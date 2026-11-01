@@ -4,13 +4,17 @@ Exposes ``number.<source>_frequency`` (87.5–108.0 MHz, step 0.05 MHz, box mode
 on each declared tuner's Audio Source device so users can type or step to any
 FM frequency directly from the Home Assistant UI without scripting
 ``media_player.play_media`` calls.
+
+The entity is a companion of the tuner's ``MyHOMESoundSource``: commands go
+through that source (which picks WHO=16 or WHO=22 for the gateway), and bus
+reports reach it through ``runtime.tuner_frequency_callbacks``.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from homeassistant.components.number import (
     NumberDeviceClass,
@@ -19,20 +23,17 @@ from homeassistant.components.number import (
 )
 from homeassistant.const import Platform, UnitOfFrequency
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from OWNd.message import OWNCommand, OWNSoundCommand, OWNSoundEvent
 
 from .const import (
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
-    DOMAIN,
 )
 from .data import MyHOMEConfigEntry, get_runtime_data
 from .myhome_device import MyHOMEEntity
-from .sound_source import source_address, who22_source_id
-from .tuner_decode import FM_MAX_KHZ, FM_MIN_KHZ, decode_who22_tuner, frequency_khz_from_who16
+from .sound_source import source_address, tuner_source, uses_who22_commands
+from .tuner_decode import FM_MAX_KHZ, FM_MIN_KHZ
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -66,7 +67,6 @@ async def async_setup_entry(
             MyHOMETunerFrequencyNumber(
                 hass=hass,
                 config_entry=config_entry,
-                slot=slot,
                 where=where,
                 name=name or f"Audio Source {slot}",
                 gateway=runtime.gateway,
@@ -97,7 +97,6 @@ class MyHOMETunerFrequencyNumber(NumberEntity, MyHOMEEntity):
         self,
         hass: HomeAssistant,
         config_entry: MyHOMEConfigEntry,
-        slot: int,
         where: str,
         name: str,
         gateway: MyHOMEGatewayHandler,
@@ -116,41 +115,36 @@ class MyHOMETunerFrequencyNumber(NumberEntity, MyHOMEEntity):
             translation_key="tuner_frequency",
         )
         self._config_entry = config_entry
-        self._slot = slot
-        self.device_key = f"{where}#16"
         self._attr_unique_id = f"{gateway.mac}-16-{where}#16-frequency"
-        self._attr_icon = "mdi:radio-fm"
         self._attr_native_value: float | None = None
         self._poll_on_add = False
 
     @property
     def available(self) -> bool:
         """Return True if this tuner's active WHO subsystem is available."""
-        who = "22" if self._uses_who22_commands() else self._who
+        who = "22" if uses_who22_commands(self._gateway_handler) else self._who
         return self._gateway_handler.is_who_available(who)
 
     async def async_added_to_hass(self) -> None:
-        """Restore last frequency and subscribe via FrameRouter and runtime callbacks."""
+        """Restore last frequency and follow the tuner's reported frequency."""
         await super().async_added_to_hass()
         runtime = get_runtime_data(self._config_entry)
-        if runtime is not None:
-            self.async_on_remove(
-                runtime.router.subscribe("16", [self.device_key], self.handle_event)
-            )
-            callbacks = runtime.tuner_frequency_callbacks.setdefault(self._where, [])
-            callbacks.append(self._apply_khz)
+        if runtime is None:
+            return
+        callbacks = runtime.tuner_frequency_callbacks.setdefault(self._where, [])
+        callbacks.append(self._apply_khz)
 
-            @callback
-            def _unsubscribe_freq() -> None:
-                if self._apply_khz in callbacks:
-                    callbacks.remove(self._apply_khz)
+        @callback
+        def _unsubscribe_freq() -> None:
+            if self._apply_khz in callbacks:
+                callbacks.remove(self._apply_khz)
 
-            self.async_on_remove(_unsubscribe_freq)
+        self.async_on_remove(_unsubscribe_freq)
 
-            source = runtime.sound_sources.get(self._where)
-            known_khz = getattr(source, "_frequency_khz", None) if source is not None else None
-            if isinstance(known_khz, int) and FM_MIN_KHZ <= known_khz <= FM_MAX_KHZ:
-                self._attr_native_value = round(known_khz / 1000.0, 2)
+        source = runtime.sound_sources.get(self._where)
+        known_khz = getattr(source, "_frequency_khz", None) if source is not None else None
+        if isinstance(known_khz, int) and FM_MIN_KHZ <= known_khz <= FM_MAX_KHZ:
+            self._attr_native_value = round(known_khz / 1000.0, 2)
 
     async def async_restore_last_state(self, last_state: State) -> None:
         """Restore the last valid FM frequency across restarts."""
@@ -176,80 +170,6 @@ class MyHOMETunerFrequencyNumber(NumberEntity, MyHOMEEntity):
             self._attr_native_value = new_val
             self._publish_state()
 
-    @callback
-    def handle_event(self, message: OWNSoundEvent) -> None:
-        """Handle a WHO=16 bus event routed to this tuner."""
-        raw_dim = getattr(message, "dimension", None)
-        try:
-            dimension = int(raw_dim) if raw_dim is not None else None
-        except (ValueError, TypeError):
-            return
-        if dimension != 6:
-            return
-        values = [
-            str(v)
-            for v in (
-                getattr(message, "dimension_value", None)
-                or getattr(message, "dimension_values", None)
-                or []
-            )
-        ]
-        if values:
-            self._apply_khz(frequency_khz_from_who16(values[-1]))
-
-    @callback
-    def handle_who22_event(self, message: Any) -> None:
-        """Handle a WHO=22 tuner report directly when used without MyHOMESoundSource."""
-        if who22_source_id(message) != self._slot:
-            return
-        raw_dim = getattr(message, "dimension", None)
-        try:
-            dimension = int(raw_dim) if raw_dim is not None else None
-        except (ValueError, TypeError):
-            return
-        values = [
-            str(v)
-            for v in (
-                getattr(message, "dimension_value", None)
-                or getattr(message, "dimension_values", None)
-                or []
-            )
-        ]
-        report = decode_who22_tuner(dimension, values)
-        if report is not None and report.frequency_khz is not None:
-            self._apply_khz(report.frequency_khz)
-
-    def _uses_who22_commands(self) -> bool:
-        supports = getattr(self._gateway_handler, "profile_supports_who", None)
-        if not callable(supports):
-            return False
-        return supports(16) is False and supports(22) is True
-
     async def async_set_native_value(self, value: float) -> None:
         """Set the tuner's FM frequency in MHz."""
-        runtime = get_runtime_data(self._config_entry)
-        source = runtime.sound_sources.get(self._where) if runtime is not None else None
-        if source is not None:
-            await source.async_set_frequency(value)
-            return
-
-        val = float(value)
-        kilohertz = int(round(val * 1000)) if math.isfinite(val) else 0
-        if not FM_MIN_KHZ <= kilohertz <= FM_MAX_KHZ:
-            raise HomeAssistantError(
-                f"{self.entity_id}: {value} MHz is outside the FM band",
-                translation_domain=DOMAIN,
-                translation_key="frequency_out_of_range",
-                translation_placeholders={
-                    "entity_id": str(self.entity_id),
-                    "frequency": str(value),
-                },
-            )
-        if self._uses_who22_commands():
-            raw = f"*#22*2#{self._slot}*#5*1*{kilohertz // 10}##"
-            cmd = OWNCommand.parse(raw) or OWNCommand(raw)
-        else:
-            cmd = OWNSoundCommand.set_frequency(self._where, kilohertz)
-        await self._gateway_handler.send(cmd)
-        self._attr_native_value = round(kilohertz / 1000.0, 2)
-        self._publish_state()
+        await tuner_source(self._config_entry, self._where, self.entity_id).async_set_frequency(value)

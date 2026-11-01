@@ -164,10 +164,10 @@ async def test_zone_player_rejects_tuner_only_services(
 
 
 @pytest.mark.asyncio
-async def test_tuner_number_and_seek_buttons_standalone_and_who22_fallback(
+async def test_tuner_number_and_seek_buttons_delegate_to_sound_source(
     hass: HomeAssistant, mock_gateway: MagicMock
 ) -> None:
-    """MyHOMETunerFrequencyNumber and Seek buttons work both via runtime sound_sources and standalone."""
+    """The frequency number and seek buttons drive their MyHOMESoundSource on WHO 16 and WHO 22 gateways."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_MAC: mock_gateway.mac},
@@ -209,62 +209,76 @@ async def test_tuner_number_and_seek_buttons_standalone_and_who22_fallback(
     await num.async_added_to_hass()
     await num.async_update()
 
-    # Receive WHO 16 dim 6 and WHO 22 dim 5 updates
-    runtime.router.publish("16", ["101#16"], OWNSoundEvent("*#16*101*6*0*98500##"))
-    assert num.native_value == 98.5
-
-    num.handle_who22_event(
-        SimpleNamespace(who="22", where="5", where_param=["2", "1"], dimension=5, dimension_value=["1", "10150"])
-    )
-    assert num.native_value == 101.5
-
-    # Ignore unrelated WHO 16 dims, invalid dims, and other WHO 22 sources
-    num.handle_event(SimpleNamespace(dimension="bad", dimension_value=[]))
-    num.handle_event(SimpleNamespace(dimension=7, dimension_value=["0", "2"]))
-    num.handle_who22_event(
-        SimpleNamespace(who="22", where="5", where_param=["2", "2"], dimension=5, dimension_value=["1", "9000"])
-    )
-    num.handle_who22_event(
-        SimpleNamespace(who="22", where="5", where_param=["2", "1"], dimension="bad", dimension_value=[])
-    )
-    assert num.native_value == 101.5
-
-    # Direct set without sound_sources registered (WHO 16 then WHO 22 fallback)
-    await num.async_set_native_value(107.25)
-    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#6*0*107250##"
-    assert num.native_value == 107.25
-
-    with pytest.raises(HomeAssistantError):
-        await num.async_set_native_value(70.0)
-
-    mock_gateway.profile_supports_who = lambda who: who == 22
-    await num.async_set_native_value(99.5)
-    assert str(mock_gateway.send.call_args[0][0]) == "*#22*2#1*#5*1*9950##"
-    assert num.native_value == 99.5
-
-    # Seek buttons standalone fallback (WHO 22 and WHO 16)
     added_buttons: list = []
     assert await async_setup_buttons(hass, entry, lambda ents: added_buttons.extend(ents))
     seek_up = next(b for b in added_buttons if isinstance(b, TunerSeekUpButtonEntity))
     seek_down = next(b for b in added_buttons if isinstance(b, TunerSeekDownButtonEntity))
+    assert seek_up.unique_id == f"{mock_gateway.mac}-16-101#16-seek-up"
+    assert seek_down.unique_id == f"{mock_gateway.mac}-16-101#16-seek-down"
     await seek_up.async_update()
-    await seek_up.async_press()
-    await seek_down.async_press()
-    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list[-2:]] == [
-        "*22*5*2#1##",
-        "*22*6*2#1##",
-    ]
 
-    mock_gateway.profile_supports_who = lambda who: who == 16
+    # Before the media player platform registers the tuner, commands fail cleanly.
+    mock_gateway.send.reset_mock()
+    for action in (num.async_set_native_value(99.5), seek_up.async_press(), seek_down.async_press()):
+        with pytest.raises(HomeAssistantError) as not_ready:
+            await action
+        assert not_ready.value.translation_key == "tuner_not_ready"
+    mock_gateway.send.assert_not_called()
+
+    tuner = MyHOMESoundSource(
+        hass=hass,
+        name="FM Radio",
+        device_id="101#16",
+        who="16",
+        where="101",
+        manufacturer="BTicino",
+        model="Audio Source",
+        gateway=mock_gateway,
+    )
+    tuner.hass = hass
+    tuner.entity_id = "media_player.fm_radio"
+    tuner.async_write_ha_state = MagicMock()
+    tuner.async_schedule_update_ha_state = MagicMock()
+    attach_platform(tuner, entry)
+    runtime.sound_sources["101"] = tuner
+
+    # Bus reports reach the number through the tuner (WHO 16 dim 6, WHO 22 dim 5).
+    tuner.handle_event(OWNSoundEvent("*#16*101*6*0*98500##"))
+    assert num.native_value == 98.5
+    tuner.handle_who22_event(
+        SimpleNamespace(who="22", where="5", where_param=["2", "1"], dimension=5, dimension_value=["1", "10150"])
+    )
+    assert num.native_value == 101.5
+
+    # WHO 16 gateway: the tuner sends bt_difson frames.
+    await num.async_set_native_value(107.25)
     await seek_up.async_press()
     await seek_down.async_press()
-    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list[-2:]] == [
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*#16*101*#6*0*107250##",
         "*16*5000*101##",
         "*16*5100*101##",
     ]
+    assert num.native_value == 107.25
+
+    with pytest.raises(HomeAssistantError) as out_of_band:
+        await num.async_set_native_value(70.0)
+    assert out_of_band.value.translation_key == "frequency_out_of_range"
+
+    # WHO 22-only gateway: the same entities send bt_multi frames.
+    mock_gateway.send.reset_mock()
+    mock_gateway.profile_supports_who = lambda who: who == 22
+    await num.async_set_native_value(99.5)
+    await seek_up.async_press()
+    await seek_down.async_press()
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*#22*2#1*#5*1*9950##",
+        "*22*5*2#1##",
+        "*22*6*2#1##",
+    ]
+    assert num.native_value == 99.5
 
     assert await async_unload_number(hass, entry) is True
-
 
 @pytest.mark.asyncio
 async def test_full_config_entry_tuner_device_grouping_reload_and_uncheck_pruning(
@@ -441,6 +455,18 @@ async def test_tuner_guard_branches_and_edge_cases(hass: HomeAssistant) -> None:
     no_rt_entry.add_to_hass(hass)
     assert await async_setup_numbers(hass, no_rt_entry, lambda _e: None) is True
 
+    # A number whose entry lost its runtime data adds without following any tuner
+    orphan_gw = MagicMock()
+    orphan_gw.mac = "00:11:22:33:44:98"
+    orphan_num = MyHOMETunerFrequencyNumber(
+        hass=hass, config_entry=no_rt_entry, where="101", name="Radio", gateway=orphan_gw
+    )
+    orphan_num.hass = hass
+    orphan_num.entity_id = "number.radio_frequency"
+    attach_platform(orphan_num, no_rt_entry)
+    await orphan_num.async_added_to_hass()
+    assert orphan_num.native_value is None
+
     follower_gw = MagicMock()
     follower_gw.mac = "00:11:22:33:44:99"
     follower_gw.is_follower = True
@@ -494,22 +520,19 @@ async def test_tuner_guard_branches_and_edge_cases(hass: HomeAssistant) -> None:
     attach_platform(seeded_num, seed_entry)
     await seeded_num.async_added_to_hass()
     assert seeded_num.native_value == 105.3
-    assert seeded_num._uses_who22_commands() is False
     assert seeded_num.available is True
     seeded_num._apply_khz(None)
     seeded_num._apply_khz(50000)
     assert seeded_num.native_value == 105.3
 
-    # 5. Button _uses_who22_commands & available with non-callable profile_supports_who
+    # 5. Button availability with non-callable profile_supports_who
     btn = TunerSeekUpButtonEntity(
         hass=hass,
         config_entry=seed_entry,
-        slot=1,
         where="101",
         name="Radio 1",
         gateway=follower_gw,
     )
-    assert btn._uses_who22_commands() is False
     assert btn.available is True
 
 

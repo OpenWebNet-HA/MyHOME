@@ -688,6 +688,9 @@
     "tuner_only_operation": {
       "message": "{entity_id}: this action is only supported on tuner source entities"
     },
+    "tuner_not_ready": {
+      "message": "{entity_id}: tuner {where} is not set up yet; reload the integration if this persists"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: volume level {volume} is not a valid finite number"
     },

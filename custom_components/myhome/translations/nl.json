@@ -609,6 +609,9 @@
     "tuner_only_operation": {
       "message": "{entity_id}: deze actie wordt alleen ondersteund op tunerbron-entiteiten"
     },
+    "tuner_not_ready": {
+      "message": "{entity_id}: tuner {where} is nog niet ingesteld; herlaad de integratie als dit aanhoudt"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: volumeniveau {volume} is geen geldig eindig getal"
     },

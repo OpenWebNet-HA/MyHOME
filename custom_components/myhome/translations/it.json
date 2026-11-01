@@ -609,6 +609,9 @@
     "tuner_only_operation": {
       "message": "{entity_id}: questa azione è supportata solo sulle entità sorgente sintonizzatore"
     },
+    "tuner_not_ready": {
+      "message": "{entity_id}: il sintonizzatore {where} non è ancora configurato; ricarica l'integrazione se il problema persiste"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"
     },

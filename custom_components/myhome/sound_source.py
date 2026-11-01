@@ -74,7 +74,7 @@ from homeassistant.components.media_player.const import (
 from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
-from OWNd.message import OWNCommand, OWNSoundCommand, OWNSoundEvent
+from OWNd.message import OWNSoundCommand, OWNSoundDiffusionCommand, OWNSoundEvent
 
 from .const import (
     DOMAIN,
@@ -97,6 +97,8 @@ __all__ = [
     "MyHOMESoundSource",
     "rds_text",
     "source_address",
+    "tuner_source",
+    "uses_who22_commands",
     "who22_source_id",
     "who22_tuner_listener",
 ]
@@ -107,9 +109,35 @@ def source_address(source: int) -> str:
     return str(100 + int(source))
 
 
-def _build_cmd(raw: str) -> Any:
-    """Build an OpenWebNet command frame across OWNd versions."""
-    return OWNCommand.parse(raw) or OWNCommand(raw)
+def uses_who22_commands(gateway: Any) -> bool:
+    """Return True on WHO=22-only gateways (MyHomeServer1, F459, F460, F461)."""
+    supports = getattr(gateway, "profile_supports_who", None)
+    if not callable(supports):
+        return False
+    return supports(16) is False and supports(22) is True
+
+
+def _seek_who22(where: str, what: int) -> OWNSoundDiffusionCommand:
+    """Automatic frequency search (``WHAT`` 5 up / 6 down, empty step); OWNd has no builder."""
+    return OWNSoundDiffusionCommand(f"*22*{what}*{where}##")
+
+
+def tuner_source(config_entry: Any, where: str, entity_id: str | None) -> MyHOMESoundSource:
+    """Return the declared tuner a companion number or button drives.
+
+    Raises:
+        HomeAssistantError: If the media player platform has not set it up yet.
+    """
+    runtime = get_runtime_data(config_entry)
+    source: MyHOMESoundSource | None = runtime.sound_sources.get(where) if runtime is not None else None
+    if source is None:
+        raise HomeAssistantError(
+            f"{entity_id}: tuner {where} is not set up yet",
+            translation_domain=DOMAIN,
+            translation_key="tuner_not_ready",
+            translation_placeholders={"entity_id": str(entity_id), "where": where},
+        )
+    return source
 
 
 class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
@@ -208,10 +236,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
 
     def _uses_who22_commands(self) -> bool:
         """Return True on WHO=22-only gateways (MyHomeServer1, F459, F460, F461)."""
-        supports = getattr(self._gateway_handler, "profile_supports_who", None)
-        if not callable(supports):
-            return False
-        return supports(16) is False and supports(22) is True
+        return uses_who22_commands(self._gateway_handler)
 
     @property
     def available(self) -> bool:
@@ -240,7 +265,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         self._register_availability_listener()
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*22*31*{self._who22_addr()}##")
+                OWNSoundDiffusionCommand.start_rds(self._who22_addr())
             )
         else:
             await self._gateway_handler.send(
@@ -252,9 +277,9 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         if self._uses_who22_commands():
             addr = self._who22_addr()
             commands: tuple[Any, ...] = (
-                _build_cmd(f"*#22*{addr}*5##"),
-                _build_cmd(f"*#22*{addr}*6##"),
-                _build_cmd(f"*#22*{addr}*12##"),
+                OWNSoundDiffusionCommand.request_frequency(addr),
+                OWNSoundDiffusionCommand.request_preset(addr),
+                OWNSoundDiffusionCommand.request_device_state(addr),
             )
         else:
             commands = (
@@ -271,7 +296,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         """Switch the source device on."""
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*22*1*{self._who22_addr()}##")
+                OWNSoundDiffusionCommand.turn_on(self._who22_addr())
             )
         else:
             await self._gateway_handler.send(OWNSoundCommand.turn_on(self._where))
@@ -284,7 +309,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         """
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*22*0*{self._who22_addr()}##")
+                OWNSoundDiffusionCommand.turn_off(self._who22_addr())
             )
         else:
             await self._gateway_handler.send(OWNSoundCommand.turn_off(self._where))
@@ -293,7 +318,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         """Advance to the next station."""
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*22*9*{self._who22_addr()}##")
+                OWNSoundDiffusionCommand.next_station(self._who22_addr())
             )
         else:
             await self._gateway_handler.send(
@@ -304,7 +329,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         """Return to the previous station."""
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*22*10*{self._who22_addr()}##")
+                OWNSoundDiffusionCommand.previous_station(self._who22_addr())
             )
         else:
             await self._gateway_handler.send(
@@ -314,9 +339,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
     async def async_seek_up(self) -> None:
         """Seek forward to the next receivable FM frequency."""
         if self._uses_who22_commands():
-            await self._gateway_handler.send(
-                _build_cmd(f"*22*5*{self._who22_addr()}##")
-            )
+            await self._gateway_handler.send(_seek_who22(self._who22_addr(), 5))
         else:
             await self._gateway_handler.send(
                 OWNSoundCommand.seek_up(self._where)
@@ -325,9 +348,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
     async def async_seek_down(self) -> None:
         """Seek backward to the previous receivable FM frequency."""
         if self._uses_who22_commands():
-            await self._gateway_handler.send(
-                _build_cmd(f"*22*6*{self._who22_addr()}##")
-            )
+            await self._gateway_handler.send(_seek_who22(self._who22_addr(), 6))
         else:
             await self._gateway_handler.send(
                 OWNSoundCommand.seek_down(self._where)
@@ -366,7 +387,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
             )
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*#22*{self._who22_addr()}*#6*{st}##")
+                OWNSoundDiffusionCommand.set_preset(self._who22_addr(), st)
             )
         else:
             await self._gateway_handler.send(
@@ -391,15 +412,12 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
                     "station": str(station),
                 },
             )
+        cmd: OWNSoundCommand | OWNSoundDiffusionCommand
         if self._uses_who22_commands():
-            cmd = _build_cmd(f"*22*33#{st}*{self._who22_addr()}##")
+            cmd = OWNSoundDiffusionCommand.store_preset(self._who22_addr(), st)
         else:
-            store_fn = getattr(OWNSoundCommand, "store_station", None)
-            cmd = (
-                store_fn(self._where, st)
-                if callable(store_fn)
-                else _build_cmd(f"*#16*{self._where}*#10*{st}##")
-            )
+            # Memorized-station write (DIMENSION 10); OWNd has no builder for it.
+            cmd = OWNSoundCommand(f"*#16*{self._where}*#10*{st}##")
         await self._gateway_handler.send(cmd)
         self._station = st
         if st > self._station_count:
@@ -426,7 +444,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
             )
         if self._uses_who22_commands():
             await self._gateway_handler.send(
-                _build_cmd(f"*#22*{self._who22_addr()}*#5*1*{kilohertz // 10}##")
+                OWNSoundDiffusionCommand.set_frequency(self._who22_addr(), kilohertz)
             )
         else:
             await self._gateway_handler.send(

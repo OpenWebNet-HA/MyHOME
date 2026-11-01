@@ -609,6 +609,9 @@
     "tuner_only_operation": {
       "message": "{entity_id} : cette action n'est prise en charge que sur les entités source tuner"
     },
+    "tuner_not_ready": {
+      "message": "{entity_id} : le tuner {where} n'est pas encore configuré ; rechargez l'intégration si le problème persiste"
+    },
     "volume_not_finite": {
       "message": "{entity_id} : le niveau de volume {volume} n'est pas un nombre fini valide"
     },

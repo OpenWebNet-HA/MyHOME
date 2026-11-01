@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from OWNd.message import OWNCommand, OWNSoundCommand
+from OWNd.message import OWNCommand
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -42,7 +42,7 @@ from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import Address, parse_unique_id, prune_orphaned_companions
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
-from .sound_source import source_address
+from .sound_source import source_address, tuner_source, uses_who22_commands
 
 PARALLEL_UPDATES = 0
 PLATFORM = Platform.BUTTON
@@ -128,26 +128,16 @@ async def async_setup_entry(
                 where = source_address(slot)
                 src_name = str(options.get(CONF_SOURCE_NAME.format(slot), "") or "").strip()
                 tuner_name = src_name or f"Audio Source {slot}"
-                _buttons.append(
-                    TunerSeekUpButtonEntity(
-                        hass=hass,
-                        config_entry=config_entry,
-                        slot=slot,
-                        where=where,
-                        name=tuner_name,
-                        gateway=gateway,
+                for button_cls in (TunerSeekUpButtonEntity, TunerSeekDownButtonEntity):
+                    _buttons.append(
+                        button_cls(
+                            hass=hass,
+                            config_entry=config_entry,
+                            where=where,
+                            name=tuner_name,
+                            gateway=gateway,
+                        )
                     )
-                )
-                _buttons.append(
-                    TunerSeekDownButtonEntity(
-                        hass=hass,
-                        config_entry=config_entry,
-                        slot=slot,
-                        where=where,
-                        name=tuner_name,
-                        gateway=gateway,
-                    )
-                )
 
     def _create_buttons_for_device(dev_id: str | int, cfg: dict[str, Any]) -> list[ButtonEntity]:
         """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
@@ -540,20 +530,18 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
 
 
 class _TunerSeekButtonBase(ButtonEntity, MyHOMEEntity):
-    """Base companion button for FM radio hardware seek up / down on an Audio Source."""
+    """Companion button for FM radio hardware seek up / down on an Audio Source."""
+
+    _translation_key: str
+    _unique_suffix: str
 
     def __init__(
         self,
         hass: HomeAssistant,
         config_entry: MyHOMEConfigEntry,
-        slot: int,
         where: str,
         name: str,
         gateway: MyHOMEGatewayHandler,
-        *,
-        translation_key: str,
-        unique_suffix: str,
-        icon: str,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -565,105 +553,39 @@ class _TunerSeekButtonBase(ButtonEntity, MyHOMEEntity):
             manufacturer="BTicino",
             model="Audio Source",
             gateway=gateway,
-            translation_key=translation_key,
+            translation_key=self._translation_key,
         )
         self._config_entry = config_entry
-        self._slot = slot
-        self._attr_icon = icon
-        self._attr_unique_id = f"{gateway.mac}-16-{where}#16-{unique_suffix}"
+        self._attr_unique_id = f"{gateway.mac}-16-{where}#16-{self._unique_suffix}"
         self._poll_on_add = False
 
     async def async_update(self) -> None:
         """Buttons have no state to request."""
 
-    def _uses_who22_commands(self) -> bool:
-        supports = getattr(self._gateway_handler, "profile_supports_who", None)
-        if not callable(supports):
-            return False
-        return supports(16) is False and supports(22) is True
-
     @property
     def available(self) -> bool:
         """Return True if this tuner's active WHO subsystem is available."""
-        who = "22" if self._uses_who22_commands() else self._who
+        who = "22" if uses_who22_commands(self._gateway_handler) else self._who
         return self._gateway_handler.is_who_available(who)
 
 
 class TunerSeekUpButtonEntity(_TunerSeekButtonBase):
     """Seek forward to the next receivable FM radio station on an F500 / F500N tuner."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        config_entry: MyHOMEConfigEntry,
-        slot: int,
-        where: str,
-        name: str,
-        gateway: MyHOMEGatewayHandler,
-    ) -> None:
-        super().__init__(
-            hass=hass,
-            config_entry=config_entry,
-            slot=slot,
-            where=where,
-            name=name,
-            gateway=gateway,
-            translation_key="tuner_seek_up",
-            unique_suffix="seek-up",
-            icon="mdi:fast-forward-outline",
-        )
+    _translation_key = "tuner_seek_up"
+    _unique_suffix = "seek-up"
 
     async def async_press(self) -> None:
         """Seek forward on the tuner."""
-        runtime = get_runtime_data(self._config_entry)
-        source = runtime.sound_sources.get(self._where) if runtime is not None else None
-        if source is not None:
-            await source.async_seek_up()
-            return
-        if self._uses_who22_commands():
-            raw = f"*22*5*2#{self._slot}##"
-            cmd = OWNCommand.parse(raw) or OWNCommand(raw)
-        else:
-            cmd = OWNSoundCommand.seek_up(self._where)
-        await self._gateway_handler.send(cmd)
+        await tuner_source(self._config_entry, self._where, self.entity_id).async_seek_up()
 
 
 class TunerSeekDownButtonEntity(_TunerSeekButtonBase):
     """Seek backward to the previous receivable FM radio station on an F500 / F500N tuner."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        config_entry: MyHOMEConfigEntry,
-        slot: int,
-        where: str,
-        name: str,
-        gateway: MyHOMEGatewayHandler,
-    ) -> None:
-        super().__init__(
-            hass=hass,
-            config_entry=config_entry,
-            slot=slot,
-            where=where,
-            name=name,
-            gateway=gateway,
-            translation_key="tuner_seek_down",
-            unique_suffix="seek-down",
-            icon="mdi:rewind-outline",
-        )
+    _translation_key = "tuner_seek_down"
+    _unique_suffix = "seek-down"
 
     async def async_press(self) -> None:
         """Seek backward on the tuner."""
-        runtime = get_runtime_data(self._config_entry)
-        source = runtime.sound_sources.get(self._where) if runtime is not None else None
-        if source is not None:
-            await source.async_seek_down()
-            return
-        if self._uses_who22_commands():
-            raw = f"*22*6*2#{self._slot}##"
-            cmd = OWNCommand.parse(raw) or OWNCommand(raw)
-        else:
-            cmd = OWNSoundCommand.seek_down(self._where)
-        await self._gateway_handler.send(cmd)
-
-
+        await tuner_source(self._config_entry, self._where, self.entity_id).async_seek_down()
