@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import time
 from collections.abc import Callable, Mapping
@@ -119,6 +120,7 @@ from .cover_motion import (
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
     WRITE_TIMEOUT,
+    CoverMotionModel,
     MotionPosition,
     compute_freeze_position,
     compute_interpolated_position,
@@ -180,6 +182,11 @@ _STANDARD_TIMED_SHUTTER_MODELS = (
     "HD4671/2",
     "AM5851/2",
 )
+
+
+def _motion_fingerprint(model: CoverMotionModel) -> dict[str, float]:
+    """The motion model a stored position was estimated with, as kept across restarts."""
+    return {key: round(float(value), 6) for key, value in dataclasses.asdict(model).items()}
 
 
 def _is_standard_timed_shutter_model(model: str | None) -> bool:
@@ -1164,7 +1171,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Return if the cover is closed (None while that is unknown)."""
         if self._motion.model is not None:
             position = self._motion.sample(time.monotonic())
-            return position == MotionPosition(0, 0) if position is not None else False
+            return position == MotionPosition(0, 0) if position is not None else None
         if self.current_cover_position is not None:
             return self.current_cover_position == 0
         return self._attr_is_closed
@@ -1187,13 +1194,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
-        if self._motion.model is not None:
-            # A restored HA percentage cannot establish the hidden slat phase,
-            # nor whether the motor moved while Home Assistant was offline.
-            self._motion.configure(self._motion.model)
-            self._motion.position = None
-            self._attr_current_cover_position = None
-            self._attr_is_closed = False
+        if (model := self._motion.model) is not None:
+            # Only the model state saved with the same motion model gives both the
+            # curtain height and the slat phase; anything else is unknown, never
+            # open. It stays an estimate (the cover may have moved while Home
+            # Assistant was offline) until the next full run re-anchors it.
+            self._motion.configure(model)
+            position = await self._async_restored_motion(model)
+            self._motion.position = position
+            self._attr_current_cover_position = self._start_position = (
+                round(position.height * 100) if position is not None else None
+            )
+            self._attr_is_closed = position == MotionPosition(0, 0) if position is not None else None
             return
         moving_on_add = bool(self._attr_is_opening or self._attr_is_closing)
         if self._strategy.assumed_state:
@@ -1238,11 +1250,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData | None:
-        """The strategy's model state, kept across restarts when it has any."""
+        """The strategy's model state and a stationary motion-model position, kept across restarts."""
+        data: dict[str, Any] = {}
         state = self._strategy.export_state()
-        if state is None:
+        if state is not None:
+            data.update(strategy=self._strategy.name, state=state)
+        position, model = self._motion.position, self._motion.model
+        if (model is not None and position is not None and self._motion.anchor is None
+                and not self._attr_is_opening and not self._attr_is_closing):
+            data["motion"] = {"height": position.height, "slats": position.slats, "model": _motion_fingerprint(model)}
+        return RestoredExtraData(data) if data else None
+
+    async def _async_restored_motion(self, model: CoverMotionModel) -> MotionPosition | None:
+        """The saved model position, only if it was estimated with the active motion model."""
+        try:
+            extra = await self.async_get_last_extra_data()
+        except Exception:  # pylint: disable=broad-except  # not registered with the restore cache
             return None
-        return RestoredExtraData({"strategy": self._strategy.name, "state": state})
+        motion = extra.as_dict().get("motion") if extra is not None else None
+        if not isinstance(motion, dict) or motion.get("model") != _motion_fingerprint(model):
+            return None
+        try:
+            return MotionPosition(motion["height"], motion["slats"])
+        except (KeyError, ValueError):
+            return None
 
     async def _async_restore_strategy_state(self) -> None:
         """Hand the strategy the state it exported before the restart (same strategy only)."""
