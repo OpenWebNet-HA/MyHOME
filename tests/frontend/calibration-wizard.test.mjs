@@ -950,7 +950,7 @@ test("dark pass: no colour darkened towards black applies on a dark theme withou
     for (const selector of selectors.split(/,(?![^(]*\))/).map((part) => part.trim())) {
       const base = selector.replace(/:hover|:not\(:disabled\)/g, "");
       const covered = [...cascadeCss.matchAll(/(?<=^|[{}])\s*(\[data-theme="dark"\][^{}@]+?)\s*\{([^{}]*)\}/g)]
-        .some(([, dark, body]) => /color: (?:var\(--panel-warning\)|color-mix\([^;]*(?:#fff|--primary-text-color))/.test(body)
+        .some(([, dark, body]) => /(?:^|[\s;])(?:color|--note-text): (?:var\(--panel-warning\)|color-mix\([^;]*(?:#fff|--primary-text-color))/.test(body)
           && dark.replace(/\[data-theme="dark"\] ?/g, "").replace(/:hover|:not\(:disabled\)/g, "").includes(base.replace(/^:is\(([^)]*)\)$/, "$1").split(",")[0].trim()));
       assert.ok(covered, `no dark counterpart for ${selector}`);
     }
@@ -991,7 +991,9 @@ test("L-69: the «Precision» tile takes its note's colours, green within the th
     const [good, goodNote, bad, badNote, plain] = host.children;
     for (const [tile, note, tone] of [[good, goodNote, "success"], [bad, badNote, "warning"]]) {
       assert.match(winner(tile, "background"), new RegExp(`--panel-${tone}\\) 8%`), `${theme}: ${tone} fill (the note itself has none, L-74)`);
-      assert.equal(winner(tile, "color"), winner(note, "color"), `${theme}: ${tone} text as its note`);
+      // L-127: a note's text is its `--note-text`.
+      assert.equal(winner(note, "color"), "var(--note-text)");
+      assert.equal(winner(tile, "color"), winner(note, "--note-text"), `${theme}: ${tone} text as its note`);
       assert.match(winner(tile, "box-shadow"), new RegExp(`--panel-${tone}`), `${theme}: ${tone} border`);
     }
     assert.equal(winner(good.firstElementChild, "color"), "inherit");
@@ -1195,47 +1197,57 @@ test("L-78: «the measurement state changed» is not shown once the session has 
   void panel;
 });
 
-test("L-80/L-82: notes by tone and theme: a 2 px solid bar, square; in light info and success are quotes with coloured text (L-89: the accent itself), warning (L-90: darkened text) and error boxed; in dark all quotes", () => {
+test("L-127 parity: every note and notice of the list, the wizard and their dialogs follows one recipe; light boxed, dark bar only; tones only change colours", () => {
   const doc = dom.window.document;
-  // [classes, tone token, light box?, light text, dark text]
+  const accentDark = "color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff))";
+  const warningLight = "color-mix(in srgb, var(--panel-warning) 60%, #000)", warningDark = "color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff))";
+  const successDark = "color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff))", text = "var(--primary-text-color, #182b37)";
+  // [classes|data-tone, host, tone token, light text, dark text]: Info, neutral info, Avviso, Successo, Errore.
   const notes = [
-    ["cal-note", "--panel-accent", false, "var(--panel-accent)", "color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff))"],
-    ["cal-note cal-tab-help", "--panel-accent", false, "var(--panel-accent)", null],
-    ["cal-note wiz-subline", "--panel-accent", false, null, null],
-    ["cal-note is-success", "--panel-success", false, "var(--panel-success)", "color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff))"],
-    ["cal-note is-success wiz-result-note", "--panel-success", false, "var(--panel-success)", null],
-    ["notice cal-tab-done", "--panel-success", false, "var(--panel-success)", null],
-    ["cal-note is-warning", "--panel-warning", true, "color-mix(in srgb, var(--panel-warning) 60%, #000)", "color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff))"],
-    ["cal-note is-warning wiz-readonly-note", "--panel-warning", true, null, null],
-    ["cal-note is-warning wiz-field-warning", "--panel-warning", true, null, null],
-    ["cal-note is-warning wiz-radio-warning", "--panel-warning", true, null, null],
-    ["cal-note is-warning cal-batch-note", "--panel-warning", true, null, null],
-    ["notice cal-tab-busy", "--panel-warning", true, "color-mix(in srgb, var(--panel-warning) 60%, #000)", "color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff))"],
-    ["notice wiz-notice|warning", "--panel-warning", true, "color-mix(in srgb, var(--panel-warning) 60%, #000)", "color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff))"],
-    ["notice error", "--panel-error", true, "var(--panel-error)", "var(--panel-error)"],
-    ["notice wiz-notice|error", "--panel-error", true, "var(--panel-error)", null],
+    ["cal-note", "cal-tab", "--panel-accent", "var(--panel-accent)", accentDark],
+    ["cal-note cal-tab-help", "cal-tab", "--panel-accent", "var(--panel-accent)", accentDark],
+    ["cal-note wiz-subline", "cal-tab", "--panel-accent", "var(--panel-accent)", accentDark],
+    ["cal-note wiz-radio-notice", "cal-tab", "--panel-accent", "var(--panel-accent)", accentDark],
+    ["notice wiz-notice|info", "cal-tab", "--panel-accent", text, text],
+    ["notice", "cal-tab", "--panel-accent", text, text],
+    ["cal-note is-warning", "cal-tab", "--panel-warning", warningLight, warningDark],
+    ["cal-note is-warning wiz-readonly-note", "cal-tab", "--panel-warning", warningLight, warningDark],
+    ["cal-note is-warning wiz-field-warning", "cal-tab", "--panel-warning", warningLight, warningDark],
+    ["cal-note is-warning cal-batch-note", "cal-tab", "--panel-warning", warningLight, warningDark],
+    ["notice cal-tab-busy", "cal-tab", "--panel-warning", warningLight, warningDark],
+    ["notice wiz-notice|warning", "cal-tab", "--panel-warning", warningLight, warningDark],
+    ["cal-note is-success", "cal-tab", "--panel-success", "var(--panel-success)", successDark],
+    ["cal-note is-success wiz-result-note", "cal-tab", "--panel-success", "var(--panel-success)", successDark],
+    ["notice cal-tab-done", "cal-tab", "--panel-success", "var(--panel-success)", successDark],
+    ["notice error", "cal-tab", "--panel-error", "var(--panel-error)", "var(--panel-error)"],
+    ["notice wiz-notice|error", "cal-tab", "--panel-error", "var(--panel-error)", "var(--panel-error)"],
+    ["notice error cal-abort-error", "dialog", "--panel-error", "var(--panel-error)", "var(--panel-error)"],
   ];
   for (const theme of ["light", "dark"]) {
-    const host = doc.createElement("div"); host.className = "cal-tab"; host.dataset.theme = theme; doc.body.append(host);
-    for (const [spec, tone, boxed, lightText, darkText] of notes) {
+    const list = doc.createElement("div"); list.className = "cal-tab"; list.dataset.theme = theme; doc.body.append(list);
+    const dialog = doc.createElement("dialog"); dialog.className = "cal-dialog"; list.append(dialog);
+    for (const [spec, host, tone, lightText, darkText] of notes) {
       const [className, dataTone] = spec.split("|");
-      const note = doc.createElement("p"); note.className = className; if (dataTone) note.dataset.tone = dataTone; host.append(note);
+      const note = doc.createElement("p"); note.className = className; if (dataTone) note.dataset.tone = dataTone;
+      (host === "dialog" ? dialog : list).append(note);
       const what = `${theme}: ${spec}`;
       assert.equal(winner(note, "--note-tone"), `var(${tone})`, `${what}: its tone`);
-      assert.equal(winner(note, "border-inline-start"), "2px solid var(--note-tone)", `${what}: a 2 px solid bar`);
+      assert.equal(winner(note, "--note-text"), theme === "light" ? lightText : darkText, `${what}: its text`);
+      assert.equal(winner(note, "color"), "var(--note-text)", `${what}: one colour rule`);
+      assert.equal(winner(note, "border-inline-start"), "2px solid var(--note-tone)", `${what}: a 2 px bar in the tone`);
       assert.equal(winner(note, "border-radius"), "0", `${what}: square`);
-      const box = theme === "light" && boxed;
-      if (box) {
-        assert.match(winner(note, "background"), new RegExp(`${tone}\\) \\d+%`), `${what}: tinted fill`);
-        assert.match(winner(note, "border"), new RegExp(`^1px solid color-mix\\(in srgb, var\\(${tone}\\)`), `${what}: a border all round`);
+      assert.equal(winner(note, "font-size"), "13px", `${what}: 13 px`);
+      if (theme === "light") {
+        assert.equal(winner(note, "background"), "color-mix(in srgb, var(--note-tone) 12%, transparent)", `${what}: the tone at 12 %`);
+        assert.equal(winner(note, "border"), "1px solid color-mix(in srgb, var(--note-tone) 45%, transparent)", `${what}: 1 px at 45 % on the other sides`);
+        assert.equal(winner(note, "padding"), "8px 12px", what);
       } else {
         assert.equal(winner(note, "background"), "none", `${what}: no fill`);
         assert.equal(winner(note, "border"), "0 solid transparent", `${what}: no other side`);
+        assert.equal(winner(note, "padding"), "4px 0 4px 12px", what);
       }
-      const text = theme === "light" ? lightText : darkText;
-      if (text) assert.equal(winner(note, "color"), text, `${what}: text colour`);
     }
-    host.remove();
+    list.remove();
   }
   // No icon in a note: the tab draws none any more, and one left over is not shown.
   const host = doc.createElement("div"); host.className = "cal-tab"; host.innerHTML = '<p class="notice cal-tab-busy"><ha-icon></ha-icon><span></span></p>'; doc.body.append(host);
@@ -1539,9 +1551,10 @@ test("L-84/L-85/L-88: the phone bar on the steps strip's surface, no bar on the 
     const [info, success, error, warning] = box.children;
     const bar = (note) => winner(note, "border-inline-start-color") || "var(--note-tone)";
     if (theme === "light") {
-      assert.equal(bar(info), winner(info, "color"), "light info: bar as text");
-      assert.equal(bar(success), winner(success, "color"), "light success: bar as text");
-      assert.equal(winner(error, "color"), "var(--panel-error)");
+      // L-127: the tone and the text are the same token for info, success and error.
+      assert.equal(winner(info, "--note-tone"), winner(info, "--note-text"), "light info: bar as text");
+      assert.equal(winner(success, "--note-tone"), winner(success, "--note-text"), "light success: bar as text");
+      assert.equal(winner(error, "--note-text"), "var(--panel-error)");
       assert.equal(winner(error, "border-inline-start"), "2px solid var(--note-tone)");
     } else {
       assert.equal(bar(info), "var(--note-tone)", "dark: the tone's colour, as before");
@@ -1581,6 +1594,10 @@ test("L-47 (revised): every bar keeps the primary and up to two secondaries in v
   assert.deepEqual(ids(overflow([a("p", "primary"), a("b"), a("c")])), [["p", "b", "c"], [], []], "three: all in view");
   assert.deepEqual(ids(overflow([a("p", "primary"), a("b"), a("s", "stop")])), [["p", "b"], [], ["s"]], "Stop in view, last");
   assert.deepEqual(ids(overflow([a("p", "primary"), a("s", "danger-outline"), a("c"), a("d"), a("e")])), [["p"], ["c", "d", "e"], ["s"]], "red never in the disclosure");
+  // L-125: an action marked visible stays beside the primary; three in view at most.
+  const v = (id) => ({ id, kind: "secondary", visible: true });
+  assert.deepEqual(ids(overflow([a("p", "primary"), v("b"), a("c"), a("d")])), [["p", "b"], ["c", "d"], []]);
+  assert.deepEqual(ids(overflow([a("p", "primary"), a("b"), v("c"), v("d"), v("e")])), [["p", "c", "d"], ["b", "e"], []], "never more than three");
 });
 
 test("A-34 offers fine-tuning once the calibration is saved: path C on the same cover, from the values just written", async () => {
@@ -1604,11 +1621,12 @@ test("A-34 offers fine-tuning once the calibration is saved: path C on the same 
   const kinds = [...wiz().querySelectorAll(".wiz-actions .wiz-action")].map((item) => [item.dataset.wiz, item.className.replace("wiz-action ", "")]);
   assert.deepEqual(kinds, [["close", "primary"], ["assign-profile", "secondary"], ["another", "secondary"], ["open-cover", "secondary"], ["refine", "secondary"]]);
   assert.equal(wiz().querySelector('.wiz-actions [data-wiz="close"]').textContent, "Back to the list");
-  // In a one-column bar the four secondaries are under «Other options ▾» (CSS hides them there).
+  // In a one-column bar the secondaries are under «Other options ▾» (CSS hides them there); L-125: a profile created
+  // in this session keeps «Assign this profile…» beside the primary. In the columns the order is the same as before.
   assert.equal(wiz().querySelector(".wiz-main .wiz-action"), null, "nothing in the text column");
-  assert.deepEqual([...wiz().querySelectorAll(".wiz-actions .wiz-more .wiz-more-list .wiz-action")].map((item) => item.dataset.wiz), ["assign-profile", "another", "open-cover", "refine"]);
+  assert.deepEqual([...wiz().querySelectorAll(".wiz-actions .wiz-more .wiz-more-list .wiz-action")].map((item) => item.dataset.wiz), ["another", "open-cover", "refine"]);
   const order = [...wiz().querySelector(".wiz-actions").children].map((item) => item.dataset.wiz || item.className);
-  assert.deepEqual(order, ["close", "wiz-more"], "the primary, then the disclosure");
+  assert.deepEqual(order, ["close", "assign-profile", "wiz-more"], "the primary, the new profile to other covers, then the disclosure");
   const toggle = wiz().querySelector(".wiz-actions .wiz-more-toggle");
   assert.deepEqual([toggle.textContent.trim(), toggle.getAttribute("aria-expanded")], ["Other options", "false"]);
   toggle.click(); await tick();
@@ -2281,7 +2299,13 @@ test("review P2: after a real save A-34's primary is «Back to the list»; fine-
   assert.ok(on.body.endsWith(translations.it.wiz_T319));
   // Phone (one column): the primary, and the rest under «Altre opzioni ▾» once they are more than three.
   const { overflow } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-wizard.js");
+  // L-125: a profile just created: «Assegna questo profilo…» beside the primary; one updated: under «Altre opzioni».
   assert.deepEqual([overflow(off.actions).shown.map((action) => action.id), overflow(off.actions).more.map((action) => action.id)],
+    [["close", "assign-profile"], ["another", "open-cover"]]);
+  assert.deepEqual([overflow(on.actions).shown.map((action) => action.id), overflow(on.actions).more.map((action) => action.id)],
+    [["close", "assign-profile"], ["another", "open-cover", "refine"]]);
+  const updated = saved(false, "profile_update");
+  assert.deepEqual([overflow(updated.actions).shown.map((action) => action.id), overflow(updated.actions).more.map((action) => action.id)],
     [["close"], ["assign-profile", "another", "open-cover"]]);
   const coverOnly = saved(false, "cover_only");
   assert.deepEqual([overflow(coverOnly.actions).shown.map((action) => action.id), overflow(coverOnly.actions).more.length], [["close", "another", "open-cover"], 0],
@@ -3475,8 +3499,8 @@ test("A-02 advises a path from the cover and the gateway's profiles, and presele
   assert.equal(none.subline, "Never calibrated", "the context says only that");
   assert.match(none.body, /If in doubt, choose this option\.$/);
   const c = none.choice.options.find((option) => option.value === "C");
-  assert.deepEqual([c.disabled, c.note, c.notice], [true, ["Only what is off gets corrected: tape readings, times, or everything."], "Calibrate the cover first."],
-    "no fine-tuning on a cover never measured: said in its yellow note (L-115)");
+  assert.deepEqual([c.disabled, c.note, c.caption, c.notice], [true, ["Only what is off gets corrected: tape readings, times, or everything."], "Calibrate the cover first.", undefined],
+    "no fine-tuning on a cover never measured: said as its grey caption (L-124)");
   // G2-2: the introduction is one line and the advice; each option explains itself in its note.
   assert.equal(none.body, 'There are **three measurement paths**.\n\n"First cover of its type" is the recommended option because the cover has never been measured and there are no saved profiles. If in doubt, choose this option.');
   assert.deepEqual(none.choice.options.map((option) => option.note[0]), [translations.en.wiz_T452, translations.en.wiz_T453, translations.en.wiz_T454]);
@@ -3528,7 +3552,8 @@ test("review P1: with the previews off, A-02 never advises nor preselects a prev
   const caseOff = buildScreen({ t, stage: "case", path: "C", cover: { ...cover, status: "calibrated" }, previews: false });
   assert.deepEqual([option(caseOff, "points_only").disabled, option(caseOff, "points_only").badge ?? "", caseOff.choice.value, caseOff.actions[0].disabled],
     [true, "", "", true]);
-  assert.equal(option(caseOff, "points_only").warning, "Available in a future version", "L-115: at its place, as a yellow note");
+  assert.deepEqual([option(caseOff, "points_only").notice, option(caseOff, "points_only").noticeTone, option(caseOff, "points_only").warning],
+    ["Available in a future version", "info", undefined], "L-124: under its title, as a blue information note");
   assert.equal(caseOff.body, translations.en.wiz_T190, "no sentence advising the tape readings");
   const caseOn = buildScreen({ t, stage: "case", path: "C", cover: { ...cover, status: "calibrated" }, previews: true });
   assert.deepEqual([option(caseOn, "points_only").disabled ?? false, caseOn.choice.value], [false, "points_only"]);
@@ -3544,17 +3569,18 @@ test("review P1: with the previews off, A-02 never advises nor preselects a prev
   assert.equal(code(), "A-02", "path B does not start");
 });
 
-test("L-115: why an option cannot be chosen is a yellow note right under its title, at full strength on the disabled option", async () => {
+test("L-115/L-124: why an option cannot be chosen is right under its title: a blue note for a feature not shipped, the grey caption for a condition to meet", async () => {
   const { tab, wiz, press, pickCover } = await mount({ previews: false });
   tab().querySelector('[data-action="cal-tab-measure"]').click(); await tick();
   await pickCover("cover.living_one");
   await press("choose");
-  for (const [value, text] of [["B", "Available in a future version"], ["C", "Calibrate the cover first."]]) {
+  for (const [value, text, kind] of [["B", "Available in a future version", "cal-note wiz-radio-notice"], ["C", "Calibrate the cover first.", "muted wiz-radio-caption"]]) {
     const label = wiz().querySelector(`input[name="path"][value="${value}"]`).closest(".wiz-radio");
-    const note = label.querySelector(".wiz-radio-notice");
-    assert.deepEqual([note?.className, note?.textContent], ["cal-note is-warning wiz-radio-notice", text], value);
+    const note = label.querySelector(".wiz-radio-notice, .wiz-radio-caption");
+    assert.deepEqual([note?.className, note?.textContent], [kind, text], value);
+    assert.equal(label.querySelector(".is-warning"), null, `${value}: no yellow (it is not a measurement's warning)`);
     const parts = [...label.querySelector(".wiz-radio-text").children].map((child) => child.className.split(" ").pop() || child.tagName.toLowerCase());
-    assert.deepEqual(parts.slice(0, 2), ["wiz-radio-label", "wiz-radio-notice"], `${value}: under the title, before what it does (${parts})`);
+    assert.deepEqual(parts.slice(0, 2), ["wiz-radio-label", kind.split(" ").pop()], `${value}: under the title, before what it does (${parts})`);
     assert.equal(label.classList.contains("is-disabled"), true);
   }
   const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
@@ -4061,7 +4087,7 @@ test("A-08b advises repeating: «Repeat the run» is the primary, «Ignore and c
   assert.match(wiz().querySelector(".wiz-body").textContent, /^The reading is recorded/);
   assert.equal(wiz().querySelector(".wiz-illustration"), null, "no drawing of the reading");
   const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
-  assert.match(css, /\[data-theme="dark"\] \.wiz-notice\[data-tone="warning"\][^{]*\{ color: color-mix\(in srgb, var\(--panel-warning\) 70%/);
+  assert.match(css, /\[data-theme="dark"\] :is\(\.cal-note\.is-warning, :is\(\.cal-tab, dialog\.cal-dialog\) \.notice:is\(\.cal-tab-busy, \[data-tone="warning"\]\)\) \{ --note-text: color-mix\(in srgb, var\(--panel-warning\) 70%/);
 });
 
 test("C-03 asks about the slats with the answer of the last calibration preselected (G4-5)", () => {
@@ -4454,4 +4480,52 @@ test("Z-14: each reading shows the drawing nearest its expected height; A-23 its
   assert.equal(id(preview({ step: "quarter_open", expected_cm: 50 })), "curtain-tape-quarter", "A-23: the quarter, no arrow (L-12)");
   assert.equal(id(preview({ step: "quarter_close", expected_cm: 52 })), "curtain-tape-quarter", "a quarter");
   assert.equal(id(preview({ step: "three_quarter_close", expected_cm: 150 })), "curtain-tape-three-quarters", "three quarters");
+});
+
+test("L-122: A-02 says how many of the three paths can be used for now; with the previews on, the three-paths wording", () => {
+  const t = (key) => translations.it[key] || key;
+  const first = (screen) => screen.body.split("\n\n")[0];
+  const at = (status, previews) => buildScreen({ t, language: "it", stage: "path", profiles: [{ id: "p", name: "alte", referenceTravel: 198 }],
+    cover: { name: "Cucina 2", status, travel_cm: 150 }, previews });
+  assert.equal(first(at("to_measure", false)), "Ci sono **tre percorsi di misurazione**: per ora se ne può usare uno.", "never measured: only Ⓐ");
+  assert.equal(first(at("measured", false)), "Ci sono **tre percorsi di misurazione**: per ora se ne possono usare due.", "measured: Ⓐ and fine-tuning");
+  assert.equal(first(at("to_measure", true)), "Ci sono **tre percorsi di misurazione**.", "PREVIEW_PATHS on: as before");
+  assert.equal(first(at("measured", true)), "Ci sono **tre percorsi di misurazione**.");
+});
+
+test("L-123: after a real save the stepper line names the last step completed, as every other line names its step", () => {
+  const t = (key) => translations.it[key] || key;
+  const saved = (path, scope = null) => buildScreen({ t, language: "it", stage: "saved", path, scope, local: { saved: { target: "cover_only" } }, cover: { name: "Cucina 2" } });
+  const a = saved("A");
+  assert.equal(a.code, "A-34");
+  assert.equal(a.stepper.line, "Riepilogo · 7 di 8", "path A: fine-tuning (optional) stays ahead");
+  assert.deepEqual(a.stepper.phases.map((phase) => phase.state).slice(-2), ["done", "future"]);
+  const c = saved("C", "times_only");
+  assert.match(c.stepper.line, /^Riepilogo · (\d+) di \1$/, "a path without fine-tuning: the last of its steps");
+  assert.doesNotMatch(`${a.stepper.line} ${c.stepper.line}`, /fuori dai passi/);
+});
+
+test("L-126: in the steps only the current label is in the text colour, semibold; done and future ones grey, regular", async () => {
+  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  // The list's own rule (0,1,2) used to outweigh the state's (0,1,1): the current label was grey as well.
+  assert.match(css, /\.wiz-steps ol > li, \.wiz-sheet-steps ol > li \{[^}]*color: var\(--panel-text-2\); \}/, "the list's grey");
+  assert.match(css, /:is\(\.wiz-steps, \.wiz-sheet-steps\) ol > li\[data-step-state="current"\] \{ color: var\(--primary-text-color, #182b37\); \}/, "the current label, at the list's weight");
+  assert.match(css, /:is\(\.wiz-steps, \.wiz-sheet-steps\) ol > li:is\(\[data-step-state="done"\], \[data-step-state="future"\]\) \{ color: var\(--panel-text-2\); \}/);
+  assert.match(css, /li\[data-step-state="current"\] > \.wiz-step-label \{ font-weight: 600; \}/, "semibold");
+  assert.match(css, /:is\(\.wiz-steps, \.wiz-sheet-steps\)\[data-interrupted\] ol > li\[data-step-state\] \{ color: var\(--panel-text-2\); \}/, "an interrupted session stays grey");
+  assert.ok(css.indexOf(':is(.wiz-steps, .wiz-sheet-steps) ol > li[data-step-state="current"]') > css.indexOf(".wiz-steps ol > li, .wiz-sheet-steps ol > li {"), "after the list's rule");
+});
+
+test("L-125: the bar is drawn again when an action moves in or out of view, its id and label unchanged", async () => {
+  const { panel, wiz, startFor } = await mount({ previews: false });
+  await startFor("cover.living_one");
+  const wizard = panel._calibrationTab._wizard;
+  const bar = () => [[...wiz().querySelectorAll(".wiz-actions > .wiz-action")].map((item) => item.dataset.wiz),
+    [...wiz().querySelectorAll(".wiz-actions .wiz-more-list .wiz-action")].map((item) => item.dataset.wiz)];
+  Object.assign(wizard._local, { stage: "saved", saved: { target: "profile_new", name: "living_room_shutter_1" } });
+  wizard._render(); await tick();
+  assert.deepEqual(bar(), [["close", "assign-profile"], ["another", "open-cover"]]);
+  wizard._local.saved.target = "profile_update";
+  wizard._render(); await tick();
+  assert.deepEqual(bar(), [["close"], ["assign-profile", "another", "open-cover"]]);
 });

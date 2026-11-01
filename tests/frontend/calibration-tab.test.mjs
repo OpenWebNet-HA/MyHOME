@@ -333,13 +333,11 @@ test("Assign profile lists the saved profiles as B-01 does and assigns with the 
   assert.match(tab.querySelector(".cal-tab-done").textContent.trim(), /now follows the profile "/, "D-28: confirmed as an unlinking is");
 });
 
-test("notes are opaque, so they never blend with the row that hosts them, and A-01's chosen row is neutral", async () => {
+test("L-127: a note is one recipe: light a box (tone 12 %, border 45 % on three sides, 2 px bar), dark the bar only; A-01's chosen row is neutral", async () => {
   const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
-  assert.match(css, /background: color-mix\(in srgb, var\(--panel-accent\) 8%, var\(--panel-surface\)\); color: var\(--panel-text-2\);/, "info");
-  assert.match(css, /background: color-mix\(in srgb, var\(--panel-warning\) 8%, var\(--panel-surface\)\);/, "warning");
+  assert.match(css, /:is\(\.cal-note, \.cal-tab \.notice, dialog\.cal-dialog \.notice\) \{ --note-tone: var\(--panel-accent\); --note-text: var\(--panel-accent\);[^}]*font-size: 13px;[^}]*background: color-mix\(in srgb, var\(--note-tone\) 12%, transparent\); border: 1px solid color-mix\(in srgb, var\(--note-tone\) 45%, transparent\);\s*border-inline-start: 2px solid var\(--note-tone\);/, "light: the box");
+  assert.match(css, /\[data-theme="dark"\] :is\(\.cal-note, \.cal-tab \.notice, dialog\.cal-dialog \.notice\) \{ background: none; border: 0 solid transparent; border-inline-start: 2px solid var\(--note-tone\);/, "dark: the bar only");
   assert.match(css, /\.wiz-pick-row\.is-selected \{ background: color-mix\(in srgb, var\(--primary-text-color, #182b37\) 4%, var\(--panel-surface\)\); \}/, "the grey row stays");
-  assert.match(css, /\.cal-note \{[^}]*border: 1px solid color-mix\(in srgb, var\(--panel-accent\) 75%, transparent\); border-inline-start-width: 3px;/, "info: 1 px border, 3 px bar");
-  assert.match(css, /\.cal-note\.is-warning \{ border-color: color-mix\(in srgb, var\(--panel-warning\) 75%, transparent\);/, "warning: the same in yellow");
 });
 
 test("a cover in progress keeps yellow tints in every state of its row", async () => {
@@ -1438,10 +1436,10 @@ test("an open card with stacked blocks shares one edge between its chips and the
   assert.equal(row(tab, "cover.living_one").getAttribute("style"), null);
 });
 
-test("L-17: the success note is green: text and icon in the colour, 8 % behind, 20 % for the border and its bar", async () => {
+test("L-17/L-127: the success note is green: its tone for fill, border and bar, its text in the colour (a lighter tint on dark themes)", async () => {
   const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
-  assert.match(css, /\.cal-tab-done, \.cal-note\.is-success \{ border: 1px solid color-mix\(in srgb, var\(--panel-success\) 20%, transparent\); border-inline-start-width: 3px;\s*background: color-mix\(in srgb, var\(--panel-success\) 8%, var\(--panel-surface\)\); color: var\(--panel-success\); \}/);
-  assert.match(css, /\[data-theme="dark"\] \.cal-tab-done, \[data-theme="dark"\] \.cal-note\.is-success \{ color: color-mix/);
+  assert.match(css, /:is\(\.cal-note\.is-success, :is\(\.cal-tab, dialog\.cal-dialog\) \.notice:is\(\.cal-tab-done, \[data-tone="success"\]\)\) \{ --note-tone: var\(--panel-success\); --note-text: var\(--panel-success\); \}/);
+  assert.match(css, /\[data-theme="dark"\] :is\(\.cal-note\.is-success, [^{]*\) \{ --note-text: color-mix\(in srgb, var\(--panel-success\) 70%/);
 });
 
 test("L-2: the cards that open in place keep the rows' chevron; only the phone, where a card opens its page, has none", async () => {

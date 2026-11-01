@@ -714,14 +714,6 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
 .cal-tab [data-action="cal-tab-refresh"] { justify-self: start; width: fit-content; }
 .cal-tab .notice:has(> ha-icon) { display: flex; gap: 10px; align-items: start; }
 .cal-tab .notice ha-icon { --mdc-icon-size: 18px; flex-shrink: 0; }
-.cal-tab-busy { border-color: color-mix(in srgb, var(--panel-warning) 45%, transparent); background: color-mix(in srgb, var(--panel-warning) 12%, var(--panel-surface)); }
-/* L-17: the «Successo» note (a profile assigned, a calibration saved): the success colour at 8 % behind, 20 % for the
-   border and its 3 px bar, text and icon in the full colour (a lighter tint on dark themes), as the other notes. */
-.cal-tab-done, .cal-note.is-success { border: 1px solid color-mix(in srgb, var(--panel-success) 20%, transparent); border-inline-start-width: 3px;
-  background: color-mix(in srgb, var(--panel-success) 8%, var(--panel-surface)); color: var(--panel-success); }
-.cal-tab-done ha-icon, .cal-note.is-success ha-icon { color: var(--panel-success); }
-[data-theme="dark"] .cal-tab-done, [data-theme="dark"] .cal-note.is-success { color: color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff)); }
-[data-theme="dark"] .cal-tab-done ha-icon, [data-theme="dark"] .cal-note.is-success ha-icon { color: inherit; }
 .cal-head-lead { display: flex; align-items: center; }
 .cal-expand-all { min-width: 32px; min-height: 32px; padding: 0 4px; margin-inline-start: -4px; }
 .cal-assign-busy { margin-bottom: 12px; }
@@ -729,18 +721,10 @@ button.danger-solid:hover { background: color-mix(in srgb, var(--panel-error) 85
 .cal-dialog-cancel:hover { background: var(--panel-accent-soft); }
 .cal-assign-none strong { display: flex; align-items: center; gap: 6px; height: 20px; }
 .cal-assign-none ha-icon { --mdc-icon-size: 16px; margin-block: -2px; color: var(--panel-text-2); }
-/* "Nota (calibrazione)": every explanatory note of the Calibration tab and of its expanded details. Accent at 8 %
-   behind, a 3 px bar of accent at 20 % on the left, secondary text; it follows its block (at most 360 px in the details). */
-/* A note: opaque tint, a 1 px border all round in its own tint at 75 %, the left bar 3 px thick. */
-.cal-note { margin: 0; padding: 8px 12px; border: 1px solid color-mix(in srgb, var(--panel-accent) 75%, transparent); border-inline-start-width: 3px;
-  border-radius: var(--cal-btn-radius); background: color-mix(in srgb, var(--panel-accent) 8%, var(--panel-surface)); color: var(--panel-text-2);
-  font-size: 13px; line-height: 18px; font-weight: 400; }
+/* "Nota (calibrazione)": every explanatory note of the Calibration tab follows its block (at most 360 px in the details);
+   its look is L-127's one recipe, below. */
+.cal-note { margin: 0; }
 .cal-details-grid .cal-note { margin-top: 8px; max-width: 360px; }
-/* The warning variant (T-06): the same shape in the theme's warning colours, text in the text colour. Both variants are
-   opaque (tint over the surface), so they never blend with the row that hosts them. */
-.cal-note.is-warning { border-color: color-mix(in srgb, var(--panel-warning) 75%, transparent);
-  background: color-mix(in srgb, var(--panel-warning) 8%, var(--panel-surface)); color: var(--primary-text-color, #182b37); }
-/* On dark themes the warning text takes the note's own tint instead of plain white. */
 /* D-18: hosting the maintainer's view, the tab's dialog names the cover in its title: the view's own line with the
    entity id is left out. */
 dialog.cal-dialog .cal-resume-entity { display: none; }
@@ -750,10 +734,6 @@ dialog.cal-dialog .cal-resume-entity { display: none; }
    white disc that reads as ticked. */
 [data-theme="dark"] { color-scheme: dark; }
 [data-theme="light"] { color-scheme: light; }
-/* M2-2: on dark themes the info notes take a light accent for their text, as the warning ones take their own tint. */
-/* L-60: the success note keeps its own green tint (it lost it to this rule, same weight and later). */
-[data-theme="dark"] .cal-note:not(.is-warning, .is-success) { color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); }
-[data-theme="dark"] .cal-note.is-warning, [data-theme="dark"] .wiz-notice[data-tone="warning"], [data-theme="dark"] .cal-tab-busy { color: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
 .cal-list { border: 1px solid var(--panel-border); border-radius: var(--panel-radius); background: var(--panel-surface); overflow: visible; }
 .cal-list-head { display: none; }
 .cal-list-rows { display: contents; }
@@ -1249,10 +1229,17 @@ li[data-step-state="done"] > .wiz-step-mark { border-color: var(--panel-accent);
 li[data-step-state="current"] > .wiz-step-mark, .wiz-dot { border: 1.5px solid var(--panel-accent); background: linear-gradient(90deg, var(--panel-accent) 50%, transparent 50%); }
 li[data-step-state="current"], li[data-step-state="done"] { color: var(--primary-text-color, #182b37); }
 li[data-step-state="current"] > .wiz-step-label { font-weight: 600; }
+/* L-126 (the owner's Figma frame 965:31953): in the steps (column and sheet) only the current step's label is in the
+   text colour, semibold; the steps done and the steps ahead are grey and regular (the marks tell them apart). Written
+   on the list's own selector: the state alone (`li[data-step-state]`) never outweighed `.wiz-steps ol > li`, so the
+   current label was grey too. The wait's stages keep the rule above. */
+:is(.wiz-steps, .wiz-sheet-steps) ol > li[data-step-state="current"] { color: var(--primary-text-color, #182b37); }
+:is(.wiz-steps, .wiz-sheet-steps) ol > li:is([data-step-state="done"], [data-step-state="future"]) { color: var(--panel-text-2); }
 /* M3-3: an ended session: the step it reached stays, greyed. */
 [data-interrupted] li[data-step-state="current"] > .wiz-step-mark, .wiz-compact[data-interrupted] .wiz-dot { border-color: var(--panel-text-2);
   background: linear-gradient(90deg, var(--panel-text-2) 50%, transparent 50%); }
-[data-interrupted] li[data-step-state="current"], [data-interrupted] li[data-step-state="done"] { color: var(--panel-text-2); }
+[data-interrupted] li[data-step-state="current"], [data-interrupted] li[data-step-state="done"],
+  :is(.wiz-steps, .wiz-sheet-steps)[data-interrupted] ol > li[data-step-state] { color: var(--panel-text-2); }
 .wiz-steps ul, .wiz-sheet-steps ul { grid-column: 2; list-style: none; margin: 4px 0 2px; padding: 0; font-size: 12px; color: var(--panel-text-2); display: grid; gap: 2px; }
 .wiz-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; padding: 20px; min-width: 0; }
 .wiz-title { margin: 0; font-size: 18px; font-weight: 600; outline: none; }
@@ -1417,8 +1404,6 @@ li[data-step-state="current"] > .wiz-step-label { font-weight: 600; }
 .wiz-notices, .wiz-result-notices { display: grid; gap: 8px; }
 .wiz-notices:empty, .wiz-result-notices:empty { display: none; }
 .wiz-notice { display: block; margin: 0; }
-.wiz-notice[data-tone="warning"] { border-color: color-mix(in srgb, var(--panel-warning) 45%, transparent); background: color-mix(in srgb, var(--panel-warning) 10%, var(--panel-surface)); }
-.wiz-notice[data-tone="error"] { color: var(--panel-error); border-color: color-mix(in srgb, var(--panel-error) 40%, transparent); background: color-mix(in srgb, var(--panel-error) 8%, transparent); }
 /* R-1 (Figma «R · Breakpoint», Wizard): the actions column 24 px inside, its buttons 44 px high, 12 px apart. */
 .wiz-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; padding: 24px; background: var(--wiz-side); }
 .wiz-action { width: 100%; min-height: 44px; border-radius: var(--cal-btn-radius); font-size: 15px; }
@@ -1712,40 +1697,26 @@ dialog.cal-dialog .dialog-head { justify-content: space-between; padding-block: 
   dialog.cal-dialog .dialog-foot, .wiz-dialog .actions { flex-direction: row; flex-wrap: wrap; justify-content: end; }
   dialog.cal-dialog .dialog-foot button, .wiz-dialog .actions button { flex: 1 1 auto; width: auto; min-width: 0; white-space: nowrap; }
 }
-/* L-74/L-80/L-82: the notes of the tab, the wizard and their dialogs (`.cal-note` in every tone, the tab's notices:
-   in progress, done, error, the wizard's). Every one has a bar on the left, 2 px, in its tone's solid colour
-   (`--note-tone`), no radius and no icon.
-   Light theme (the default): info and success are quotes (no fill, the bar only) with their text in their colour, a
-   clearly blue info text; warning and error keep their box (tinted fill, a border all round in their tint, square).
-   Dark theme: every tone is a quote; text colours as before (the lighter tints above).
-   The weight of `.cal-tab .notice` (through :is) and the place after every tone's own rule let these win. */
-:is(.cal-note, .cal-tab .notice) { --note-tone: var(--panel-accent); background: none; border: 0 solid transparent;
-  border-inline-start: 2px solid var(--note-tone); border-radius: 0; padding: 4px 0 4px 12px; box-shadow: none; }
-:is(.cal-note.is-success, .cal-tab .notice.cal-tab-done, .cal-tab .notice[data-tone="success"]) { --note-tone: var(--panel-success); }
-:is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"]) { --note-tone: var(--panel-warning); }
-:is(.cal-tab .notice.error, .cal-tab .notice[data-tone="error"]) { --note-tone: var(--panel-error); }
-.cal-tab .notice ha-icon { display: none; }
-/* Light (L-89): an info note's text in the accent itself. L-88: where the text has the tone's
-   colour (info, success, error) the bar takes exactly the text's colour, one token for both; a warning's text is its
-   colour darkened (L-90, below), its bar the solid yellow. */
-.cal-note:not(.is-warning, .is-success) { color: var(--panel-accent); border-inline-start-color: var(--panel-accent); }
-/* L-90: on the light theme a warning's text is its own colour darkened to read on its tint; the bar stays solid. */
-:is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"]) { color: color-mix(in srgb, var(--panel-warning) 60%, #000); }
-:is(.cal-note.is-success, .cal-tab .notice.cal-tab-done, .cal-tab .notice[data-tone="success"]) { border-inline-start-color: var(--panel-success); }
-/* Light: warning and error notes in their box, as before L-74 but square, with the 2 px bar. */
-.cal-note.is-warning { background: color-mix(in srgb, var(--panel-warning) 8%, var(--panel-surface));
-  border: 1px solid color-mix(in srgb, var(--panel-warning) 75%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
-.cal-tab .notice.cal-tab-busy { background: color-mix(in srgb, var(--panel-warning) 12%, var(--panel-surface));
-  border: 1px solid color-mix(in srgb, var(--panel-warning) 45%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
-.cal-tab .notice[data-tone="warning"] { background: color-mix(in srgb, var(--panel-warning) 10%, var(--panel-surface));
-  border: 1px solid color-mix(in srgb, var(--panel-warning) 45%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
-.cal-tab .notice:is(.error, [data-tone="error"]) { background: color-mix(in srgb, var(--panel-error) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--panel-error) 40%, transparent); border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
-/* Dark: every tone a quote, its text as before. */
-[data-theme="dark"] :is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"], .cal-tab .notice.error, .cal-tab .notice[data-tone="error"]) {
-  background: none; border: 0 solid transparent; border-inline-start: 2px solid var(--note-tone); padding: 4px 0 4px 12px; }
-[data-theme="dark"] .cal-note:not(.is-warning, .is-success) { color: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); border-inline-start-color: var(--note-tone); }
-[data-theme="dark"] :is(.cal-note.is-warning, .cal-tab .notice.cal-tab-busy, .cal-tab .notice[data-tone="warning"]) { color: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
+/* L-127 (the owner, 24 Oct; Figma «Nota»): ONE recipe for every note and notice of the calibration list, the wizard and
+   their dialogs (`.cal-note` in every tone, the list's notices: in progress, done, errors; the wizard's notices), in
+   five variants that differ only by their tone and text colour: Info (the accent's text), neutral info (a notice with
+   no tone of its own, or the wizard's information: the text colour), Avviso, Successo, Errore.
+   Light: a box, the tone at 12 % as its fill, a 1 px border at 45 % on top, right and bottom, a 2 px bar in the solid
+   tone on the left, square, 13 px text. Dark: the bar only (no fill, no border), the text in the tone's light tint.
+   The tones only set `--note-tone` and `--note-text`; the shape is written once. No icon in a note. */
+:is(.cal-note, .cal-tab .notice, dialog.cal-dialog .notice) { --note-tone: var(--panel-accent); --note-text: var(--panel-accent);
+  box-sizing: border-box; border-radius: 0; box-shadow: none; font-size: 13px; line-height: 18px; font-weight: 400; color: var(--note-text);
+  background: color-mix(in srgb, var(--note-tone) 12%, transparent); border: 1px solid color-mix(in srgb, var(--note-tone) 45%, transparent);
+  border-inline-start: 2px solid var(--note-tone); padding: 8px 12px; }
+:is(.cal-tab, dialog.cal-dialog) .notice:not(.error, .cal-tab-busy, .cal-tab-done, [data-tone="warning"], [data-tone="error"], [data-tone="success"]) { --note-text: var(--primary-text-color, #182b37); }
+:is(.cal-note.is-warning, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-busy, [data-tone="warning"])) { --note-tone: var(--panel-warning); --note-text: color-mix(in srgb, var(--panel-warning) 60%, #000); }
+:is(.cal-note.is-success, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-done, [data-tone="success"])) { --note-tone: var(--panel-success); --note-text: var(--panel-success); }
+:is(.cal-note.is-error, :is(.cal-tab, dialog.cal-dialog) .notice:is(.error, [data-tone="error"])) { --note-tone: var(--panel-error); --note-text: var(--panel-error); }
+:is(.cal-tab, dialog.cal-dialog) .notice ha-icon { display: none; }
+[data-theme="dark"] :is(.cal-note, .cal-tab .notice, dialog.cal-dialog .notice) { background: none; border: 0 solid transparent; border-inline-start: 2px solid var(--note-tone); padding: 4px 0 4px 12px; }
+[data-theme="dark"] .cal-note:not(.is-warning, .is-success, .is-error) { --note-text: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); }
+[data-theme="dark"] :is(.cal-note.is-warning, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-busy, [data-tone="warning"])) { --note-text: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
+[data-theme="dark"] :is(.cal-note.is-success, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-done, [data-tone="success"])) { --note-text: color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff)); }
 /* L-72: one corner radius for the calibration tab, the wizard and their dialogs: the shell's 8 px (`--cal-btn-radius`)
    for notes, tiles, cards, boxes, menus, inputs, drop-downs and buttons. Chips and counts stay pills, marks and radios
    round; the dialogs' and sheets' own frames and the list and wizard frames keep Home Assistant's card radius. */

@@ -678,8 +678,11 @@ export class CalibrationWizard {
     return `<fieldset class="wiz-choice wiz-radios"><legend${choice.legendHidden ? ' class="visually-hidden"' : ""}>${esc(choice.label)}</legend>${choice.help ? this._helpMarkup(choice.help) : ""}${choice.options.map((option) =>
       `<label class="wiz-radio${option.disabled ? " is-disabled" : ""}"><input type="radio" name="${esc(choice.name)}" value="${esc(option.value)}" ${option.value === choice.value ? "checked" : ""} ${option.disabled ? "disabled" : ""}><span class="wiz-radio-text"><span class="wiz-radio-label">${parts(option)[0]}${option.badge
         ? ` <span class="badge wiz-recommended">${esc(option.badge)}</span>` : ""}</span>${option.notice
-        // L-115: why an option cannot be chosen yet, a yellow note right under its title, before what it does.
-        ? `<span class="cal-note is-warning wiz-radio-notice">${text.units(esc(option.notice))}</span>` : ""}${parts(option)[1]}${[].concat(option.note || []).map((line) => `<small class="muted">${text.units(esc(line))}</small>`).join("")}${option.warning
+        // L-115: why an option cannot be chosen yet, a note right under its title, before what it does. L-124: blue for a
+        // feature not shipped yet (`noticeTone: "info"`), yellow only for a measurement's warning; a condition the user
+        // can meet is the option's plain grey caption.
+        ? `<span class="cal-note${option.noticeTone === "info" ? "" : " is-warning"} wiz-radio-notice">${text.units(esc(option.notice))}</span>` : ""}${option.caption
+        ? `<small class="muted wiz-radio-caption">${text.units(esc(option.caption))}</small>` : ""}${parts(option)[1]}${[].concat(option.note || []).map((line) => `<small class="muted">${text.units(esc(line))}</small>`).join("")}${option.warning
         ? `<span class="cal-note is-warning wiz-radio-warning">${text.units(esc(option.warning))}</span>` : ""}</span></label>`).join("")}</fieldset>`;
   }
 
@@ -1616,7 +1619,7 @@ function barParts(screen) {
   const slotAction = screen.actions.find((action) => STOP_SLOT.includes(action.id));
   const barActions = screen.actions.filter((action) => !STOP_SLOT.includes(action.id));
   return { readOnlyKey, slotAction, barActions,
-    signature: JSON.stringify([barActions.map((action) => [action.id, action.label, action.kind, action.note]), !!slotAction, readOnlyKey]) };
+    signature: JSON.stringify([barActions.map((action) => [action.id, action.label, action.kind, action.note, !!action.visible]), !!slotAction, readOnlyKey]) };
 }
 /**
  * L-121: the cover's position from Home Assistant, only when it is a number from 0 to 100 that agrees with the state;
@@ -1638,7 +1641,9 @@ const STOP_SLOT = ["stop", "stopped"];
 export function overflow(actions) {
   const red = actions.filter((action) => RED_KINDS.includes(action.kind)), others = actions.filter((action) => !RED_KINDS.includes(action.kind));
   if (others.length <= 3) return { shown: others, more: [], red };
-  return { shown: others.slice(0, 1), more: others.slice(1), red };
+  // The primary stays visible, with the actions a screen marks `visible` (L-125), three at most; the rest fold.
+  const shown = others.filter((action, index) => index === 0 || action.visible).slice(0, 3);
+  return { shown, more: others.filter((action) => !shown.includes(action)), red };
 }
 
 /** Z-2: a value the reading field accepts (a number within its own limits). */
