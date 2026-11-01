@@ -512,3 +512,30 @@ async def test_tuner_guard_branches_and_edge_cases(hass: HomeAssistant) -> None:
     assert btn._uses_who22_commands() is False
     assert btn.available is True
 
+
+def test_typing_compat_undefined_avoids_ha_2026_12_deprecation() -> None:
+    """Verify typing_compat resolves Undefined on HA 2026.12+ without touching deprecated UNDEFINED."""
+    import types
+
+    import homeassistant.helpers.typing as ha_typing
+
+    from custom_components.myhome.typing_compat import UNDEFINED, _resolve_undefined
+
+    sentinel = object()
+    fake_dev_typing = types.ModuleType("homeassistant.helpers.typing")
+    fake_dev_typing.Undefined = sentinel  # type: ignore[attr-defined]
+
+    def _forbid_deprecated_undefined(name: str) -> object:
+        if name == "UNDEFINED":
+            raise AssertionError("Deprecated UNDEFINED alias must not be accessed when Undefined exists")
+        raise AttributeError(name)
+
+    fake_dev_typing.__getattr__ = _forbid_deprecated_undefined  # type: ignore[method-assign]
+    assert _resolve_undefined(fake_dev_typing) is sentinel
+
+    fake_stable_typing = types.ModuleType("homeassistant.helpers.typing")
+    fake_stable_typing.UNDEFINED = sentinel  # type: ignore[attr-defined]
+    assert _resolve_undefined(fake_stable_typing) is sentinel
+    assert UNDEFINED is _resolve_undefined(ha_typing)
+
+
