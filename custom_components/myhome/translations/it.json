@@ -622,13 +622,13 @@
       "message": "{name} è un interruttore di configurazione di sensore binario e non supporta i timer hardware su bus WHO=1."
     },
     "lock_gateway_who6_unsupported": {
-      "message": "{name}: il gateway {gateway} ha rifiutato il comando di apertura serratura videocitofonica WHO=6 ({frame}). I gateway solo automazione non includono il modulo videocitofonico (bt_vct) e non collegano il bus AV a 2 fili."
+      "message": "{name}: il gateway {gateway} ha rifiutato il comando di apertura serratura videocitofonica WHO=6 ({frame}). Il suo firmware non instrada il WHO 6 (videocitofonia base)."
     },
     "lock_command_rejected": {
       "message": "{name}: il gateway {gateway} ha rifiutato o scartato il comando di apertura serratura WHO=6 ({frame})"
     },
     "lock_command_timeout": {
-      "message": "{name}: il comando di apertura serratura non è stato consegnato al bus entro {timeout} s"
+      "message": "{name}: il comando di apertura serratura non è stato confermato entro {timeout} s; è stato ritirato se non era ancora stato inviato"
     },
     "lock_command_failed": {
       "message": "{name}: comando di apertura serratura non riuscito: {error}"

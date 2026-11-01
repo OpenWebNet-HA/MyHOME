@@ -396,11 +396,11 @@ def test_gateway_door_entry_support_and_label_helpers():
     assert _gateway_supports_who6(mhs1) is False
     assert _gateway_model_label(_effective_send_gateway(mhs1)) == "MyHomeServer1"
 
-    # Delegated WHO 6 to connected F454 -> True, and effective send gateway resolves to secondary F454
-    f454 = MagicMock(spec=["model", "is_connected", "profile_supports_who"])
-    f454.model = "F454"
-    f454.is_connected = True
-    f454.profile_supports_who.return_value = True
+    # Delegated WHO 6 to connected F452V -> True, and effective send gateway resolves to secondary F452V
+    f452v = MagicMock(spec=["model", "is_connected", "profile_supports_who"])
+    f452v.model = "F452V"
+    f452v.is_connected = True
+    f452v.profile_supports_who.return_value = True
     mhs1_delegated = MagicMock(
         spec=[
             "model",
@@ -414,15 +414,15 @@ def test_gateway_door_entry_support_and_label_helpers():
     mhs1_delegated.model = "MyHomeServer1"
     mhs1_delegated.is_connected = True
     mhs1_delegated.delegated_away_whos = {6, 8}
-    mhs1_delegated._get_secondary_for_who.return_value = f454
+    mhs1_delegated._get_secondary_for_who.return_value = f452v
     mhs1_delegated._get_standby_gateway.return_value = None
     mhs1_delegated.profile_supports_who.return_value = False
     assert _gateway_supports_door_entry(mhs1_delegated) is True
-    assert _effective_send_gateway(mhs1_delegated) is f454
-    assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "F454"
+    assert _effective_send_gateway(mhs1_delegated) is f452v
+    assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "F452V"
 
     # Secondary temporarily disconnected -> send() fell back to primary, so effective gateway is MyHomeServer1
-    f454.is_connected = False
+    f452v.is_connected = False
     assert _gateway_supports_door_entry(mhs1_delegated) is True
     assert _effective_send_gateway(mhs1_delegated) is mhs1_delegated
     assert _gateway_model_label(_effective_send_gateway(mhs1_delegated)) == "MyHomeServer1"
@@ -462,7 +462,7 @@ def test_gateway_door_entry_support_and_label_helpers():
     assert _gateway_model_label(bare) == "MyHOME gateway"
 
 
-async def test_lock_setup_warns_only_on_unsupported_undelagated_gateway(
+async def test_lock_setup_warns_only_on_unsupported_undelegated_gateway(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ):
     """Startup logs a clear warning when WHO=6 locks are configured on an automation-only gateway unless WHO 6 is delegated."""
@@ -513,7 +513,7 @@ async def test_lock_setup_warns_only_on_unsupported_undelagated_gateway(
             "4000, 5#4#01" in msg
             and "MyHomeServer1" in msg
             and "bt_vct" in msg
-            and "HomeTouch 3488" in msg
+            and "F454 and F459 route only WHO 8" in msg
             for msg in warnings
         )
 
@@ -524,7 +524,7 @@ async def test_lock_setup_warns_only_on_unsupported_undelagated_gateway(
             await async_setup_entry(hass, entry2, [].extend)
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
 
-        # 3. Same MyHomeServer1 with WHO 6 delegated to a secondary F454 -> no warning
+        # 3. Same MyHomeServer1 with WHO 6 delegated to a secondary F452V -> no warning
         caplog.clear()
         gw.delegated_away_whos = {6, 8}
         entry3 = _build_entry(
@@ -589,13 +589,13 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
     assert lock._relock_unsub is None
     lock.async_write_ha_state.assert_not_called()
 
-    # 1b. Delegated secondary (F454) temporarily disconnected -> MyHomeServer1 NACKs locally and is named in error
-    f454_down = MagicMock()
-    f454_down.model = "F454"
-    f454_down.is_connected = False
-    f454_down.profile_supports_who.return_value = True
+    # 1b. Delegated secondary (F452V) temporarily disconnected -> MyHomeServer1 NACKs locally and is named in error
+    f452v_down = MagicMock()
+    f452v_down.model = "F452V"
+    f452v_down.is_connected = False
+    f452v_down.profile_supports_who.return_value = True
     gw.delegated_away_whos = {6, 8}
-    gw._get_secondary_for_who.return_value = f454_down
+    gw._get_secondary_for_who.return_value = f452v_down
     fut_local_nack: asyncio.Future[float] = hass.loop.create_future()
     fut_local_nack.cancel()
     gw.send.return_value = fut_local_nack
@@ -606,8 +606,8 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
     gw.delegated_away_whos = set()
     gw._get_secondary_for_who.return_value = None
 
-    # 2. Gateway NACK / drop on a WHO=6-capable gateway (F454) raises lock_command_rejected
-    gw.model = "F454"
+    # 2. Gateway NACK / drop on a WHO=6-capable gateway (F452V) raises lock_command_rejected
+    gw.model = "F452V"
     gw.profile_supports_who.return_value = True
     fut_rejected: asyncio.Future[float] = hass.loop.create_future()
     fut_rejected.cancel()
@@ -618,7 +618,7 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
     assert exc_info.value.translation_key == "lock_command_rejected"
     assert exc_info.value.translation_placeholders == {
         "name": "Gate 1",
-        "gateway": "F454",
+        "gateway": "F452V",
         "frame": "*6*10*4000##",
     }
     assert lock.is_locked is True
@@ -669,7 +669,8 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
         await coro_task
     assert lock.is_locked is True
 
-    # 5. Delivery timeout raises lock_command_timeout and consumes late exceptions on unawaited future
+    # 5. Delivery timeout raises lock_command_timeout and withdraws the queued frame (the sending
+    #    worker skips a cancelled delivery future) so the strike cannot open after the error
     fut_slow: asyncio.Future[float] = hass.loop.create_future()
     gw.send.return_value = fut_slow
     with (
@@ -678,10 +679,9 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
     ):
         await lock.async_unlock()
     assert exc_info.value.translation_key == "lock_command_timeout"
-    assert not fut_slow.cancelled()
+    assert fut_slow.cancelled()
     assert lock.is_locked is True
     assert lock._relock_unsub is None
-    fut_slow.set_exception(RuntimeError("late transport error"))
     await asyncio.sleep(0)
 
     # 5b. Delivery timeout on non-Future coroutine awaitable
@@ -729,22 +729,22 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
     assert exc_info.value.translation_key == "lock_command_failed"
     assert lock.is_locked is True
 
-    # 8. Mid-flight secondary disconnect during send() still attributes NACK/drop to F454 (not MyHomeServer1),
+    # 8. Mid-flight secondary disconnect during send() still attributes NACK/drop to F452V (not MyHomeServer1),
     #    and direct _raise_unlock_rejected() without target_gw resolves dynamically
     gw.send.side_effect = None
     gw.model = "MyHomeServer1"
     gw.profile_supports_who.return_value = False
-    f454_mid = MagicMock()
-    f454_mid.model = "F454"
-    f454_mid.is_connected = True
-    f454_mid.profile_supports_who.return_value = True
+    f452v_mid = MagicMock()
+    f452v_mid.model = "F452V"
+    f452v_mid.is_connected = True
+    f452v_mid.profile_supports_who.return_value = True
     gw.delegated_away_whos = {6, 8}
-    gw._get_secondary_for_who.return_value = f454_mid
+    gw._get_secondary_for_who.return_value = f452v_mid
 
     fut_mid_drop: asyncio.Future[float] = hass.loop.create_future()
 
     def _drop_mid_flight() -> None:
-        f454_mid.is_connected = False
+        f452v_mid.is_connected = False
         fut_mid_drop.cancel()
 
     hass.loop.call_soon(_drop_mid_flight)
@@ -752,7 +752,7 @@ async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failur
     with pytest.raises(HomeAssistantError) as exc_info:
         await lock.async_unlock()
     assert exc_info.value.translation_key == "lock_command_rejected"
-    assert exc_info.value.translation_placeholders["gateway"] == "F454"
+    assert exc_info.value.translation_placeholders["gateway"] == "F452V"
 
     with pytest.raises(HomeAssistantError) as exc_info:
         lock._raise_unlock_rejected("*6*10*4000##")

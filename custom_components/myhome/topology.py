@@ -82,18 +82,31 @@ def gateway_tier(model: str | None) -> int:
     return 3
 
 
-#: Dedicated A/V gateways whose firmware runs ``bt_vct`` for both WHO 6 (door entry) and WHO 8 (intercom).
-DOOR_ENTRY_AV_MODELS: frozenset[str] = frozenset({"F452", "F452V", "F453AV", "F454", "F459"})
-#: Single-bus ``MH`` scenario programmers whose firmware ships ``bt_vct`` and relays both WHO 6
-#: and WHO 8 on the event session when an external ``F422`` interface bridges an ``AV`` riser
-#: (live-verified on ``MH200`` 2.1.0 in ``issue_667`` and ``MH202`` 1.0 in
-#: ``mh202_sound_intercom_ducking``; ``MH200N`` by ``MH200`` family in OWNd).
+#: Door entry (WHO 6) and video door entry / intercom (WHO 8): the subsystems whose support
+#: depends on the gateway's firmware routing them to ``bt_vct``.
+DOOR_ENTRY_WHOS: tuple[int, ...] = (6, 8)
+#: A/V gateways assumed to route both WHO 6 and WHO 8. Unverified: F453AV ships ``bt_vct``
+#: (oracle target ``030014``) but its ``stack_open.xml`` routing has not been inspected, and
+#: F452 / F452V are listed by product line.
+DOOR_ENTRY_AV_MODELS: frozenset[str] = frozenset({"F452", "F452V", "F453AV"})
+#: A/V gateways that route WHO 8 but not WHO 6: the F454 ``020051`` ``stack_open.xml`` gives
+#: ``bt_vct`` ``<chi>8</chi>`` and no program ``6``; the F459 ships the same image
+#: (``art.xml.F459``). They hear doorbells but NACK ``*6*10*WHERE##`` unlocks.
+DOOR_ENTRY_WHO8_ONLY_MODELS: frozenset[str] = frozenset({"F454", "F459"})
+#: ``MH`` scenario programmers that route WHO 6 to ``bt_vct`` (``<chi>6.7</chi>`` on MH202
+#: ``010024``, WHO 6/7 on MH200 ``020102``) and pass WHO 6 / WHO 8 bus frames to the event
+#: session when the door-entry riser reaches their bus, e.g. through an ``F422`` (inferred:
+#: neither capture documents one). Captures: ``mh202_sound_intercom_ducking`` (MH202 1.0: WHO 8
+#: call, WHO 6 lock release) and ``issue_667`` (MH200 2.1.0: WHO 8 call, ``*6*9##``). MH200N is
+#: listed because its OWNd profile advertises WHO 6/8; there is no capture or firmware data.
 DOOR_ENTRY_MH_BRIDGE_AV_MODELS: frozenset[str] = frozenset({"MH200", "MH200N", "MH202"})
-#: Single-bus ``MH`` gateways whose firmware supervises ``bt_vct`` for WHO 6 (``<chi>6.7</chi>``)
-#: or unmeasured ``MH`` counterparts without a captured WHO 8 intercom relay.
+#: Gateways that may route WHO 6 without a captured WHO 8 relay: F453 (``bt_vct`` WHO 6/7),
+#: H4684 (ships ``bt_vct``, routing not inspected). H4890 and MH201 are unmeasured and kept
+#: permissive so their locks raise no false warning.
 DOOR_ENTRY_WHO6_ONLY_MODELS: frozenset[str] = frozenset({"F453", "H4684", "H4890", "MH201"})
-#: Automation/supervision gateways whose firmware omits ``bt_vct`` completely and rejects
-#: WHO 6 / WHO 8 frames with ``*#*0##``.
+#: Gateways that route neither WHO 6 nor WHO 8: no ``bt_vct`` in the MyHomeServer1 ``028206``
+#: or F450 ``020010`` ``stack_open.xml`` nor in the F455 / F460 oracle targets, and the F461
+#: NACKs both in ~55 ms (``issue_667``).
 DOOR_ENTRY_UNSUPPORTED_MODELS: frozenset[str] = frozenset(
     {"F450", "F455", "F460", "F461", "MYHOMESERVER1"}
 )
@@ -147,6 +160,8 @@ def gateway_supported_whos(model: str | None, firmware: str | None = None) -> se
             whos.add(22)
         if model_name in DOOR_ENTRY_AV_MODELS:
             whos |= {6, 8}
+        elif model_name in DOOR_ENTRY_WHO8_ONLY_MODELS:
+            whos = (whos - {6}) | {8}
         elif model_name in DOOR_ENTRY_MH_BRIDGE_AV_MODELS or model_name in DOOR_ENTRY_WHO6_ONLY_MODELS:
             whos -= {6, 8}
     except Exception:
@@ -163,9 +178,10 @@ def gateway_supported_whos(model: str | None, firmware: str | None = None) -> se
 def gateway_delegatable_whos(model: str | None, firmware: str | None = None) -> set[int]:
     """Subsystems ``model`` can accept when explicitly delegated on a shared bus.
 
-    Includes :func:`gateway_supported_whos` plus door-entry WHOs that single-bus
-    ``MH`` gateways translate via ``bt_vct`` when an ``F422`` interface bridges an
-    ``AV`` riser, and all delegatable WHOs for un-identified ``Generic`` gateways.
+    Includes :func:`gateway_supported_whos` plus the door-entry WHOs that ``MH``
+    gateways route to ``bt_vct`` when the door-entry riser reaches their bus, and
+    WHO 6 / 8 for un-identified ``Generic`` gateways (their other subsystems still
+    come from the conservative profile).
     """
     whos = set(gateway_supported_whos(model, firmware))
     norm = (model or "").strip().upper()
@@ -183,20 +199,28 @@ def gateway_delegatable_whos(model: str | None, firmware: str | None = None) -> 
     elif (
         is_generic
         and "3578" not in norm
-        and model_name not in DOOR_ENTRY_UNSUPPORTED_MODELS
+        and model_name not in DOOR_ENTRY_UNSUPPORTED_MODELS | DOOR_ENTRY_WHO8_ONLY_MODELS
         and not any(k in norm for k in DOOR_ENTRY_UNSUPPORTED_MODELS)
     ):
-        whos = set(DELEGATABLE_WHOS)
+        whos |= set(DOOR_ENTRY_WHOS)
     return whos
+
+
+def peer_handles_who(peer: Any, who: int) -> bool:
+    """Whether a delegated or standby peer can take ``who``.
+
+    Door-entry WHOs need the peer's firmware to route them (an F454 takes WHO 8
+    but NACKs WHO 6); every other subsystem goes where the topology says.
+    """
+    return who not in DOOR_ENTRY_WHOS or bool(peer._profile_supports_who(who))
 
 
 def _follower_delegation(pri_whos: set[int], sec_whos: set[int]) -> tuple[str, set[int], bool]:
     """Role, delegated WHOs and audio coupling of a follower next to a primary.
 
     The follower takes the subsystems the primary lacks; when that includes
-    sound (WHO 16 or 22) or door entry / intercom (WHO 6 or 8) it takes both,
-    so coupled subsystems stay on one gateway. With nothing to delegate it is
-    a warm standby.
+    sound (WHO 16 or 22) it takes both, so audio stays on one gateway. With
+    nothing to delegate it is a warm standby.
     """
     delta = sec_whos - pri_whos
     audio_coupled = False
@@ -205,10 +229,6 @@ def _follower_delegation(pri_whos: set[int], sec_whos: set[int]) -> tuple[str, s
             if audio_who in sec_whos and audio_who not in delta:
                 delta.add(audio_who)
                 audio_coupled = True
-    if (6 in delta or 8 in delta) and (6 in sec_whos or 8 in sec_whos):
-        for door_who in (6, 8):
-            if door_who in sec_whos and door_who not in delta:
-                delta.add(door_who)
     return (ROLE_STANDBY, set(), False) if not delta else (ROLE_SECONDARY, delta, audio_coupled)
 
 
@@ -537,9 +557,9 @@ class GatewayTopologyMixin:
     def is_who_available(self, who: str | int) -> bool:
         """Return True if this gateway (or its delegated/standby peer) can currently handle the given WHO."""
         who_int = int(who)
-        if who_int not in (13, 1013) and who_int in self.delegated_away_whos:
+        if who_int in DOOR_ENTRY_WHOS and who_int in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who_int)
-            if sec is not None and sec.available and sec._profile_supports_who(who_int):
+            if sec is not None and sec.available and peer_handles_who(sec, who_int):
                 return True
             if self._available:
                 return self._profile_supports_who(who_int)
@@ -678,7 +698,7 @@ class GatewayTopologyMixin:
         return IgnoredAddresses.from_config_entry(self.config_entry)
 
     def _bridge_to_primary(self, message: Any) -> None:
-        """Hand a bus frame to the primary's entities on warm-standby failover or delegated WHOs the primary does not hear."""
+        """Hand a bus frame to the primary's entities on warm-standby failover, or door-entry frames the primary does not hear."""
         from . import gateway as _gw
 
         raw_who = getattr(message, "who", getattr(message, "_who", None))
@@ -690,13 +710,14 @@ class GatewayTopologyMixin:
             if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
                 return
             primary_gw._evaluate_failover()
-            if who_int is not None and who_int in primary_gw.delegated_away_whos:
+            if who_int in DOOR_ENTRY_WHOS and who_int in primary_gw.delegated_away_whos:
+                # A secondary that routes it bridges this door-entry frame itself.
                 sec = primary_gw._get_secondary_for_who(who_int)
-                if sec is not None and sec.is_connected and sec._profile_supports_who(who_int):
+                if sec is not None and sec.is_connected and peer_handles_who(sec, who_int):
                     return
             _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
             return
-        if self.is_secondary and who_int is not None and who_int in self.delegated_whos:
+        if self.is_secondary and who_int in DOOR_ENTRY_WHOS and who_int in self.delegated_whos:
             primary_gw = self._get_primary_gateway()
             if primary_gw is not None and not (
                 primary_gw.is_connected and primary_gw._natively_hears_who(who_int)
@@ -791,7 +812,7 @@ class GatewayTopologyMixin:
         if msg_who in (13, 1013) or msg_who is None or msg_who not in self.delegated_away_whos:
             return None
         sec = self._get_secondary_for_who(msg_who)
-        if sec is None or not sec.is_connected or not sec._profile_supports_who(int(msg_who)):
+        if sec is None or not sec.is_connected or not peer_handles_who(sec, int(msg_who)):
             return None
         LOGGER.debug("%s Subsystem WHO=%s is delegated; sending `%s` through secondary gateway %s.", self.log_id, msg_who, message, sec.log_id)
         return sec

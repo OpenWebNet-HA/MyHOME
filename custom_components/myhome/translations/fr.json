@@ -622,13 +622,13 @@
       "message": "{name} est un interrupteur de configuration de capteur binaire et ne prend pas en charge les temporisations matérielles sur bus WHO=1."
     },
     "lock_gateway_who6_unsupported": {
-      "message": "{name} : la passerelle {gateway} a refusé l'ouverture de gâche portier WHO=6 ({frame}). Les passerelles d'automatisation n'embarquent pas le module portier (bt_vct) et ne relient pas le bus portier 2 fils AV."
+      "message": "{name} : la passerelle {gateway} a refusé l'ouverture de gâche portier WHO=6 ({frame}). Son firmware n'achemine pas le WHO 6 (portier de base)."
     },
     "lock_command_rejected": {
       "message": "{name} : la passerelle {gateway} a refusé ou ignoré la commande d'ouverture WHO=6 ({frame})"
     },
     "lock_command_timeout": {
-      "message": "{name} : la commande d'ouverture portier n'a pas pu être transmise sur le bus dans un délai de {timeout} s"
+      "message": "{name} : la commande d'ouverture portier n'a pas été confirmée dans un délai de {timeout} s ; elle a été retirée si elle n'avait pas encore été envoyée"
     },
     "lock_command_failed": {
       "message": "{name} : échec de la commande d'ouverture portier : {error}"

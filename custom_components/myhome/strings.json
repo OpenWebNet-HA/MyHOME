@@ -719,13 +719,13 @@
       "message": "{name} is a binary sensor configuration switch and does not support WHO=1 hardware bus timers."
     },
     "lock_gateway_who6_unsupported": {
-      "message": "{name}: gateway {gateway} rejected WHO=6 door-entry unlock ({frame}). Automation-only gateways omit door-entry support (bt_vct) and do not bridge the 2-wire AV door-entry bus."
+      "message": "{name}: gateway {gateway} rejected WHO=6 door-entry unlock ({frame}). Its firmware does not route WHO 6 (basic door entry)."
     },
     "lock_command_rejected": {
       "message": "{name}: gateway {gateway} rejected or dropped the WHO=6 door-entry unlock command ({frame})"
     },
     "lock_command_timeout": {
-      "message": "{name}: door-entry unlock command was not delivered to the bus within {timeout} s"
+      "message": "{name}: door-entry unlock command was not confirmed within {timeout} s; it was withdrawn if it had not been sent yet"
     },
     "lock_command_failed": {
       "message": "{name}: door-entry unlock command failed: {error}"

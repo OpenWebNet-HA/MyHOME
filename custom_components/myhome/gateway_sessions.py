@@ -1346,6 +1346,16 @@ class CommandWorkerPool:
                 try:
                     if task is None:
                         break
+                    written = task.get("written")
+                    if isinstance(written, asyncio.Future) and written.cancelled():
+                        # The caller withdrew the frame (a door-entry unlock past its
+                        # timeout): writing it now would act long after the caller gave up.
+                        LOGGER.debug(
+                            "%s Message `%s` was withdrawn before it was written; not sending.",
+                            self.log_id,
+                            task["message"],
+                        )
+                        continue
 
                     LOGGER.debug(
                         "%s Message `%s` was successfully unqueued by worker %s.",

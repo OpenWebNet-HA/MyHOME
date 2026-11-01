@@ -79,7 +79,9 @@ from .topology import (
     DOOR_ENTRY_MH_BRIDGE_AV_MODELS,
     DOOR_ENTRY_UNSUPPORTED_MODELS,
     DOOR_ENTRY_WHO6_ONLY_MODELS,
+    DOOR_ENTRY_WHO8_ONLY_MODELS,
     GatewayTopologyMixin,
+    peer_handles_who,
 )
 
 __all__ = [
@@ -852,6 +854,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 return True
             if self._model_key in DOOR_ENTRY_WHO6_ONLY_MODELS:
                 return who == 6
+            if self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS:
+                return who == 8
             if self._model_key in DOOR_ENTRY_UNSUPPORTED_MODELS:
                 return False
             if isinstance(profile, GenericGatewayProfile):
@@ -1088,7 +1092,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
         if who not in (13, 1013) and who in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who)
-            if sec is not None and sec.is_connected and sec._profile_supports_who(int(who)):
+            if sec is not None and sec.is_connected and peer_handles_who(sec, int(who)):
                 return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
         if who not in (13, 1013) and not self.is_connected:
             standby = self._get_standby_gateway()

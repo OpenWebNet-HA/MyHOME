@@ -1173,6 +1173,39 @@ async def test_sending_loop(gateway_handler):
 
 
 @pytest.mark.asyncio
+async def test_sending_loop_skips_withdrawn_frames(gateway_handler):
+    """A frame whose delivery future the caller cancelled (a timed-out unlock) is never written."""
+    with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
+        mock_cmd_session = MagicMock()
+        mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session.close = AsyncMock()
+        mock_cmd_class.return_value = mock_cmd_session
+        gateway_handler._event_session_ready.set()
+
+        withdrawn: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        withdrawn.cancel()
+        kept: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        mock_queue = MagicMock()
+        mock_queue.get = AsyncMock(side_effect=[
+            {"message": "*6*10*4000##", "is_status_request": False, "written": withdrawn},
+            {"message": "*1*1*21##", "is_status_request": False, "written": kept},
+        ])
+        gateway_handler.send_buffer = mock_queue
+
+        def mock_send(message, is_status_request):
+            gateway_handler._terminate_sender = True
+            return True
+
+        mock_cmd_session.send = AsyncMock(side_effect=mock_send)
+
+        await gateway_handler.sending_loop(0)
+
+        assert [c.kwargs["message"] for c in mock_cmd_session.send.call_args_list] == ["*1*1*21##"]
+        assert mock_queue.task_done.call_count == 2
+        assert kept.done() and not kept.cancelled()
+
+
+@pytest.mark.asyncio
 async def test_sending_loop_auth_failure_lockout_protection(gateway_handler):
     with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
         mock_cmd_session = MagicMock()

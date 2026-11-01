@@ -129,11 +129,12 @@ def warn_if_locks_unsupported(gateway: Any, entities: Sequence[Any]) -> bool:
         sorted(str(getattr(ent, "_full_where", getattr(ent, "_where", "?"))) for ent in entities)
     )
     LOGGER.warning(
-        "%s Configured WHO=6 door-entry lock(s) (%s) on gateway %s, whose firmware omits "
-        "door-entry support (bt_vct) and does not bridge the 2-wire AV door-entry bus "
-        "(e.g. HomeTouch 3488). Unlock commands (*6*10*WHERE##) will be NACKed unless WHO 6 "
-        "is delegated to an A/V gateway (F454 / F453AV) on a shared bus or the strike/gate "
-        "is driven by an MH-bus relay (WHO=1 impulse cover).",
+        "%s Configured WHO=6 door-entry lock(s) (%s) on gateway %s, whose firmware routes "
+        "no WHO 6 door-entry translator (bt_vct). Unlock commands (*6*10*WHERE##) will be "
+        "NACKed unless WHO 6 is delegated on a shared bus to a gateway that routes it and "
+        "sees the door-entry riser (MH200, MH202 or F453, e.g. through an F422; F454 and "
+        "F459 route only WHO 8) or the strike/gate is driven by an MH-bus relay (WHO=1 "
+        "impulse cover).",
         gateway.log_id,
         wheres,
         _gateway_model_label(gateway),
@@ -311,8 +312,7 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
         if not _gateway_supports_who6(effective_gw):
             raise HomeAssistantError(
                 f"{self._display_name}: gateway {gw_label} rejected WHO=6 door-entry unlock "
-                f"(`{frame}`). Automation-only gateways omit door-entry support (bt_vct) and "
-                f"do not bridge the 2-wire door-entry AV bus.",
+                f"(`{frame}`). Its firmware does not route WHO 6 (basic door entry).",
                 translation_domain=DOMAIN,
                 translation_key="lock_gateway_who6_unsupported",
                 translation_placeholders={
@@ -361,14 +361,17 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
                     write_fut.add_done_callback(_consume_future_exception)
                     done, _ = await asyncio.wait((write_fut,), timeout=LOCK_WRITE_TIMEOUT)
                     if not done:
+                        # Withdraw the queued frame: an unlock written after the user was
+                        # told it failed would open the strike unexpectedly.
+                        write_fut.cancel()
                         raise TimeoutError
                     await write_fut
                 else:
                     await asyncio.wait_for(write_fut, LOCK_WRITE_TIMEOUT)
             except TimeoutError as err:
                 raise HomeAssistantError(
-                    f"{self._display_name}: door-entry unlock command was not delivered to the bus "
-                    f"within {LOCK_WRITE_TIMEOUT:.0f} s",
+                    f"{self._display_name}: door-entry unlock command was not confirmed within "
+                    f"{LOCK_WRITE_TIMEOUT:.0f} s; it was withdrawn if it had not been sent yet",
                     translation_domain=DOMAIN,
                     translation_key="lock_command_timeout",
                     translation_placeholders={
