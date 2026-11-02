@@ -493,9 +493,9 @@ async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: H
     cu.entity_id = "climate.central_unit_0"
     cu.async_write_ha_state = MagicMock()
 
-    # 1. Replay the exact MH200N + 3550 status burst from Discussion #819:
-    # *4*1101*#0##, *4*20*#0##, *4*31*#0##, *4*23*#0##, *4*24*#0##
-    for raw in ("*4*1101*#0##", "*4*20*#0##", "*4*31*#0##", "*4*23*#0##", "*4*24*#0##"):
+    # 1. Replay the exact MH200N + 3550 *#4*#0## status burst from Discussion #819:
+    # *4*1101*#0##, *4*20*#0##, *4*30*#0##, *4*31*#0##, *4*22*#0##
+    for raw in ("*4*1101*#0##", "*4*20*#0##", "*4*30*#0##", "*4*31*#0##", "*4*22*#0##"):
         cu.handle_event(OWNHeatingEvent(raw))
 
     attrs = cu.extra_state_attributes
@@ -503,11 +503,11 @@ async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: H
     assert attrs["season"] == "heating"
     assert attrs["program"] == 1
     assert attrs["remote_control"] == "disabled"
+    assert attrs["failure_detected"] is True
     assert attrs["battery_fault"] is True
-    assert attrs["at_least_one_probe_antifreeze"] is True
-    assert attrs["at_least_one_probe_manual"] is True
-    assert attrs["at_least_one_probe_off"] is False
-    assert attrs["failure_detected"] is False
+    assert attrs["at_least_one_probe_off"] is True
+    assert attrs["at_least_one_probe_antifreeze"] is False
+    assert attrs["at_least_one_probe_manual"] is False
 
     issue_reg = ir.async_get(hass)
     rc_id = fault_issue_id(entry.entry_id, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0")
@@ -516,18 +516,18 @@ async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: H
     assert issue_reg.async_get_issue(DOMAIN, bat_id) is not None
 
     # 2. Next burst: user enabled Telegestione (*4*21*#0##), replaced battery (no *4*31*#0##),
-    # and all probes returned to schedule (no *4*23*#0## / *4*24*#0##), while one probe is off (*4*22*#0##)
-    # and a zone fault is reported (*4*30*#0##)
-    for raw in ("*4*1101*#0##", "*4*21*#0##", "*4*22*#0##", "*4*30*#0##"):
+    # resolved the zone failure (no *4*30*#0##) and turned probe 4 back on (no *4*22*#0##),
+    # while one probe is in antifreeze (*4*23*#0##) and one is in manual (*4*24*#0##)
+    for raw in ("*4*1101*#0##", "*4*21*#0##", "*4*23*#0##", "*4*24*#0##"):
         cu.handle_event(OWNHeatingEvent(raw))
 
     attrs2 = cu.extra_state_attributes
     assert attrs2["remote_control"] == "enabled"
+    assert attrs2["failure_detected"] is False
     assert attrs2["battery_fault"] is False
-    assert attrs2["at_least_one_probe_antifreeze"] is False
-    assert attrs2["at_least_one_probe_manual"] is False
-    assert attrs2["at_least_one_probe_off"] is True
-    assert attrs2["failure_detected"] is True
+    assert attrs2["at_least_one_probe_off"] is False
+    assert attrs2["at_least_one_probe_antifreeze"] is True
+    assert attrs2["at_least_one_probe_manual"] is True
     assert issue_reg.async_get_issue(DOMAIN, rc_id) is None
     assert issue_reg.async_get_issue(DOMAIN, bat_id) is None
 
@@ -550,8 +550,10 @@ async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: H
     await restored.async_restore_last_state(State("climate.central_unit_0", "heat", attrs2))
     restored_attrs = restored.extra_state_attributes
     assert restored_attrs["remote_control"] == "enabled"
-    assert restored_attrs["at_least_one_probe_off"] is True
-    assert restored_attrs["failure_detected"] is True
+    assert restored_attrs["at_least_one_probe_off"] is False
+    assert restored_attrs["at_least_one_probe_antifreeze"] is True
+    assert restored_attrs["at_least_one_probe_manual"] is True
+    assert restored_attrs["failure_detected"] is False
     assert restored_attrs["battery_fault"] is False
 
 
@@ -595,7 +597,7 @@ async def test_3550_yaml_default_central_false_and_scs_only_bus_discovery_poll(
 async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
     hass: HomeAssistant,
 ) -> None:
-    """Verify subordinate zone hydrates nominal setpoint from Dimension 12 and writes #Z setpoints on mode changes (#819)."""
+    """Verify subordinate zone hydrates nominal setpoint from Dimension 12/14 and writes #Z setpoints on mode changes (#819)."""
     gateway = MagicMock()
     gateway.mac = MAC
     gateway.is_connected = True
@@ -622,12 +624,14 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
     z1.entity_id = "climate.climate_zone_1"
     z1.async_write_ha_state = MagicMock()
 
-    # 1. Replay Discussion #819 Zone 1 sequence from *#4*0##:
-    # Dimension 0 temperature (*#4*1*0*0210##), Dimension 13 knob (*#4*1*13*00##),
-    # Dimension 12 setpoint in force (*#4*1*12*0170*3##) while hvac_mode is still None,
-    # followed by *4*111*#1## (Automatic heating mode on central-unit plant)
-    z1.handle_event(OWNHeatingEvent("*#4*1*0*0210##"))
-    z1.handle_event(OWNHeatingEvent("*#4*1*13*00##"))
+    # Probe WHERE with leading '#' (#105) must not mark the plant as having a central unit
+    z1.handle_event(OWNHeatingEvent("*#4*#105*0*0210##"))
+    assert gateway.has_central_unit is False
+
+    # 1. Replay Discussion #819 Zone 1 (*#4*1##) sequence:
+    # Dimension 0 temperature (*#4*1*0*0199##), Dimension 12 setpoint in force (*#4*1*12*0170*3##)
+    # while hvac_mode is still None, followed by *4*111*#1## (Automatic heating mode on 3550 plant)
+    z1.handle_event(OWNHeatingEvent("*#4*1*0*0199##"))
     z1.handle_event(OWNHeatingEvent("*#4*1*12*0170*3##"))
     assert z1.target_temperature == 17.0
     assert z1._target_temperature is None  # hvac_mode is still None
@@ -643,14 +647,42 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
     await z1.async_set_hvac_mode(HVACMode.HEAT)
     assert str(gateway.send.call_args[0][0]) == "*#4*#1*#14*0170*1##"
 
-    # 3. Adjusting Zone 1 temperature to 20.5 °C writes *#4*#1*#14*0205*3##
+    # 3. Adjusting Zone 1 temperature to 21.0 °C writes *#4*#1*#14*0210*3##
     gateway.send.reset_mock()
-    await z1.async_set_temperature(temperature=20.5)
-    assert str(gateway.send.call_args[0][0]) == "*#4*#1*#14*0205*3##"
+    await z1.async_set_temperature(temperature=21.0)
+    assert str(gateway.send.call_args[0][0]) == "*#4*#1*#14*0210*3##"
 
     # 4. Returning Zone 1 to 3550 schedule (AUTO) writes *4*311*#1##
     gateway.send.reset_mock()
     await z1.async_set_hvac_mode(HVACMode.AUTO)
     assert str(gateway.send.call_args[0][0]) == "*4*311*#1##"
+
+    # 5. Zone 2 (Eloisa) sequence from diagnostics.json: Dimension 14 (*#4*2*14*0150*3##)
+    # arrives while hvac_mode is None, followed by *4*111*#2## without Dimension 12
+    z2 = MyHOMEClimate(
+        hass=hass,
+        name="Eloisa",
+        device_id="4-2",
+        who="4",
+        where="2",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z2.entity_id = "climate.eloisa"
+    z2.async_write_ha_state = MagicMock()
+    z2.handle_event(OWNHeatingEvent("*#4*2*0*0194##"))
+    z2.handle_event(OWNHeatingEvent("*#4*2*14*0150*3##"))
+    assert z2._target_temperature == 15.0
+    assert z2._local_target_temperature is None
+    z2.handle_event(OWNHeatingEvent("*4*111*#2##"))
+    assert z2.hvac_mode == HVACMode.HEAT
+    assert z2._local_target_temperature == 15.0
+    assert z2.target_temperature == 15.0
 
 

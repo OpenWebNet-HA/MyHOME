@@ -84,6 +84,7 @@ from .thermo_switch import load_thermo_switch_subentries
 from .where_grammar import (
     canonical_thermo_zone,
     is_actuator_where,
+    is_central_thermo_where,
     is_probe,
     is_pump,
     parse_thermo_actuator_where,
@@ -1275,13 +1276,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         return None
 
     def _hydrate_nominal_from_local(self) -> None:
-        """Promote an initial Dimension 12 reading to nominal once the zone is known to be active (#819)."""
-        if (
-            self._target_temperature is None
-            and self._local_target_temperature is not None
-            and self._attr_hvac_mode not in (None, HVACMode.OFF)
-        ):
+        """Promote an initial Dimension 12/14 reading once the zone is known to be active (#819)."""
+        if self._attr_hvac_mode in (None, HVACMode.OFF):
+            return
+        if self._target_temperature is None and self._local_target_temperature is not None:
             self._target_temperature = self._local_target_temperature - self._local_offset
+        elif (
+            self._local_target_temperature is None
+            and self._target_temperature is not None
+            and not self._local_target_reported
+        ):
+            self._local_target_temperature = self._target_temperature + self._local_offset
 
     def _reset_central_status_flags(self) -> None:
         """Reset optional central unit (#0) flags at the start of a new mode/status burst (#819).
@@ -1502,7 +1507,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
-        if str(getattr(message, "where", None) or "").startswith("#"):
+        if is_central_thermo_where(message):
             self._gateway_handler.has_central_unit = True
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()

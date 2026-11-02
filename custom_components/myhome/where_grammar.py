@@ -200,6 +200,7 @@ __all__ = [
     "expose_message_where",
     "is_actuator_where",
     "is_apl_address",
+    "is_central_thermo_where",
     "is_probe",
     "is_pump",
     "is_valid_hs_tuple",
@@ -280,6 +281,12 @@ def where_param(message: Any) -> list[str]:
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def is_central_thermo_where(message: Any) -> bool:
+    """Whether a WHO=4 message's WHERE is central-unit addressed (``#0``, ``#Z``, ``#0#N``), excluding probes."""
+    raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
+    return raw.startswith("#") and not is_probe(raw)
 
 
 def canonical_point_spelling(where: str) -> str:
