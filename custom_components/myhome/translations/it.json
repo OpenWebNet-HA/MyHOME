@@ -543,6 +543,9 @@
     "calibration_no_stop_status": {
       "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
     },
+    "calibration_actuator_cutoff": {
+      "message": "{name}: la corsa {direction} è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare questa tapparella - usa il cronometro (Stop & Save) oppure imposta travel_time manualmente"
+    },
     "cover_reports_position": {
       "message": "{name} segnala la propria posizione (advanced: true in myhome.yaml); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, rimuovere advanced: true da myhome.yaml."
     },

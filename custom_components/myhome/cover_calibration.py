@@ -115,6 +115,23 @@ class CalibrationInterrupted(HomeAssistantError):
         )
 
 
+class CalibrationCutoff(HomeAssistantError):
+    """A calibration run ended at the actuator's run-time limit, not at the end stop."""
+
+    def __init__(self, name: str, direction: str, seconds: float, limit: float) -> None:
+        self.limit = limit
+        super().__init__(
+            f"{name}: the {direction} run ended after {seconds:.1f} s, at the actuator's {limit:.0f} s "
+            "run-time limit, not at the end stop; the actuator cannot measure this shutter "
+            "- use the stopwatch (Stop & Save) or set travel_time manually",
+            translation_domain=DOMAIN,
+            translation_key="calibration_actuator_cutoff",
+            translation_placeholders={
+                "name": name, "direction": direction, "seconds": f"{seconds:.1f}", "limit": f"{limit:.0f}",
+            },
+        )
+
+
 class CoverCalibrationHub:
     """Encapsulates calibration state and serialization per gateway."""
 

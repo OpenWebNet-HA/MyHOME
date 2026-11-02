@@ -190,11 +190,16 @@ CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run
 CALIBRATION_MIN_MOTOR_PULSE = 0.0  # s: 0.0 disables floor
 CALIBRATION_MAX_MOTOR_PULSE = 5.0  # s: upper limit for motor start-up deadband floor
 CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
-# An actuator with the factory 60 s run-time limit stops itself, not at the end
-# stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that
-# ends inside this window measured the actuator, not the shutter, and is refused.
-CALIBRATION_CUTOFF_MIN = 59.0
-CALIBRATION_CUTOFF_MAX = 65.0
+# A timed actuator stops itself at its configured run-time limit, not at the end
+# stop: measured 61.5 s for a 14 s shutter at the factory 60 s on a MyHOMEServer1
+# (#319). The F411/2 and F411/4 physical configurator M=0..3 sets 1/2/5/10 min and
+# MyHOME_Suite whole minutes from 2 to 10, so a 60-86 s shutter needs M=1 = 120 s
+# (#770, #837). A run that ends just after one of these limits measured the
+# actuator, not the shutter, and is refused. Limits past CALIBRATION_RUN_TIMEOUT
+# never end a run: such a run fails on the timeout first.
+CALIBRATION_CUTOFFS = tuple(60.0 * minutes for minutes in range(1, 11))
+CALIBRATION_CUTOFF_EARLY = 1.0   # s the stop status may precede a limit
+CALIBRATION_CUTOFF_LATE = 5.0    # s the stop status may follow a limit
 WHO_BURGLAR_ALARM = "5"
 PLATFORM_ALARM = "alarm_control_panel"
 

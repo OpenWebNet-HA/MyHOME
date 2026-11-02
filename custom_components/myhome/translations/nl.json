@@ -543,6 +543,9 @@
     "calibration_no_stop_status": {
       "message": "{name}: geen stopstatus van de actuator binnen {timeout} s - mogelijk meldt hij geen status; stel travel_time handmatig in"
     },
+    "calibration_actuator_cutoff": {
+      "message": "{name}: de {direction}-loop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+    },
     "cover_reports_position": {
       "message": "{name} meldt zijn positie (advanced: true in myhome.yaml); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, verwijder dan advanced: true uit myhome.yaml."
     },

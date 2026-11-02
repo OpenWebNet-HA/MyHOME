@@ -10,9 +10,11 @@ from OWNd.message import OWNEvent
 
 from custom_components.myhome.const import CONF_COVER_TRAVEL_TIMES, EVENT_COVER_CALIBRATION
 from custom_components.myhome.cover import (
+    CalibrationCutoff,
     CalibrationInterrupted,
     CoverCalibrationHub,
     MyHOMECover,
+    _actuator_cutoff,
     _stored_calibration,
     async_stop_cover_calibration,
     get_last_calibration_trace,
@@ -906,17 +908,74 @@ async def test_run_ending_at_the_actuator_cutoff_fails_at_once(hass, gateway, cl
     assert cover._calibrating is False
     await hass.async_block_till_done()
     assert events[-1]["phase"] == "failed" and "60 s run-time limit" in events[-1]["error"]
+    assert events[-1]["actuator_limit"] == 60.0
 
 
-async def test_run_just_outside_the_cutoff_window_is_stored(hass, gateway, clock, fake_time, sleeps):
-    """A genuine 58 s or 66 s run is a long shutter, not the limit."""
+async def test_run_ending_at_the_m1_cutoff_fails_at_once(hass, gateway, clock, fake_time, sleeps):
+    """#837: an 86 s shutter on an F411 at M=1 (120 s): the 121.5 s run fails like the 60 s one, nothing is stored."""
+    cover = _make_cover(hass, gateway)
+    events = []
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.3, motor_delay=0.55, run=121.5)
+    with pytest.raises(CalibrationCutoff, match="120 s run-time limit") as err:
+        await asyncio.wait_for(task, 5)
+    assert "the open run ended after 121.5 s" in str(err.value)
+    assert err.value.translation_key == "calibration_actuator_cutoff"
+    assert err.value.translation_placeholders == {
+        "name": "Bedroom shutter", "direction": "open", "seconds": "121.5", "limit": "120",
+    }
+
+    assert [f for f, _ in gateway.deliveries] == ["*2*1*21##"]  # no second and third run
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+    await hass.async_block_till_done()
+    assert events[-1]["phase"] == "failed" and events[-1]["actuator_limit"] == 120.0
+    failed = [f for f in get_last_calibration_trace(gateway.mac) if f.get("phase") == "failed"]
+    assert failed[-1]["actuator_limit"] == 120.0
+
+
+@pytest.mark.parametrize(
+    ("seconds", "limit"),
+    [
+        (14.0, None),
+        (58.9, None),
+        (59.0, 60.0),
+        (61.5, 60.0),
+        (65.0, 60.0),
+        (65.1, None),
+        (86.0, None),
+        (118.9, None),
+        (119.0, 120.0),
+        (121.5, 120.0),
+        (125.0, 120.0),
+        (125.1, None),
+        (181.5, 180.0),
+        (301.0, 300.0),
+        (601.5, 600.0),
+        (605.1, None),
+    ],
+)
+def test_actuator_cutoff_windows(seconds, limit):
+    """Each configurator limit from 1 to 10 min owns a window from 1 s before to 5 s after it."""
+    assert _actuator_cutoff(seconds) == limit
+
+
+@pytest.mark.parametrize(("down", "up"), [(58.0, 66.0), (118.0, 126.0)])
+async def test_run_just_outside_the_cutoff_window_is_stored(hass, gateway, clock, fake_time, sleeps, down, up):
+    """A genuine 58 s or 66 s (118 s or 126 s) run is a long shutter, not the limit."""
     cover = _make_cover(hass, gateway)
     task = asyncio.create_task(cover.async_calibrate())
     await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
-    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=58.0)
-    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=66.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=down)
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=up)
     result = await asyncio.wait_for(task, 5)
-    assert result["down"] == pytest.approx(58.0) and result["up"] == pytest.approx(66.0)
+    assert result["down"] == pytest.approx(down) and result["up"] == pytest.approx(up)
 
 
 # ── the backend measures every run for the stopwatch (#319 review) ─────────

@@ -543,6 +543,9 @@
     "calibration_no_stop_status": {
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
+    "calibration_actuator_cutoff": {
+      "message": "{name} : la course {direction} s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
+    },
     "cover_reports_position": {
       "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
     },
