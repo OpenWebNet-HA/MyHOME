@@ -264,7 +264,7 @@ class MyHOMEScopeCover(MyHOMECover):
             self._cancel_run_timeout()
         at = kwargs.get("at")
         queued_at = time.monotonic()
-        followers: list[tuple[MyHOMECover, tuple[float, str] | None]] = []
+        followers: list[MyHOMECover] = []
         tilting_leaders: list[tuple[MyHOMECover, int]] = []
         seen_leaders: set[int] = set()
         for member in self._members():
@@ -279,19 +279,18 @@ class MyHOMEScopeCover(MyHOMECover):
                 # Cancel each member's end-of-run settle and track the scope stop write
                 # so known members freeze (even without relayed stop frames or inside
                 # ECHO_WINDOW) and unknown members stay unknown (#770).
-                followers.append((member, member._begin_stop(scope_where=self._full_where)))
+                member._begin_stop(scope_where=self._full_where)
+                followers.append(member)
             else:
                 member._cancel_stop_task()
         try:
             written = await self._async_stop(**kwargs)
         except Exception:
-            for member, settled_sw in followers:
-                if settled_sw is not None and member._settled_stopwatch is None:
-                    member._settled_stopwatch = settled_sw
+            for member in followers:
                 member._end_echo_window()
             raise
-        for member, settled_sw in followers:
-            member._follow_scope_stop(written, settled_sw)
+        for member in followers:
+            member._follow_scope_stop(written)
         not_before = max(at, queued_at) if at is not None else queued_at
         for leader, leader_gen in tilting_leaders:
             if leader._is_tilting and leader_gen == leader._run_generation:

@@ -249,6 +249,7 @@ class CoverCalibrationHub:
         active = self.active_cover
         if active is not None and getattr(active, "_calibrating", False):
             active._calibration_interrupted = "Calibration stopped by user"
+            active._settles_on_timer = True
             active._motor_started.set()
             active._stopped_event.set()
             try:
