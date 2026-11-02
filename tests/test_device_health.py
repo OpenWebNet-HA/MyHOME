@@ -497,6 +497,11 @@ async def test_central_unit_remote_control_disabled_and_battery_fault_lifecycle(
     rc_issue_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0")
     bat_issue_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0")
 
+    # 0. WHO 4 dimension frames and non-#0 zone frames are ignored by DeviceHealth._observe_heating
+    await dispatcher.process_message(_frame("*#4*1*0*0210##"))
+    await dispatcher.process_message(_frame("*4*111*#1##"))
+    assert health.faults == []
+
     # 1. *4*20*#0## raises central_remote_control_disabled; *4*31*#0## raises central_battery_fault
     await dispatcher.process_message(_frame("*4*1101*#0##"))
     await dispatcher.process_message(_frame("*4*20*#0##"))

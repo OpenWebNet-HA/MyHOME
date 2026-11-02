@@ -286,7 +286,8 @@ def is_pump(message: Any) -> bool:
 def is_central_thermo_where(message: Any) -> bool:
     """Whether a WHO=4 message's WHERE is central-unit addressed (``#0``, ``#Z``, ``#0#N``), excluding probes."""
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
-    return raw.startswith("#") and not is_probe(raw)
+    head = raw.removeprefix("#").split("#", 1)[0]
+    return raw.startswith("#") and head.isdigit() and not is_probe(head)
 
 
 def canonical_point_spelling(where: str) -> str:

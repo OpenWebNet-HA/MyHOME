@@ -474,6 +474,14 @@
       "title": "Authenticatie mislukt voor MyHOME-gateway {gateway}",
       "description": "De gateway heeft de OpenWebNet-inloggegevens geweigerd. Configureer het wachtwoord opnieuw."
     },
+    "central_remote_control_disabled": {
+      "title": "Afstandsbediening uitgeschakeld op centrale verwarmingseenheid {device} ({gateway})",
+      "description": "De 99-zone centrale eenheid {device} (WHO {who}, adres `{where}`) op {gateway} meldde OpenWebNet-status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nZolang afstandsbediening is uitgeschakeld op de fysieke centrale eenheid (bijv. BTicino 3550), bevestigt de gateway OpenWebNet-opdrachten nog wel met `*#*1##`, maar negeert de centrale eenheid modus- en setpointwijzigingen vanuit Home Assistant.\n\nSchakel **Afstandsbediening** (*Telegestione*) in via het instellingenmenu op de fysieke centrale eenheid. Dit probleem verdwijnt automatisch zodra de centrale eenheid `*4*21*#0##` (`Remote control enabled`) meldt."
+    },
+    "central_battery_fault": {
+      "title": "Storing noodbatterij op centrale verwarmingseenheid {device} ({gateway})",
+      "description": "De 99-zone centrale eenheid {device} (WHO {who}, adres `{where}`) op {gateway} meldde OpenWebNet-status `*4*31*#0##` (`Central unit battery KO`).\n\nControleer of vervang de noodbatterij in de fysieke centrale eenheid (bijv. BTicino 3550) zodat weekprogramma's en klokinstellingen behouden blijven bij stroomuitval. Dit probleem verdwijnt automatisch bij het volgende statusrapport (`*#4*#0##`) zodra `*4*31*#0##` niet meer wordt gemeld."
+    },
     "unmapped_device_status": {
       "title": "{device} meldt een ongedocumenteerde status",
       "description": "{device} (WHO {who}, adres `{where}`) meldde statuscode WHAT {code}, die niet in de gepubliceerde OpenWebNet-tabel voor dit subsysteem staat; de ontvangen status laat Home Assistant daarom niet bepalen wat de huidige toestand van het apparaat is.\n\nDeze code is gezien bij een verlichtingsactor die in storing stond. Controleer het apparaat ter plaatse: de status-LED, de aangesloten belasting en de bedrading daarvan. Werkt het apparaat normaal, meld de code dan zodat hij kan worden toegevoegd.\n\nDit verdwijnt vanzelf zodra er op de bus een aan-, uit- of niveaustatus voor dit adres wordt gezien. Een commando van een wandknop of van Home Assistant geeft hetzelfde bericht, dus het kan te vroeg verdwijnen en bij het volgende statusverzoek terugkomen zolang de storing blijft."

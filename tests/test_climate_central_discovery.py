@@ -626,6 +626,8 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
 
     # Probe WHERE with leading '#' (#105) must not mark the plant as having a central unit
     # via either GatewayEventDispatcher.process_message or MyHOMEClimate.handle_event
+    from OWNd.message import OWNHeatingCommand
+
     from custom_components.myhome.gateway_events import GatewayEventDispatcher
 
     gateway.hass = hass
@@ -638,6 +640,8 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
 
     await dispatcher.process_message(OWNHeatingEvent("*#4*#105*0*0210##"))
     assert gateway.has_central_unit is False
+    await dispatcher.process_message(OWNHeatingCommand("*#4*#105*#14*0210*1##"))
+    gateway.send_status_request.assert_not_called()
     z1.handle_event(OWNHeatingEvent("*#4*#105*0*0210##"))
     assert gateway.has_central_unit is False
 
@@ -648,6 +652,7 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
     z1.handle_event(OWNHeatingEvent("*#4*1*12*0170*3##"))
     assert z1.target_temperature == 17.0
     assert z1._target_temperature is None  # hvac_mode is still None
+    assert z1._effective_nominal_temperature() == 17.0
 
     await dispatcher.process_message(OWNHeatingEvent("*4*111*#1##"))
     assert gateway.has_central_unit is True

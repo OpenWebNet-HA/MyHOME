@@ -285,20 +285,7 @@ class DeviceHealth:
         where = message_where(message)
         if where is None or not (where == "#0" or where.startswith("#0#4#")) or self.is_ignored(4, where):
             return
-        raw_what = getattr(message, "what", None)
-        if raw_what is None:
-            raw_what = getattr(message, "_what", None)
-        what: int | None = None
-        if isinstance(raw_what, int) and not isinstance(raw_what, bool):
-            what = raw_what
-        elif isinstance(raw_what, str) and raw_what.isdigit():
-            what = int(raw_what)
-        else:
-            text = str(message)
-            if text.startswith("*4*"):
-                parts = text.split("*")
-                if len(parts) > 2 and parts[2].isdigit():
-                    what = int(parts[2])
+        what = getattr(message, "what", None)
         if what == 20:
             self.report(Fault(4, where, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, "20"))
         elif what == 21:

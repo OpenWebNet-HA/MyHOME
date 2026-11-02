@@ -108,19 +108,9 @@ def _central_diagnostic_what(message: Any) -> int | None:
     """Return the central unit (#0) diagnostic WHAT code (20..24, 30, 31), or None."""
     if getattr(message, "dimension", None) is not None or getattr(message, "message_type", None) is not None:
         return None
-    for attr in ("what", "_what", "mode"):
-        raw = getattr(message, attr, None)
-        if isinstance(raw, int) and not isinstance(raw, bool) and raw in _CENTRAL_DIAGNOSTIC_WHATS:
-            return raw
-        if isinstance(raw, str) and raw.isdigit() and int(raw) in _CENTRAL_DIAGNOSTIC_WHATS:
-            return int(raw)
-    text = str(message)
-    if text.startswith("*4*"):
-        parts = text.split("*")
-        if len(parts) > 2 and parts[2].isdigit():
-            val = int(parts[2])
-            if val in _CENTRAL_DIAGNOSTIC_WHATS:
-                return val
+    what = getattr(message, "what", None)
+    if isinstance(what, int) and not isinstance(what, bool) and what in _CENTRAL_DIAGNOSTIC_WHATS:
+        return what
     return None
 
 # A dimension 12 frame and the frame that turns the zone OFF follow within ~0.1 s (#454, #383)
@@ -1203,8 +1193,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif master_mode == HVACMode.AUTO:
             if self._attr_hvac_mode != HVACMode.OFF and HVACMode.AUTO in self._attr_hvac_modes:
                 self._attr_hvac_mode = HVACMode.AUTO
-        if prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
-            self._hydrate_nominal_from_local()
+        self._hydrate_nominal_from_local(prev_mode)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1275,9 +1264,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return self._local_target_temperature - self._local_offset
         return None
 
-    def _hydrate_nominal_from_local(self) -> None:
+    def _hydrate_nominal_from_local(self, prev_mode: HVACMode | None) -> None:
         """Promote an initial Dimension 12/14 reading once the zone is known to be active (#819)."""
-        if self._attr_hvac_mode in (None, HVACMode.OFF):
+        if self._central or prev_mode is not None or self._attr_hvac_mode in (None, HVACMode.OFF):
             return
         if self._target_temperature is None and self._local_target_temperature is not None:
             self._target_temperature = self._local_target_temperature - self._local_offset
@@ -1497,8 +1486,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         temperature = message.set_temperature if state == "setpoint" else None
         if temperature is not None:
             self._target_temperature = temperature
-        elif prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
-            self._hydrate_nominal_from_local()
+        else:
+            self._hydrate_nominal_from_local(prev_mode)
         if self._attr_hvac_mode != HVACMode.OFF and self._target_temperature is not None and (
             temperature is not None or prev_mode == HVACMode.OFF
         ):
@@ -1615,8 +1604,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     message.human_readable_log,
                     self._attr_hvac_mode,
                 )
-            if not self._central and prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
-                self._hydrate_nominal_from_local()
+            self._hydrate_nominal_from_local(prev_mode)
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -1683,8 +1671,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
                 self._mark_actuators_off()
-            if not self._central and prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
-                self._hydrate_nominal_from_local()
+            self._hydrate_nominal_from_local(prev_mode)
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -1745,8 +1732,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if message.set_temperature is not None and message.set_temperature >= 0:
                 self._target_temperature = message.set_temperature
                 self._show_nominal()
-            elif not self._central and prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
-                self._hydrate_nominal_from_local()
+            else:
+                self._hydrate_nominal_from_local(prev_mode)
             if self._central and self.hass is not None and self._attr_hvac_mode is not None:
                 async_dispatcher_send(
                     self.hass,
