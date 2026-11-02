@@ -289,7 +289,7 @@ class GatewayEventDispatcher:
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
             # on a shared bus only that subsystem's owner raises the device's issues.
-            if who_int in (1, 1001):
+            if who_int in (1, 4, 1001):
                 self._observe_health(message, who_int)
 
         if not isinstance(message, OWNMessage):
@@ -306,7 +306,7 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#0"):
+                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#"):
                     self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (

@@ -36,6 +36,11 @@ from homeassistant.helpers.issue_registry import (
 from homeassistant.helpers.issue_registry import (
     async_get as async_get_issue_registry,
 )
+from OWNd.message import (
+    MESSAGE_TYPE_MODE,
+    MESSAGE_TYPE_MODE_TARGET,
+    MESSAGE_TYPE_SEASON,
+)
 
 from .const import DOMAIN, LOGGER
 from .ignored import IgnoredAddresses
@@ -61,6 +66,16 @@ DOCUMENTED_EVENTS = frozenset({32, 34, 39})
 # They do not raise an unmapped status fault, and clear any pre-existing fault.
 RECOGNIZED_STATUSES = frozenset({19})
 
+# WHO 4 central unit (#0) mode/season message types that begin a status burst.
+CENTRAL_UNIT_MODE_TYPES = (
+    MESSAGE_TYPE_MODE,
+    MESSAGE_TYPE_MODE_TARGET,
+    MESSAGE_TYPE_SEASON,
+    "mode",
+    "mode_target",
+    "season",
+)
+
 
 class FaultKind(StrEnum):
     """What is wrong with a device."""
@@ -69,6 +84,10 @@ class FaultKind(StrEnum):
     UNMAPPED_STATUS = "unmapped_status"
     #: The device stopped answering its status request (see ``poll_health``).
     UNRESPONSIVE = "unresponsive"
+    #: The 99-zone central unit (#0) reported remote control (Telegestione) disabled (WHAT 20).
+    CENTRAL_REMOTE_CONTROL_DISABLED = "central_remote_control_disabled"
+    #: The 99-zone central unit (#0) reported a backup battery fault (WHAT 31).
+    CENTRAL_BATTERY_FAULT = "central_battery_fault"
 
 
 @dataclass(frozen=True)
@@ -84,6 +103,12 @@ _TEXTS: dict[FaultKind, _KindText] = {
         "unmapped_device_status", "unmapped_device_status_autodiag", "unmapped-device-status"
     ),
     FaultKind.UNRESPONSIVE: _KindText("unresponsive_zone", None, "heating-zone-no-longer-answers"),
+    FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED: _KindText(
+        "central_remote_control_disabled", None, "central-unit-remote-control-disabled"
+    ),
+    FaultKind.CENTRAL_BATTERY_FAULT: _KindText(
+        "central_battery_fault", None, "central-unit-battery-fault"
+    ),
 }
 
 
@@ -213,11 +238,13 @@ class DeviceHealth:
         """Raise ``fault``, or update its issue when its code or evidence changed."""
         if self.is_ignored(fault.who, fault.where):
             return
-        if device:
-            self._names[(fault.who, fault.where)] = device
         key = (fault.who, fault.where, fault.kind)
         if self._active.get(key) == fault:
+            if device:
+                self.name_address(fault.who, fault.where, device)
             return
+        if device:
+            self.name_address(fault.who, fault.where, device)
         self._active[key] = fault
         self._raise(fault)
 
@@ -247,8 +274,39 @@ class DeviceHealth:
         who = getattr(message, "who", None)
         if who == 1:
             self._observe_lighting(message)
+        elif who == 4:
+            self._observe_heating(message)
         elif who == 1001:
             self._observe_lighting_autodiag(message)
+
+    def _observe_heating(self, message: Any) -> None:
+        if getattr(message, "is_translation", False) is True or getattr(message, "dimension", None) is not None:
+            return
+        where = message_where(message)
+        if where is None or not (where == "#0" or where.startswith("#0#4#")) or self.is_ignored(4, where):
+            return
+        raw_what = getattr(message, "what", None)
+        if raw_what is None:
+            raw_what = getattr(message, "_what", None)
+        what: int | None = None
+        if isinstance(raw_what, int) and not isinstance(raw_what, bool):
+            what = raw_what
+        elif isinstance(raw_what, str) and raw_what.isdigit():
+            what = int(raw_what)
+        else:
+            text = str(message)
+            if text.startswith("*4*"):
+                parts = text.split("*")
+                if len(parts) > 2 and parts[2].isdigit():
+                    what = int(parts[2])
+        if what == 20:
+            self.report(Fault(4, where, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, "20"))
+        elif what == 21:
+            self.clear(4, where, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED)
+        elif what == 31:
+            self.report(Fault(4, where, FaultKind.CENTRAL_BATTERY_FAULT, "31"))
+        elif getattr(message, "message_type", None) in CENTRAL_UNIT_MODE_TYPES:
+            self.clear(4, where, FaultKind.CENTRAL_BATTERY_FAULT)
 
     def _observe_lighting(self, message: Any) -> None:
         if getattr(message, "is_translation", False) is True or any(

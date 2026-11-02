@@ -487,3 +487,43 @@ async def test_what_19_no_load_does_not_raise_an_issue(hass):
     health.observe(_frame("*1*19*74##"))
     assert _issue(hass) is None
     assert health.faults == []
+
+
+async def test_central_unit_remote_control_disabled_and_battery_fault_lifecycle(hass):
+    """WHO 4 #0 diagnostic frames raise and self-clear CENTRAL_REMOTE_CONTROL_DISABLED and CENTRAL_BATTERY_FAULT (#819)."""
+    dispatcher = _dispatcher(hass)
+    health = dispatcher.handler.device_health
+
+    rc_issue_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0")
+    bat_issue_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0")
+
+    # 1. *4*20*#0## raises central_remote_control_disabled; *4*31*#0## raises central_battery_fault
+    await dispatcher.process_message(_frame("*4*1101*#0##"))
+    await dispatcher.process_message(_frame("*4*20*#0##"))
+    await dispatcher.process_message(_frame("*4*31*#0##"))
+
+    rc_issue = _issue(hass, rc_issue_id)
+    bat_issue = _issue(hass, bat_issue_id)
+    assert rc_issue is not None
+    assert rc_issue.translation_key == "central_remote_control_disabled"
+    assert rc_issue.translation_placeholders["device"] == "WHO 4 WHERE #0"
+    assert bat_issue is not None
+    assert bat_issue.translation_key == "central_battery_fault"
+
+    # 2. Reporting the same fault with a device name updates the existing issue's device placeholder
+    health.report(
+        Fault(4, "#0", FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, "20"),
+        device="Central Unit 0",
+    )
+    assert _issue(hass, rc_issue_id).translation_placeholders["device"] == "Central Unit 0"
+    assert _issue(hass, bat_issue_id).translation_placeholders["device"] == "Central Unit 0"
+
+    # 3. Next #0 status burst without *4*31*#0## and with *4*21*#0## clears both issues
+    await dispatcher.process_message(_frame("*4*1101*#0##"))
+    assert _issue(hass, bat_issue_id) is None
+    assert _issue(hass, rc_issue_id) is not None
+
+    await dispatcher.process_message(_frame("*4*21*#0##"))
+    assert _issue(hass, rc_issue_id) is None
+    assert health.faults == []
+

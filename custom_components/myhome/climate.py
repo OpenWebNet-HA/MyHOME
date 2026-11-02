@@ -96,6 +96,31 @@ PLATFORM = Platform.CLIMATE
 PARALLEL_UPDATES = 0
 
 _FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
+# BTicino 3550 central unit (#0) diagnostic WHAT codes (OpenWebNet Thermoregulation v2.0.0 Table 5):
+# 20 = remote control disabled, 21 = remote control enabled, 22 = at least one probe OFF,
+# 23 = at least one probe in antifreeze/protection, 24 = at least one probe in manual,
+# 30 = failure discovered in a zone, 31 = central unit backup battery KO.
+_CENTRAL_DIAGNOSTIC_WHATS = frozenset({20, 21, 22, 23, 24, 30, 31})
+
+
+def _central_diagnostic_what(message: Any) -> int | None:
+    """Return the central unit (#0) diagnostic WHAT code (20..24, 30, 31), or None."""
+    if getattr(message, "dimension", None) is not None or getattr(message, "message_type", None) is not None:
+        return None
+    for attr in ("what", "_what", "mode"):
+        raw = getattr(message, attr, None)
+        if isinstance(raw, int) and not isinstance(raw, bool) and raw in _CENTRAL_DIAGNOSTIC_WHATS:
+            return raw
+        if isinstance(raw, str) and raw.isdigit() and int(raw) in _CENTRAL_DIAGNOSTIC_WHATS:
+            return int(raw)
+    text = str(message)
+    if text.startswith("*4*"):
+        parts = text.split("*")
+        if len(parts) > 2 and parts[2].isdigit():
+            val = int(parts[2])
+            if val in _CENTRAL_DIAGNOSTIC_WHATS:
+                return val
+    return None
 
 # A dimension 12 frame and the frame that turns the zone OFF follow within ~0.1 s (#454, #383)
 _PROTECTION_FRAME_WINDOW = 2.0
@@ -244,9 +269,9 @@ async def async_setup_entry(
         zone = zone_number(where)
         cfg = _zone_config(configured, ctx.address, ctx.key) or ctx.cfg
         suffix = f"{zone}I{interface}" if interface else zone
-        is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL)
-        if ctx.source != "bus":
-            is_central = cfg.get(CONF_CENTRAL, is_central)
+        is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL) or (
+            ctx.source != "bus" and bool(cfg.get(CONF_CENTRAL, False))
+        )
         default_name = f"Central Unit {suffix}" if is_central and ctx.source != "bus" else f"Climate Zone {suffix}"
         registry_name = getattr(ctx.registry_entry, "name", None)
         name = cfg.get(CONF_NAME) or (registry_name if isinstance(registry_name, str) else None) or default_name
@@ -542,7 +567,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         )
         self._interface_poll_skip_logged = False
 
-        self._central = True if self._where.removeprefix("4-") in ("#0", *_FOUR_ZONE_CENTRAL) else central
+        self._central = True if self._where.removeprefix("4-") in ("0", "#0", *_FOUR_ZONE_CENTRAL) else central
         # None: not configured. A zone then follows the plant, see the standalone property.
         self._standalone_config = False if self._central else standalone
         if self._central:
@@ -614,6 +639,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._current_temperature_restored = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
+        # BTicino 3550 central unit (#0) diagnostic status flags (WHAT 20..24, 30, 31)
+        self._remote_control: str | None = None
+        self._at_least_one_probe_off: bool = False
+        self._at_least_one_probe_antifreeze: bool = False
+        self._at_least_one_probe_manual: bool = False
+        self._failure_detected: bool = False
+        self._battery_fault: bool = False
 
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_hvac_action: HVACAction | None = None
@@ -736,7 +768,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
         if self._interface is not None:
             attrs["Int"] = self._interface
-        if not self._central:
+        if self._central:
+            if self._remote_control is not None:
+                attrs["remote_control"] = self._remote_control
+            attrs["at_least_one_probe_off"] = self._at_least_one_probe_off
+            attrs["at_least_one_probe_antifreeze"] = self._at_least_one_probe_antifreeze
+            attrs["at_least_one_probe_manual"] = self._at_least_one_probe_manual
+            attrs["failure_detected"] = self._failure_detected
+            attrs["battery_fault"] = self._battery_fault
+        else:
             attrs.update(self._poll_health.attributes())
         return attrs
 
@@ -747,6 +787,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._poll_health.restore(last_state.attributes)
             else:
                 self._clear_unresponsive_issue()
+                restored_rc = last_state.attributes.get("remote_control")
+                if restored_rc in ("enabled", "disabled"):
+                    self._remote_control = str(restored_rc)
+                self._at_least_one_probe_off = bool(
+                    last_state.attributes.get("at_least_one_probe_off", False)
+                )
+                self._at_least_one_probe_antifreeze = bool(
+                    last_state.attributes.get("at_least_one_probe_antifreeze", False)
+                )
+                self._at_least_one_probe_manual = bool(
+                    last_state.attributes.get("at_least_one_probe_manual", False)
+                )
+                self._failure_detected = bool(last_state.attributes.get("failure_detected", False))
+                self._battery_fault = bool(last_state.attributes.get("battery_fault", False))
         if last_state is not None and last_state.state is not None:
             try:
                 restored_mode = HVACMode(last_state.state)
@@ -1137,6 +1191,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
         """Update subordinate zone mode when central unit changes seasonal mode."""
+        prev_mode = self._attr_hvac_mode
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
@@ -1147,6 +1202,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif master_mode == HVACMode.AUTO:
             if self._attr_hvac_mode != HVACMode.OFF and HVACMode.AUTO in self._attr_hvac_modes:
                 self._attr_hvac_mode = HVACMode.AUTO
+        if prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
+            self._hydrate_nominal_from_local()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1203,6 +1260,45 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         def target_temperature(self) -> float | None:
             return self.native_target_temperature
 
+    def _effective_nominal_temperature(self) -> float | None:
+        """Return the nominal setpoint to write in mode changes.
+
+        On plants where the gateway or probe reports Dimension 12 (setpoint in force)
+        before the zone's operating mode is known, ``_target_temperature`` may still be
+        ``None`` until Dimension 14 arrives; fall back to ``_local_target_temperature - _local_offset``
+        when the zone is not OFF (#819).
+        """
+        if self._target_temperature is not None:
+            return self._target_temperature
+        if self._local_target_temperature is not None and self._attr_hvac_mode != HVACMode.OFF:
+            return self._local_target_temperature - self._local_offset
+        return None
+
+    def _hydrate_nominal_from_local(self) -> None:
+        """Promote an initial Dimension 12 reading to nominal once the zone is known to be active (#819)."""
+        if (
+            self._target_temperature is None
+            and self._local_target_temperature is not None
+            and self._attr_hvac_mode not in (None, HVACMode.OFF)
+        ):
+            self._target_temperature = self._local_target_temperature - self._local_offset
+
+    def _reset_central_status_flags(self) -> None:
+        """Reset optional central unit (#0) flags at the start of a new mode/status burst (#819).
+
+        On ``*#4*#0##`` (and unsolicited ``#0`` status bursts), the BTicino 3550 emits its
+        operating mode frame first (``*4*1101*#0##``, ``*4*102*#0##``, etc.), followed by
+        ``WHAT 20``/``21`` and whichever optional fault/probe flags (``WHAT 22, 23, 24, 30, 31``)
+        are currently active. Optional flags have no separate all-clear code and are simply
+        omitted once resolved.
+        """
+        self._at_least_one_probe_off = False
+        self._at_least_one_probe_antifreeze = False
+        self._at_least_one_probe_manual = False
+        self._failure_detected = False
+        self._battery_fault = False
+        self._clear_fault(FaultKind.CENTRAL_BATTERY_FAULT)
+
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
         if self._refuse_interface_write():
@@ -1247,7 +1343,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # NACKed (F461 2.0.11, tests/fixtures/traces/f461_live_2026-10-15). The
                 # only frame that takes a standalone thermostat out of OFF or protection
                 # is a setpoint write; mode 3 keeps the thermostat's own season.
-                if self._target_temperature is None:
+                nominal = self._effective_nominal_temperature()
+                if nominal is None:
                     LOGGER.warning(
                         "%s %s has no central unit and no known setpoint, cannot switch it on",
                         self._gateway_handler.log_id,
@@ -1262,7 +1359,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 await self._gateway_handler.send(
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
-                        temperature=self._target_temperature,
+                        temperature=nominal,
                         mode=SETPOINT_WRITE_MODE,
                         standalone=True,
                     )
@@ -1276,21 +1373,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if cmd is not None:
                 await self._gateway_handler.send(cmd)
         elif hvac_mode == HVACMode.HEAT:
-            if self._target_temperature is not None:
+            nominal = self._effective_nominal_temperature()
+            if nominal is not None:
                 await self._gateway_handler.send(
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
-                        temperature=self._target_temperature,
+                        temperature=nominal,
                         mode=CLIMATE_MODE_HEAT,
                         standalone=self._standalone,
                     )
                 )
         elif hvac_mode == HVACMode.COOL:
-            if self._target_temperature is not None:
+            nominal = self._effective_nominal_temperature()
+            if nominal is not None:
                 await self._gateway_handler.send(
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
-                        temperature=self._target_temperature,
+                        temperature=nominal,
                         mode=CLIMATE_MODE_COOL,
                         standalone=self._standalone,
                     )
@@ -1393,6 +1492,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         temperature = message.set_temperature if state == "setpoint" else None
         if temperature is not None:
             self._target_temperature = temperature
+        elif prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
+            self._hydrate_nominal_from_local()
         if self._attr_hvac_mode != HVACMode.OFF and self._target_temperature is not None and (
             temperature is not None or prev_mode == HVACMode.OFF
         ):
@@ -1401,6 +1502,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
+        if str(getattr(message, "where", None) or "").startswith("#"):
+            self._gateway_handler.has_central_unit = True
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
@@ -1488,6 +1591,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # zone that was OFF or not yet known is running again, so it takes
             # the season's mode. For a central unit the season is the plant
             # mode Home Assistant shows.
+            if self._central:
+                self._reset_central_status_flags()
             previous_season = self._season
             self._season = message.season
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
@@ -1505,6 +1610,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     message.human_readable_log,
                     self._attr_hvac_mode,
                 )
+            if not self._central and prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
+                self._hydrate_nominal_from_local()
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -1519,6 +1626,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
+            if self._central:
+                self._reset_central_status_flags()
             prev_mode = self._attr_hvac_mode
             previous_season = self._season
             self._remember_season(message)
@@ -1569,6 +1678,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
                 self._mark_actuators_off()
+            if not self._central and prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
+                self._hydrate_nominal_from_local()
             if (
                 prev_mode == HVACMode.OFF
                 and self._attr_hvac_mode != HVACMode.OFF
@@ -1582,6 +1693,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode,
                 )
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
+            if self._central:
+                self._reset_central_status_flags()
+            prev_mode = self._attr_hvac_mode
             self._remember_season(message)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
@@ -1626,6 +1740,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if message.set_temperature is not None and message.set_temperature >= 0:
                 self._target_temperature = message.set_temperature
                 self._show_nominal()
+            elif not self._central and prev_mode is None and self._attr_hvac_mode not in (None, HVACMode.OFF):
+                self._hydrate_nominal_from_local()
             if self._central and self.hass is not None and self._attr_hvac_mode is not None:
                 async_dispatcher_send(
                     self.hass,
@@ -1777,5 +1893,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._attr_fan_mode = "high"
             elif getattr(message, "fan_on", None) is True:
                 self._attr_fan_mode = "auto"
+        elif self._central and (diag_what := _central_diagnostic_what(message)) is not None:
+            LOGGER.debug(
+                "%s %s",
+                self._gateway_handler.log_id,
+                getattr(message, "human_readable_log", str(message)),
+            )
+            if diag_what == 20:
+                self._remote_control = "disabled"
+                self._report_fault(FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, code="20")
+            elif diag_what == 21:
+                self._remote_control = "enabled"
+                self._clear_fault(FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED)
+            elif diag_what == 22:
+                self._at_least_one_probe_off = True
+            elif diag_what == 23:
+                self._at_least_one_probe_antifreeze = True
+            elif diag_what == 24:
+                self._at_least_one_probe_manual = True
+            elif diag_what == 30:
+                self._failure_detected = True
+            elif diag_what == 31:
+                self._battery_fault = True
+                self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
 
         self._publish_state()
