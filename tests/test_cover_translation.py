@@ -357,7 +357,8 @@ async def test_the_cover_moves_from_the_translation_as_if_its_status_had_come_th
     movement.age = TRANSLATION_GRACE
     with patch.object(translated._strategy, "on_run_started", wraps=translated._strategy.on_run_started) as runs:
         _at(1000 + TRANSLATION_GRACE, translated.handle_event, movement)
-        assert translated.is_opening and not translated.is_closed
+        # Read on the test's clock: the host's monotonic clock may be below 1000 (a fresh CI runner).
+        assert translated.is_opening and not _at(1000 + TRANSLATION_GRACE, lambda: translated.is_closed)
         assert translated._move_start_time == translated._run_started_at == 1000
         # The status relayed late is the same movement: no second anchor, no second run.
         _at(1001.4, translated.handle_event, frame("*2*1*81##"))
