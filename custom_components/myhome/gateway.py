@@ -870,11 +870,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     def _natively_hears_who(self, who: int) -> bool:
         """Return whether this gateway hears ``who`` on its local bus without an external F422 bridge."""
-        if who in (6, 8) and (
-            self._model_key in DOOR_ENTRY_MH_BRIDGE_AV_MODELS
-            or self._model_key in DOOR_ENTRY_WHO6_ONLY_MODELS
-        ):
-            return False
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS:
+                return True
+            return who == 8 and self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS
         return self._profile_supports_who(who)
 
     async def _process_message(self, message: Any) -> None:

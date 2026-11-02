@@ -212,7 +212,10 @@ def peer_handles_who(peer: Any, who: int) -> bool:
     Door-entry WHOs need the peer's firmware to route them (an F454 takes WHO 8
     but NACKs WHO 6); every other subsystem goes where the topology says.
     """
-    return who not in DOOR_ENTRY_WHOS or bool(peer._profile_supports_who(who))
+    if who not in DOOR_ENTRY_WHOS:
+        return True
+    fn = getattr(peer, "_profile_supports_who", None) or getattr(peer, "profile_supports_who", None)
+    return bool(fn(who)) if callable(fn) else True
 
 
 def _follower_delegation(pri_whos: set[int], sec_whos: set[int]) -> tuple[str, set[int], bool]:
@@ -717,7 +720,12 @@ class GatewayTopologyMixin:
                     return
             _gw.async_dispatcher_send(self.hass, f"myhome_message_{primary_gw.mac}", message)
             return
-        if self.is_secondary and who_int in DOOR_ENTRY_WHOS and who_int in self.delegated_whos:
+        if (
+            self.is_secondary
+            and who_int in DOOR_ENTRY_WHOS
+            and who_int in self.delegated_whos
+            and peer_handles_who(self, who_int)
+        ):
             primary_gw = self._get_primary_gateway()
             if primary_gw is not None and not (
                 primary_gw.is_connected and primary_gw._natively_hears_who(who_int)

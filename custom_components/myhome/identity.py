@@ -557,12 +557,11 @@ class GatewayIdentityMixin:
 
         entry = getattr(self, "config_entry", None)
         runtime = get_runtime_data(entry) if entry is not None else None
-        if runtime is not None:
-            locks = runtime.entities.get(LOCK_PLATFORM)
-            if locks:
-                warn_if_locks_unsupported(self, list(locks.values()))
+        locks = runtime.entities.get(LOCK_PLATFORM) if runtime is not None else None
+        if locks:
+            warn_if_locks_unsupported(self, list(locks.values()))
+        notify = getattr(self, "_notify_availability", None)
         if getattr(self, "is_secondary", False) and 6 in getattr(self, "delegated_whos", ()):
-            notify = getattr(self, "_notify_availability", None)
             if callable(notify):
                 notify()
             primary_fn = getattr(self, "_get_primary_gateway", None)
@@ -573,6 +572,8 @@ class GatewayIdentityMixin:
                 pri_locks = pri_runtime.entities.get(LOCK_PLATFORM)
                 if pri_locks:
                     warn_if_locks_unsupported(primary, list(pri_locks.values()))
+        elif (getattr(self, "is_standby", False) or locks) and callable(notify):
+            notify()
 
     def _trim_sending_workers(self, model: str) -> None:
         """Stop the command workers a corrected model has no sessions for."""

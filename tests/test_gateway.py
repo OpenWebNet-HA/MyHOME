@@ -1174,22 +1174,53 @@ async def test_sending_loop(gateway_handler):
 
 @pytest.mark.asyncio
 async def test_sending_loop_skips_withdrawn_frames(gateway_handler):
-    """A frame whose delivery future the caller cancelled (a timed-out unlock) is never written."""
+    """Frames withdrawn before dequeue OR while reopening _command_session.connect() are never written."""
     with patch("custom_components.myhome.gateway.OWNCommandSession") as mock_cmd_class:
         mock_cmd_session = MagicMock()
-        mock_cmd_session.connect = AsyncMock(return_value={"Success": True})
+        mock_cmd_session._stream_reader = None
+        mock_cmd_session._stream_writer = None
         mock_cmd_session.close = AsyncMock()
         mock_cmd_class.return_value = mock_cmd_session
         gateway_handler._event_session_ready.set()
 
-        withdrawn: asyncio.Future[float] = asyncio.get_running_loop().create_future()
-        withdrawn.cancel()
+        withdrawn_queued: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        withdrawn_queued.cancel()
+        withdrawn_connecting: asyncio.Future[float] = asyncio.get_running_loop().create_future()
         kept: asyncio.Future[float] = asyncio.get_running_loop().create_future()
-        mock_queue = MagicMock()
-        mock_queue.get = AsyncMock(side_effect=[
-            {"message": "*6*10*4000##", "is_status_request": False, "written": withdrawn},
+
+        connect_calls = 0
+
+        async def _connect_side_effect() -> dict[str, bool]:
+            nonlocal connect_calls
+            connect_calls += 1
+            if connect_calls == 2:
+                # Reopening after idle close: LOCK_WRITE_TIMEOUT fires during connect()
+                # AFTER item 2 was already dequeued while not yet cancelled.
+                withdrawn_connecting.cancel()
+            mock_cmd_session._stream_reader = object()
+            mock_cmd_session._stream_writer = object()
+            return {"Success": True}
+
+        mock_cmd_session.connect = AsyncMock(side_effect=_connect_side_effect)
+        items = [
+            {"message": "*6*10*4000##", "is_status_request": False, "written": withdrawn_queued},
+            {"message": "*6*10*4001##", "is_status_request": False, "written": withdrawn_connecting},
             {"message": "*1*1*21##", "is_status_request": False, "written": kept},
-        ])
+        ]
+        idx = 0
+
+        async def _queue_get() -> dict[str, object]:
+            nonlocal idx
+            item = items[idx]
+            idx += 1
+            if idx == 2:
+                # Session was closed on idle timeout before item 2 arrived
+                mock_cmd_session._stream_reader = None
+                mock_cmd_session._stream_writer = None
+            return item
+
+        mock_queue = MagicMock()
+        mock_queue.get = AsyncMock(side_effect=_queue_get)
         gateway_handler.send_buffer = mock_queue
 
         def mock_send(message, is_status_request):
@@ -1200,9 +1231,16 @@ async def test_sending_loop_skips_withdrawn_frames(gateway_handler):
 
         await gateway_handler.sending_loop(0)
 
+        assert mock_cmd_session.connect.call_count == 2
         assert [c.kwargs["message"] for c in mock_cmd_session.send.call_args_list] == ["*1*1*21##"]
-        assert mock_queue.task_done.call_count == 2
+        assert mock_queue.task_done.call_count == 3
         assert kept.done() and not kept.cancelled()
+        tx_frames = [
+            f["raw"]
+            for f in gateway_handler.bus_monitor.get_recent_frames()
+            if f["direction"] == "tx"
+        ]
+        assert tx_frames == ["*1*1*21##"]
 
 
 @pytest.mark.asyncio

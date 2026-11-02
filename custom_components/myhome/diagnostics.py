@@ -17,6 +17,7 @@ from .const import (
     DOMAIN,
     INTEGRATION_VERSION,
     ROLE_PRIMARY,
+    ROLE_SECONDARY,
     TOPOLOGY_SHARED,
     get_ownd_version,
 )
@@ -247,6 +248,7 @@ def _build_topology_inference_diagnostics(
         entry_primary_mac,
         entry_role,
         entry_topology,
+        gateway_delegatable_whos,
         gateway_supported_whos,
         gateway_tier,
         infer_shared_bus_topology,
@@ -254,8 +256,10 @@ def _build_topology_inference_diagnostics(
 
     my_mac = entry_mac(entry) or ""
     my_model = entry_model(entry)
+    my_fw = entry_firmware(entry)
     my_tier = gateway_tier(my_model)
-    my_whos = gateway_supported_whos(my_model, entry_firmware(entry))
+    my_whos = gateway_supported_whos(my_model, my_fw)
+    my_delegatable = gateway_delegatable_whos(my_model, my_fw)
     configured_topology = entry_topology(entry)
     configured_role = entry_role(entry)
     configured_primary = entry_primary_mac(entry)
@@ -267,6 +271,7 @@ def _build_topology_inference_diagnostics(
         "hardware_tier": my_tier,
         "command_queue_delay": profile_info.get("command_queue_delay"),
         "supported_whos": sorted(my_whos),
+        "delegatable_whos": sorted(my_delegatable),
         "configured_topology": configured_topology,
         "configured_role": configured_role,
         "configured_primary": configured_primary,
@@ -279,8 +284,10 @@ def _build_topology_inference_diagnostics(
     for peer in peer_entries:
         peer_mac = entry_mac(peer) or ""
         peer_model = entry_model(peer)
+        peer_fw = entry_firmware(peer)
         peer_tier = gateway_tier(peer_model)
-        peer_whos = gateway_supported_whos(peer_model, entry_firmware(peer))
+        peer_whos = gateway_supported_whos(peer_model, peer_fw)
+        peer_delegatable = gateway_delegatable_whos(peer_model, peer_fw)
         rec = infer_shared_bus_topology(entry, peer)
 
         is_target_primary = rec.primary_mac == my_mac
@@ -290,6 +297,11 @@ def _build_topology_inference_diagnostics(
 
         role_aligned = (configured_role == expected_role) if configured_topology == TOPOLOGY_SHARED else None
         whos_aligned = (configured_whos == expected_whos) if configured_topology == TOPOLOGY_SHARED else None
+        whos_supported = (
+            (configured_whos <= my_delegatable)
+            if (configured_topology == TOPOLOGY_SHARED and configured_role == ROLE_SECONDARY)
+            else None
+        )
         primary_aligned = (configured_primary == expected_pri_mac) if (configured_topology == TOPOLOGY_SHARED and not is_target_primary) else None
 
         evaluations.append({
@@ -297,6 +309,7 @@ def _build_topology_inference_diagnostics(
             "peer_mac": peer_mac,
             "peer_tier": peer_tier,
             "peer_supported_whos": sorted(peer_whos),
+            "peer_delegatable_whos": sorted(peer_delegatable),
             "peer_topology": entry_topology(peer),
             "peer_role": entry_role(peer),
             "primary_mac": rec.primary_mac,
@@ -313,6 +326,7 @@ def _build_topology_inference_diagnostics(
                 "is_recommended_primary": is_target_primary,
                 "role_aligned": role_aligned,
                 "delegated_whos_aligned": whos_aligned,
+                "delegated_whos_supported": whos_supported,
                 "primary_aligned": primary_aligned,
             },
         })

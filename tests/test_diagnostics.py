@@ -360,11 +360,14 @@ async def test_topology_inference_diagnostics_paired_and_redacted(hass: HomeAssi
     assert "unique subsystems" in eval_peer["rationale"]
 
     # Alignment verification
+    assert 6 in top["target_gateway"]["delegatable_whos"]
+    assert 6 not in eval_peer["peer_delegatable_whos"]
     align = eval_peer["alignment"]
     assert align["configured_shared_bus"] is True
     assert align["is_recommended_primary"] is False
     assert align["role_aligned"] is True
     assert align["delegated_whos_aligned"] is (True if has_alarm else False)
+    assert align["delegated_whos_supported"] is (True if has_alarm else False)
     assert align["primary_aligned"] is True
 
     # Strict redaction check: raw MACs must not exist anywhere in topology_inference

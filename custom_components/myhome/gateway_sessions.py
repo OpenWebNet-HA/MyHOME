@@ -1363,16 +1363,6 @@ class CommandWorkerPool:
                         task["message"],
                         worker_id,
                     )
-                    task_start = time.time()
-                    self.bus_monitor.record_frame(
-                        direction="tx",
-                        raw=str(task["message"]),
-                        parsed=(
-                            task["message"]
-                            if isinstance(task["message"], OWNMessage)
-                            else None
-                        ),
-                    )
                     # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
                     # or a prior failed send) calls `connect()` directly, preserving
                     # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
@@ -1395,6 +1385,26 @@ class CommandWorkerPool:
                             )
                             _cancel_written(task)
                             continue
+                        if isinstance(written, asyncio.Future) and written.cancelled():
+                            # Re-check after `connect()`: OWNd's 5-attempt retry loop
+                            # (~13.3 s + handshake latency) can outlast LOCK_WRITE_TIMEOUT,
+                            # and zero bytes of this frame have been written yet.
+                            LOGGER.debug(
+                                "%s Message `%s` was withdrawn while opening command session; not sending.",
+                                self.log_id,
+                                task["message"],
+                            )
+                            continue
+                    task_start = time.time()
+                    self.bus_monitor.record_frame(
+                        direction="tx",
+                        raw=str(task["message"]),
+                        parsed=(
+                            task["message"]
+                            if isinstance(task["message"], OWNMessage)
+                            else None
+                        ),
+                    )
                     written_at = time.monotonic()
                     is_exposed = self._is_exposed_target(task)
                     self._in_flight_messages.append(task["message"])

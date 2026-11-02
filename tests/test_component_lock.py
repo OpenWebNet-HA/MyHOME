@@ -526,6 +526,10 @@ async def test_lock_setup_warns_only_on_unsupported_undelegated_gateway(
 
         # 3. Same MyHomeServer1 with WHO 6 delegated to a secondary F452V -> no warning
         caplog.clear()
+        gw._who6_locks_unsupported_warned = False
+        f452v_sec = MagicMock(spec=["profile_supports_who"])
+        f452v_sec.profile_supports_who.return_value = True
+        gw._get_secondary_for_who.return_value = f452v_sec
         gw.delegated_away_whos = {6, 8}
         entry3 = _build_entry(
             "mhs1_delegated",
@@ -534,6 +538,7 @@ async def test_lock_setup_warns_only_on_unsupported_undelegated_gateway(
         with caplog.at_level("WARNING"):
             await async_setup_entry(hass, entry3, [].extend)
         assert not [r for r in caplog.records if r.levelname == "WARNING"]
+        assert gw._who6_locks_unsupported_warned is False
 
 
 async def test_lock_unlock_raises_homeassistant_error_on_nack_timeout_and_failure(

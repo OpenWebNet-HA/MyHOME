@@ -3467,7 +3467,172 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
     assert gw_pri._delegated_target(cmd_lock) is None
     assert gw_pri.claim_in_flight_dimension_where(6, 1) is None
 
-    for lk in (*standalone_locks, *pri_locks):
+    # 4. Generic Primary (before WHO=13 resolves) bridges WHO 6/8 from Secondary, and refreshes
+    #    Primary-hosted lock availability when _apply_model resolves MyHomeServer1 while Secondary is down.
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from OWNd.message import OWNEvent
+
+    from custom_components.myhome.topology import peer_handles_who
+
+    assert peer_handles_who(object(), 6) is True
+
+    gen_pri_mac = "00:03:50:de:40:06"
+    av_sec_mac = "00:03:50:de:40:07"
+    entry_gen_pri, gw_gen_pri = _create_mock_gateway(
+        hass,
+        gen_pri_mac,
+        name="Generic",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_av_sec = _create_mock_gateway(
+        hass,
+        av_sec_mac,
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=gen_pri_mac,
+        delegated_whos=[6, 8],
+    )
+    gw_gen_pri.is_connected = True
+    gw_gen_pri._available = True
+    gw_av_sec.is_connected = True
+    gw_av_sec._available = True
+
+    assert gw_gen_pri._natively_hears_who(6) is False
+    assert gw_gen_pri._natively_hears_who(8) is False
+    assert gw_gen_pri._natively_hears_who(1) is True
+
+    bridged_gen: list[str] = []
+    unsub_gen = async_dispatcher_connect(
+        hass, f"myhome_message_{gen_pri_mac}", lambda m: bridged_gen.append(str(m))
+    )
+    try:
+        gw_av_sec._bridge_to_primary(OWNEvent.parse("*6*10*4002##"))
+    finally:
+        unsub_gen()
+    assert bridged_gen == ["*6*10*4002##"]
+
+    entry_gen_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4002": {"who": "6", "where": "4002", "name": "Generic Primary Gate"},
+    }
+    gen_pri_locks: list[MyHOMELock] = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        await async_setup_lock(hass, entry_gen_pri, gen_pri_locks.extend)
+    gen_pri_lock = gen_pri_locks[0]
+    gen_pri_lock.hass = hass
+    gen_pri_lock.entity_id = "lock.generic_primary_gate"
+    gen_pri_lock.async_write_ha_state = MagicMock()
+
+    # Secondary drops while Primary is still Generic -> lock stays available until WHO=13 resolves MyHomeServer1
+    gw_av_sec.is_connected = False
+    gw_av_sec._available = False
+    assert gen_pri_lock.available is True
+    gen_pri_avail_events: list[bool] = []
+    unsub_gen_avail = async_dispatcher_connect(
+        hass, gw_gen_pri.availability_signal, lambda: gen_pri_avail_events.append(gen_pri_lock.available)
+    )
+    try:
+        gw_gen_pri._apply_model("MyHomeServer1")
+    finally:
+        unsub_gen_avail()
+    assert gen_pri_lock.available is False
+    assert gen_pri_avail_events == [False]
+
+    # 5. Warm Standby Generic -> F454 refreshes offline Primary lock availability, and
+    #    GatewayEventDispatcher._is_active_for_who partitions WHO 6 vs WHO 8 across Primary/Standby/F454 Secondary.
+    mh_pri_mac = "00:03:50:de:40:08"
+    gen_sb_mac = "00:03:50:de:40:09"
+    f454_sec_mac = "00:03:50:de:40:10"
+    entry_mh_pri, gw_mh_pri = _create_mock_gateway(
+        hass,
+        mh_pri_mac,
+        name="MH202",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_gen_sb = _create_mock_gateway(
+        hass,
+        gen_sb_mac,
+        name="Generic",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_STANDBY,
+        primary_gateway=mh_pri_mac,
+    )
+    _, gw_f454_sec = _create_mock_gateway(
+        hass,
+        f454_sec_mac,
+        name="F454",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=mh_pri_mac,
+        delegated_whos=[6, 8],
+    )
+    assert gw_f454_sec._natively_hears_who(8) is True
+    assert gw_f454_sec._natively_hears_who(6) is False
+
+    # Online Primary (MH202) + Online F454 Secondary (stale [6, 8]): MH202 reclaims WHO 6; F454 owns WHO 8 only
+    gw_mh_pri.is_connected = True
+    gw_mh_pri._available = True
+    gw_gen_sb.is_connected = True
+    gw_gen_sb._available = True
+    gw_f454_sec.is_connected = True
+    gw_f454_sec._available = True
+
+    assert gw_f454_sec._event_dispatcher._is_active_for_who(8) is True
+    assert gw_f454_sec._event_dispatcher._is_active_for_who(6) is False
+    assert gw_mh_pri._event_dispatcher._is_active_for_who(6) is True
+    assert gw_mh_pri._event_dispatcher._is_active_for_who(8) is False
+
+    stale_bridged: list[str] = []
+    unsub_stale = async_dispatcher_connect(
+        hass, f"myhome_message_{mh_pri_mac}", lambda m: stale_bridged.append(str(m))
+    )
+    try:
+        gw_f454_sec._bridge_to_primary(OWNEvent.parse("*6*10*4003##"))
+        gw_f454_sec._bridge_to_primary(OWNEvent.parse("*8*1#1#4*74##"))
+    finally:
+        unsub_stale()
+    assert stale_bridged == ["*8*1#1#4*74##"]
+
+    # Primary drops: Generic Standby carries WHO 6 (since F454 cannot), yields WHO 8 to F454;
+    # once Standby resolves to F454 via WHO=13, Primary availability signal fires and WHO 6 drops.
+    entry_mh_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4003": {"who": "6", "where": "4003", "name": "Standby Gate"},
+    }
+    mh_pri_locks: list[MyHOMELock] = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        await async_setup_lock(hass, entry_mh_pri, mh_pri_locks.extend)
+    sb_lock = mh_pri_locks[0]
+    sb_lock.hass = hass
+    sb_lock.entity_id = "lock.standby_gate"
+    sb_lock.async_write_ha_state = MagicMock()
+
+    gw_mh_pri.is_connected = False
+    gw_mh_pri._available = False
+    assert gw_gen_sb._event_dispatcher._is_active_for_who(6) is True
+    assert gw_gen_sb._event_dispatcher._is_active_for_who(8) is False
+    assert sb_lock.available is True
+
+    sb_avail_events: list[bool] = []
+    unsub_sb_avail = async_dispatcher_connect(
+        hass, gw_mh_pri.availability_signal, lambda: sb_avail_events.append(sb_lock.available)
+    )
+    try:
+        gw_gen_sb._apply_model("F454")
+    finally:
+        unsub_sb_avail()
+    assert sb_lock.available is False
+    assert sb_avail_events == [False]
+    assert gw_gen_sb._event_dispatcher._is_active_for_who(6) is False
+
+    for lk in (*standalone_locks, *pri_locks, *gen_pri_locks, *mh_pri_locks):
         await lk.async_will_remove_from_hass()
 
 
