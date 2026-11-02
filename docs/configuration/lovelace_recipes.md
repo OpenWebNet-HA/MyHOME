@@ -554,7 +554,7 @@ entities:
   - entity: button.living_room_shutter_calibrate_travel_time   # on-bus calibration, when the actuator supports it
 ```
 
-**Workflow**: press **Close** on the first row, press **Stop** the instant the shutter reaches the bottom, check *Last run* / *Last run direction*, press **Save**. Repeat with **Open**. `calibration_source` flips to `manual` and the position slider follows the new times immediately.
+**Workflow**: if your shutter takes longer than the `25 s` default (e.g. a `60–90 s` shutter), first set a temporary larger `travel_time` (such as `180` s) via `myhome.set_cover_travel_time` so the cover does not settle before you press **Stop**. Then press **Close** on the first row, press **Stop** the instant the shutter physically reaches the bottom, check *Last run* / *Last run direction*, and press **Save** (never click **Save** after an unattended `~60 s` `M=0` or `~120 s` `M=1` actuator hardware cutoff). Repeat with **Open**. `calibration_source` flips to `manual` and the position slider follows the new times immediately.
 
 > [!TIP]
 > Only want the number at a glance? A Markdown card does it in one line:

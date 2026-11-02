@@ -30,7 +30,7 @@ from homeassistant.const import (
     STATE_ON,
     STATE_OPEN,
 )
-from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
@@ -310,6 +310,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         registry_address=cover_registry_address("2"), accept=accept_shutter,
         on_general=relay_general, on_scope=relay_scope,
         known_keys=lambda ctx: [*default_known_keys(ctx), "general"],
+        route_translations=True,
     ).start()
 
     PlatformDiscovery(
@@ -363,9 +364,9 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
 
 
 class MyHOMECover(MyHOMEEntity, CoverEntity):
-    # open / close from an unknown position settle on the travel timer (point
-    # covers); a scope cover follows its members and has its own run timeout.
-    _settles_open_close_from_unknown = True
+    # Full open / close runs on timed point covers settle on the travel timer;
+    # a scope cover follows its members and has its own memberless run timeout.
+    _settles_open_close = True
     _attr_device_class = CoverDeviceClass.SHUTTER
 
     def __init__(  # type: ignore
@@ -533,6 +534,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # never reaches the bus and there is no position to derive it from.
         self._is_closed_before_move: bool | None = None
         self._stop_task: asyncio.Task[None] | None = None
+        self._wall_settle_unsub: CALLBACK_TYPE | None = None
+        self._timer_settle_enabled: bool = True
+        self._travel_recomputed: asyncio.Event = asyncio.Event()
         # True while a run HA commanded to an end stop from an unknown position
         # settles on its timer: an actuator stop before the travel time does not
         # end it (review of #795: the F411/2's own timer is often shorter than
@@ -546,6 +550,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_cmd: str | None = None
         self._echo_until: float | None = None
         self._motor_started: asyncio.Event = asyncio.Event()
+        self._stop_translation_seen: bool = False
         self._run_generation: int = 0
         self._run_start_position: int | None = None
         self._run_start_tilt: int | None = None
@@ -555,6 +560,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._move_lead: float = 0.0
         self._pending_stop_context: dict[str, Any] | None = None
         self._auto_stop_duration: float | None = None
+
+    @property
+    def _settles_on_timer(self) -> bool:
+        """Whether full open/close runs settle on ``travel_time + END_SETTLE_MARGIN``.
+
+        Calibration runs and interactive measurement sessions lower this flag so
+        the cover waits for the real stop frame instead of settling early on its
+        stored travel timer.
+        """
+        return self._timer_settle_enabled
+
+    @_settles_on_timer.setter
+    def _settles_on_timer(self, value: bool) -> None:
+        enabled = bool(value)
+        self._timer_settle_enabled = enabled
+        if not enabled:
+            self._cancel_wall_settle()
+            self._travel_recomputed.set()
 
     @property
     def strategy(self) -> CoverKinematicsStrategy:
@@ -647,6 +670,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_cmd = cmd
         self._echo_until = time.monotonic() + WRITE_TIMEOUT + ECHO_WINDOW
         self._motor_started = asyncio.Event()
+        self._stop_translation_seen = False
 
     def _track_write(self, written) -> None:  # type: ignore
         """Anchor the echo window (and the clock) on the real write time."""
@@ -680,7 +704,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # Provisional anchor: the motor starts shortly after the write.
                 # The direction echo re-anchors precisely if the gateway relays it.
                 self._anchor_run(write_ts)
-            elif self._pending_cmd == "stop":
+            elif self._pending_cmd == "stop" and not self._motor_started.is_set():
                 # Motion stops within ~0.04-0.12 s of the write on measured
                 # gateways (MyHOMEServer1 34-47 ms, F461 64-120 ms; #302, #705).
                 # Freeze provisionally at write_ts (+ MOTOR_STOP_DELAY) while
@@ -694,12 +718,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         written.add_done_callback(_on_written)
 
     def _in_echo_window(self, now: float) -> bool:
-        return is_in_echo_window(self._echo_until, now)
+        if is_in_echo_window(self._echo_until, now):
+            return True
+        if self._echo_until is not None:
+            self._end_echo_window()
+        return False
 
     def _end_echo_window(self) -> None:
         self._pending_cmd = None
         self._echo_until = None
         self._pending_stop_context = None
+        self._stop_translation_seen = False
 
     def _anchor_run(self, at: float) -> None:
         """Anchor the running estimate and the run measurement on the motor start."""
@@ -864,12 +893,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if the gateway relayed one inside the window, else the write time.
         Raises HomeAssistantError if the frame was cancelled, failed, or timed out.
         """
+        generation = self._run_generation
+        motor_started = self._motor_started
         write_ts: float | None = None
         if isinstance(written, asyncio.Future):
             try:
                 write_ts = await asyncio.wait_for(asyncio.shield(written), WRITE_TIMEOUT)
             except TimeoutError as err:
-                self._abort_motion()
+                if generation == self._run_generation:
+                    self._abort_motion()
                 raise HomeAssistantError(
                     f"{self._display_name}: direction command was not delivered to the bus within {WRITE_TIMEOUT:.0f} s",
                     translation_domain=DOMAIN,
@@ -879,7 +911,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             except asyncio.CancelledError:
                 if not written.cancelled():
                     raise  # our own task was cancelled (new command, entity removed): stop here
-                self._abort_motion()
+                if generation == self._run_generation:
+                    self._abort_motion()
                 raise HomeAssistantError(
                     f"{self._display_name}: direction command delivery was cancelled before reaching the bus",
                     translation_domain=DOMAIN,
@@ -887,23 +920,28 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     translation_placeholders={"name": self._display_name},
                 )
             except Exception as err:
-                self._abort_motion()
+                if generation == self._run_generation:
+                    self._abort_motion()
                 raise HomeAssistantError(
                     f"{self._display_name}: direction command delivery failed: {err}",
                     translation_domain=DOMAIN,
                     translation_key="command_delivery_failed",
                     translation_placeholders={"name": self._display_name, "error": str(err)},
                 ) from err
+        if generation != self._run_generation:
+            return self._move_start_time if self._move_start_time is not None else time.monotonic()
         # The window ends ECHO_WINDOW after the write; computed here from the write
         # time itself, as this task may run before the future's callbacks did.
         deadline = (write_ts if write_ts is not None else time.monotonic()) + ECHO_WINDOW
         remaining = deadline - time.monotonic()
-        if remaining > 0 and not self._motor_started.is_set():
+        if remaining > 0 and not motor_started.is_set():
             try:
-                await asyncio.wait_for(self._motor_started.wait(), remaining)
+                await asyncio.wait_for(motor_started.wait(), remaining)
             except TimeoutError:
                 pass
-        if not self._motor_started.is_set() and write_ts is not None and self._move_start_time == write_ts:
+        if generation != self._run_generation:
+            return self._move_start_time if self._move_start_time is not None else time.monotonic()
+        if not motor_started.is_set() and write_ts is not None and self._move_start_time == write_ts:
             # No direction status relayed (not every gateway does): the motor
             # started a measured MOTOR_START_DELAY after the write, not at it.
             self._anchor_run(write_ts + MOTOR_START_DELAY)
@@ -911,11 +949,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._anchor_run(time.monotonic())
         return self._move_start_time  # type: ignore
 
+    def _cancel_wall_settle(self) -> None:
+        """Cancel any scheduled external/wall end-of-run settle callback."""
+        if self._wall_settle_unsub is not None:
+            self._wall_settle_unsub()
+            self._wall_settle_unsub = None
+
     def _cancel_stop_task(self) -> None:
-        """Cancel any running scheduled auto-stop task."""
+        """Cancel any running scheduled auto-stop task or wall settle timer."""
         # A cancelled settle can no longer anchor a run from unknown: the next
         # stop status must end the run normally (a reversal or an HA stop).
         self._end_run_from_unknown = False
+        self._cancel_wall_settle()
         if self._stop_task is not None:
             try:
                 current = asyncio.current_task()
@@ -979,16 +1024,20 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self.async_update()
         else:
             await super().async_added_to_hass()
+            if (self._attr_is_opening or self._attr_is_closing) and not self._is_tilting and self._stop_task is None:
+                self._arm_wall_settle(bool(self._attr_is_opening))
         if self._family is not None:
             self._family.membership_changed()
 
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
+        moving_on_add = bool(self._attr_is_opening or self._attr_is_closing)
         if self._strategy.assumed_state:
-            if last_state.state in (STATE_CLOSED, "closed"):
-                self._attr_is_closed = True
-            elif last_state.state in (STATE_OPEN, "open"):
-                self._attr_is_closed = False
+            if not moving_on_add:
+                if last_state.state in (STATE_CLOSED, "closed"):
+                    self._attr_is_closed = True
+                elif last_state.state in (STATE_OPEN, "open"):
+                    self._attr_is_closed = False
         elif not self._advanced:
             restored = False
             last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
@@ -996,7 +1045,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 try:
                     self._attr_current_cover_position = max(0, min(100, int(round(float(last_pos)))))
                     self._start_position = self._attr_current_cover_position
-                    self._attr_is_closed = (self._attr_current_cover_position == 0)
+                    self._attr_is_closed = False if moving_on_add else (self._attr_current_cover_position == 0)
                     restored = True
                 except (ValueError, TypeError):
                     restored = False
@@ -1004,13 +1053,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if last_state.state in (STATE_CLOSED, "closed"):
                     self._attr_current_cover_position = 0
                     self._start_position = 0
-                    self._attr_is_closed = True
+                    self._attr_is_closed = False if moving_on_add else True
                 elif last_state.state in (STATE_OPEN, "open"):
                     # "open" says nothing about the height: open, position unknown
                     # until an end stop (review of #795). "closed" is a height.
                     self._attr_current_cover_position = None
                     self._start_position = None
                     self._attr_is_closed = False
+            if moving_on_add:
+                self._run_start_position = self._start_position
 
         if self._slat_tilt:
             last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
@@ -1052,6 +1103,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _interrupt_calibration(self, reason: str) -> None:
         if self._calibrating and not self._calibration_interrupted:
             self._calibration_interrupted = reason
+            self._settles_on_timer = True
+            self._motor_started.set()
             self._stopped_event.set()
 
     def _fire_calibration_event(self, phase: str, **data) -> None:  # type: ignore
@@ -1078,49 +1131,59 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def _calibration_run(self, direction: str) -> float:
         """Drive one full run and return its measured duration (motor start -> actuator stop)."""
-        self._stopped_event = asyncio.Event()
-        self._calibration_interrupted = None
-        self._fire_calibration_event("run", direction=direction)
-        written = await self._async_move(direction)
-        anchor = await self._await_motion_anchor(written)
         if self._calibration_interrupted:
             raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
-        deadline = time.monotonic() + CALIBRATION_RUN_TIMEOUT
-        while True:
-            remaining = max(0.01, deadline - time.monotonic())
+        self._settles_on_timer = False
+        try:
+            self._stopped_event = asyncio.Event()
+            self._fire_calibration_event("run", direction=direction)
+            written = await self._async_move(direction)
             try:
-                await asyncio.wait_for(self._stopped_event.wait(), remaining)
-            except TimeoutError as err:
-                raise HomeAssistantError(
-                    f"{self._display_name}: no stop status from the actuator within {CALIBRATION_RUN_TIMEOUT:.0f} s "
-                    "- it may not report status; set travel_time manually",
-                    translation_domain=DOMAIN,
-                    translation_key="calibration_no_stop_status",
-                    translation_placeholders={"name": self._display_name, "timeout": f"{CALIBRATION_RUN_TIMEOUT:.0f}"},
-                ) from err
+                anchor = await self._await_motion_anchor(written)
+            except HomeAssistantError:
+                if self._calibration_interrupted:
+                    raise CalibrationInterrupted(self._display_name, self._calibration_interrupted) from None
+                raise
             if self._calibration_interrupted:
                 raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
-            stop_at = self._last_stop_at if self._last_stop_at is not None else time.monotonic()
-            elapsed = max(0.0, stop_at - anchor)
-            # If a stop frame arrives less than 0.15s after anchor (e.g. trailing relay echo on MH200),
-            # ignore it and keep waiting for the real actuator limit stop.
-            if elapsed < 0.15:
-                LOGGER.debug(
-                    "%s Ignoring premature stop echo for %s during calibration (%.2f s < 0.15 s); continuing run.",
-                    self._gateway_handler.log_id, self._full_where, elapsed,
-                )
-                self._stopped_event.clear()
-                continue
-            if CALIBRATION_CUTOFF_MIN <= elapsed <= CALIBRATION_CUTOFF_MAX:
-                # The actuator stopped itself at its run-time limit, not at the end
-                # stop: storing this would make a 14 s shutter a 61 s one (#319).
-                # Fail now rather than after three such runs.
-                raise HomeAssistantError(
-                    f"{self._attr_name}: the {direction} run ended after {elapsed:.1f} s, at the actuator's "
-                    "60 s run-time limit, not at the end stop; the actuator cannot measure this shutter "
-                    "- use the stopwatch (Stop & Save) or set travel_time manually"
-                )
-            return elapsed
+            deadline = time.monotonic() + CALIBRATION_RUN_TIMEOUT
+            while True:
+                remaining = max(0.01, deadline - time.monotonic())
+                try:
+                    await asyncio.wait_for(self._stopped_event.wait(), remaining)
+                except TimeoutError as err:
+                    raise HomeAssistantError(
+                        f"{self._display_name}: no stop status from the actuator within {CALIBRATION_RUN_TIMEOUT:.0f} s "
+                        "- it may not report status; set travel_time manually",
+                        translation_domain=DOMAIN,
+                        translation_key="calibration_no_stop_status",
+                        translation_placeholders={"name": self._display_name, "timeout": f"{CALIBRATION_RUN_TIMEOUT:.0f}"},
+                    ) from err
+                if self._calibration_interrupted:
+                    raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
+                stop_at = self._last_stop_at if self._last_stop_at is not None else time.monotonic()
+                elapsed = max(0.0, stop_at - anchor)
+                # If a stop frame arrives less than 0.15s after anchor (e.g. trailing relay echo on MH200),
+                # ignore it and keep waiting for the real actuator limit stop.
+                if elapsed < 0.15:
+                    LOGGER.debug(
+                        "%s Ignoring premature stop echo for %s during calibration (%.2f s < 0.15 s); continuing run.",
+                        self._gateway_handler.log_id, self._full_where, elapsed,
+                    )
+                    self._stopped_event.clear()
+                    continue
+                if CALIBRATION_CUTOFF_MIN <= elapsed <= CALIBRATION_CUTOFF_MAX:
+                    # The actuator stopped itself at its run-time limit, not at the end
+                    # stop: storing this would make a 14 s shutter a 61 s one (#319).
+                    # Fail now rather than after three such runs.
+                    raise HomeAssistantError(
+                        f"{self._attr_name}: the {direction} run ended after {elapsed:.1f} s, at the actuator's "
+                        "60 s run-time limit, not at the end stop; the actuator cannot measure this shutter "
+                        "- use the stopwatch (Stop & Save) or set travel_time manually"
+                    )
+                return elapsed
+        finally:
+            self._settles_on_timer = True
 
     async def async_calibrate(self) -> dict:  # type: ignore
         """Measure this cover's travel times on the bus and store them.
@@ -1175,6 +1238,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     raise
                 finally:
                     self._calibrating = False
+                    self._settles_on_timer = True
                     hub.active_cover = None
         finally:
             hub.queued_covers.discard(self)
@@ -1253,15 +1317,20 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         The built-in timed strategy becomes simple again; any other strategy keeps itself.
         """
+        self._cancel_wall_settle()
+        if not self._is_tilting:
+            self._cancel_stop_task()
         demoted = self._strategy.demoted()
         if demoted is self._strategy:
             return
+        self._auto_stop_duration = None
         self._strategy = demoted
         self._attr_assumed_state = True
         self._attr_supported_features = (
             self._attr_supported_features or CoverEntityFeature(0)
         ) & ~CoverEntityFeature.SET_POSITION
         self._attr_current_cover_position = None
+        self._start_position = None
 
     def _end_run_on_reversal(self, now: float) -> None:
         """Tell the strategy the opposite direction on the bus ended the running run."""
@@ -1347,6 +1416,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._travel_time_down = round(float(down), 2)
             self._travel_time_up = round(float(up), 2)
             self._travel_time = int(round(self._travel_time_down))
+            self._recompute_active_settle()
 
         if slat_time is not None:
             if not MIN_SLAT_TIME <= slat_time <= MAX_SLAT_TIME:
@@ -1408,6 +1478,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         return result
 
+    def _recompute_active_settle(self) -> None:
+        """Recompute any in-flight end-of-run settle after a travel-time change."""
+        if (
+            (self._attr_is_opening or self._attr_is_closing)
+            and not self._is_tilting
+            and self._pending_cmd != "stop"
+        ):
+            if self._stop_task is None or self._stop_task.done():
+                self._arm_wall_settle(bool(self._attr_is_opening))
+            else:
+                self._travel_recomputed.set()
+
     async def async_reset_travel_time(self) -> None:
         """Reset travel times back to default or YAML configuration."""
         if self._advanced and not self._slat_tilt:
@@ -1454,6 +1536,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_down = base_travel
         self._travel_time_up = base_travel
         self._travel_time = int(round(base_travel))
+        self._recompute_active_settle()
         self._calibration_source = source
         self._calibrated_at = None
         self._copied_from = None
@@ -1513,31 +1596,31 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Open the cover."""
-        if self._runs_to_end_from_unknown(True):
+        if self._settles_full_run(True):
             await self._async_run_to_end(True)
             return
         await self._async_move("open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Close cover."""
-        if self._runs_to_end_from_unknown(False):
+        if self._settles_full_run(False):
             await self._async_run_to_end(False)
             return
         await self._async_move("close")
 
-    def _runs_to_end_from_unknown(self, opening: bool) -> bool:
-        """True when open / close must settle on the travel timer: a timed cover with no position.
+    def _settles_full_run(self, opening: bool) -> bool:
+        """True when a full open / close run settles on the travel timer.
 
-        Nothing but an end stop can anchor the position, and the actuator's own
-        stop status may come before the configured travel time (an F411/2 timed
-        shorter than `travel_time`), so the run is settled like
-        `set_cover_position: 0` / `100` (#702) instead of waiting for that status.
+        Timed covers receive no intermediate position frames, and the actuator's
+        own stop status can come long after the curtain arrived (e.g. a 60 s
+        factory cutoff or an F411 set to M=1 = 120 s on a 60-86 s shutter,
+        #702 / #770), earlier on a run from ``unknown`` (#795), or not at all.
         """
         return (
-            self._settles_open_close_from_unknown
+            self._settles_open_close
+            and self._settles_on_timer
             and not self._advanced
             and not self._strategy.assumed_state
-            and self.current_cover_position is None
             and self._travel_for(opening) > 0
         )
 
@@ -1630,16 +1713,37 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         ``_begin_run`` opened the run before the frame was queued, as ``_async_move`` does
         for an own command; the write is tracked and the run settles on the travel timer
-        like an own open / close from an unknown position, instead of freezing to no
-        position at the actuator's own stop (#795).
+        like an own open / close (#770, #795).
         """
         self._track_write(written)
         self._settle_run_to_end(opening, written)
         self._publish_state()
 
+    def _finish_end_of_run_settle(self, opening: bool) -> None:
+        """Publish the end position once ``travel_time + END_SETTLE_MARGIN`` has elapsed."""
+        self._attr_current_cover_position = 100 if opening else 0
+        self._start_position = self._attr_current_cover_position
+        if self._slat_tilt:
+            self._attr_current_cover_tilt_position = 100 if opening else 0
+        self._strategy.on_run_ended(self, "end_stop", self._start_position, time.monotonic())
+        self._strategy.on_position_confirmed(self, self._start_position, "end_stop")
+        self._move_start_time = None
+        self._run_started_at = None
+        self._motion_started_at = None
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        self._attr_is_closed = not opening
+        self._run_start_position = None
+        self._run_start_tilt = None
+        self._run_lead = self._move_lead = 0.0
+        self._pending_stop_context = None
+        self._auto_stop_duration = None
+        self._end_run_from_unknown = False
+        self._refresh_travel_attributes()
+        self._publish_state()
+
     def _settle_run_to_end(self, opening: bool, written: asyncio.Future[Any] | None) -> None:
         """Settle the run just queued on the travel timer (see ``_async_run_to_end``)."""
-        travel_time = self._travel_for(opening)
         generation = self._run_generation
         # _begin_run anchored _start_position: None means the run starts unknown.
         self._end_run_from_unknown = self._start_position is None and not self._strategy.assumed_state
@@ -1647,31 +1751,43 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         async def _settle() -> None:
             try:
                 anchor = await self._await_motion_anchor(written)
-                if generation != self._run_generation:
-                    return  # a newer command or a real stop superseded this run
-                await asyncio.sleep(max(0.0, travel_time + END_SETTLE_MARGIN - (time.monotonic() - anchor)))
-                if generation != self._run_generation:
-                    return
-                self._attr_current_cover_position = 100 if opening else 0
-                self._start_position = self._attr_current_cover_position
-                if self._slat_tilt:
-                    self._attr_current_cover_tilt_position = 100 if opening else 0
-                self._strategy.on_run_ended(self, "end_stop", self._start_position, time.monotonic())
-                self._strategy.on_position_confirmed(self, self._start_position, "end_stop")
-                self._move_start_time = None
-                self._run_started_at = None
-                self._motion_started_at = None
-                self._attr_is_opening = False
-                self._attr_is_closing = False
-                self._attr_is_closed = not opening
-                self._run_start_position = None
-                self._run_start_tilt = None
-                self._run_lead = self._move_lead = 0.0
-                self._pending_stop_context = None
-                self._auto_stop_duration = None
-                self._end_run_from_unknown = False
-                self._refresh_travel_attributes()
-                self._publish_state()
+                while True:
+                    if (
+                        generation != self._run_generation
+                        or not self._settles_on_timer
+                        or self._strategy.assumed_state
+                        or self._travel_for(opening) <= 0
+                    ):
+                        self._end_run_from_unknown = False
+                        return
+                    self._travel_recomputed.clear()
+                    delay = self._travel_for(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
+                    if delay <= 0:
+                        break
+                    sleep_task = asyncio.create_task(asyncio.sleep(delay))
+                    recompute_task = asyncio.create_task(self._travel_recomputed.wait())
+                    try:
+                        await asyncio.wait(
+                            {sleep_task, recompute_task},
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                    finally:
+                        for pending in (sleep_task, recompute_task):
+                            if not pending.done():
+                                pending.cancel()
+                        await asyncio.gather(sleep_task, recompute_task, return_exceptions=True)
+                    if self._travel_recomputed.is_set():
+                        continue
+                    if (
+                        generation != self._run_generation
+                        or not self._settles_on_timer
+                        or self._strategy.assumed_state
+                        or self._travel_for(opening) <= 0
+                    ):
+                        self._end_run_from_unknown = False
+                        return
+                    break
+                self._finish_end_of_run_settle(opening)
             except HomeAssistantError as err:
                 self._end_run_from_unknown = False
                 LOGGER.error("%s End-of-run settle aborted for %s: %s", self._gateway_handler.log_id, self._full_where, err)
@@ -1679,6 +1795,35 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 pass
 
         self._stop_task = asyncio.create_task(_settle())
+
+    def _arm_wall_settle(self, opening: bool) -> None:
+        """Settle an external (wall switch / scenario) full run on the travel timer."""
+        self._cancel_wall_settle()
+        if self.hass is None or not self._settles_full_run(opening):
+            return
+        generation = self._run_generation
+        elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
+        delay = max(0.0, self._travel_for(opening) + END_SETTLE_MARGIN - elapsed)
+
+        @callback
+        def _on_wall_settle(_now: Any) -> None:
+            self._wall_settle_unsub = None
+            if (
+                generation != self._run_generation
+                or not self._settles_on_timer
+                or self._is_tilting
+                or self._strategy.assumed_state
+                or self._travel_for(opening) <= 0
+                or not (self._attr_is_opening if opening else self._attr_is_closing)
+            ):
+                return
+            self._finish_end_of_run_settle(opening)
+
+        self._wall_settle_unsub = async_call_later(
+            self.hass,
+            delay,
+            HassJob(_on_wall_settle, f"myhome cover wall settle {self._full_where}", cancel_on_shutdown=True),
+        )
 
     def _check_position_target(self, target_position: float) -> None:
         """Refuse a partial target while a timed cover's position is unknown.
@@ -1848,27 +1993,51 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         self._stop_task = asyncio.create_task(_auto_stop())
 
-    async def async_stop_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
-        """Stop the cover."""
+    def _capture_stop_context(self, *, scope_where: str | None = None) -> dict[str, Any]:
+        """Snapshot the active run state for stop-echo re-anchoring."""
+        is_opening = bool(self._attr_is_opening)
+        is_closing = bool(self._attr_is_closing)
+        ctx: dict[str, Any] = {
+            "run_start_position": self._run_start_position if self._run_start_position is not None else self._start_position,
+            "run_started_at": self._run_started_at,
+            "is_opening": is_opening,
+            "is_closing": is_closing,
+            "auto_stop_duration": self._auto_stop_duration,
+            "lead": self._run_lead if self._run_started_at is not None else self._slat_lead_time(is_opening, is_closing),
+            "run_start_tilt": self._run_start_tilt if self._run_start_tilt is not None else self._attr_current_cover_tilt_position,
+        }
+        if scope_where is not None:
+            ctx["scope_where"] = scope_where
+        return ctx
+
+    def _begin_stop(self, *, scope_where: str | None = None) -> None:
+        """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
+        self._cancel_stop_task()
+        if self._advanced or self._is_tilting:
+            return
+        # The estimate keeps running until the stop frame is actually
+        # written (_track_write freezes it then); if delivery never
+        # happens the next status frame will correct us.
+        self._pending_stop_context = self._capture_stop_context(scope_where=scope_where)
+        self._begin_command("stop")
+
+    def _track_stop_write(self, written: Any) -> None:
+        """Track a stop frame's delivery and freeze immediately when no Future is returned."""
+        self._track_write(written)
+        if not isinstance(written, asyncio.Future):
+            self._freeze_position(time.monotonic() + MOTOR_STOP_DELAY)
+            self._motor_started.set()
+
+    def _follow_scope_stop(self, written: Any) -> None:
+        """A scope stop frame just queued halts this member as well (#770)."""
+        self._track_stop_write(written)
+        self._publish_state()
+
+    async def _async_stop(self, **kwargs: Any) -> Any:
+        """Queue a stop command and return its delivery handle."""
         was_tilting = self._is_tilting
         at = kwargs.get("at")
-        self._cancel_stop_task()
-        if not self._advanced and not was_tilting:
-            # The estimate keeps running until the stop frame is actually
-            # written (_track_write freezes it then); if delivery never
-            # happens the next status frame will correct us.
-            is_opening = bool(self._attr_is_opening)
-            is_closing = bool(self._attr_is_closing)
-            self._pending_stop_context = {
-                "run_start_position": self._run_start_position if self._run_start_position is not None else self._start_position,
-                "run_started_at": self._run_started_at,
-                "is_opening": is_opening,
-                "is_closing": is_closing,
-                "auto_stop_duration": self._auto_stop_duration,
-                "lead": self._run_lead if self._run_started_at is not None else self._slat_lead_time(is_opening, is_closing),
-                "run_start_tilt": self._run_start_tilt if self._run_start_tilt is not None else self._attr_current_cover_tilt_position,
-            }
-            self._begin_command("stop")
+        self._begin_stop()
         generation = self._run_generation
         queued_at = time.monotonic()
         cmd = OWNAutomationCommand.stop_shutter(self._full_where)
@@ -1876,9 +2045,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(cmd), action="stop", entity_id=self.entity_id)
         if not self._advanced and not was_tilting:
-            self._track_write(written)
-            if not isinstance(written, asyncio.Future):
-                self._freeze_position(time.monotonic() + MOTOR_STOP_DELAY)  # type: ignore
+            self._track_stop_write(written)
         elif was_tilting and generation == self._run_generation:
             # A pulse started while this stop was being queued is not ours to settle.
             if isinstance(written, asyncio.Future) and not written.done():
@@ -1886,6 +2053,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._settle_pulse_on_write(written, generation, max(at, queued_at) if at is not None else queued_at)
         if self.hass is not None:
             self.async_write_ha_state()
+        return written
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        """Stop the cover."""
+        await self._async_stop(**kwargs)
 
     def _settle_pulse_on_write(self, written: Any, generation: int, not_before: float) -> None:
         """Settle the slat angle when the stop frame reaches the bus.
@@ -2248,6 +2420,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Stop cover tilt."""
         await self.async_stop_cover(**kwargs)
 
+    @staticmethod
+    def _format_where_and_scope(raw_where: Any, message: OWNMessage) -> tuple[str, bool]:
+        """Format a frame's full WHERE string and whether it addresses a scope."""
+        raw_iface = getattr(message, "interface", None)
+        msg_where = (
+            ""
+            if raw_where is None or raw_where == ""
+            else f"{raw_where}{BUS_ROUTING}{raw_iface}"
+            if raw_iface
+            else str(raw_where)
+        )
+        is_general = bool(
+            getattr(message, "is_general", False)
+            or getattr(message, "is_area", False)
+            or getattr(message, "is_group", False)
+            or str(raw_where) == "0"
+        )
+        return msg_where, is_general
+
     def _handle_echo(self, message: OWNMessage, now: float) -> bool:
         """Consume frames the gateway relays for our own in-flight command.
 
@@ -2285,14 +2476,34 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._end_echo_window()
             return False
         # Pending stop command:
-        is_general = (
-            getattr(message, "is_general", False)
-            or getattr(message, "is_area", False)
-            or getattr(message, "is_group", False)
-            or str(getattr(message, "where", "")) == "0"
+        msg_where, is_general = self._format_where_and_scope(
+            getattr(message, "where", None), message
         )
-        if is_stop and not is_general:
-            ctx = self._pending_stop_context
+        is_translation = getattr(message, "is_translation", None) is True
+        ctx = self._pending_stop_context
+        matches_own_stop = is_stop and (
+            not is_general or (self.scope is not None and msg_where == self._full_where)
+        )
+        matches_scope_stop = (
+            is_stop and ctx is not None and bool(msg_where) and msg_where == ctx.get("scope_where")
+        )
+        if is_translation and (matches_own_stop or matches_scope_stop):
+            if self._stop_translation_seen:
+                # A second *2*1000#0* inside the stop echo window is the pre-direction
+                # translation of a new bus command; close the window before its *2*0* arrives.
+                self._end_echo_window()
+                return True
+            self._stop_translation_seen = True
+            if not self._motor_started.is_set() and not self._is_tilting:
+                self._freeze_position(now + MOTOR_STOP_DELAY)
+                self._motor_started.set()
+            self._last_stop_at = now
+            self._stopped_event.set()
+            return True
+        if matches_own_stop:
+            if not self._motor_started.is_set():
+                self._freeze_position(now)
+                self._motor_started.set()
             self._end_echo_window()
             self._auto_stop_duration = None
             self._last_stop_at = now
@@ -2301,6 +2512,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # run_start_position is None for a run from an unknown position.
                 self._strategy.reanchor_on_stop_echo(self, ctx, now)
             return True
+        if matches_scope_stop:
+            # Relayed scope stop (*2*0*<scope>##) on a member halted by that scope's
+            # async_stop_cover(): freeze provisionally if write completion has not run
+            # yet, and keep the stop echo window open so a subsequent per-actuator
+            # *2*0*<member>## still re-anchors to the actuator's own stop time (#770).
+            if not self._motor_started.is_set():
+                stopped_at = now + MOTOR_STOP_DELAY
+                self._freeze_position(stopped_at)
+                self._motor_started.set()
+            self._last_stop_at = now
+            self._stopped_event.set()
+            return True
         # Opposite or external command during stop echo window: end window and handle externally.
         self._end_echo_window()
         return False
@@ -2308,8 +2531,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     @callback
     def handle_event(self, message: OWNMessage) -> None:
         """Handle an event message."""
-        if getattr(message, "is_translation", None) is True:
-            return
+        is_translation = getattr(message, "is_translation", None) is True
+        if is_translation:
+            effective_what = getattr(message, "effective_what", None)
+            if effective_what not in (0, 10):
+                if self._pending_cmd == "stop" and effective_what in (1, 2, 11, 12, 13, 14):
+                    self._end_echo_window()
+                return
+            if self._advanced and not self._is_tilting:
+                return
 
         dimension = getattr(message, "dimension", getattr(message, "_dimension", None))
         if dimension == 11:
@@ -2441,6 +2671,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._run_start_tilt = None
                     self._auto_stop_duration = None
                     self._anchor_run(now)
+                    self._arm_wall_settle(True)
         elif is_closing:
             if self._is_tilting and self._tilt_direction == "close":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
@@ -2471,13 +2702,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._run_start_tilt = None
                     self._auto_stop_duration = None
                     self._anchor_run(now)
+                    self._arm_wall_settle(False)
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
             was_tilting = self._is_tilting
             was_opening = bool(self._attr_is_opening)
             was_closing = bool(self._attr_is_closing)
             if (
-                not was_tilting
+                not is_translation
+                and not was_tilting
                 and (was_opening or was_closing)
                 and self._end_run_from_unknown
                 and self._stop_task is not None
@@ -2489,9 +2722,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # the actuator stopped itself before the configured travel time
                 # (an F411/2 timed shorter than `travel_time`): there is no
                 # position to freeze, so the end position settles on the travel
-                # timer (#702). A keypad stop in that window is indistinguishable
-                # from the actuator's own and settles the same way (documented).
-                # The motor time is still measured: it is what calibration needs.
+                # timer (#702). A plain keypad stop without command translation is
+                # indistinguishable from the actuator's own and settles the same
+                # way (documented). The motor time is still measured for calibration.
                 self._last_stop_at = now
                 self._stopped_event.set()
                 self._last_run = {
@@ -2509,15 +2742,32 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 )
                 self._publish_state()
                 return
+            if is_translation and self._calibrating and (was_opening or was_closing):
+                self._interrupt_calibration("an external stop command arrived")
             self._is_tilting = False
             self._cancel_stop_task()
             self._run_generation += 1
             self._last_stop_at = now
             self._stopped_event.set()
+            stop_at = now + MOTOR_STOP_DELAY if is_translation else now
             if was_tilting:
-                self._apply_tilt_stop(now)
+                self._apply_tilt_stop(stop_at)
             elif not self._advanced:
-                self._freeze_position(now)
+                stop_ctx: dict[str, Any] | None = None
+                if is_translation and (was_opening or was_closing):
+                    msg_where, is_general = self._format_where_and_scope(
+                        getattr(message, "where", None), message
+                    )
+                    stop_ctx = self._capture_stop_context(
+                        scope_where=msg_where if (is_general and msg_where) else None
+                    )
+                self._freeze_position(stop_at)
+                if stop_ctx is not None:
+                    self._pending_stop_context = stop_ctx
+                    self._pending_cmd = "stop"
+                    self._echo_until = now + ECHO_WINDOW
+                    self._stop_translation_seen = True
+                    self._motor_started.set()
             else:
                 self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
                 if (was_opening or was_closing) and not self._dim10_seen and not self._warned_missing_dim10:
