@@ -27,14 +27,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.myhome.const import CALIBRATION_MAX_RUN
+from custom_components.myhome.const import CALIBRATION_MAX_RUN, CONF_TRAVEL_TIME
 from custom_components.myhome.cover import (
     END_SETTLE_MARGIN,
     MOTOR_STOP_DELAY,
+    CalibrationInterrupted,
     CoverFamily,
     CoverScope,
     MyHOMECover,
@@ -57,8 +59,12 @@ def clock() -> Clock:
 
 @pytest.fixture
 def fake_time(clock: Clock):
-    with patch("custom_components.myhome.cover.time") as mock_time:
+    with (
+        patch("custom_components.myhome.cover.time") as mock_time,
+        patch("custom_components.myhome.cover_scope.time") as mock_scope_time,
+    ):
         mock_time.monotonic.side_effect = lambda: clock.now
+        mock_scope_time.monotonic.side_effect = lambda: clock.now
         yield mock_time
 
 
@@ -145,8 +151,13 @@ def _make_scope(
     gateway,
     where: str,
     members: list[MyHOMECover],
+    *,
+    slat_tilt: bool = False,
+    slat_time: float = 2.0,
+    family: CoverFamily | None = None,
 ) -> MyHOMEScopeCover:
-    family = CoverFamily()
+    if family is None:
+        family = CoverFamily()
     with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
         scope = MyHOMEScopeCover(
             hass=hass,
@@ -161,14 +172,17 @@ def _make_scope(
             model="Shutter",
             gateway=gateway,
             travel_time=25,
-            scope=CoverScope.of(where),
+            slat_tilt=slat_tilt,
+            slat_time=slat_time,
+            scope=CoverScope.of(where, members=[m._where for m in members]),
         )
     scope.hass = hass
     scope.entity_id = f"cover.scope_{where}"
     scope.async_write_ha_state = MagicMock()
     scope.async_schedule_update_ha_state = MagicMock()
     for c in (*members, scope):
-        family.add(c)
+        if c not in family._covers:
+            family.add(c)
     return scope
 
 
@@ -547,3 +561,653 @@ async def test_venetian_wall_full_run_and_wall_settle_guard_branches(
     no_loop_cover.hass = SimpleNamespace(loop=MagicMock())  # type: ignore[assignment]
     no_loop_cover.handle_event(OWNEvent.parse("*2*1*32##"))
     assert no_loop_cover._wall_settle_unsub is None
+
+
+async def test_scope_stop_freezes_members_without_relayed_stop_and_inside_echo_window(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Scope async_stop_cover() freezes timed members even without relayed stop frames or inside ECHO_WINDOW."""
+    essen = _make_cover(hass, gateway, where="11", name="Essen Fixglas", travel_time=60.0, position=0)
+    fresh = _make_cover(hass, gateway, where="12", name="Fresh Unknown", travel_time=86.0, position=None)
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        native = MyHOMECover(
+            hass=hass,
+            name="Native",
+            entity_name=None,
+            device_id="13",
+            who="2",
+            where="13",
+            interface=None,
+            advanced=True,
+            manufacturer="BTicino",
+            model="LN4660M2",
+            gateway=gateway,
+        )
+    native.hass = hass
+    native.entity_id = "cover.native"
+    native.async_write_ha_state = MagicMock()
+    native.async_schedule_update_ha_state = MagicMock()
+    area = _make_scope(hass, gateway, "1", [essen, fresh, native])
+
+    # 1. Silent gateway (F453/F453AV / M=4): no *2*0*1## or *2*0*11## ever arrives on the event session.
+    await area.async_open_cover()
+    _, open_written = gateway.deliveries[-1]
+    open_written.set_result(clock.now)
+    await _yield()
+    clock.now += 30.0
+    await area.async_stop_cover()
+    _, stop_written = gateway.deliveries[-1]
+    stop_written.set_result(clock.now)
+    await _yield()
+
+    assert essen.is_opening is False
+    assert essen.current_cover_position == 50
+    assert fresh.is_opening is False
+    assert fresh.current_cover_position is None
+    assert fresh.is_closed is None
+    assert area.is_opening is False
+    assert area.current_cover_position == 50
+
+    # 2. Quick open_cover -> stop_cover inside ECHO_WINDOW (0.3 s after open write, before any *2*1*1## echo):
+    # relayed stop frames must NOT be swallowed as open echoes ("Ignoring stop echo").
+    clock.now += 5.0
+    await area.async_close_cover()
+    _, close_written = gateway.deliveries[-1]
+    close_written.set_result(clock.now)
+    await _yield()
+    assert essen._pending_cmd == "close" and fresh._pending_cmd == "close"
+
+    clock.now += 0.30  # still inside 1.0 s ECHO_WINDOW!
+    await area.async_stop_cover()
+    assert essen._pending_cmd == "stop" and fresh._pending_cmd == "stop"
+    _, quick_stop_written = gateway.deliveries[-1]
+    quick_stop_written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.05
+    for c in (area, essen, fresh):
+        c.handle_event(OWNEvent.parse("*2*0*1##"))
+    essen.handle_event(OWNEvent.parse("*2*0*11##"))
+    assert essen.is_closing is False
+    assert fresh.is_closing is False
+    assert fresh.current_cover_position is None
+    assert area.is_closing is False
+
+    # 3. Failed scope stop send() restores any latched _settled_stopwatch and closes member echo windows.
+    essen._settled_stopwatch = (clock.now - 40.0, "open")
+    fresh._settled_stopwatch = None
+    gateway.send = AsyncMock(side_effect=HomeAssistantError("gateway offline"))
+    with pytest.raises(HomeAssistantError, match="gateway offline"):
+        await area.async_stop_cover()
+    assert essen._settled_stopwatch is not None
+    assert fresh._settled_stopwatch is None
+    assert essen._pending_cmd is None and fresh._pending_cmd is None
+
+
+async def test_scope_stop_echo_preserves_member_reanchor_and_handles_early_echo(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Relayed *2*0*<scope>## keeps member stop echo open for *2*0*<member>## and handles pre-write echoes."""
+    essen = _make_cover(hass, gateway, where="11", name="Essen Fixglas", travel_time=60.0, position=0)
+    stiege = _make_cover(hass, gateway, where="12", name="Stiege oben", travel_time=100.0, position=0)
+    area = _make_scope(hass, gateway, "1", [essen, stiege])
+
+    # 1. Echoed *2*0*1## arrives after stop_written, followed by per-actuator *2*0*11## 600 ms later.
+    await area.async_open_cover()
+    _, open_written = gateway.deliveries[-1]
+    open_written.set_result(clock.now)
+    await _yield()
+    for c in (area, essen, stiege):
+        c.handle_event(OWNEvent.parse("*2*1*1##"))
+    t_start = clock.now
+    clock.now = t_start + 24.0
+    await area.async_stop_cover()
+    _, stop_written = gateway.deliveries[-1]
+    stop_written.set_result(clock.now)
+    await _yield()
+    assert essen.current_cover_position == 40  # provisional at 24 s / 60 s
+
+    # Unrelated general stop *2*0*0## on a different scope cover is not consumed as area 1's own echo.
+    other_area = _make_scope(hass, gateway, "2", [])
+    other_area._begin_command("stop")
+    assert other_area._handle_echo(OWNEvent.parse("*2*0*0##"), clock.now) is False
+
+    # Gateway echoes *2*0*1## on relay_scope: area consumes its own echo; members keep echo window open!
+    clock.now = t_start + 24.05
+    for c in (area, essen, stiege):
+        c.handle_event(OWNEvent.parse("*2*0*1##"))
+    assert area._pending_cmd is None
+    assert essen._pending_cmd == "stop" and stiege._pending_cmd == "stop"
+
+    # Actuator 11 stops slightly later (at t_start + 30.0 s, still inside stop_written's 1.0 s? Use +0.9 s -> 30.0 s):
+    clock.now = t_start + 24.9
+    essen._travel_time_up = 49.8  # 24.9 / 49.8 = 50% (vs provisional 24.08 / 49.8 = 48%)
+    essen.handle_event(OWNEvent.parse("*2*0*11##"))
+    assert essen._pending_cmd is None
+    assert essen.current_cover_position == 50  # re-anchored on exact *2*0*11## arrival!
+    assert stiege.is_opening is False  # stiege never emitted *2*0*12## (MH201) yet stayed frozen!
+
+    # 2. Pre-write echo: *2*0*1## arrives BEFORE stop_written resolves (both moving & settled_stopwatch members).
+    essen._travel_time_up = 60.0
+    essen._attr_current_cover_position = essen._start_position = 0
+    stiege._attr_current_cover_position = stiege._start_position = 100
+    stiege._settled_stopwatch = (clock.now - 50.0, "open")
+    essen.handle_event(OWNEvent.parse("*2*1*11##"))
+    clock.now += 15.0
+    await area.async_stop_cover()
+    _, pre_stop_written = gateway.deliveries[-1]
+    assert not pre_stop_written.done()
+    for c in (area, essen, stiege):
+        c.handle_event(OWNEvent.parse("*2*0*1##"))
+    assert essen.is_opening is False
+    assert essen.current_cover_position == 25
+    assert stiege.extra_state_attributes["last_run_seconds"] == pytest.approx(65.0 + MOTOR_STOP_DELAY, abs=0.02)
+    # Resolving stop_written afterwards does not overwrite the provisional freeze.
+    clock.now += 0.2
+    pre_stop_written.set_result(clock.now)
+    await _yield()
+    assert essen.current_cover_position == 25
+
+    # 3. Point-to-point pre-write stop echo + routed interface scope stop echo (*2*0*0#4#02##).
+    pt = _make_cover(hass, gateway, where="21", name="Point PreWrite", travel_time=40.0, position=0)
+    pt.handle_event(OWNEvent.parse("*2*1*21##"))
+    clock.now += 10.0
+    await pt.async_stop_cover()
+    _, pt_stop_written = gateway.deliveries[-1]
+    assert not pt_stop_written.done()
+    pt.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert pt.is_opening is False and pt.current_cover_position == 25
+    pt_stop_written.set_result(clock.now + 0.05)
+    await _yield()
+    assert pt.current_cover_position == 25
+
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        routed_gen = MyHOMEScopeCover(
+            hass=hass,
+            name="Gen Bus 02",
+            entity_name=None,
+            device_id="0#4#02",
+            who="2",
+            where="0",
+            interface="02",
+            advanced=False,
+            manufacturer="BTicino",
+            model="Shutter",
+            gateway=gateway,
+            travel_time=25,
+            scope=CoverScope.of("0", "02"),
+        )
+    routed_gen.hass = hass
+    routed_gen.entity_id = "cover.gen_bus_02"
+    routed_gen.async_write_ha_state = MagicMock()
+    routed_gen.async_schedule_update_ha_state = MagicMock()
+    await routed_gen.async_stop_cover()
+    _, rg_written = gateway.deliveries[-1]
+    rg_written.set_result(clock.now)
+    await _yield()
+    routed_gen.handle_event(OWNEvent.parse("*2*0*0#4#02##"))
+    assert routed_gen._pending_cmd is None
+
+
+async def test_external_wall_command_interrupting_calibration_arms_wall_settle(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """External wall UP/DOWN interrupting async_calibrate() arms _wall_settle_unsub across all phases (#770)."""
+    # 1a. Wall DOWN (*2*2*21##) arrives BEFORE up_written resolves on the bus, then up_written resolves.
+    cover = _make_cover(hass, gateway, where="21", name="Calib Shutter", travel_time=60.0, position=50)
+    t0 = dt_util.utcnow()
+    cal_task = asyncio.create_task(cover.async_calibrate())
+    await _yield()
+    _, up_written = gateway.deliveries[-1]
+    assert not up_written.done()
+
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    assert cover._wall_settle_unsub is not None
+    assert cover.is_closing is True
+    up_written.set_result(clock.now)
+    with pytest.raises(CalibrationInterrupted, match="external close"):
+        await asyncio.wait_for(cal_task, 1.0)
+    assert cover._calibrating is False
+    assert cover.is_closing is True
+    assert cover._wall_settle_unsub is not None
+
+    # At 60 + 2 s, cover settles to 0% (closed) without waiting for 120 s / missing stop frame.
+    clock.now += 60.0 + END_SETTLE_MARGIN + 0.1
+    async_fire_time_changed(hass, t0 + timedelta(seconds=62.1))
+    await hass.async_block_till_done()
+    assert cover.is_closing is False
+    assert cover.is_closed is True
+    assert cover.current_cover_position == 0
+
+    # 1b. Wall DOWN arrives AFTER up_written resolves while awaiting motor_started echo.
+    cal_task_echo = asyncio.create_task(cover.async_calibrate())
+    await _yield()
+    _, up_written_echo = gateway.deliveries[-1]
+    up_written_echo.set_result(clock.now)
+    await _yield()
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    with pytest.raises(CalibrationInterrupted, match="external close"):
+        await asyncio.wait_for(cal_task_echo, 1.0)
+    assert cover.is_closing is True
+    assert cover._wall_settle_unsub is not None
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+    # 1c. Unwritten calibration command failing, cancelling, or timing out AFTER wall interruption
+    # must NOT abort the new wall run and must raise CalibrationInterrupted (not HomeAssistantError).
+    for mode in ("exception", "cancel", "timeout"):
+        with patch("custom_components.myhome.cover.WRITE_TIMEOUT", 0.01 if mode == "timeout" else 5.0):
+            cal_fail = asyncio.create_task(cover.async_calibrate())
+            await _yield()
+            _, unwritten = gateway.deliveries[-1]
+            cover.handle_event(OWNEvent.parse("*2*2*21##"))
+            assert cover.is_closing is True
+            assert cover._wall_settle_unsub is not None
+            if mode == "exception":
+                unwritten.set_exception(HomeAssistantError("send dropped"))
+            elif mode == "cancel":
+                unwritten.cancel()
+            with pytest.raises(CalibrationInterrupted, match="external close"):
+                await asyncio.wait_for(cal_fail, 1.0)
+            assert cover.is_closing is True
+            assert cover._wall_settle_unsub is not None
+            cover.handle_event(OWNEvent.parse("*2*0*21##"))
+
+    # 2. Interrupted by wall UP (*2*1*21##) during closing phase of calibration.
+    async def _fast_sleep(delay: float, *args, **kwargs) -> None:
+        clock.now += delay
+        await _REAL_SLEEP(0)
+
+    t1 = dt_util.utcnow()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_fast_sleep):
+        cal_task_2 = asyncio.create_task(cover.async_calibrate())
+        await _yield()
+        _, w_up = gateway.deliveries[-1]
+        w_up.set_result(clock.now)
+        await _yield()
+        clock.now += 0.1
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))
+        await _yield()
+        clock.now += 30.0
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))  # up run finishes cleanly
+        await _yield(6)
+        raw_down, w_down = gateway.deliveries[-1]
+        assert raw_down == "*2*2*21##"
+        w_down.set_result(clock.now)
+        await _yield()
+        clock.now += 0.1
+        cover.handle_event(OWNEvent.parse("*2*2*21##"))  # down run starts
+        await _yield()
+        clock.now += 5.0
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))  # wall UP interrupts down run!
+        assert cover._wall_settle_unsub is not None
+        with pytest.raises(CalibrationInterrupted, match="external open"):
+            await asyncio.wait_for(cal_task_2, 1.0)
+
+    clock.now += 60.0 + END_SETTLE_MARGIN + 0.1
+    async_fire_time_changed(hass, t1 + timedelta(seconds=130.0))
+    await hass.async_block_till_done()
+    assert cover.is_opening is False
+    assert cover.is_closed is False
+    assert cover.current_cover_position == 100
+
+    # 3. Interrupted by wall DOWN (*2*2*21##) during CALIBRATION_SETTLE pause between up and down runs:
+    # must NOT wipe _calibration_interrupted or send a second calibration command!
+    settle_entered = asyncio.Event()
+    release_settle = asyncio.Event()
+
+    async def _pause_between_runs(delay: float, *args, **kwargs) -> None:
+        if delay >= 1.0:
+            settle_entered.set()
+            await release_settle.wait()
+            return
+        await _REAL_SLEEP(0)
+
+    t2 = dt_util.utcnow()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_pause_between_runs):
+        cal_task_3 = asyncio.create_task(cover.async_calibrate())
+        await _yield()
+        _, w_up_3 = gateway.deliveries[-1]
+        w_up_3.set_result(clock.now)
+        await _yield()
+        clock.now += 0.1
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))
+        await _yield()
+        clock.now += 30.0
+        cover.handle_event(OWNEvent.parse("*2*0*21##"))  # up run finishes -> enters CALIBRATION_SETTLE
+        await asyncio.wait_for(settle_entered.wait(), 1.0)
+        deliveries_before_wall = len(gateway.deliveries)
+
+        cover.handle_event(OWNEvent.parse("*2*2*21##"))  # external wall close during CALIBRATION_SETTLE
+        assert cover._wall_settle_unsub is not None
+        assert cover.is_closing is True
+
+        release_settle.set()
+        with pytest.raises(CalibrationInterrupted, match="external close"):
+            await asyncio.wait_for(cal_task_3, 1.0)
+        assert len(gateway.deliveries) == deliveries_before_wall  # no calibration *2*2*21## queued!
+        assert cover._wall_settle_unsub is not None
+
+    clock.now += 60.0 + END_SETTLE_MARGIN + 0.1
+    async_fire_time_changed(hass, t2 + timedelta(seconds=62.1))
+    await hass.async_block_till_done()
+    assert cover.is_closing is False
+    assert cover.current_cover_position == 0
+
+
+async def test_scope_stop_cover_halts_member_slat_tilt_pulses_and_mixed_scope_members(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Scope async_stop_cover() settles independent/cross-scope slat tilt pulses and mixed non-tilting members."""
+    # 1. Independent member slat tilt pulse stopped by scope async_stop_cover() without relayed *2*0*11##.
+    blind_1 = _make_cover(hass, gateway, where="11", name="Blind 11", travel_time=40.0, slat_tilt=True, slat_time=2.0, position=0)
+    shutter_2 = _make_cover(hass, gateway, where="12", name="Shutter 12", travel_time=60.0, slat_tilt=False, position=0)
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        adv_3 = MyHOMECover(
+            hass=hass,
+            name="Adv 13",
+            entity_name=None,
+            device_id="13",
+            who="2",
+            where="13",
+            interface=None,
+            advanced=True,
+            manufacturer="BTicino",
+            model="F411U2",
+            gateway=gateway,
+            travel_time=40,
+        )
+    adv_3.hass = hass
+    adv_3.entity_id = "cover.adv_13"
+    adv_3.async_write_ha_state = MagicMock()
+    adv_3.async_schedule_update_ha_state = MagicMock()
+
+    family = CoverFamily()
+    area = _make_scope(hass, gateway, "1", [blind_1, shutter_2, adv_3], slat_tilt=True, slat_time=2.0, family=family)
+
+    release_pulse = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release_pulse)):
+        await blind_1.async_open_cover_tilt()
+        _, tilt_written = gateway.deliveries[-1]
+        tilt_written.set_result(clock.now)
+        await _yield()
+        blind_1.handle_event(OWNEvent.parse("*2*1*11##"))
+        assert blind_1._is_tilting is True
+        assert blind_1._stop_task is not None
+
+        clock.now += 0.5  # 0.5 s / 2.0 s = 25% slat tilt
+        await area.async_stop_cover()
+        _, area_stop_written = gateway.deliveries[-1]
+        assert not area_stop_written.done()
+        assert blind_1._pulse_stop_written is area_stop_written
+        assert blind_1._stop_task is None
+
+        area_stop_written.set_result(clock.now)
+        await _yield()
+        release_pulse.set()
+
+    assert blind_1._is_tilting is False
+    assert blind_1.current_cover_tilt_position == 25
+
+    # 2. Cross-scope tilt pulse: group (#1) tilts blind_1 & blind_2; general (0) stops both via seen_leaders.
+    blind_2 = _make_cover(hass, gateway, where="14", name="Blind 14", travel_time=40.0, slat_tilt=True, slat_time=2.0, position=0)
+    blind_1._attr_current_cover_tilt_position = 0
+    for b in (blind_1, blind_2):
+        b._device_config = lambda: {"groups": [1]}  # type: ignore[method-assign]
+    cross_family = CoverFamily()
+    group = _make_scope(hass, gateway, "#1", [blind_1, blind_2], slat_tilt=True, slat_time=2.0, family=cross_family)
+    general = _make_scope(hass, gateway, "0", [blind_1, blind_2], slat_tilt=True, slat_time=2.0, family=cross_family)
+
+    release_group_pulse = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release_group_pulse)):
+        await group.async_open_cover_tilt()
+        _, grp_tilt_written = gateway.deliveries[-1]
+        grp_tilt_written.set_result(clock.now)
+        await _yield()
+        group.handle_event(OWNEvent.parse("*2*1*#1##"))
+        assert group._is_tilting is True
+        assert blind_1._tilt_follows is group and blind_2._tilt_follows is group
+
+        clock.now += 1.0  # 1.0 s / 2.0 s = 50% slat tilt
+        await general.async_stop_cover()
+        _, gen_stop_written = gateway.deliveries[-1]
+        gen_stop_written.set_result(clock.now)
+        await _yield()
+        release_group_pulse.set()
+
+    assert group._is_tilting is False
+    assert blind_1._is_tilting is False and blind_2._is_tilting is False
+    assert blind_1.current_cover_tilt_position == 50
+    assert blind_2.current_cover_tilt_position == 50
+
+    # 3. Mixed scope: area is tilting blind_1 while non-Venetian shutter_2 is moving from an open command.
+    blind_1._attr_current_cover_tilt_position = 0
+    release_mixed_pulse = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release_mixed_pulse)):
+        await area.async_open_cover_tilt()
+        _, mixed_tilt_written = gateway.deliveries[-1]
+        mixed_tilt_written.set_result(clock.now)
+        await _yield()
+        area.handle_event(OWNEvent.parse("*2*1*1##"))
+        assert area._is_tilting is True and blind_1._tilt_follows is area
+
+        shutter_2.handle_event(OWNEvent.parse("*2*1*12##"))  # wall UP starts shutter_2
+        assert shutter_2.is_opening is True
+        assert shutter_2._wall_settle_unsub is not None
+
+        clock.now += 15.0  # shutter_2 moved 15 s / 60 s = 25%
+        await area.async_stop_cover()
+        _, mixed_stop_written = gateway.deliveries[-1]
+        mixed_stop_written.set_result(clock.now)
+        await _yield()
+        release_mixed_pulse.set()
+
+    assert area._is_tilting is False
+    assert blind_1._is_tilting is False
+    assert shutter_2.is_opening is False
+    assert shutter_2.current_cover_position == 25
+
+
+async def test_reset_travel_time_demotion_cancels_pending_app_and_wall_settle_timers(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Resetting/updating travel times cancels zero-travel settles, re-arms mid-run wall settles, and preserves stopwatches."""
+    cover = _make_cover(hass, gateway, where="21", name="Simple Relay", travel_time=0.0, position=None)
+    assert cover.assumed_state is True
+    cover._device_config = lambda: {CONF_TRAVEL_TIME: 0}  # type: ignore[method-assign]
+
+    # Promote via async_set_travel_time -> TimedCurtainStrategy (40 s).
+    await cover.async_set_travel_time(travel_time=40.0)
+    assert cover.assumed_state is False
+
+    # 1. App open_cover arms _stop_task; async_reset_travel_time demotes to simple and cancels _stop_task.
+    await cover.async_open_cover()
+    _, open_written = gateway.deliveries[-1]
+    open_written.set_result(clock.now)
+    await _yield()
+    assert cover._stop_task is not None
+    cover._settled_stopwatch = (clock.now, "open")
+
+    await cover.async_reset_travel_time()
+    assert cover.assumed_state is True
+    assert cover._stop_task is None
+    assert cover._settled_stopwatch is None
+    assert cover._start_position is None
+    assert cover.current_cover_position is None
+
+    # 2. Re-promote, arm _wall_settle_unsub from wall DOWN, then reset travel time mid-run.
+    await cover.async_set_travel_time(travel_time=40.0)
+    t0 = dt_util.utcnow()
+    cover.handle_event(OWNEvent.parse("*2*2*21##"))
+    assert cover._wall_settle_unsub is not None
+
+    await cover.async_reset_travel_time()
+    assert cover.assumed_state is True
+    assert cover._wall_settle_unsub is None
+    clock.now += 45.0
+    async_fire_time_changed(hass, t0 + timedelta(seconds=45.0))
+    await hass.async_block_till_done()
+    assert cover.current_cover_position is None
+    assert cover.assumed_state is True
+
+    # 3. Direct assumed_state / zero-travel guards inside _settle_run_to_end and _on_wall_settle callbacks.
+    await cover.async_set_travel_time(travel_time=40.0)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await cover.async_open_cover()
+            _, w2 = gateway.deliveries[-1]
+            w2.set_result(clock.now)
+            await _yield()
+            task_ref = cover._stop_task
+            assert task_ref is not None
+            cover._strategy = cover._strategy.demoted()
+            cover._attr_assumed_state = True
+            cover._attr_current_cover_position = None
+        finally:
+            release.set()
+        await asyncio.wait_for(task_ref, 1.0)
+    assert cover.current_cover_position is None
+
+    await cover.async_set_travel_time(travel_time=40.0)
+    t1 = dt_util.utcnow()
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))
+    cover._strategy = cover._strategy.demoted()
+    cover._attr_assumed_state = True
+    cover._attr_current_cover_position = None
+    clock.now += 45.0
+    async_fire_time_changed(hass, t1 + timedelta(seconds=45.0))
+    await hass.async_block_till_done()
+    assert cover.current_cover_position is None
+
+    # 4. Venetian cover with travel_time: 0 in YAML (VenetianTiltStrategy.demoted() returns self):
+    # async_reset_travel_time cancels curtain settle timers while preserving active slat tilt pulses.
+    venetian = _make_cover(hass, gateway, where="31", name="Venetian Zero", travel_time=0.0, slat_tilt=True, slat_time=2.0)
+    venetian._device_config = lambda: {CONF_TRAVEL_TIME: 0}  # type: ignore[method-assign]
+    await venetian.async_set_travel_time(travel_time=40.0)
+    await venetian.async_open_cover()
+    _, ven_open_w = gateway.deliveries[-1]
+    ven_open_w.set_result(clock.now)
+    await _yield()
+    assert venetian._stop_task is not None
+    await venetian.async_reset_travel_time()
+    assert venetian._stop_task is None
+    assert venetian._travel_for(True) == 0.0
+    clock.now += 2.0  # past ECHO_WINDOW of ven_open_w
+
+    # Setting travel_time while already moving without _stop_task arms _wall_settle_unsub immediately!
+    await venetian.async_set_travel_time(travel_time=40.0)
+    assert venetian._wall_settle_unsub is not None
+    venetian.handle_event(OWNEvent.parse("*2*0*31##"))
+
+    t_ven = dt_util.utcnow()
+    venetian.handle_event(OWNEvent.parse("*2*1*31##"))
+    assert venetian._wall_settle_unsub is not None
+    await venetian.async_reset_travel_time()
+    assert venetian._wall_settle_unsub is None
+    clock.now += 45.0
+    async_fire_time_changed(hass, t_ven + timedelta(seconds=45.0))
+    await hass.async_block_till_done()
+    assert venetian.current_cover_position is None
+    venetian.handle_event(OWNEvent.parse("*2*0*31##"))
+
+    # Direct zero-travel completion guards on VenetianTiltStrategy (assumed_state is False).
+    await venetian.async_set_travel_time(travel_time=40.0)
+    release_ven_settle = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release_ven_settle)):
+        try:
+            await venetian.async_open_cover()
+            _, ven_w2 = gateway.deliveries[-1]
+            ven_w2.set_result(clock.now)
+            await _yield()
+            ven_task = venetian._stop_task
+            assert ven_task is not None
+            venetian._travel_time_up = 0.0
+        finally:
+            release_ven_settle.set()
+        await asyncio.wait_for(ven_task, 1.0)
+    assert venetian.current_cover_position is None
+    clock.now += 2.0
+    venetian.handle_event(OWNEvent.parse("*2*0*31##"))
+
+    await venetian.async_set_travel_time(travel_time=40.0)
+    t_ven2 = dt_util.utcnow()
+    venetian.handle_event(OWNEvent.parse("*2*1*31##"))
+    venetian._travel_time_up = 0.0
+    clock.now += 45.0
+    async_fire_time_changed(hass, t_ven2 + timedelta(seconds=45.0))
+    await hass.async_block_till_done()
+    assert venetian.current_cover_position is None
+    venetian.handle_event(OWNEvent.parse("*2*0*31##"))
+
+    # Active slat tilt pulse on Venetian cover is NOT cancelled when resetting travel_time to 0.
+    venetian._attr_current_cover_position = venetian._start_position = 0
+    venetian._attr_current_cover_tilt_position = 0
+    release_ven_tilt = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release_ven_tilt)):
+        await venetian.async_set_travel_time(travel_time=40.0)
+        await venetian.async_open_cover_tilt()
+        _, ven_tilt_w = gateway.deliveries[-1]
+        ven_tilt_w.set_result(clock.now)
+        await _yield()
+        assert venetian._is_tilting is True and venetian._stop_task is not None
+        await venetian.async_reset_travel_time()
+        assert venetian._is_tilting is True and venetian._stop_task is not None
+        await venetian.async_stop_cover_tilt()
+        _, ven_stop_w = gateway.deliveries[-1]
+        ven_stop_w.set_result(clock.now)
+        await _yield()
+        release_ven_tilt.set()
+
+    # 5. Mid-wall-run async_set_travel_time / async_reset_travel_time re-arms _wall_settle_unsub
+    # for remaining travel + END_SETTLE_MARGIN (subtracting elapsed motor time).
+    timed = _make_cover(hass, gateway, where="41", name="Timed Rearm", travel_time=80.0, position=0)
+    timed._device_config = lambda: {CONF_TRAVEL_TIME: 50}  # type: ignore[method-assign]
+    timed.handle_event(OWNEvent.parse("*2*1*41##"))  # armed for 82 s
+    clock.now += 10.0
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10.0))
+    await hass.async_block_till_done()
+    await timed.async_set_travel_time(travel_time=20.0)  # remaining: 20 + 2 - 10 = 12 s
+    t_rearm = dt_util.utcnow()
+    clock.now += 11.0
+    async_fire_time_changed(hass, t_rearm + timedelta(seconds=11.0))
+    await hass.async_block_till_done()
+    assert timed.is_opening is True  # 1.0 s still remaining before 22 s total
+    clock.now += 1.5
+    async_fire_time_changed(hass, t_rearm + timedelta(seconds=12.5))
+    await hass.async_block_till_done()
+    assert timed.is_opening is False and timed.current_cover_position == 100
+
+    timed.handle_event(OWNEvent.parse("*2*2*41##"))  # armed for 22 s
+    clock.now += 5.0
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5.0))
+    await hass.async_block_till_done()
+    await timed.async_reset_travel_time()  # resets to YAML 50 s -> remaining: 50 + 2 - 5 = 47 s
+    t_reset = dt_util.utcnow()
+    clock.now += 20.0
+    async_fire_time_changed(hass, t_reset + timedelta(seconds=20.0))
+    await hass.async_block_till_done()
+    assert timed.is_closing is True  # past old 22 s timer!
+    clock.now += 27.5
+    async_fire_time_changed(hass, t_reset + timedelta(seconds=47.5))
+    await hass.async_block_till_done()
+    assert timed.is_closing is False and timed.current_cover_position == 0
+
+    # 6. Failed stop_written Future restores _settled_stopwatch so the real stop still records last_run_seconds.
+    uncal = _make_cover(hass, gateway, where="51", name="Uncal Stopwatch", travel_time=25.0, position=0)
+    t_sw = clock.now
+    uncal.handle_event(OWNEvent.parse("*2*1*51##"))
+    t_uncal = dt_util.utcnow()
+    clock.now = t_sw + 25.0 + END_SETTLE_MARGIN + 0.1
+    async_fire_time_changed(hass, t_uncal + timedelta(seconds=27.1))
+    await hass.async_block_till_done()
+    assert uncal._settled_stopwatch is not None
+
+    await uncal.async_stop_cover()
+    _, failed_stop_w = gateway.deliveries[-1]
+    assert uncal._settled_stopwatch is None  # temporarily popped into _pending_stop_context
+    failed_stop_w.set_exception(HomeAssistantError("bus write failed"))
+    await _yield()
+    assert uncal._settled_stopwatch == (t_sw, "open")
+
+    clock.now = t_sw + 86.0
+    uncal.handle_event(OWNEvent.parse("*2*0*51##"))
+    assert uncal.extra_state_attributes["last_run_seconds"] == pytest.approx(86.0, abs=0.02)
