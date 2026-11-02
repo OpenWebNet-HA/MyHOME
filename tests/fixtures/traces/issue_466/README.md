@@ -895,3 +895,46 @@ Verbatim `<myhome-bus-card>` sweep + live burglar-alarm capture contributed by *
 3. **Physical `3486` Disarming via Transponder & Courtesy Light Broadcast Resync (`frames[106..155]`, `18:57:44.444Z -> 18:57:58.208Z`)**:
    - **Disarming Burst (`frames[106..120]`)**: `*5*2*0##` (*deactivation*) -> `*5*1*0##` (*activation* — operational status, **not** armed) -> **`*5*9*0##` (*disengage* -> `disarmed`)** -> `*5*18*#5..#8##` -> repeated `*5*1*0## -> *5*9*0##` -> **`*1*17*3##` (Area `3` 15-minute timed courtesy light `ON`)** -> `*5*11*#1..#4##` -> `*5*5*##`.
    - **Queued Broadcast Resync (`frames[124..155]`)**: Once the `36` `WHO 18` sweep queries finish draining at `frames[123]`, MyHOME drains the `8` populated-area polls `*#1*2## .. *#1*9##` queued by `*1*0*0##` (skipping unpopulated Area `1`) plus the targeted `*#1*3##` poll queued by `*1*17*3##` (`5 + 4 + 36 + 8 + 1 = 54 tx` frames total), reconciling `light.light_31` to `ON` (`*1*1*31##` at `frames[130]` & `frames[155]`) while all other `15` lights confirm `OFF`.
+
+---
+
+# #819 BTicino MH200N (FW 1.1.8) + 3550 Central Unit Bus Sweep & WHO 4 Diagnostic Trace (`*#4*#0##`, `*4*20*#0##` Remote Control Disabled, `*4*31*#0##` Battery KO & Rejected Override)
+
+Verbatim `<myhome-bus-card>` sweep + targeted `WHO 4` diagnostic capture contributed by **@wave68runner** on [Discussion #819 (comment 19348637)](https://github.com/orgs/OpenWebNet-HA/discussions/819#discussioncomment-19348637) (`Home Assistant 2026.9.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino MH200N** firmware `1.1.8` + **BTicino 3550** 99-zone thermoregulation central unit).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH200N (`FW 1.1.8`, Linux kernel `2.3.8`, distribution `3.0.1`, `WHO 13` device type `44`, `MH200NProfile`, `queue_pacing = 0.15 s`)
+- **Thermoregulation Hardware**: BTicino 3550 99-zone central unit (`WHERE = #0`), `F430/4` heating actuator (`Zone 0` boiler + `Zone 1` living room connected; `Zones 1..5` configured on the `3550` with `+3/-3 °C` local adjustment-knob probes)
+- **Additional Subsystems**: 39 `WHO 1` lighting/dimmer endpoints (`11, 14, 41` dimmers + `52` relay `ON`; `35` endpoints `OFF`, including 4-digit SCS/ZigBee addresses `0011, 0510, 0512, 0513, 0514` and `WHO 1001` autodiagnostic mask on `72`) + dual-dialect `WHO 16` / `WHO 22` multi-room audio (`3` stereo sources `101..103`, `5` amplifier zones `11, 12, 21, 31, 41`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH200N_all_2026-11-02T12-53-15.json` | Bus Card Sweep Export (148 frames in buffer: `14 tx / 134 rx`, unfiltered, `truncated: false`, lifetime `total_tx: 14 / total_rx: 135`, `SHA-256: f68477c7fc90627fd63f5ce01f6435f76469dd2fe5324bac89ee5ff3ce3a9661`) | Unfiltered `myhome.sweep_bus` capture on `MH200N` (`FW 1.1.8`: `WHO 13`, dual `39`-light + `WHO 1001` bursts on `*#1*0##` and `*#2*0##`, `0` replies on `*#4*0##`, `16` `WHO 16`/`WHO 22` audio frames on `*#16*0*5##`) followed by the 5-step `3550` diagnostic sequence (`*#4*#0##`, `*#4*1##`, `*#4*1*13##`, `*#4*#1*#14*0210*1##`, `*4*311*#1##`). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway `WHO 13` Identification, Dual `39`-Light + `WHO 1001` Bursts, Silent `*#4*0##` & Dual-Dialect Audio (`frames[0..111]`)**:
+   - **`WHO 13` Metadata (`frames[0..9]`, `12:51:27.358Z -> 12:51:28.015Z`)**: `*#13**0## -> *#13**0*13*51*26*001##` (`UTC+1`), `*#13**15## -> *#13**15*44##` (`MH200N`), `*#13**16## -> *#13**16*1*1*8##` (`1.1.8`), `*#13**23## -> *#13**23*2*3*8##` (`2.3.8`), and `*#13**24## -> *#13**24*3*0*1##` (`3.0.1`), plus `4` periodic `~30.0 s` `*#13**22*...##` full date/time broadcasts (`frames[73, 111, 137, 145]`).
+   - **Dual `WHO 1` + `WHO 1001` Bursts (`frames[10..50]` & `frames[51..92]`)**: Both `*#1*0##` and `*#2*0##` return the identical **39 `WHO 1` lighting endpoints** (`11` at `WHAT 9`, `14` at `WHAT 8`, `41` at `WHAT 7`, `52` at `WHAT 1`, and `35` `OFF` endpoints including `0011, 0510, 0512, 0513, 0514`) plus `WHO 1001` autodiagnostic mask `*#1001*72*11*111011111111111101101101##` (`frames[33]` and `frames[75]`).
+   - **Unanswered `*#4*0##` on `3550` Plant (`frames[93]`, `12:51:35.853Z`)**: Although `MH200N` forwards `*#4*0##` onto the SCS bus (`$0499003000 / 12 / 0E / 0D` in `own-firmware-oracle`), zero `WHO 4` frames arrive during the `1.334 s` window before `*#16*0*5##`, proving that `*#4*0##` does not elicit `#0` central-unit status on a `3550` plant.
+   - **Dual-Dialect Sound System Inventory (`frames[94..110]`, `12:51:37.187Z -> 12:51:38.902Z`)**: `[tx] *#16*0*5##` elicits `16` paired `WHO 16` + `WHO 22` frames (`8` pairs: amplifier zones `31, 12, 11, 21, 41` `OFF`, active source `101` `*16*3*101##` / `*#22*2#1*12*1*4##`, and inactive sources `103` & `102`).
+
+2. **Central Unit `#0` Status & Diagnostic Flags (`frames[112..127]`, `12:52:05.676Z -> 12:52:12.130Z`)**:
+   - Querying `[tx] *#4*#0##` (`frames[112]`) is answered by the `3550` in `113.8 ms` with its 5-frame `#0` status header (`frames[113..117]`):
+     - `*4*1101*#0##`: Heating Weekly Program `1` (`mode = heat`, `season = heating`, `program = 1`).
+     - **`*4*20*#0##` (`WHAT 20`, `ownkb:claim:c003320`)**: **Remote Control Disabled (*Telegestione* = OFF)** on the `3550`.
+     - **`*4*30*#0##` (`WHAT 30`, `ownkb:claim:c003325`)**: **Failure Discovered** on the thermoregulation plant.
+     - **`*4*31*#0##` (`WHAT 31`, `ownkb:claim:c003326`)**: **Central-Unit Battery Fault (`KO`)** on the `3550`.
+     - **`*4*22*#0##` (`WHAT 22`, `ownkb:claim:c003322`)**: **At least one probe OFF**.
+   - Immediately after `#0` status (`+485.7 ms`), the `3550` broadcasts `10` automatic-heating zone mode frames across all 5 programmed zones (`#1..#5`: `*4*111*#4##`, `*4*111*#1##`, `*4*111*#4##`, `*4*111*#2##`, `*4*111*#1##`, `*4*111*#2##`, `*4*111*#5##`, `*4*111*#3##`, `*4*111*#4##`, `*4*111*#5##`).
+
+3. **Zone `1` Status Expansion (`*#4*1##` & `*#4*1*13##`) and Rejected Remote Setpoint Override (`frames[128..147]`)**:
+   - **`[tx] *#4*1##` (`frames[128..136]`, `12:52:19.059Z -> 12:52:20.736Z`)**: Returns `*#4*1*0*0199##` (`19.9 °C` ambient), `*#4*1*12*0170*3##` (`17.0 °C` effective setpoint after knob offset), `*4*1*1##` (heating season), `*#4*1*14*0160*3##` (`16.0 °C` nominal program setpoint), `*#4*1*13*01##` (`+1 °C` local knob offset), and `*4*111*#1##` (`Automatic Heating`).
+   - **`[tx] *#4*1*13##` (`frames[138..142]`, `12:52:33.056Z -> 12:52:33.810Z`)**: Answers `*#4*1*13*01##` in `85.5 ms`, followed by `*4*111*#1##`, `*#4*1*12*0170*3##`, and `*4*1*1##`.
+   - **`[tx] *#4*#1*#14*0210*1##` (`frames[143..144]`, `12:52:47.109Z -> 12:52:47.222Z`)**: Manual heating override to `21.0 °C` on `#1` is **immediately rejected** (`+113.2 ms`) by the `3550` with `[rx] *4*111*#1##` (remaining in `Automatic Heating` at `16.0 °C` / `17.0 °C` effective) because `*4*20*#0##` (*Remote Control Disabled*) is active on the `3550`.
+   - **`[tx] *4*311*#1##` (`frames[146..147]`, `12:53:03.795Z -> 12:53:03.921Z`)**: Returns `[rx] *4*111*#1##` (`+126.0 ms`).
+
