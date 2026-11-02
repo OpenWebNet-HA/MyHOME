@@ -555,8 +555,11 @@
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"
     },
-    "calibration_implausible_run": {
-      "message": "{name} : course {direction} invraisemblable de {seconds} s ; non enregistrée"
+    "calibration_implausible_run_down": {
+      "message": "{name} : course de fermeture invraisemblable de {seconds} s ; non enregistrée"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name} : course d'ouverture invraisemblable de {seconds} s ; non enregistrée"
     },
     "travel_time_missing": {
       "message": "Au moins travel_time, travel_time_down/up ou min_motor_pulse doit être indiqué"

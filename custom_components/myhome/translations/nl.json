@@ -555,8 +555,11 @@
     "calibration_in_progress": {
       "message": "{name} wordt al gekalibreerd"
     },
-    "calibration_implausible_run": {
-      "message": "{name}: onwaarschijnlijke {direction}-loop van {seconds} s; niet opgeslagen"
+    "calibration_implausible_run_down": {
+      "message": "{name}: onwaarschijnlijke sluitloop van {seconds} s; niet opgeslagen"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name}: onwaarschijnlijke openingsloop van {seconds} s; niet opgeslagen"
     },
     "travel_time_missing": {
       "message": "Geef ten minste travel_time, travel_time_down/up of min_motor_pulse op"

@@ -55,7 +55,7 @@ from .access_policy import (
 from .const import (
     BUS_ROUTING,
     CALIBRATION_CUTOFF_EARLY,
-    CALIBRATION_CUTOFF_LATE,
+    CALIBRATION_CUTOFF_LATE_PER_MIN,
     CALIBRATION_CUTOFFS,
     CALIBRATION_MAX_MOTOR_PULSE,
     CALIBRATION_MAX_RUN,
@@ -188,7 +188,8 @@ def _is_standard_timed_shutter_model(model: str | None) -> bool:
 def _actuator_cutoff(seconds: float) -> float | None:
     """Return the actuator run-time limit a calibration run of ``seconds`` ended at, if any."""
     for limit in CALIBRATION_CUTOFFS:
-        if limit - CALIBRATION_CUTOFF_EARLY <= seconds <= limit + CALIBRATION_CUTOFF_LATE:
+        late = (limit / 60.0) * CALIBRATION_CUTOFF_LATE_PER_MIN
+        if limit - CALIBRATION_CUTOFF_EARLY <= seconds <= limit + late:
             return limit
     return None
 
@@ -1255,11 +1256,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
                 msg = f"{self._display_name}: implausible {label} run of {value:.1f} s; not stored"
                 self._fire_calibration_event("failed", error=msg)
+                placeholders = {"name": self._display_name, "seconds": f"{value:.1f}"}
+                if label == "down":
+                    raise HomeAssistantError(
+                        msg,
+                        translation_domain=DOMAIN,
+                        translation_key="calibration_implausible_run_down",
+                        translation_placeholders=placeholders,
+                    )
                 raise HomeAssistantError(
                     msg,
                     translation_domain=DOMAIN,
-                    translation_key="calibration_implausible_run",
-                    translation_placeholders={"name": self._display_name, "direction": label, "seconds": f"{value:.1f}"},
+                    translation_key="calibration_implausible_run_up",
+                    translation_placeholders=placeholders,
                 )
 
         self._promote_to_timed_strategy()

@@ -619,8 +619,11 @@
     "calibration_in_progress": {
       "message": "{name} is already being calibrated"
     },
-    "calibration_implausible_run": {
-      "message": "{name}: implausible {direction} run of {seconds} s; not stored"
+    "calibration_implausible_run_down": {
+      "message": "{name}: implausible down run of {seconds} s; not stored"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name}: implausible up run of {seconds} s; not stored"
     },
     "travel_time_missing": {
       "message": "At least travel_time, travel_time_down/up, or min_motor_pulse must be specified"

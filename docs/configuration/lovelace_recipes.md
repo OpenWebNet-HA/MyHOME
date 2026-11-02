@@ -476,7 +476,7 @@ cards:
 
 ## 🪟 Recipe 6: Shutter Travel-Time Workbench (stock cards only)
 
-Timed covers measure **every** run they make: after any open or close that you stop by hand, the cover exposes `last_run_seconds` and `last_run_direction` as entity attributes (see [Covers → Method 3](covers.md#method-3-set-explicit-travel-time-via-service-action)). This recipe puts those attributes, the stored travel times and a one-click **Save** on the dashboard, using only built-in cards — the natural tool for actuators with the factory 60 s cutoff or for MH200 / MH200N gateways, where on-bus calibration is refused.
+Timed covers measure **every** run they make: after any open or close that you stop by hand, the cover exposes `last_run_seconds` and `last_run_direction` as entity attributes (see [Covers → Method 3](covers.md#method-3-set-explicit-travel-time-via-service-action)). This recipe puts those attributes, the stored travel times and a one-click **Save** on the dashboard, using only built-in cards — the natural tool for actuators at a configurator run-time cutoff (60 s, 120 s, …), where on-bus calibration is refused, or for MH200 / MH200N gateways.
 
 Add a small script to `scripts.yaml` once (it saves the last run into the matching direction and keeps the other one):
 
