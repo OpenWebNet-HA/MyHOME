@@ -625,6 +625,19 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
     z1.async_write_ha_state = MagicMock()
 
     # Probe WHERE with leading '#' (#105) must not mark the plant as having a central unit
+    # via either GatewayEventDispatcher.process_message or MyHOMEClimate.handle_event
+    from custom_components.myhome.gateway_events import GatewayEventDispatcher
+
+    gateway.hass = hass
+    gateway.host = "192.168.1.35"
+    gateway.generate_events = False
+    gateway._correlate_shared_bus_traffic = MagicMock()
+    gateway._bridge_to_primary = MagicMock()
+    gateway.health_owner = MagicMock(return_value=None)
+    dispatcher = GatewayEventDispatcher(gateway)
+
+    await dispatcher.process_message(OWNHeatingEvent("*#4*#105*0*0210##"))
+    assert gateway.has_central_unit is False
     z1.handle_event(OWNHeatingEvent("*#4*#105*0*0210##"))
     assert gateway.has_central_unit is False
 
@@ -635,6 +648,10 @@ async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
     z1.handle_event(OWNHeatingEvent("*#4*1*12*0170*3##"))
     assert z1.target_temperature == 17.0
     assert z1._target_temperature is None  # hvac_mode is still None
+
+    await dispatcher.process_message(OWNHeatingEvent("*4*111*#1##"))
+    assert gateway.has_central_unit is True
+    gateway.has_central_unit = False
 
     # Arrival of *4*111*#1## marks the plant as having a central unit, sets mode to HEAT,
     # and hydrates _target_temperature from _local_target_temperature - _local_offset

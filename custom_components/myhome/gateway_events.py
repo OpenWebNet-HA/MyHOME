@@ -45,7 +45,7 @@ from .const import (
     LOGGER,
 )
 from .topology import peer_handles_who
-from .where_grammar import where_param
+from .where_grammar import is_central_thermo_where, where_param
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -306,7 +306,7 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#"):
+                if isinstance(message, OWNHeatingEvent) and is_central_thermo_where(message):
                     self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
