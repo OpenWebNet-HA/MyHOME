@@ -96,6 +96,7 @@ __all__ = [
     "FM_MAX_KHZ",
     "FM_MIN_KHZ",
     "MyHOMESoundSource",
+    "parse_station_slot",
     "rds_text",
     "source_address",
     "supports_who22",
@@ -104,6 +105,24 @@ __all__ = [
     "who22_source_id",
     "who22_tuner_listener",
 ]
+
+
+def parse_station_slot(station: Any) -> int | None:
+    """Parse an integer preset slot, rejecting booleans and fractional floats."""
+    if isinstance(station, bool):
+        return None
+    if isinstance(station, int):
+        return station
+    if isinstance(station, float):
+        if not math.isfinite(station) or not station.is_integer():
+            return None
+        return int(station)
+    if isinstance(station, str):
+        try:
+            return int(station.strip())
+        except ValueError:
+            return None
+    return None
 
 
 def source_address(source: int) -> str:
@@ -384,8 +403,8 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
 
     async def async_select_station(self, station: int) -> None:
         """Switch to stored station ``station`` (1-15)."""
-        st = int(station)
-        if not 1 <= st <= TUNER_MAX_STATION_COUNT:
+        st = parse_station_slot(station)
+        if st is None or not 1 <= st <= TUNER_MAX_STATION_COUNT:
             raise HomeAssistantError(
                 f"{self.entity_id}: station {station} is outside the valid range (1-{TUNER_MAX_STATION_COUNT})",
                 translation_domain=DOMAIN,
@@ -420,8 +439,8 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         use_who22_only = self._uses_who22_commands()
         can_use_who22 = use_who22_only or supports_who22(self._gateway_handler)
         max_station = TUNER_MAX_STATION_COUNT if can_use_who22 else TUNER_STATION_COUNT
-        st = 0 if isinstance(station, bool) else int(station)
-        if not 1 <= st <= max_station:
+        st = parse_station_slot(station)
+        if st is None or not 1 <= st <= max_station:
             raise HomeAssistantError(
                 f"{self.entity_id}: station {station} is outside the valid range (1-{max_station})",
                 translation_domain=DOMAIN,
@@ -450,8 +469,14 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         Raises:
             HomeAssistantError: If the frequency is outside the FM band.
         """
-        val = float(frequency)
-        kilohertz = int(round(val * 1000)) if math.isfinite(val) else 0
+        if isinstance(frequency, bool):
+            kilohertz = 0
+        else:
+            try:
+                val = float(frequency)
+            except (TypeError, ValueError):
+                val = float("nan")
+            kilohertz = int(round(val * 1000)) if math.isfinite(val) else 0
         if not FM_MIN_KHZ <= kilohertz <= FM_MAX_KHZ:
             raise HomeAssistantError(
                 f"{self.entity_id}: {frequency} MHz is outside the FM band",

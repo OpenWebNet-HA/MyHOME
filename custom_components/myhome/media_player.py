@@ -137,7 +137,12 @@ from .media_player_power import (
     determine_power_transition,
 )
 from .media_player_routing import parse_routing_address, route_pseudo_zones, zone_environment
-from .sound_source import MyHOMESoundSource, source_address, who22_tuner_listener
+from .sound_source import (
+    MyHOMESoundSource,
+    parse_station_slot,
+    source_address,
+    who22_tuner_listener,
+)
 from .tuner_decode import parse_tuner_pictures
 
 PARALLEL_UPDATES = 0
@@ -261,17 +266,35 @@ async def async_setup_entry(
         platform.async_register_entity_service(
             SERVICE_TUNER_SET_FREQUENCY,
             cv.make_entity_service_schema(
-                {vol.Required("frequency"): vol.Coerce(float)}
+                {vol.Required("frequency"): _coerce_tuner_frequency}
             ),
             "async_set_frequency",
         )
         platform.async_register_entity_service(
             SERVICE_TUNER_STORE_STATION,
             cv.make_entity_service_schema(
-                {vol.Required("station"): vol.Coerce(int)}
+                {vol.Required("station"): _coerce_tuner_station}
             ),
             "async_store_station",
         )
+
+
+def _coerce_tuner_frequency(value: Any) -> float:
+    """Coerce a finite FM frequency in MHz, rejecting booleans and NaN/Inf."""
+    if isinstance(value, bool):
+        raise vol.Invalid("boolean is not a valid FM frequency")
+    freq = float(vol.Coerce(float)(value))
+    if not math.isfinite(freq):
+        raise vol.Invalid("expected finite FM frequency")
+    return freq
+
+
+def _coerce_tuner_station(value: Any) -> int:
+    """Coerce an integer preset slot, rejecting booleans and fractional floats."""
+    slot = parse_station_slot(value)
+    if slot is None:
+        raise vol.Invalid("expected whole-integer station number")
+    return slot
 
 
 def _is_source_where(where: str) -> bool:
