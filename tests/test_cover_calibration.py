@@ -926,9 +926,9 @@ async def test_run_ending_at_the_m1_cutoff_fails_at_once(hass, gateway, clock, f
     with pytest.raises(CalibrationCutoff, match="120 s run-time limit") as err:
         await asyncio.wait_for(task, 5)
     assert "the open run ended after 121.5 s" in str(err.value)
-    assert err.value.translation_key == "calibration_actuator_cutoff"
+    assert err.value.translation_key == "calibration_actuator_cutoff_open"
     assert err.value.translation_placeholders == {
-        "name": "Bedroom shutter", "direction": "open", "seconds": "121.5", "limit": "120",
+        "name": "Bedroom shutter", "seconds": "121.5", "limit": "120",
     }
 
     assert [f for f, _ in gateway.deliveries] == ["*2*1*21##"]  # no second and third run
@@ -938,6 +938,34 @@ async def test_run_ending_at_the_m1_cutoff_fails_at_once(hass, gateway, clock, f
     assert events[-1]["phase"] == "failed" and events[-1]["actuator_limit"] == 120.0
     failed = [f for f in get_last_calibration_trace(gateway.mac) if f.get("phase") == "failed"]
     assert failed[-1]["actuator_limit"] == 120.0
+
+
+async def test_close_run_ending_at_the_m1_cutoff_fails_without_third_run(hass, gateway, clock, fake_time, sleeps):
+    """#837: if the opening reference run ends early and the closing run hits M=1 (120 s), calibration aborts before the third run."""
+    cover = _make_cover(hass, gateway)
+    events = []
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.3, motor_delay=0.55, run=121.5)
+    with pytest.raises(CalibrationCutoff, match="120 s run-time limit") as err:
+        await asyncio.wait_for(task, 5)
+    assert "the close run ended after 121.5 s" in str(err.value)
+    assert err.value.translation_key == "calibration_actuator_cutoff_close"
+    assert err.value.translation_placeholders == {
+        "name": "Bedroom shutter", "seconds": "121.5", "limit": "120",
+    }
+
+    assert [f for f, _ in gateway.deliveries] == ["*2*1*21##", "*2*2*21##"]  # no third run
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+    await hass.async_block_till_done()
+    assert events[-1]["phase"] == "failed" and events[-1]["actuator_limit"] == 120.0
 
 
 @pytest.mark.parametrize(

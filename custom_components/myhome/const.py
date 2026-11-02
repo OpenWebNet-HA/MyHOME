@@ -195,8 +195,8 @@ CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay se
 # (#319). The F411/2 and F411/4 physical configurator M=0..3 sets 1/2/5/10 min and
 # MyHOME_Suite whole minutes from 2 to 10, so a 60-86 s shutter needs M=1 = 120 s
 # (#770, #837). A run that ends just after one of these limits measured the
-# actuator, not the shutter, and is refused. Limits past CALIBRATION_RUN_TIMEOUT
-# never end a run: such a run fails on the timeout first.
+# actuator, not the shutter, and is refused. Limits above CALIBRATION_RUN_TIMEOUT
+# (and a 3 min stop arriving after the 180 s wait) fail on the timeout first.
 CALIBRATION_CUTOFFS = tuple(60.0 * minutes for minutes in range(1, 11))
 CALIBRATION_CUTOFF_EARLY = 1.0   # s the stop status may precede a limit
 CALIBRATION_CUTOFF_LATE = 5.0    # s the stop status may follow a limit

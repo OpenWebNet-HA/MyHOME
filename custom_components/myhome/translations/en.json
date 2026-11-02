@@ -408,15 +408,15 @@
       "fields": {
         "travel_time": {
           "name": "Travel time",
-          "description": "Seconds for a full travel in both directions (1-180); used for whichever direction has no explicit value."
+          "description": "Seconds for a full travel in both directions (1-300); used for whichever direction has no explicit value."
         },
         "travel_time_down": {
           "name": "Travel time down",
-          "description": "Seconds for a full closing run (1-180)."
+          "description": "Seconds for a full closing run (1-300)."
         },
         "travel_time_up": {
           "name": "Travel time up",
-          "description": "Seconds for a full opening run (1-180)."
+          "description": "Seconds for a full opening run (1-300)."
         },
         "slat_time": {
           "name": "Slat time",
@@ -607,8 +607,11 @@
     "calibration_no_stop_status": {
       "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
     },
-    "calibration_actuator_cutoff": {
-      "message": "{name}: the {direction} run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+    "calibration_actuator_cutoff_open": {
+      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+    },
+    "calibration_actuator_cutoff_close": {
+      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
     },
     "cover_reports_position": {
       "message": "{name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml."

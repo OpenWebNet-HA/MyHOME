@@ -3267,6 +3267,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "CalibrationCutoff",
     "CalibrationInterrupted",
     "CoverCalibrationHub",
     "CoverFamily",
@@ -3279,6 +3280,7 @@ __all__ = [
     "MyHOMEImpulseCover",
     "MyHOMEScopeCover",
     "WRITE_TIMEOUT",
+    "_actuator_cutoff",
     "_calibration_lock",
     "_gateway_key",
     "_normalize_mac",
