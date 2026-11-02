@@ -25,6 +25,7 @@ Next / previous station     ``*16*6001*10S##`` / ``*16*6101*10S##``
 Seek up / down              ``*16*5000*10S##`` / ``*16*5100*10S##``
 Start / stop RDS reporting  ``*16*101*10S##`` / ``*16*102*10S##``
 Select stored station       ``*#16*10S*#7*<STATION>##``
+Memorise station (1–5)      ``*#16*10S*#10*<1..5>##``
 Set frequency               ``*#16*10S*#6*0*<KHZ>##``
 Frequency report            ``*#16*10S*6*0*<KHZ>##``
 Station report              ``*#16*10S*7*0*<STATION>##``
@@ -97,6 +98,7 @@ __all__ = [
     "MyHOMESoundSource",
     "rds_text",
     "source_address",
+    "supports_who22",
     "tuner_source",
     "uses_who22_commands",
     "who22_source_id",
@@ -107,6 +109,14 @@ __all__ = [
 def source_address(source: int) -> str:
     """Return the bus address of source device ``source`` (1-9)."""
     return str(100 + int(source))
+
+
+def supports_who22(gateway: Any) -> bool:
+    """Return True when the gateway profile advertises WHO=22 support."""
+    supports = getattr(gateway, "profile_supports_who", None)
+    if not callable(supports):
+        return False
+    return supports(22) is True
 
 
 def uses_who22_commands(gateway: Any) -> bool:
@@ -400,11 +410,20 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         self.async_schedule_update_ha_state()
 
     async def async_store_station(self, station: int) -> None:
-        """Memorise the currently tuned frequency into preset ``station`` (1-15)."""
-        st = int(station)
-        if not 1 <= st <= TUNER_MAX_STATION_COUNT:
+        """Memorise the currently tuned frequency into preset ``station``.
+
+        WHO=16 ``DIMENSION 10`` (``*#16*10S*#10*<N>##``) only accepts slots
+        1–5 in ``bt_difson`` (``ownkb:claim:c002128``); extended F500N slots
+        6–15 require WHO=22 ``WHAT 33#<N>`` (``*22*33#<N>*2#<S>##``), used on
+        WHO=22-only gateways and on dual-stack gateways for slots 6–15.
+        """
+        use_who22_only = self._uses_who22_commands()
+        can_use_who22 = use_who22_only or supports_who22(self._gateway_handler)
+        max_station = TUNER_MAX_STATION_COUNT if can_use_who22 else TUNER_STATION_COUNT
+        st = 0 if isinstance(station, bool) else int(station)
+        if not 1 <= st <= max_station:
             raise HomeAssistantError(
-                f"{self.entity_id}: station {station} is outside the valid range (1-{TUNER_MAX_STATION_COUNT})",
+                f"{self.entity_id}: station {station} is outside the valid range (1-{max_station})",
                 translation_domain=DOMAIN,
                 translation_key="unknown_station",
                 translation_placeholders={
@@ -413,10 +432,10 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
                 },
             )
         cmd: OWNSoundCommand | OWNSoundDiffusionCommand
-        if self._uses_who22_commands():
+        if use_who22_only or st > TUNER_STATION_COUNT:
             cmd = OWNSoundDiffusionCommand.store_preset(self._who22_addr(), st)
         else:
-            # Memorized-station write (DIMENSION 10); OWNd has no builder for it.
+            # Memorized-station write (DIMENSION 10, 1–5); OWNd has no builder for it.
             cmd = OWNSoundCommand(f"*#16*{self._where}*#10*{st}##")
         await self._gateway_handler.send(cmd)
         self._station = st
@@ -547,7 +566,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
 
         if dimension == 6 and values:
             self._set_frequency_from_bus(values[-1])
-        elif dimension in (7, 10) and values:
+        elif dimension == 7 and values:
             self._set_station_from_bus(values[-1])
         elif dimension == 8 and values:
             if len(values) == 8:

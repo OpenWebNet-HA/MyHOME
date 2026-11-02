@@ -284,7 +284,7 @@ device with four entities alongside the amplifier zones:
 | Source list | stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
 | Manual frequency (`number.<source>_frequency` / `myhome.tuner_set_frequency`) | `87.50–108.00 MHz` (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`) |
 | Seek up / down (`button` / `myhome.tuner_seek_up` & `tuner_seek_down`) | `*16*5000*10S##` / `*16*5100*10S##` (or `*22*5*2#S##` / `*22*6*2#S##`) |
-| Store preset (`myhome.tuner_store_station`) | `*#16*10S*#10*<N>##` (or `*22*33#<N>*2#S##`) |
+| Store preset (`myhome.tuner_store_station`) | `*#16*10S*#10*<1–5>##` (or `*22*33#<1–15>*2#S##` for slots `6`–`15` and `WHO 22`-only gateways) |
 | Media Browser (`BROWSE_MEDIA`) & `play_media` (`channel`) | `"1"`–`"15"` selects a station; anything else is read as MHz, so `"105.3"` tunes to `105.30 MHz` |
 | `media_title` | RDS text, reported as ASCII codes on `WHO 16` `DIMENSION 8` / `WHO 22` `DIMENSION 10` |
 | `frequency` attribute | `WHO 16` `DIMENSION 6` / `WHO 22` `DIMENSION 5` & `11`, in MHz |

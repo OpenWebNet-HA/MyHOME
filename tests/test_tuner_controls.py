@@ -98,25 +98,34 @@ async def test_tuner_store_station_and_browse_media(
 
     assert bool(tuner.supported_features & MediaPlayerEntityFeature.BROWSE_MEDIA)
 
-    # Store station 5 (WHO 16 *#16*101*#10*5##) and F500N preset 12 (expands station_count)
+    # Dual-stack gateway (WHO 16 + WHO 22): slots 1..5 use WHO 16 *#16*101*#10*<N>##,
+    # while extended F500N slots 6..15 delegate to WHO 22 *22*33#<N>*2#1## (bt_difson caps #10 at 5).
     await tuner.async_store_station(5)
     assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#10*5##"
     assert tuner.source == "Station 5"
     assert tuner.extra_state_attributes["station"] == 5
 
+    await tuner.async_store_station(6)
+    assert str(mock_gateway.send.call_args[0][0]) == "*22*33#6*2#1##"
+    assert tuner.source == "Station 6"
+
     await tuner.async_store_station(12)
-    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#10*12##"
+    assert str(mock_gateway.send.call_args[0][0]) == "*22*33#12*2#1##"
     assert len(tuner.source_list) == 12
     assert tuner.source == "Station 12"
 
-    # Out-of-range station raises HomeAssistantError
-    for bad in (0, 16, -1):
+    # Out-of-range or boolean station raises HomeAssistantError
+    mock_gateway.send.reset_mock()
+    for bad in (0, 16, -1, True, False):
         with pytest.raises(HomeAssistantError) as exc_info:
             await tuner.async_store_station(bad)
         assert exc_info.value.translation_key == "unknown_station"
+    mock_gateway.send.assert_not_called()
 
-    # Dimension 10 report from bus updates active station
-    tuner.handle_event(OWNSoundEvent("*#16*101*10*3##"))
+    # Dimension 7 report from bus updates active station; write-only Dimension 10 is ignored
+    tuner.handle_event(OWNSoundEvent("*#16*101*7*0*3##"))
+    assert tuner.source == "Station 3"
+    tuner.handle_event(OWNSoundEvent("*#16*101*10*4##"))
     assert tuner.source == "Station 3"
 
     # Browse media lists all 12 stations + 2 sorted picture frequencies
@@ -134,6 +143,54 @@ async def test_tuner_store_station_and_browse_media(
     assert browse.children[13].title == "105.30 MHz"
     assert browse.children[13].media_content_id == "105.30"
     assert browse.children[13].thumbnail == "/local/dimsoft.png"
+
+
+@pytest.mark.asyncio
+async def test_who16_only_gateway_caps_store_station_at_five(
+    hass: HomeAssistant, mock_gateway: MagicMock
+) -> None:
+    """WHO 16-only gateways (MH200, H4684 FW < 6.0) cap store_station at 1..5 without emitting NACKed frames."""
+    mock_gateway.profile_supports_who = lambda who: who == 16
+    tuner = MyHOMESoundSource(
+        hass=hass,
+        name="FM Radio",
+        device_id="101#16",
+        who="16",
+        where="101",
+        manufacturer="BTicino",
+        model="Audio Source",
+        gateway=mock_gateway,
+    )
+    tuner.hass = hass
+    tuner.entity_id = "media_player.fm_radio"
+    tuner.async_schedule_update_ha_state = MagicMock()
+    entry = MagicMock()
+    entry.data = {CONF_MAC: mock_gateway.mac}
+    entry.runtime_data = MyHOMERuntimeData(gateway=mock_gateway)
+    attach_platform(tuner, entry)
+
+    await tuner.async_store_station(1)
+    await tuner.async_store_station(5)
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*#16*101*#10*1##",
+        "*#16*101*#10*5##",
+    ]
+    assert tuner.source == "Station 5"
+
+    mock_gateway.send.reset_mock()
+    for bad in (0, -1, 6, 12, 15, 16, True, False):
+        with pytest.raises(HomeAssistantError) as exc_info:
+            await tuner.async_store_station(bad)
+        assert exc_info.value.translation_key == "unknown_station"
+        assert "(1-5)" in str(exc_info.value)
+    mock_gateway.send.assert_not_called()
+
+    # Also verify non-callable profile_supports_who defaults safely to the 1..5 WHO 16 ceiling
+    mock_gateway.profile_supports_who = None
+    with pytest.raises(HomeAssistantError) as exc_unprofiled:
+        await tuner.async_store_station(6)
+    assert exc_unprofiled.value.translation_key == "unknown_station"
+    mock_gateway.send.assert_not_called()
 
 
 @pytest.mark.asyncio

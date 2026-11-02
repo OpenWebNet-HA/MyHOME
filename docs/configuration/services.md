@@ -367,13 +367,13 @@ data:
 
 ## 17. `myhome.tuner_store_station`
 
-Memorises the currently tuned FM radio frequency into a hardware preset slot (`1–5` on F500, up to `1–15` on F500N), dispatching `*#16*10S*#10*<station>##` on `WHO 16` gateways or `*22*33#<station>*2#S##` on `WHO 22`-only gateways.
+Memorises the currently tuned FM radio frequency into a hardware preset slot (`1–5` on F500, up to `1–15` on F500N), dispatching `*#16*10S*#10*<station>##` for slots `1–5` on `WHO 16` gateways (`bt_difson` ceiling) and `*22*33#<station>*2#S##` for extended slots `6–15` on dual-stack gateways or all slots `1–15` on `WHO 22`-only gateways (`WHO 16`-only gateways such as `MH200` reject slots `6–15`).
 
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
 | `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
-| `station` | integer | **Yes** | Preset memory slot number (`1`–`15`). | `5` |
+| `station` | integer | **Yes** | Preset memory slot number (`1`–`5` on `WHO 16`-only gateways, `1`–`15` when `WHO 22` is available). | `5` |
 
 ### Example YAML Call
 ```yaml
