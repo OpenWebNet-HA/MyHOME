@@ -1574,3 +1574,247 @@ async def test_settles_on_timer_flag_and_calibration_hub_stop_restoration(
     assert stopped == 1
     assert cover._settles_on_timer is True
 
+
+async def test_memberless_scope_cover_recomputes_timeout_and_set_position_without_conflict(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Memberless MyHOMEScopeCover recomputes _run_timeout on travel_time changes and avoids _stop_task conflict."""
+    family = CoverFamily()
+    scope = _make_scope(hass, gateway, "#7", [], family=family)
+    scope._added = True
+    t0 = dt_util.utcnow()
+
+    # Idle travel-time update leaves _run_timeout unset.
+    await scope.async_set_travel_time(travel_time=25.0)
+    assert scope._run_timeout is None
+
+    # 1. Mid-run lengthening (25 s -> 86 s at t+10 s): does NOT fire at 25 s; settles at 86 s.
+    await scope.async_close_cover()
+    _, w1 = gateway.deliveries[-1]
+    w1.set_result(clock.now)
+    await _yield()
+    scope.handle_event(OWNEvent.parse("*2*2*#7##"))
+    assert scope._run_timeout is not None
+
+    clock.now += 10.0
+    async_fire_time_changed(hass, t0 + timedelta(seconds=10))
+    await hass.async_block_till_done()
+    await scope.async_set_travel_time(travel_time=86.0)
+
+    clock.now += 16.0  # t + 26 s: past old 25 s timer, still 60 s remaining on 86 s run
+    async_fire_time_changed(hass, t0 + timedelta(seconds=26))
+    await hass.async_block_till_done()
+    assert scope.is_closing is True
+    assert scope.current_cover_position is None
+
+    clock.now += 60.5  # t + 86.5 s: reaches 86 s travel time
+    async_fire_time_changed(hass, t0 + timedelta(seconds=86.5))
+    await hass.async_block_till_done()
+    assert scope.is_closing is False
+    assert scope.is_closed is True
+    assert scope.current_cover_position == 0
+    assert scope.extra_state_attributes["last_run_seconds"] == pytest.approx(86.5)
+
+    # 2. Mid-run shortening below elapsed (86 s -> 15 s at t+30 s): settles immediately!
+    t1 = t0 + timedelta(seconds=90)
+    scope.handle_event(OWNEvent.parse("*2*1*#7##"))
+    assert scope.is_opening is True and scope._run_timeout is not None
+    clock.now += 30.0
+    await scope.async_set_travel_time(travel_time=15.0)
+    async_fire_time_changed(hass, t1 + timedelta(seconds=30.1))
+    await hass.async_block_till_done()
+    assert scope.is_opening is False
+    assert scope.current_cover_position == 100
+
+    # 3. set_cover_position(0) uses _settle_run_to_end without a competing _run_timeout.
+    sleep_delays: list[float] = []
+    step_events: list[asyncio.Event] = []
+
+    async def _stepped_sleep(delay: float, *args, **kwargs) -> None:
+        if delay <= 0:
+            await _REAL_SLEEP(0)
+            return
+        sleep_delays.append(delay)
+        ev = asyncio.Event()
+        step_events.append(ev)
+        await ev.wait()
+
+    await scope.async_set_travel_time(travel_time=25.0)
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_stepped_sleep):
+        await scope.async_set_cover_position(position=0)
+        assert scope._run_timeout is None
+        _, w2 = gateway.deliveries[-1]
+        w2.set_result(clock.now)
+        await _yield()
+        scope.handle_event(OWNEvent.parse("*2*2*#7##"))
+        assert scope._run_timeout is None  # _watch_run skips arming while _stop_task is active!
+        await _yield(6)
+        assert sleep_delays[-1] == pytest.approx(27.0)
+
+        clock.now += 10.0
+        await scope.async_set_travel_time(travel_time=86.0)
+        await _yield(8)
+        assert scope.is_closing is True
+        assert sleep_delays[-1] == pytest.approx(78.0)
+
+        clock.now += 78.0
+        step_events[-1].set()
+        assert scope._stop_task is not None
+        await asyncio.wait_for(scope._stop_task, 1.0)
+    assert scope.is_closing is False and scope.current_cover_position == 0
+
+    # 4. Resetting to 0 s (simple strategy) cancels _run_timeout and assumed_state never invents a % position.
+    scope._device_config = lambda: {CONF_TRAVEL_TIME: 0}  # type: ignore[method-assign]
+    scope.handle_event(OWNEvent.parse("*2*1*#7##"))
+    assert scope._run_timeout is not None
+    await scope.async_reset_travel_time()
+    assert scope._strategy.assumed_state is True
+    assert scope._run_timeout is None
+    scope._attr_current_cover_position = None
+    scope._attr_is_closing = True
+    scope._attr_is_opening = False
+    scope._run_timeout_direction = "close"
+    scope._end_run(None)
+    assert scope.current_cover_position is None
+    assert scope.is_closed is True
+
+    # 5. Lowering _settles_on_timer or dynamically adding a member cancels _run_timeout.
+    await scope.async_set_travel_time(travel_time=30.0)
+    scope.handle_event(OWNEvent.parse("*2*1*#7##"))
+    assert scope._run_timeout is not None
+    scope._settles_on_timer = False
+    assert scope._run_timeout is None
+    scope._settles_on_timer = True
+    scope.handle_event(OWNEvent.parse("*2*0*#7##"))
+
+    scope.scope = CoverScope.of("#7", members=["71"])
+    scope.handle_event(OWNEvent.parse("*2*1*#7##"))
+    assert scope._run_timeout is not None
+    member = _make_cover(hass, gateway, where="71", name="Member 71", travel_time=30.0, position=50)
+    family.add(member)
+    family.membership_changed()
+    assert scope._run_timeout is None
+
+
+async def test_queued_stop_write_ignores_mid_flight_travel_time_recompute(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Travel-time updates while an outgoing stop write is queued do not arm _wall_settle_unsub."""
+    cover = _make_cover(hass, gateway, where="21", name="Stop Queue Race", travel_time=40.0, position=0)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        await cover.async_open_cover()
+        _, up_written = gateway.deliveries[-1]
+        up_written.set_result(clock.now)
+        await _yield()
+        cover.handle_event(OWNEvent.parse("*2*1*21##"))
+        await _yield(4)
+
+        # At t+20 s (50%), queue stop_cover(); stop_written has NOT resolved yet.
+        clock.now += 20.0
+        await cover.async_stop_cover()
+        _, stop_written = gateway.deliveries[-1]
+        assert not stop_written.done()
+        assert cover._pending_cmd == "stop"
+        assert cover.is_opening is True
+        release.set()
+        await _yield(4)
+
+        # Updating travel_time while stop_written is pending must NOT arm _wall_settle_unsub
+        # (even if new travel_time + END_SETTLE_MARGIN <= elapsed).
+        await cover.async_set_travel_time(travel_time=15.0)
+        assert cover._wall_settle_unsub is None
+        assert cover._pending_stop_context is not None
+
+        # Restore 40 s and resolve stop_written at t+20 s -> freezes cleanly at 50% with 20.0 s run.
+        await cover.async_set_travel_time(travel_time=40.0)
+        assert cover._wall_settle_unsub is None
+        stop_written.set_result(clock.now)
+        await _yield()
+
+    assert cover.is_opening is False
+    assert cover.current_cover_position == 50
+    assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(20.0)
+
+
+async def test_ha_stop_without_stop_translation_closes_echo_window_on_direction_translation(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Direction translation (*2*1000#1/#2*) closes an HA stop echo window even without prior *2*1000#0*."""
+    cover = _make_cover(hass, gateway, where="21", name="F454 Stop Then Move", travel_time=20.0, position=100)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        await cover.async_close_cover()
+        _, down_written = gateway.deliveries[-1]
+        down_written.set_result(clock.now)
+        await _yield()
+        cover.handle_event(OWNEvent.parse("*2*2*21##"))
+        await _yield(4)
+
+        clock.now += 10.0
+        await cover.async_stop_cover()
+        _, stop_written = gateway.deliveries[-1]
+        stop_written.set_result(clock.now)
+        await _yield()
+        release.set()
+
+    # Frozen at 50% (10.0 s); gateway did not emit *2*1000#0*21## (_stop_translation_seen is False).
+    assert cover.current_cover_position == 50
+    assert cover._pending_cmd == "stop"
+    assert cover._stop_translation_seen is False
+    assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(10.0)
+
+    # 0.8 s later (inside 1.5 s ECHO_WINDOW), an external press starts opening on F454:
+    # *2*1000#1*21## arrives 4 ms BEFORE the pre-direction *2*0*21##!
+    clock.now += 0.8
+    cover.handle_event(OWNEvent.parse("*2*1000#1*21##"))
+    assert cover._pending_cmd is None
+
+    # Pre-direction *2*0*21## 4 ms later must NOT re-anchor the stopped position to 46% or 10.8 s!
+    clock.now += 0.004
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    assert cover.current_cover_position == 50
+    assert cover.extra_state_attributes["last_run_seconds"] == pytest.approx(10.0)
+
+    clock.now += 0.02
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))
+    assert cover.is_opening is True
+    assert cover._start_position == 50
+
+
+async def test_direct_calibration_run_error_restores_settles_on_timer_and_routed_general_stop_delay(
+    hass: HomeAssistant, gateway, clock: Clock, fake_time
+) -> None:
+    """Direct _calibration_run errors restore _settles_on_timer, and routed general + MOTOR_STOP_DELAY behave consistently."""
+    # 1. Direct _calibration_run raising HomeAssistantError (60 s cutoff) while _calibrating=True restores _settles_on_timer.
+    cover = _make_cover(hass, gateway, where="21", name="Direct Calib", travel_time=25.0, position=0)
+    cover._calibrating = True
+    run_task = asyncio.create_task(cover._calibration_run("open"))
+    await _yield()
+    _, up_written = gateway.deliveries[-1]
+    up_written.set_result(clock.now)
+    await _yield()
+    cover.handle_event(OWNEvent.parse("*2*1*21##"))
+    await _yield(4)
+    assert cover._settles_on_timer is False
+    clock.now += 60.5  # inside CALIBRATION_CUTOFF_MIN..MAX -> raises HomeAssistantError
+    cover.handle_event(OWNEvent.parse("*2*0*21##"))
+    with pytest.raises(HomeAssistantError, match="run-time limit"):
+        await asyncio.wait_for(run_task, 1.0)
+    assert cover._settles_on_timer is True
+    cover._calibrating = False
+
+    # 2. _format_where_and_scope treats raw_where="0" with interface="02" as general even if is_general is False.
+    mock_routed = MagicMock(interface="02", is_general=False, is_area=False, is_group=False)
+    assert MyHOMECover._format_where_and_scope("0", mock_routed) == ("0#4#02", True)
+
+    # 3. External *2*1000#0* applies MOTOR_STOP_DELAY on provisional freeze, matching _track_write / _handle_echo.
+    timed = _make_cover(hass, gateway, where="22", name="Delay Check", travel_time=10.0, position=0)
+    timed.handle_event(OWNEvent.parse("*2*1*22##"))
+    clock.now += 4.0
+    with patch("custom_components.myhome.cover.MOTOR_STOP_DELAY", 1.0):
+        timed.handle_event(OWNEvent.parse("*2*1000#0*22##"))
+    assert timed.current_cover_position == 50  # (4.0 + 1.0) / 10.0 = 50%
+    assert MOTOR_STOP_DELAY == 0.0
+
+

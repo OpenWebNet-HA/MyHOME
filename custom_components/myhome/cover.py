@@ -1183,8 +1183,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     )
                 return elapsed
         finally:
-            if not self._calibrating or self._calibration_interrupted:
-                self._settles_on_timer = True
+            self._settles_on_timer = True
 
     async def async_calibrate(self) -> dict:  # type: ignore
         """Measure this cover's travel times on the bus and store them.
@@ -1226,7 +1225,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
                 hub.active_cover = self
                 self._calibrating = True
-                self._settles_on_timer = False
                 self._cancel_stop_task()
                 self._fire_calibration_event("start")
                 try:
@@ -1482,7 +1480,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _recompute_active_settle(self) -> None:
         """Recompute any in-flight end-of-run settle after a travel-time change."""
-        if (self._attr_is_opening or self._attr_is_closing) and not self._is_tilting:
+        if (
+            (self._attr_is_opening or self._attr_is_closing)
+            and not self._is_tilting
+            and self._pending_cmd != "stop"
+        ):
             if self._stop_task is None or self._stop_task.done():
                 self._arm_wall_settle(bool(self._attr_is_opening))
             else:
@@ -2433,7 +2435,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             getattr(message, "is_general", False)
             or getattr(message, "is_area", False)
             or getattr(message, "is_group", False)
-            or msg_where == "0"
+            or str(raw_where) == "0"
         )
         return msg_where, is_general
 
@@ -2533,7 +2535,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if is_translation:
             effective_what = getattr(message, "effective_what", None)
             if effective_what not in (0, 10):
-                if self._stop_translation_seen and effective_what in (1, 2, 11, 12):
+                if self._pending_cmd == "stop" and effective_what in (1, 2, 11, 12, 13, 14):
                     self._end_echo_window()
                 return
             if self._advanced and not self._is_tilting:
@@ -2747,8 +2749,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_generation += 1
             self._last_stop_at = now
             self._stopped_event.set()
+            stop_at = now + MOTOR_STOP_DELAY if is_translation else now
             if was_tilting:
-                self._apply_tilt_stop(now)
+                self._apply_tilt_stop(stop_at)
             elif not self._advanced:
                 stop_ctx: dict[str, Any] | None = None
                 if is_translation and (was_opening or was_closing):
@@ -2758,7 +2761,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     stop_ctx = self._capture_stop_context(
                         scope_where=msg_where if (is_general and msg_where) else None
                     )
-                self._freeze_position(now)
+                self._freeze_position(stop_at)
                 if stop_ctx is not None:
                     self._pending_stop_context = stop_ctx
                     self._pending_cmd = "stop"

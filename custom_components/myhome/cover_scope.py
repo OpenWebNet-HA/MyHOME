@@ -117,11 +117,11 @@ class MyHOMEScopeCover(MyHOMECover):
     _settles_open_close = False
 
     def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
+        self._run_timeout: CALLBACK_TYPE | None = None
+        self._run_timeout_direction: str | None = None
         super().__init__(*args, **kwargs)
         self.scope = scope
         self._attr_extra_state_attributes["scope"] = scope.kind
-        self._run_timeout: CALLBACK_TYPE | None = None
-        self._run_timeout_direction: str | None = None
         self._unsub_members: CALLBACK_TYPE | None = None
         self._pulse_followers: list[MyHOMECover] = []
         # A member can join before this cover is in Home Assistant (no hass yet).
@@ -143,6 +143,7 @@ class MyHOMEScopeCover(MyHOMECover):
         if not self._added:
             return
         if entity_ids := [m.entity_id for m in self._members() if m.entity_id]:
+            self._cancel_run_timeout()
             self._unsub_members = async_track_state_change_event(self.hass, entity_ids, self._member_changed)
         self._publish_state()
 
@@ -251,6 +252,7 @@ class MyHOMEScopeCover(MyHOMECover):
     async def _async_run_to_end(self, opening: bool) -> None:
         """`set_cover_position: 0` / `100` with one scope frame: the members settle too."""
         written = await self._async_run_members_to_end(opening)
+        self._cancel_run_timeout()
         self._settle_run_to_end(opening, written)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
@@ -413,18 +415,43 @@ class MyHOMEScopeCover(MyHOMECover):
             self._unsub_members = None
         await super().async_will_remove_from_hass()
 
+    def _cancel_wall_settle(self) -> None:
+        self._cancel_run_timeout()
+        super()._cancel_wall_settle()
+
+    def _recompute_active_settle(self) -> None:
+        super()._recompute_active_settle()
+        if (
+            (self._attr_is_opening or self._attr_is_closing)
+            and not self._is_tilting
+            and self._pending_cmd != "stop"
+            and (self._stop_task is None or self._stop_task.done())
+        ):
+            self._watch_run(force_rearm=True)
+
     @callback
-    def _watch_run(self) -> None:
+    def _watch_run(self, *, force_rearm: bool = False) -> None:
         """Without members nothing reports the end of a run: end it after the travel time."""
         moving = "open" if self._attr_is_opening else "close" if self._attr_is_closing else None
-        if moving is None or self.hass is None or self._members() or self._is_tilting:
+        opening = moving == "open"
+        if (
+            moving is None
+            or self.hass is None
+            or self._members()
+            or self._is_tilting
+            or not self._settles_on_timer
+            or self._travel_for(opening) <= 0
+            or (self._stop_task is not None and not self._stop_task.done())
+        ):
             self._cancel_run_timeout()
             return
-        if self._run_timeout is not None and self._run_timeout_direction == moving:
+        if not force_rearm and self._run_timeout is not None and self._run_timeout_direction == moving:
             return
         self._cancel_run_timeout()
+        elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
+        delay = max(0.0, self._travel_for(opening) - elapsed)
         self._run_timeout_direction = moving
-        self._run_timeout = async_call_later(self.hass, self._travel_for(moving == "open"), self._end_run)
+        self._run_timeout = async_call_later(self.hass, delay, self._end_run)
 
     @callback
     def _cancel_run_timeout(self) -> None:
@@ -452,10 +479,11 @@ class MyHOMEScopeCover(MyHOMECover):
             and travel > 0
         )
         self._freeze_position(at)
-        # A full run by the model; the anchor may trail the timer by the queue delay.
-        self._attr_current_cover_position = self._start_position = end
-        if not confirmed:
-            self._strategy.on_position_confirmed(self, end, "end_stop")
+        if not self._strategy.assumed_state:
+            # A full run by the model; the anchor may trail the timer by the queue delay.
+            self._attr_current_cover_position = self._start_position = end
+            if not confirmed:
+                self._strategy.on_position_confirmed(self, end, "end_stop")
         if self._slat_tilt:
             self._attr_current_cover_tilt_position = end
         self._attr_is_closed = not opening
