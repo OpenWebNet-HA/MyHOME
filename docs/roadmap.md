@@ -10,9 +10,9 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b16 Released)
+## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b17 Released)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b16** releases. **v2.0.0b15** was published on 2026-10-07; **v2.0.0b16** follows with the 83 pull requests merged since, on OWNd 2.0.0b11. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b17** releases. **v2.0.0b16** was published on 2026-10-21; **v2.0.0b17** follows with the 61 pull requests merged since, on OWNd 2.0.0b13. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
 
 ```mermaid
 gantt
@@ -51,6 +51,12 @@ gantt
     Venetian Blind Slat Tilt (#492, #508)             :done, 2026-09-23, 2026-10-18
     Impulse Gate & Garage Covers, Intercom Events (#667) :done, 2026-10-08, 2026-10-19
     Expose HA Entities to the Bus (#750)              :done, 2026-10-14, 2026-10-21
+    section Released in v2.0.0b17
+    Cover End-Stop Settle (#834, #847) & Min Delta (#778) :done, 2026-10-22, 2026-11-04
+    Central Unit 3550 Hydration & Actuator Switch (#817, #846) :done, 2026-10-25, 2026-11-04
+    OWNd 2.0.0b13 Pin & Legrand 067292 Alias (#848, #854) :done, 2026-10-26, 2026-11-04
+    F500 FM Tuner Controls & Station Range Bounds (#839, #844) :done, 2026-10-28, 2026-11-04
+    Dimmer Preset Echo & Coarse Curve Alignment (#828, #852) :done, 2026-10-28, 2026-11-04
     section Final Stabilization
     v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-15
 ```
