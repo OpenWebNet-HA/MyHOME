@@ -323,7 +323,11 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
 
     # Heating zone: mode, setpoint and temperature arrive in separate frames, so a
     # temperature-only frame must not cancel the poll for the rest on gateways that support it.
+    # A 99-zone central unit (#0) always answers *#4*#0## on all gateways (including SCS-only
+    # gateways like MH200N / F454) with a multi-frame burst of mode + diagnostic flags.
     if isinstance(entity, ClimateEntity):
+        if getattr(entity, "_central", False):
+            return False
         if not getattr(entity, "_gateway_supports_zone_status", True):
             # SCS-only gateway: only a zone that asks for its temperature (#185) still needs to.
             return getattr(entity, "_polls_temperature", False) is not True or (

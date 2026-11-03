@@ -566,6 +566,106 @@ entities:
 
 ---
 
+## 🔥 Recipe 7: BTicino 3550 Central Unit & Multi-Zone Heating Control
+
+For plants with a **BTicino 3550** (99-zone central unit at `WHERE = #0`) and subordinate room zones (`WHERE = 1..99`), this recipe combines:
+1. A **Central Unit status & health header** displaying the active weekly program (`program`), remote-control state (`remote_control`), battery health (`battery_fault`), and manual-override status (`at_least_one_probe_manual`).
+2. **Per-room thermostat cards** with instant setpoint override and a one-tap **Return All Zones to 3550 Schedule (`Auto`)** button.
+
+```yaml
+type: vertical-stack
+cards:
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: climate.central_unit_0
+        attribute: remote_control
+        state: disabled
+    card:
+      type: markdown
+      content: >-
+        ⚠️ **BTicino 3550 Remote Control Disabled (`*4*20*#0##`)**: Enable *Telegestione*
+        on the physical 3550 panel so Home Assistant commands are applied on the bus.
+
+  - type: tile
+    entity: climate.central_unit_0
+    name: Central Heating Unit (3550)
+    icon: mdi:thermostat-box
+    features:
+      - type: climate-hvac-modes
+        hvac_modes:
+          - auto
+          - heat
+          - cool
+          - "off"
+
+  - type: markdown
+    content: >-
+      **Season:** {{ state_attr('climate.central_unit_0', 'season') | default('unknown') }} |
+      **Program:** {{ state_attr('climate.central_unit_0', 'program') | default('—') }} |
+      **Remote Control:** {{ state_attr('climate.central_unit_0', 'remote_control') | default('unknown') }} |
+      **Manual Override Active:** {{ 'Yes' if state_attr('climate.central_unit_0', 'at_least_one_probe_manual') else 'No' }} |
+      **Battery Fault:** {{ '⚠️ KO' if state_attr('climate.central_unit_0', 'battery_fault') else 'OK' }}
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: thermostat
+        entity: climate.climate_zone_1
+        name: Living Room (Zone 1)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+      - type: thermostat
+        entity: climate.climate_zone_2
+        name: Master Bedroom (Zone 2)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+      - type: thermostat
+        entity: climate.climate_zone_3
+        name: Study (Zone 3)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+      - type: thermostat
+        entity: climate.climate_zone_4
+        name: Bathroom (Zone 4)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+
+  - type: button
+    name: Return All Zones to 3550 Weekly Program (Auto)
+    icon: mdi:calendar-sync
+    tap_action:
+      action: perform-action
+      perform_action: climate.set_hvac_mode
+      target:
+        entity_id:
+          - climate.climate_zone_1
+          - climate.climate_zone_2
+          - climate.climate_zone_3
+          - climate.climate_zone_4
+      data:
+        hvac_mode: auto
+```
+
+---
+
 ## 🤝 Join In & Share Your Creations!
 
 Every MyHOME installation is unique! Do you have a custom card layout, Mushroom card setup, floorplan SVG, or automation dashboard that you are proud of?

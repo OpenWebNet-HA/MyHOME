@@ -20,10 +20,24 @@ When your gateway connects to Home Assistant:
 
 MyHOME installations typically deploy one of three climate topologies, all natively supported by the v2 discovery engine:
 
-### 1. 99-Zone Central Unit Architecture
+### 1. 99-Zone Central Unit Architecture (`BTicino 3550` / `#0`)
 * **Hardware**: Central thermoregulation unit (BTicino `3550`, MyHOME_Screen 10, or MyHOME_Screen 3.5) operating at master address `WHERE = #0`.
-* **Subordinate Zones**: Individual room zones (`WHERE = 1..99`) driven by `F430/2` or `F430/4` flush/DIN actuators.
-* **Operation**: The integration discovers the central unit as the master climate entity and each individual zone as a controllable climate device. Commands issued to room zones are synchronized through the central unit.
+* **Subordinate Zones**: Individual room zones (`WHERE = 1..99`) with local probes (`L4693`, `H4693`, `LN4693`, etc.) and `F430/2` or `F430/4` flush/DIN actuators.
+* **Operation**: The integration discovers the central unit (`#0`) as the master `climate` entity and each individual zone (`1..99`) as a controllable `climate` device. Subordinate zone setpoint and mode commands use the central-unit-routed `#Z` address format (`*#4*#Z*#14*TTTT*M##`, `*4*311*#Z##`, `*4*303*#Z##`).
+* **Startup & Reconnect Status Burst (`*#4*#0##`)**: On startup (including on SCS-only gateways such as `MH200N` and `F454`), the central unit entity queries `*#4*#0##`. The `3550` responds with its operating mode frame (e.g. `*4*1101*#0##` for Heating Weekly Program 1, `*4*110#0200*#0##` for Manual 20.0 °C, or `*4*102*#0##` for Antifreeze/Protection) followed by diagnostic status frames (`WHAT 20..24, 30, 31`), exposed on the `#0` entity as state attributes:
+  - `remote_control`: `"enabled"` (`*4*21*#0##`) or `"disabled"` (`*4*20*#0##`, raises the self-clearing `central_remote_control_disabled` repair issue).
+  - `at_least_one_probe_off`: `true` when `*4*22*#0##` is reported in the current burst.
+  - `at_least_one_probe_antifreeze`: `true` when `*4*23*#0##` is reported in the current burst.
+  - `at_least_one_probe_manual`: `true` when `*4*24*#0##` is reported in the current burst.
+  - `failure_detected`: `true` when `*4*30*#0##` (`Failure discovered in a zone`) is reported in the current burst.
+  - `battery_fault`: `true` when `*4*31*#0##` (`Central unit battery KO`) is reported in the current burst (raises the self-clearing `central_battery_fault` repair issue).
+* **Remote Control (*Telegestione*) Requirement**: On a physical BTicino `3550`, **Remote Control (*Telegestione*)** must be set to **Enabled (*Abilitata*)** in the `3550` menu (`*4*21*#0##`) for the central unit to accept remote commands over the bus. When `*4*20*#0##` is active, the gateway still replies `*#*1##` (ACK), but the `3550` ignores remote mode and setpoint writes.
+* **Subordinate Zone Control Patterns (`Auto` vs `Manual`)**:
+
+| Control Pattern | Central Unit (`#0`) Mode | Subordinate Zone (`1..99`) Mode | How Setpoint & Schedule Changes Work |
+| --- | --- | --- | --- |
+| **1. `3550` as Schedule Master + HA Temporary Overrides** | `auto` (Weekly Program `1..3` or Scenario `1..16`) | `auto` (`*4*111*#Z##` / `*4*211*#Z##`) | Calling `climate.set_temperature` on a zone writes `*#4*#Z*#14*TTTT*3##`, placing that zone into **manual setpoint override** (`*4*110*#Z##`, `hvac_mode: heat`/`cool`, `#0` reports `at_least_one_probe_manual: true`). Setting the zone's `hvac_mode` back to `auto` sends `*4*311*#Z##` and returns the zone to the `3550`'s active weekly schedule. |
+| **2. Home Assistant as Full Schedule Master** | `heat`, `cool`, or `auto` | `heat` / `cool` (Manual setpoint per room) | Each zone is driven directly by Home Assistant automations or the HA [Schedule](https://www.home-assistant.io/integrations/schedule/) integration calling `climate.set_temperature` (`*#4*#Z*#14*TTTT*3##`) or `climate.set_hvac_mode` (`heat`, `cool`, `off`) on each room entity independently. |
 
 ### 2. 4-Zone Central Unit Architecture
 * **Hardware**: BTicino `HC4695`, `L4695`, or `LN4695` 4-zone master display panel.

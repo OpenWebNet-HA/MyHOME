@@ -115,6 +115,41 @@ If the zone no longer exists (for example a leftover entity), remove its device 
 
 ---
 
+## Central Unit Remote Control Disabled
+
+**Repair Key**: `central_remote_control_disabled`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes  
+**Fixable via UI**: No
+
+### What it means
+A 99-zone thermoregulation central unit (`WHERE = #0`, such as a BTicino `3550`, `MyHOME_Screen 10`, or `MyHOME_Screen 3.5`) reported OpenWebNet status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).
+
+When *Telegestione* (Remote Control) is disabled in the physical central unit's settings menu, the OpenWebNet gateway still acknowledges central-unit commands (`*4*1*#0##`, `*4*311*#0##`, `*#4*#0*#14*...##`) with `*#*1##` at the TCP command session layer, **but the central unit itself ignores remote mode and setpoint writes from Home Assistant**.
+
+### How to resolve
+1. On the physical BTicino `3550` (or central unit display panel), open the **Settings / Impostazioni** menu.
+2. Set **Remote Control / Telegestione** to **Enabled / Abilitata**.
+3. The central unit will emit `*4*21*#0##` (`Remote control enabled`) on the next status query or mode broadcast, and this repair issue will clear automatically.
+
+---
+
+## Central Unit Battery Fault
+
+**Repair Key**: `central_battery_fault`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes  
+**Fixable via UI**: No
+
+### What it means
+A 99-zone thermoregulation central unit (`WHERE = #0`, such as a BTicino `3550`) reported OpenWebNet status `*4*31*#0##` (`Central unit battery KO`) during its status report burst (`*#4*#0##`).
+
+### How to resolve
+1. Check or replace the backup battery inside the physical central unit (`3550`) so weekly programs and internal clock settings are preserved across mains power interruptions.
+2. Once the battery fault is resolved on the hardware, the central unit omits `*4*31*#0##` from its next status burst (`*#4*#0##`), and this repair issue clears automatically.
+
+---
+
 ## Unmapped Device Status
 
 **Repair Key**: `unmapped_device_status`  

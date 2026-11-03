@@ -474,6 +474,14 @@
       "title": "Autenticazione non riuscita sul gateway MyHOME {gateway}",
       "description": "Il gateway ha rifiutato le credenziali OpenWebNet. Riconfigura la password."
     },
+    "central_remote_control_disabled": {
+      "title": "Telegestione disabilitata sulla centrale di termoregolazione {device} ({gateway})",
+      "description": "La centrale a 99 zone {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nFinché la telegestione è disabilitata sulla centrale fisica (es. BTicino 3550), il gateway conferma i comandi OpenWebNet con `*#*1##`, ma la centrale ignora le modifiche di modalità e setpoint inviate da Home Assistant.\n\nAbilita la **Telegestione** (*Controllo remoto*) nel menu impostazioni della centrale fisica. Questo avviso si risolve automaticamente appena la centrale segnala `*4*21*#0##` (`Remote control enabled`)."
+    },
+    "central_battery_fault": {
+      "title": "Guasto batteria tampone sulla centrale di termoregolazione {device} ({gateway})",
+      "description": "La centrale a 99 zone {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*31*#0##` (`Central unit battery KO`).\n\nControlla o sostituisci la batteria tampone nella centrale fisica (es. BTicino 3550) per preservare i programmi settimanali e l'orologio durante le interruzioni di corrente. Questo avviso si risolve automaticamente al successivo rapporto di stato (`*#4*#0##`) quando `*4*31*#0##` non è più presente."
+    },
     "unmapped_device_status": {
       "title": "{device} segnala uno stato non documentato",
       "description": "{device} (WHO {who}, indirizzo `{where}`) ha segnalato il codice di stato WHAT {code}, assente dalla tabella OpenWebNet pubblicata per questo sottosistema, quindi il valore ricevuto non consente a Home Assistant di determinare lo stato attuale del dispositivo.\n\nQuesto codice è stato osservato su un attuatore luci guasto. Controlla il dispositivo sul posto: il LED di stato, il carico collegato e il cablaggio del carico. Se il dispositivo funziona normalmente, segnala il codice perché possa essere gestito.\n\nIl problema si risolve da solo quando sul bus viene visto un frame di accensione, spegnimento o livello per questo indirizzo. Un comando da un pulsante a parete o da Home Assistant produce lo stesso frame: il problema può quindi sparire troppo presto e tornare alla prossima richiesta di stato se il guasto persiste."

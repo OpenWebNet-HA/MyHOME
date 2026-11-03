@@ -35,6 +35,9 @@ from custom_components.myhome.ignored import (
         ((1, "74"), (1, "74")),
         ([1, "74#4#01"], (1, "74#4#01")),
         ([1, 74], (1, "74")),
+        ("4/#0", (4, "0")),
+        ((4, "#0"), (4, "0")),
+        ([4, "#0"], (4, "0")),
     ],
 )
 def test_parse_ignored_address_valid(raw, expected):
@@ -234,3 +237,14 @@ def test_ignored_addresses_defensive_types():
     assert (1, None) not in ign
     assert (1, "") not in ign
     assert ("not_int", "74") not in ign
+
+def test_ignored_addresses_matching_central_units_and_hashes():
+    """Verify addresses with leading # (heating zones and central units) match correctly."""
+    ign = IgnoredAddresses(["4/#0", "4/1"])
+    assert ign.is_ignored(4, "#0") is True
+    assert ign.is_ignored(4, "0") is True
+    assert ign.is_ignored(4, "4-#0") is True
+    assert ign.is_ignored(4, "#1") is True
+    assert ign.is_ignored(4, "1") is True
+    assert ign.is_ignored(4, "#2") is False
+

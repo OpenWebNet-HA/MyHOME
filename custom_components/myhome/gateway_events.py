@@ -45,7 +45,7 @@ from .const import (
     LOGGER,
 )
 from .topology import peer_handles_who
-from .where_grammar import where_param
+from .where_grammar import is_central_thermo_where, is_probe, where_param
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -289,7 +289,7 @@ class GatewayEventDispatcher:
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
             # on a shared bus only that subsystem's owner raises the device's issues.
-            if who_int in (1, 1001):
+            if who_int in (1, 4, 1001):
                 self._observe_health(message, who_int)
 
         if not isinstance(message, OWNMessage):
@@ -306,7 +306,7 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#0"):
+                if isinstance(message, OWNHeatingEvent) and is_central_thermo_where(message):
                     self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
@@ -459,7 +459,7 @@ class GatewayEventDispatcher:
                 base_tail = tail
             where_str = cast(str, message.where)
             where = where_str[1:] if where_str.startswith("#") else where_str
-            if where == "0" or base_tail:
+            if where == "0" or is_probe(where) or base_tail:
                 return
             if iface_str is not None:
                 where = f"{where}{BUS_ROUTING}{iface_str}"

@@ -508,6 +508,14 @@
       "title": "Heating zone {device} no longer answers ({gateway})",
       "description": "The heating zone {device} on {gateway} did not answer its status request on two restarts in a row, so MyHOME stopped asking for it at startup (each unanswered request costs the gateway's command queue several seconds). If the zone no longer exists, remove its device or entity in Home Assistant. If it does exist, this clears as soon as it sends any frame, and it is asked again after a week."
     },
+    "central_remote_control_disabled": {
+      "title": "Central heating unit {device} has remote control disabled ({gateway})",
+      "description": "The 99-zone central unit {device} (WHO {who}, address `{where}`) on {gateway} reported OpenWebNet status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nWhile remote control is disabled on the physical central unit (e.g., BTicino 3550), the gateway still acknowledges OpenWebNet commands with `*#*1##`, but the central unit ignores remote mode and setpoint writes from Home Assistant.\n\nEnable **Remote Control** (*Telegestione*) in the settings menu on the physical central unit panel. This issue clears automatically as soon as the central unit reports `*4*21*#0##` (`Remote control enabled`)."
+    },
+    "central_battery_fault": {
+      "title": "Central heating unit {device} reports a backup battery fault ({gateway})",
+      "description": "The 99-zone central unit {device} (WHO {who}, address `{where}`) on {gateway} reported OpenWebNet status `*4*31*#0##` (`Central unit battery KO`).\n\nCheck or replace the backup battery inside the physical central unit (e.g., BTicino 3550) so weekly schedules and clock settings are preserved during power outages. This issue clears automatically on the next central unit status report (`*#4*#0##`) once `*4*31*#0##` is no longer present."
+    },
     "gateway_authentication_failed": {
       "title": "Authentication failed for MyHOME gateway {gateway}",
       "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
