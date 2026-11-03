@@ -127,3 +127,13 @@ async def test_an_off_report_with_a_normal_speed_does_not_unmark_a_coarse_dimmer
     await hass.async_block_till_done()
     assert light._attr_brightness_pct == 40
     gateway.send_status_request.assert_not_awaited()
+
+
+async def test_no_refresh_without_hass(hass):
+    """A light not yet added to Home Assistant applies the preset and asks nothing."""
+    light, gateway = _light(hass)
+    light.handle_event(OWNMessage.parse("*#1*0010*1*153*4##"))
+    light.hass = None
+    light.handle_event(OWNMessage.parse("*1*7*0010##"))
+    assert light._attr_brightness_pct == 50
+    gateway.send_status_request.assert_not_awaited()
