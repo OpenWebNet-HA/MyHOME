@@ -532,3 +532,47 @@ async def test_central_unit_remote_control_disabled_and_battery_fault_lifecycle(
     assert _issue(hass, rc_issue_id) is None
     assert health.faults == []
 
+async def test_device_health_heating_edge_cases(hass):
+    """Verify DeviceHealth heating edge cases: dimensions, translations, ignored addresses, and bus routing (#819)."""
+    dispatcher = _dispatcher(hass)
+    health = dispatcher.handler.device_health
+
+    # 1. Dimension frame on #0 is ignored by heating health observer
+    await dispatcher.process_message(_frame("*#4*#0*12*0210*3##"))
+    assert health.faults == []
+
+    # 2. Translation frame on #0 is ignored
+    tx_msg = _frame("*4*20*#0##")
+    tx_msg._family = "COMMAND_TRANSLATION"
+    await dispatcher.process_message(tx_msg)
+    assert health.faults == []
+
+    # 3. Ignored address: configure 4/#0 as ignored
+    from types import SimpleNamespace
+
+    from custom_components.myhome.const import CONF_IGNORED_ADDRESSES
+    dispatcher.handler.config_entry = SimpleNamespace(entry_id=ENTRY_ID, options={CONF_IGNORED_ADDRESSES: ["4/#0"]})
+    await dispatcher.process_message(_frame("*4*20*#0##"))
+    assert health.faults == []
+    dispatcher.handler.config_entry = SimpleNamespace(entry_id=ENTRY_ID, options={})
+
+    # 4. Bus-routed central unit (#0#4#1 behind interface 1):
+    rc_routed_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0#4#1")
+    bat_routed_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0#4#1")
+
+    await dispatcher.process_message(_frame("*4*20*#0#4#1##"))
+    await dispatcher.process_message(_frame("*4*31*#0#4#1##"))
+    assert _issue(hass, rc_routed_id) is not None
+    assert _issue(hass, bat_routed_id) is not None
+
+    # Next status burst clears battery fault on #0#4#1
+    await dispatcher.process_message(_frame("*4*1101*#0#4#1##"))
+    assert _issue(hass, bat_routed_id) is None
+    assert _issue(hass, rc_routed_id) is not None
+
+    # *4*21*#0#4#1## clears remote control disabled on #0#4#1
+    await dispatcher.process_message(_frame("*4*21*#0#4#1##"))
+    assert _issue(hass, rc_routed_id) is None
+    assert health.faults == []
+
+

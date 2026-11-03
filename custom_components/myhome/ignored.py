@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 from .const import CONF_IGNORED_ADDRESSES, CONF_WHERE, CONF_WHO
 
 _PAIR_PATTERN = re.compile(
-    r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?([0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?)$",
+    r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?(#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?)$",
     re.IGNORECASE,
 )
 
@@ -34,7 +34,7 @@ def parse_ignored_address(value: Any) -> tuple[int, str] | None:
         match = _PAIR_PATTERN.match(val)
         if match:
             who = int(match.group(1))
-            where = match.group(2).strip()
+            where = match.group(2).strip().removeprefix("#")
             if where:
                 return who, where
         return None
@@ -52,8 +52,8 @@ def parse_ignored_address(value: Any) -> tuple[int, str] | None:
             try:
                 who = int(who_val)
                 where = str(where_val).strip()
-                if where and re.fullmatch(r"[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?", where):
-                    return who, where
+                if where and re.fullmatch(r"#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?", where):
+                    return who, where.removeprefix("#")
             except (ValueError, TypeError):
                 return None
         return None
@@ -62,8 +62,8 @@ def parse_ignored_address(value: Any) -> tuple[int, str] | None:
         try:
             who = int(value[0])
             where = str(value[1]).strip()
-            if where and re.fullmatch(r"[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?", where):
-                return who, where
+            if where and re.fullmatch(r"#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?", where):
+                return who, where.removeprefix("#")
         except (ValueError, TypeError):
             return None
 
@@ -186,10 +186,13 @@ class IgnoredAddresses:
             bare = where.partition("#4#")[0]
             candidates.add(bare)
 
-        # Also strip who- prefix if any (e.g. clean WHERE)
+        # Also strip who- prefix and leading # if any (e.g. clean WHERE, central units)
         for c in list(candidates):
             if "-" in c:
                 candidates.add(c.split("-")[-1])
+        for c in list(candidates):
+            if c.startswith("#"):
+                candidates.add(c.removeprefix("#"))
 
         for c in candidates:
             if (who_int, c) in self._entries:
