@@ -228,9 +228,9 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**F461**",
         "profile_name": "F461",
-        "pinned_whos": [1, 2, 4, 16, 18],
-        "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
-        "notes": "Lighting, cover, and energy meter 51 queries. The `020011` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "pinned_whos": [1, 2, 4, 18],
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
         "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
@@ -243,9 +243,9 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
-        "pinned_whos": [1, 2, 4, 16, 18],
-        "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
-        "notes": "Lighting, cover, and energy meter 51 queries. The firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle `028206`, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "pinned_whos": [1, 2, 4, 18],
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
         "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {

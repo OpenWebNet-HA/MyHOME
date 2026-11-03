@@ -355,8 +355,13 @@ def test_sync_gateway_discovery_detects_drift_and_updates(tmp_path, monkeypatch)
     assert ok_after is True
 
 
-def test_check_all_documentation_stays_green_against_ownd_142_until_pin_bump(tmp_path, monkeypatch):
-    """While manifest.json pins OWNd==2.0.0b11, check_all_documentation stays green against OWNd #142, then enforces regeneration at the pin bump."""
+def test_check_all_documentation_follows_ownd_142_rows_at_the_pin_bump(tmp_path, monkeypatch):
+    """manifest.json pins OWNd==2.0.0b13 (past OWNd #142): the committed docs carry the WHO 22-only rows.
+
+    check_all_documentation is green against the pinned profiles (no WHO 16 on the F461 /
+    MyHomeServer1), and a stale pre-#142 OWNd install is flagged by both the oracle and the
+    discovery-table checks instead of being tolerated as a transition.
+    """
     import OWNd.profiles as ownd_profiles
 
     try:
@@ -366,42 +371,41 @@ def test_check_all_documentation_stays_green_against_ownd_142_until_pin_bump(tmp
 
     real_get = ownd_profiles.get_gateway_profile
 
-    class _ProfileWithoutWho16:
-        def __init__(self, base):
+    class _ProfileWho16:
+        def __init__(self, base, with_who16: bool):
             self._base = base
+            self._with_who16 = with_who16
 
         def __getattr__(self, attr):
             return getattr(self._base, attr)
 
         def supports_who(self, who: int) -> bool:
             if who == 16:
-                return False
+                return self._with_who16
             return bool(self._base.supports_who(who))
 
-    def _patched_get(name: str, *args, **kwargs):
-        base = real_get(name, *args, **kwargs)
-        if getattr(base, "model_name", None) in ("F461", "MyHomeServer1"):
-            return _ProfileWithoutWho16(base)
-        return base
+    def _patch_profiles(with_who16: bool) -> None:
+        def _patched_get(name: str, *args, **kwargs):
+            base = real_get(name, *args, **kwargs)
+            if getattr(base, "model_name", None) in ("F461", "MyHomeServer1"):
+                return _ProfileWho16(base, with_who16)
+            return base
 
-    monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched_get)
+        monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched_get)
+
+    _patch_profiles(with_who16=False)
     monkeypatch.setattr(ugp_mod, "_patched_ownd_profiles", lambda: [])
     if "update_gateway_profiles" in sys.modules:
         monkeypatch.setattr(sys.modules["update_gateway_profiles"], "_patched_ownd_profiles", lambda: [])
 
-    # 1. With manifest.json at OWNd==2.0.0b11, full real-tree doc check passes cleanly.
+    # 1. With manifest.json at OWNd==2.0.0b13 and the pinned (OWNd #142) profiles, the full
+    #    real-tree doc check passes cleanly.
     ok, messages = syncdoc.check_all_documentation(update=False)
-    assert ok is True, f"Expected zero drift during OWNd==2.0.0b11 transition window: {messages}"
+    assert ok is True, f"Expected zero drift against the pinned OWNd profiles: {messages}"
 
-    # 2. Once manifest.json bumps to OWNd==2.0.0b12, both oracle and discovery table checks flag the stale rows.
-    fake_cc = tmp_path / "myhome"
-    fake_cc.mkdir(parents=True, exist_ok=True)
-    real_manifest = (syncdoc.CUSTOM_COMPONENTS_DIR / "manifest.json").read_text(encoding="utf-8")
-    (fake_cc / "manifest.json").write_text(
-        real_manifest.replace("OWNd==2.0.0b11", "OWNd==2.0.0b12"),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(syncdoc, "CUSTOM_COMPONENTS_DIR", fake_cc)
+    # 2. A stale pre-#142 OWNd (WHO 16 still advertised on the F461 / MyHomeServer1) is flagged
+    #    by both the oracle and the discovery table checks: the transition window is closed.
+    _patch_profiles(with_who16=True)
 
     ok_disc, msgs_disc = syncdoc.sync_gateway_discovery(update=False)
     assert ok_disc is False

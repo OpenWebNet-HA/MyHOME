@@ -32,7 +32,6 @@ from OWNd.message import OWNGatewayEvent, OWNMessage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_JSON_PATH = REPO_ROOT / "custom_components" / "myhome" / "manifest.json"
-PRE_MODEL_NAME_OWND_PIN = "OWNd==2.0.0b11"
 ORACLE_JSON_PATH = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 ENCYCLOPEDIA_EVIDENCE_DIR = REPO_ROOT.parent / "OpenWebNet-Encyclopedia" / "evidence"
@@ -698,66 +697,6 @@ def test_tier3_physical_trace_commands_accepted_by_emulated_gateways(
         assert entry["verdict"] == expected_verdict, f"Expected {expected_verdict} for {frame} on {product}, got {entry}"
 
 
-# Authentic WHO 13 dimension 27 model-name replies whose decoder landed in OWNd#139
-# (merged into OWNd@master after OWNd==2.0.0b11 was published). While manifest.json
-# still pins OWNd==2.0.0b11, pre-OWNd#139 runtimes parse them to None cleanly and
-# OWNd#139+ runtimes (CI's OWNd@master) must decode OWNGatewayEvent.model_name;
-# once manifest.json bumps past OWNd==2.0.0b11, Tier 4 fails loudly so pending_decoder_rx
-# is removed and the frames are checked like every other rx frame.
-PENDING_MODEL_NAME_DECODER_RX: dict[str, str] = {
-    # Live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23)
-    "*#13**27*70#52#54#49##": "F461",
-    # Live MyHomeServer1 3.87.13 (tests/fixtures/traces/myhomeserver1_live_2026-10-24)
-    "*#13**27*77#121#72#111#109#101#83#101#114#118#101#114#49##": "MyHomeServer1",
-}
-
-
-def _manifest_pins_pre_model_name_ownd(manifest_path: Path = MANIFEST_JSON_PATH) -> bool:
-    """Return True while manifest.json still pins the pre-OWNd#139 release (OWNd==2.0.0b11)."""
-    if not manifest_path.exists():
-        return False
-    try:
-        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-    if not isinstance(manifest_data, dict):
-        return False
-    reqs = manifest_data.get("requirements", [])
-    return isinstance(reqs, list) and PRE_MODEL_NAME_OWND_PIN in reqs
-
-
-def _validate_pending_model_name_rx(
-    frame: str,
-    parsed: Any,
-    expected_model_name: str,
-    *,
-    manifest_path: Path = MANIFEST_JSON_PATH,
-    gateway_event_cls: type[Any] = OWNGatewayEvent,
-) -> None:
-    """Validate a WHO 13 dimension 27 frame across the OWNd==2.0.0b11 -> OWNd#139 transition."""
-    if not _manifest_pins_pre_model_name_ownd(manifest_path):
-        if parsed is not None:
-            raise AssertionError(
-                f"remove {frame} from pending_decoder_rx: the OWNd pin now decodes it ({parsed!r})"
-            )
-        raise AssertionError(
-            f"OWNMessage.parse returned None for {frame} after manifest.json "
-            f"moved past {PRE_MODEL_NAME_OWND_PIN}"
-        )
-
-    if hasattr(gateway_event_cls, "model_name"):
-        assert isinstance(parsed, gateway_event_cls), (
-            f"Expected {gateway_event_cls.__name__} for {frame} on OWNd#139+, got {parsed!r}"
-        )
-        assert parsed.model_name == expected_model_name, (
-            f"Expected model_name={expected_model_name!r} for {frame}, got {parsed.model_name!r}"
-        )
-    else:
-        assert parsed is None, (
-            f"Expected None for {frame} on pre-OWNd#139 runtime, got {parsed!r}"
-        )
-
-
 def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     """Verify all 2,770+ unique `rx` frames across all 105+ trace files parse without exceptions in OWNd."""
     rx_frames = {
@@ -767,13 +706,9 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     }
     assert len(rx_frames) >= 2700, f"Expected >= 2700 unique rx frames, found {len(rx_frames)}"
 
-    stale_pending = sorted(f for f in PENDING_MODEL_NAME_DECODER_RX if f not in rx_frames)
-    assert not stale_pending, f"not in any capture any more: {stale_pending}"
-
     # Known malformed synthetic frame in f500_tuner fixture (missing leading '#' on WHO 22 dim 6);
     # OWNMessage.parse must return None cleanly without raising.
     known_unparseable_rx = {"*22*2#1*6*2##"}
-    pending_decoder_rx = PENDING_MODEL_NAME_DECODER_RX
 
     failures: list[str] = []
     for frame in sorted(rx_frames):
@@ -782,8 +717,6 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
             if frame in known_unparseable_rx:
                 if parsed is not None:
                     failures.append(f"Expected None for malformed frame {frame}, got {parsed!r}")
-            elif frame in pending_decoder_rx:
-                _validate_pending_model_name_rx(frame, parsed, pending_decoder_rx[frame])
             elif parsed is None:
                 failures.append(f"OWNMessage.parse returned None for trace rx frame: {frame}")
         except Exception as exc:  # noqa: BLE001
@@ -794,84 +727,21 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     )
 
 
-def test_tier4_pending_model_name_decoder_transition_regimes(tmp_path: Path) -> None:
-    """Verify WHO 13 dimension 27 transition checks across pre-139, OWNd#139+, and post-pin-bump regimes."""
-    frame = "*#13**27*70#52#54#49##"
+@pytest.mark.parametrize(
+    ("frame", "model_name"),
+    [
+        # Live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23)
+        ("*#13**27*70#52#54#49##", "F461"),
+        # Live MyHomeServer1 3.87.13 (tests/fixtures/traces/myhomeserver1_live_2026-10-24)
+        ("*#13**27*77#121#72#111#109#101#83#101#114#118#101#114#49##", "MyHomeServer1"),
+    ],
+)
+def test_tier4_who13_model_name_replies_decode_with_the_pinned_ownd(frame: str, model_name: str) -> None:
+    """The captured WHO 13 dimension 27 replies decode to the gateway model name (OWNd#139, in the pinned release)."""
+    rx_frames = {raw for _src, _gw, direction, raw in ALL_TRACE_RECORDS if direction == "rx"}
+    assert frame in rx_frames, f"not in any capture any more: {frame}"
+    parsed = OWNMessage.parse(frame)
+    assert isinstance(parsed, OWNGatewayEvent), parsed
+    assert parsed.model_name == model_name
 
-    b11_manifest = tmp_path / "manifest_b11.json"
-    b11_manifest.write_text('{"requirements": ["OWNd==2.0.0b11"]}', encoding="utf-8")
-    assert _manifest_pins_pre_model_name_ownd(b11_manifest) is True
-
-    # 1. Pre-OWNd#139 runtime + b11 manifest: None is expected, non-None fails.
-    class _Pre139GatewayEvent:
-        pass
-
-    _validate_pending_model_name_rx(
-        frame, None, "F461", manifest_path=b11_manifest, gateway_event_cls=_Pre139GatewayEvent
-    )
-    with pytest.raises(AssertionError, match="Expected None"):
-        _validate_pending_model_name_rx(
-            frame, object(), "F461", manifest_path=b11_manifest, gateway_event_cls=_Pre139GatewayEvent
-        )
-
-    # 2. OWNd#139+ runtime + b11 manifest: decoded OWNGatewayEvent with matching model_name required.
-    class _Post139GatewayEvent:
-        model_name: str | None = None
-
-        def __init__(self, model_name: str | None) -> None:
-            self.model_name = model_name
-
-    _validate_pending_model_name_rx(
-        frame,
-        _Post139GatewayEvent("F461"),
-        "F461",
-        manifest_path=b11_manifest,
-        gateway_event_cls=_Post139GatewayEvent,
-    )
-    with pytest.raises(AssertionError, match="Expected _Post139GatewayEvent"):
-        _validate_pending_model_name_rx(
-            frame, None, "F461", manifest_path=b11_manifest, gateway_event_cls=_Post139GatewayEvent
-        )
-    with pytest.raises(AssertionError, match="Expected model_name='F461'"):
-        _validate_pending_model_name_rx(
-            frame,
-            _Post139GatewayEvent("MyHomeServer1"),
-            "F461",
-            manifest_path=b11_manifest,
-            gateway_event_cls=_Post139GatewayEvent,
-        )
-
-    # 3. Post-bump manifest (OWNd==2.0.0b12): fails loudly so pending_decoder_rx is cleaned up.
-    b12_manifest = tmp_path / "manifest_b12.json"
-    b12_manifest.write_text('{"requirements": ["OWNd==2.0.0b12"]}', encoding="utf-8")
-    assert _manifest_pins_pre_model_name_ownd(b12_manifest) is False
-
-    with pytest.raises(AssertionError, match="remove .* from pending_decoder_rx: the OWNd pin now decodes it"):
-        _validate_pending_model_name_rx(
-            frame,
-            _Post139GatewayEvent("F461"),
-            "F461",
-            manifest_path=b12_manifest,
-            gateway_event_cls=_Post139GatewayEvent,
-        )
-    with pytest.raises(AssertionError, match="moved past OWNd==2.0.0b11"):
-        _validate_pending_model_name_rx(
-            frame,
-            None,
-            "F461",
-            manifest_path=b12_manifest,
-            gateway_event_cls=_Post139GatewayEvent,
-        )
-
-    # 4. Missing, invalid JSON, non-dict JSON, and non-list requirements fail closed.
-    assert _manifest_pins_pre_model_name_ownd(tmp_path / "missing.json") is False
-    bad_json = tmp_path / "bad.json"
-    bad_json.write_text("{not-json", encoding="utf-8")
-    assert _manifest_pins_pre_model_name_ownd(bad_json) is False
-    list_json = tmp_path / "list.json"
-    list_json.write_text('["OWNd==2.0.0b11"]', encoding="utf-8")
-    assert _manifest_pins_pre_model_name_ownd(list_json) is False
-    str_reqs = tmp_path / "str_reqs.json"
-    str_reqs.write_text('{"requirements": "OWNd==2.0.0b11"}', encoding="utf-8")
-    assert _manifest_pins_pre_model_name_ownd(str_reqs) is False
 

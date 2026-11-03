@@ -234,6 +234,13 @@ class _ProfileWithoutWho16:
         return who in (1, 2, 4, 18, 22)
 
 
+class _ProfileWithWho16:
+    """An OWNd profile double for the F461 / MyHomeServer1 before OWNd#142 (WHO 16 still advertised)."""
+
+    def supports_who(self, who: int) -> bool:
+        return who in (1, 2, 4, 16, 18, 22)
+
+
 def test_discovery_row_drops_who16_when_the_profile_does(monkeypatch: pytest.MonkeyPatch):
     """With a profile that no longer lists WHO 16 the F461 row, its sweep omissions and its sound wording follow.
 
@@ -534,14 +541,14 @@ def test_missing_files_and_markers_graceful_degradation(tmp_path: Path):
 
 
 def test_calibrate_discovery_use_pinned_overrides_installed_ownd(monkeypatch: pytest.MonkeyPatch):
-    """``use_pinned=True`` generates the pinned OWNd rows even when an unpinned OWNd drops WHO 16."""
+    """``use_pinned=True`` generates the pinned OWNd rows even when a stale pre-#142 OWNd still lists WHO 16."""
     import OWNd.profiles as ownd_profiles
 
     real = ownd_profiles.get_gateway_profile
 
     def _patched(name: str, *args, **kwargs):
         if name in ("F461", "MyHomeServer1"):
-            return _ProfileWithoutWho16()
+            return _ProfileWithWho16()
         return real(name, *args, **kwargs)
 
     monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
@@ -555,60 +562,69 @@ def test_calibrate_discovery_use_pinned_overrides_installed_ownd(monkeypatch: py
     assert ugp.build_discovery_block(use_pinned=False) != doc[start:end]
 
 
-def test_oracle_check_enforces_who16_pin_once_manifest_bumps_past_2_0_0b11(
+def test_oracle_check_enforces_who16_pin_now_that_manifest_pins_ownd_2_0_0b13(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    """Once manifest.json bumps past OWNd==2.0.0b11, stale WHO 16 pins on F461 / MyHomeServer1 are flagged."""
+    """manifest.json pins OWNd==2.0.0b13 (past OWNd#142): the F461 / MyHomeServer1 rows pin WHO 22 only.
+
+    The WHO 16 transition window closed with the pin bump: a row that disagrees with the
+    installed profile is flagged whichever side of #142 the installed OWNd is on, and the
+    window is only tolerated against a manifest that still pins OWNd==2.0.0b11.
+    """
     import OWNd.profiles as ownd_profiles
 
-    assert ugp.manifest_pins_pre_who16_ownd() is True
+    assert ugp.manifest_pins_pre_who16_ownd() is False
     assert ugp.manifest_pins_pre_who16_ownd(tmp_path / "missing.json") is False
 
     bad_json = tmp_path / "bad.json"
     bad_json.write_text("{not-json", encoding="utf-8")
     assert ugp.manifest_pins_pre_who16_ownd(bad_json) is False
 
-    bumped_manifest = tmp_path / "manifest.json"
-    bumped_manifest.write_text('{"requirements": ["OWNd==2.0.0b12"]}', encoding="utf-8")
-    assert ugp.manifest_pins_pre_who16_ownd(bumped_manifest) is False
+    pre_bump_manifest = tmp_path / "manifest.json"
+    pre_bump_manifest.write_text('{"requirements": ["OWNd==2.0.0b11"]}', encoding="utf-8")
+    assert ugp.manifest_pins_pre_who16_ownd(pre_bump_manifest) is True
+
+    for row in ugp.GATEWAY_DISCOVERY_METADATA:
+        if row["profile_name"] in ("F461", "MyHomeServer1"):
+            assert row["pinned_whos"] == [1, 2, 4, 18]
+            assert row["sweep_omits"] == [ugp.GENERAL_ZONE_STATUS]
 
     real = ownd_profiles.get_gateway_profile
 
-    class _DelegatingWithoutWho16:
-        def __init__(self, base):
+    class _DelegatingWho16:
+        def __init__(self, base, with_who16: bool):
             self._base = base
+            self._with_who16 = with_who16
 
         def __getattr__(self, attr: str):
             return getattr(self._base, attr)
 
         def supports_who(self, who: int) -> bool:
             if who == 16:
-                return False
+                return self._with_who16
             return bool(self._base.supports_who(who))
 
-    def _patched(name: str, *args, **kwargs):
-        base = real(name, *args, **kwargs)
-        if getattr(base, "model_name", None) in ("F461", "MyHomeServer1"):
-            return _DelegatingWithoutWho16(base)
-        return base
+    def _patch(with_who16: bool):
+        def _patched(name: str, *args, **kwargs):
+            base = real(name, *args, **kwargs)
+            if getattr(base, "model_name", None) in ("F461", "MyHomeServer1"):
+                return _DelegatingWho16(base, with_who16)
+            return base
 
-    monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
+        monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
+
     monkeypatch.setattr(ugp, "_patched_ownd_profiles", lambda: [])
 
-    # Pre-bump manifest (OWNd==2.0.0b11): WHO 16 transition is tolerated.
+    # The pinned release (OWNd#142: no WHO 16 on the F461 / MyHomeServer1) agrees with the rows.
+    _patch(with_who16=False)
     assert ugp.verify_profiles_against_oracle() == []
 
-    # Post-bump manifest (OWNd==2.0.0b12): stale pinned_whos with WHO 16 is rejected.
-    violations = ugp.verify_profiles_against_oracle(manifest_path=bumped_manifest)
-    assert [v for v in violations if "**F461** pinned_whos=[1, 2, 4, 16, 18] disagrees" in v]
-    assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 16, 18] disagrees" in v]
+    # A stale pre-#142 OWNd (WHO 16 still advertised) disagrees with the committed rows and is
+    # flagged against the bumped manifest ...
+    _patch(with_who16=True)
+    violations = ugp.verify_profiles_against_oracle()
+    assert [v for v in violations if "**F461** pinned_whos=[1, 2, 4, 18] disagrees" in v]
+    assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 18] disagrees" in v]
     assert len(violations) == 2
-
-    # Updating pinned_whos and sweep_omits at the pin bump clears all violations.
-    rows = copy.deepcopy(ugp.GATEWAY_DISCOVERY_METADATA)
-    for row in rows:
-        if row["profile_name"] in ("F461", "MyHomeServer1"):
-            row["pinned_whos"] = [1, 2, 4, 18]
-            row["sweep_omits"] = [ugp.GENERAL_ZONE_STATUS]
-    monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
-    assert ugp.verify_profiles_against_oracle(manifest_path=bumped_manifest) == []
+    # ... and tolerated only by a manifest that still pins OWNd==2.0.0b11 (the closed window).
+    assert ugp.verify_profiles_against_oracle(manifest_path=pre_bump_manifest) == []
