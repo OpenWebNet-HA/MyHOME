@@ -2910,7 +2910,7 @@ async def test_shared_bus_who6_who8_delegation_end_to_end(hass: HomeAssistant) -
     )
     gw_mh202.is_connected = True
     bridged: list[Any] = []
-    unsub_bridge = async_dispatcher_connect(hass, f"myhome_message_{gw_mh202.mac}", bridged.append)
+    unsub_bridge = async_dispatcher_connect(hass, f"myhome_message_{gw_mh202.mac}", callback(lambda m: bridged.append(m)))
     try:
         gw_f453av_b._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
         assert len(bridged) == 1
@@ -2939,7 +2939,7 @@ async def test_shared_bus_who6_who8_delegation_end_to_end(hass: HomeAssistant) -
     gw_f453av_pri.is_connected = True
     bridged_av: list[Any] = []
     unsub_bridge_av = async_dispatcher_connect(
-        hass, f"myhome_message_{gw_f453av_pri.mac}", bridged_av.append
+        hass, f"myhome_message_{gw_f453av_pri.mac}", callback(lambda m: bridged_av.append(m))
     )
     try:
         gw_mh202_c._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
@@ -2953,7 +2953,7 @@ async def test_shared_bus_who6_who8_delegation_end_to_end(hass: HomeAssistant) -
     # 6. Closing/unloading secondary gateway notifies primary availability listeners immediately
     pri_avail_signals: list[None] = []
     unsub_avail = async_dispatcher_connect(
-        hass, gw_pri.availability_signal, lambda: pri_avail_signals.append(None)
+        hass, gw_pri.availability_signal, callback(lambda: pri_avail_signals.append(None))
     )
     try:
         await gw_sec.close_listener()
@@ -3019,7 +3019,7 @@ async def test_three_gateway_shared_bus_standby_and_who6_secondary(hass: HomeAss
     bridged: list[str] = []
     doorbells = []
     unsub_msg = async_dispatcher_connect(
-        hass, f"myhome_message_{pri_mac}", lambda m: bridged.append(str(m))
+        hass, f"myhome_message_{pri_mac}", callback(lambda m: bridged.append(str(m)))
     )
     unsub_bell = hass.bus.async_listen("myhome_doorbell_event", doorbells.append)
     try:
@@ -3081,7 +3081,7 @@ async def test_three_gateway_shared_bus_standby_and_who6_secondary(hass: HomeAss
     unsub_mh_avail = async_dispatcher_connect(
         hass,
         gw_mh.availability_signal,
-        lambda: avail_updates.append((gw_mh.is_who_available(1), gw_mh.is_who_available(6))),
+        callback(lambda: avail_updates.append((gw_mh.is_who_available(1), gw_mh.is_who_available(6)))),
     )
     try:
         gw_mh._mark_unavailable(None)
@@ -3181,7 +3181,7 @@ async def test_mh202_live_trace_who6_who8_delegation_and_standby_failover(
         bridged_to_primary: list[str] = []
         doorbells = []
         unsub_bridge = async_dispatcher_connect(
-            hass, f"myhome_message_{pri_mac}", lambda m: bridged_to_primary.append(str(m))
+            hass, f"myhome_message_{pri_mac}", callback(lambda m: bridged_to_primary.append(str(m)))
         )
         unsub_bell = hass.bus.async_listen("myhome_doorbell_event", doorbells.append)
         try:
@@ -3248,7 +3248,7 @@ async def test_mh202_live_trace_who6_who8_delegation_and_standby_failover(
         sb_doorbells = []
         sb_bridged: list[str] = []
         unsub_sb_bridge = async_dispatcher_connect(
-            hass, f"myhome_message_{pri_av_mac}", lambda m: sb_bridged.append(str(m))
+            hass, f"myhome_message_{pri_av_mac}", callback(lambda m: sb_bridged.append(str(m)))
         )
         unsub_sb_bell = hass.bus.async_listen("myhome_doorbell_event", sb_doorbells.append)
         try:
@@ -3318,7 +3318,7 @@ def test_door_entry_guards_apply_only_to_who6_who8(hass: HomeAssistant) -> None:
     aux_evt = OWNEvent.parse("*9*1*1##")
     assert aux_evt is not None
     bridged: list[str] = []
-    unsub = async_dispatcher_connect(hass, f"myhome_message_{pri_mac}", lambda m: bridged.append(str(m)))
+    unsub = async_dispatcher_connect(hass, f"myhome_message_{pri_mac}", callback(lambda m: bridged.append(str(m))))
     try:
         gw_sec._bridge_to_primary(OWNEvent.parse("*8*1#1#4*74##"))
         gw_sec._bridge_to_primary(OWNEvent.parse("*1*1*21##"))
@@ -3505,7 +3505,7 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
 
     bridged_gen: list[str] = []
     unsub_gen = async_dispatcher_connect(
-        hass, f"myhome_message_{gen_pri_mac}", lambda m: bridged_gen.append(str(m))
+        hass, f"myhome_message_{gen_pri_mac}", callback(lambda m: bridged_gen.append(str(m)))
     )
     try:
         gw_av_sec._bridge_to_primary(OWNEvent.parse("*6*10*4002##"))
@@ -3533,7 +3533,7 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
     assert gen_pri_lock.available is True
     gen_pri_avail_events: list[bool] = []
     unsub_gen_avail = async_dispatcher_connect(
-        hass, gw_gen_pri.availability_signal, lambda: gen_pri_avail_events.append(gen_pri_lock.available)
+        hass, gw_gen_pri.availability_signal, callback(lambda: gen_pri_avail_events.append(gen_pri_lock.available))
     )
     try:
         gw_gen_pri._apply_model("MyHomeServer1")
@@ -3589,7 +3589,7 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
 
     stale_bridged: list[str] = []
     unsub_stale = async_dispatcher_connect(
-        hass, f"myhome_message_{mh_pri_mac}", lambda m: stale_bridged.append(str(m))
+        hass, f"myhome_message_{mh_pri_mac}", callback(lambda m: stale_bridged.append(str(m)))
     )
     try:
         gw_f454_sec._bridge_to_primary(OWNEvent.parse("*6*10*4003##"))
@@ -3622,7 +3622,7 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
 
     sb_avail_events: list[bool] = []
     unsub_sb_avail = async_dispatcher_connect(
-        hass, gw_mh_pri.availability_signal, lambda: sb_avail_events.append(sb_lock.available)
+        hass, gw_mh_pri.availability_signal, callback(lambda: sb_avail_events.append(sb_lock.available))
     )
     try:
         gw_gen_sb._apply_model("F454")
