@@ -425,6 +425,7 @@ async def test_who22_only_gateway_outbound_commands(hass):
     await tuner.async_select_source("Station 5")
     await tuner.async_set_frequency(105.3)
     await tuner.async_store_station(5)
+    await tuner.async_store_station(15)
 
     sent_cmds = [str(call.args[0]) for call in gw.send.call_args_list]
     assert sent_cmds == [
@@ -437,6 +438,7 @@ async def test_who22_only_gateway_outbound_commands(hass):
         "*#22*2#1*#6*5##",
         "*#22*2#1*#5*1*10530##",
         "*22*33#5*2#1##",
+        "*22*33#15*2#1##",
     ]
 
 

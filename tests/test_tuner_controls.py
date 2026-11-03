@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import voluptuous as vol
 from homeassistant.components.media_player import MediaClass, MediaPlayerEntityFeature, MediaType
 from homeassistant.components.number import NumberDeviceClass, NumberMode
 from homeassistant.const import (
@@ -54,7 +55,7 @@ from custom_components.myhome.number import (
 from custom_components.myhome.number import (
     async_unload_entry as async_unload_number,
 )
-from custom_components.myhome.sound_source import MyHOMESoundSource
+from custom_components.myhome.sound_source import MyHOMESoundSource, parse_station_slot
 from tests.conftest import attach_platform
 
 
@@ -98,25 +99,58 @@ async def test_tuner_store_station_and_browse_media(
 
     assert bool(tuner.supported_features & MediaPlayerEntityFeature.BROWSE_MEDIA)
 
-    # Store station 5 (WHO 16 *#16*101*#10*5##) and F500N preset 12 (expands station_count)
+    # Dual-stack gateway (WHO 16 + WHO 22): slots 1..5 use WHO 16 *#16*101*#10*<N>##,
+    # while extended F500N slots 6..15 delegate to WHO 22 *22*33#<N>*2#1## (bt_difson caps #10 at 5).
     await tuner.async_store_station(5)
     assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#10*5##"
     assert tuner.source == "Station 5"
     assert tuner.extra_state_attributes["station"] == 5
 
+    await tuner.async_store_station(6)
+    assert str(mock_gateway.send.call_args[0][0]) == "*22*33#6*2#1##"
+    assert tuner.source == "Station 6"
+
     await tuner.async_store_station(12)
-    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#10*12##"
+    assert str(mock_gateway.send.call_args[0][0]) == "*22*33#12*2#1##"
     assert len(tuner.source_list) == 12
     assert tuner.source == "Station 12"
 
-    # Out-of-range station raises HomeAssistantError
-    for bad in (0, 16, -1):
-        with pytest.raises(HomeAssistantError) as exc_info:
-            await tuner.async_store_station(bad)
-        assert exc_info.value.translation_key == "unknown_station"
+    # Whole-number float and integer string are accepted cleanly
+    await tuner.async_store_station(4.0)  # type: ignore[arg-type]
+    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#10*4##"
+    await tuner.async_store_station(" 5 ")  # type: ignore[arg-type]
+    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#10*5##"
+    await tuner.async_select_station(3.0)  # type: ignore[arg-type]
+    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#7*3##"
+    await tuner.async_select_station("2")  # type: ignore[arg-type]
+    assert str(mock_gateway.send.call_args[0][0]) == "*#16*101*#7*2##"
 
-    # Dimension 10 report from bus updates active station
-    tuner.handle_event(OWNSoundEvent("*#16*101*10*3##"))
+    # parse_station_slot covers all scalar/non-scalar branches
+    assert parse_station_slot(5) == 5
+    assert parse_station_slot(5.0) == 5
+    assert parse_station_slot(" 5 ") == 5
+    for bad_slot in (True, False, 1.9, float("inf"), float("nan"), "1.9", "abc", None, object()):
+        assert parse_station_slot(bad_slot) is None
+
+    # Out-of-range, boolean, fractional float, or non-integer station raises HomeAssistantError
+    mock_gateway.send.reset_mock()
+    for bad in (0, 16, -1, True, False, 1.9, "1.9", "abc", float("nan"), float("inf"), None):
+        with pytest.raises(HomeAssistantError) as exc_info:
+            await tuner.async_store_station(bad)  # type: ignore[arg-type]
+        assert exc_info.value.translation_key == "unknown_station"
+        with pytest.raises(HomeAssistantError) as sel_exc:
+            await tuner.async_select_station(bad)  # type: ignore[arg-type]
+        assert sel_exc.value.translation_key == "unknown_station"
+    for bad_freq in (True, False, "abc", float("nan"), float("inf"), None):
+        with pytest.raises(HomeAssistantError) as freq_exc:
+            await tuner.async_set_frequency(bad_freq)  # type: ignore[arg-type]
+        assert freq_exc.value.translation_key == "frequency_out_of_range"
+    mock_gateway.send.assert_not_called()
+
+    # Dimension 7 report from bus updates active station; write-only Dimension 10 is ignored
+    tuner.handle_event(OWNSoundEvent("*#16*101*7*0*3##"))
+    assert tuner.source == "Station 3"
+    tuner.handle_event(OWNSoundEvent("*#16*101*10*4##"))
     assert tuner.source == "Station 3"
 
     # Browse media lists all 12 stations + 2 sorted picture frequencies
@@ -134,6 +168,54 @@ async def test_tuner_store_station_and_browse_media(
     assert browse.children[13].title == "105.30 MHz"
     assert browse.children[13].media_content_id == "105.30"
     assert browse.children[13].thumbnail == "/local/dimsoft.png"
+
+
+@pytest.mark.asyncio
+async def test_who16_only_gateway_caps_store_station_at_five(
+    hass: HomeAssistant, mock_gateway: MagicMock
+) -> None:
+    """WHO 16-only gateways (MH200, H4684 FW < 6.0) cap store_station at 1..5 without emitting NACKed frames."""
+    mock_gateway.profile_supports_who = lambda who: who == 16
+    tuner = MyHOMESoundSource(
+        hass=hass,
+        name="FM Radio",
+        device_id="101#16",
+        who="16",
+        where="101",
+        manufacturer="BTicino",
+        model="Audio Source",
+        gateway=mock_gateway,
+    )
+    tuner.hass = hass
+    tuner.entity_id = "media_player.fm_radio"
+    tuner.async_schedule_update_ha_state = MagicMock()
+    entry = MagicMock()
+    entry.data = {CONF_MAC: mock_gateway.mac}
+    entry.runtime_data = MyHOMERuntimeData(gateway=mock_gateway)
+    attach_platform(tuner, entry)
+
+    await tuner.async_store_station(1)
+    await tuner.async_store_station(5)
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*#16*101*#10*1##",
+        "*#16*101*#10*5##",
+    ]
+    assert tuner.source == "Station 5"
+
+    mock_gateway.send.reset_mock()
+    for bad in (0, -1, 6, 12, 15, 16, True, False):
+        with pytest.raises(HomeAssistantError) as exc_info:
+            await tuner.async_store_station(bad)
+        assert exc_info.value.translation_key == "unknown_station"
+        assert "(1-5)" in str(exc_info.value)
+    mock_gateway.send.assert_not_called()
+
+    # Also verify non-callable profile_supports_who defaults safely to the 1..5 WHO 16 ceiling
+    mock_gateway.profile_supports_who = None
+    with pytest.raises(HomeAssistantError) as exc_unprofiled:
+        await tuner.async_store_station(6)
+    assert exc_unprofiled.value.translation_key == "unknown_station"
+    mock_gateway.send.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -403,6 +485,53 @@ async def test_full_config_entry_tuner_device_grouping_reload_and_uncheck_prunin
         ]
         assert float(hass.states.get(num_eid).state) == 98.75
         assert hass.states.get(mp_eid).attributes["station"] == 5
+
+        # Service-layer schemas reject booleans, fractional floats, NaN/Inf, and non-numeric strings
+        # BEFORE reaching the entity (preventing vol.Coerce(int)(True/1.9) == 1 from overwriting Station 1).
+        mock_send.reset_mock()
+        for bad_station in (True, False, 1.9, "1.9", "abc", float("nan"), None):
+            with pytest.raises(vol.Invalid):
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_TUNER_STORE_STATION,
+                    {"entity_id": mp_eid, "station": bad_station},
+                    blocking=True,
+                )
+        for bad_frequency in (True, False, "abc", "nan", float("inf"), None):
+            with pytest.raises(vol.Invalid):
+                await hass.services.async_call(
+                    DOMAIN,
+                    SERVICE_TUNER_SET_FREQUENCY,
+                    {"entity_id": mp_eid, "frequency": bad_frequency},
+                    blocking=True,
+                )
+        mock_send.assert_not_called()
+
+        # Whole-number float and integer string still work through the HA service schema
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TUNER_STORE_STATION,
+            {"entity_id": mp_eid, "station": "4"},
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TUNER_STORE_STATION,
+            {"entity_id": mp_eid, "station": 5.0},
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_TUNER_SET_FREQUENCY,
+            {"entity_id": mp_eid, "frequency": "101.20"},
+            blocking=True,
+        )
+        await hass.async_block_till_done()
+        assert [str(c.args[0]) for c in mock_send.call_args_list] == [
+            "*#16*101*#10*4##",
+            "*#16*101*#10*5##",
+            "*#16*101*#6*0*101200##",
+        ]
 
         # Reload entry: PlatformDiscovery MUST NOT restore 101#16 as a duplicate MyHOMEMediaPlayer!
         assert await hass.config_entries.async_reload(entry.entry_id)
