@@ -10,9 +10,11 @@ from OWNd.message import OWNEvent
 
 from custom_components.myhome.const import CONF_COVER_TRAVEL_TIMES, EVENT_COVER_CALIBRATION
 from custom_components.myhome.cover import (
+    CalibrationCutoff,
     CalibrationInterrupted,
     CoverCalibrationHub,
     MyHOMECover,
+    _actuator_cutoff,
     _stored_calibration,
     async_stop_cover_calibration,
     get_last_calibration_trace,
@@ -323,16 +325,34 @@ async def test_external_command_interrupts_calibration(hass, gateway, clock, fak
     assert cover._calibrating is False
 
 
-async def test_implausible_run_is_not_stored(hass, gateway, clock, fake_time, sleeps):
+@pytest.mark.parametrize(
+    ("down", "up", "expected_msg", "expected_key", "expected_seconds"),
+    [
+        (0.2, 20.0, "implausible down run of 0.2 s", "calibration_implausible_run_down", "0.2"),
+        (20.0, 0.2, "implausible up run of 0.2 s", "calibration_implausible_run_up", "0.2"),
+        (326.0, 20.0, "implausible down run of 326.0 s", "calibration_implausible_run_down", "326.0"),
+        (20.0, 326.0, "implausible up run of 326.0 s", "calibration_implausible_run_up", "326.0"),
+    ],
+)
+async def test_implausible_run_is_not_stored(
+    hass, gateway, clock, fake_time, sleeps, down, up, expected_msg, expected_key, expected_seconds
+):
     cover = _make_cover(hass, gateway)
-    task = asyncio.create_task(cover.async_calibrate())
-    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
-    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=0.2)  # 0.2 s "travel"
-    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=20.0)
-    with pytest.raises(HomeAssistantError, match="implausible down run"):
-        await asyncio.wait_for(task, 5)
+    events = []
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, callback(lambda ev: events.append(ev.data)))
+    with patch("custom_components.myhome.cover.CALIBRATION_RUN_TIMEOUT", 400.0):
+        task = asyncio.create_task(cover.async_calibrate())
+        await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
+        await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=down)
+        await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=up)
+        with pytest.raises(HomeAssistantError, match=expected_msg) as err:
+            await asyncio.wait_for(task, 5)
+    assert err.value.translation_key == expected_key
+    assert err.value.translation_placeholders == {"name": "Bedroom shutter", "seconds": expected_seconds}
     assert cover.extra_state_attributes["calibration_source"] == "default"
-    assert cover._travel_time_down == 25.0
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+    await hass.async_block_till_done()
+    assert events[-1]["phase"] == "failed" and expected_msg in events[-1]["error"]
 
 
 async def test_calibrations_on_one_gateway_run_sequentially(hass, gateway, clock, fake_time, sleeps):
@@ -906,17 +926,174 @@ async def test_run_ending_at_the_actuator_cutoff_fails_at_once(hass, gateway, cl
     assert cover._calibrating is False
     await hass.async_block_till_done()
     assert events[-1]["phase"] == "failed" and "60 s run-time limit" in events[-1]["error"]
+    assert events[-1]["actuator_limit"] == 60.0
 
 
-async def test_run_just_outside_the_cutoff_window_is_stored(hass, gateway, clock, fake_time, sleeps):
-    """A genuine 58 s or 66 s run is a long shutter, not the limit."""
+async def test_run_ending_at_the_m1_cutoff_fails_at_once(hass, gateway, clock, fake_time, sleeps):
+    """#837: an 86 s shutter on an F411 at M=1 (120 s): the 121.5 s run fails like the 60 s one, nothing is stored."""
+    cover = _make_cover(hass, gateway)
+    events = []
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.3, motor_delay=0.55, run=121.5)
+    with pytest.raises(CalibrationCutoff, match="120 s run-time limit") as err:
+        await asyncio.wait_for(task, 5)
+    assert "the open run ended after 121.5 s" in str(err.value)
+    assert err.value.translation_key == "calibration_actuator_cutoff_open"
+    assert err.value.translation_placeholders == {
+        "name": "Bedroom shutter", "seconds": "121.5", "limit": "120",
+    }
+
+    assert [f for f, _ in gateway.deliveries] == ["*2*1*21##"]  # no second and third run
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+    await hass.async_block_till_done()
+    assert events[-1]["phase"] == "failed" and events[-1]["actuator_limit"] == 120.0
+    failed = [f for f in get_last_calibration_trace(gateway.mac) if f.get("phase") == "failed"]
+    assert failed[-1]["actuator_limit"] == 120.0
+
+
+async def test_close_run_ending_at_the_m1_cutoff_fails_without_third_run(hass, gateway, clock, fake_time, sleeps):
+    """#837: if the opening reference run ends early and the closing run hits M=1 (120 s), calibration aborts before the third run."""
+    cover = _make_cover(hass, gateway)
+    events = []
+
+    @callback
+    def _record_event(ev):
+        events.append(ev.data)
+
+    hass.bus.async_listen(EVENT_COVER_CALIBRATION, _record_event)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.3, motor_delay=0.55, run=121.5)
+    with pytest.raises(CalibrationCutoff, match="120 s run-time limit") as err:
+        await asyncio.wait_for(task, 5)
+    assert "the close run ended after 121.5 s" in str(err.value)
+    assert err.value.translation_key == "calibration_actuator_cutoff_close"
+    assert err.value.translation_placeholders == {
+        "name": "Bedroom shutter", "seconds": "121.5", "limit": "120",
+    }
+
+    assert [f for f, _ in gateway.deliveries] == ["*2*1*21##", "*2*2*21##"]  # no third run
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+    await hass.async_block_till_done()
+    assert events[-1]["phase"] == "failed" and events[-1]["actuator_limit"] == 120.0
+
+
+@pytest.mark.parametrize(
+    ("seconds", "limit"),
+    [
+        (float("-inf"), None),
+        (-1.0, None),
+        (0.0, None),
+        (float("nan"), None),
+        (float("inf"), None),
+        (14.0, None),
+        (58.9, None),
+        (59.0, 60.0),
+        (60.05, 60.0),
+        (61.5, 60.0),
+        (65.0, 60.0),
+        (65.1, None),
+        (86.0, None),
+        (91.32, None),
+        (118.9, None),
+        (119.0, 120.0),
+        (121.5, 120.0),
+        (125.45, 120.0),
+        (126.32, 120.0),
+        (127.11, 120.0),
+        (130.0, 120.0),
+        (130.1, None),
+        (178.9, None),
+        (179.0, 180.0),
+        (181.5, 180.0),
+        (195.0, 180.0),
+        (195.1, None),
+        (298.9, None),
+        (299.0, 300.0),
+        (301.0, 300.0),
+        (325.0, 300.0),
+        (325.1, None),
+        (538.9, None),
+        (539.0, 540.0),
+        (585.0, 540.0),
+        (585.1, None),
+        (598.9, None),
+        (599.0, 600.0),
+        (601.5, 600.0),
+        (650.0, 600.0),
+        (650.1, None),
+    ],
+)
+def test_actuator_cutoff_windows(seconds, limit):
+    """Each configurator limit from 1 to 10 min owns a window from 1 s before to 5 s/min after it."""
+    assert _actuator_cutoff(seconds) == limit
+
+
+async def test_trace_433_two_minute_actuator_stops_are_all_caught_as_120s_cutoff(
+    hass, gateway, clock, fake_time, sleeps
+):
+    """Every ~2-minute actuator stop in TRACE_433 (#433, 29 s shutters on 4672) is rejected as the 120 s cutoff."""
+    import re
+
+    from tests.test_issue_433_cover_scope import POINTS, TRACE_433
+
+    rx_frames = [(offset, raw) for offset, direction, raw in TRACE_433 if direction == "rx"]
+    starts: dict[str, float] = {}
+    end_stops: list[float] = []
+    for idx, (offset, raw) in enumerate(rx_frames):
+        match = re.match(r"^\*2\*(0|1|2)\*([^#*]+)##$", raw)
+        assert match is not None
+        what, where = match.group(1), match.group(2)
+        if what == "1" and where == "0":
+            for member in POINTS:
+                starts[member] = offset
+        elif what in ("1", "2"):
+            starts[where] = offset
+        elif what == "0" and where in starts:
+            # In TRACE_433, every keypad press emits *2*0*W## ~40-50 ms before *2*1*W##;
+            # skip those pre-direction stops to isolate genuine end-of-run stops.
+            is_pre_direction = idx + 1 < len(rx_frames) and (
+                rx_frames[idx + 1][0] - offset < 1.0
+                and rx_frames[idx + 1][1] in (f"*2*1*{where}##", f"*2*2*{where}##")
+            )
+            if not is_pre_direction:
+                dt = offset - starts.pop(where)
+                if dt > 15.0:
+                    end_stops.append(dt)
+
+    assert len(end_stops) == 18  # 2 point-to-point + 2 * 8 general UP runs (125.45-127.11 s)
+    assert min(end_stops) > 125.0 and max(end_stops) < 128.0
+    assert [_actuator_cutoff(dt) for dt in end_stops] == [120.0] * 18
+
+    # End-to-end check on the slowest TRACE_433 stop (127.114 s): rejected on first run, nothing stored.
+    cover = _make_cover(hass, gateway)
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=max(end_stops))
+    with pytest.raises(CalibrationCutoff, match="120 s run-time limit") as err:
+        await asyncio.wait_for(task, 5)
+    assert err.value.limit == 120.0
+    assert cover.extra_state_attributes["calibration_source"] == "default"
+    assert cover._travel_time_down == 25.0 and cover._travel_time_up == 25.0
+
+
+@pytest.mark.parametrize(("down", "up"), [(58.0, 66.0), (118.0, 131.0)])
+async def test_run_just_outside_the_cutoff_window_is_stored(hass, gateway, clock, fake_time, sleeps, down, up):
+    """A genuine 58 s or 66 s (118 s or 131 s) run is a long shutter, not the limit."""
     cover = _make_cover(hass, gateway)
     task = asyncio.create_task(cover.async_calibrate())
     await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=30.0)
-    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=58.0)
-    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=66.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.1, motor_delay=0.5, run=down)
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.1, motor_delay=0.5, run=up)
     result = await asyncio.wait_for(task, 5)
-    assert result["down"] == pytest.approx(58.0) and result["up"] == pytest.approx(66.0)
+    assert result["down"] == pytest.approx(down) and result["up"] == pytest.approx(up)
 
 
 # ── the backend measures every run for the stopwatch (#319 review) ─────────

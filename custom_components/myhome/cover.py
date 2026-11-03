@@ -54,8 +54,9 @@ from .access_policy import (
 )
 from .const import (
     BUS_ROUTING,
-    CALIBRATION_CUTOFF_MAX,
-    CALIBRATION_CUTOFF_MIN,
+    CALIBRATION_CUTOFF_EARLY,
+    CALIBRATION_CUTOFF_LATE_PER_MIN,
+    CALIBRATION_CUTOFFS,
     CALIBRATION_MAX_MOTOR_PULSE,
     CALIBRATION_MAX_RUN,
     CALIBRATION_MIN_MOTOR_PULSE,
@@ -99,6 +100,7 @@ from .const import (
     SERVICE_STOP_COVER_CALIBRATION,
 )
 from .cover_calibration import (
+    CalibrationCutoff,
     CalibrationInterrupted,
     CoverCalibrationHub,
     _calibration_lock,
@@ -181,6 +183,15 @@ def _is_standard_timed_shutter_model(model: str | None) -> bool:
         return False
     normalized = model.strip().upper()
     return bool(normalized) and normalized.startswith(_STANDARD_TIMED_SHUTTER_MODELS)
+
+
+def _actuator_cutoff(seconds: float) -> float | None:
+    """Return the actuator run-time limit a calibration run of ``seconds`` ended at, if any."""
+    for limit in CALIBRATION_CUTOFFS:
+        late = (limit / 60.0) * CALIBRATION_CUTOFF_LATE_PER_MIN
+        if limit - CALIBRATION_CUTOFF_EARLY <= seconds <= limit + late:
+            return limit
+    return None
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -1172,15 +1183,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     )
                     self._stopped_event.clear()
                     continue
-                if CALIBRATION_CUTOFF_MIN <= elapsed <= CALIBRATION_CUTOFF_MAX:
+                if (limit := _actuator_cutoff(elapsed)) is not None:
                     # The actuator stopped itself at its run-time limit, not at the end
-                    # stop: storing this would make a 14 s shutter a 61 s one (#319).
+                    # stop: storing this would make a 14 s shutter a 61 s one (#319), or
+                    # an 86 s shutter on an F411 at M=1 a 121 s one (#837).
                     # Fail now rather than after three such runs.
-                    raise HomeAssistantError(
-                        f"{self._attr_name}: the {direction} run ended after {elapsed:.1f} s, at the actuator's "
-                        "60 s run-time limit, not at the end stop; the actuator cannot measure this shutter "
-                        "- use the stopwatch (Stop & Save) or set travel_time manually"
-                    )
+                    raise CalibrationCutoff(self._display_name, direction, elapsed, limit)
                 return elapsed
         finally:
             self._settles_on_timer = True
@@ -1234,7 +1242,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     await asyncio.sleep(CALIBRATION_SETTLE)
                     up = await self._calibration_run("open")
                 except HomeAssistantError as err:
-                    self._fire_calibration_event("failed", error=str(err))
+                    extra = {"actuator_limit": err.limit} if isinstance(err, CalibrationCutoff) else {}
+                    self._fire_calibration_event("failed", error=str(err), **extra)
                     raise
                 finally:
                     self._calibrating = False
@@ -1247,11 +1256,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if not CALIBRATION_MIN_RUN <= value <= CALIBRATION_MAX_RUN:
                 msg = f"{self._display_name}: implausible {label} run of {value:.1f} s; not stored"
                 self._fire_calibration_event("failed", error=msg)
+                placeholders = {"name": self._display_name, "seconds": f"{value:.1f}"}
+                if label == "down":
+                    raise HomeAssistantError(
+                        msg,
+                        translation_domain=DOMAIN,
+                        translation_key="calibration_implausible_run_down",
+                        translation_placeholders=placeholders,
+                    )
                 raise HomeAssistantError(
                     msg,
                     translation_domain=DOMAIN,
-                    translation_key="calibration_implausible_run",
-                    translation_placeholders={"name": self._display_name, "direction": label, "seconds": f"{value:.1f}"},
+                    translation_key="calibration_implausible_run_up",
+                    translation_placeholders=placeholders,
                 )
 
         self._promote_to_timed_strategy()
@@ -3259,6 +3276,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "CalibrationCutoff",
     "CalibrationInterrupted",
     "CoverCalibrationHub",
     "CoverFamily",
@@ -3271,6 +3289,7 @@ __all__ = [
     "MyHOMEImpulseCover",
     "MyHOMEScopeCover",
     "WRITE_TIMEOUT",
+    "_actuator_cutoff",
     "_calibration_lock",
     "_gateway_key",
     "_normalize_mac",
