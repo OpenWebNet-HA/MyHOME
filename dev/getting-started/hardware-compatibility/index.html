@@ -2279,9 +2279,9 @@
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F461</strong></td>
-<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>, <code>*#16*0*5##</code>)</td>
-<td style="text-align: left;">Lighting, cover, and energy meter 51 queries. The <code>020011</code> firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle, confirmed live on 2.0.11), so the sweep leaves both out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code>. Alarm query omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 4, 18</td>
+<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no <code>bt_difson</code>; every WHO 16 frame refused, own-firmware-oracle <code>020011</code>, confirmed live on 2.0.11). The firmware also drops <code>*#4*0##</code>, so the sweep leaves it out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code>. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F455</strong></td>
@@ -2291,9 +2291,9 @@
 </tr>
 <tr>
 <td style="text-align: left;"><strong>MyHomeServer1</strong></td>
-<td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
-<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>, <code>*#16*0*5##</code>)</td>
-<td style="text-align: left;">Lighting, cover, and energy meter 51 queries. The firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle <code>028206</code>, confirmed live on 3.87.13), so the sweep leaves both out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code>. Alarm query omitted.</td>
+<td style="text-align: left;">WHO 1, 2, 4, 18</td>
+<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no <code>bt_difson</code>; every WHO 16 frame refused, own-firmware-oracle <code>028206</code>, confirmed live on 3.87.13). The firmware also drops <code>*#4*0##</code>, so the sweep leaves it out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code>. Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>MH201</strong></td>
