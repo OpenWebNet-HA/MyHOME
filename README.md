@@ -94,6 +94,8 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 | **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
 
+*This table is automatically updated from gateway profile definitions and hardware specifications.*
+
 
 ### 📊 Hardware Trace Availability Matrix
 

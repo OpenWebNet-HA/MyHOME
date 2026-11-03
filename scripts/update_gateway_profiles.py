@@ -134,8 +134,8 @@ GATEWAY_METADATA: list[dict[str, object]] = [
     },
     {
         "model": "**H4890 / AM4890**",
-        "const_models": ["AM4890", "H4890", "LN4890"],
-        "ssdp_models": ["AM4890", "H4890", "LN4890", "LN4890A"],
+        "const_models": ["AM4890", "H4890", "LN4890", "067292", "573958", "078479"],
+        "ssdp_models": ["AM4890", "H4890", "LN4890", "LN4890A", "067292", "573958", "078479"],
         "profile_name": "H4890",
         "protocol": "OpenWebNet",
         "max_workers": "1 worker",
