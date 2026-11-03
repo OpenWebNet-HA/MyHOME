@@ -4026,7 +4026,7 @@
 </span></code></pre></div>
 <hr />
 <h2 id="17-myhometuner_store_station">17. <code>myhome.tuner_store_station</code><a class="headerlink" href="#17-myhometuner_store_station" title="Permanent link">&para;</a></h2>
-<p>Memorises the currently tuned FM radio frequency into a hardware preset slot (<code>1–5</code> on F500, up to <code>1–15</code> on F500N), dispatching <code>*#16*10S*#10*&lt;station&gt;##</code> on <code>WHO 16</code> gateways or <code>*22*33#&lt;station&gt;*2#S##</code> on <code>WHO 22</code>-only gateways.</p>
+<p>Memorises the currently tuned FM radio frequency into a hardware preset slot (<code>1–5</code> on F500, up to <code>1–15</code> on F500N), dispatching <code>*#16*10S*#10*&lt;station&gt;##</code> for slots <code>1–5</code> on <code>WHO 16</code> gateways (<code>bt_difson</code> ceiling) and <code>*22*33#&lt;station&gt;*2#S##</code> for extended slots <code>6–15</code> on dual-stack gateways or all slots <code>1–15</code> on <code>WHO 22</code>-only gateways (<code>WHO 16</code>-only gateways such as <code>MH200</code> reject slots <code>6–15</code>).</p>
 <h3 id="fields_16">Fields<a class="headerlink" href="#fields_16" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -4050,7 +4050,7 @@
 <td style="text-align: left;"><code>station</code></td>
 <td style="text-align: center;">integer</td>
 <td style="text-align: center;"><strong>Yes</strong></td>
-<td style="text-align: left;">Preset memory slot number (<code>1</code>–<code>15</code>).</td>
+<td style="text-align: left;">Preset memory slot number (<code>1</code>–<code>5</code> on <code>WHO 16</code>-only gateways, <code>1</code>–<code>15</code> when <code>WHO 22</code> is available).</td>
 <td style="text-align: left;"><code>5</code></td>
 </tr>
 </tbody>
