@@ -414,8 +414,9 @@ class TestMyHOMEAlarmEntity:
             return alarm
 
     def test_alarm_attributes(self, alarm_central, alarm_zone1):
-        # Read-only: the central unit rejects SCS arm/disarm (#564)
-        assert alarm_central.supported_features == AlarmControlPanelEntityFeature(0)
+        # Advertises ARM_AWAY for HomeKit / core trigger compatibility (#466),
+        # while refusing direct SCS arm/disarm calls (#564).
+        assert alarm_central.supported_features == AlarmControlPanelEntityFeature.ARM_AWAY
         assert alarm_central.alarm_state == STATE_DISARMED
         assert alarm_central.state == STATE_DISARMED
         assert alarm_central.extra_state_attributes["where"] == "0"
@@ -433,13 +434,14 @@ class TestMyHOMEAlarmEntity:
         assert alarm_zone1.async_on_remove.call_count == 1
 
     async def test_alarm_is_read_only(self, alarm_central):
-        # Core gates arm/trigger on supported_features; disarm has no flag, so
-        # the entity refuses it rather than send a frame the panel rejects.
-        with pytest.raises(ServiceValidationError) as err:
-            await alarm_central.async_alarm_disarm()
-        assert err.value.translation_domain == DOMAIN
-        assert err.value.translation_key == "alarm_read_only"
-        assert err.value.translation_placeholders == {"name": alarm_central._display_name}
+        # ARM_AWAY is advertised for state compatibility (#466) and disarm has no
+        # flag, so both entity methods refuse rather than send a rejected WHO 5 frame (#564).
+        for action in (alarm_central.async_alarm_arm_away, alarm_central.async_alarm_disarm):
+            with pytest.raises(ServiceValidationError) as err:
+                await action()
+            assert err.value.translation_domain == DOMAIN
+            assert err.value.translation_key == "alarm_read_only"
+            assert err.value.translation_placeholders == {"name": alarm_central._display_name}
         alarm_central._gateway_handler.send.assert_not_awaited()
 
     def test_status_requests(self):
