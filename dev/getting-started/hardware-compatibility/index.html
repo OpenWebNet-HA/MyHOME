@@ -2188,6 +2188,18 @@
 <td style="text-align: left;">3485, 3486 (Central Units), 3480</td>
 </tr>
 <tr>
+<td style="text-align: left;"><strong>Door Entry</strong></td>
+<td style="text-align: center;"><code>6</code></td>
+<td style="text-align: left;"><code>lock</code>, event bus</td>
+<td style="text-align: left;">Entrance panel door locks (<code>4000</code>–<code>4099</code>) and indoor-unit releases — <em>requires a gateway that routes <code>WHO 6</code> and sees the door-entry riser (<code>MH200</code>, <code>MH202</code>, <code>F453</code>; unverified: <code>F453AV</code>, <code>F452</code>, <code>F452V</code>, <code>H4684</code>, <code>H4890</code>, <code>MH201</code>, <code>MH200N</code>); <code>F454</code> / <code>F459</code> route only <code>WHO 8</code></em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Video Door Entry / Intercom</strong></td>
+<td style="text-align: center;"><code>8</code></td>
+<td style="text-align: left;">event bus</td>
+<td style="text-align: left;">2-wire entrance panels (<code>PE1</code>–<code>PE4</code>) — <em>requires a gateway that sees the door-entry riser (<code>F454</code>, <code>F459</code>; unverified: <code>F453AV</code>, <code>F452</code>, <code>F452V</code>; or <code>MH200</code>/<code>MH200N</code>/<code>MH202</code> when the riser reaches their bus)</em></td>
+</tr>
+<tr>
 <td style="text-align: left;"><strong>Gateway Diagnostics</strong></td>
 <td style="text-align: center;"><code>13</code></td>
 <td style="text-align: left;"><code>diagnostics</code>, <code>repair</code></td>
@@ -2219,6 +2231,10 @@
 </tr>
 </tbody>
 </table>
+<div class="admonition important">
+<p class="admonition-title">Important</p>
+<p><strong>Door Entry &amp; Intercom (<code>WHO = 6 / 8</code>) — <code>MH</code> vs <code>AV</code> Bus Separation</strong>: BTicino 2-wire door entry (<code>AV</code> SCS riser) and home automation (<code>MH</code> SCS bus) are physically separate buses unless bridged through an <code>F422</code> SCS/SCS interface; an A/V gateway (<code>F454</code>, <code>F459</code>, <code>F453AV</code>) connects to the <code>AV</code> riser itself. Dual-bus indoor touchscreens such as <strong>HomeTouch <code>3488</code></strong> have isolated <code>MH SCS BUS</code> and <code>AV SCS BUS</code> terminals (they do <strong>not</strong> bridge door-entry frames onto <code>MH</code>) and do <strong>not</strong> run a local OpenWebNet server on TCP port <code>20000</code>. Gateways without the <code>bt_vct</code> door-entry translator (<strong><code>MyHomeServer1</code></strong>, <strong><code>F455</code></strong>, <strong><code>F461</code></strong>, <strong><code>F450</code></strong>, <strong><code>F460</code></strong>) NACK <code>*6*10*&lt;where&gt;##</code> with <code>*#*0##</code>, and so do <strong><code>F454</code></strong> / <strong><code>F459</code></strong>, whose <code>bt_vct</code> handles <code>WHO 8</code> only. On such plants, either drive gates/strikes via an <code>MH</code>-bus dry-contact relay (<code>F411/2</code>, <code>F411/1N</code>, or <code>F411/4</code> with interposing relays; <code>WHO = 1</code> impulse cover) or add a gateway that routes <code>WHO 6</code> and sees the riser (<code>MH200</code>, <code>MH202</code>, <code>F453</code>) in <strong>Shared Bus → Secondary</strong> mode with <code>WHO 6</code> (and <code>WHO 8</code> for doorbells) delegated to it.</p>
+</div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p><strong>Sound System (WHO = 16) Wiring</strong>: The 2-wire SCS bus carries both digital commands (power, volume, input routing via OpenWebNet WHO 16) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the <a href="../../configuration/media_player/">Sound System / Media Player Guide</a>.</p>

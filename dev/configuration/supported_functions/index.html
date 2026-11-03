@@ -2381,9 +2381,16 @@
 <tr>
 <td style="text-align: center;">6</td>
 <td style="text-align: left;">Door entry</td>
-<td style="text-align: left;"><code>lock</code>, <code>event</code></td>
+<td style="text-align: left;"><code>lock</code>, event bus</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Door strikes, lock actuators, and doorbell events.</td>
+<td style="text-align: left;">Door strikes (<code>*6*10*&lt;where&gt;##</code>), lock release status, and doorbell events. Requires a gateway whose firmware routes <code>WHO 6</code> and that sees the door-entry riser: <code>MH200</code>, <code>MH202</code>, <code>F453</code> (firmware-verified); <code>F453AV</code>, <code>F452</code>, <code>F452V</code>, <code>H4684</code>, <code>H4890</code>, <code>MH201</code>, <code>MH200N</code> (unverified). Not routed by <code>F454</code> / <code>F459</code> (<code>WHO 8</code> only) or by <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F450</code>, and <code>F460</code>.</td>
+</tr>
+<tr>
+<td style="text-align: center;">8</td>
+<td style="text-align: left;">Video door entry / intercom</td>
+<td style="text-align: left;">event bus</td>
+<td style="text-align: center;">👁️</td>
+<td style="text-align: left;">Entrance panel doorbell events (<code>*8*1#&lt;1..4&gt;#&lt;mm&gt;*&lt;where&gt;##</code>) from a gateway that sees the door-entry riser: <code>F454</code>, <code>F459</code>; <code>F453AV</code>, <code>F452</code>, <code>F452V</code> (unverified); or <code>MH200</code> / <code>MH200N</code> / <code>MH202</code> when the riser reaches their bus (e.g. through an <code>F422</code>).</td>
 </tr>
 <tr>
 <td style="text-align: center;">9</td>
@@ -2580,12 +2587,12 @@
 <tr>
 <td style="text-align: left;">Door entry lock (WHO 6)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Door entry strikes from <code>myhome.yaml</code> with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; <code>who: 1</code> relays are rejected (motorized gates and garage doors are impulse covers).</td>
+<td style="text-align: left;">Door entry strikes from <code>myhome.yaml</code> with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; <code>who: 1</code> relays are rejected (motorized gates and garage doors are impulse covers). Requires a gateway that routes <code>WHO 6</code> and sees the door-entry riser, or <strong>Shared Bus → Secondary</strong> <code>WHO 6</code> delegation to one (such as an <code>MH202</code> on the riser); <code>F454</code> / <code>F459</code> route only <code>WHO 8</code>. If the gateway rejects <code>*6*10*&lt;where&gt;##</code> with <code>*#*0##</code> (e.g. <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F454</code>), <code>lock.unlock</code> raises <code>HomeAssistantError</code> and leaves the entity locked; an unlock not confirmed within 15 s is withdrawn if it has not been sent yet.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Doorbell event (WHO 6 / WHO 8)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;"><code>myhome_doorbell_event</code> for an entrance panel ringing (WHO 8 call kinds 1-4, WHO 6 call), not for handset-to-handset calls or pager broadcasts. Fired by the gateway that owns the subsystem only. The WHO 6 chime (WHAT 20) is unverified: it is not in the published WHO 6 table and has no capture.</td>
+<td style="text-align: left;"><code>myhome_doorbell_event</code> for an entrance panel ringing (WHO 8 call kinds 1-4, WHO 6 call), not for handset-to-handset calls or pager broadcasts. Fired by the gateway that owns the subsystem only (delegatable via <code>WHO 6</code> / <code>WHO 8</code> on a shared bus). The WHO 6 chime (WHAT 20) is unverified: it is not in the published WHO 6 table and has no capture.</td>
 </tr>
 </tbody>
 </table>

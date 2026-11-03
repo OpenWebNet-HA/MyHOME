@@ -1383,6 +1383,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#door-entry-and-intercom-who-6-who-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Door entry and intercom (WHO 6 / WHO 8)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sound-system-who-16" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2088,6 +2099,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#door-entry-and-intercom-who-6-who-8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Door entry and intercom (WHO 6 / WHO 8)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sound-system-who-16" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2314,6 +2336,33 @@
 <td style="text-align: left;"><strong>Arming requires the central unit to accept the command.</strong></td>
 <td style="text-align: left;">Central units reject arming while a zone is open or the engineer code is active; the bus only reports the refusal.</td>
 <td style="text-align: left;">Watch the bus-monitor card for the NACK.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="door-entry-and-intercom-who-6-who-8">Door entry and intercom (WHO 6 / WHO 8)<a class="headerlink" href="#door-entry-and-intercom-who-6-who-8" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Limitation</th>
+<th style="text-align: left;">Why</th>
+<th style="text-align: left;">Workaround</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Gateways whose firmware routes no <code>WHO 6</code> reject unlock commands (<code>*6*10*&lt;where&gt;##</code>) with NACK (<code>*#*0##</code>): <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F450</code>, <code>F460</code>, and the A/V gateways <code>F454</code> / <code>F459</code>.</strong> (Discussion #833)</td>
+<td style="text-align: left;"><code>MyHomeServer1</code>, <code>F450</code>, <code>F455</code>, <code>F460</code> and <code>F461</code> ship no <code>bt_vct</code> door-entry translator, so they also see no <code>WHO 6 / 8</code> traffic. <code>F454</code> (and <code>F459</code>, which ships the same firmware image) routes only <code>WHO 8</code> to <code>bt_vct</code>: it reports doorbells, but no program takes <code>WHO 6</code>.</td>
+<td style="text-align: left;">Either wire an <code>MH</code>-bus dry-contact relay actuator (<code>F411/2</code>, <code>F411/1N</code>, or <code>F411/4</code> via interposing relays since <code>F411/4</code> shares a common <code>C</code> terminal across its 4 channels) in parallel with the gate/strike dry-contact input and configure it as a <code>WHO 1</code> impulse <code>cover</code>, or add a gateway that routes <code>WHO 6</code> and sees the door-entry riser (<code>MH200</code>, <code>MH202</code> or <code>F453</code>, with the riser reaching its bus, e.g. through an <code>F422</code> interface) as a <strong>Shared Bus → Secondary</strong> gateway with <code>WHO 6</code> (and <code>WHO 8</code> for doorbells) delegated to it. <code>F453AV</code> ships <code>bt_vct</code>, but its <code>WHO 6</code> routing is unverified.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>HomeTouch 3488</code> indoor video displays neither bridge <code>AV</code> frames onto <code>MH</code> nor expose a local OpenWebNet server on TCP port <code>20000</code>.</strong> (Discussion #833)</td>
+<td style="text-align: left;"><code>HomeTouch 3488</code> has physically isolated <code>MH SCS BUS</code> and <code>AV SCS BUS</code> 2-wire terminals: tapping its screen for lights transmits on <code>MH</code>, while door/gate release buttons transmit strictly on <code>AV</code>. Over LAN, <code>3488</code> acts only as an OpenWebNet <em>client</em> pairing to <code>MyHomeServer1</code> and exposes SIP/HTTPS for the BTicino cloud <em>Door Entry for HOMETOUCH</em> app — no local <code>openserver</code> listens on port <code>20000</code>.</td>
+<td style="text-align: left;">Do not point the integration's host IP at <code>HomeTouch 3488</code>. Use an <code>MH</code>-bus dry-contact impulse relay (<code>F411/2</code>, <code>F411/1N</code>) at the gate/strike inputs or a <code>WHO 6</code>-capable gateway that sees the door-entry riser (see above).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Door entry locks (<code>lock</code>) are never auto-discovered from bus traffic.</strong></td>
+<td style="text-align: left;">Creating a code-less <code>lock</code> entity automatically whenever someone presses an indoor door-release button would let anyone with dashboard access unlatch the strike.</td>
+<td style="text-align: left;">Declare door entry locks explicitly under <code>lock:</code> in <code>myhome.yaml</code> (with an optional <code>code:</code> PIN).</td>
 </tr>
 </tbody>
 </table>
