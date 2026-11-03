@@ -24,7 +24,7 @@ Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** communit
 [📦 Installation](#-installation) • [🏛️ Supported Hardware](#️-supported-hardware) • [📚 Documentation](https://openwebnet-ha.github.io/MyHOME/beta/) • [💬 Discussions](https://github.com/OpenWebNet-HA/MyHOME/discussions) • [🤝 Contributing](CONTRIBUTING.md) • [🔒 Security](SECURITY.md)
 
 > [!TIP]
-> **🚀 V2 Phase 2 Architecture Now Live**: Phase 2 architecture is active across **OWNd** and **MyHOME**! Featuring strongly typed CEN / CEN+ scenario command builders and device triggers (**P2**), Thermoregulation Central Unit (3550 / 4695) master mode and zone coordination (**P4**), Multi-Gateway routing and physical plant isolation (**P6**), DALI Tunable White support, and 100.0% test coverage verified against the OpenWebNet Golden Corpus.
+> **🚀 V2 Phase 1 & 2 Architecture Now Live (v2.0.0b17)**: The complete v2 architecture modernization is active across **OWNd** and **MyHOME** ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232))! Featuring strongly typed CEN / CEN+ scenario command builders and device triggers (**P2**), Thermoregulation Central Unit (3550 / 4695) master mode and zone coordination (**P4**), Multi-Gateway routing and physical plant isolation (**P6**), DALI Tunable White, Cover End-Stop Settling & Min Delta, FM Tuner controls, and 100.0% test coverage across **5,324 automated tests** verified against the OpenWebNet Golden Corpus.
 
 ---
 
@@ -32,7 +32,8 @@ Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** communit
 
 - **Strongly Typed CEN / CEN+ Device Triggers & Addressing (P2)**: Native Home Assistant UI device triggers for scenario buttons with string-preserved addressing (`"0001"`, `"01"`, `"15"`), enriched event payloads (`where`, `gateway_mac`, `entry_id`), and all 8 press/release/held actions without requiring external YAML blueprints.
 - **Native Hardware Bus Light & Switch Timers (`WHO=1`)**: Hardware-offloaded countdown timers executed directly on Legrand DIN actuators (F411, etc.) via `myhome.turn_on_timed` or native `timer`/`duration` parameters in `light.turn_on` and `switch.turn_on`. Supports standard Legrand preset codes (0.5s, 30s, 1m, 2m, 3m, 4m, 5m, 15m) and custom Dimension 2 (`*#1*WHERE*#2*H*M*S##`) durations that turn off automatically even if Home Assistant restarts.
-- **Real-World Gateway Trace Replay Fixtures in CI (P5)**: Automated pytest fixture engine (`tests/test_trace_replay.py`) replaying frozen on-wire bus captures from production gateways directly against the integration state machine, enabling deterministic bug reproduction and permanent regression defense for community beta testers without requiring physical hardware.
+- **Real-World Gateway Trace Replay Fixtures in CI (P5)**: Automated pytest fixture engine replaying frozen on-wire bus captures from production gateways (F461, HL4684, Legrand 067292, F454, MH200N, MH201, 3550, 3486) directly against the integration state machine, enabling deterministic bug reproduction and permanent regression defense for community beta testers without requiring physical hardware.
+- **Cover Kinematics, End-Stop Settling & Min Delta**: Advanced cover kinematics with configurable `min_position_delta` (1–5 %, default 2 %) for tall shutters and slat adjustments, automatic settling on `travel_time + 2 s` from known positions, and 0.5 s early cutoff recognition preventing fractional frozen positions short of limit stops.
 - **Thermoregulation Central Unit Coordination (P4)**: Dedicated master coordination for 99-zone Central Unit (`#0`, model `Central Unit (3550)`) and 4-zone Central Unit (`#0#1`, model `Central Unit (4695)`). Master Heating/Cooling switches (`*4*3xx*#0##`) propagate across internal dispatchers to subordinate zones (`standalone=False`), automatically synchronizing whole-home climate operations with physical central units.
 - **Multi-Gateway Routing & Plant Isolation (P6)**: Namespaced event dispatchers (`f"myhome_cen_event_{mac}"`, `f"myhome_central_mode_{mac}"`) and device trigger filtering by parent gateway MAC (`via_device`), eliminating cross-talk and phantom triggers across physical plants combining multiple gateways (e.g. F454 + MH200N / MH201).
 - **DALI Tunable White & Color Temperature**: Native support for DALI DT8 ballasts (F429 / F461 gateways) with auto-detection of color temperature (`ColorMode.COLOR_TEMP`, 2000K–6535K / mireds), seamless Kelvin/mireds conversion, and sentinel filtering.
@@ -44,7 +45,7 @@ Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** communit
 - **Sound System 2.0 & Audio Matrix (WHO=16)**: Complete multi-room audio support for F441 / F441M matrices and amplifiers, including zone power, volume normalization (0–31 scale), software mute emulation, and dynamic streaming proxy.
 - **Streaming Audio Dynamic Proxy**: Seamlessly stream from **Music Assistant**, **Spotify Connect**, or any HA media player to wired BTicino audio zones using a thread-safe `DecoderPool` with analog gain-staging.
 - **Dimmable Light Detection**: Auto-detects dimming capabilities directly from bus events with transition support.
-- **OpenWebNet Golden Corpus Conformance**: Automated unit tests maintaining strict 100.0% line and branch coverage across all component modules, verified against multi-authority real-world captures across 11 OpenWebNet subsystems.
+- **OpenWebNet Golden Corpus Conformance**: Over **5,300 automated tests passing with 100.0% statement coverage (5,324 tests)** across all component modules, verified against multi-authority real-world captures across 11 OpenWebNet subsystems.
 
 ---
 
@@ -644,7 +645,7 @@ automated coverage and physical gateway verification steps.
 ### CI Workflows
 - **`hassfest`**: Official Home Assistant manifest, translation, and metadata validation.
 - **`validate`**: Official HACS compliance checks.
-- **`test-coverage`**: 3380 automated unit tests with snapshot matching and 100% line coverage enforcement on the `ownd` core package.
+- **`test-coverage`**: 5,324 automated unit and integration tests with snapshot matching and 100.0% statement coverage enforcement.
 - **`ha-container-smoke`**: Automated containerized smoke testing against official Home Assistant Docker images (`stable`, `beta`, `dev`) verifying `check_config`, clean platform module imports, and zero asyncio loop-blocking calls.
 - **`ownd-smoke`**: Automated smoke testing of the `OWNd` protocol engine across `pinned`, `latest`, and `upstream-dev` distributions on Python 3.14.
 - **`ha-upstream-compat`**: Continuous integration testing against upstream Home Assistant Stable, Beta, and Dev channels.
@@ -672,7 +673,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### 📊 Code Coverage & Quality Assurance
 
-The integration maintains 3380 automated unit tests (100% line coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
+The integration maintains 5,324 automated tests (100.0% statement coverage across all modules) covering core protocol handling, hardware profiles, discovery, state reconciliation, and error boundaries.
 
 <!-- START_COVERAGE_TABLE -->
 
@@ -762,13 +763,14 @@ The development of the MyHOME integration is organized into strategic release mi
   - [x] Actuator hardware maintenance locks (`WHO = 14`) as lock / unlock configuration buttons ([#353](https://github.com/OpenWebNet-HA/MyHOME/issues/353)).
   - [ ] Decide whether the locks also become a native `lock` entity with domain services ([#493](https://github.com/OpenWebNet-HA/MyHOME/issues/493)).
   - [x] Device fault reporting as self-clearing Home Assistant repair issues (`device_health.py`).
+  - [x] Cover end-stop settle recomputation and 0.5 s limit-stop cutoff from known positions (#834, #847).
   - [ ] Relay operating cycle counters: no WHO 14 / 1001 / 1004 captures exist yet, so this waits on community traces ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)).
 - [ ] **Phase 5: Extended Lighting Management & DALI-2 (v2.4 — deferred)**
   - [ ] Lighting Management Room Controllers (`WHO = 24` BMNE500 / 002645) are deferred as an optional standalone extension; the residential core stays on `WHO = 1` and the DALI gateways. See [ROADMAP.md](ROADMAP.md).
 - [ ] **Phase 6: Smart Energy Management (v2.5 — Q1 2027)**
   - [x] Power meters and energy counters (`WHO = 18`) as Home Assistant energy sensors.
   - [ ] Energy management central units & multi-function power meters (`WHO = 18` F520/F521/F522/F523/3522): not started, needs a scope decision and captures.
-  - ~~Multi-room FM tuner presets and RDS metadata (`WHO = 22`)~~: formally deprecated in favour of the Dynamic Streaming Proxy.
+  - [x] Multi-room FM tuner presets, frequency, and RDS metadata (`WHO = 22` / `WHO = 16`): native `media_player` tuner controls with band, preset, and frequency tuning (#839, #844).
 - [ ] **Stable v2.0.0**: merge the v2 line ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) into `master` so HACS users receive it; today every release is a pre-release (latest: v2.0.0b17).
 
 ---
@@ -780,8 +782,15 @@ This integration is developed and maintained by the **[OpenWebNet-HA](https://gi
 Special thanks to:
 - **[@anotherjulien](https://github.com/anotherjulien)** for creating the original MyHOME integration and laying the protocol foundations.
 - **[@GreenGrassBlueOcean](https://github.com/GreenGrassBlueOcean)** for the v2 modernized architecture, gateway profiles, streaming proxy, and test suite.
+- **[@xtimmy86x](https://github.com/xtimmy86x)** for crafting the frontend user experience, administration panel, cover calibration interfaces, and hardware diagnostics.
+- **[@gdluck](https://github.com/gdluck)** for outstanding engineering, invaluable ideas, and rigorous physical F461 plant measurements.
+- **[@TheDarkWizard](https://github.com/TheDarkWizard)** for crucial CEN+ wire address captures (KW8011), WHO 1001 diagnostics, and tireless real-world hardware testing across Living Now controls and MyHomeServer1 setups.
+- **[@wave68runner](https://github.com/wave68runner)** for the authentic HL4684 touchscreen captures, BTicino 3550 thermoregulation sweeps, and tuner diagnostics.
+- **[@Interstellar0verdrive](https://github.com/Interstellar0verdrive)** for deep hardware actuator analysis, cover timing/concurrency mechanics, and platform extensions.
+- **[@fedem95](https://github.com/fedem95)**, **[@mantovanellimatteo](https://github.com/mantovanellimatteo)**, **[@lyubomirtraykov](https://github.com/lyubomirtraykov)**, and **Cedric Rohou** for key bugfixes, platform extensions, and community testing.
 - **[@GianlucaCh](https://github.com/GianlucaCh)** for preserving and contributing the comprehensive 15-manual BTicino/Legrand specification archive (`OWN DOC.zip`), the official `WHO_24.pdf` Lighting Management specification, and CEN+ community automation references.
-- **[@mantovanellimatteo](https://github.com/mantovanellimatteo)**, **[@fedem95](https://github.com/fedem95)**, **[@lyubomirtraykov](https://github.com/lyubomirtraykov)**, **[@Interstellar0verdrive](https://github.com/Interstellar0verdrive)**, and **Cedric Rohou** for key bugfixes, platform extensions, and community testing.
+- **[@nicolacavallo84](https://github.com/nicolacavallo84)** for the iconic 70+ device plant captures and H4890 touchscreen multi-gateway traces that form our foundational CI replay fixtures.
+- **All community testers and trace providers** whose real-world bus captures keep our test suite grounded in real hardware: *"In traces we find the truth"* — their traces prove again and again that we can only build reliable stuff when we get authentic user traces: **[@manfredgittmaier-afk](https://github.com/manfredgittmaier-afk)**, **[@eC0y0te](https://github.com/eC0y0te)**, **[@simo72mast-lab](https://github.com/simo72mast-lab)**, **[@lionelser](https://github.com/lionelser)**, **[@caiosweet](https://github.com/caiosweet)**, **[@f18m](https://github.com/f18m)**, **[@marcob79](https://github.com/marcob79)**, **[@xduss](https://github.com/xduss)**, **[@pakob81](https://github.com/pakob81)**, **[@Depechie](https://github.com/Depechie)**, **[@nce2704](https://github.com/nce2704)**, **[@ricdijk](https://github.com/ricdijk)**, **[@imfreddie](https://github.com/imfreddie)**, **[@theveninjeremy](https://github.com/theveninjeremy)**, and **[@Yvan13120](https://github.com/Yvan13120)**.
 
 ---
 
