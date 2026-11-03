@@ -4,8 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+import OWNd.message as _ownd_message
 import voluptuous as vol
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -42,10 +44,10 @@ SERVICE_SEND_MESSAGE = "send_message"
 # safe, so every dimension 22 frame stays refused. Used by handle_send_message,
 # the bus-monitor WebSocket and the thermo switch trigger validation.
 _WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
-try:
-    from OWNd.message import is_who4_dimension_22_crash_form as _is_dimension_22_crash_form
-except ImportError:  # OWNd < 2.0.0b12: no sendable dimension 22 form is known
-    _is_dimension_22_crash_form = None
+# None on OWNd < 2.0.0b12, where no sendable dimension 22 form is known.
+_is_dimension_22_crash_form: Callable[[object], bool] | None = getattr(
+    _ownd_message, "is_who4_dimension_22_crash_form", None
+)
 
 
 def services_has_dimension_22_detector() -> bool:
