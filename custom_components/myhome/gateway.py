@@ -74,7 +74,15 @@ from .repairs import (
     async_delete_unconfigured_timezone_issue,
     async_delete_unknown_model_issue,
 )
-from .topology import GatewayTopologyMixin
+from .topology import (
+    DOOR_ENTRY_AV_MODELS,
+    DOOR_ENTRY_MH_BRIDGE_AV_MODELS,
+    DOOR_ENTRY_UNSUPPORTED_MODELS,
+    DOOR_ENTRY_WHO6_ONLY_MODELS,
+    DOOR_ENTRY_WHO8_ONLY_MODELS,
+    GatewayTopologyMixin,
+    peer_handles_who,
+)
 
 __all__ = [
     "AVAILABILITY_GRACE",
@@ -811,7 +819,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return
         self._available = False
         self._evaluate_failover()
-        if self.available:  # carried by the warm standby; entities stay available
+        if self.available:  # carried by the warm standby; refresh entities whose standby coverage differs
+            async_dispatcher_send(self.hass, self.availability_signal)
             return
         LOGGER.warning(
             "%s Gateway unavailable (outage exceeded %ss).",
@@ -835,10 +844,22 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     def _profile_supports_who(self, who: int) -> bool:
         """Return whether the gateway profile advertises a WHO subsystem (True when unknown)."""
-        # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
+        # TODO(OWNd>2.0.0b11): remove shims once manifest.json pins an OWNd release containing
+        # OWNd#147 and door-entry WHO 6/8 profile flags.
         if who == 22 and self._model_key == "H4684" and _firmware_at_least(self.firmware, (6, 0, 0)):
             return True
         profile = getattr(self.gateway, "profile", None)
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS or self._model_key in DOOR_ENTRY_MH_BRIDGE_AV_MODELS:
+                return True
+            if self._model_key in DOOR_ENTRY_WHO6_ONLY_MODELS:
+                return who == 6
+            if self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS:
+                return who == 8
+            if self._model_key in DOOR_ENTRY_UNSUPPORTED_MODELS:
+                return False
+            if isinstance(profile, GenericGatewayProfile):
+                return True
         supports = getattr(profile, "supports_who", None)
         if not callable(supports):
             return True
@@ -846,6 +867,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return bool(supports(who))
         except Exception:  # pragma: no cover - defensive against foreign profile objects
             return True
+
+    def _natively_hears_who(self, who: int) -> bool:
+        """Return whether this gateway hears ``who`` on its local bus without an external F422 bridge."""
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS:
+                return True
+            return who == 8 and self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS
+        return self._profile_supports_who(who)
 
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
@@ -1013,6 +1042,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             if primary is not None and not primary._available:
                 primary._evaluate_failover()
                 async_dispatcher_send(self.hass, primary.availability_signal)
+        elif self.is_secondary and self.delegated_whos:
+            primary = self._get_primary_gateway()
+            if primary is not None:
+                async_dispatcher_send(self.hass, primary.availability_signal)
 
         self._event_runner.close()
         self._command_pool.close()
@@ -1058,7 +1091,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
         if who not in (13, 1013) and who in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who)
-            if sec is not None and sec.is_connected:
+            if sec is not None and sec.is_connected and peer_handles_who(sec, int(who)):
                 return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
         if who not in (13, 1013) and not self.is_connected:
             standby = self._get_standby_gateway()

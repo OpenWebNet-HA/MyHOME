@@ -1,9 +1,11 @@
 """Support for MyHome locks (door entry electric strikes, WHO=6)."""
 from __future__ import annotations
 
+import asyncio
 import hmac
 import inspect
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, NoReturn
 
 from homeassistant.components.lock import (  # type: ignore[attr-defined, unused-ignore]
     LockEntity,
@@ -17,7 +19,7 @@ from homeassistant.const import (
     Platform,
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
@@ -41,6 +43,7 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_PULSE_DURATION,
     CONF_WHO,
+    DOMAIN,
     LOGGER,
 )
 from .data import get_runtime_data
@@ -56,6 +59,97 @@ from .myhome_device import MyHOMEEntity
 PLATFORM = Platform.LOCK
 PARALLEL_UPDATES = 0
 DEFAULT_LOCK_DURATION = 5.0
+LOCK_WRITE_TIMEOUT = 15.0
+
+
+def _gateway_supports_who6(gateway: Any) -> bool:
+    """Return False only when ``gateway``'s own profile omits WHO=6 support."""
+    for attr in ("profile_supports_who", "_profile_supports_who"):
+        fn = getattr(gateway, attr, None)
+        if callable(fn):
+            try:
+                res = fn(6)
+                return res if isinstance(res, bool) else bool(res)
+            except Exception:
+                return True
+    return True
+
+
+def _gateway_supports_door_entry(gateway: Any) -> bool:
+    """Return False only when the gateway (and its configured shared-bus topology) omits WHO=6 support."""
+    delegated = getattr(gateway, "delegated_away_whos", None)
+    if isinstance(delegated, (set, frozenset, list, tuple)) and 6 in delegated:
+        sec_fn = getattr(gateway, "_get_secondary_for_who", None)
+        sec = sec_fn(6) if callable(sec_fn) else None
+        if sec is None or _gateway_supports_who6(sec):
+            return True
+    return _gateway_supports_who6(gateway)
+
+
+def _effective_send_gateway(gateway: Any) -> Any:
+    """Return the gateway handler that actually executed a WHO=6 send at runtime."""
+    delegated = getattr(gateway, "delegated_away_whos", None)
+    if isinstance(delegated, (set, frozenset, list, tuple)) and 6 in delegated:
+        sec_fn = getattr(gateway, "_get_secondary_for_who", None)
+        sec = sec_fn(6) if callable(sec_fn) else None
+        if (
+            sec is not None
+            and getattr(sec, "is_connected", True) is not False
+            and _gateway_supports_who6(sec)
+        ):
+            return sec
+    if getattr(gateway, "is_connected", True) is False:
+        sb_fn = getattr(gateway, "_get_standby_gateway", None)
+        standby = sb_fn() if callable(sb_fn) else None
+        if (
+            standby is not None
+            and getattr(standby, "is_connected", False) is True
+            and _gateway_supports_who6(standby)
+        ):
+            return standby
+    return gateway
+
+
+def _gateway_model_label(gateway: Any) -> str:
+    """Human-readable gateway model/name for logs and error placeholders."""
+    for attr in ("model", "name", "mac"):
+        val = getattr(gateway, attr, None)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return "MyHOME gateway"
+
+
+def warn_if_locks_unsupported(gateway: Any, entities: Sequence[Any]) -> bool:
+    """Warn once when WHO=6 locks are configured on a gateway without WHO=6 support."""
+    if not entities or _gateway_supports_door_entry(gateway):
+        return False
+    if getattr(gateway, "_who6_locks_unsupported_warned", False) is True:
+        return False
+    wheres = ", ".join(
+        sorted(str(getattr(ent, "_full_where", getattr(ent, "_where", "?"))) for ent in entities)
+    )
+    LOGGER.warning(
+        "%s Configured WHO=6 door-entry lock(s) (%s) on gateway %s, whose firmware routes "
+        "no WHO 6 door-entry translator (bt_vct). Unlock commands (*6*10*WHERE##) will be "
+        "NACKed unless WHO 6 is delegated on a shared bus to a gateway that routes it and "
+        "sees the door-entry riser (MH200, MH202 or F453, e.g. through an F422; F454 and "
+        "F459 route only WHO 8) or the strike/gate is driven by an MH-bus relay (WHO=1 "
+        "impulse cover).",
+        gateway.log_id,
+        wheres,
+        _gateway_model_label(gateway),
+    )
+    try:
+        gateway._who6_locks_unsupported_warned = True
+    except Exception:  # pragma: no cover - defensive against frozen stand-ins
+        pass
+    return True
+
+
+def _consume_future_exception(fut: asyncio.Future[Any]) -> None:
+    """Retrieve any exception on an unawaited write future so the event loop stays clean."""
+    if not fut.cancelled():
+        fut.exception()
 
 
 async def async_setup_entry(
@@ -110,7 +204,7 @@ async def async_setup_entry(
     # Locks come only from myhome.yaml and the entity registry, never from bus traffic:
     # a lock release seen on the bus would otherwise add a code-less entity that anyone
     # with dashboard access can unlock.
-    PlatformDiscovery(
+    entities = PlatformDiscovery(
         hass,
         config_entry,
         async_add_entities,
@@ -123,6 +217,11 @@ async def async_setup_entry(
         accept=accept,
     ).start(listen=True)
 
+    runtime.entities[PLATFORM] = {
+        str(getattr(ent, "_full_where", getattr(ent, "_where", "?"))): ent for ent in entities
+    }
+    warn_if_locks_unsupported(gateway, entities)
+
     return True
 
 
@@ -132,6 +231,11 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
 
+    runtime.entities.pop(PLATFORM, None)
+    try:
+        runtime.gateway._who6_locks_unsupported_warned = False  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - defensive against frozen stand-ins
+        pass
     configured_locks = runtime.platforms[PLATFORM]
     for lock_key in list(configured_locks.keys()):
         del runtime.platforms[PLATFORM][lock_key]
@@ -195,6 +299,40 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
         self._attr_is_locked = True
         self.async_write_ha_state()
 
+    def _raise_unlock_rejected(
+        self,
+        frame: str,
+        cause: BaseException | None = None,
+        *,
+        target_gw: Any = None,
+    ) -> NoReturn:
+        """Raise a translated HomeAssistantError when the gateway NACKs or drops WHO=6 unlock."""
+        effective_gw = target_gw if target_gw is not None else _effective_send_gateway(self._gateway_handler)
+        gw_label = _gateway_model_label(effective_gw)
+        if not _gateway_supports_who6(effective_gw):
+            raise HomeAssistantError(
+                f"{self._display_name}: gateway {gw_label} rejected WHO=6 door-entry unlock "
+                f"(`{frame}`). Its firmware does not route WHO 6 (basic door entry).",
+                translation_domain=DOMAIN,
+                translation_key="lock_gateway_who6_unsupported",
+                translation_placeholders={
+                    "name": self._display_name,
+                    "gateway": gw_label,
+                    "frame": frame,
+                },
+            ) from cause
+        raise HomeAssistantError(
+            f"{self._display_name}: gateway {gw_label} rejected or dropped the WHO=6 door-entry "
+            f"unlock command (`{frame}`)",
+            translation_domain=DOMAIN,
+            translation_key="lock_command_rejected",
+            translation_placeholders={
+                "name": self._display_name,
+                "gateway": gw_label,
+                "frame": frame,
+            },
+        ) from cause
+
     async def async_unlock(self, **kwargs: Any) -> None:
         """Unlock the door strike momentarily."""
         if self._code:
@@ -202,11 +340,63 @@ class MyHOMELock(MyHOMEEntity, LockEntity):
             if code is None or not hmac.compare_digest(str(code), str(self._code)):
                 raise ServiceValidationError(f"Invalid code for {self._display_name}")
 
-        write_fut = await self._gateway_handler.send(
-            OWNDoorEntryCommand.open_lock(self._full_where)
-        )
+        cmd = OWNDoorEntryCommand.open_lock(self._full_where)
+        frame = str(cmd)
+        target_gw = _effective_send_gateway(self._gateway_handler)
+        try:
+            write_fut: Any = await self._gateway_handler.send(cmd)
+        except HomeAssistantError:
+            raise
+        except Exception as err:
+            raise HomeAssistantError(
+                f"{self._display_name}: door-entry unlock command failed: {err}",
+                translation_domain=DOMAIN,
+                translation_key="lock_command_failed",
+                translation_placeholders={"name": self._display_name, "error": str(err)},
+            ) from err
+
         if inspect.isawaitable(write_fut):
-            await write_fut
+            try:
+                if isinstance(write_fut, asyncio.Future):
+                    write_fut.add_done_callback(_consume_future_exception)
+                    done, _ = await asyncio.wait((write_fut,), timeout=LOCK_WRITE_TIMEOUT)
+                    if not done:
+                        # Withdraw the queued frame: an unlock written after the user was
+                        # told it failed would open the strike unexpectedly.
+                        write_fut.cancel()
+                        raise TimeoutError
+                    await write_fut
+                else:
+                    await asyncio.wait_for(write_fut, LOCK_WRITE_TIMEOUT)
+            except TimeoutError as err:
+                raise HomeAssistantError(
+                    f"{self._display_name}: door-entry unlock command was not confirmed within "
+                    f"{LOCK_WRITE_TIMEOUT:.0f} s; it was withdrawn if it had not been sent yet",
+                    translation_domain=DOMAIN,
+                    translation_key="lock_command_timeout",
+                    translation_placeholders={
+                        "name": self._display_name,
+                        "timeout": f"{LOCK_WRITE_TIMEOUT:.0f}",
+                    },
+                ) from err
+            except asyncio.CancelledError as err:
+                cur_task = asyncio.current_task()
+                externally_cancelled = (
+                    (cur_task is not None and cur_task.cancelling() > 0)
+                    or (isinstance(write_fut, asyncio.Future) and not write_fut.cancelled())
+                )
+                if externally_cancelled:
+                    raise
+                self._raise_unlock_rejected(frame, err, target_gw=target_gw)
+            except HomeAssistantError:
+                raise
+            except Exception as err:
+                raise HomeAssistantError(
+                    f"{self._display_name}: door-entry unlock command failed: {err}",
+                    translation_domain=DOMAIN,
+                    translation_key="lock_command_failed",
+                    translation_placeholders={"name": self._display_name, "error": str(err)},
+                ) from err
 
         self._attr_is_locked = False
         self.async_write_ha_state()

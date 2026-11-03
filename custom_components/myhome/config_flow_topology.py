@@ -26,6 +26,7 @@ from .const import (
     TOPOLOGY_STANDALONE,
 )
 from .topology import (
+    DELEGATABLE_WHOS,
     entry_for_mac,
     entry_is_follower,
     entry_mac,
@@ -188,18 +189,7 @@ class ConfigFlowTopologyMixin:
                         },
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
-                            options=[
-                                "1",
-                                "2",
-                                "4",
-                                "5",
-                                "9",
-                                "15",
-                                "16",
-                                "18",
-                                "22",
-                                "25",
-                            ],
+                            options=[str(w) for w in DELEGATABLE_WHOS],
                             multiple=True,
                             mode=selector.SelectSelectorMode.DROPDOWN,
                             translation_key=CONF_DELEGATED_WHOS,
@@ -371,7 +361,7 @@ class OptionsFlowTopologyMixin:
             )
         ] = selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=["1", "2", "4", "5", "9", "15", "16", "18", "22", "25"],
+                options=[str(w) for w in DELEGATABLE_WHOS],
                 multiple=True,
                 mode=selector.SelectSelectorMode.DROPDOWN,
                 translation_key=CONF_DELEGATED_WHOS,

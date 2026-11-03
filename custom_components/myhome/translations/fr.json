@@ -620,6 +620,18 @@
     },
     "invert_switch_no_timer": {
       "message": "{name} est un interrupteur de configuration de capteur binaire et ne prend pas en charge les temporisations matérielles sur bus WHO=1."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name} : la passerelle {gateway} a refusé l'ouverture de gâche portier WHO=6 ({frame}). Son firmware n'achemine pas le WHO 6 (portier de base)."
+    },
+    "lock_command_rejected": {
+      "message": "{name} : la passerelle {gateway} a refusé ou ignoré la commande d'ouverture WHO=6 ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name} : la commande d'ouverture portier n'a pas été confirmée dans un délai de {timeout} s ; elle a été retirée si elle n'avait pas encore été envoyée"
+    },
+    "lock_command_failed": {
+      "message": "{name} : échec de la commande d'ouverture portier : {error}"
     }
   },
   "entity": {
@@ -682,6 +694,8 @@
         "2": "2 - Volets / stores",
         "4": "4 - Thermorégulation",
         "5": "5 - Alarme anti-intrusion",
+        "6": "6 - Portier",
+        "8": "8 - Portier vidéo / interphonie",
         "9": "9 - Auxiliaires",
         "15": "15 - Scénarios CEN",
         "16": "16 - Diffusion sonore",

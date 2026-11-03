@@ -44,6 +44,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .topology import peer_handles_who
 from .where_grammar import where_param
 
 if TYPE_CHECKING:
@@ -209,16 +210,34 @@ class GatewayEventDispatcher:
         """Return True if this gateway is the active owner for this WHO subsystem."""
         if getattr(self.handler, "is_standby", False):
             # Standby is only active for bus events if failover is active (primary is offline)
+            # and no connected secondary that routes this subsystem already owns it.
             primary_gw = self.handler._get_primary_gateway()
-            if primary_gw is not None and not primary_gw.is_connected:
-                return who is not None and self.handler._profile_supports_who(who)
+            if primary_gw is not None and not primary_gw.is_connected and who is not None:
+                if who in getattr(primary_gw, "delegated_away_whos", set()):
+                    sec_fn = getattr(primary_gw, "_get_secondary_for_who", None)
+                    sec = sec_fn(who) if callable(sec_fn) else None
+                    if (
+                        sec is not None
+                        and getattr(sec, "is_connected", False)
+                        and peer_handles_who(sec, who)
+                    ):
+                        return False
+                return bool(self.handler._profile_supports_who(who))
             return False
 
         if getattr(self.handler, "is_secondary", False):
-            return who is not None and who in getattr(self.handler, "delegated_whos", set())
+            return (
+                who is not None
+                and who in getattr(self.handler, "delegated_whos", set())
+                and peer_handles_who(self.handler, who)
+            )
 
         # Primary or standalone
-        return who is None or who not in getattr(self.handler, "delegated_away_whos", set())
+        if who is None or who not in getattr(self.handler, "delegated_away_whos", set()):
+            return True
+        sec_fn = getattr(self.handler, "_get_secondary_for_who", None)
+        sec = sec_fn(who) if callable(sec_fn) else None
+        return sec is not None and not peer_handles_who(sec, who)
 
     def _observe_health(self, message: OWNMessage, who: int) -> None:
         """Feed a lighting frame to the tracker that owns this address's issues.
