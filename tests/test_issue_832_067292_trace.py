@@ -157,6 +157,17 @@ def test_067292_gateway_profile_resolution() -> None:
     assert profile.supports_audio is True
     assert 5 in profile.supported_who  # Burglar alarm supported
 
+    # Verify fallback resolution through _MODEL_SPELLINGS when OWNd does not alias natively
+    from OWNd.profiles import GenericGatewayProfile
+
+    def _unaliased_lookup(m: str | None, fw: str | None = None):
+        if m in ("H4890", "h4890"):
+            return profile
+        return GenericGatewayProfile(model_name=m or "Generic")
+
+    simulated = _profile_for_model("067292", lookup=_unaliased_lookup)
+    assert isinstance(simulated, H4890Profile)
+
 
 def test_067292_gateway_tier() -> None:
     """Verify gateway performance tier for 067292."""

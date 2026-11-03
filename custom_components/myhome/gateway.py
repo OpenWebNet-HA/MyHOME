@@ -148,25 +148,18 @@ def _call_get_gateway_profile(
 def _profile_for_model(
     model: str | None, firmware: str | None = None, *, lookup: Any = None
 ) -> Any:
-    """Resolve ``model`` to an OWNd profile, mapping SSDP spellings like ``H/L4684``."""
+    """Resolve ``model`` to an OWNd profile (firmware-aware, e.g. the H4684's WHO 22 from 6.0.0).
+
+    SSDP spellings such as ``H/L4684`` / ``HL4684`` / ``HC4684`` are aliased by the pinned OWNd
+    itself (OWNd#147, in OWNd 2.0.0b13). Touch screen family spellings (067292, etc.) are mapped
+    via ``_MODEL_SPELLINGS`` (#832).
+    """
     profile = _call_get_gateway_profile(model, firmware, lookup=lookup)
     if isinstance(profile, GenericGatewayProfile) and model:
         mapped = _MODEL_SPELLINGS.get(_alnum(model))
         if mapped is not None:
             return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
     return profile
-
-
-def _firmware_at_least(firmware: str | None, minimum: tuple[int, int, int]) -> bool:
-    """Return whether ``firmware`` parses to at least ``minimum`` (V, R, B)."""
-    if not firmware:
-        return False
-    parts = [int(m) for m in re.findall(r"\d+", str(firmware))]
-    if not parts:
-        return False
-    while len(parts) < 3:
-        parts.append(0)
-    return tuple(parts[:3]) >= minimum
 
 
 def command_session_limit(model: str | None) -> int | None:
@@ -275,12 +268,9 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
-# SSDP announces the H4684 as "H/L4684" (issue #466) or "HL4684" (manifest.json), which OWNd<=2.0.0b11
-# does not alias to its H4684 profile yet, and "HC4684" is the other prefixed spelling of the same product.
-# TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
+# Legrand 067292 Céliane 3.5" touch screen family (issue #832) SSDP model names mapped
+# to the H4890 profile until OWNd aliases them upstream.
 _MODEL_SPELLINGS = {
-    "HL4684": "H4684",
-    "HC4684": "H4684",
     "067292": "H4890",
     "67292": "H4890",
     "573958": "H4890",
@@ -297,8 +287,9 @@ def _alnum(name: object) -> str:
 def _resolved_model(word: str) -> str | None:
     """The model OWNd resolves one word of a model string to, or ``None`` for a word it does not know.
 
-    ``L4684`` -> ``H4684``, ``003598`` -> ``F454``, ``03565`` -> ``MH200N`` (OWNd's aliases and
-    catalogue item numbers); the spellings OWNd has no alias for are mapped first.
+    ``L4684`` -> ``H4684``, ``HL4684`` / ``HC4684`` -> ``H4684`` (OWNd#147), ``003598`` -> ``F454``,
+    ``03565`` -> ``MH200N`` (OWNd's aliases and catalogue item numbers); spellings OWNd has no
+    alias for are mapped first via ``_MODEL_SPELLINGS``.
     """
     key = _MODEL_SPELLINGS.get(_alnum(word), word)
     profile = get_gateway_profile(key)
@@ -530,7 +521,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             for k in (
                 "F450",
                 "F455",
-                "HL4684",  # TODO(OWNd>2.0.0b11): remove once manifest.json pins OWNd containing OWNd#147
+                "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
                 "F454",
                 "MH200",
                 "MH201",
@@ -550,8 +541,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         A known OWNd profile names the model; a ``GenericGatewayProfile`` (also what
         ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name.
         There a brand-prefixed alias or catalogue number is resolved word by word through
-        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``), the SSDP
-        spelling ``HL4684`` is read as ``H4684``, and otherwise a known model is looked up as
+        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``, the SSDP
+        spelling ``HL4684`` -> ``H4684``), and otherwise a known model is looked up as
         a substring, longest first (``supports_zone_status`` style), so ``MH200N`` stays
         distinct from ``MH200``. The words are the alphanumeric runs of the string, so
         ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
@@ -851,11 +842,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return self._profile_supports_who(who)
 
     def _profile_supports_who(self, who: int) -> bool:
-        """Return whether the gateway profile advertises a WHO subsystem (True when unknown)."""
-        # TODO(OWNd>2.0.0b11): remove shims once manifest.json pins an OWNd release containing
-        # OWNd#147 and door-entry WHO 6/8 profile flags.
-        if who == 22 and self._model_key == "H4684" and _firmware_at_least(self.firmware, (6, 0, 0)):
-            return True
+        """Return whether the gateway profile advertises a WHO subsystem (True when unknown).
+
+        The H4684's WHO 22 from firmware 6.0.0 comes from the firmware-aware OWNd profile
+        (``_profile_for_model(model, firmware)``, refreshed on ``*#13**16*V*R*B##``).
+        """
         profile = getattr(self.gateway, "profile", None)
         if who in (6, 8):
             if self._model_key in DOOR_ENTRY_AV_MODELS or self._model_key in DOOR_ENTRY_MH_BRIDGE_AV_MODELS:
