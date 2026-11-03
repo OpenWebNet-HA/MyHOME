@@ -25,8 +25,8 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: MyHOME (e.g. 2.0.0b16), Home Assistant, and Music Assistant versions.
-      placeholder: "MyHOME 2.0.0b16, HA 2026.10.1, Music Assistant 2.x"
+      description: MyHOME (e.g. 2.0.0b17), Home Assistant, and Music Assistant versions.
+      placeholder: "MyHOME 2.0.0b17, HA 2026.10.1, Music Assistant 2.x"
     validations:
       required: true
 

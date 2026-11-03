@@ -20,7 +20,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Key milestone betas to maintain in version list (historical tags; append 2.0.0b16 once released)
+# Key milestone betas to maintain in version list (historical tags; append 2.0.0b17 once released)
 DEFAULT_MILESTONE_BETAS = [
     "2.0.0b5",
     "2.0.0b6",
@@ -32,6 +32,7 @@ DEFAULT_MILESTONE_BETAS = [
     "2.0.0b13",
     "2.0.0b14",
     "2.0.0b15",
+    "2.0.0b16",
 ]
 
 
