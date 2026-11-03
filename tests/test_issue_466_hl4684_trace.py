@@ -43,7 +43,6 @@ from custom_components.myhome.const import (
 from custom_components.myhome.diagnostics import TO_REDACT, async_get_config_entry_diagnostics
 from custom_components.myhome.gateway import (
     MyHOMEGatewayHandler,
-    _firmware_at_least,
     _profile_for_model,
     command_session_default,
     command_session_limit,
@@ -161,16 +160,11 @@ def test_hl4684_ssdp_profile_identity_and_fw6_who22(hass: HomeAssistant) -> None
     assert handler.profile_supports_who(25) is False
     assert gateway_supported_whos("H/L4684", "6.0.11") == {1, 2, 4, 15, 16, 18, 22}
     assert gateway_supported_whos("H/L4684", "2.0.54") == {1, 2, 4, 15, 16, 18}
-    assert _firmware_at_least("unknown", (6, 0, 0)) is False
-    assert _firmware_at_least("6.0", (6, 0, 0)) is True
-
-    # Simulate OWNd <= 2.0.0b11 where get_gateway_profile("H/L4684") returned GenericGatewayProfile
-    def _legacy_lookup(m: str | None, fw: str | None = None):
-        if m == "H4684":
-            return handler.gateway.profile
-        return GenericGatewayProfile(model_name=m or "Generic")
-
-    assert _profile_for_model("H/L4684", "6.0.11", lookup=_legacy_lookup).model_name == "H4684"
+    # The pinned OWNd (2.0.0b13, OWNd#147) aliases the SSDP spellings itself: no MyHOME shim.
+    for spelling in ("H/L4684", "HL4684", "HC4684"):
+        assert _profile_for_model(spelling, "6.0.11").model_name == "H4684"
+        assert _profile_for_model(spelling, "6.0.11").supports_who(22) is True
+        assert _profile_for_model(spelling, "2.0.54").supports_who(22) is False
 
     # Replay the real WHO 13 identification sequence from the H/L4684 trace
     for raw in (
@@ -503,19 +497,19 @@ async def test_hl4684_followup_traces_zone66_recovery_who1004_and_f500_tuner(
     trace_1130 = trace_dir / "myhome_trace_HL4684_all_2026-11-01T11-30-19.json"
     trace_1148 = trace_dir / "myhome_trace_HL4684_all_2026-11-01T11-48-15.json"
 
-    raw_1130 = trace_1130.read_bytes()
-    raw_1148 = trace_1148.read_bytes()
+    text_1130 = trace_1130.read_text(encoding="utf-8")
+    text_1148 = trace_1148.read_text(encoding="utf-8")
     assert (
-        hashlib.sha256(raw_1130).hexdigest()
+        hashlib.sha256(text_1130.encode("utf-8")).hexdigest()
         == "ca615a981f99d7d0e6f754f2f55b20b82f6afa043a069278232abca12bb6ae83"
     )
     assert (
-        hashlib.sha256(raw_1148).hexdigest()
+        hashlib.sha256(text_1148.encode("utf-8")).hexdigest()
         == "ac5c96c9029668eeab1586a0a70c7ebd74304cff85b783ab8bc26e1348d70e18"
     )
 
-    doc_1130 = json.loads(raw_1130.decode("utf-8"))
-    doc_1148 = json.loads(raw_1148.decode("utf-8"))
+    doc_1130 = json.loads(text_1130)
+    doc_1148 = json.loads(text_1148)
     frames_1130 = doc_1130["frames"]
     frames_1148 = doc_1148["frames"]
     assert len(frames_1130) == 150

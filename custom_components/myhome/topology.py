@@ -160,25 +160,26 @@ def gateway_supported_whos(model: str | None, firmware: str | None = None) -> se
     """Retrieve intrinsic supported WHO set from OWNd profile for topology inference."""
     whos: set[int] = set()
     norm = (model or "").strip().upper()
+    model_name = ""
     try:
-        from .gateway import _firmware_at_least
-
         profile, model_name = _profile_and_model(model, firmware)
         supports = getattr(profile, "supports_who", None)
         for w in getattr(profile, "supported_who", None) or ():
             if not callable(supports) or supports(int(w)):
                 whos.add(int(w))
-        # TODO(OWNd>2.0.0b11): remove shims once manifest.json pins an OWNd release with
-        # H4684 FW>=6.0 WHO 22 (OWNd#147) and A/V gateway WHO 6/8 profile flags.
-        if model_name == "H4684" and _firmware_at_least(firmware, (6, 0, 0)):
-            whos.add(22)
         if model_name in DOOR_ENTRY_AV_MODELS:
             whos |= {6, 8}
         elif model_name in DOOR_ENTRY_WHO8_ONLY_MODELS:
             whos = (whos - {6}) | {8}
         elif model_name in DOOR_ENTRY_MH_BRIDGE_AV_MODELS or model_name in DOOR_ENTRY_WHO6_ONLY_MODELS:
             whos -= {6, 8}
-    except Exception:
+    except ImportError:
+        # A missing OWNd or gateway symbol is an installation defect, not a
+        # profile without WHOs: an empty set here hides it behind unrelated
+        # failures (every gateway "supports nothing").
+        raise
+    except Exception as err:  # noqa: BLE001 - a profile lookup error degrades to "no WHOs"
+        LOGGER.debug("No WHO set from the OWNd profile for %r: %s", model, err)
         model_name = ""
     # Model-specific hardware capability constraints:
     # MyHomeServer1 firmware omits audio (WHO 16/22), burglar alarm (WHO 5), and door entry (WHO 6/8).
