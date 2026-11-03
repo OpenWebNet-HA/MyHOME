@@ -1875,6 +1875,19 @@ def _require_f453av_profile() -> None:
         pytest.skip("installed OWNd does not discriminate F453AV firmware yet (OWNd#80)")
 
 
+def test_gateway_supported_whos_import_error_is_not_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing OWNd symbol must surface, not become an empty WHO set for every gateway."""
+    import custom_components.myhome.gateway as gateway_module
+    from custom_components.myhome.topology import gateway_supported_whos
+
+    def _broken(*_args: object, **_kwargs: object) -> object:
+        raise ImportError("cannot import name '_profile_for_model'")
+
+    monkeypatch.setattr(gateway_module, "_profile_for_model", _broken)
+    with pytest.raises(ImportError):
+        gateway_supported_whos("F461", "2.0.11")
+
+
 def test_gateway_supported_whos_with_firmware() -> None:
     """Verify gateway_supported_whos discriminates firmware-gated capabilities (e.g. F453AV CEN+)."""
     _require_f453av_profile()

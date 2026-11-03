@@ -173,7 +173,13 @@ def gateway_supported_whos(model: str | None, firmware: str | None = None) -> se
             whos = (whos - {6}) | {8}
         elif model_name in DOOR_ENTRY_MH_BRIDGE_AV_MODELS or model_name in DOOR_ENTRY_WHO6_ONLY_MODELS:
             whos -= {6, 8}
-    except Exception:
+    except ImportError:
+        # A missing OWNd or gateway symbol is an installation defect, not a
+        # profile without WHOs: an empty set here hides it behind unrelated
+        # failures (every gateway "supports nothing").
+        raise
+    except Exception as err:  # noqa: BLE001 - a profile lookup error degrades to "no WHOs"
+        LOGGER.debug("No WHO set from the OWNd profile for %r: %s", model, err)
         model_name = ""
     # Model-specific hardware capability constraints:
     # MyHomeServer1 firmware omits audio (WHO 16/22), burglar alarm (WHO 5), and door entry (WHO 6/8).
