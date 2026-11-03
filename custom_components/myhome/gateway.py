@@ -616,8 +616,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         for every zone (``all_zone_request``), that frame replaces the local zones' own.
         """
         if dimension == 22:
-            # *#4*Z*22## kills the F461 thermostat handler and reboots the gateway.
-            raise ValueError("WHO 4 dimension 22 is never requested")
+            # A zone WHERE has no actuator token, so *#4*Z*22## is the crash form:
+            # it kills the thermostat daemon (bt_termo) and a live F461 rebooted.
+            # The published split form *#4*3#Z#N*22## goes through send_message once
+            # the installed OWNd (>= 2.0.0b12) can tell the forms apart.
+            raise ValueError("WHO 4 dimension 22 is never requested for a zone")
         self._zone_requests.add((_validate_zone_where(where), dimension))
         if self._zone_request_task is None or self._zone_request_task.done():
             self._zone_request_task = self.hass.async_create_background_task(
