@@ -2264,8 +2264,8 @@
 <td style="text-align: left;">Calibrate with <code>myhome.calibrate_cover</code> (or <code>myhome.set_cover_travel_time</code>); a full open or close resynchronises the estimate.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Calibration on an MH200 / MH200N can fail</strong> with <em>no stop status from the actuator</em>.</td>
-<td style="text-align: left;">The single-session gateway delays or drops the actuator's stop status; some actuators also enforce a 60 s safety cut-off that ends the run early.</td>
+<td style="text-align: left;"><strong>Calibration on an MH200 / MH200N can fail</strong> with <em>no stop status from the actuator</em>, and <strong>configurator run-time cut-offs (60 s, 120 s, …) are refused</strong>.</td>
+<td style="text-align: left;">The single-session gateway delays or drops the actuator's stop status; actuators at a whole-minute configurator limit stop on their timer rather than at the end stop.</td>
 <td style="text-align: left;">Measure the run with a stopwatch and store the timings via <code>myhome.set_cover_travel_time</code>.</td>
 </tr>
 <tr>
