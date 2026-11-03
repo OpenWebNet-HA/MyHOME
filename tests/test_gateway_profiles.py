@@ -39,6 +39,7 @@ def test_extract_gateway_models_from_const():
     assert "MH200N" in models
     assert "MH200" in models
     assert "AM4890" in models
+    assert "067292" in models
     assert "F452" in models
     assert "F452V" in models
     assert "F453" in models
@@ -53,6 +54,7 @@ def test_extract_ssdp_models_from_manifest():
     assert "F454" in ssdp_models
     assert "MyHomeServer1" in ssdp_models
     assert "AM4890" in ssdp_models
+    assert "067292" in ssdp_models
     assert "HL4684" in ssdp_models
     assert "H/L4684" in ssdp_models
 

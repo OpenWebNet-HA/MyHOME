@@ -278,7 +278,15 @@ _ZONE_REQUEST_MODELS = sorted(
 # SSDP announces the H4684 as "H/L4684" (issue #466) or "HL4684" (manifest.json), which OWNd<=2.0.0b11
 # does not alias to its H4684 profile yet, and "HC4684" is the other prefixed spelling of the same product.
 # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
-_MODEL_SPELLINGS = {"HL4684": "H4684", "HC4684": "H4684"}
+_MODEL_SPELLINGS = {
+    "HL4684": "H4684",
+    "HC4684": "H4684",
+    "067292": "H4890",
+    "67292": "H4890",
+    "573958": "H4890",
+    "078479": "H4890",
+    "78479": "H4890",
+}
 
 
 def _alnum(name: object) -> str:

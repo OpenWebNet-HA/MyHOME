@@ -77,7 +77,21 @@ def gateway_tier(model: str | None) -> int:
     norm = (model or "").strip().upper()
     if any(k in norm for k in ("F454", "MYHOMESERVER1", "F455", "F461")):
         return 1
-    if any(k in norm for k in ("MH201", "MH202", "H4890", "AM4890", "LN4890")):
+    if any(
+        k in norm
+        for k in (
+            "MH201",
+            "MH202",
+            "H4890",
+            "AM4890",
+            "LN4890",
+            "067292",
+            "67292",
+            "573958",
+            "078479",
+            "78479",
+        )
+    ):
         return 2
     return 3
 

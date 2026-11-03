@@ -52,6 +52,21 @@
     {
       "st": "upnp:rootdevice",
       "manufacturer": "BTicino S.p.A.",
+      "modelName": "067292"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
+      "modelName": "573958"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
+      "modelName": "078479"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
       "modelName": "MyHomeServer1"
     },
     {

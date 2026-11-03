@@ -27,7 +27,7 @@ import json
 from pathlib import Path
 
 from OWNd.message import OWNHeatingEvent, OWNLightingCommand, OWNLightingEvent, OWNMessage
-from OWNd.profiles import GenericGatewayProfile, H4890Profile
+from OWNd.profiles import H4890Profile
 
 from custom_components.myhome.gateway import _profile_for_model
 from scripts.anonymize_plant_fixture import findings
@@ -148,8 +148,20 @@ def test_067292_bus_monitor_frame_parsing_and_parser_coverage() -> None:
 
 
 def test_067292_gateway_profile_resolution() -> None:
-    """Verify profile resolution for model string '067292'."""
+    """Verify profile resolution for model string '067292' resolves to H4890Profile."""
     profile = _profile_for_model("067292")
-    assert isinstance(profile, (GenericGatewayProfile, H4890Profile))
+    assert isinstance(profile, H4890Profile)
+    assert profile.model_name == "H4890"
     assert profile.max_command_sessions == 1
     assert profile.command_queue_delay == 0.05
+    assert profile.supports_audio is True
+    assert 5 in profile.supported_who  # Burglar alarm supported
+
+
+def test_067292_gateway_tier() -> None:
+    """Verify gateway performance tier for 067292."""
+    from custom_components.myhome.topology import gateway_tier
+
+    assert gateway_tier("067292") == 2
+    assert gateway_tier("573958") == 2
+    assert gateway_tier("078479") == 2
