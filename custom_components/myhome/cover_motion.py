@@ -63,10 +63,18 @@ END_SETTLE_MARGIN: float = 2.0
 # matched the 5.82 s settled at 100 %. The relay of the stop status and the
 # actuator's own limit stop account for ~0.1 s; a yaml travel_time is a whole
 # second (6 for that 5.82 s shutter), so the stored time can be up to 0.5 s off
-# the real travel as well. 0.5 s covers both. On the shortest shutters (6 s)
-# that is 8 % of the travel; a deliberate stop within half a second of the end
-# is reported as arrived (an HA stop or a translated keypad stop is not: those
-# freeze the timed estimate as before).
+# the real travel as well. 0.5 s covers both. Only a plain *2*0*WHERE## on a
+# full run to an end gets the tolerance: a stop HA sent, a stop during a
+# set_cover_position run HA times itself, and a keypad stop relayed with the
+# WHO 2 command translation (*2*1000#0*WHERE##, F461 / MyHomeServer1) freeze
+# the timed estimate as before. Known ambiguity: on a gateway that relays no
+# command translation (MH200N and the like) a wall-switch or scenario stop in
+# the last 0.5 s of a full run is the same plain *2*0*WHERE## as the actuator's
+# limit stop and is reported as arrived too; worst case a manual stop there
+# shows 100 % / 0 % instead of 92..99 % on the shortest shutters (6 s, where
+# 0.5 s is 8 % of the travel) and instead of 99 % on a 60 s one. 0.5 s stays
+# inside the 1 s early window of the calibration cutoff rule (#843,
+# CALIBRATION_CUTOFF_EARLY) and does not treat any configurator limit as a stop.
 END_STOP_TOLERANCE: float = 0.5
 
 

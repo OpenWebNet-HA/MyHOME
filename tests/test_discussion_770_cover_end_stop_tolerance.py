@@ -250,6 +250,7 @@ async def test_an_ha_stop_near_the_end_freezes_the_estimate(hass, gateway, clock
             await cover.async_stop_cover()
             raw, written = gateway.deliveries[-1]
             assert raw == "*2*0*05##"
+            assert cover._full_run_to_end is False  # cleared by the stop command, before any status
             written.set_result(clock.now)
             await _yield()
             clock.now += 0.08
@@ -282,6 +283,58 @@ async def test_a_plain_stop_during_a_partial_run_near_the_end_freezes_the_estima
     assert cover.is_closing is False
     assert cover.current_cover_position == 7  # 100 - 5.40 / 5.82 * 100
     assert cover.is_closed is False
+
+
+async def test_set_position_0_to_95_ends_at_95_not_at_the_end(hass, gateway, clock, fake_time) -> None:
+    """set_cover_position 95 from 0 on a 6 s travel: HA's own stop at 5.7 s leaves 95 %, never 100 % (review)."""
+    cover = _make_cover(hass, gateway, position=0, travel_down=6.0, travel_up=6.0)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        await cover.async_set_cover_position(position=95)
+        raw, written = gateway.deliveries[-1]
+        assert raw == "*2*1*05##"
+        assert cover._full_run_to_end is False  # a partial run HA times itself
+        written.set_result(clock.now)
+        await _yield()
+        clock.now += DIRECTION_ECHO
+        cover.handle_event(OWNEvent.parse("*2*1*05##"))
+        assert cover._full_run_to_end is False
+        clock.now += 5.70  # 95 % of 6 s: HA's auto-stop is due
+        release.set()
+        await _yield(8)
+        raw, written = gateway.deliveries[-1]
+        assert raw == "*2*0*05##"  # HA's own stop frame
+        written.set_result(clock.now)
+        await _yield()
+        # Its status, 0.30 s before the travel time: within END_STOP_TOLERANCE, but HA asked
+        # for this stop, so the estimate is the target (a later status re-anchors by the
+        # motor's overrun, 96 for 80 ms; never the end).
+        cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover.is_opening is False
+    assert cover.current_cover_position == 95
+    assert cover.is_closed is False
+
+
+async def test_a_plain_stop_at_the_target_of_a_0_to_95_run_is_not_an_end_stop(hass, gateway, clock, fake_time) -> None:
+    """A plain *2*0*05## 5.7 s into a set_cover_position 95 run (before HA's stop) freezes at 95, not 100."""
+    cover = _make_cover(hass, gateway, position=0, travel_down=6.0, travel_up=6.0)
+    release = asyncio.Event()
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_controlled_sleep(release)):
+        try:
+            await cover.async_set_cover_position(position=95)
+            raw, written = gateway.deliveries[-1]
+            assert raw == "*2*1*05##"
+            written.set_result(clock.now)
+            await _yield()
+            clock.now += DIRECTION_ECHO
+            cover.handle_event(OWNEvent.parse("*2*1*05##"))
+            clock.now += 5.70
+            cover.handle_event(OWNEvent.parse("*2*0*05##"))  # within END_STOP_TOLERANCE of the 6 s travel
+        finally:
+            release.set()
+    assert cover.is_opening is False
+    assert cover.current_cover_position == 95
+    assert [raw for raw, _ in gateway.deliveries] == ["*2*1*05##"]
 
 
 async def test_a_wall_switch_close_from_100_settles_at_the_early_actuator_stop(hass, gateway, clock, fake_time) -> None:

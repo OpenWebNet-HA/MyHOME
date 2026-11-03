@@ -2032,6 +2032,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _begin_stop(self, *, scope_where: str | None = None) -> None:
         """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
         self._cancel_stop_task()
+        # HA asked for the stop: its status is never the end stop, whenever it arrives.
+        self._full_run_to_end = False
         if self._advanced or self._is_tilting:
             return
         # The estimate keeps running until the stop frame is actually
