@@ -898,10 +898,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-99-zone-central-unit-architecture" class="md-nav__link">
+  <a href="#1-99-zone-central-unit-architecture-bticino-3550-0" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. 99-Zone Central Unit Architecture
+        1. 99-Zone Central Unit Architecture (BTicino 3550 / #0)
       
     </span>
   </a>
@@ -2079,10 +2079,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-99-zone-central-unit-architecture" class="md-nav__link">
+  <a href="#1-99-zone-central-unit-architecture-bticino-3550-0" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. 99-Zone Central Unit Architecture
+        1. 99-Zone Central Unit Architecture (BTicino 3550 / #0)
       
     </span>
   </a>
@@ -2200,12 +2200,45 @@
 <hr />
 <h2 id="supported-plant-architectures">🏛️ Supported Plant Architectures<a class="headerlink" href="#supported-plant-architectures" title="Permanent link">&para;</a></h2>
 <p>MyHOME installations typically deploy one of three climate topologies, all natively supported by the v2 discovery engine:</p>
-<h3 id="1-99-zone-central-unit-architecture">1. 99-Zone Central Unit Architecture<a class="headerlink" href="#1-99-zone-central-unit-architecture" title="Permanent link">&para;</a></h3>
+<h3 id="1-99-zone-central-unit-architecture-bticino-3550-0">1. 99-Zone Central Unit Architecture (<code>BTicino 3550</code> / <code>#0</code>)<a class="headerlink" href="#1-99-zone-central-unit-architecture-bticino-3550-0" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Hardware</strong>: Central thermoregulation unit (BTicino <code>3550</code>, MyHOME_Screen 10, or MyHOME_Screen 3.5) operating at master address <code>WHERE = #0</code>.</li>
-<li><strong>Subordinate Zones</strong>: Individual room zones (<code>WHERE = 1..99</code>) driven by <code>F430/2</code> or <code>F430/4</code> flush/DIN actuators.</li>
-<li><strong>Operation</strong>: The integration discovers the central unit as the master climate entity and each individual zone as a controllable climate device. Commands issued to room zones are synchronized through the central unit.</li>
+<li><strong>Subordinate Zones</strong>: Individual room zones (<code>WHERE = 1..99</code>) with local probes (<code>L4693</code>, <code>H4693</code>, <code>LN4693</code>, etc.) and <code>F430/2</code> or <code>F430/4</code> flush/DIN actuators.</li>
+<li><strong>Operation</strong>: The integration discovers the central unit (<code>#0</code>) as the master <code>climate</code> entity and each individual zone (<code>1..99</code>) as a controllable <code>climate</code> device. Subordinate zone setpoint and mode commands use the central-unit-routed <code>#Z</code> address format (<code>*#4*#Z*#14*TTTT*M##</code>, <code>*4*311*#Z##</code>, <code>*4*303*#Z##</code>).</li>
+<li><strong>Startup &amp; Reconnect Status Burst (<code>*#4*#0##</code>)</strong>: On startup (including on SCS-only gateways such as <code>MH200N</code> and <code>F454</code>), the central unit entity queries <code>*#4*#0##</code>. The <code>3550</code> responds with its operating mode frame (e.g. <code>*4*1101*#0##</code> for Heating Weekly Program 1, <code>*4*110#0200*#0##</code> for Manual 20.0 °C, or <code>*4*102*#0##</code> for Antifreeze/Protection) followed by diagnostic status frames (<code>WHAT 20..24, 30, 31</code>), exposed on the <code>#0</code> entity as state attributes:</li>
+<li><code>remote_control</code>: <code>"enabled"</code> (<code>*4*21*#0##</code>) or <code>"disabled"</code> (<code>*4*20*#0##</code>, raises the self-clearing <code>central_remote_control_disabled</code> repair issue).</li>
+<li><code>at_least_one_probe_off</code>: <code>true</code> when <code>*4*22*#0##</code> is reported in the current burst.</li>
+<li><code>at_least_one_probe_antifreeze</code>: <code>true</code> when <code>*4*23*#0##</code> is reported in the current burst.</li>
+<li><code>at_least_one_probe_manual</code>: <code>true</code> when <code>*4*24*#0##</code> is reported in the current burst.</li>
+<li><code>failure_detected</code>: <code>true</code> when <code>*4*30*#0##</code> (<code>Failure discovered in a zone</code>) is reported in the current burst.</li>
+<li><code>battery_fault</code>: <code>true</code> when <code>*4*31*#0##</code> (<code>Central unit battery KO</code>) is reported in the current burst (raises the self-clearing <code>central_battery_fault</code> repair issue).</li>
+<li><strong>Remote Control (<em>Telegestione</em>) Requirement</strong>: On a physical BTicino <code>3550</code>, <strong>Remote Control (<em>Telegestione</em>)</strong> must be set to <strong>Enabled (<em>Abilitata</em>)</strong> in the <code>3550</code> menu (<code>*4*21*#0##</code>) for the central unit to accept remote commands over the bus. When <code>*4*20*#0##</code> is active, the gateway still replies <code>*#*1##</code> (ACK), but the <code>3550</code> ignores remote mode and setpoint writes.</li>
+<li><strong>Subordinate Zone Control Patterns (<code>Auto</code> vs <code>Manual</code>)</strong>:</li>
 </ul>
+<table>
+<thead>
+<tr>
+<th>Control Pattern</th>
+<th>Central Unit (<code>#0</code>) Mode</th>
+<th>Subordinate Zone (<code>1..99</code>) Mode</th>
+<th>How Setpoint &amp; Schedule Changes Work</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. <code>3550</code> as Schedule Master + HA Temporary Overrides</strong></td>
+<td><code>auto</code> (Weekly Program <code>1..3</code> or Scenario <code>1..16</code>)</td>
+<td><code>auto</code> (<code>*4*111*#Z##</code> / <code>*4*211*#Z##</code>)</td>
+<td>Calling <code>climate.set_temperature</code> on a zone writes <code>*#4*#Z*#14*TTTT*3##</code>, placing that zone into <strong>manual setpoint override</strong> (<code>*4*110*#Z##</code>, <code>hvac_mode: heat</code>/<code>cool</code>, <code>#0</code> reports <code>at_least_one_probe_manual: true</code>). Setting the zone's <code>hvac_mode</code> back to <code>auto</code> sends <code>*4*311*#Z##</code> and returns the zone to the <code>3550</code>'s active weekly schedule.</td>
+</tr>
+<tr>
+<td><strong>2. Home Assistant as Full Schedule Master</strong></td>
+<td><code>heat</code>, <code>cool</code>, or <code>auto</code></td>
+<td><code>heat</code> / <code>cool</code> (Manual setpoint per room)</td>
+<td>Each zone is driven directly by Home Assistant automations or the HA <a href="https://www.home-assistant.io/integrations/schedule/">Schedule</a> integration calling <code>climate.set_temperature</code> (<code>*#4*#Z*#14*TTTT*3##</code>) or <code>climate.set_hvac_mode</code> (<code>heat</code>, <code>cool</code>, <code>off</code>) on each room entity independently.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="2-4-zone-central-unit-architecture">2. 4-Zone Central Unit Architecture<a class="headerlink" href="#2-4-zone-central-unit-architecture" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Hardware</strong>: BTicino <code>HC4695</code>, <code>L4695</code>, or <code>LN4695</code> 4-zone master display panel.</li>
