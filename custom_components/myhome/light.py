@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import time
 from typing import Any, cast
 
 import voluptuous as vol
@@ -90,6 +91,12 @@ from .typing_compat import as_any
 from .where_grammar import is_valid_hs_tuple, is_valid_rgb_tuple
 
 PARALLEL_UPDATES = 0
+
+# OWNd's DIMMER_SPEED_COARSE_ONLY: the speed slot a pre-09W29 coarse-only dimmer
+# reports on Dimension 1 (#767); such a dimmer stays on the preset table (#851).
+_COARSE_ONLY_SPEED = 240
+# One Dimension 1 read per burst of WHAT 2..10 echoes on a fine dimmer (#851).
+_BRIGHTNESS_REFRESH_WINDOW_S = 1.0
 
 # Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
 ATTR_COLOR_TEMP = "color_temp"
@@ -545,6 +552,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._attr_brightness_pct: int | None = None
 
         self._last_brightness_pct: int = 100
+        # A fine dimmer has reported an exact level on Dimension 1 / 4 with a normal
+        # speed; a coarse-only one (speed 240, #767) is still a coarse dimmer even if
+        # it reports levels (#851).
+        self._exact_level_seen = False
+        self._coarse_speed_seen = False
+        self._brightness_refresh_after: float = 0.0
 
     @property
     def color_temp(self) -> int | None:
@@ -1097,6 +1110,45 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
 
     @callback
+    def _learn_dimmer_kind(self, message: OWNLightingEvent) -> None:
+        """Record whether an exact-level frame came from a fine or a coarse-only dimmer.
+
+        Only a Dimension 1 report of a lit dimmer counts: its speed slot is where a
+        coarse-only unit puts the 240 sentinel (#767), while Dimension 4 carries a
+        different trailing value and an off report says nothing about the kind.
+        """
+        if getattr(message, "dimension", None) != 1 or not message.brightness:
+            return
+        speed = getattr(message, "transition", None)
+        if speed == _COARSE_ONLY_SPEED or getattr(message, "is_coarse_dimmer", None) is True:
+            self._coarse_speed_seen = True
+        else:
+            self._exact_level_seen = True
+
+    def _is_fine_dimmer(self, message: OWNLightingEvent) -> bool:
+        """True when this light has reported exact levels and nothing marks it coarse-only."""
+        return (
+            self._exact_level_seen
+            and not self._coarse_speed_seen
+            and getattr(message, "is_coarse_dimmer", None) is not True
+        )
+
+    def _request_brightness_refresh(self) -> None:
+        """Ask Dimension 1 after a preset echo on a fine dimmer, at most once a second (#851)."""
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return
+        now = time.monotonic()
+        if now < self._brightness_refresh_after:
+            return
+        self._brightness_refresh_after = now + _BRIGHTNESS_REFRESH_WINDOW_S
+        hass.async_create_task(
+            self._gateway_handler.send_status_request(
+                OWNLightingCommand.get_brightness(self._full_where)
+            ),
+            name=f"myhome_light_{self._where}_brightness_refresh",
+        )
+
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message.
 
@@ -1304,6 +1356,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_brightness = percent_to_eight_bits(message.brightness)
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
+            self._learn_dimmer_kind(message)
         elif has_level and has_preset and not is_fading:
             # Coarse WHAT 2..10 presets map to BTicino's non-linear dimmerLevelTo100 curve
             # (2->1%, 3->10%, 4->20%, 5->30%, 6->40%, 7->50%, 8->60%, 9->75%, 10->100%),
@@ -1317,6 +1370,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     cast(int, preset), cast(int, preset) * 10
                 )
             self._apply_brightness_state(max(0, min(100, preset_pct)))
+            if self._is_fine_dimmer(message):
+                # On a fine dimmer WHAT 2..10 is a quantised view of the level: an F461
+                # answers *#1*WHERE## with *1*7*WHERE## for anything between about 44 and
+                # 57 %, and the F418's own ladder is 1, 8, 16, 24, 34, 47, 63, 79, 100 %
+                # (#851). The mapped value is shown at once (a wall press did change the
+                # level, #828) and Dimension 1 is asked for the exact one.
+                self._bus_state_complete = False
+                self._request_brightness_refresh()
 
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
