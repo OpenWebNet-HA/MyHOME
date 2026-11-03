@@ -115,6 +115,7 @@ from .cover_calibration import (
 from .cover_motion import (
     ECHO_WINDOW,
     END_SETTLE_MARGIN,
+    END_STOP_TOLERANCE,
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
     WRITE_TIMEOUT,
@@ -553,6 +554,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # end it (review of #795: the F411/2's own timer is often shorter than
         # the configured travel time, and only the end stop can anchor the position).
         self._end_run_from_unknown = False
+        # True while a full run to an end stop (an own open / close, a scope run that
+        # moves this cover, or a wall run) settles on its timer: the actuator's own
+        # stop status up to END_STOP_TOLERANCE before the travel time is then the end
+        # stop, not a mid-run stop (report 20 of the live F461: 5.76 s / 5.74 s runs
+        # on a 5.82 s travel ended "open 1 %" / "open 98 %" on a shutter at its limit).
+        self._full_run_to_end = False
 
         # Echo model state (see ECHO_WINDOW): which command of ours is in
         # flight, until when relayed frames count as its echo, when the motor
@@ -781,8 +788,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_current_cover_tilt_position, run_duration, direction
         )
 
-    def _freeze_position(self, at: float) -> None:
-        """Turn the running estimate into a fixed position as of ``at`` (a stop ended the run)."""
+    def _freeze_position(self, at: float, *, end_stop_tolerance: float = 0.0) -> None:
+        """Turn the running estimate into a fixed position as of ``at`` (a stop ended the run).
+
+        ``end_stop_tolerance``: seconds before the travel time within which the stop is
+        still the end stop (the actuator's own limit stop on a full run, see
+        END_STOP_TOLERANCE); 0 for a stop HA or a keypad commanded.
+        """
         is_opening = bool(self._attr_is_opening)
         is_closing = bool(self._attr_is_closing)
         run_started_at = self._run_started_at
@@ -801,7 +813,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             and run_started_at is not None
             and (is_opening or is_closing)
             and (travel := self._travel_for(is_opening)) > 0
-            and at >= run_started_at + travel
+            and at + end_stop_tolerance >= run_started_at + travel
         )
         curtain_at = max(self._move_start_time, at - lead) if self._move_start_time is not None else at
         # None: the run started at an unknown position, which only an end stop resolves.
@@ -851,6 +863,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_start_tilt = None
         self._run_lead = self._move_lead = 0.0
         self._auto_stop_duration = None
+        self._full_run_to_end = False
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = (self._attr_current_cover_position == 0)
         elif self._strategy.assumed_state and (is_opening or is_closing):
@@ -873,6 +886,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_stop_context = None
         self._auto_stop_duration = None
         self._end_run_from_unknown = False
+        self._full_run_to_end = False
         self._move_start_time = None
         self._run_started_at = None
         self._motion_started_at = None
@@ -1647,6 +1661,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         member's motor-start echo too)."""
         self._cancel_stop_task()
         self._end_run_from_unknown = False
+        self._full_run_to_end = False
         if not is_tilting or self._tilt_follows is not None:
             # A curtain command, or a blind's own pulse, takes the motor over.
             self._end_pulse_for_takeover()
@@ -1756,6 +1771,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_stop_context = None
         self._auto_stop_duration = None
         self._end_run_from_unknown = False
+        self._full_run_to_end = False
         self._refresh_travel_attributes()
         self._publish_state()
 
@@ -1764,6 +1780,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         generation = self._run_generation
         # _begin_run anchored _start_position: None means the run starts unknown.
         self._end_run_from_unknown = self._start_position is None and not self._strategy.assumed_state
+        self._full_run_to_end = True
 
         async def _settle() -> None:
             try:
@@ -1816,11 +1833,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _arm_wall_settle(self, opening: bool) -> None:
         """Settle an external (wall switch / scenario) full run on the travel timer."""
         self._cancel_wall_settle()
+        self._full_run_to_end = False
         if self.hass is None or not self._settles_full_run(opening):
             return
         generation = self._run_generation
         elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
         delay = max(0.0, self._travel_for(opening) + END_SETTLE_MARGIN - elapsed)
+        self._full_run_to_end = True
 
         @callback
         def _on_wall_settle(_now: Any) -> None:
@@ -2030,6 +2049,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _begin_stop(self, *, scope_where: str | None = None) -> None:
         """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
         self._cancel_stop_task()
+        # HA asked for the stop: its status is never the end stop, whenever it arrives.
+        self._full_run_to_end = False
         if self._advanced or self._is_tilting:
             return
         # The estimate keeps running until the stop frame is actually
@@ -2761,6 +2782,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 return
             if is_translation and self._calibrating and (was_opening or was_closing):
                 self._interrupt_calibration("an external stop command arrived")
+            # The actuator's own limit stop on a full run to an end (no command
+            # translation: nobody sent a stop) may come a little before the stored
+            # travel time (report 20: 60-80 ms on the F461's F411/2); within
+            # END_STOP_TOLERANCE it is the end stop (#770).
+            end_stop_tolerance = (
+                END_STOP_TOLERANCE
+                if self._full_run_to_end and not is_translation and (was_opening or was_closing)
+                else 0.0
+            )
             self._is_tilting = False
             self._cancel_stop_task()
             self._run_generation += 1
@@ -2778,7 +2808,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     stop_ctx = self._capture_stop_context(
                         scope_where=msg_where if (is_general and msg_where) else None
                     )
-                self._freeze_position(stop_at)
+                self._freeze_position(stop_at, end_stop_tolerance=end_stop_tolerance)
                 if stop_ctx is not None:
                     self._pending_stop_context = stop_ctx
                     self._pending_cmd = "stop"
