@@ -24,9 +24,10 @@ What it carries:
   `*#130**1*6*3*2*5##` broadcasts.
 - **OWNd parse coverage, identical on 2.0.0b13 and dev:** 1338 of 1374 parse (752 `OWNHeatingEvent`,
   198 `OWNHeatingCommand`, 349 `OWNLightingEvent`, 29 `OWNIntercomEvent`, 10 base `OWNEvent`). The
-  36 that do not are all WHO 7 **event forms with an empty WHERE** — `*7*73#1#100*##`,
-  `*7*300#127#0#0#1#5000#2*##`, `*7*0*##`, `*7*219*##`, `*7*55*##`, ... — for which `OWNMessage.parse`
-  returns `None`; MyHOME logs each as `Data received is not a message` (45 such lines). The WHO 7
+  36 that do not are all WHO 7 **event forms with the WHERE field absent**, `*7*WHAT*##` —
+  `*7*73#1#100*##`, `*7*300#127#0#0#1#5000#2*##`, `*7*0*##`, `*7*219*##`, `*7*55*##`, ... — one star
+  short of the documented `*7*WHAT*WHERE*##`; OWNd accepts the documented address-less release form
+  `*7*9**##` but returns `None` for these; MyHOME logs each as `Data received is not a message` (45 such lines). The WHO 7
   dimension forms (`*#7**20*…`, `*#7**31#…`) and the two event forms that carry a WHERE parse. OWNd
   PR #162 (camera WHERE zero-padding) does not change this.
 - The gateway echoes the dimension **write** form `*#4*Z#N*#20*V##` immediately before the `*20*`

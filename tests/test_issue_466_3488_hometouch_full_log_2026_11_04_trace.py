@@ -15,8 +15,10 @@ the 1374 inbound frames in the log is received under the Generic profile on MyHo
 
 Late in the session (12:27-12:30 local) the reporter used the 3488's video door-entry functions,
 which puts WHO 7 (video) and WHO 8 (door entry) traffic on the event session. The WHO 7 event-form
-frames carry an empty WHERE (``*7*73#1#100*##``, ``*7*300#127#0#0#1#5000#2*##``, ``*7*0*##``, ...)
-and OWNd returns ``None`` for them on 2.0.0b13 and on dev alike, which MyHOME logs as
+frames come with the WHERE field absent, ``*7*WHAT*##`` (``*7*73#1#100*##``,
+``*7*300#127#0#0#1#5000#2*##``, ``*7*0*##``, ...), one star short of the documented
+``*7*WHAT*WHERE*##``; OWNd accepts the documented address-less release form ``*7*9**##`` but
+returns ``None`` for the absent-WHERE form on 2.0.0b13 and on dev alike, which MyHOME logs as
 "Data received is not a message"; the WHO 7 dimension forms and all WHO 8 frames parse.
 
 Home Assistant 2026.10.4, MyHOME 2.0.0b17, OWNd 2.0.0b13. The log is verbatim from the first
@@ -163,12 +165,12 @@ def test_parse_coverage_and_class_counts_are_ownd_version_stable() -> None:
         "OWNIntercomEvent",
         "OWNEvent",
     }
-    # Every unparsed frame is a WHO 7 event form with an empty WHERE (`*7*<what>*##`).
+    # Every unparsed frame is a WHO 7 event form with the WHERE field absent (`*7*<what>*##`).
     assert all(_who(raw) == "7" for raw in unparsed)
     assert all(raw.endswith("*##") and not raw.startswith("*#") for raw in unparsed)
 
 
-def test_who7_video_event_form_with_empty_where_is_unparsed_and_logged_by_myhome() -> None:
+def test_who7_video_event_form_with_absent_where_is_unparsed_and_logged_by_myhome() -> None:
     lines = _lines()
     raws = [raw for _, _, raw in _received() if _who(raw) == "7"]
     assert len(raws) == 44
@@ -176,6 +178,9 @@ def test_who7_video_event_form_with_empty_where_is_unparsed_and_logged_by_myhome
     assert "*7*300#127#0#0#1#5000#2*##" in raws
     assert OWNMessage.parse("*7*73#1#100*##") is None
     assert OWNMessage.parse("*7*300#127#0#0#1#5000#2*##") is None
+    # The documented address-less release form keeps its trailing star and does parse; the 3488's
+    # frames drop the WHERE field altogether, and that is the form OWNd rejects.
+    assert isinstance(OWNMessage.parse("*7*9**##"), OWNEvent)
     # The two event forms that do carry a WHERE parse (to the base event), as do the dimension forms.
     assert isinstance(OWNMessage.parse("*7*72*20##"), OWNEvent)
     assert isinstance(OWNMessage.parse("*#7**20*50*50*50*75*50##"), OWNEvent)
