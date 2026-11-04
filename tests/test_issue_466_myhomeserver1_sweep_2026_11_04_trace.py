@@ -1,13 +1,12 @@
-"""#466: Physical BTicino 3488 HOMETOUCH (FW 3.2.5) thermoregulation sweep.
+"""#466: 3488 HOMETOUCH with MyHomeServer1 (FW 3.2.5) connected — thermoregulation sweep.
 
 Contributed by @gimprota76 in:
 - https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6626706525
 
-The gateway is a 3488 HOMETOUCH running SMARTDES firmware 3.2.5 (the oracle's `030205`), the same
-firmware catalogued and emulated in own-firmware-oracle. The plant was already configured in MyHOME
-as ``MyHomeServer1`` (``identification.source == "manual"``, ``configured_model ==
-"MyHomeServer1"``, WHO 13 code ``200``), which is the model name the export records; the hardware is
-the contributor's 3488. Choosing the 3488 model directly is added in ``feat/support-3488-gateway``.
+The gateway is a MyHomeServer1 on firmware 3.2.5 (``identification.source == "manual"``,
+``configured_model == "MyHomeServer1"``, WHO 13 code ``200``, ``MyHomeServer1Profile``). The plant is a
+3488 HOMETOUCH touch screen connected to that MyHomeServer1: the 3488 is not a web server and cannot be
+the OpenWebNet endpoint, so OWNd connects over IP, port and password to the MyHomeServer1.
 Home Assistant 2026.10.4, MyHOME 2.0.0b17, OWNd 2.0.0b13.
 
 A 200-frame window of the gateway's bus buffer (``truncated: true``) that is entirely WHO 4
@@ -48,10 +47,9 @@ def test_fixture_provenance_is_pinned() -> None:
     assert hashlib.sha256(FIXTURE.read_bytes()).hexdigest() == SHA256
 
 
-def test_capture_is_a_3488_on_3_2_5_configured_as_myhomeserver1() -> None:
+def test_capture_environment_is_the_myhomeserver1_3_2_5_on_b17() -> None:
     doc = _doc()
-    # Firmware 3.2.5 is the 3488's SMARTDES build (oracle 030205); the model is only what the
-    # plant was configured as, since this was an existing MyHomeServer1 config entry.
+    # The export's gateway block: MyHomeServer1, firmware 3.2.5 (WHO 13 dimension 16), manual entry.
     assert doc["gateway"]["firmware"] == "3.2.5"
     assert doc["gateway"]["model"] == "MyHomeServer1"
     ident = doc["gateway"].get("identification", {})
