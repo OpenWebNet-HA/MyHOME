@@ -453,7 +453,7 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     what = getattr(message, "what", None) or getattr(message, "_what", None)
     what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
     tail = where_param(message)
-    if not interface and len(tail) > 1 and tail[0] == "4":
+    if not interface and len(tail) == 2 and tail[0] == "4":
         interface = str(tail[1])
     elif not interface and len(tail) > 2 and tail[1] == "4":
         interface = str(tail[2])
