@@ -211,15 +211,15 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 )  # *#16*0*5## (sound-who16-source.tsv)
 # Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
 # for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
-# models refusing *#4*0## whose *#4*Z## is expanded into four bus queries ($0499ZZ3000 / 12 /
-# 0E / 0D in trace-corpus.tsv, ~1.3 s per zone when a central unit answers them all, a NACK
-# after 1.5-2 s when a standalone thermostat answers only some), and the MH201, whose
-# standalone thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the
-# issue_466 sweep trace, the MH201 is not in the oracle). F460, F461 and MyHomeServer1 refuse
-# *#4*0## too but answer *#4*Z## themselves (F460 and F461 expand it into one request,
-# $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
-# keep the zone status poll and are not listed here.
-ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
+# single-session or uncaptured models refusing *#4*0## whose *#4*Z## is expanded into four bus
+# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), and the MH201, whose standalone
+# thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466
+# sweep trace, the MH201 is not in the oracle). F454, F460, F461 and MyHomeServer1 refuse
+# *#4*0## too but answer *#4*Z## themselves (F454 supports up to 4 command sessions and answers
+# all five frames in ~1.3 s on both central-unit #629 and standalone #866 plants; F460 and F461
+# expand it into $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649),
+# so their zones keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201", "MH202"})
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -507,6 +507,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @property
     def supports_zone_status(self) -> bool:
         """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
+        profile = getattr(getattr(self, "gateway", None), "profile", None)
+        supported = getattr(profile, "supports_heating_zone_status", None)
+        if isinstance(supported, bool):
+            return supported
         # Check the configured model string, its alphanumeric form (so "BTicino H/L4684" matches
         # "HL4684"), and the profile model _profile_for_model resolves it to (L4684, NT4684,
         # H/L4684, HL4684, HC4684, and MyHOME_Suite catalogue codes such as 003598).
@@ -522,7 +526,6 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 "F450",
                 "F455",
                 "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
-                "F454",
                 "MH200",
                 "MH201",
                 "MH202",

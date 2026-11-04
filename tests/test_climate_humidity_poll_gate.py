@@ -117,12 +117,12 @@ async def test_f461_zone_still_asks_for_its_humidity(hass):
     assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
 
 
-@pytest.mark.parametrize("model", ["F454", "MH202"])
-async def test_refusing_gateway_zone_does_not_ask(hass, model):
-    """No ``*60##``; the SCS-only zone's own temperature poll (``*#4*Z*0##``, #794) still goes out."""
+@pytest.mark.parametrize(("model", "expected"), [("F454", ["*#4*2##"]), ("MH202", ["*#4*2*0##"])])
+async def test_refusing_gateway_zone_does_not_ask(hass, model, expected):
+    """No ``*60##``; the zone's own status (F454, #866) or temperature (MH202, #794) poll still goes out."""
     handler = _handler(hass, model)
     await _humidity_zone(hass, handler).async_update()
-    assert _sent(handler) == ["*#4*2*0##"]
+    assert _sent(handler) == expected
 
 
 async def test_gateway_without_the_property_is_still_asked(hass):

@@ -138,16 +138,21 @@ async def test_sweep_bus_leaves_out_the_refused_requests_unless_forced(hass, att
 
 
 @pytest.mark.parametrize(
-    ("model", "profile_model"),
-    [("L4684", "H4684"), ("NT4684", "H4684"), ("003598", "F454"), ("03535", "MH202")],
+    ("model", "profile_model", "zone_status", "temp_poll"),
+    [
+        ("L4684", "H4684", False, True),
+        ("NT4684", "H4684", False, True),
+        ("003598", "F454", True, False),
+        ("03535", "MH202", False, True),
+    ],
 )
-def test_aliased_model_strings_follow_their_profile(hass, model, profile_model):
-    """OWNd resolves these spellings to a profile; the SCS-only gate follows the profile's model name."""
+def test_aliased_model_strings_follow_their_profile(hass, model, profile_model, zone_status, temp_poll):
+    """OWNd resolves these spellings to a profile; the zone-status and temperature gates follow it."""
     handler = _handler(hass, model)
     assert handler.gateway.profile.model_name == profile_model
     assert handler._model_key == profile_model
-    assert handler.supports_zone_status is False
-    assert handler.zone_temperature_poll_needed is True
+    assert handler.supports_zone_status is zone_status
+    assert handler.zone_temperature_poll_needed is temp_poll
 
 
 @pytest.mark.parametrize("ssdp_model", ["H/L4684", "HL4684", "HC4684"])
@@ -176,6 +181,18 @@ def test_profile_flag_for_the_general_heating_status_wins(hass, flag):
     assert ("*#4*0##" in handler._discovery_frames()) is flag
 
 
+@pytest.mark.parametrize("flag", [True, False])
+def test_profile_flag_for_heating_zone_status_wins(hass, flag):
+    """An OWNd profile that states ``supports_heating_zone_status`` is believed over the fallback list."""
+    handler = _handler(hass, "MH202" if flag else "F461")
+    handler.gateway.profile = SimpleNamespace(
+        model_name=handler.gateway.profile.model_name,
+        supports_heating_zone_status=flag,
+        supports_who=lambda who: True,
+    )
+    assert handler.supports_zone_status is flag
+
+
 def test_profile_without_who_16_skips_the_sound_request(hass):
     handler = _handler(hass, "F454")
     handler.gateway.profile = SimpleNamespace(model_name="F454", supports_who=lambda who: who != 16)
@@ -188,10 +205,10 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
-        ("MH201", True), ("MH202", True), ("F450", True), ("F454", True), ("MH200", True), ("H4684", True),
+        ("MH201", True), ("MH202", True), ("F450", True), ("MH200", True), ("H4684", True),
         ("HL4684", True), ("H/L4684", True), ("F459", True),
         ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
-        ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
+        ("F454", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],
 )
 def test_which_gateways_need_a_zone_temperature_poll(hass, model, expected):
@@ -337,7 +354,7 @@ async def test_a_malformed_restored_temperature_is_ignored(hass):
 @pytest.mark.parametrize(
     ("model", "flag", "expected"),
     [
-        ("F454", True, False),  # listed in the fallback table, but the profile says the sweep is answered
+        ("MH202", True, False),  # listed in the fallback table, but the profile says the sweep is answered
         ("MH201", True, False),  # the #185 field-report entry yields to a stated profile flag too
         ("F453", False, True),  # not in the table; the profile says the sweep is refused
         ("F461", False, False),  # polled with *#4*Z##: never a temperature poll
@@ -430,7 +447,7 @@ async def test_captured_f461_dimension_0_reply_clears_a_restored_temperature(has
 
 async def test_dimension_0_poll_result_is_not_counted_against_the_zone(hass):
     """No _poll_answered on *#4*Z*0##: a NACK (cancelled write) must not mark a healthy SCS zone unresponsive."""
-    handler = _handler(hass, "F454")
+    handler = _handler(hass, "MH202")
     written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
     written.cancel()
     handler.send_status_request = AsyncMock(return_value=written)

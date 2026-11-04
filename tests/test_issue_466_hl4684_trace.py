@@ -101,7 +101,6 @@ def test_hl4684_trace_fixture_integrity_and_parser_coverage() -> None:
         "H4684",
         "L4684",
         "BTicino H/L4684",
-        "003598",  # F454
         "003594",  # F455
         "003565",  # MH200N
         "003535",  # MH202
