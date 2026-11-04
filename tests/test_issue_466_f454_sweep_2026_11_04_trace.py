@@ -120,7 +120,6 @@ def test_sweep_who18_reads_the_meters_and_the_actuator_address() -> None:
     assert {r.split("*")[3].rstrip("#") for r in _raws(SWEEP, 18)} <= {"51", "1200"}
 
 
-
 def test_sweep_alarm_deactivation_decodes_as_deactivation_not_silent() -> None:
     # The real F454 emits *5*2*0## (WHAT 2); OWNd decodes it as deactivation, not a silent alarm.
     deact = OWNMessage.parse("*5*2*0##")
