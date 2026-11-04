@@ -204,6 +204,18 @@ def test_thermo_event_helpers() -> None:
     assert thermo_event_zone(local_evt) == "7"
     assert thermo_event_actuator(local_evt) == "2"
 
+    # Issue #863: actuator #4 (Z#4 and Z#4#4#IF) must not be confused with F422 #4#IF
+    local_act4_evt = OWNHeatingEvent("*#4*30#4*20*1##")
+    assert thermo_event_interface(local_act4_evt) is None
+    assert thermo_event_zone(local_act4_evt) == "30"
+    assert thermo_event_actuator(local_act4_evt) == "4"
+
+    routed_act4_evt = OWNHeatingEvent("*#4*30#4#4#1*20*1##")
+    assert thermo_event_interface(routed_act4_evt) == "01"
+    assert thermo_event_zone(routed_act4_evt) == "30"
+    assert thermo_event_actuator(routed_act4_evt) == "4"
+    assert _calling_zones(routed_act4_evt) == (["30"], "01")
+
     routed_act_evt = OWNHeatingEvent("*#4*7#3#4#1*20*1##")
     assert thermo_event_interface(routed_act_evt) == "01"
     assert thermo_event_zone(routed_act_evt) == "7"
@@ -2156,3 +2168,49 @@ def test_seed_core_translations_patches_mock_restore_cache_for_ha_2026_11(
         check=False,
     )
     assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.asyncio
+async def test_issue_863_actuator_4_does_not_overwrite_actuator_1(
+    hass: HomeAssistant,
+) -> None:
+    """Verify WHO=4 Dimension 20 frames on Z#4 route to actuator 4 and never overwrite Z#1."""
+    gw = _mock_gateway()
+    entry = _mock_entry(
+        hass,
+        gw,
+        platforms={
+            "switch": {
+                "4-30#1": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "30#1",
+                    CONF_NAME: "Riscaldamento Camera Ginevra",
+                },
+                "4-30#4": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "30#4",
+                    CONF_NAME: "Riscaldamento Sala",
+                },
+            }
+        },
+    )
+    added: list[MyHOMEThermoSwitch] = []
+    await switch_setup_entry(hass, entry, lambda ents, _u=False: added.extend(ents))
+    assert len(added) == 2
+    by_where = {ent._where: ent for ent in added}
+    sw_1 = by_where["30#1"]
+    sw_4 = by_where["30#4"]
+    sw_1.async_write_ha_state = MagicMock()
+    sw_4.async_write_ha_state = MagicMock()
+
+    # Live burst from issue #863: *#4*30#1*20*0## followed by *#4*30#4*20*1##
+    evt_1_off = OWNHeatingEvent("*#4*30#1*20*0##")
+    evt_4_on = OWNHeatingEvent("*#4*30#4*20*1##")
+
+    for evt in (evt_1_off, evt_4_on):
+        sw_1.handle_event(evt)
+        sw_4.handle_event(evt)
+
+    assert sw_1.is_on is False
+    assert sw_4.is_on is True
+

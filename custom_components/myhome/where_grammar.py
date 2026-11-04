@@ -394,7 +394,7 @@ def thermo_event_interface(message: Any) -> str | None:
     raw_if = getattr(message, "interface", None)
     if not raw_if:
         tail = where_param(message)
-        if len(tail) > 1 and tail[0] == "4":
+        if len(tail) == 2 and tail[0] == "4":
             raw_if = str(tail[1])
         elif len(tail) > 2 and tail[1] == "4":
             raw_if = str(tail[2])
@@ -428,7 +428,7 @@ def thermo_event_actuator(message: Any) -> str:
     if act is not None and str(act).isdigit():
         return str(int(str(act)))
     tail = where_param(message)
-    if tail and tail[0] != "4" and str(tail[0]).isdigit():
+    if tail and not (len(tail) == 2 and tail[0] == "4") and str(tail[0]).isdigit():
         return str(int(str(tail[0])))
     return "1"
 
