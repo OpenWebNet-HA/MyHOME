@@ -1534,6 +1534,24 @@
         
       
       
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Hardware Trace Availability
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
       <a href="./" class="md-nav__link md-nav__link--active">
         
   
@@ -1550,6 +1568,36 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#devices-captured-behind-a-gateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices captured behind a gateway
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
       
     </li>
   
@@ -1901,6 +1949,25 @@
     
   
   
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#devices-captured-behind-a-gateway" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Devices captured behind a gateway
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
 </nav>
                   </div>
                 </div>
@@ -2217,6 +2284,26 @@
 <!-- TRACE_MATRIX_END -->
 
 <p><em>Checkmarks (✅) indicate that at least one <code>diagnostic_summary.json</code> or <code>.txt</code> bus capture in our test corpus contains frames for that subsystem from the specified gateway model.</em></p>
+<h2 id="devices-captured-behind-a-gateway">Devices captured behind a gateway<a class="headerlink" href="#devices-captured-behind-a-gateway" title="Permanent link">&para;</a></h2>
+<p>The matrix is keyed by the gateway OWNd connects to. Some corpus captures come from a plant whose distinctive device is not the gateway itself; those devices are listed here with the gateway their frames were received through.</p>
+<table>
+<thead>
+<tr>
+<th>Device</th>
+<th>Connected through</th>
+<th>Subsystems in the captures</th>
+<th>Corpus</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>3488 HOMETOUCH</strong> (video door-entry touch screen)</td>
+<td>MyHomeServer1 (firmware 3.2.5)</td>
+<td>WHO 1 lights, WHO 4 climate, WHO 7 video, WHO 8 door entry</td>
+<td><code>issue_466/myhome_sweep_MyHomeServer1_all_2026-11-04T09-35-58.json</code>, <code>issue_466/MyHomeServer1_full_debug_log_2026-11-04T10-30-17.txt</code></td>
+</tr>
+</tbody>
+</table>
 
 
 
