@@ -300,8 +300,9 @@ class TestAVCommands:
         cmd = OWNAVCommand.receive_video("1")
         assert cmd is not None
         # OWNd < #162 built *7*0*401## (the bare camera number after the 40 prefix);
-        # OWNd#162 zero-pads it to the WHO 7 PDF WHERE table form *7*0*4001##
-        # (4000 = Camera 00 .. 4099 = Camera 99). Accept both until the OWNd pin bumps.
+        # OWNd#162 zero-pads it to the WHO 7 PDF WHERE table value 4001 (4000 = Camera 00 ..
+        # 4099 = Camera 99). The PDF prints the frame with a trailing empty field, *7*0*4001*##;
+        # OWNd builds the three-tag *7*0*4001##. Accept both until the OWNd pin bumps.
         assert str(cmd) in ("*7*0*401##", "*7*0*4001##")
 
     def test_close_video(self):
