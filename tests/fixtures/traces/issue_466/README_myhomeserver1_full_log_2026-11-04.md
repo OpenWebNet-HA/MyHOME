@@ -36,4 +36,4 @@ Relationship to `myhome_sweep_MyHomeServer1_all_2026-11-04T09-35-58.json`: same 
 morning, but that export is a 200-frame Bus Monitor buffer window (09:35:17 → 09:35:43Z) under the
 `MyHomeServer1` profile, before DEBUG logging was on; the two do not overlap, so both are kept.
 
-Pinned by `tests/test_issue_466_myhomeserver1_full_log_2026_11_04_trace.py` (SHA-256 provenance).
+Pinned by `tests/test_issue_466_3488_hometouch_full_log_2026_11_04_trace.py` (SHA-256 provenance).
