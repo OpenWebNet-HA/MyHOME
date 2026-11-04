@@ -46,6 +46,24 @@ data:
 
 ---
 
+## 🔀 Master / Slave (`M=SLA`) Actuators vs Decoupled Independent Control
+
+In traditional physical SCS configuration, auxiliary loads like bathroom extractor fans or secondary contactors are often configured as slaves by inserting `M=SLA` (or delayed-off configurators `M=1..4`) and duplicating the master actuator's `A` and `PL` address.
+
+> [!WARNING]
+> **OpenWebNet Limitation with `M=SLA`**:
+> On the physical bus, an actuator in `M=SLA` does not have its own independent OpenWebNet address. It listens to the identical `A*PL` broadcast telegram as its master. Sending an OpenWebNet frame (`*1*1*APL##`) turns on both the master and slave simultaneously. It is **not possible** to control an `M=SLA` slave independently from Home Assistant without also triggering the master.
+
+### Recommended Pattern: Decouple the Address (Single Relay Contact)
+Instead of wiring two relays in parallel or keeping `M=SLA`:
+1. **Remove `M=SLA`**: Configure the auxiliary relay (e.g. Channel 2 of an `F411/2` or `F411/4`) with its own distinct `PL` address (e.g. Light = `11`, Fan = `12`, with `M` left empty).
+2. **Expose as Fan / Switch**: Home Assistant discovers `12` as an independent entity (`switch.bathroom_fan` or `fan.bathroom_fan`).
+3. **Automate the Overrun in HA**: Use an automation to turn on the fan when the light turns on, and run an overrun timer (`myhome.turn_on_timed`) or humidity purge when the light turns off.
+
+See the complete guide and YAML configuration in [Use Cases — Decoupled Bathroom Extractor Fan](use_cases.md#11-decoupled-bathroom-extractor-fan-with-smart-overrun--humidity-boost-single-f411-contact).
+
+---
+
 ## 🔥 Probe-less Thermo Actuators & Towel Warmers (`WHO = 4`)
 
 Bathroom towel warmers and electric radiant relays are often wired to `F430/2` or `F430/4` thermoregulation actuators (`WHO = 4`, e.g. Zone `7`, Actuator `1` → `WHERE = 7#1`) **without** a room temperature probe.
