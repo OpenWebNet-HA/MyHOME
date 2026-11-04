@@ -8,8 +8,9 @@ Contributed by @gimprota76 after upgrading to 2.0.0b17, in:
 Two verbatim exports are pinned:
 
 * ``myhome_sweep_F454_all_2026-11-04T08-31-02.json`` - an 89-frame bus sweep whose WHO 5 run
-  captures a full 3486 arm/disarm cycle, and whose 36 WHO 18 frames exercise the energy totals
-  (dimensions 51..59) and the ``7N#0`` Energy Management Actuator address (71#0..79#0).
+  captures a full 3486 arm/disarm cycle, and whose 36 WHO 18 frames read the nine energy meters ``5N``
+  (WHERE 51..59) with dimension 51 (energy totalizer) and 1200 (automatic-update control), and the
+  ``7N#0`` Energy Management Actuator address (71#0..79#0).
 * ``myhome_sweep_F454_all_2026-11-04T08-33-48.json`` - an 82-frame export taken while the MyHOME
   scenario controller fired, adding four WHO 0 scenario-module frames and WHO 1 / WHO 2 point
   activations with their ``1000#M`` / advanced-position echoes. The companion T08-33-52 export the
@@ -107,13 +108,17 @@ def test_every_scenario_frame_parses() -> None:
     assert kinds["OWNGatewayEvent"] == 2
 
 
-def test_sweep_who18_reads_totals_and_the_actuator_address() -> None:
-    whats = {r.split("*")[2] for r in _raws(SWEEP, 18)}
-    assert {"51", "52", "53", "54", "55", "56", "57", "58", "59"} <= whats
+def test_sweep_who18_reads_the_meters_and_the_actuator_address() -> None:
+    # The third field is the WHERE: the nine 5N energy meters and the 7N#0 actuators.
+    wheres = {r.split("*")[2] for r in _raws(SWEEP, 18)}
+    assert {"51", "52", "53", "54", "55", "56", "57", "58", "59"} <= wheres
     # Energy Management Actuator 7N#0 (71#0..79#0): the published WHO 18 WHERE form.
-    assert {f"{7}{n}#0" for n in range(1, 10)} <= whats
+    assert {f"{7}{n}#0" for n in range(1, 10)} <= wheres
     for r in _raws(SWEEP, 18):
         assert isinstance(OWNMessage.parse(r), OWNEnergyCommand)
+    # The dimensions read are 51 (energy totalizer) and 1200 (automatic-update control).
+    assert {r.split("*")[3].rstrip("#") for r in _raws(SWEEP, 18)} <= {"51", "1200"}
+
 
 
 def test_sweep_alarm_deactivation_decodes_as_deactivation_not_silent() -> None:
