@@ -924,16 +924,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not wants_humidity
         ):
             # SCS-only gateways without multi-session *#4*Z## verification (F450, F453, F453AV, F459,
-            # H4684, MH200, MH200N, MH202 in the firmware oracle; F455 and MH201 by field reports) expand
+            # H4684, MH200, MH200N in the firmware oracle; F455 and MH201 by field reports) expand
             # the dimensionless zone status request *#4*Z## into four bus queries, dimension 0, 12, 14 and
             # 13 ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv). The 10 s socket hang of #674 was an F455,
             # not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing answered. F454
-            # (up to 4 command sessions) answers *#4*Z## in ~1.3 s with all five frames on both 99-zone central
-            # units (#629) and standalone thermostats (#866); MyHomeServer1 replies from its cache (#649);
-            # F460 and F461 expand it into one request ($00499013000) and answer it (#714): those four keep
-            # the poll. Where an SCS-only gateway also drops the general request *#4*0##, the zone asks for
-            # its temperature below (_polls_temperature); everywhere else it waits for the sweep replies or
-            # for the thermostat's own reports.
+            # (up to 4 command sessions) answers *#4*Z## in ~1.3 s and MH202 in ~160-250 ms with all five
+            # frames on both central units (#629) and standalone thermostats (#866); MyHomeServer1 replies
+            # from its cache (#649); F460 and F461 expand it into one request ($00499013000) and answer it
+            # (#714): those five keep the poll. Where an SCS-only gateway also drops the general request
+            # *#4*0##, the zone asks for its temperature below (_polls_temperature); everywhere else it waits
+            # for the sweep replies or for the thermostat's own reports.
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)

@@ -143,7 +143,7 @@ async def test_sweep_bus_leaves_out_the_refused_requests_unless_forced(hass, att
         ("L4684", "H4684", False, True),
         ("NT4684", "H4684", False, True),
         ("003598", "F454", True, False),
-        ("03535", "MH202", False, True),
+        ("03535", "MH202", True, False),
     ],
 )
 def test_aliased_model_strings_follow_their_profile(hass, model, profile_model, zone_status, temp_poll):
@@ -184,7 +184,7 @@ def test_profile_flag_for_the_general_heating_status_wins(hass, flag):
 @pytest.mark.parametrize("flag", [True, False])
 def test_profile_flag_for_heating_zone_status_wins(hass, flag):
     """An OWNd profile that states ``supports_heating_zone_status`` is believed over the fallback list."""
-    handler = _handler(hass, "MH202" if flag else "F461")
+    handler = _handler(hass, "MH200" if flag else "F461")
     handler.gateway.profile = SimpleNamespace(
         model_name=handler.gateway.profile.model_name,
         supports_heating_zone_status=flag,
@@ -205,17 +205,17 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
 @pytest.mark.parametrize(
     ("model", "expected"),
     [
-        ("MH201", True), ("MH202", True), ("F450", True), ("MH200", True), ("H4684", True),
+        ("MH201", True), ("F450", True), ("MH200", True), ("H4684", True),
         ("HL4684", True), ("H/L4684", True), ("F459", True),
         ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
-        ("F454", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
+        ("F454", False), ("MH202", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],
 )
 def test_which_gateways_need_a_zone_temperature_poll(hass, model, expected):
     assert _handler(hass, model).zone_temperature_poll_needed is expected
 
 
-@pytest.mark.parametrize("model", ["MH201", "MH202"])
+@pytest.mark.parametrize("model", ["MH201", "MH200"])
 async def test_scs_only_zone_asks_for_its_temperature(hass, model):
     handler = _handler(hass, model)
     handler.send_status_request = AsyncMock()
@@ -275,7 +275,7 @@ async def test_withheld_interface_poll_also_withholds_humidity_and_fan_cross_pol
 @pytest.mark.parametrize(
     ("model", "flag", "expected_temp", "expected_frames"),
     [
-        ("MH202", True, True, ["*#4*3#4#01*0##"]),
+        ("MH202", True, False, ["*#4*3#4#01##"]),
         ("H4684", True, True, ["*#4*3#4#01*0##"]),
         ("H4684", False, False, []),
         ("F461", True, False, ["*#4*3#4#01##"]),
@@ -322,7 +322,7 @@ async def test_central_unit_is_not_a_temperature_poll(hass):
 
 
 def test_bus_discovered_zone_keeps_its_poll_until_a_temperature_arrives(hass):
-    polled = _zone(hass, _handler(hass, "MH202"))
+    polled = _zone(hass, _handler(hass, "MH200"))
     assert polled._polls_temperature is True
     assert message_has_state(polled, OWNHeatingEvent("*#4*3*14*0210*3##")) is False
     assert message_has_state(polled, OWNHeatingEvent("*#4*3*0*0215##")) is True
@@ -333,7 +333,7 @@ def test_bus_discovered_zone_keeps_its_poll_until_a_temperature_arrives(hass):
 # ------------------------------------------------------------------ restored temperature
 
 async def test_current_temperature_is_restored_and_flagged_until_the_bus_reports(hass):
-    zone = _zone(hass, _handler(hass, "MH202"))
+    zone = _zone(hass, _handler(hass, "MH200"))
     await zone.async_restore_last_state(
         State("climate.zone_3", "heat", {"temperature": 21.0, "current_temperature": 23.9})
     )
@@ -345,7 +345,7 @@ async def test_current_temperature_is_restored_and_flagged_until_the_bus_reports
 
 
 async def test_a_malformed_restored_temperature_is_ignored(hass):
-    zone = _zone(hass, _handler(hass, "MH202"))
+    zone = _zone(hass, _handler(hass, "MH200"))
     await zone.async_restore_last_state(State("climate.zone_3", "heat", {"current_temperature": "warm"}))
     assert zone.current_temperature is None
     assert "current_temperature_restored" not in zone.extra_state_attributes
@@ -354,7 +354,7 @@ async def test_a_malformed_restored_temperature_is_ignored(hass):
 @pytest.mark.parametrize(
     ("model", "flag", "expected"),
     [
-        ("MH202", True, False),  # listed in the fallback table, but the profile says the sweep is answered
+        ("MH200", True, False),  # listed in the fallback table, but the profile says the sweep is answered
         ("MH201", True, False),  # the #185 field-report entry yields to a stated profile flag too
         ("F453", False, True),  # not in the table; the profile says the sweep is refused
         ("F461", False, False),  # polled with *#4*Z##: never a temperature poll
@@ -428,7 +428,7 @@ def test_f461_capture_answers_the_populated_zone_and_nacks_the_unpopulated_one(f
 async def test_captured_f461_dimension_0_reply_clears_a_restored_temperature(hass, f461_rows):
     """The request an SCS-only zone 2 sends is the captured *#4*2*0##; the captured reply replaces the restored value."""
     run = "run1_oracle_replay_readonly"
-    handler = _handler(hass, "MH202")
+    handler = _handler(hass, "MH200")
     handler.send_status_request = AsyncMock()
     zone = _zone(hass, handler, where="2")
     await zone.async_restore_last_state(State("climate.zone_2", "heat", {"current_temperature": 21.0}))
@@ -447,7 +447,7 @@ async def test_captured_f461_dimension_0_reply_clears_a_restored_temperature(has
 
 async def test_dimension_0_poll_result_is_not_counted_against_the_zone(hass):
     """No _poll_answered on *#4*Z*0##: a NACK (cancelled write) must not mark a healthy SCS zone unresponsive."""
-    handler = _handler(hass, "MH202")
+    handler = _handler(hass, "MH200")
     written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
     written.cancel()
     handler.send_status_request = AsyncMock(return_value=written)

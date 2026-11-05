@@ -204,7 +204,7 @@ def test_gateway_supports_zone_status_property(hass: HomeAssistant) -> None:
         ("F455", False),
         ("F454", True),
         ("MH200N", False),
-        ("MH202", False),
+        ("MH202", True),
         ("MyHomeServer1", True),
     ):
         handler.gateway.model_name = model

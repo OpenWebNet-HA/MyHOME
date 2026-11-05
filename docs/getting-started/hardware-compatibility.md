@@ -59,7 +59,7 @@ During startup initial discovery, status queries are gated by the gateway profil
 <!-- GATEWAY_DISCOVERY_START -->
 | Gateway Model | Profile Subsystems (advertised) | Startup Sweep Requests (sent) | Profile Support Notes |
 | :--- | :--- | :--- | :--- |
-| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) | Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself. |
+| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) | Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out; climate zones are polled with `*#4*<WHERE>##` (#866). |
 | **H4890 / AM4890** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 4, 5, 16, 18 | Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries. |
 | **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) | Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep leaves it out; zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted. |
 | **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted. |

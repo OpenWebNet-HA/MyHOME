@@ -117,7 +117,7 @@ async def test_f461_zone_still_asks_for_its_humidity(hass):
     assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
 
 
-@pytest.mark.parametrize(("model", "expected"), [("F454", ["*#4*2##"]), ("MH202", ["*#4*2*0##"])])
+@pytest.mark.parametrize(("model", "expected"), [("F454", ["*#4*2##"]), ("MH202", ["*#4*2##"]), ("MH200", ["*#4*2*0##"])])
 async def test_refusing_gateway_zone_does_not_ask(hass, model, expected):
     """No ``*60##``; the zone's own status (F454, #866) or temperature (MH202, #794) poll still goes out."""
     handler = _handler(hass, model)
@@ -425,7 +425,7 @@ async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity
     or a zone pre-enabled with ``humidity: true``) is taken as on any gateway, and the MH202 zone
     still does not ask ``*#4*2*60##``. No trace claims an MH202 emits such a frame.
     """
-    handler = _handler(hass, "MH202")
+    handler = _handler(hass, "MH200")
     zone = MyHOMEClimate(
         hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
         heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
@@ -439,12 +439,12 @@ async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity
     assert zone._humidity is True
     assert zone.current_humidity == 45.0
     await zone.async_update()
-    assert _sent(handler) == ["*#4*2*0##"]  # humidity known, dimension 60 still not asked on the MH202; its temperature poll (#794) is
+    assert _sent(handler) == ["*#4*2*0##"]  # humidity known, dimension 60 still not asked on the MH200; its temperature poll (#794) is
 
 
 def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
     """``_poll_on_add`` is untouched: the first update runs so the identity can settle before the gate decides."""
-    handler = _handler(hass, "MH202")
+    handler = _handler(hass, "MH200")
     zone = MyHOMEClimate(
         hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
         heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
