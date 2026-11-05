@@ -2664,17 +2664,37 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._cancel_stop_task()
                 self._end_echo_window()
             previous_position = self._attr_current_cover_position
+            was_opening = bool(self._attr_is_opening)
+            was_closing = bool(self._attr_is_closing)
             self._attr_current_cover_position = position
             if not self._advanced:
                 self._start_position = position
             self._move_start_time = None
             self._attr_is_opening = False
             self._attr_is_closing = False
-            if self._slat_tilt and not self._is_tilting and position != previous_position and position in (0, 100):
-                # The curtain reached an end stop, so the slats turned all the way.
-                # A repeated report of the same level says nothing about the slats:
-                # they may have been tilted open on a lowered blind.
-                self._attr_current_cover_tilt_position = position
+            if self._slat_tilt and not self._is_tilting:
+                if was_opening or was_closing:
+                    self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                elif position != previous_position and previous_position is not None:
+                    # External position jump / level change without prior movement frames (#868).
+                    # Downward movement closes slats, upward movement opens slats.
+                    if position < previous_position:
+                        self._turn_slats_for_run(now, None, False, True)
+                    elif position > previous_position:
+                        self._turn_slats_for_run(now, None, True, False)
+                elif position != previous_position and position in (0, 100):
+                    self._attr_current_cover_tilt_position = position
+            if was_opening or was_closing:
+                self._last_stop_at = now
+                self._stopped_event.set()
+                if self._advanced and self._run_started_at is not None:
+                    self._last_run = {
+                        "seconds": round(max(0.0, now - self._run_started_at), 2),
+                        "direction": "open" if was_opening else "close",
+                        "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                    }
+                    self._refresh_travel_attributes()
+                self._run_started_at = None
             if (is_closed := getattr(message, "is_closed", None)) is not None:
                 self._attr_is_closed = bool(is_closed)
             else:
@@ -2700,16 +2720,20 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if was_closing:
                     self._turn_slats_for_run(now, self._run_started_at, False, True)
                     self._end_run_on_reversal(now)
+                    self._run_started_at = now
                 was_already_opening = bool(self._attr_is_opening)
                 self._attr_is_opening = True
                 self._attr_is_closing = False
                 self._attr_is_closed = False
-                if not self._advanced and not was_already_opening:
-                    self._run_start_position = None
-                    self._run_start_tilt = None
-                    self._auto_stop_duration = None
-                    self._anchor_run(now)
-                    self._arm_wall_settle(True)
+                if not was_already_opening:
+                    if self._run_started_at is None:
+                        self._run_started_at = now
+                    if not self._advanced:
+                        self._run_start_position = None
+                        self._run_start_tilt = None
+                        self._auto_stop_duration = None
+                        self._anchor_run(now)
+                        self._arm_wall_settle(True)
         elif is_closing:
             if self._is_tilting and self._tilt_direction == "close":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
@@ -2731,16 +2755,20 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if was_opening:
                     self._turn_slats_for_run(now, self._run_started_at, True, False)
                     self._end_run_on_reversal(now)
+                    self._run_started_at = now
                 was_already_closing = bool(self._attr_is_closing)
                 self._attr_is_opening = False
                 self._attr_is_closing = True
                 self._attr_is_closed = False
-                if not self._advanced and not was_already_closing:
-                    self._run_start_position = None
-                    self._run_start_tilt = None
-                    self._auto_stop_duration = None
-                    self._anchor_run(now)
-                    self._arm_wall_settle(False)
+                if not was_already_closing:
+                    if self._run_started_at is None:
+                        self._run_started_at = now
+                    if not self._advanced:
+                        self._run_start_position = None
+                        self._run_start_tilt = None
+                        self._auto_stop_duration = None
+                        self._anchor_run(now)
+                        self._arm_wall_settle(False)
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
             was_tilting = self._is_tilting
@@ -2817,6 +2845,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._motor_started.set()
             else:
                 self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                if self._advanced:
+                    self._run_started_at = None
                 if (was_opening or was_closing) and not self._dim10_seen and not self._warned_missing_dim10:
                     self._warned_missing_dim10 = True
                     LOGGER.warning(
