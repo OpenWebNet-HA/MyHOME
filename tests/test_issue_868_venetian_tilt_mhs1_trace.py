@@ -415,3 +415,65 @@ async def test_advanced_cover_what0_stop_records_last_run(mock_gateway: MagicMoc
     assert cover.extra_state_attributes["last_run_direction"] == "close"
     assert cover.current_cover_tilt_position == 0
 
+
+@pytest.mark.asyncio
+async def test_stefanvitz_workaround_scenario_native_open_tilt(mock_gateway: MagicMock) -> None:
+    """Verify issue #868 comment-6658716371 scenario: 0.6s slat_time opens slats natively without height creep.
+
+    Stefan Vitz noted that after a downward move to 75%, an external 0.6s OPEN+STOP pulse
+    physically opens the slats, whereas a 0.86s pulse moved the cover from 75% to 76%.
+    This test verifies that with slat_time=0.6:
+    1. The downward move to 75% sets tilt to 0% (closed).
+    2. Calling async_open_cover_tilt() natively pulses for exactly 0.6s (*2*1*0115## then *2*0*0115##).
+    3. Height remains untouched at 75% and tilt reaches 100%.
+    """
+    cover = _create_venetian_cover(mock_gateway, "0115", slat_time=0.6)
+    cover._attr_current_cover_position = 100
+    cover._attr_current_cover_tilt_position = 100
+
+    t0 = 800.0
+    # Downward run to 75%
+    with patch("time.monotonic", return_value=t0):
+        cover.handle_event(OWNEvent.parse("*#2*0115*10*12*100*001*0##"))
+    assert cover.is_closing is True
+
+    # Stops at 75%
+    with patch("time.monotonic", return_value=t0 + 15.0):
+        cover.handle_event(OWNEvent.parse("*#2*0115*10*10*75*001*0##"))
+        cover.handle_event(OWNEvent.parse("*2*0*0115##"))
+
+    assert cover.current_cover_position == 75
+    assert cover.current_cover_tilt_position == 0
+
+    # User calls open_cover_tilt()
+    t_open = t0 + 20.0
+    fut = asyncio.Future()
+    fut.set_result(t_open)
+    mock_gateway.send.return_value = fut
+
+    with (
+        patch("time.monotonic", return_value=t_open),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await cover.async_open_cover_tilt()
+
+        # Command sent to open
+        assert str(mock_gateway.send.call_args[0][0]) == "*2*1*0115##"
+        assert cover._is_tilting is True
+        # Duration is exactly 0.6s (Stefan's calibrated pulse)
+        assert cover._tilt_duration == 0.6
+
+        # Direction status echo arrives from bus, anchoring the motor pulse
+        cover.handle_event(OWNEvent.parse("*2*1*0115##"))
+
+        if cover._stop_task:
+            await cover._stop_task
+
+    # Stop command was sent
+    assert str(mock_gateway.send.call_args[0][0]) == "*2*0*0115##"
+    # Slats are now fully open (100%) and curtain remains at 75% (no creep to 76%)
+    assert cover.current_cover_tilt_position == 100
+    assert cover.current_cover_position == 75
+    assert cover._is_tilting is False
+
+
