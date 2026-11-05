@@ -923,19 +923,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._fan
             and not wants_humidity
         ):
-            # SCS-only gateways (F450, F453, F453AV, F454, F459, H4684, MH200, MH200N, MH202 in the
-            # firmware oracle; F455 and MH201 by field reports) expand the dimensionless zone status
-            # request *#4*Z## into four bus queries, dimension 0, 12, 14 and 13 ($0499ZZ3000 / 12 /
-            # 0E / 0D in trace-corpus.tsv). Against a 99-zone central unit every query is answered
-            # (F454 + #0, issue_629 log: *#4*1##..*#4*15## complete in ~1.3 s each with all five
-            # frames); a standalone thermostat answers only some of them, and the command session
-            # then ends with a NACK after 1.5-2 s (MH202 ACKs). The 10 s socket hang of #674 was an
-            # F455, not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing
-            # answered. MyHomeServer1 replies to *#4*Z## from its cache (#649); F460 and F461 expand
-            # it into one request ($00499013000) and answer it (#714): those three keep the poll.
-            # Where the SCS-only gateway also drops the general request *#4*0##, the zone asks for
-            # its temperature below (_polls_temperature); everywhere else it waits for the sweep
-            # replies or for the thermostat's own reports.
+            # SCS-only gateways without multi-session *#4*Z## verification (F450, F453, F453AV, F459,
+            # H4684, MH200, MH200N in the firmware oracle; F455 and MH201 by field reports) expand
+            # the dimensionless zone status request *#4*Z## into four bus queries, dimension 0, 12, 14 and
+            # 13 ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv). The 10 s socket hang of #674 was an F455,
+            # not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing answered. F454
+            # (up to 4 command sessions) answers *#4*Z## in ~1.3 s and MH202 in ~160-250 ms with all five
+            # frames on both central units (#629) and standalone thermostats (#866); MyHomeServer1 replies
+            # from its cache (#649); F460 and F461 expand it into one request ($00499013000) and answer it
+            # (#714): those five keep the poll. Where an SCS-only gateway also drops the general request
+            # *#4*0##, the zone asks for its temperature below (_polls_temperature); everywhere else it waits
+            # for the sweep replies or for the thermostat's own reports.
             return
         if self._poll_health.should_skip(time.time()):
             LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
@@ -963,8 +961,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # is the bus TX timeout of an unpopulated zone (the QEMU images have no thermostat
             # wired; the live F461 NACKs the unpopulated zone 1 the same way after 2.07 s, rows
             # 374-376), not a verdict on a populated one. Until a command-session capture of
-            # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
-            # rather than risk marking a healthy zone unresponsive on a NACK.
+            # *#4*Z*0## on a single-session SCS-only gateway (MH200 / H4684) exists, the result is
+            # left uncounted rather than risk marking a healthy zone unresponsive on a NACK.
             await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(

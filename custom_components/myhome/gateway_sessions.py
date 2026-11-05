@@ -1421,8 +1421,18 @@ class CommandWorkerPool:
                     else:
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])
-                    if collected and isinstance(collected, list):
-                        for resp in collected:
+                    responses_to_dispatch: Any = collected
+                    if responses_to_dispatch is None and task["is_status_request"]:
+                        # A standalone zone status request (*#4*Z##) that answers only some of
+                        # bt_H4690's four bus queries ends with *#*0## on the command session;
+                        # OWNd preserves the partial frames in OWNNackError.responses.
+                        responses_to_dispatch = getattr(
+                            getattr(_command_session, "last_error", None),
+                            "responses",
+                            None,
+                        )
+                    if responses_to_dispatch and isinstance(responses_to_dispatch, list):
+                        for resp in responses_to_dispatch:
                             raw_resp = str(resp)
                             if self.bus_monitor.has_frame_since(
                                 task_start, direction="rx", raw=raw_resp

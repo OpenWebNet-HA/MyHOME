@@ -12,7 +12,7 @@ After the event session is up, the integration sends a small set of general stat
 | :--- | :--- | :--- |
 | `*#1*0##` | Lighting | All gateways |
 | `*#2*0##` | Automation / covers | All gateways |
-| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, `tests/fixtures/traces/issue_466`); F460, F461 and MyHomeServer1 poll `*#4*<WHERE>##` per zone instead, and the zones of the SCS-only models (F450, F454, F459, H4684, MH200, MH201, MH202) ask `*#4*<WHERE>*0##` |
+| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, `tests/fixtures/traces/issue_466`); F454, MH202, F460, F461 and MyHomeServer1 poll `*#4*<WHERE>##` per zone instead (#629, #649, #714, #866), and the zones of the remaining SCS-only models (F450, F459, H4684, MH200, MH201) ask `*#4*<WHERE>*0##` |
 | `*#5*0##` | Burglar alarm | MH202, H4890 |
 | `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | Gateways whose profile advertises WHO 16, except F450, F459, F460, F461, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle) |
 | `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
