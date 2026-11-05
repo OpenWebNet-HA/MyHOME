@@ -7,6 +7,10 @@ FIXTURES_DIR = REPO_ROOT / 'tests' / 'fixtures'
 README_MD = REPO_ROOT / 'README.md'
 DOCS_MD = REPO_ROOT / 'docs' / 'trace-availability.md'
 
+HA_LOG_FRAME = re.compile(
+    r'\[([A-Za-z0-9]+) gateway - [^\]]*\] (?:Message received|Collected command response): `([^`]+)`'
+)
+
 START_MARKER = '<!-- TRACE_MATRIX_START -->'
 END_MARKER = '<!-- TRACE_MATRIX_END -->'
 
@@ -78,6 +82,16 @@ def build_matrix():
                 whos = set()
                 gateway = 'F454' # from issue_429 readme
                 for line in lines:
+                    # Home Assistant debug logs: the frame sits in backticks after a
+                    # "[<model> gateway - <address>]" label, which names the gateway.
+                    m = HA_LOG_FRAME.search(line)
+                    if m:
+                        if m.group(1) != 'Generic':
+                            gateway = m.group(1)
+                            w = get_who(m.group(2))
+                            if w is not None:
+                                whos.add(w)
+                        continue
                     line_clean = re.sub(r'^\[.*?\]\s*\[.*?\]\s*', '', line.strip())
                     w = get_who(line_clean)
                     if w is not None:
