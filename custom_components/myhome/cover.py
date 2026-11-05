@@ -2658,12 +2658,26 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._publish_state()
             return
         if position is not None:
-            if not self._is_tilting:
-                # A status report during a slat pulse (a poll reply, a DIM 10 level)
-                # must not cancel the auto-stop: the motor would run on.
-                self._cancel_stop_task()
-                self._end_echo_window()
             previous_position = self._attr_current_cover_position
+            if self._is_tilting:
+                if position != previous_position and previous_position is not None:
+                    # External movement took over the motor during a slat pulse (#868).
+                    self._end_pulse_for_takeover()
+                else:
+                    # Routine status/poll reply during a slat pulse: update position
+                    # but preserve active pulse state and auto-stop task.
+                    self._attr_current_cover_position = position
+                    if not self._advanced:
+                        self._start_position = position
+                    if (is_closed := getattr(message, "is_closed", None)) is not None:
+                        self._attr_is_closed = bool(is_closed)
+                    else:
+                        self._attr_is_closed = (self._attr_current_cover_position == 0)
+                    self._publish_state()
+                    return
+
+            self._cancel_stop_task()
+            self._end_echo_window()
             was_opening = bool(self._attr_is_opening)
             was_closing = bool(self._attr_is_closing)
             self._attr_current_cover_position = position
@@ -2693,6 +2707,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         "direction": "open" if was_opening else "close",
                         "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
                     }
+                    self._motion_started_at = None
                     self._refresh_travel_attributes()
                 self._run_started_at = None
             if (is_closed := getattr(message, "is_closed", None)) is not None:
@@ -2728,7 +2743,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if not was_already_opening:
                     if self._run_started_at is None:
                         self._run_started_at = now
-                    if not self._advanced:
+                    if self._advanced:
+                        started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - now))
+                        self._motion_started_at = started.isoformat(timespec="milliseconds")
+                        self._refresh_travel_attributes()
+                    else:
                         self._run_start_position = None
                         self._run_start_tilt = None
                         self._auto_stop_duration = None
@@ -2763,7 +2782,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if not was_already_closing:
                     if self._run_started_at is None:
                         self._run_started_at = now
-                    if not self._advanced:
+                    if self._advanced:
+                        started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - now))
+                        self._motion_started_at = started.isoformat(timespec="milliseconds")
+                        self._refresh_travel_attributes()
+                    else:
                         self._run_start_position = None
                         self._run_start_tilt = None
                         self._auto_stop_duration = None
@@ -2845,6 +2868,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._motor_started.set()
             else:
                 self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                if self._advanced and (was_opening or was_closing) and self._run_started_at is not None:
+                    self._last_run = {
+                        "seconds": round(max(0.0, now - self._run_started_at), 2),
+                        "direction": "open" if was_opening else "close",
+                        "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                    }
+                    self._motion_started_at = None
+                    self._refresh_travel_attributes()
                 if self._advanced:
                     self._run_started_at = None
                 if (was_opening or was_closing) and not self._dim10_seen and not self._warned_missing_dim10:

@@ -316,3 +316,102 @@ async def test_partial_slat_rotation_on_short_impulse(mock_gateway: MagicMock) -
     assert cover.current_cover_position == 50
     # 0% + (0.5 / 2.0) * 100% = 25%
     assert cover.current_cover_tilt_position == 25
+
+
+@pytest.mark.asyncio
+async def test_poll_during_active_tilt_preserves_tilt_state(mock_gateway: MagicMock) -> None:
+    """Verify that a status poll during an active tilt pulse preserves tilting and opening state."""
+    cover = _create_venetian_cover(mock_gateway, "0115", slat_time=2.0)
+    cover._attr_current_cover_position = 75
+    cover._attr_current_cover_tilt_position = 0
+
+    t0 = 500.0
+    fut = asyncio.Future()
+    fut.set_result(t0)
+    mock_gateway.send.return_value = fut
+
+    with (
+        patch("time.monotonic", return_value=t0),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await cover.async_open_cover_tilt()
+
+        assert cover._is_tilting is True
+        assert cover.is_opening is True
+
+        # Poll reply arrives with unchanged position while tilting
+        cover.handle_event(OWNEvent.parse("*#2*0115*10*10*75*001*0##"))
+
+        # State must NOT be prematurely cleared
+        assert cover._is_tilting is True
+        assert cover.is_opening is True
+        assert cover.current_cover_position == 75
+
+        # Complete pulse
+        cover._motor_started.set()
+        if cover._stop_task:
+            await cover._stop_task
+
+    assert cover.current_cover_tilt_position == 100
+    assert cover._is_tilting is False
+    assert cover.is_opening is False
+
+
+@pytest.mark.asyncio
+async def test_external_position_jump_during_active_tilt_takes_over(mock_gateway: MagicMock) -> None:
+    """Verify that an external position jump during an active tilt pulse ends the pulse and rotates slats."""
+    cover = _create_venetian_cover(mock_gateway, "0115", slat_time=2.0)
+    cover._attr_current_cover_position = 75
+    cover._attr_current_cover_tilt_position = 0
+
+    t0 = 600.0
+    fut = asyncio.Future()
+    fut.set_result(t0)
+    mock_gateway.send.return_value = fut
+
+    with (
+        patch("time.monotonic", return_value=t0),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await cover.async_open_cover_tilt()
+
+        assert cover._is_tilting is True
+        assert cover.is_opening is True
+
+        # External position jump to 25 arrives (e.g. wall switch downward command)
+        cover.handle_event(OWNEvent.parse("*#2*0115*10*10*25*001*0##"))
+
+        # Pulse must be ended for takeover and slats turned closed for downward jump
+        assert cover._is_tilting is False
+        assert cover.current_cover_position == 25
+        assert cover.current_cover_tilt_position == 0
+
+
+@pytest.mark.asyncio
+async def test_advanced_cover_what0_stop_records_last_run(mock_gateway: MagicMock) -> None:
+    """Verify that an advanced cover stopping via *2*0*WHERE## records last_run and extra attributes."""
+    cover = _create_venetian_cover(mock_gateway, "0115", slat_time=2.0)
+    cover._attr_current_cover_position = 100
+    cover._attr_current_cover_tilt_position = 100
+
+    t0 = 700.0
+    with patch("time.monotonic", return_value=t0):
+        cover.handle_event(OWNEvent.parse("*2*2*0115##"))
+
+    assert cover.is_closing is True
+    assert cover._run_started_at == t0
+    assert cover._motion_started_at is not None
+
+    t_stop = t0 + 5.0
+    with patch("time.monotonic", return_value=t_stop):
+        cover.handle_event(OWNEvent.parse("*2*0*0115##"))
+
+    assert cover.is_closing is False
+    assert cover._run_started_at is None
+    assert cover._motion_started_at is None
+    assert cover._last_run["seconds"] == 5.0
+    assert cover._last_run["direction"] == "close"
+    assert cover.extra_state_attributes["last_run_seconds"] == 5.0
+    assert cover.extra_state_attributes["last_run_direction"] == "close"
+    assert cover.current_cover_tilt_position == 0
+
