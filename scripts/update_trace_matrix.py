@@ -7,8 +7,10 @@ FIXTURES_DIR = REPO_ROOT / 'tests' / 'fixtures'
 README_MD = REPO_ROOT / 'README.md'
 DOCS_MD = REPO_ROOT / 'docs' / 'trace-availability.md'
 
+# Home Assistant debug-log lines: "[<model> gateway - <address>] Message received: `<frame>`".
+# The model is the configured model string, which may carry a slash ("H/L4684 gateway").
 HA_LOG_FRAME = re.compile(
-    r'\[([A-Za-z0-9]+) gateway - [^\]]*\] (?:Message received|Collected command response): `([^`]+)`'
+    r'\[([^\]]+?) gateway - [^\]]*\] (?:Message received: |Collected command response )`([^`]+)`'
 )
 
 START_MARKER = '<!-- TRACE_MATRIX_START -->'
@@ -22,6 +24,12 @@ GATEWAY_CANONICAL_KEYS = {
     "LN4890": "H4890",
     "LN4890A": "H4890",
 }
+
+
+def canonical_gateway(model):
+    """Map a captured model label ("H/L4684", "L4684", "AM4890") to its matrix key."""
+    model = model.strip()
+    return GATEWAY_CANONICAL_KEYS.get(model, GATEWAY_CANONICAL_KEYS.get(model.replace('/', ''), model))
 
 
 def get_who(frame):
@@ -81,21 +89,24 @@ def build_matrix():
                     lines = f.readlines()
                 whos = set()
                 gateway = 'F454' # from issue_429 readme
+                labelled = {}  # Home Assistant debug logs: frames per labelled gateway
                 for line in lines:
                     # Home Assistant debug logs: the frame sits in backticks after a
                     # "[<model> gateway - <address>]" label, which names the gateway.
                     m = HA_LOG_FRAME.search(line)
                     if m:
-                        if m.group(1) != 'Generic':
-                            gateway = m.group(1)
+                        model = canonical_gateway(m.group(1))
+                        if model != 'Generic':
                             w = get_who(m.group(2))
                             if w is not None:
-                                whos.add(w)
+                                labelled.setdefault(model, set()).add(w)
                         continue
                     line_clean = re.sub(r'^\[.*?\]\s*\[.*?\]\s*', '', line.strip())
                     w = get_who(line_clean)
                     if w is not None:
                         whos.add(w)
+                for model, model_whos in labelled.items():
+                    gateways_data.setdefault(model, set()).update(model_whos)
                 if whos:
                     if gateway not in gateways_data:
                         gateways_data[gateway] = set()
