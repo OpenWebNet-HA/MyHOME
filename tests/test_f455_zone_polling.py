@@ -1,48 +1,42 @@
-"""#466: what a heating zone asks an F455, backed by the physical F455 1.0.76 capture of 2026-11-06.
+"""#466: an F455 zone that stays silent after the startup sweep asks its own state once.
 
-``tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl`` records every status request
-sent to the F455 with its ACK, elapsed time and replies. On that gateway:
+What stays as it was (#674): F455 zones ask nothing on add, the F455 stays off the zone status poll
+(``*#4*Z##``) and the temperature poll, and the startup sweep is unchanged.
 
-- ``*#4*0##`` returns no frame and ACKs after 9.1 s, and ``*#4*Z##`` ACKs only after ~9 s (its five
-  frames arrive on the event session), one second short of OWNd's 10 s response window;
-- ``*#4*Z*0##``, ``*#4*Z*14##`` and ``*#4*Z*12##`` are answered on the command session in ~0.1 s
-  (the dimension 12 reply is followed by the zone's mode frame ``*4*0*Z##``);
-- ``*#4*Z*20##`` is NACKed in under 20 ms while ``*#4*Z#1*20##`` is answered in ~0.09 s.
-
-So the startup sweep leaves ``*#4*0##`` out, a zone asks its temperature, then its setpoint and
-mode once the temperature was answered, and the
-actuator read goes out in the per-actuator form.
+What is added, backed by the physical F455 1.0.76 capture
+``tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl`` (and its debug log, where the
+standalone zone 2 reported nothing on its own): SILENT_ZONE_GRACE seconds after the sweep, a zone
+still without a temperature or setpoint of its own asks ``*#4*Z*0##``, then ``*#4*Z*14##``, ``*#4*Z*12##`` (followed by the
+zone's mode frame) and ``*#4*Z#1*20##``, each only once the previous read was answered.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
+from OWNd.message import OWNHeatingEvent
 from OWNd.profiles import get_gateway_profile
 
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import CONF_FIRMWARE
 from custom_components.myhome.gateway import (
-    ACTUATOR_REQUEST_PER_ACTUATOR,
-    ZONE_SETPOINT_POLL,
+    SILENT_ZONE_GRACE,
+    SILENT_ZONE_POLL,
     MyHOMEGatewayHandler,
 )
 
-DIRECT = (
-    Path(__file__).resolve().parent
-    / "fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl"
-)
+DIRECT = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl"
 MAC = "00:03:50:00:11:06"
+SILENT_READS = ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 
 def _sent() -> dict[str, dict]:
-    records = [
-        json.loads(line) for line in DIRECT.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
+    records = [json.loads(line) for line in DIRECT.read_text(encoding="utf-8").splitlines() if line.strip()]
     return {r["frame"]: r for r in records if r["kind"] == "sent"}
 
 
@@ -85,162 +79,181 @@ def _zone(hass, handler, where: str = "2") -> MyHOMEClimate:
     return zone
 
 
-# ------------------------------------------------------------------ the capture behind each table entry
-
-
-def test_capture_backs_leaving_out_the_general_and_zone_status_requests() -> None:
-    sent = _sent()
-    assert sent["*#4*0##"]["replies"] is True and 8.5 < sent["*#4*0##"]["dt"] < 9.5
-    for frame in ("*#4*2##", "*#4*4##"):
-        assert sent[frame]["replies"] is True and 8.5 < sent[frame]["dt"] < 9.5
-
-
-def test_capture_backs_the_temperature_and_setpoint_reads() -> None:
-    sent = _sent()
-    for frame, reply in (
-        ("*#4*2*0##", "*#4*2*0*0239##"),
-        ("*#4*4*0##", "*#4*4*0*0255##"),
-        ("*#4*2*14##", "*#4*2*14*0220*3##"),
-        ("*#4*4*14##", "*#4*4*14*0215*3##"),
-    ):
-        assert (
-            sent[frame]["ack"] is True
-            and sent[frame]["replies"] == [reply]
-            and sent[frame]["dt"] < 0.2
-        )
-    for zone, setpoint in (("2", "0220"), ("4", "0225")):
-        frame = f"*#4*{zone}*12##"
-        assert sent[frame]["replies"] == [f"*#4*{zone}*12*{setpoint}*3##", f"*4*0*{zone}##"]
-        assert sent[frame]["dt"] < 0.2
-
-
-def test_capture_backs_the_per_actuator_form() -> None:
-    sent = _sent()
-    for zone, reply in (("2", "*#4*2#1*20*7##"), ("4", "*#4*4#1*20*0##")):
-        assert sent[f"*#4*{zone}*20##"]["ack"] is False and sent[f"*#4*{zone}*20##"]["dt"] < 0.05
-        assert sent[f"*#4*{zone}#1*20##"]["replies"] == [reply]
-
-
-# ------------------------------------------------------------------ the gateway handler
-
-
-def test_f455_handler_takes_the_temperature_setpoint_and_per_actuator_polls(hass) -> None:
-    handler = _handler(hass, "F455")
-    assert handler.supports_zone_status is False
-    assert handler.general_zone_request_refused is True
-    assert handler.zone_temperature_poll_needed is True
-    assert handler.zone_setpoint_poll_needed is True
-    assert handler.actuator_request_refused is True
-    assert handler.actuator_request_per_actuator is True
-    assert "*#4*0##" not in handler._discovery_frames()
-    assert ZONE_SETPOINT_POLL == {"F455"} and ACTUATOR_REQUEST_PER_ACTUATOR == {"F455"}
-
-
-@pytest.mark.parametrize("model", ["F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"])
-def test_other_temperature_poll_gateways_do_not_ask_the_setpoint(hass, model) -> None:
-    handler = _handler(hass, model)
-    assert handler.zone_temperature_poll_needed is True
-    assert handler.zone_setpoint_poll_needed is False
-
-
-@pytest.mark.parametrize("model", ["F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"])
-def test_other_refusing_gateways_still_skip_the_actuator_request(hass, model) -> None:
-    assert _handler(hass, model).actuator_request_per_actuator is False
-
-
-# ------------------------------------------------------------------ what goes on the wire
-
-
 def _queued(handler) -> list[str]:
     return [str(call.args[0]) for call in handler.send_status_request.await_args_list]
 
 
-async def test_f455_zone_asks_temperature_then_setpoint_and_mode(hass) -> None:
+async def _spin() -> None:
+    """Let the poll task run up to its next wait (not ``async_block_till_done``: it waits on it)."""
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+
+def _ready(handler, side_effect=None) -> None:
+    handler._initial_discovery_done.set()
+    handler.send_status_request = AsyncMock(side_effect=side_effect)
+
+
+# ------------------------------------------------------------------ the capture behind it
+
+
+def test_capture_backs_each_read_of_the_silent_zone_poll() -> None:
+    sent = _sent()
+    for frame, replies in (
+        ("*#4*2*0##", ["*#4*2*0*0239##"]),
+        ("*#4*2*14##", ["*#4*2*14*0220*3##"]),
+        ("*#4*2*12##", ["*#4*2*12*0220*3##", "*4*0*2##"]),
+        ("*#4*2#1*20##", ["*#4*2#1*20*7##"]),
+        ("*#4*4*0##", ["*#4*4*0*0255##"]),
+        ("*#4*4*14##", ["*#4*4*14*0215*3##"]),
+        ("*#4*4*12##", ["*#4*4*12*0225*3##", "*4*0*4##"]),
+        ("*#4*4#1*20##", ["*#4*4#1*20*0##"]),
+    ):
+        assert sent[frame]["ack"] is True and sent[frame]["replies"] == replies, frame
+        assert sent[frame]["dt"] < 0.2, frame
+
+
+def test_capture_backs_staying_off_the_zone_status_poll() -> None:
+    sent = _sent()
+    for frame in ("*#4*2##", "*#4*4##"):
+        assert sent[frame]["replies"] is True and 8.5 < sent[frame]["dt"] < 9.5
+
+
+# ------------------------------------------------------------------ what stays as it was
+
+
+def test_f455_keeps_the_issue_674_gates(hass) -> None:
     handler = _handler(hass, "F455")
-    handler.send_status_request = AsyncMock()
-    handler.request_zone_dimension = MagicMock()
+    assert handler.silent_zone_poll_needed is True
+    assert handler.supports_zone_status is False
+    assert handler.zone_temperature_poll_needed is False
+    assert handler.general_zone_request_refused is False
+    assert handler.actuator_request_refused is False
+    assert "*#4*0##" in handler._discovery_frames()
+    assert SILENT_ZONE_POLL == {"F455"} and SILENT_ZONE_GRACE == 120.0
+
+
+@pytest.mark.parametrize("model", ["F450", "F454", "F459", "F461", "MH200", "MH200N", "MH202", "MyHomeServer1"])
+def test_other_gateways_have_no_silent_zone_poll(hass, model) -> None:
+    assert _handler(hass, model).silent_zone_poll_needed is False
+
+
+async def test_f455_zone_still_asks_nothing_on_add_or_update(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler)
     zone = _zone(hass, handler)
+    assert zone._poll_on_add is False
     await zone.async_update()
-    assert _queued(handler) == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
-    # The actuator is asked again once the mode is known, so hvac_action can be derived.
-    handler.request_zone_dimension.assert_called_once_with("2", 20)
+    assert _queued(handler) == []
 
 
-async def test_hvac_action_needs_the_mode_before_the_actuator_report(hass) -> None:
-    """Why the actuator is re-asked: the same report gives no action before the mode, and one after."""
-    from OWNd.message import OWNHeatingEvent
+# ------------------------------------------------------------------ the silent-zone poll
 
+
+async def test_silent_zone_asks_temperature_setpoint_mode_and_actuator(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler)
+    await _zone(hass, handler)._poll_if_silent(grace=0)
+    assert _queued(handler) == SILENT_READS
+
+
+async def test_a_restored_temperature_still_counts_as_silent(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler)
+    zone = _zone(hass, handler)
+    zone._attr_native_current_temperature = 23.9
+    zone._current_temperature_restored = True
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == SILENT_READS
+
+
+async def test_a_zone_that_reported_by_itself_is_not_asked(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler)
+    zone = _zone(hass, handler)
+    zone.handle_event(OWNHeatingEvent("*#4*2*0*0238##"))
+    zone.handle_event(OWNHeatingEvent("*#4*2*14*0220*3##"))
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == []
+
+
+async def test_a_zone_with_a_temperature_but_no_setpoint_is_asked(hass) -> None:
+    """The live zone 4 pushed its temperature but no setpoint: it is asked like a silent one."""
+    handler = _handler(hass, "F455")
+    _ready(handler)
+    zone = _zone(hass, handler, "4")
+    zone.handle_event(OWNHeatingEvent("*#4*4*0*0255##"))
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+
+
+async def test_each_read_waits_for_the_previous_answer(hass) -> None:
+    handler = _handler(hass, "F455")
+    futures = [hass.loop.create_future() for _ in SILENT_READS]
+    _ready(handler, side_effect=futures)
+    task = asyncio.ensure_future(_zone(hass, handler)._poll_if_silent(grace=0))
+    await _spin()
+    assert _queued(handler) == SILENT_READS[:1]
+    futures[0].set_result(1.0)  # the F455 answered and ACKed
+    await _spin()
+    assert _queued(handler) == SILENT_READS[:2]
+    for future in futures[1:]:
+        future.set_result(1.0)
+        await _spin()
+    await task
+    assert _queued(handler) == SILENT_READS
+
+
+async def test_a_refused_temperature_read_ends_the_poll(hass) -> None:
+    """A zone without a probe: the refused read cancels its future, nothing more is asked."""
+    handler = _handler(hass, "F455")
+    refused = hass.loop.create_future()
+    _ready(handler, side_effect=[refused])
+    task = asyncio.ensure_future(_zone(hass, handler, "3")._poll_if_silent(grace=0))
+    await _spin()
+    refused.cancel()
+    await task
+    assert _queued(handler) == ["*#4*3*0##"]
+
+
+async def test_the_replies_in_poll_order_give_mode_and_action(hass) -> None:
+    """The capture's replies, in the order the poll asks for them, fill every attribute."""
     zone = _zone(hass, _handler(hass, "F455"))
-    zone.handle_event(OWNHeatingEvent("*#4*2#1*20*1##"))
-    assert zone.hvac_action is None
-    zone.handle_event(OWNHeatingEvent("*4*0*2##"))
-    zone.handle_event(OWNHeatingEvent("*#4*2#1*20*1##"))
+    for frame in ("*#4*2*0*0239##", "*#4*2*14*0220*3##", "*#4*2*12*0220*3##", "*4*0*2##", "*#4*2#1*20*1##"):
+        zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.current_temperature == 23.9 and zone.target_temperature == 22.0
     assert zone.hvac_mode == "cool" and zone.hvac_action == "cooling"
 
 
-async def test_f455_setpoint_and_mode_wait_for_the_temperature_answer(hass) -> None:
-    """With the real queue future: asked after the ACK of the temperature read, not with it."""
+async def test_added_f455_zone_schedules_the_silent_poll(hass, monkeypatch) -> None:
     handler = _handler(hass, "F455")
-    written = hass.loop.create_future()
-    handler.send_status_request = AsyncMock(side_effect=[written, None, None])
-    handler.request_zone_dimension = MagicMock()
     zone = _zone(hass, handler)
-    await zone.async_update()
-    assert _queued(handler) == ["*#4*2*0##"]
-    written.set_result(1.0)  # the F455 answered *#4*2*0*0238## and ACKed
-    await hass.async_block_till_done(wait_background_tasks=True)
-    assert _queued(handler) == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
+    names: list[str] = []
+
+    def _capture(coro, name=None, **_kwargs):
+        names.append(name)
+        coro.close()
+        return MagicMock()
+
+    monkeypatch.setattr(hass, "async_create_background_task", _capture)
+    zone._poll_on_add = False
+    handler.watch_zone_actuators = MagicMock(return_value=lambda: None)
+    await zone.async_added_to_hass()
+    assert names == ["myhome_climate.zone_2_silent_zone_poll"]
 
 
-async def test_f455_zone_without_a_probe_is_not_asked_further(hass) -> None:
-    """A refused temperature read (live zone 3: NACK after ~9 s) stops the setpoint and mode reads."""
-    handler = _handler(hass, "F455")
-    written = hass.loop.create_future()
-    handler.send_status_request = AsyncMock(side_effect=[written])
-    handler.request_zone_dimension = MagicMock()
+async def test_added_mh202_zone_schedules_nothing(hass, monkeypatch) -> None:
+    handler = _handler(hass, "MH202")
     zone = _zone(hass, handler, "3")
-    await zone.async_update()
-    written.cancel()
-    await hass.async_block_till_done(wait_background_tasks=True)
-    assert _queued(handler) == ["*#4*3*0##"]
-    handler.request_zone_dimension.assert_not_called()
+    names: list[str] = []
 
+    def _capture(coro, name=None, **_kwargs):
+        names.append(name)
+        coro.close()
+        return MagicMock()
 
-async def test_the_mode_frame_after_the_dimension_12_reply_sets_hvac_mode(hass) -> None:
-    from OWNd.message import OWNHeatingEvent
-
-    zone = _zone(hass, _handler(hass, "F455"))
-    for frame in ("*#4*2*0*0238##", "*#4*2*14*0220*3##"):
-        zone.handle_event(OWNHeatingEvent(frame))
-    assert zone.hvac_mode is None and zone.target_temperature == 22.0
-    for frame in ("*#4*2*12*0220*3##", "*4*0*2##"):  # the *#4*2*12## reply of the capture
-        zone.handle_event(OWNHeatingEvent(frame))
-    assert zone.hvac_mode == "cool"
-
-
-async def test_mh202_zone_still_asks_only_its_temperature(hass) -> None:
-    handler = _handler(hass, "MH202")
-    handler.send_status_request = AsyncMock()
-    await _zone(hass, handler, "3").async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == [
-        "*#4*3*0##"
-    ]
-
-
-async def test_f455_actuator_watch_sends_the_per_actuator_form(hass, fast_bus_pacing) -> None:
-    handler = _handler(hass, "F455")
-    handler._initial_discovery_done.set()
-    handler.send_paced = AsyncMock()
-    handler.watch_zone_actuators("2")
-    handler.watch_zone_actuators("4")
-    await hass.async_block_till_done(wait_background_tasks=True)
-    handler.send_paced.assert_awaited_once_with(["*#4*2#1*20##", "*#4*4#1*20##"])
-
-
-async def test_mh202_actuator_watch_still_sends_nothing(hass, fast_bus_pacing) -> None:
-    handler = _handler(hass, "MH202")
-    handler._initial_discovery_done.set()
-    handler.send_paced = AsyncMock()
-    handler.watch_zone_actuators("2")
-    await hass.async_block_till_done(wait_background_tasks=True)
-    handler.send_paced.assert_not_awaited()
+    monkeypatch.setattr(hass, "async_create_background_task", _capture)
+    zone._poll_on_add = False
+    handler.watch_zone_actuators = MagicMock(return_value=lambda: None)
+    await zone.async_added_to_hass()
+    assert names == []

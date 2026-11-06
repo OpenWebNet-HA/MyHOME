@@ -77,7 +77,7 @@ from .discovery import (
     default_known_keys,
     is_broadcast_where,
 )
-from .gateway import _ZONE_WHERE, MyHOMEGatewayHandler
+from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
@@ -95,6 +95,8 @@ from .where_grammar import (
 
 PLATFORM = Platform.CLIMATE
 PARALLEL_UPDATES = 0
+# How long one read of the silent-zone poll (#466) waits for its answer before giving up.
+PACED_READ_TIMEOUT = 60.0
 
 _FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
 # BTicino 3550 central unit (#0) diagnostic WHAT codes (OpenWebNet Thermoregulation v2.0.0 Table 5):
@@ -965,18 +967,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # 374-376), not a verdict on a populated one. Until a command-session capture of
             # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
             # rather than risk marking a healthy zone unresponsive on a NACK.
-            # ``object``: test doubles return no future, and then the reads follow at once.
-            temperature_written: object = await self._gateway_handler.send_status_request(
-                OWNHeatingCommand.get_temperature(self._full_where)
-            )
-            if getattr(self._gateway_handler, "zone_setpoint_poll_needed", False) is True:
-                # Off the zone status poll, nothing else brings the setpoint and the mode after a
-                # restart. Asked only once the temperature read was answered: a zone without a
-                # probe makes the F455 NACK each read after ~9 s (issue_466 F455 2026-11-06).
-                if isinstance(temperature_written, asyncio.Future):
-                    temperature_written.add_done_callback(self._ask_setpoint_after_temperature)
-                else:
-                    await self._ask_setpoint_and_mode()
+            await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
@@ -994,32 +985,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
 
     @callback
-    @callback
-    def _ask_setpoint_after_temperature(self, written: asyncio.Future[float]) -> None:
-        """Ask for the setpoint and mode once the zone answered its temperature read."""
-        if written.cancelled():
-            return  # refused or unanswered: no probe there to ask further
-        self.hass.async_create_background_task(
-            self._ask_setpoint_and_mode(), name=f"myhome_{self.entity_id}_setpoint_poll"
-        )
-
-    async def _ask_setpoint_and_mode(self) -> None:
-        """Ask the setpoint (``*#4*Z*14##``) and the probe status (``*#4*Z*12##``).
-
-        The dimension 12 reply carries the local setpoint and is followed by the zone's mode
-        frame (``*4*0*2##`` on the F455 1.0.76 capture), which is what sets ``hvac_mode``.
-        """
-        for dimension in (14, 12):
-            await self._gateway_handler.send_status_request(
-                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*{dimension}##"))
-            )
-        if getattr(self._gateway_handler, "actuator_request_per_actuator", False) is True:
-            # hvac_action is derived when an actuator report finds the season known; the startup
-            # actuator read went out before the mode, so ask it once more after the mode.
-            request = getattr(self._gateway_handler, "request_zone_dimension", None)
-            if callable(request):
-                request(self._where, 20)
-
     def _poll_answered(self, written: asyncio.Future[float], frames_before: int) -> None:
         """Count a status request the gateway refused or never answered (see ``poll_health``)."""
         if written.cancelled():
@@ -1199,6 +1164,56 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
+            if (
+                getattr(self._gateway_handler, "silent_zone_poll_needed", False) is True
+                and not self._interface_poll_refused
+                and not is_actuator_where(self._where)
+                and target_hass is not None
+            ):
+                task = target_hass.async_create_background_task(
+                    self._poll_if_silent(), name=f"myhome_{self.entity_id}_silent_zone_poll"
+                )
+
+                def _cancel_silent_zone_poll() -> None:
+                    task.cancel()
+
+                self.async_on_remove(_cancel_silent_zone_poll)
+
+    async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
+        """Ask a zone that has not reported by itself since the startup sweep, read by read (#466).
+
+        Nothing goes out for a zone whose temperature and setpoint are known (a restored temperature
+        does not count). Each read waits for the
+        previous one to be answered, so a refused or unanswered read (a zone without a probe) ends
+        it after one request. The actuator is asked last: ``hvac_action`` is derived when an
+        actuator report finds the mode known.
+        """
+        wait = getattr(self._gateway_handler, "wait_for_initial_discovery", None)
+        if callable(wait):
+            await wait()
+        await asyncio.sleep(grace)
+        if (
+            self.current_temperature is not None
+            and not self._current_temperature_restored
+            and self.target_temperature is not None
+        ):
+            return  # the zone reported its temperature and setpoint on its own
+        LOGGER.debug(
+            "%s %s has not reported since the startup sweep; asking its state", self._gateway_handler.log_id, self._display_name
+        )
+        for frame in (
+            f"*#4*{self._full_where}*0##",
+            f"*#4*{self._full_where}*14##",
+            f"*#4*{self._full_where}*12##",
+            f"*#4*{self._full_where}#1*20##",
+        ):
+            written: object = await self._gateway_handler.send_status_request(
+                cast(OWNCommand, OWNHeatingCommand.parse(frame))
+            )
+            if isinstance(written, asyncio.Future):
+                await asyncio.wait([written], timeout=PACED_READ_TIMEOUT)
+                if not written.done() or written.cancelled():
+                    return
 
     def _refuse_interface_write(self) -> bool:
         """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
