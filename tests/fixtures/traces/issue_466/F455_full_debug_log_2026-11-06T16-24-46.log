@@ -1,0 +1,328 @@
+2026-11-06 18:24:46.327+02:00 INFO (MainThread) [custom_components.myhome] Unloading MyHome entry.
+2026-11-06 18:24:46.332+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] central_battery_fault at WHO 4 WHERE #0 cleared
+2026-11-06 18:24:46.332+02:00 INFO (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Closing event listener
+2026-11-06 18:24:46.333+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:24:46.333+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:24:46.336+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Destroying sending worker 0
+2026-11-06 18:24:46.336+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Destroying sending worker 1
+2026-11-06 18:24:46.336+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Event session closed.
+2026-11-06 18:24:46.336+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Destroying listening worker.
+2026-11-06 18:24:46.336+02:00 INFO (MainThread) [custom_components.myhome] Setting up MyHOME gateway 'F455 Gateway' (v2.0.0b17, OWNd v2.0.0b13)
+2026-11-06 18:24:46.340+02:00 INFO (MainThread) [custom_components.myhome] Loaded legacy myhome.yaml configuration for gateway 00:03:50:00:11:06 (5 platforms)
+2026-11-06 18:24:46.341+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating test session.
+2026-11-06 18:24:46.342+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Test session established successfully.
+2026-11-06 18:24:46.343+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Test session closed.
+2026-11-06 18:24:46.343+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Creating listening worker.
+2026-11-06 18:24:46.343+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening event session.
+2026-11-06 18:24:46.344+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Creating sending worker 0
+2026-11-06 18:24:46.344+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Worker 0 waiting for event session to be ready...
+2026-11-06 18:24:46.344+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Creating sending worker 1
+2026-11-06 18:24:46.344+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Worker 1 waiting for event session to be ready...
+2026-11-06 18:24:46.344+02:00 INFO (MainThread) [custom_components.myhome] light: Pruned duplicate secondary entity light.light_1 in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.345+02:00 INFO (MainThread) [custom_components.myhome] light: Pruned duplicate secondary entity light.light_2 in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.346+02:00 INFO (MainThread) [custom_components.myhome] light: Pruned duplicate secondary entity light.light_bath_2 in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.346+02:00 INFO (MainThread) [custom_components.myhome] light: Pruned duplicate secondary entity light.light_kitchen in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.351+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: light restored/configured 4 entities (8 addresses known)
+2026-11-06 18:24:46.351+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: switch restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.351+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: switch restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.353+02:00 INFO (MainThread) [custom_components.myhome] cover: Pruned duplicate secondary entity cover.shutter in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.354+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: cover restored/configured 1 entities (3 addresses known)
+2026-11-06 18:24:46.354+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: cover restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.355+02:00 INFO (MainThread) [custom_components.myhome] climate: Pruned duplicate secondary entity climate.central_unit in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.355+02:00 INFO (MainThread) [custom_components.myhome] climate: Pruned duplicate secondary entity climate.n4692fan in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.355+02:00 INFO (MainThread) [custom_components.myhome] climate: Pruned duplicate secondary entity climate.thermo_ofice in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.362+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: climate restored/configured 3 entities (7 addresses known)
+2026-11-06 18:24:46.362+02:00 INFO (MainThread) [custom_components.myhome] binary_sensor: Pruned duplicate secondary entity binary_sensor.ir_hall_motion_2 in favor of primary gateway 00:03:50:00:11:07
+2026-11-06 18:24:46.363+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: binary_sensor restored/configured 1 entities (2 addresses known)
+2026-11-06 18:24:46.363+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: binary_sensor restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.363+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: binary_sensor restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.364+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: sensor restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.364+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: sensor restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.364+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: sensor restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.370+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: alarm_control_panel restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.370+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: lock restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.377+02:00 INFO (MainThread) [custom_components.myhome] MyHOME media player: decoder pool initialised with 0 decoder(s)
+2026-11-06 18:24:46.378+02:00 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:06: media_player restored/configured 0 entities (0 addresses known)
+2026-11-06 18:24:46.378+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] TCP keepalive enabled on event socket (idle=30s, intvl=10s, cnt=3).
+2026-11-06 18:24:46.378+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating event session.
+2026-11-06 18:24:46.382+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Event session established successfully.
+2026-11-06 18:24:46.382+02:00 INFO (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway available again.
+2026-11-06 18:24:46.385+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Event session ready, command sessions can now start.
+2026-11-06 18:24:46.387+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Worker 0: event session is ready, proceeding with command session.
+2026-11-06 18:24:46.388+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:24:46.388+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Worker 1: event session is ready, proceeding with command session.
+2026-11-06 18:24:46.388+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=1 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=2 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=4 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=5 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=16 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=18 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.389+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Skipping WHO=18 discovery: follower gateway on shared bus.
+2026-11-06 18:24:46.390+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*06##` was successfully queued.
+2026-11-06 18:24:46.390+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*07##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*09#4#01##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*1##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#2*05##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*11##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*#0##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*4*11##` was successfully queued.
+2026-11-06 18:24:46.391+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#25*344##` was successfully queued.
+2026-11-06 18:24:46.392+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*20##` was successfully queued.
+2026-11-06 18:24:46.392+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:24:46.393+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:24:46.394+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:24:46.394+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*06##` was successfully unqueued by worker 0.
+2026-11-06 18:24:46.394+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:24:46.395+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*07##` was successfully unqueued by worker 1.
+2026-11-06 18:24:46.554+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*1*0*07##`.
+2026-11-06 18:24:46.554+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*07##`
+2026-11-06 18:24:46.555+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 07 is switched off.
+2026-11-06 18:24:46.601+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*06##` was successfully sent.
+2026-11-06 18:24:46.651+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*09#4#01##` was successfully unqueued by worker 0.
+2026-11-06 18:24:46.764+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*1*0*09#4#01##`.
+2026-11-06 18:24:46.764+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*09#4#01##` was successfully sent.
+2026-11-06 18:24:46.764+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 09 on interface 01 is switched off.
+2026-11-06 18:24:46.765+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*09#4#01##`
+2026-11-06 18:24:46.765+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 09 on interface 01 is switched off.
+2026-11-06 18:24:46.815+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-06 18:24:46.924+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#1*0010*4*100*2##`.
+2026-11-06 18:24:46.924+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*1##` was successfully sent.
+2026-11-06 18:24:46.924+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched off.
+2026-11-06 18:24:46.925+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1*0010*4*100*2##`
+2026-11-06 18:24:46.925+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched off.
+2026-11-06 18:24:46.975+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#2*05##` was successfully unqueued by worker 0.
+2026-11-06 18:24:47.024+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-06 18:24:47.024+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-06 18:24:47.074+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*2*0*05##`.
+2026-11-06 18:24:47.074+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#2*05##` was successfully sent.
+2026-11-06 18:24:47.074+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 stopped.
+2026-11-06 18:24:47.075+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*0*05##`
+2026-11-06 18:24:47.075+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 stopped.
+2026-11-06 18:24:47.126+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*11##` was successfully unqueued by worker 0.
+2026-11-06 18:24:47.214+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#4*2*11*2##`.
+2026-11-06 18:24:47.214+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*11##` was successfully sent.
+2026-11-06 18:24:47.214+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's fan is on at speed 2.
+2026-11-06 18:24:47.215+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's fan is on at speed 2.
+2026-11-06 18:24:47.215+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*2*11*2##`
+2026-11-06 18:24:47.216+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's fan is on at speed 2.
+2026-11-06 18:24:47.216+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's fan is on at speed 2.
+2026-11-06 18:24:47.267+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*#0##` was successfully unqueued by worker 0.
+2026-11-06 18:24:47.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*4*202*#0##`.
+2026-11-06 18:24:47.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*4*21*#0##`.
+2026-11-06 18:24:47.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*4*31*#0##`.
+2026-11-06 18:24:47.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*4*24*#0##`.
+2026-11-06 18:24:47.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*4*202*#0##`
+2026-11-06 18:24:47.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 0's mode is set to 'off'.
+2026-11-06 18:24:47.365+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 0's mode is set to 'off'.
+2026-11-06 18:24:47.365+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*4*21*#0##`
+2026-11-06 18:24:47.365+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 0's remote control is enabled.
+2026-11-06 18:24:47.366+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*4*31*#0##`
+2026-11-06 18:24:47.366+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 0's central unit reports the central unit battery is KO.
+2026-11-06 18:24:47.366+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] central_battery_fault at WHO 4 WHERE #0 (code 31, evidence -)
+2026-11-06 18:24:47.366+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*4*24*#0##`
+2026-11-06 18:24:47.367+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 0's central unit reports at least one probe is in manual mode.
+2026-11-06 18:24:48.313+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*#0##` was successfully sent.
+2026-11-06 18:24:48.366+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*4*11##` was successfully unqueued by worker 0.
+2026-11-06 18:24:48.454+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#4*4*11*0##`.
+2026-11-06 18:24:48.454+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*4*11##` was successfully sent.
+2026-11-06 18:24:48.454+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 4's fan is on at 'Auto' speed.
+2026-11-06 18:24:48.455+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 4's fan is on at 'Auto' speed.
+2026-11-06 18:24:48.455+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*4*11*0##`
+2026-11-06 18:24:48.455+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 4's fan is on at 'Auto' speed.
+2026-11-06 18:24:48.456+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 4's fan is on at 'Auto' speed.
+2026-11-06 18:24:48.505+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#25*344##` was successfully unqueued by worker 0.
+2026-11-06 18:24:48.506+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#4*4*11*0##`.
+2026-11-06 18:24:48.507+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*4*11*0##`
+2026-11-06 18:24:48.507+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 4's fan is on at 'Auto' speed.
+2026-11-06 18:24:48.507+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 4's fan is on at 'Auto' speed.
+2026-11-06 18:24:48.508+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#25*344##` was successfully sent.
+2026-11-06 18:24:48.559+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*20##` was successfully unqueued by worker 0.
+2026-11-06 18:24:48.560+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway rejected status request *#4*2*20## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-06 18:24:49.310+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*4*20##` was successfully queued.
+2026-11-06 18:24:49.311+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*4*20##` was successfully unqueued by worker 0.
+2026-11-06 18:24:49.312+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway rejected status request *#4*4*20## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-06 18:24:56.313+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*07##` was successfully sent.
+2026-11-06 18:25:04.363+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:25:04.364+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:25:11.366+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:25:11.367+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:26:16.524+02:00 INFO (MainThread) [custom_components.myhome.services] Executing diagnostic bus sweep on gateway 00:03:50:00:11:06 (force=False)
+2026-11-06 18:26:16.524+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**0##` was successfully queued.
+2026-11-06 18:26:16.524+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**0##` was successfully unqueued by worker 0.
+2026-11-06 18:26:16.524+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:26:16.526+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:26:16.527+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:26:16.528+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#13**0*18*26*15*##`
+2026-11-06 18:26:16.528+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway's internal time is: 18:26:15.
+2026-11-06 18:26:16.529+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#13**0*18*26*15*##`.
+2026-11-06 18:26:16.569+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**0##` was successfully sent.
+2026-11-06 18:26:16.575+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**15##` was successfully queued.
+2026-11-06 18:26:16.575+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**15##` was successfully unqueued by worker 1.
+2026-11-06 18:26:16.575+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:26:16.577+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:26:16.578+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:26:16.578+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#13**15*200##`
+2026-11-06 18:26:16.579+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201.
+2026-11-06 18:26:16.579+02:00 INFO (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] WHO=13 reports device type 200 (seen on multiple modern gateways); keeping model `F455` until WHO=1013 answers.
+2026-11-06 18:26:16.579+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Requesting WHO=1013 dimension 1 (OBJECT_MODEL) to settle the model.
+2026-11-06 18:26:16.580+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#13**15*200##`.
+2026-11-06 18:26:16.620+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1013**1##` was successfully unqueued by worker 0.
+2026-11-06 18:26:16.621+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#1013**1*8*15*0*5##`.
+2026-11-06 18:26:16.621+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1013**1*8*15*0*5##`
+2026-11-06 18:26:16.621+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**15##` was successfully sent.
+2026-11-06 18:26:16.622+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1013**1##` was successfully sent.
+2026-11-06 18:26:16.626+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**16##` was successfully queued.
+2026-11-06 18:26:16.673+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**16##` was successfully unqueued by worker 1.
+2026-11-06 18:26:16.674+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#13**16*1*0*76##`
+2026-11-06 18:26:16.674+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway's firmware version is: 1.0.76.
+2026-11-06 18:26:16.674+02:00 INFO (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Auto-detected gateway firmware `1.0.76` via WHO=13 Dimension 16.
+2026-11-06 18:26:16.676+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*#13**16*1*0*76##`.
+2026-11-06 18:26:16.676+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**16##` was successfully sent.
+2026-11-06 18:26:16.677+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**23##` was successfully queued.
+2026-11-06 18:26:16.677+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**23##` was successfully unqueued by worker 0.
+2026-11-06 18:26:16.678+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway rejected status request *#13**23## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-06 18:26:16.728+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**24##` was successfully queued.
+2026-11-06 18:26:16.729+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#13**24##` was successfully unqueued by worker 1.
+2026-11-06 18:26:16.729+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Gateway rejected status request *#13**24## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-06 18:26:16.780+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1013*0*1##` was successfully queued.
+2026-11-06 18:26:16.780+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1013*0*1##` was successfully unqueued by worker 1.
+2026-11-06 18:26:16.881+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1001*01*1*151*5*0*0##`
+2026-11-06 18:26:16.881+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Unsupported message type: `*#1001*01*1*151*5*0*0##`
+2026-11-06 18:26:26.710+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1013*0*1##` was successfully sent.
+2026-11-06 18:26:31.730+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:26:31.731+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:26:41.763+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:26:41.763+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:27:01.842+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*06##` was successfully queued.
+2026-11-06 18:27:01.842+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*06##` was successfully unqueued by worker 1.
+2026-11-06 18:27:01.842+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:27:01.844+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:27:01.845+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:27:01.846+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*06##` was successfully sent.
+2026-11-06 18:27:01.919+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*1*06##`
+2026-11-06 18:27:01.919+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 06 is switched on.
+2026-11-06 18:27:05.851+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*06##` was successfully queued.
+2026-11-06 18:27:05.852+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*06##` was successfully unqueued by worker 0.
+2026-11-06 18:27:05.852+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:27:05.853+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:27:05.854+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:27:05.855+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*06##` was successfully sent.
+2026-11-06 18:27:05.929+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*06##`
+2026-11-06 18:27:05.929+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 06 is switched off.
+2026-11-06 18:27:09.860+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*07##` was successfully queued.
+2026-11-06 18:27:09.860+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*07##` was successfully unqueued by worker 1.
+2026-11-06 18:27:09.862+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*07##` was successfully sent.
+2026-11-06 18:27:09.939+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*1*07##`
+2026-11-06 18:27:09.939+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 07 is switched on.
+2026-11-06 18:27:13.867+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*07##` was successfully queued.
+2026-11-06 18:27:13.867+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*07##` was successfully unqueued by worker 0.
+2026-11-06 18:27:13.869+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*07##` was successfully sent.
+2026-11-06 18:27:13.939+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*07##`
+2026-11-06 18:27:13.939+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 07 is switched off.
+2026-11-06 18:27:17.876+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*09#4#01##` was successfully queued.
+2026-11-06 18:27:17.876+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*09#4#01##` was successfully unqueued by worker 1.
+2026-11-06 18:27:17.878+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*09#4#01##` was successfully sent.
+2026-11-06 18:27:17.988+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*1*09#4#01##`
+2026-11-06 18:27:17.989+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 09 on interface 01 is switched on.
+2026-11-06 18:27:21.880+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*09#4#01##` was successfully queued.
+2026-11-06 18:27:21.881+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*09#4#01##` was successfully unqueued by worker 0.
+2026-11-06 18:27:21.882+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*09#4#01##` was successfully sent.
+2026-11-06 18:27:21.998+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*09#4#01##`
+2026-11-06 18:27:21.998+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 09 on interface 01 is switched off.
+2026-11-06 18:27:25.886+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*0010##` was successfully queued.
+2026-11-06 18:27:25.886+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*1##` was successfully queued.
+2026-11-06 18:27:25.887+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*0010##` was successfully unqueued by worker 1.
+2026-11-06 18:27:25.889+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*1*0010##`
+2026-11-06 18:27:25.889+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched on.
+2026-11-06 18:27:25.889+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*1*0010##` was successfully sent.
+2026-11-06 18:27:25.890+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-06 18:27:25.968+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Collected command response `*1*10*0010##`.
+2026-11-06 18:27:25.968+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*1##` was successfully sent.
+2026-11-06 18:27:25.969+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched on at brightness level 10.
+2026-11-06 18:27:25.970+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*10*0010##`
+2026-11-06 18:27:25.970+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched on at brightness level 10.
+2026-11-06 18:27:26.078+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1*0010*1*200*4##`
+2026-11-06 18:27:26.078+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched on at 100%.
+2026-11-06 18:27:26.138+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-06 18:27:26.138+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-06 18:27:29.909+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*#1*150*0##` was successfully queued.
+2026-11-06 18:27:29.909+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*#1*150*0##` was successfully unqueued by worker 1.
+2026-11-06 18:27:29.911+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*#1*150*0##` was successfully sent.
+2026-11-06 18:27:30.018+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1*0010*1*150*4##`
+2026-11-06 18:27:30.018+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched on at 50%.
+2026-11-06 18:27:33.932+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*#1*200*0##` was successfully queued.
+2026-11-06 18:27:33.933+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*#1*200*0##` was successfully unqueued by worker 0.
+2026-11-06 18:27:33.935+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#1*0010*#1*200*0##` was successfully sent.
+2026-11-06 18:27:34.038+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#1*0010*1*200*4##`
+2026-11-06 18:27:34.038+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched on at 100%.
+2026-11-06 18:27:37.958+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*0010##` was successfully queued.
+2026-11-06 18:27:37.959+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*0010##` was successfully unqueued by worker 1.
+2026-11-06 18:27:37.960+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*0010##`
+2026-11-06 18:27:37.961+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched off.
+2026-11-06 18:27:37.961+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*1*0*0010##` was successfully sent.
+2026-11-06 18:27:38.048+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*1*0*0010##`
+2026-11-06 18:27:38.048+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Light 0010 is switched off.
+2026-11-06 18:27:41.967+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*1*05##` was successfully queued.
+2026-11-06 18:27:41.967+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*1*05##` was successfully unqueued by worker 0.
+2026-11-06 18:27:41.970+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*0*5##`
+2026-11-06 18:27:41.970+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*1*05##` was successfully sent.
+2026-11-06 18:27:42.047+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*0*05##`
+2026-11-06 18:27:42.048+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 stopped.
+2026-11-06 18:27:42.048+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Ignoring stop echo for 05.
+2026-11-06 18:27:42.127+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*1*05##`
+2026-11-06 18:27:42.128+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 is opening.
+2026-11-06 18:27:42.128+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Motor start echo for 05; clock anchored.
+2026-11-06 18:27:47.977+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*0*05##` was successfully queued.
+2026-11-06 18:27:47.977+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*0*05##` was successfully unqueued by worker 1.
+2026-11-06 18:27:47.980+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*0*05##` was successfully sent.
+2026-11-06 18:27:48.047+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*0*05##`
+2026-11-06 18:27:48.047+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 stopped.
+2026-11-06 18:27:48.048+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Stop status echo for 05; re-anchored to 20% (elapsed 5.92 s).
+2026-11-06 18:27:51.997+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*2*05##` was successfully queued.
+2026-11-06 18:27:51.998+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*2*05##` was successfully unqueued by worker 0.
+2026-11-06 18:27:52.000+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*0*5##`
+2026-11-06 18:27:52.000+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*2*2*05##` was successfully sent.
+2026-11-06 18:27:52.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*2*05##`
+2026-11-06 18:27:52.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 is closing.
+2026-11-06 18:27:52.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Motor start echo for 05; clock anchored.
+2026-11-06 18:28:03.031+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:28:03.032+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:28:07.052+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:28:07.052+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:28:22.686+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*2*0*05##`
+2026-11-06 18:28:22.686+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Cover 05 stopped.
+2026-11-06 18:28:28.029+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*#14*0225*3##` was successfully queued.
+2026-11-06 18:28:28.029+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*#14*0225*3##` was successfully unqueued by worker 1.
+2026-11-06 18:28:28.030+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:28:28.031+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:28:28.032+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:28:28.033+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*#14*0225*3##` was successfully sent.
+2026-11-06 18:28:28.156+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*2*12*0225*3##`
+2026-11-06 18:28:28.156+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's local target temperature is set to 22.5°C.
+2026-11-06 18:28:28.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's local target temperature is set to 22.5°C.
+2026-11-06 18:28:28.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*4*0*2##`
+2026-11-06 18:28:28.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-06 18:28:28.158+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-06 18:28:28.196+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*2*0*0238##`
+2026-11-06 18:28:28.196+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's main sensor is reporting a temperature of 23.8°C.
+2026-11-06 18:28:28.197+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's main sensor is reporting a temperature of 23.8°C.
+2026-11-06 18:28:36.053+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*#14*0220*3##` was successfully queued.
+2026-11-06 18:28:36.053+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*#14*0220*3##` was successfully unqueued by worker 0.
+2026-11-06 18:28:36.053+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Opening command session.
+2026-11-06 18:28:36.055+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Negotiating command session.
+2026-11-06 18:28:36.056+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session established successfully.
+2026-11-06 18:28:36.057+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message `*#4*2*#14*0220*3##` was successfully sent.
+2026-11-06 18:28:36.156+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*2*12*0220*3##`
+2026-11-06 18:28:36.156+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's local target temperature is set to 22.0°C.
+2026-11-06 18:28:36.156+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's local target temperature is set to 22.0°C.
+2026-11-06 18:28:36.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*4*0*2##`
+2026-11-06 18:28:36.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-06 18:28:36.157+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-06 18:28:36.206+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Message received: `*#4*2*0*0238##`
+2026-11-06 18:28:36.206+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's main sensor is reporting a temperature of 23.8°C.
+2026-11-06 18:28:36.206+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Zone 2's main sensor is reporting a temperature of 23.8°C.
+2026-11-06 18:28:43.085+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:28:43.086+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
+2026-11-06 18:28:51.108+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-06 18:28:51.109+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - 192.0.2.55] Command session closed.
