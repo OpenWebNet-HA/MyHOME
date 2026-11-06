@@ -31,12 +31,13 @@ from custom_components.myhome.gateway import (
 )
 
 DIRECT = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl"
+ZONE3 = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_zone3_2026-11-06.jsonl"
 MAC = "00:03:50:00:11:06"
 SILENT_READS = ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 
-def _sent() -> dict[str, dict]:
-    records = [json.loads(line) for line in DIRECT.read_text(encoding="utf-8").splitlines() if line.strip()]
+def _sent(path: Path = DIRECT) -> dict[str, dict]:
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return {r["frame"]: r for r in records if r["kind"] == "sent"}
 
 
@@ -111,6 +112,19 @@ def test_capture_backs_each_read_of_the_silent_zone_poll() -> None:
     ):
         assert sent[frame]["ack"] is True and sent[frame]["replies"] == replies, frame
         assert sent[frame]["dt"] < 0.2, frame
+
+
+def test_capture_backs_the_cost_of_a_zone_without_a_probe() -> None:
+    """Zone 3 has an actuator and no probe: each single-dimension read is refused only after ~9 s."""
+    sent = _sent(ZONE3)
+    for frame in ("*#4*3*0##", "*#4*3*14##", "*#4*3*12##", "*#4*3*19##"):
+        assert sent[frame]["ack"] is False and sent[frame]["replies"] is None, frame
+        assert 8.5 < sent[frame]["dt"] < 9.5, frame  # the poll's first read, and its only one
+    assert sent["*#4*3#1*20##"]["ack"] is True and sent["*#4*3#1*20##"]["replies"] == ["*#4*3#1*20*0##"]
+    assert sent["*#4*3#1*20##"]["dt"] < 0.2
+    assert sent["*#4*3*20##"]["ack"] is False and sent["*#4*3*20##"]["dt"] < 0.05
+    for frame in ("*#4*2*0##", "*#4*4*0##"):  # the populated zones, same run
+        assert sent[frame]["ack"] is True and sent[frame]["dt"] < 0.2, frame
 
 
 def test_capture_backs_staying_off_the_zone_status_poll() -> None:
@@ -205,7 +219,11 @@ async def test_each_read_waits_for_the_previous_answer(hass) -> None:
 
 
 async def test_a_refused_temperature_read_ends_the_poll(hass) -> None:
-    """A zone without a probe: the refused read cancels its future, nothing more is asked."""
+    """A zone without a probe: the refused read cancels its future, nothing more is asked.
+
+    The F455 refuses ``*#4*3*0##`` only after ~9 s (F455_direct_requests_zone3_2026-11-06.jsonl), so
+    this one read is what a probe-less zone costs: one command session for ~9 s, once.
+    """
     handler = _handler(hass, "F455")
     refused = hass.loop.create_future()
     _ready(handler, side_effect=[refused])
