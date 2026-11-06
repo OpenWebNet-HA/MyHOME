@@ -228,7 +228,10 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 # (*#4*Z*12##, followed by the mode frame) and actuator 1 (*#4*Z#1*20##). A physical F455 1.0.76
 # answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
 # (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 reported nothing on its
-# own in four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log).
+# own in four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a
+# probe the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
+# (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the poll
+# holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
 SILENT_ZONE_POLL = frozenset({"F455"})
 SILENT_ZONE_GRACE = 120.0
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in

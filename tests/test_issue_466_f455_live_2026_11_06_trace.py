@@ -34,8 +34,10 @@ from OWNd.message import (
 TRACES = Path(__file__).resolve().parent / "fixtures/traces/issue_466"
 LOG = TRACES / "F455_full_debug_log_2026-11-06T16-24-46.log"
 DIRECT = TRACES / "F455_direct_requests_2026-11-06.jsonl"
+ZONE3 = TRACES / "F455_direct_requests_zone3_2026-11-06.jsonl"
 LOG_SHA256 = "a8c3d76cf6d753f35a33e261bead9b067a50f50b14c47493b24fad19f83c1a93"
 DIRECT_SHA256 = "c3250cffb7bfc5bf46693f83ab2fa9605085d63a64230917eb586e9250a0431d"
+ZONE3_SHA256 = "635f160c94332dc5341788ed4735fc6226756d7f3bf2bae802b9f81581d5620e"
 
 SYNTHETIC_ADDRESS = "192.0.2.55"
 SYNTHETIC_MAC = "00:03:50:00:11:06"
@@ -84,10 +86,11 @@ def _sent() -> dict[str, dict]:
 def test_fixture_provenance_is_pinned() -> None:
     assert hashlib.sha256(LOG.read_bytes()).hexdigest() == LOG_SHA256
     assert hashlib.sha256(DIRECT.read_bytes()).hexdigest() == DIRECT_SHA256
+    assert hashlib.sha256(ZONE3.read_bytes()).hexdigest() == ZONE3_SHA256
 
 
 def test_no_gateway_network_identity_is_committed() -> None:
-    for path in (LOG, DIRECT):
+    for path in (LOG, DIRECT, ZONE3):
         text = path.read_text(encoding="utf-8")
         ips = set(re.findall(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", text))
         macs = set(re.findall(r"(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b", text))
