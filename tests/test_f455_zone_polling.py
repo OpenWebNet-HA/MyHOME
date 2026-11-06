@@ -230,16 +230,22 @@ async def test_added_f455_zone_schedules_the_silent_poll(hass, monkeypatch) -> N
     zone = _zone(hass, handler)
     names: list[str] = []
 
+    task = MagicMock()
+
     def _capture(coro, name=None, **_kwargs):
         names.append(name)
         coro.close()
-        return MagicMock()
+        return task
 
     monkeypatch.setattr(hass, "async_create_background_task", _capture)
     zone._poll_on_add = False
     handler.watch_zone_actuators = MagicMock(return_value=lambda: None)
     await zone.async_added_to_hass()
     assert names == ["myhome_climate.zone_2_silent_zone_poll"]
+    # Removing the entity cancels a poll still waiting out its grace period.
+    for remove in list(zone._on_remove or []):
+        remove()
+    task.cancel.assert_called_once()
 
 
 async def test_added_mh202_zone_schedules_nothing(hass, monkeypatch) -> None:
