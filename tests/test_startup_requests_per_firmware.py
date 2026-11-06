@@ -190,7 +190,8 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
     [
         ("MH201", True), ("MH202", True), ("F450", True), ("F454", True), ("MH200", True), ("H4684", True),
         ("HL4684", True), ("H/L4684", True), ("F459", True),
-        ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
+        ("F455", True),  # physical F455 1.0.76: *#4*0## returns nothing, *#4*Z## ACKs after ~9 s (#466)
+        ("F453", False), ("MH200N", False),  # the sweep answers
         ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],
 )
@@ -281,7 +282,8 @@ async def test_profile_flag_wins_over_the_interface_zone_default(hass, model, fl
     assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == expected_frames
 
 
-async def test_f455_zone_still_sends_nothing(hass, caplog):
+async def test_f455_interface_zone_still_sends_nothing(hass, caplog):
+    """The F455 zone now wants its temperature (#466), but behind an interface nothing is routed."""
     handler = _handler(hass, "F455")
     handler.send_status_request = AsyncMock()
     zone = _zone(hass, handler, interface="01")
@@ -290,7 +292,7 @@ async def test_f455_zone_still_sends_nothing(hass, caplog):
     with caplog.at_level("DEBUG", logger="custom_components.myhome"):
         await zone.async_update()
     handler.send_status_request.assert_not_awaited()
-    assert not [record for record in caplog.records if "does not route WHO 4 requests" in record.message]
+    assert [record for record in caplog.records if "does not route WHO 4 requests" in record.message]
 
 
 async def test_central_unit_is_not_a_temperature_poll(hass):
@@ -309,7 +311,7 @@ def test_bus_discovered_zone_keeps_its_poll_until_a_temperature_arrives(hass):
     assert polled._polls_temperature is True
     assert message_has_state(polled, OWNHeatingEvent("*#4*3*14*0210*3##")) is False
     assert message_has_state(polled, OWNHeatingEvent("*#4*3*0*0215##")) is True
-    silent = _zone(hass, _handler(hass, "F455"))
+    silent = _zone(hass, _handler(hass, "F453"))  # not on the temperature poll: the sweep answers
     assert message_has_state(silent, OWNHeatingEvent("*#4*3*14*0210*3##")) is True
 
 

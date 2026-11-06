@@ -201,11 +201,13 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 # (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
 # until the flags exist there. Gateways not listed keep sending the request.
 GENERAL_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
+    {"F450", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
 )  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
 # oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
 # and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
-# trace 19-05-42 frames 0-10).
+# trace 19-05-42 frames 0-10). Nor is the F455: a physical F455 1.0.76 returned no frame and
+# held the command session 9.1 s before its ACK, on a plant whose zones 2 and 4 answer their own
+# reads (issue_466/F455_direct_requests_2026-11-06.jsonl).
 SOUND_STATUS_REQUEST_REFUSED = frozenset(
     {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
@@ -219,7 +221,15 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # *#4*0## too but answer *#4*Z## themselves (F460 and F461 expand it into one request,
 # $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
 # keep the zone status poll and are not listed here.
-ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
+# The F455 is not in the oracle; a physical F455 1.0.76 answers *#4*Z*0## in ~0.1 s but delivers
+# the five frames of *#4*Z## on the event session and ACKs only after ~9 s, one second short of
+# OWNd's 10 s response window (issue_466/F455_direct_requests_2026-11-06.jsonl; the issue_674
+# timeouts), so its zones take the temperature poll and stay off the zone status poll.
+ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F455", "F459", "H4684", "MH200", "MH201", "MH202"})
+# Of those, the gateways whose zones also ask for their setpoint (*#4*Z*14##) after the
+# temperature: the zone status poll is what brings the setpoint elsewhere. The physical F455
+# 1.0.76 answers *#4*Z*14## in ~0.1 s (issue_466/F455_direct_requests_2026-11-06.jsonl).
+ZONE_SETPOINT_POLL = frozenset({"F455"})
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -234,7 +244,13 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH
 # (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
 # Read from the OWNd profile first (``supports_heating_actuator_status``); this table is the
 # fallback until the flag exists there.
-ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "F455", "H4684", "MH200", "MH200N", "MH202"})
+# Of those, the gateways that answer the published per-actuator form instead (``*#4*Z#N*20##``,
+# WHO 4 PDF "Where actuators = Z#N"): a physical F455 1.0.76 NACKs *#4*2*20## and *#4*4*20## in
+# under 20 ms but answers *#4*2#1*20## and *#4*4#1*20## in ~0.09 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl). Their zones ask actuator 1; further
+# actuators of a zone still report on the event session.
+ACTUATOR_REQUEST_PER_ACTUATOR = frozenset({"F455"})
 # One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
 # the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
 # The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
@@ -264,7 +280,8 @@ KNOWN_GATEWAY_MODELS = frozenset(
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
-    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL,
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL
+    | ZONE_SETPOINT_POLL | ACTUATOR_REQUEST_PER_ACTUATOR,
     key=len,
     reverse=True,
 )
@@ -581,6 +598,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return not supported
         return self._model_key in ACTUATOR_REQUEST_REFUSED
 
+    @property
+    def actuator_request_per_actuator(self) -> bool:
+        """Whether this gateway, refusing ``*#4*Z*20##``, answers ``*#4*Z#1*20##`` instead."""
+        return self._model_key in ACTUATOR_REQUEST_PER_ACTUATOR
+
     def all_zone_request(self, dimension: int) -> str | None:
         """The single request this gateway answers with every zone's ``dimension``, if any."""
         return ALL_ZONE_REQUESTS.get(self._model_key, {}).get(dimension)
@@ -655,10 +677,19 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         if not wheres:
                             continue
                 if dimension == 20 and target.actuator_request_refused:
+                    if not target.actuator_request_per_actuator:
+                        LOGGER.debug(
+                            "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
+                        )
+                        continue
+                    # The zone form is refused but actuator 1 of each zone is answered.
+                    wheres = [where if "#" in where else f"{where}#1" for where in wheres]
                     LOGGER.debug(
-                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
+                        "%s Zones %s: %s refuses the zone actuator request; asking actuator 1",
+                        self.log_id,
+                        wheres,
+                        target.model,
                     )
-                    continue
                 all_zones = target.all_zone_request(dimension)
                 if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
                     frames.append(all_zones)
@@ -723,6 +754,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             # the per-zone poll pointless, whatever the fallback table says.
             return not supported
         return self._model_key in ZONE_TEMPERATURE_POLL
+
+    @property
+    def zone_setpoint_poll_needed(self) -> bool:
+        """Whether a zone on the temperature poll also asks for its setpoint (``*#4*Z*14##``)."""
+        return self.zone_temperature_poll_needed and self._model_key in ZONE_SETPOINT_POLL
 
     @property
     def interface_zone_request_refused(self) -> bool:

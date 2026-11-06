@@ -237,8 +237,8 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**F455**",
         "profile_name": "F455",
         "pinned_whos": [1, 2, 4, 18],
-        "sweep_omits": [],
-        "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual. A physical F455 1.0.76 returns nothing to `*#4*0##` and holds the session 9 s, and its `*#4*<WHERE>##` ACKs only after ~9 s, so the sweep leaves the first out and zones ask `*#4*<WHERE>*0##` and `*#4*<WHERE>*14##` instead (#466, F455 2026-11-06).",
     },
     {
         "model": "**MyHomeServer1**",

@@ -58,6 +58,9 @@ def _gateway(model: str = "F461") -> MagicMock:
     gw.model = model
     gw.has_central_unit = False
     gw.supports_zone_status = model.upper() == "F461"
+    # What MyHOMEGatewayHandler answers for these two models (tests/test_f455_zone_polling.py).
+    gw.zone_temperature_poll_needed = model.upper() == "F455"
+    gw.zone_setpoint_poll_needed = model.upper() == "F455"
     gw.initial_discovery_pending = False
     gw.is_connected = True
     gw.sent: list[str] = []
@@ -156,12 +159,12 @@ async def test_zone_update_on_f461_sends_the_status_request(hass) -> None:
     assert gw.sent == ["*#4*2##"]
 
 
-async def test_zone_update_on_f455_still_sends_nothing(hass) -> None:
+async def test_zone_update_on_f455_asks_temperature_and_setpoint(hass) -> None:
+    """No zone status on the F455 (its ACK comes after ~9 s); the two single-dimension reads instead."""
     gw = _gateway("F455")
     zone = (await _plant(hass, gw))["2"]
-    assert zone._poll_on_add is False
     await zone.async_update()
-    assert gw.sent == []
+    assert gw.sent == ["*#4*2*0##", "*#4*2*14##"]
 
 
 async def test_replay_fills_the_zone_from_the_poll_replies(hass, rows: list[dict]) -> None:

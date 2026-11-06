@@ -966,6 +966,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
             # rather than risk marking a healthy zone unresponsive on a NACK.
             await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
+            if getattr(self._gateway_handler, "zone_setpoint_poll_needed", False) is True:
+                # Off the zone status poll, nothing else brings the setpoint after a restart; the
+                # F455 answers the single-dimension read in ~0.1 s (issue_466 F455 2026-11-06).
+                await self._gateway_handler.send_status_request(
+                    cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*14##"))
+                )
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
