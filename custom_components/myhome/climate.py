@@ -1193,9 +1193,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             await wait()
         await asyncio.sleep(grace)
         if (
-            self.current_temperature is not None
+            self._attr_native_current_temperature is not None
             and not self._current_temperature_restored
-            and self.target_temperature is not None
+            and self.native_target_temperature is not None
         ):
             return  # the zone reported its temperature and setpoint on its own
         LOGGER.debug(
