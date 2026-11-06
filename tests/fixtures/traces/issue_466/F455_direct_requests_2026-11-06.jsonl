@@ -1,0 +1,89 @@
+{"t": 1.043, "utc": "16:18:56", "kind": "event", "raw": "*#13**15*200##", "cls": "OWNGatewayEvent", "log": "Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201."}
+{"t": 1.045, "utc": "16:18:56", "kind": "event", "raw": "*#1013**1*8*15*0*5##", "cls": "OWNGatewayDiagnosticEvent", "log": "Gateway diagnostic object model is: F455 (8)."}
+{"t": 4.045, "utc": "16:18:59", "kind": "sent", "frame": "*#13**15##", "status": true, "ack": true, "dt": 0.017, "replies": ["*#13**15*200##"], "events": ["*#13**15*200##", "*#1013**1*8*15*0*5##"]}
+{"t": 4.154, "utc": "16:18:59", "kind": "event", "raw": "*#4*2*0*0239##", "cls": "OWNHeatingEvent", "log": "Zone 2's main sensor is reporting a temperature of 23.9\u00b0C."}
+{"t": 7.154, "utc": "16:19:02", "kind": "sent", "frame": "*#4*2*0##", "status": true, "ack": true, "dt": 0.109, "replies": ["*#4*2*0*0239##"], "events": ["*#4*2*0*0239##"]}
+{"t": 7.242, "utc": "16:19:02", "kind": "event", "raw": "*#4*4*0*0255##", "cls": "OWNHeatingEvent", "log": "Zone 4's main sensor is reporting a temperature of 25.5\u00b0C."}
+{"t": 10.244, "utc": "16:19:05", "kind": "sent", "frame": "*#4*4*0##", "status": true, "ack": true, "dt": 0.09, "replies": ["*#4*4*0*0255##"], "events": ["*#4*4*0*0255##"]}
+{"t": 10.352, "utc": "16:19:05", "kind": "event", "raw": "*#4*2*14*0220*3##", "cls": "OWNHeatingEvent", "log": "Zone 2's target temperature is set to 22.0\u00b0C."}
+{"t": 13.354, "utc": "16:19:08", "kind": "sent", "frame": "*#4*2*14##", "status": true, "ack": true, "dt": 0.108, "replies": ["*#4*2*14*0220*3##"], "events": ["*#4*2*14*0220*3##"]}
+{"t": 13.977, "utc": "16:19:09", "kind": "event", "raw": "*#4*2*0*0239##", "cls": "OWNHeatingEvent", "log": "Zone 2's main sensor is reporting a temperature of 23.9\u00b0C."}
+{"t": 14.614, "utc": "16:19:09", "kind": "event", "raw": "*#4*2*12*0220*3##", "cls": "OWNHeatingEvent", "log": "Zone 2's local target temperature is set to 22.0\u00b0C."}
+{"t": 14.614, "utc": "16:19:09", "kind": "event", "raw": "*4*0*2##", "cls": "OWNHeatingEvent", "log": "Zone 2's season is conditioning."}
+{"t": 15.103, "utc": "16:19:10", "kind": "event", "raw": "*#4*2*14*0220*3##", "cls": "OWNHeatingEvent", "log": "Zone 2's target temperature is set to 22.0\u00b0C."}
+{"t": 15.721, "utc": "16:19:10", "kind": "event", "raw": "*#4*2*13*00##", "cls": "OWNHeatingEvent", "log": "Zone 2's local offset is set to 0\u00b0C."}
+{"t": 25.272, "utc": "16:19:20", "kind": "sent", "frame": "*#4*2##", "status": true, "ack": true, "dt": 8.917, "replies": true, "events": ["*#4*2*0*0239##", "*#4*2*12*0220*3##", "*4*0*2##", "*#4*2*14*0220*3##", "*#4*2*13*00##"]}
+{"t": 25.862, "utc": "16:19:21", "kind": "event", "raw": "*#4*4*0*0256##", "cls": "OWNHeatingEvent", "log": "Zone 4's main sensor is reporting a temperature of 25.6\u00b0C."}
+{"t": 26.433, "utc": "16:19:21", "kind": "event", "raw": "*#4*4*12*0225*3##", "cls": "OWNHeatingEvent", "log": "Zone 4's local target temperature is set to 22.5\u00b0C."}
+{"t": 26.434, "utc": "16:19:21", "kind": "event", "raw": "*4*0*4##", "cls": "OWNHeatingEvent", "log": "Zone 4's season is conditioning."}
+{"t": 27.002, "utc": "16:19:22", "kind": "event", "raw": "*#4*4*14*0215*3##", "cls": "OWNHeatingEvent", "log": "Zone 4's target temperature is set to 21.5\u00b0C."}
+{"t": 27.571, "utc": "16:19:22", "kind": "event", "raw": "*#4*4*13*01##", "cls": "OWNHeatingEvent", "log": "Zone 4's local offset is set to 1\u00b0C."}
+{"t": 37.271, "utc": "16:19:32", "kind": "sent", "frame": "*#4*4##", "status": true, "ack": true, "dt": 8.998, "replies": true, "events": ["*#4*4*0*0256##", "*#4*4*12*0225*3##", "*4*0*4##", "*#4*4*14*0215*3##", "*#4*4*13*01##"]}
+{"t": 49.383, "utc": "16:19:44", "kind": "sent", "frame": "*#4*0##", "status": true, "ack": true, "dt": 9.098, "replies": true, "events": []}
+{"t": 1.024, "utc": "16:31:14", "kind": "event", "raw": "*#13**0*18*31*13*##", "cls": "OWNGatewayEvent", "log": "Gateway's internal time is: 18:31:13."}
+{"t": 3.527, "utc": "16:31:16", "kind": "sent", "frame": "*#13**0##", "status": true, "ack": true, "dt": 0.005, "replies": ["*#13**0*18*31*13*##"], "events": ["*#13**0*18*31*13*##"]}
+{"t": 3.531, "utc": "16:31:16", "kind": "event", "raw": "*#13**1*05*06*11*2026##", "cls": "OWNGatewayEvent", "log": "Gateway's internal date is: 2026-11-06."}
+{"t": 6.459, "utc": "16:31:19", "kind": "sent", "frame": "*#13**1##", "status": true, "ack": true, "dt": 0.431, "replies": ["*#13**1*05*06*11*2026##"], "events": ["*#13**1*05*06*11*2026##"]}
+{"t": 6.462, "utc": "16:31:19", "kind": "event", "raw": "*#13**15*200##", "cls": "OWNGatewayEvent", "log": "Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201."}
+{"t": 8.971, "utc": "16:31:22", "kind": "sent", "frame": "*#13**15##", "status": true, "ack": true, "dt": 0.01, "replies": ["*#13**15*200##"], "events": ["*#13**15*200##"]}
+{"t": 8.973, "utc": "16:31:22", "kind": "event", "raw": "*#13**16*1*0*76##", "cls": "OWNGatewayEvent", "log": "Gateway's firmware version is: 1.0.76."}
+{"t": 11.48, "utc": "16:31:24", "kind": "sent", "frame": "*#13**16##", "status": true, "ack": true, "dt": 0.008, "replies": ["*#13**16*1*0*76##"], "events": ["*#13**16*1*0*76##"]}
+{"t": 11.483, "utc": "16:31:24", "kind": "event", "raw": "*#13**19*0*5*3*21##", "cls": "OWNGatewayEvent", "log": "Gateway's uptime is: 5:03:21."}
+{"t": 13.986, "utc": "16:31:27", "kind": "sent", "frame": "*#13**19##", "status": true, "ack": true, "dt": 0.006, "replies": ["*#13**19*0*5*3*21##"], "events": ["*#13**19*0*5*3*21##"]}
+{"t": 13.99, "utc": "16:31:27", "kind": "event", "raw": "*#1013**1*8*15*0*5##", "cls": "OWNGatewayDiagnosticEvent", "log": "Gateway diagnostic object model is: F455 (8)."}
+{"t": 16.492, "utc": "16:31:29", "kind": "sent", "frame": "*#1013**1##", "status": true, "ack": true, "dt": 0.005, "replies": ["*#1013**1*8*15*0*5##"], "events": ["*#1013**1*8*15*0*5##"]}
+{"t": 16.633, "utc": "16:31:29", "kind": "event", "raw": "*1*0*06##", "cls": "OWNLightingEvent", "log": "Light 06 is switched off."}
+{"t": 16.672, "utc": "16:31:29", "kind": "event", "raw": "*1*0*07##", "cls": "OWNLightingEvent", "log": "Light 07 is switched off."}
+{"t": 16.725, "utc": "16:31:29", "kind": "event", "raw": "*2*0*05##", "cls": "OWNAutomationEvent", "log": "Cover 05 stopped."}
+{"t": 16.773, "utc": "16:31:29", "kind": "event", "raw": "*1*0*0010##", "cls": "OWNLightingEvent", "log": "Light 0010 is switched off."}
+{"t": 16.863, "utc": "16:31:29", "kind": "event", "raw": "*1*0*09#4#01##", "cls": "OWNLightingEvent", "log": "Light 09 on interface 01 is switched off."}
+{"t": 20.332, "utc": "16:31:33", "kind": "sent", "frame": "*#1*0##", "status": true, "ack": true, "dt": 1.338, "replies": ["*1*0*06##", "*1*0*07##", "*1*0*0010##", "*1*0*09#4#01##"], "events": ["*1*0*06##", "*1*0*07##", "*2*0*05##", "*1*0*0010##", "*1*0*09#4#01##"]}
+{"t": 20.412, "utc": "16:31:33", "kind": "event", "raw": "*1*0*06##", "cls": "OWNLightingEvent", "log": "Light 06 is switched off."}
+{"t": 22.916, "utc": "16:31:36", "kind": "sent", "frame": "*#1*06##", "status": true, "ack": true, "dt": 0.083, "replies": ["*1*0*06##"], "events": ["*1*0*06##"]}
+{"t": 23.032, "utc": "16:31:36", "kind": "event", "raw": "*1*0*09#4#01##", "cls": "OWNLightingEvent", "log": "Light 09 on interface 01 is switched off."}
+{"t": 25.534, "utc": "16:31:38", "kind": "sent", "frame": "*#1*09#4#01##", "status": true, "ack": true, "dt": 0.117, "replies": ["*1*0*09#4#01##"], "events": ["*1*0*09#4#01##"]}
+{"t": 25.642, "utc": "16:31:38", "kind": "event", "raw": "*#1*0010*4*100*2##", "cls": "OWNLightingEvent", "log": "Light 0010 is switched off."}
+{"t": 25.712, "utc": "16:31:38", "kind": "event", "raw": "*#1001*0010*11*111110111111111101100111##", "cls": "OWNLightingDiagnosticEvent", "log": "Light 0010 autodiagnostic mask is 111110111111111101100111 (cleared bits: 6, 17, 20, 21)."}
+{"t": 28.15, "utc": "16:31:41", "kind": "sent", "frame": "*#1*0010*1##", "status": true, "ack": true, "dt": 0.114, "replies": ["*#1*0010*4*100*2##"], "events": ["*#1*0010*4*100*2##", "*#1001*0010*11*111110111111111101100111##"]}
+{"t": 28.263, "utc": "16:31:41", "kind": "event", "raw": "*#1*0010*4*100*2##", "cls": "OWNLightingEvent", "log": "Light 0010 is switched off."}
+{"t": 28.332, "utc": "16:31:41", "kind": "event", "raw": "*#1001*0010*11*111110111111111101100111##", "cls": "OWNLightingDiagnosticEvent", "log": "Light 0010 autodiagnostic mask is 111110111111111101100111 (cleared bits: 6, 17, 20, 21)."}
+{"t": 30.773, "utc": "16:31:43", "kind": "sent", "frame": "*#1*0010*4##", "status": true, "ack": true, "dt": 0.122, "replies": ["*#1*0010*4*100*2##"], "events": ["*#1*0010*4*100*2##", "*#1001*0010*11*111110111111111101100111##"]}
+{"t": 30.912, "utc": "16:31:44", "kind": "event", "raw": "*1*0*06##", "cls": "OWNLightingEvent", "log": "Light 06 is switched off."}
+{"t": 30.952, "utc": "16:31:44", "kind": "event", "raw": "*1*0*07##", "cls": "OWNLightingEvent", "log": "Light 07 is switched off."}
+{"t": 31.006, "utc": "16:31:44", "kind": "event", "raw": "*2*0*05##", "cls": "OWNAutomationEvent", "log": "Cover 05 stopped."}
+{"t": 31.051, "utc": "16:31:44", "kind": "event", "raw": "*1*0*0010##", "cls": "OWNLightingEvent", "log": "Light 0010 is switched off."}
+{"t": 31.152, "utc": "16:31:44", "kind": "event", "raw": "*1*0*09#4#01##", "cls": "OWNLightingEvent", "log": "Light 09 on interface 01 is switched off."}
+{"t": 34.493, "utc": "16:31:47", "kind": "sent", "frame": "*#2*0##", "status": true, "ack": true, "dt": 1.219, "replies": ["*2*0*05##"], "events": ["*1*0*06##", "*1*0*07##", "*2*0*05##", "*1*0*0010##", "*1*0*09#4#01##"]}
+{"t": 34.571, "utc": "16:31:47", "kind": "event", "raw": "*2*0*05##", "cls": "OWNAutomationEvent", "log": "Cover 05 stopped."}
+{"t": 37.074, "utc": "16:31:50", "kind": "sent", "frame": "*#2*05##", "status": true, "ack": true, "dt": 0.08, "replies": ["*2*0*05##"], "events": ["*2*0*05##"]}
+{"t": 37.141, "utc": "16:31:50", "kind": "event", "raw": "*2*0*05##", "cls": "OWNAutomationEvent", "log": "Cover 05 stopped."}
+{"t": 49.509, "utc": "16:32:02", "kind": "sent", "frame": "*#2*05*10##", "status": true, "ack": false, "dt": 9.934, "replies": null, "events": ["*2*0*05##"]}
+{"t": 49.611, "utc": "16:32:02", "kind": "event", "raw": "*4*202*#0##", "cls": "OWNHeatingEvent", "log": "Zone 0's mode is set to 'off'."}
+{"t": 49.611, "utc": "16:32:02", "kind": "event", "raw": "*4*21*#0##", "cls": "OWNHeatingEvent", "log": "Zone 0's remote control is enabled."}
+{"t": 49.611, "utc": "16:32:02", "kind": "event", "raw": "*4*31*#0##", "cls": "OWNHeatingEvent", "log": "Zone 0's central unit reports the central unit battery is KO."}
+{"t": 49.612, "utc": "16:32:02", "kind": "event", "raw": "*4*24*#0##", "cls": "OWNHeatingEvent", "log": "Zone 0's central unit reports at least one probe is in manual mode."}
+{"t": 53.093, "utc": "16:32:06", "kind": "sent", "frame": "*#4*#0##", "status": true, "ack": true, "dt": 1.082, "replies": ["*4*202*#0##", "*4*21*#0##", "*4*31*#0##", "*4*24*#0##"], "events": ["*4*202*#0##", "*4*21*#0##", "*4*31*#0##", "*4*24*#0##"]}
+{"t": 53.202, "utc": "16:32:06", "kind": "event", "raw": "*#4*2*12*0220*3##", "cls": "OWNHeatingEvent", "log": "Zone 2's local target temperature is set to 22.0\u00b0C."}
+{"t": 53.203, "utc": "16:32:06", "kind": "event", "raw": "*4*0*2##", "cls": "OWNHeatingEvent", "log": "Zone 2's season is conditioning."}
+{"t": 55.71, "utc": "16:32:08", "kind": "sent", "frame": "*#4*2*12##", "status": true, "ack": true, "dt": 0.115, "replies": ["*#4*2*12*0220*3##", "*4*0*2##"], "events": ["*#4*2*12*0220*3##", "*4*0*2##"]}
+{"t": 55.81, "utc": "16:32:08", "kind": "event", "raw": "*#4*2*13*00##", "cls": "OWNHeatingEvent", "log": "Zone 2's local offset is set to 0\u00b0C."}
+{"t": 58.319, "utc": "16:32:11", "kind": "sent", "frame": "*#4*2*13##", "status": true, "ack": true, "dt": 0.108, "replies": ["*#4*2*13*00##"], "events": ["*#4*2*13*00##"]}
+{"t": 58.423, "utc": "16:32:11", "kind": "event", "raw": "*#4*2*19*7*5##", "cls": "OWNHeatingEvent", "log": "Zone 2's cooling fan is on at speed 2; heating fan is off."}
+{"t": 60.929, "utc": "16:32:14", "kind": "sent", "frame": "*#4*2*19##", "status": true, "ack": true, "dt": 0.11, "replies": ["*#4*2*19*7*5##"], "events": ["*#4*2*19*7*5##"]}
+{"t": 63.448, "utc": "16:32:16", "kind": "sent", "frame": "*#4*2*20##", "status": true, "ack": false, "dt": 0.018, "replies": null, "events": []}
+{"t": 63.53, "utc": "16:32:16", "kind": "event", "raw": "*#4*2#1*20*7##", "cls": "OWNHeatingEvent", "log": "Zone 2's fan is on at speed 2."}
+{"t": 66.037, "utc": "16:32:19", "kind": "sent", "frame": "*#4*2#1*20##", "status": true, "ack": true, "dt": 0.087, "replies": ["*#4*2#1*20*7##"], "events": ["*#4*2#1*20*7##"]}
+{"t": 68.556, "utc": "16:32:21", "kind": "sent", "frame": "*#4*2*60##", "status": true, "ack": false, "dt": 0.019, "replies": null, "events": []}
+{"t": 68.651, "utc": "16:32:21", "kind": "event", "raw": "*#4*4*12*0225*3##", "cls": "OWNHeatingEvent", "log": "Zone 4's local target temperature is set to 22.5\u00b0C."}
+{"t": 68.651, "utc": "16:32:21", "kind": "event", "raw": "*4*0*4##", "cls": "OWNHeatingEvent", "log": "Zone 4's season is conditioning."}
+{"t": 71.152, "utc": "16:32:24", "kind": "sent", "frame": "*#4*4*12##", "status": true, "ack": true, "dt": 0.096, "replies": ["*#4*4*12*0225*3##", "*4*0*4##"], "events": ["*#4*4*12*0225*3##", "*4*0*4##"]}
+{"t": 71.24, "utc": "16:32:24", "kind": "event", "raw": "*#4*4*14*0215*3##", "cls": "OWNHeatingEvent", "log": "Zone 4's target temperature is set to 21.5\u00b0C."}
+{"t": 73.741, "utc": "16:32:26", "kind": "sent", "frame": "*#4*4*14##", "status": true, "ack": true, "dt": 0.088, "replies": ["*#4*4*14*0215*3##"], "events": ["*#4*4*14*0215*3##"]}
+{"t": 76.245, "utc": "16:32:29", "kind": "sent", "frame": "*#4*4*20##", "status": true, "ack": false, "dt": 0.002, "replies": null, "events": []}
+{"t": 76.329, "utc": "16:32:29", "kind": "event", "raw": "*#4*4#1*20*0##", "cls": "OWNHeatingEvent", "log": "Zone 4's actuator 1 is off."}
+{"t": 78.84, "utc": "16:32:31", "kind": "sent", "frame": "*#4*4#1*20##", "status": true, "ack": true, "dt": 0.094, "replies": ["*#4*4#1*20*0##"], "events": ["*#4*4#1*20*0##"]}
+{"t": 81.349, "utc": "16:32:34", "kind": "sent", "frame": "*#4*0*20##", "status": true, "ack": false, "dt": 0.007, "replies": null, "events": []}
+{"t": 87.789, "utc": "16:32:40", "kind": "sent", "frame": "*#5*0##", "status": true, "ack": true, "dt": 3.939, "replies": true, "events": []}
+{"t": 100.292, "utc": "16:32:53", "kind": "sent", "frame": "*#18*51*51##", "status": true, "ack": false, "dt": 10.002, "replies": null, "events": []}
+{"t": 112.789, "utc": "16:33:05", "kind": "sent", "frame": "*#18*51*113##", "status": true, "ack": false, "dt": 9.995, "replies": null, "events": []}
+{"t": 115.305, "utc": "16:33:08", "kind": "sent", "frame": "*#25*344##", "status": true, "ack": true, "dt": 0.015, "replies": true, "events": []}
