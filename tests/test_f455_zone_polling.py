@@ -5,10 +5,12 @@ sent to the F455 with its ACK, elapsed time and replies. On that gateway:
 
 - ``*#4*0##`` returns no frame and ACKs after 9.1 s, and ``*#4*Z##`` ACKs only after ~9 s (its five
   frames arrive on the event session), one second short of OWNd's 10 s response window;
-- ``*#4*Z*0##`` and ``*#4*Z*14##`` are answered on the command session in ~0.1 s;
+- ``*#4*Z*0##``, ``*#4*Z*14##`` and ``*#4*Z*12##`` are answered on the command session in ~0.1 s
+  (the dimension 12 reply is followed by the zone's mode frame ``*4*0*Z##``);
 - ``*#4*Z*20##`` is NACKed in under 20 ms while ``*#4*Z#1*20##`` is answered in ~0.09 s.
 
-So the startup sweep leaves ``*#4*0##`` out, a zone asks its temperature and setpoint, and the
+So the startup sweep leaves ``*#4*0##`` out, a zone asks its temperature, then its setpoint and
+mode once the temperature was answered, and the
 actuator read goes out in the per-actuator form.
 """
 
@@ -106,6 +108,10 @@ def test_capture_backs_the_temperature_and_setpoint_reads() -> None:
             and sent[frame]["replies"] == [reply]
             and sent[frame]["dt"] < 0.2
         )
+    for zone, setpoint in (("2", "0220"), ("4", "0225")):
+        frame = f"*#4*{zone}*12##"
+        assert sent[frame]["replies"] == [f"*#4*{zone}*12*{setpoint}*3##", f"*4*0*{zone}##"]
+        assert sent[frame]["dt"] < 0.2
 
 
 def test_capture_backs_the_per_actuator_form() -> None:
@@ -145,15 +151,71 @@ def test_other_refusing_gateways_still_skip_the_actuator_request(hass, model) ->
 # ------------------------------------------------------------------ what goes on the wire
 
 
-async def test_f455_zone_asks_temperature_then_setpoint(hass) -> None:
+def _queued(handler) -> list[str]:
+    return [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+
+
+async def test_f455_zone_asks_temperature_then_setpoint_and_mode(hass) -> None:
     handler = _handler(hass, "F455")
     handler.send_status_request = AsyncMock()
+    handler.request_zone_dimension = MagicMock()
     zone = _zone(hass, handler)
     await zone.async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == [
-        "*#4*2*0##",
-        "*#4*2*14##",
-    ]
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
+    # The actuator is asked again once the mode is known, so hvac_action can be derived.
+    handler.request_zone_dimension.assert_called_once_with("2", 20)
+
+
+async def test_hvac_action_needs_the_mode_before_the_actuator_report(hass) -> None:
+    """Why the actuator is re-asked: the same report gives no action before the mode, and one after."""
+    from OWNd.message import OWNHeatingEvent
+
+    zone = _zone(hass, _handler(hass, "F455"))
+    zone.handle_event(OWNHeatingEvent("*#4*2#1*20*1##"))
+    assert zone.hvac_action is None
+    zone.handle_event(OWNHeatingEvent("*4*0*2##"))
+    zone.handle_event(OWNHeatingEvent("*#4*2#1*20*1##"))
+    assert zone.hvac_mode == "cool" and zone.hvac_action == "cooling"
+
+
+async def test_f455_setpoint_and_mode_wait_for_the_temperature_answer(hass) -> None:
+    """With the real queue future: asked after the ACK of the temperature read, not with it."""
+    handler = _handler(hass, "F455")
+    written = hass.loop.create_future()
+    handler.send_status_request = AsyncMock(side_effect=[written, None, None])
+    handler.request_zone_dimension = MagicMock()
+    zone = _zone(hass, handler)
+    await zone.async_update()
+    assert _queued(handler) == ["*#4*2*0##"]
+    written.set_result(1.0)  # the F455 answered *#4*2*0*0238## and ACKed
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
+
+
+async def test_f455_zone_without_a_probe_is_not_asked_further(hass) -> None:
+    """A refused temperature read (live zone 3: NACK after ~9 s) stops the setpoint and mode reads."""
+    handler = _handler(hass, "F455")
+    written = hass.loop.create_future()
+    handler.send_status_request = AsyncMock(side_effect=[written])
+    handler.request_zone_dimension = MagicMock()
+    zone = _zone(hass, handler, "3")
+    await zone.async_update()
+    written.cancel()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _queued(handler) == ["*#4*3*0##"]
+    handler.request_zone_dimension.assert_not_called()
+
+
+async def test_the_mode_frame_after_the_dimension_12_reply_sets_hvac_mode(hass) -> None:
+    from OWNd.message import OWNHeatingEvent
+
+    zone = _zone(hass, _handler(hass, "F455"))
+    for frame in ("*#4*2*0*0238##", "*#4*2*14*0220*3##"):
+        zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.hvac_mode is None and zone.target_temperature == 22.0
+    for frame in ("*#4*2*12*0220*3##", "*4*0*2##"):  # the *#4*2*12## reply of the capture
+        zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.hvac_mode == "cool"
 
 
 async def test_mh202_zone_still_asks_only_its_temperature(hass) -> None:

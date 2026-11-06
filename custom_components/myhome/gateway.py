@@ -226,9 +226,10 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # OWNd's 10 s response window (issue_466/F455_direct_requests_2026-11-06.jsonl; the issue_674
 # timeouts), so its zones take the temperature poll and stay off the zone status poll.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F455", "F459", "H4684", "MH200", "MH201", "MH202"})
-# Of those, the gateways whose zones also ask for their setpoint (*#4*Z*14##) after the
-# temperature: the zone status poll is what brings the setpoint elsewhere. The physical F455
-# 1.0.76 answers *#4*Z*14## in ~0.1 s (issue_466/F455_direct_requests_2026-11-06.jsonl).
+# Of those, the gateways whose zones also ask for their setpoint (*#4*Z*14##) and probe status
+# (*#4*Z*12##, followed by the zone's mode frame) once the temperature was answered: the zone
+# status poll is what brings them elsewhere. The physical F455 1.0.76 answers both in ~0.1 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl: *#4*2*12## -> *#4*2*12*0220*3## + *4*0*2##).
 ZONE_SETPOINT_POLL = frozenset({"F455"})
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
@@ -757,7 +758,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def zone_setpoint_poll_needed(self) -> bool:
-        """Whether a zone on the temperature poll also asks for its setpoint (``*#4*Z*14##``)."""
+        """Whether a zone on the temperature poll also asks its setpoint and mode (``*14##``, ``*12##``)."""
         return self.zone_temperature_poll_needed and self._model_key in ZONE_SETPOINT_POLL
 
     @property

@@ -160,11 +160,11 @@ async def test_zone_update_on_f461_sends_the_status_request(hass) -> None:
 
 
 async def test_zone_update_on_f455_asks_temperature_and_setpoint(hass) -> None:
-    """No zone status on the F455 (its ACK comes after ~9 s); the two single-dimension reads instead."""
+    """No zone status on the F455 (its ACK comes after ~9 s); single-dimension reads instead."""
     gw = _gateway("F455")
     zone = (await _plant(hass, gw))["2"]
     await zone.async_update()
-    assert gw.sent == ["*#4*2*0##", "*#4*2*14##"]
+    assert gw.sent == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
 
 
 async def test_replay_fills_the_zone_from_the_poll_replies(hass, rows: list[dict]) -> None:

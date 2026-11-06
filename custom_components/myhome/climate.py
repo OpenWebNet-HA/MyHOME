@@ -965,13 +965,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # 374-376), not a verdict on a populated one. Until a command-session capture of
             # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
             # rather than risk marking a healthy zone unresponsive on a NACK.
-            await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
+            # ``object``: test doubles return no future, and then the reads follow at once.
+            temperature_written: object = await self._gateway_handler.send_status_request(
+                OWNHeatingCommand.get_temperature(self._full_where)
+            )
             if getattr(self._gateway_handler, "zone_setpoint_poll_needed", False) is True:
-                # Off the zone status poll, nothing else brings the setpoint after a restart; the
-                # F455 answers the single-dimension read in ~0.1 s (issue_466 F455 2026-11-06).
-                await self._gateway_handler.send_status_request(
-                    cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*14##"))
-                )
+                # Off the zone status poll, nothing else brings the setpoint and the mode after a
+                # restart. Asked only once the temperature read was answered: a zone without a
+                # probe makes the F455 NACK each read after ~9 s (issue_466 F455 2026-11-06).
+                if isinstance(temperature_written, asyncio.Future):
+                    temperature_written.add_done_callback(self._ask_setpoint_after_temperature)
+                else:
+                    await self._ask_setpoint_and_mode()
         if self._fan and self._season_has_fan_coil():
             await self._gateway_handler.send_status_request(
                 cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
@@ -989,6 +994,32 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
 
     @callback
+    @callback
+    def _ask_setpoint_after_temperature(self, written: asyncio.Future[float]) -> None:
+        """Ask for the setpoint and mode once the zone answered its temperature read."""
+        if written.cancelled():
+            return  # refused or unanswered: no probe there to ask further
+        self.hass.async_create_background_task(
+            self._ask_setpoint_and_mode(), name=f"myhome_{self.entity_id}_setpoint_poll"
+        )
+
+    async def _ask_setpoint_and_mode(self) -> None:
+        """Ask the setpoint (``*#4*Z*14##``) and the probe status (``*#4*Z*12##``).
+
+        The dimension 12 reply carries the local setpoint and is followed by the zone's mode
+        frame (``*4*0*2##`` on the F455 1.0.76 capture), which is what sets ``hvac_mode``.
+        """
+        for dimension in (14, 12):
+            await self._gateway_handler.send_status_request(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*{dimension}##"))
+            )
+        if getattr(self._gateway_handler, "actuator_request_per_actuator", False) is True:
+            # hvac_action is derived when an actuator report finds the season known; the startup
+            # actuator read went out before the mode, so ask it once more after the mode.
+            request = getattr(self._gateway_handler, "request_zone_dimension", None)
+            if callable(request):
+                request(self._where, 20)
+
     def _poll_answered(self, written: asyncio.Future[float], frames_before: int) -> None:
         """Count a status request the gateway refused or never answered (see ``poll_health``)."""
         if written.cancelled():
