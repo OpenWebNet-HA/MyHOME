@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import inspect
 import time
 from collections.abc import Callable, Mapping
@@ -119,6 +120,7 @@ from .cover_motion import (
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
     WRITE_TIMEOUT,
+    CoverMotionModel,
     MotionPosition,
     compute_freeze_position,
     compute_interpolated_position,
@@ -180,6 +182,11 @@ _STANDARD_TIMED_SHUTTER_MODELS = (
     "HD4671/2",
     "AM5851/2",
 )
+
+
+def _motion_fingerprint(model: CoverMotionModel) -> dict[str, float]:
+    """The motion model a stored position was estimated with, as kept across restarts."""
+    return {key: round(float(value), 6) for key, value in dataclasses.asdict(model).items()}
 
 
 def _is_standard_timed_shutter_model(model: str | None) -> bool:
@@ -754,6 +761,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Full-travel seconds for the given direction (motors are often slower going up)."""
         return self._strategy.travel_for_direction(opening)
 
+    def _settle_travel_for(self, opening: bool) -> float:
+        """Motor seconds from the run's start to its end stop, for the end-of-run settle.
+
+        With a motion model and a known start, the model's remaining time; otherwise
+        (a linear cover, an unknown start, a run not yet anchored) the full travel time.
+        """
+        motion = self._motion
+        if (motion.model is not None and motion.position is not None
+                and motion.anchor is not None and motion.opening == opening):
+            return motion.remaining(MotionPosition.at_height(1 if opening else 0))
+        return self._travel_for(opening)
+
     def _curtain_travel_for(self, opening: bool) -> float:
         """Curtain-only travel seconds for the given direction (end-to-end travel minus slat rotation)."""
         return self._strategy.curtain_travel_for(opening)
@@ -1164,7 +1183,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Return if the cover is closed (None while that is unknown)."""
         if self._motion.model is not None:
             position = self._motion.sample(time.monotonic())
-            return position == MotionPosition(0, 0) if position is not None else False
+            return position == MotionPosition(0, 0) if position is not None else None
         if self.current_cover_position is not None:
             return self.current_cover_position == 0
         return self._attr_is_closed
@@ -1187,13 +1206,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
-        if self._motion.model is not None:
-            # A restored HA percentage cannot establish the hidden slat phase,
-            # nor whether the motor moved while Home Assistant was offline.
-            self._motion.configure(self._motion.model)
-            self._motion.position = None
-            self._attr_current_cover_position = None
-            self._attr_is_closed = False
+        if (model := self._motion.model) is not None:
+            # Only the model state saved with the same motion model gives both the
+            # curtain height and the slat phase; anything else is unknown, never
+            # open. It stays an estimate (the cover may have moved while Home
+            # Assistant was offline) until the next full run re-anchors it.
+            self._motion.configure(model)
+            position = await self._async_restored_motion(model)
+            self._motion.position = position
+            self._attr_current_cover_position = self._start_position = (
+                round(position.height * 100) if position is not None else None
+            )
+            self._attr_is_closed = position == MotionPosition(0, 0) if position is not None else None
             return
         moving_on_add = bool(self._attr_is_opening or self._attr_is_closing)
         if self._strategy.assumed_state:
@@ -1238,11 +1262,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData | None:
-        """The strategy's model state, kept across restarts when it has any."""
+        """The strategy's model state and a stationary motion-model position, kept across restarts."""
+        data: dict[str, Any] = {}
         state = self._strategy.export_state()
-        if state is None:
+        if state is not None:
+            data.update(strategy=self._strategy.name, state=state)
+        position, model = self._motion.position, self._motion.model
+        if (model is not None and position is not None and self._motion.anchor is None
+                and not self._attr_is_opening and not self._attr_is_closing):
+            data["motion"] = {"height": position.height, "slats": position.slats, "model": _motion_fingerprint(model)}
+        return RestoredExtraData(data) if data else None
+
+    async def _async_restored_motion(self, model: CoverMotionModel) -> MotionPosition | None:
+        """The saved model position, only if it was estimated with the active motion model."""
+        try:
+            extra = await self.async_get_last_extra_data()
+        except Exception:  # pylint: disable=broad-except  # not registered with the restore cache
             return None
-        return RestoredExtraData({"strategy": self._strategy.name, "state": state})
+        motion = extra.as_dict().get("motion") if extra is not None else None
+        if not isinstance(motion, dict) or motion.get("model") != _motion_fingerprint(model):
+            return None
+        try:
+            return MotionPosition(motion["height"], motion["slats"])
+        except (KeyError, ValueError):
+            return None
 
     async def _async_restore_strategy_state(self) -> None:
         """Hand the strategy the state it exported before the restart (same strategy only)."""
@@ -1958,7 +2001,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._end_run_from_unknown = False
                         return
                     self._travel_recomputed.clear()
-                    delay = self._travel_for(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
+                    delay = self._settle_travel_for(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
                     if delay <= 0:
                         break
                     sleep_task = asyncio.create_task(asyncio.sleep(delay))
@@ -2004,7 +2047,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         generation = self._run_generation
         elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
-        delay = max(0.0, self._travel_for(opening) + END_SETTLE_MARGIN - elapsed)
+        delay = max(0.0, self._settle_travel_for(opening) + END_SETTLE_MARGIN - elapsed)
         self._full_run_to_end = True
 
         @callback
@@ -2053,10 +2096,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Move with the panel geometry, including its hidden slat phase."""
         target_motion = MotionPosition.at_height(float(target_position) / 100)
         current_motion = self._motion.sample(time.monotonic())
+        if target_position in (0, 100) and current_motion != target_motion:
+            # A full run, the same as open / close: no Stop frame, the limit switch
+            # ends it and re-anchors the model, and it settles on the travel timer
+            # (a scope cover's members settle, as on its own open / close).
+            await (self.async_open_cover() if target_position == 100 else self.async_close_cover())
+            return
         if current_motion is None:
-            if target_position in (0, 100):
-                await self._async_move("open" if target_position == 100 else "close")
-                return
             raise HomeAssistantError("Complete a full opening or closing run before setting an intermediate position",
                                      translation_domain=DOMAIN, translation_key="cover_position_unknown",
                                      translation_placeholders={"name": self._display_name})
@@ -2065,9 +2111,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 await self.async_stop_cover()
             return
         curr_pos = current_motion.height * 100
-        diff = target_position - curr_pos
-        if diff == 0:  # Height zero still owes the closure of the slats.
-            diff = -1
+        diff = target_position - curr_pos  # never 0: 0 % and 100 % are full runs above
         self._cancel_stop_task()
 
         written = await self._async_move("open" if diff > 0 else "close")
