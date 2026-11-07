@@ -226,3 +226,65 @@ automation:
 ```
 
 The integration emits a single native OpenWebNet broadcast frame (`*2*2*0#4#02##`). All actuators energize simultaneously in total synchrony with zero bus queue latency and zero dropped frames. No artificial `delay:` or manual `cover.stop_cover` is needed—actuators stop cleanly on their own limit switches.
+
+## 11. Decoupled bathroom extractor fan with smart overrun & humidity boost (single F411 contact)
+
+In traditional BTicino MyHome wiring, bathroom extractor fans are often configured as hardware slaves (`M=SLA` or off-delay `M=1..4`) sharing the exact same `A` and `PL` address as the bathroom light actuator. While this turns the fan on whenever the light turns on, an actuator in `M=SLA` cannot be commanded independently by Home Assistant without also turning the light on, because both physical relays listen to the identical OpenWebNet `A*PL` broadcast telegram.
+
+Instead of wasting a second contact and wiring two relays in parallel, **decouple the fan contact on your F411** by giving it its own distinct Point address:
+- **Output 1 (Light)**: `A=1, PL1=1`, `M = [empty]` (Address `11`, discovered as `light.bathroom_light`).
+- **Output 2 (Fan)**: `A=1, PL2=2`, `M = [empty]` (Address `12`, discovered as `switch.bathroom_fan` or shown as a Fan via UI).
+
+Home Assistant now coordinates the master/slave link with far more flexibility than hardware configurators:
+- When the bathroom light is turned on at the wall switch, Home Assistant immediately turns on the fan.
+- When the light is turned off, Home Assistant engages an overrun timer (e.g. 10 minutes) using `myhome.turn_on_timed` so the fan automatically switches off at the bus hardware level even if Home Assistant restarts.
+- Because the fan has its own address, Home Assistant can also trigger high-humidity purges or boost ventilation independently without turning on the ceiling light.
+
+```yaml
+automation:
+  - alias: "Bathroom Fan - Follow Light with Overrun"
+    id: bathroom_fan_follow_light
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: light.bathroom_light
+        to: "on"
+      - trigger: state
+        entity_id: light.bathroom_light
+        to: "off"
+    actions:
+      - choose:
+          # Light turned ON -> Start Fan
+          - conditions:
+              - condition: state
+                entity_id: light.bathroom_light
+                state: "on"
+            sequence:
+              - action: switch.turn_on
+                target:
+                  entity_id: switch.bathroom_fan
+
+          # Light turned OFF -> Run fan for 10 min using native bus timer, then turn OFF
+          - conditions:
+              - condition: state
+                entity_id: light.bathroom_light
+                state: "off"
+            sequence:
+              - action: myhome.turn_on_timed
+                target:
+                  entity_id: switch.bathroom_fan
+                data:
+                  minutes: 10
+
+  - alias: "Bathroom Fan - High Humidity Purge"
+    id: bathroom_fan_humidity_purge
+    triggers:
+      - trigger: numeric_state
+        entity_id: sensor.bathroom_humidity
+        above: 70
+    actions:
+      - action: switch.turn_on
+        target:
+          entity_id: switch.bathroom_fan
+```
+
