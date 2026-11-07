@@ -762,3 +762,130 @@ async def test_a_lock_drops_the_translation_held_for_its_shutter_only(relay):
     assert relay.held() == ["82"]
     relay.send("*2*1000#2*81##")
     assert relay.held() == ["82"]
+
+
+# ── a group, area or general Stop inside the window ─────────────────
+# A Stop to a group, an area or every shutter stops each actuator it addresses. When the gateway
+# drops the actuators' own statuses, nothing names the shutters it stopped: the Stop itself must
+# drop what the relay holds for them, or each would start one second after it stopped.
+
+
+async def _scoped_plant(hass, tmp_path):
+    """Shutters 81 and 82 (area 8, group #5 as declared) and 91 (area 9), on one bus."""
+    plant_yaml = tmp_path / "myhome.yaml"
+    plant_yaml.write_text(
+        f"mh201:\n  mac: '{MAC}'\n  cover:\n"
+        + "".join(f"    cover_{w}:\n      where: '{w}'\n      name: Cover {w}\n      travel_time: 30\n"
+                  for w in ("81", "82", "91"))
+        + "    group_5:\n      where: '#5'\n      name: Group 5\n      members: ['81', '82']\n",
+        encoding="utf-8")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_HOST: "192.0.2.1", CONF_PORT: 20000, CONF_PASSWORD: "pass", CONF_MAC: MAC,
+              CONF_NAME: "MH201", CONF_DEVICE_TYPE: "urn:schemas-bticino-it:device:IP scenario module:1",
+              CONF_FRIENDLY_NAME: "MH201 Gateway", CONF_MANUFACTURER: "BTicino S.p.A.", CONF_FIRMWARE: "1.0"},
+        options={CONF_FILE_PATH: str(plant_yaml)},
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+    with patch("custom_components.myhome.gateway.OWNSession.test_connection",
+               return_value={"Success": True, "Message": None}), \
+         patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"), \
+         patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    entry.runtime_data.gateway._on_event_connection_state_change(True)
+    return entry
+
+
+@pytest.fixture
+async def scoped(hass, tmp_path):
+    entry = await _scoped_plant(hass, tmp_path)
+    bus = Bus(hass, entry)
+    await bus.send("*2*0*81##", "*2*0*82##", "*2*0*91##")
+    (platform,) = [p for p in entity_platform.async_get_platforms(hass, DOMAIN) if p.domain == "cover"]
+    bus.covers = {w: platform.entities[f"cover.cover_{w}"] for w in ("81", "82", "91")}
+    for cover in bus.covers.values():  # Closed, as after a run to the end stop.
+        cover._motion.confirm(0)
+        cover._attr_current_cover_position = cover._start_position = 0
+        cover._attr_is_closed = True
+        cover.async_write_ha_state()
+    bus.entered = {w: [] for w in bus.covers}
+
+    @callback
+    def entered(event: Event) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        for w in bus.covers:
+            if event.data["entity_id"] == f"cover.cover_{w}" and new is not None and (old is None or old.state != new.state):
+                bus.entered[w].append(new.state)
+
+    undo = hass.bus.async_listen(EVENT_STATE_CHANGED, entered)
+    yield bus
+    undo()
+    bus.stop()
+    if entry.state.recoverable:
+        await hass.config_entries.async_unload(entry.entry_id)
+    assert _pending_releases(hass) == []
+
+
+@pytest.mark.parametrize(("stop", "stopped"), [
+    ("*2*0*#5##", ("81", "82")),  # Group 5 reports it is stopped: its declared members.
+    ("*2*1000#0*#5##", ("81", "82")),  # The gateway's translation of a Stop to group 5.
+    ("*2*0*0##", ("81", "82", "91")),  # General: every shutter.
+    ("*2*1000#0*0##", ("81", "82", "91")),
+    ("*2*0*8##", ("81", "82")),  # Area 8.
+    ("*2*1000#0*8##", ("81", "82")),
+    ("*2*0*#7##", ("81", "82", "91")),  # A group nobody declared: any shutter may be in it.
+])
+async def test_a_group_area_or_general_stop_in_the_window_cancels_the_held_movements(scoped, stop, stopped):
+    """Up on 81, 82 and 91 with no status, then a scope Stop inside the window: the shutters it
+    stopped never start; the others still get their movement, dated at their translation."""
+    await scoped.send("*2*1000#1*81##", "*2*1000#1*82##", "*2*1000#1*91##")
+    up = scoped.clock[0]
+    assert len(_pending_releases(scoped.hass)) == 3
+    await scoped.send(stop, step=.3)
+    await scoped.wait(TRANSLATION_GRACE)
+    await scoped.wait(TRANSLATION_GRACE)  # Long after the window: nothing stale arrives.
+    for w, cover in scoped.covers.items():
+        if w in stopped:
+            assert scoped.entered[w] == [] and not cover.is_opening, w
+            assert scoped.hass.states.get(f"cover.cover_{w}").state == "closed"
+        else:
+            assert scoped.entered[w] == ["opening"] and cover._move_start_time == up, w
+    assert _pending_releases(scoped.hass) == []
+
+
+@pytest.mark.parametrize(("stop", "stopped"), [
+    ("*2*0*0##", ["81", "81#4#01", "91#4#02"]),  # General on the main bus: every shutter, as relay_general.
+    ("*2*0*0#4#01##", ["81#4#01"]),  # General behind interface 01: its shutters only.
+    ("*2*1000#0*0#4#01##", ["81#4#01"]),
+    ("*2*0*8##", ["81"]),  # Area 8 on the main bus.
+    ("*2*0*8#4#01##", ["81#4#01"]),  # Area 8 behind interface 01.
+    ("*2*0*#5##", ["81"]),  # A group of unknown membership: every shutter of its bus.
+    ("*2*0*#5#4#02##", ["91#4#02"]),
+    ("*2*0*82##", []),  # A point-to-point Stop of another shutter.
+    ("*2*1*0##", []),  # A general Up stops nothing.
+])
+async def test_a_scope_stop_drops_what_is_held_for_the_shutters_it_addresses(relay, stop, stopped):
+    held = ["81", "81#4#01", "91#4#02"]
+    for key in held:
+        where, _, interface = key.partition("#4#")
+        relay.send(f"*2*1000#1*{where}{'#4#' + interface if interface else ''}##")
+    assert relay.held() == held
+    relay.send(stop)
+    assert relay.held() == [k for k in held if k not in stopped]
+    assert relay.delivered == []
+
+
+async def test_a_group_stop_drops_its_declared_members_only(hass):
+    members = {("#5", None): {"81"}, ("#5", "01"): {"81#4#01"}}
+    relay = Relay(hass, [1000.0])
+    relay.relay = CoverTranslationRelay(hass, relay.delivered.append,
+                                        group_members=lambda where, interface: members.get((where, interface)))
+    for raw in ("*2*1000#1*81##", "*2*1000#1*82##", "*2*1000#1*81#4#01##"):
+        relay.send(raw)
+    relay.send("*2*0*#5#4#01##")
+    assert relay.held() == ["81", "82"]
+    relay.send("*2*1000#0*#5##")
+    assert relay.held() == ["82"]
+    relay.relay.close()
