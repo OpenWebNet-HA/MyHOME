@@ -14,7 +14,7 @@ import pytest
 from OWNd.message import OWNMessage
 
 from custom_components.myhome.cover_motion import END_SETTLE_MARGIN, MotionPosition
-from custom_components.myhome.cover_scope import CoverScope, MyHOMEScopeCover
+from custom_components.myhome.cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
 from tests.test_cover_nonlinear_backend import nonlinear
 from tests.test_cover_profiles import plant as plant_fixture
 from tests.test_cover_travel_scaling import write
@@ -219,6 +219,55 @@ async def test_position_zero_of_a_modelled_scope_cover_is_a_plain_full_run(model
     finally:
         area._cancel_run_timeout()
         area._cancel_stop_task()
+
+
+@pytest.mark.parametrize(("opening", "known"), [(False, True), (False, False), (True, True), (True, False)],
+                         ids=["close_known", "close_unknown", "open_known", "open_unknown"])
+async def test_position_end_of_a_modelled_scope_cover_runs_its_members_as_open_close(modelled, opening, known):
+    """0 % / 100 % of a modelled area on the main bus is its close / open: one frame, the members settle."""
+    m = modelled
+    members = m.plant.covers[:2]  # 11 (modelled) and 12 (linear), both on the first gateway
+    family = CoverFamily()
+    area = MyHOMEScopeCover(
+        hass=m.hass, gateway=m.plant.gateways[0], name="Area 1", entity_name=None, device_id="1", who="2",
+        where="1", interface=None, advanced=False, manufacturer="BTicino", model="Area",
+        travel_time=CLOSING_S, scope=CoverScope.of("1"),
+    )
+    area.hass, area.entity_id = m.hass, "cover.area_1"
+    area.async_write_ha_state = area.async_schedule_update_ha_state = area.async_on_remove = MagicMock()
+    area._motion.configure(m.cover._motion.model)
+    for cover in (*members, area):
+        family.add(cover)
+    if known:
+        at_end(m, 100 if not opening else 0)
+        area._motion.confirm(100 if not opening else 0)
+    raw = OPEN.replace("11", "1") if opening else CLOSE.replace("11", "1")
+
+    def runs():
+        return [(c._full_run_to_end, c._stop_task is not None, c.is_opening, c.is_closing) for c in members]
+
+    try:
+        await (area.async_open_cover() if opening else area.async_close_cover())
+        await settle()
+        reference = (commands(m), runs())
+        for cover in (*members, area):
+            cover._cancel_stop_task()
+            cover._cancel_wall_settle()
+        area._cancel_run_timeout()
+        m.sent.clear()
+        if known:
+            at_end(m, 100 if not opening else 0)
+            area._motion.confirm(100 if not opening else 0)
+        await area.async_set_cover_position(position=100 if opening else 0)
+        await settle()
+        assert (commands(m), runs()) == reference
+        assert reference[0] == [raw]
+        assert all(full_run and settling for full_run, settling, _, _ in reference[1])
+    finally:
+        for cover in (*members, area):
+            cover._cancel_stop_task()
+            cover._cancel_wall_settle()
+        area._cancel_run_timeout()
 
 
 # A run from mid travel settles at the model's remaining time.

@@ -2097,13 +2097,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         target_motion = MotionPosition.at_height(float(target_position) / 100)
         current_motion = self._motion.sample(time.monotonic())
         if target_position in (0, 100) and current_motion != target_motion:
-            # A full run, as open / close: no Stop frame, the limit switch ends it
-            # and re-anchors the model, and it settles on the travel timer.
-            opening = target_position == 100
-            if self._settles_full_run(opening):
-                await self._async_run_to_end(opening)
-            else:
-                await self._async_move("open" if opening else "close")
+            # A full run, the same as open / close: no Stop frame, the limit switch
+            # ends it and re-anchors the model, and it settles on the travel timer
+            # (a scope cover's members settle, as on its own open / close).
+            await (self.async_open_cover() if target_position == 100 else self.async_close_cover())
             return
         if current_motion is None:
             raise HomeAssistantError("Complete a full opening or closing run before setting an intermediate position",
