@@ -11,15 +11,25 @@ that time supersedes it, so the usual sequence is handled exactly as before; so 
 translation of a Stop, after which the run is over. Only a translation that nothing followed
 reaches the cover, as the movement status it stands for, dated when the translation arrived.
 
-The relay never stands the translation of a Stop (`*2*1000#0*WHERE##`) for anything: the cover
-platform routes it to the cover itself, which halts an active run on it (#645). Group, area and
-general translations are never relayed either: they name no single actuator.
+The relay never stands the translation of a Stop (`*2*1000#0*WHERE##`, or the advanced Stop
+`*2*1000#10#…*WHERE##`) for anything: the cover platform routes it to the cover itself, which
+halts an active run on it (#645). Group, area and general translations are never relayed on
+their own either: they name no single actuator.
 
-A Stop to a group, an area or every shutter (`*2*0*#G##`, `*2*0*A##`, `*2*0*0##`, or its
-translation `*2*1000#0*…##`) stops each actuator it addresses, and the gateway may drop their
-statuses as well: it drops what is held for every shutter it addresses, or that shutter would
-start one second after it stopped. A group's shutters are the members `myhome.yaml` declares for
-it; a group nobody declared may hold any shutter of its bus, so its Stop drops all of them.
+A Stop to a group, an area or every shutter (`*2*0*#G##`, `*2*0*A##`, `*2*0*0##`, the advanced
+`*2*10#…##`, or their translations `*2*1000#0*…##`, `*2*1000#10#…##`) stops each actuator it
+addresses, and the gateway may drop their statuses as well: it drops what is held for every
+shutter it addresses, or that shutter would start one second after it stopped. A group's
+shutters are the members `myhome.yaml` declares for it; a group nobody declared may hold any
+shutter of its bus, so its Stop drops all of them.
+
+An Up or a Down to a scope reaches each of those shutters too, and the held direction must not
+overwrite it a second later. Its status (`*2*1*0##`, `*2*2*#G##`, …) is relayed to every cover
+it addresses, which follows it: it drops what is held for them, as their own status would. Its
+translation (`*2*1000#1*0##`, …) is not relayed to the covers: a shutter held the other way now
+holds the scope's direction, dated at that translation; one held the same way keeps its own. A
+group nobody declared may not hold that shutter: it drops it instead, so that it never shows
+going the wrong way.
 
 A shutter locked via WHO 14 (`*14*0*WHERE##`) answers an Up or a Down with the translations
 alone and does not move (live F461 + F411/2 trace): from its lock to its unlock (`*14*1*WHERE##`)
@@ -43,6 +53,10 @@ from .const import BUS_ROUTING, LOGGER, area_of_where
 
 #: Seconds a direction translation waits for the actuator's own status (which follows in ~0.4 s).
 TRANSLATION_GRACE = 1.0
+
+#: The WHATs of a Stop (10: the advanced one), and the movement (1 up, 2 down) of each direction.
+_STOP = frozenset({0, 10})
+_DIRECTION = {1: 1, 11: 1, 13: 1, 2: 2, 12: 2, 14: 2}
 
 # `*2*1000#<1|2>*<where>[#4#<interface>]##`: one shutter's direction, nothing else.
 _DIRECTION_TRANSLATION = re.compile(r"^\*2\*1000#(?P<what>[12])\*(?P<where>\d+(?:#\d+)*)##$")
@@ -121,9 +135,14 @@ class CoverTranslationRelay:
         if not isinstance(message, OWNAutomationEvent):
             return
         if message.is_general or message.is_area or message.is_group:
-            if message.effective_what == 0:
+            what = message.effective_what
+            if what in _STOP or (what in _DIRECTION and not message.is_translation):
                 for key in self._addressed_by(message):
-                    self.discard(key)  # The scope's Stop stopped that shutter too.
+                    self.discard(key)  # The scope's Stop stopped it, or the cover follows the scope's status.
+            elif what in _DIRECTION:
+                known = not message.is_group or bool(self._members(message))
+                for key in self._addressed_by(message):
+                    self._redirect(key, message, _DIRECTION[what], known)
             return
         key = self._key(message)
         if not message.is_translation:
@@ -134,15 +153,33 @@ class CoverTranslationRelay:
         if movement is not None and key in self._locked:
             return  # A locked actuator does not move: its translation stands for nothing.
         if movement is None:
-            if message.effective_what == 0:
+            if message.effective_what in _STOP:
                 self.discard(key)  # A Stop translated after the direction: that run is over.
             return
+        self._hold(key, movement)
+
+    def _hold(self, key: str, movement: TranslatedMovement) -> None:
         held = self._held.get(key)
         if held is not None and held.movement.state == movement.state:
             return  # The same direction again: the first one dates the movement.
         self.discard(key)
         timer = self.hass.loop.call_later(self.grace, self._release, key)
         self._held[key] = _Held(movement, monotonic(), timer)
+
+    def _redirect(self, key: str, translation: OWNAutomationEvent, state: int, known: bool) -> None:
+        """The held shutter `key` now runs as the scope's translated direction `state` says."""
+        held = self._held[key].movement
+        if held.state == state:
+            return  # Already that way: its own translation dates the movement.
+        if not known:
+            self.discard(key)  # A group of unknown members may not hold it: never show it the wrong way.
+            return
+        routing = f"{BUS_ROUTING}{held.interface}" if held.interface else ""
+        self._hold(key, TranslatedMovement(translation, f"*2*{state}*{held.where}{routing}##"))
+
+    def _members(self, message: OWNAutomationEvent) -> Collection[str] | None:
+        """The shutters `myhome.yaml` declares for the group of `message`, or None."""
+        return self.group_members(str(message.where), message.interface or None) if self.group_members else None
 
     def _addressed_by(self, message: OWNAutomationEvent) -> list[str]:
         """The held shutters a group, area or general frame addresses (as `CoverScope.contains`)."""
@@ -156,7 +193,7 @@ class CoverTranslationRelay:
         if message.is_area:
             return [k for k in self._held
                     if bus_of(k) == interface and area_of_where(k.partition(BUS_ROUTING)[0]) == where]
-        members = self.group_members(where, interface) if self.group_members else None
+        members = self._members(message)
         if members:
             return [k for k in self._held if k in members]
         return [k for k in self._held if bus_of(k) == interface]  # Undeclared: any shutter of its bus.

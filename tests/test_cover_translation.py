@@ -258,10 +258,10 @@ async def test_the_gateway_hands_every_translation_on_and_names_the_held_ones(ha
                        "myhome_group_automation_event", "myhome_general_light_event"):
         hass.bus.async_listen(event_type, events.append)
     caplog.set_level(logging.DEBUG, logger="custom_components.myhome")
-    for raw in (*LIVE_UP, "*2*1000#1*0##", "*2*1000#1*5##", "*2*1000#2*#5##", "*1*1000#1*53##"):
+    for raw in (*LIVE_UP, "*2*1000#1*0##", "*2*1000#1*5##", "*2*1000#1*#5##", "*1*1000#1*53##"):
         await dispatcher.process_message(frame(raw))
     await hass.async_block_till_done()
-    assert [str(m) for m in seen] == [*LIVE_UP, "*2*1000#1*0##", "*2*1000#1*5##", "*2*1000#2*#5##", "*1*1000#1*53##"]
+    assert [str(m) for m in seen] == [*LIVE_UP, "*2*1000#1*0##", "*2*1000#1*5##", "*2*1000#1*#5##", "*1*1000#1*53##"]
     assert events == []  # No translation fires a bus event, as before.
     assert relay.held() == ["81"]  # Only the point-to-point direction is held.
     held = [r.getMessage() for r in caplog.records if "Holding command translation" in r.getMessage()]
@@ -269,7 +269,7 @@ async def test_the_gateway_hands_every_translation_on_and_names_the_held_ones(ha
                     "Cover 81 is opening (command translation)."]
     ignored = [r.getMessage() for r in caplog.records if "Ignoring translation message" in r.getMessage()]
     assert ignored == [f"[gw] Ignoring translation message `{raw}`" for raw in
-                       ("*2*1000#0*81##", "*2*1000#1*0##", "*2*1000#1*5##", "*2*1000#2*#5##", "*1*1000#1*53##")]
+                       ("*2*1000#0*81##", "*2*1000#1*0##", "*2*1000#1*5##", "*2*1000#1*#5##", "*1*1000#1*53##")]
     relay.release()
     assert [str(m) for m in relay.delivered] == ["*2*1000#1*81##"]
 
@@ -299,7 +299,7 @@ async def test_the_platform_delivers_a_lone_translation_to_its_cover_only(hass):
     assert not cover.is_closing
     async_dispatcher_send(hass, signal, frame("*2*1000#2*81##"))
     async_dispatcher_send(hass, signal, frame("*2*1000#1*82##"))  # No cover there: none is discovered.
-    async_dispatcher_send(hass, signal, frame("*2*1000#1*0##"))
+    async_dispatcher_send(hass, signal, frame("*2*1000#2*0##"))  # The same way: nothing changes.
     assert not cover.is_closing  # Held for the grace.
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=TRANSLATION_GRACE + .5))
     await hass.async_block_till_done()
@@ -864,7 +864,7 @@ async def test_a_group_area_or_general_stop_in_the_window_cancels_the_held_movem
     ("*2*0*#5##", ["81"]),  # A group of unknown membership: every shutter of its bus.
     ("*2*0*#5#4#02##", ["91#4#02"]),
     ("*2*0*82##", []),  # A point-to-point Stop of another shutter.
-    ("*2*1*0##", []),  # A general Up stops nothing.
+    ("*2*1000#1*0##", []),  # A general Up translated, the way they already go: nothing to drop.
 ])
 async def test_a_scope_stop_drops_what_is_held_for_the_shutters_it_addresses(relay, stop, stopped):
     held = ["81", "81#4#01", "91#4#02"]
