@@ -179,8 +179,9 @@ async def test_failed_direction_keeps_preexisting_motion_and_zero_height_can_sti
              patch('custom_components.myhome.cover.asyncio.sleep', side_effect=wait):
             await cover.async_set_cover_position(position=0)
             await cover._stop_task
-        # 0 % on the sill is a full run to the limit switch, settled on the travel timer.
-        assert waits == [pytest.approx(cover._travel_for(False) + END_SETTLE_MARGIN)]
+        # 0 % on the sill is a full run to the limit switch, settled at the model's
+        # remaining time (the 0.5 s that close the slats).
+        assert waits == [pytest.approx(0.5 + END_SETTLE_MARGIN)]
         assert cover.is_closed
         plant.gateways[0].send.reset_mock()
         await cover.async_set_cover_position(position=0)

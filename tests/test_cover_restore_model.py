@@ -65,8 +65,8 @@ async def test_restored_estimate_is_re_anchored_by_the_next_full_run(modelled):
                                        "model": _motion_fingerprint(m.cover._motion.model)}})
     await m.cover.async_close_cover()
     start = await written_and_started(m, CLOSE)
-    # Settled on the full closing time, as every full run of a timed cover (#834).
-    await until(m, start, m.cover._travel_for(False) + END_SETTLE_MARGIN + 0.1)
+    remaining = m.cover._motion.model.duration(MotionPosition(0.5, 1), MotionPosition(0, 0), opening=False)
+    await until(m, start, remaining + END_SETTLE_MARGIN + 0.1)
     assert state(m) == ("closed", 0)
     assert m.cover._motion.position == MotionPosition(0, 0)
     assert saved(m.cover)["motion"]["height"] == 0

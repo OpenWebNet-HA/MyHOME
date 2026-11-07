@@ -761,6 +761,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Full-travel seconds for the given direction (motors are often slower going up)."""
         return self._strategy.travel_for_direction(opening)
 
+    def _settle_travel_for(self, opening: bool) -> float:
+        """Motor seconds from the run's start to its end stop, for the end-of-run settle.
+
+        With a motion model and a known start, the model's remaining time; otherwise
+        (a linear cover, an unknown start, a run not yet anchored) the full travel time.
+        """
+        motion = self._motion
+        if (motion.model is not None and motion.position is not None
+                and motion.anchor is not None and motion.opening == opening):
+            return motion.remaining(MotionPosition.at_height(1 if opening else 0))
+        return self._travel_for(opening)
+
     def _curtain_travel_for(self, opening: bool) -> float:
         """Curtain-only travel seconds for the given direction (end-to-end travel minus slat rotation)."""
         return self._strategy.curtain_travel_for(opening)
@@ -1989,7 +2001,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._end_run_from_unknown = False
                         return
                     self._travel_recomputed.clear()
-                    delay = self._travel_for(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
+                    delay = self._settle_travel_for(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
                     if delay <= 0:
                         break
                     sleep_task = asyncio.create_task(asyncio.sleep(delay))
@@ -2035,7 +2047,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         generation = self._run_generation
         elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
-        delay = max(0.0, self._travel_for(opening) + END_SETTLE_MARGIN - elapsed)
+        delay = max(0.0, self._settle_travel_for(opening) + END_SETTLE_MARGIN - elapsed)
         self._full_run_to_end = True
 
         @callback

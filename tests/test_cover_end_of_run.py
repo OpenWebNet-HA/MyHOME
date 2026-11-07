@@ -194,3 +194,44 @@ async def test_an_end_already_reached_sends_nothing(modelled):
     at_end(m, 0)
     await m.cover.async_set_cover_position(position=0)
     assert commands(m) == []
+
+
+# A run from mid travel settles at the model's remaining time.
+
+def _at_half(m):
+    at_end(m, 100)
+    m.cover._motion.position = MotionPosition(0.5, 1)
+    m.cover._attr_current_cover_position = m.cover._start_position = 50
+    return m.cover._motion.model.duration(MotionPosition(0.5, 1), MotionPosition(0, 0), opening=False)
+
+
+async def test_direct_close_from_mid_travel_settles_at_the_remaining_model_time(modelled):
+    m = modelled
+    remaining = _at_half(m)
+    assert remaining < CLOSING_S
+    await m.cover.async_close_cover()
+    start = await written_and_started(m, CLOSE)
+    await until(m, start, remaining + END_SETTLE_MARGIN - 0.2)
+    assert m.cover.state == "closing"
+    await until(m, start, remaining + END_SETTLE_MARGIN + 0.1)
+    assert state(m) == ("closed", 0)
+    assert commands(m) == [CLOSE]
+
+
+async def test_a_wall_close_from_mid_travel_arms_the_remaining_model_time(modelled):
+    m = modelled
+    remaining = _at_half(m)
+    with patch("custom_components.myhome.cover.async_call_later") as call_later:
+        await wall_run(m, CLOSE)
+    ((_, delay, _),) = [call.args for call in call_later.call_args_list]
+    assert delay == pytest.approx(remaining + END_SETTLE_MARGIN)
+
+
+async def test_a_run_from_an_unknown_start_settles_on_the_full_time(modelled):
+    m = modelled
+    await m.cover.async_close_cover()
+    start = await written_and_started(m, CLOSE)
+    await until(m, start, CLOSING_S + END_SETTLE_MARGIN - 0.2)
+    assert m.cover.state == "closing"
+    await until(m, start, CLOSING_S + END_SETTLE_MARGIN + 0.1)
+    assert state(m) == ("closed", 0)
