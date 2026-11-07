@@ -332,7 +332,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     )
     shutters.start()
     # A direction translation no status followed stands for the shutter's movement.
-    translations = CoverTranslationRelay(hass, shutters.relay)
+    translations = CoverTranslationRelay(hass, shutters.relay, group_members=family.group_members)
     config_entry.async_on_unload(
         async_dispatcher_connect(hass, f"myhome_message_{shutters.mac}", translations.handle_message)
     )

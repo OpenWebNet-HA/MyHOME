@@ -15,6 +15,12 @@ The relay never stands the translation of a Stop (`*2*1000#0*WHERE##`) for anyth
 platform routes it to the cover itself, which halts an active run on it (#645). Group, area and
 general translations are never relayed either: they name no single actuator.
 
+A Stop to a group, an area or every shutter (`*2*0*#G##`, `*2*0*A##`, `*2*0*0##`, or its
+translation `*2*1000#0*…##`) stops each actuator it addresses, and the gateway may drop their
+statuses as well: it drops what is held for every shutter it addresses, or that shutter would
+start one second after it stopped. A group's shutters are the members `myhome.yaml` declares for
+it; a group nobody declared may hold any shutter of its bus, so its Stop drops all of them.
+
 A shutter locked via WHO 14 (`*14*0*WHERE##`) answers an Up or a Down with the translations
 alone and does not move (live F461 + F411/2 trace): from its lock to its unlock (`*14*1*WHERE##`)
 its translations stand for nothing. A lock set while Home Assistant was not listening is not
@@ -25,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from time import monotonic
 from typing import Any
@@ -33,7 +39,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant, callback
 from OWNd.message import OWNActuatorLockEvent, OWNAutomationEvent
 
-from .const import BUS_ROUTING, LOGGER
+from .const import BUS_ROUTING, LOGGER, area_of_where
 
 #: Seconds a direction translation waits for the actuator's own status (which follows in ~0.4 s).
 TRANSLATION_GRACE = 1.0
@@ -87,10 +93,12 @@ class CoverTranslationRelay:
     """Hold each shutter's direction translation until its own status supersedes it, or deliver it."""
 
     def __init__(self, hass: HomeAssistant, deliver: Callable[[TranslatedMovement], None],
-                 grace: float = TRANSLATION_GRACE) -> None:
+                 grace: float = TRANSLATION_GRACE,
+                 group_members: Callable[[str, str | None], Collection[str] | None] | None = None) -> None:
         self.hass = hass
         self.deliver = deliver
         self.grace = grace
+        self.group_members = group_members
         self._held: dict[str, _Held] = {}
         self._locked: set[str] = set()
 
@@ -112,6 +120,11 @@ class CoverTranslationRelay:
             return
         if not isinstance(message, OWNAutomationEvent):
             return
+        if message.is_general or message.is_area or message.is_group:
+            if message.effective_what == 0:
+                for key in self._addressed_by(message):
+                    self.discard(key)  # The scope's Stop stopped that shutter too.
+            return
         key = self._key(message)
         if not message.is_translation:
             if message.is_opening is not None or message.is_closing is not None:
@@ -130,6 +143,23 @@ class CoverTranslationRelay:
         self.discard(key)
         timer = self.hass.loop.call_later(self.grace, self._release, key)
         self._held[key] = _Held(movement, monotonic(), timer)
+
+    def _addressed_by(self, message: OWNAutomationEvent) -> list[str]:
+        """The held shutters a group, area or general frame addresses (as `CoverScope.contains`)."""
+        where, interface = str(message.where), message.interface or None
+
+        def bus_of(key: str) -> str | None:
+            return key.partition(BUS_ROUTING)[2] or None
+
+        if message.is_general:
+            return [k for k in self._held if interface is None or bus_of(k) == interface]
+        if message.is_area:
+            return [k for k in self._held
+                    if bus_of(k) == interface and area_of_where(k.partition(BUS_ROUTING)[0]) == where]
+        members = self.group_members(where, interface) if self.group_members else None
+        if members:
+            return [k for k in self._held if k in members]
+        return [k for k in self._held if bus_of(k) == interface]  # Undeclared: any shutter of its bus.
 
     @callback
     def _release(self, key: str) -> None:
