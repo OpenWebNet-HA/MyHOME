@@ -14,6 +14,7 @@ import pytest
 from OWNd.message import OWNMessage
 
 from custom_components.myhome.cover_motion import END_SETTLE_MARGIN, MotionPosition
+from custom_components.myhome.cover_scope import CoverScope, MyHOMEScopeCover
 from tests.test_cover_nonlinear_backend import nonlinear
 from tests.test_cover_profiles import plant as plant_fixture
 from tests.test_cover_travel_scaling import write
@@ -194,6 +195,30 @@ async def test_an_end_already_reached_sends_nothing(modelled):
     at_end(m, 0)
     await m.cover.async_set_cover_position(position=0)
     assert commands(m) == []
+
+
+async def test_position_zero_of_a_modelled_scope_cover_is_a_plain_full_run(modelled):
+    """A scope cover does not settle its own full runs: 0 % writes one close and no Stop, settles nothing."""
+    m = modelled
+    area = MyHOMEScopeCover(
+        hass=m.hass, gateway=m.plant.gateways[0], name="Area 1", entity_name=None, device_id="1", who="2",
+        where="1", interface=None, advanced=False, manufacturer="BTicino", model="Area",
+        travel_time=CLOSING_S, scope=CoverScope.of("1"),
+    )
+    area.hass, area.entity_id = m.hass, "cover.area_1"
+    area.async_write_ha_state = area.async_schedule_update_ha_state = MagicMock()
+    area._motion.configure(m.cover._motion.model)  # the same panel profile, bound to the scope cover
+    assert not area._settles_full_run(False)
+    try:
+        await area.async_set_cover_position(position=0)
+        await settle()
+        assert commands(m) == ["*2*2*1##"]
+        assert area._stop_task is None and area._full_run_to_end is False  # no settle on the travel timer
+        await m.clock.advance(CLOSING_S + END_SETTLE_MARGIN + 0.1)
+        assert commands(m) == ["*2*2*1##"]  # the limit switch ends the run: no Stop is written
+    finally:
+        area._cancel_run_timeout()
+        area._cancel_stop_task()
 
 
 # A run from mid travel settles at the model's remaining time.
