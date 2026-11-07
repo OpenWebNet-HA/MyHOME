@@ -44,6 +44,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .cover_translation import movement_translation
 from .topology import peer_handles_who
 from .where_grammar import is_central_thermo_where, is_probe, where_param
 
@@ -436,6 +437,14 @@ class GatewayEventDispatcher:
                             f"myhome_group_automation_event_{self.handler.mac}",
                             group_payload,
                         )
+            elif (movement := movement_translation(message)) is not None:
+                # Covers hold it and take it as the movement when no status follows (cover_translation).
+                self._logger.debug(
+                    "%s Holding command translation `%s` in case no status follows: %s",
+                    self.handler.log_id,
+                    message,
+                    movement.human_readable_log,
+                )
             else:
                 self._logger.debug(
                     "%s Ignoring translation message `%s`",

@@ -46,6 +46,7 @@ from .cover_profiles import (
     travel_time,
     write_profile,
 )
+from .cover_translation import event_age
 from .data import MyHOMERuntimeData
 from .typing_compat import as_any
 
@@ -500,7 +501,8 @@ class CalibrationSession:
         if self.phase.startswith("starting_"):
             if expected and self.armed:
                 self.phase = "opening" if opening else "closing"
-                self.started_at = monotonic()
+                # A command translation standing for a missing status dates the run on its arrival.
+                self.started_at = monotonic() - event_age(event)
                 self.arm_deadline(self.travel_seconds, self.travel_reason)
                 self.emit()
             elif expected or opposite:
