@@ -21,6 +21,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
     MESSAGE_TYPE_ACTION,
     MESSAGE_TYPE_FAN_SPEED,
+    MESSAGE_TYPE_MODE,
+    MESSAGE_TYPE_MODE_TARGET,
     OWNEvent,
 )
 
@@ -639,13 +641,15 @@ async def test_central_unit_event_dispatches_central_mode(hass: HomeAssistant, m
     central._attr_hvac_modes = [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT, HVACMode.COOL]
     central.async_schedule_update_ha_state = MagicMock()
 
-    # MESSAGE_TYPE_MODE: *4*1*#0## (Mode Heat)
-    event_mode = OWNEvent.parse("*4*1*#0##")
+    # Manual heating mode, rather than the WHAT 1 season-only report.
+    event_mode = OWNEvent.parse("*4*110*#0##")
+    assert event_mode.message_type == MESSAGE_TYPE_MODE
     central.handle_event(event_mode)
     assert central.hvac_mode == HVACMode.HEAT
 
-    # MESSAGE_TYPE_MODE_TARGET: *4*110#0215*#0## (Mode Heat, Target 21.5)
+    # MESSAGE_TYPE_MODE_TARGET: manual heating with target 21.5.
     event_target = OWNEvent.parse("*4*110#0215*#0##")
+    assert event_target.message_type == MESSAGE_TYPE_MODE_TARGET
     central.handle_event(event_target)
     assert central.hvac_mode == HVACMode.HEAT
     assert central.target_temperature == 21.5

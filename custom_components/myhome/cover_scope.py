@@ -90,6 +90,14 @@ class CoverFamily:
             scopes.append(own)
         return [c._device_id for c in self._covers if any(s.contains(c) for s in scopes)]
 
+    def group_members(self, where: str, interface: str | None) -> frozenset[str] | None:
+        """The address keys `myhome.yaml` declares for a group, or None when no group cover declares any."""
+        declared = frozenset[str]().union(*(
+            c.scope.members for c in self._covers
+            if c.scope is not None and c.scope.kind == "group" and (c.scope.where, c.scope.interface) == (where, interface)
+        ))
+        return declared or None
+
     @callback
     def membership_changed(self) -> None:
         """A cover joined or left Home Assistant: every scope cover re-resolves whom it follows."""

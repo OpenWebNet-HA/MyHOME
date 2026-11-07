@@ -47,11 +47,15 @@ from tests.conftest import attach_runtime
 
 
 @pytest.fixture
-def mock_gateway():
+def mock_gateway(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
     gw = MagicMock()
     gw.mac = "00:03:50:00:12:34"
     gw.unique_id = "00:03:50:00:12:34"
     gw.log_id = "[Test Gateway]"
+    gw.config_entry = MockConfigEntry(domain=DOMAIN, data={"mac": gw.mac})
+    gw.config_entry.add_to_hass(hass)
     gw.send = AsyncMock()
     gw.send_status_request = AsyncMock()
     return gw
@@ -1598,12 +1602,10 @@ class TestTiltAuditRegressions:
 
     @staticmethod
     def _wire_options(cover, hass, options):
-        entry = MagicMock()
-        entry.options = options
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+        entry = MockConfigEntry(domain=DOMAIN, data={"mac": cover._gateway_handler.mac}, options=options)
+        entry.add_to_hass(hass)
         cover._gateway_handler.config_entry = entry
-        hass.config_entries.async_update_entry = MagicMock(
-            side_effect=lambda e, options: setattr(e, "options", options)
-        )
         return entry
 
     def test_dimension11_leaves_no_dead_state(self, cover):
@@ -1617,26 +1619,28 @@ class TestTiltAuditRegressions:
     @pytest.mark.asyncio
     async def test_slat_time_only_does_not_store_travel_calibration(self, cover, hass):
         """Finding 2: a slat-only call must not turn the defaults into a stored calibration."""
-        entry = self._wire_options(cover, hass, {})
+        self._wire_options(cover, hass, {})
         await cover.async_set_travel_time(slat_time=3.5)
-        stored = entry.options["cover_travel_times"]["31"]
+        stored = cover.native_cover_fallback()
         assert stored == {"slat_time": 3.5}
 
     @pytest.mark.asyncio
     async def test_slat_time_only_keeps_existing_travel_record(self, cover, hass):
-        entry = self._wire_options(
+        self._wire_options(
             cover, hass, {"cover_travel_times": {"31": {"down": 20.0, "up": 22.0, "source": "measured"}}}
         )
         await cover.async_set_travel_time(slat_time=1.5)
-        assert entry.options["cover_travel_times"]["31"] == {
+        assert cover.native_cover_fallback() == {
             "down": 20.0, "up": 22.0, "source": "measured", "slat_time": 1.5,
+            "provenance": {direction: {"source": "measured", "recorded_at": None, "origin_unique_id": None}
+                           for direction in ("opening", "closing")},
         }
 
     @pytest.mark.asyncio
     async def test_travel_time_call_stores_slat_time_with_it(self, cover, hass):
-        entry = self._wire_options(cover, hass, {})
+        self._wire_options(cover, hass, {})
         await cover.async_set_travel_time(travel_time=30, slat_time=2.5)
-        stored = entry.options["cover_travel_times"]["31"]
+        stored = cover.native_cover_fallback()
         assert stored["down"] == 30 and stored["slat_time"] == 2.5
 
     def test_stored_slat_time_is_restored(self, make_cover):
@@ -2266,12 +2270,12 @@ class TestTiltAuditRegressions:
     @pytest.mark.asyncio
     async def test_reset_on_advanced_blind_restores_the_slat_time(self, make_cover, hass):
         cover = make_cover(advanced=True)
-        entry = self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 4.0}}})
+        self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 4.0}}})
         cover._slat_time = 4.0
         with patch.object(cover, "_device_config", return_value={"slat_time": 1.5}):
             await cover.async_reset_travel_time()
         assert cover._slat_time == 1.5
-        assert "31" not in entry.options["cover_travel_times"]
+        assert cover.native_cover_fallback() is None
         assert "travel_time" not in cover._attr_extra_state_attributes
 
     @pytest.mark.asyncio
@@ -2321,13 +2325,13 @@ class TestTiltAuditRegressions:
 
     @pytest.mark.asyncio
     async def test_reset_restores_the_configured_slat_time(self, cover, hass):
-        entry = self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 4.0}}})
+        self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 4.0}}})
         cover._slat_time = 4.0
         with patch.object(cover, "_device_config", return_value={"slat_time": 1.5}):
             await cover.async_reset_travel_time()
         assert cover._slat_time == 1.5
         assert cover._attr_extra_state_attributes["slat_time"] == 1.5
-        assert "31" not in entry.options["cover_travel_times"]
+        assert cover.native_cover_fallback() is None
 
     def test_non_numeric_slat_time_is_a_schema_error(self):
         """Finding 7: a bad slat_time is rejected as a schema error, never a bare ValueError."""
@@ -2406,7 +2410,7 @@ class TestTiltAuditRegressions:
     @pytest.mark.asyncio
     async def test_calibrate_preserves_stored_slat_time(self, cover, hass):
         """Review: async_calibrate must not drop a previously stored slat_time."""
-        entry = self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 3.5}}})
+        self._wire_options(cover, hass, {"cover_travel_times": {"31": {"slat_time": 3.5}}})
         with (
             patch.object(cover, "_calibration_run", AsyncMock(side_effect=[20.0, 21.0, 22.0])),
             patch("asyncio.sleep", new=AsyncMock()),
@@ -2415,7 +2419,7 @@ class TestTiltAuditRegressions:
         assert res["down"] == 21.0
         assert res["up"] == 22.0
         assert res["slat_time"] == 3.5
-        assert entry.options["cover_travel_times"]["31"]["slat_time"] == 3.5
+        assert cover.native_cover_fallback()["slat_time"] == 3.5
 
     @pytest.mark.asyncio
     async def test_slat_time_rejected_without_slat_tilt(self, make_cover):

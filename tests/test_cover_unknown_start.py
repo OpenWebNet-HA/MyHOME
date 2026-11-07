@@ -244,7 +244,7 @@ async def test_promotion_from_simple_forgets_the_optimistic_state(hass, gateway,
     cover.handle_event(OWNEvent.parse("*2*0*05##"))
     assert cover.is_closed is True  # the optimistic state of an assumed-state cover
     assert cover.current_cover_position is None
-    cover._persist_calibration = MagicMock()
+    cover._persist_calibration = AsyncMock()
     await cover.async_set_travel_time(6.0, 6.0)
     assert cover.strategy.name == "timed"
     assert cover.assumed_state is False

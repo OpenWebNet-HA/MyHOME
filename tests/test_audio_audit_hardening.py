@@ -452,7 +452,9 @@ async def test_options_flow_validates_and_keeps_the_companion(hass):
     entry.add_to_hass(hass)
     flow = MyhomeOptionsFlowHandler(entry)
     flow.hass = hass
-    form = await flow.async_step_init()
+    menu = await flow.async_step_init()
+    assert menu["type"] == "menu"
+    form = await flow.async_step_user()
     schema_keys = {str(key) for key in form["data_schema"].schema}
     assert CONF_DECODER_COMPANION.format(1) in schema_keys
 

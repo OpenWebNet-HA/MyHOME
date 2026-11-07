@@ -1,0 +1,33 @@
+name: panel-tests
+
+on:
+  push:
+    branches: [main, master, "v2-*"]
+    paths:
+      - "custom_components/myhome/frontend/**"
+      - "tests/frontend/**"
+      - "package*.json"
+      - ".github/workflows/panel-tests.yml"
+  pull_request:
+    paths:
+      - "custom_components/myhome/frontend/**"
+      - "tests/frontend/**"
+      - "package*.json"
+      - ".github/workflows/panel-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  panel-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run test:panel

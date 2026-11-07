@@ -1363,82 +1363,88 @@ class CommandWorkerPool:
                         task["message"],
                         worker_id,
                     )
-                    # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
-                    # or a prior failed send) calls `connect()` directly, preserving
-                    # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
-                    # single-slot gateways like MH201 momentarily close TCP during
-                    # negotiation (OpenWebNet-HA/OWNd#132). Only a mid-flight socket
-                    # drop inside `send()` uses OWNd's single-attempt fast reconnect;
-                    # if `send()` returns None, `_cancel_written(task)` aborts without
-                    # re-queuing so non-idempotent commands whose ACK was lost are
-                    # never replayed.
-                    if not session_is_open(_command_session):
-                        res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
+                    async with task.get("command_lock", asyncio.Lock()):
+                        guard = task.get("guard")
+                        if guard is not None and not guard():
                             _cancel_written(task)
-                            return
+                            continue
+                        # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
+                        # or a prior failed send) calls `connect()` directly, preserving
+                        # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
+                        # single-slot gateways like MH201 momentarily close TCP during
+                        # negotiation (OpenWebNet-HA/OWNd#132). Only a mid-flight socket
+                        # drop inside `send()` uses OWNd's single-attempt fast reconnect;
+                        # if `send()` returns None, `_cancel_written(task)` aborts without
+                        # re-queuing so non-idempotent commands whose ACK was lost are
+                        # never replayed.
                         if not session_is_open(_command_session):
-                            LOGGER.warning(
-                                "%s Command session unavailable; message `%s` not sent.",
-                                self.log_id,
-                                task["message"],
-                            )
+                            res = await _command_session.connect()
+                            if self._connect_refused(res, worker_id):
+                                _cancel_written(task)
+                                return
+                            if not session_is_open(_command_session):
+                                LOGGER.warning(
+                                    "%s Command session unavailable; message `%s` not sent.",
+                                    self.log_id,
+                                    task["message"],
+                                )
+                                _cancel_written(task)
+                                continue
+                        if guard is not None and not guard():
                             _cancel_written(task)
                             continue
                         if isinstance(written, asyncio.Future) and written.cancelled():
-                            # Re-check after `connect()`: OWNd's 5-attempt retry loop
-                            # (~13.3 s + handshake latency) can outlast LOCK_WRITE_TIMEOUT,
-                            # and zero bytes of this frame have been written yet.
+                            # The lock/connect await may outlast the caller's timeout.
                             LOGGER.debug(
                                 "%s Message `%s` was withdrawn while opening command session; not sending.",
                                 self.log_id,
                                 task["message"],
                             )
                             continue
-                    task_start = time.time()
-                    self.bus_monitor.record_frame(
-                        direction="tx",
-                        raw=str(task["message"]),
-                        parsed=(
-                            task["message"]
-                            if isinstance(task["message"], OWNMessage)
-                            else None
-                        ),
-                    )
-                    written_at = time.monotonic()
-                    is_exposed = self._is_exposed_target(task)
-                    self._in_flight_messages.append(task["message"])
-                    try:
-                        collected = await _command_session.send(
-                            message=task["message"],
-                            is_status_request=task["is_status_request"] or is_exposed,
+                        task_start = time.time()
+                        self.bus_monitor.record_frame(
+                            direction="tx",
+                            raw=str(task["message"]),
+                            parsed=(
+                                task["message"]
+                                if isinstance(task["message"], OWNMessage)
+                                else None
+                            ),
                         )
-                    finally:
-                        with contextlib.suppress(ValueError):
-                            self._in_flight_messages.remove(task["message"])
-                    if collected is None and not (is_exposed and session_is_open(_command_session)):
-                        _cancel_written(task)
-                    else:
-                        _resolve_written(task, written_at)
-                        self.handler._record_tx(written_at, task["message"])
-                    if collected and isinstance(collected, list):
-                        for resp in collected:
-                            raw_resp = str(resp)
-                            if self.bus_monitor.has_frame_since(
-                                task_start, direction="rx", raw=raw_resp
-                            ):
-                                continue
-                            frame = self.bus_monitor.record_frame(
-                                direction="rx",
-                                raw=raw_resp,
-                                parsed=resp if isinstance(resp, OWNMessage) else None,
+                        written_at = time.monotonic()
+                        is_exposed = self._is_exposed_target(task)
+                        self._in_flight_messages.append(task["message"])
+                        try:
+                            collected = await _command_session.send(
+                                message=task["message"],
+                                is_status_request=task["is_status_request"] or is_exposed,
                             )
-                            if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
-                                dispatcher_send(
-                                    self.hass, f"myhome_message_{self.mac}", resp
+                        finally:
+                            with contextlib.suppress(ValueError):
+                                self._in_flight_messages.remove(task["message"])
+                        if collected is None and not (is_exposed and session_is_open(_command_session)):
+                            _cancel_written(task)
+                        else:
+                            _resolve_written(task, written_at)
+                            self.handler._record_tx(written_at, task["message"])
+                        if collected and isinstance(collected, list):
+                            for resp in collected:
+                                raw_resp = str(resp)
+                                if self.bus_monitor.has_frame_since(
+                                    task_start, direction="rx", raw=raw_resp
+                                ):
+                                    continue
+                                frame = self.bus_monitor.record_frame(
+                                    direction="rx",
+                                    raw=raw_resp,
+                                    parsed=resp if isinstance(resp, OWNMessage) else None,
                                 )
-                                # A reply to a request sent for an offline primary
-                                self.handler._bridge_to_primary(resp)
+                                if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                    dispatcher_send(
+                                        self.hass, f"myhome_message_{self.mac}", resp
+                                    )
+                                    # A reply to a request sent for an offline primary
+                                    self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise

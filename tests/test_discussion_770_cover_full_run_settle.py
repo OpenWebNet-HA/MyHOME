@@ -1492,9 +1492,9 @@ async def test_mid_run_set_and_reset_travel_time_recomputes_app_and_scope_settle
         await asyncio.wait_for(cover._stop_task, 1.0)
     assert cover.is_closing is False and cover.current_cover_position == 0
 
-    # 3. Wall run started AFTER a completed HA _stop_task (_stop_task.done() is True):
+    # 3. Wall run started AFTER a completed HA settle (its task was released):
     # mid-run async_set_travel_time still re-arms _wall_settle_unsub!
-    assert cover._stop_task is not None and cover._stop_task.done()
+    assert cover._stop_task is None
     cover.handle_event(OWNEvent.parse("*2*1*21##"))
     first_unsub = cover._wall_settle_unsub
     assert first_unsub is not None

@@ -733,6 +733,18 @@ class PlatformDiscovery:
         if keys:
             self.router.publish(self.who, keys, message)
 
+    @callback
+    def relay(self, message: Any) -> None:
+        """Deliver a point-to-point frame to the device already known at its address, never discovering one.
+
+        For what a frame stands for rather than what it is (a shutter's command translation,
+        see `cover_translation`): an address that is ignored or exposed on the bus stays
+        silent, as for the frames themselves.
+        """
+        address = self.address_of(message)
+        if address is not None and address.key in self.known and not self._is_ignored(address):
+            self.route(message, address)
+
     def listen(self) -> None:
         """Subscribe to the gateway's frames for the life of the config entry."""
         self.config_entry.async_on_unload(
