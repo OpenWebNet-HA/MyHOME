@@ -11,9 +11,14 @@ that time supersedes it, so the usual sequence is handled exactly as before; so 
 translation of a Stop, after which the run is over. Only a translation that nothing followed
 reaches the cover, as the movement status it stands for, dated when the translation arrived.
 
-The translation of a Stop (`*2*1000#0*WHERE##`) is never relayed: the gateway sends one around
-every direction command, before the motor starts. Group, area and general translations are
-never relayed either: they name no single actuator.
+The relay never stands the translation of a Stop (`*2*1000#0*WHERE##`) for anything: the cover
+platform routes it to the cover itself, which halts an active run on it (#645). Group, area and
+general translations are never relayed either: they name no single actuator.
+
+A shutter locked via WHO 14 (`*14*0*WHERE##`) answers an Up or a Down with the translations
+alone and does not move (live F461 + F411/2 trace): from its lock to its unlock (`*14*1*WHERE##`)
+its translations stand for nothing. A lock set while Home Assistant was not listening is not
+known here.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.core import HomeAssistant, callback
-from OWNd.message import OWNAutomationEvent
+from OWNd.message import OWNActuatorLockEvent, OWNAutomationEvent
 
 from .const import BUS_ROUTING, LOGGER
 
@@ -87,15 +92,24 @@ class CoverTranslationRelay:
         self.deliver = deliver
         self.grace = grace
         self._held: dict[str, _Held] = {}
+        self._locked: set[str] = set()
 
     @staticmethod
-    def _key(message: OWNAutomationEvent) -> str:
+    def _key(message: OWNAutomationEvent | OWNActuatorLockEvent) -> str:
         interface = message.interface
         return f"{message.where}{BUS_ROUTING}{interface}" if interface else str(message.where)
 
     @callback
     def handle_message(self, message: Any) -> None:
-        """Watch every frame of the gateway; only shutter events concern the held translations."""
+        """Watch every frame of the gateway; only shutter and lock events concern the held translations."""
+        if isinstance(message, OWNActuatorLockEvent):
+            key = self._key(message)
+            if message.is_locked:
+                self._locked.add(key)
+                self.discard(key)
+            elif message.is_unlocked:
+                self._locked.discard(key)
+            return
         if not isinstance(message, OWNAutomationEvent):
             return
         key = self._key(message)
@@ -104,6 +118,8 @@ class CoverTranslationRelay:
                 self.discard(key)  # The actuator's own status: the usual path handles it.
             return
         movement = movement_translation(message)
+        if movement is not None and key in self._locked:
+            return  # A locked actuator does not move: its translation stands for nothing.
         if movement is None:
             if message.effective_what == 0:
                 self.discard(key)  # A Stop translated after the direction: that run is over.

@@ -727,3 +727,38 @@ async def test_our_own_command_starts_alike_whatever_confirms_it(hass, confirmed
         assert [c.args[0] for c in anchor.call_args_list] == pytest.approx(anchors)
     assert cover._pending_cmd is None and cover.is_opening
     assert cover._move_start_time == pytest.approx(anchors[-1])
+
+
+# ── a shutter locked via WHO 14 ─────────────────────────────────────
+# Live F461 + F411/2 (`test_f461_who14_live_trace.py`, run 3): once `*14*0*WHERE##` locks the
+# actuator, an Up or a Down puts only `*2*1000#0*WHERE##` and `*2*1000#<1|2>*WHERE##` on the
+# monitor, never a status, and the shutter does not move.
+
+LOCKED_UP = ("*2*1000#0*81##", "*2*1000#1*81##")
+
+
+async def test_a_locked_shutter_does_not_move_on_its_translation(bus):
+    await bus.send("*14*0*81##", "*2*0*81##")  # Locked: the actuator reports it is stopped.
+    await bus.send(*LOCKED_UP, step=.05)
+    await bus.wait(TRANSLATION_GRACE)
+    await bus.wait(TRANSLATION_GRACE)
+    assert bus.states == [] and not bus.cover.is_opening
+    assert bus.anchors == []
+    assert _pending_releases(bus.hass) == []
+
+
+async def test_an_unlocked_shutter_moves_on_its_translation_again(bus):
+    await bus.send("*14*0*81##", "*2*0*81##", "*14*1*81##")
+    await bus.send(*LIVE_UP)
+    up = bus.clock[0]
+    await bus.wait(TRANSLATION_GRACE)
+    assert bus.states == ["opening"] and bus.anchors == [up]
+
+
+async def test_a_lock_drops_the_translation_held_for_its_shutter_only(relay):
+    relay.send("*2*1000#1*81##")
+    relay.send("*2*1000#1*82##")
+    relay.send("*14*0*81##")
+    assert relay.held() == ["82"]
+    relay.send("*2*1000#2*81##")
+    assert relay.held() == ["82"]
