@@ -7,7 +7,11 @@ import pytest
 from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNMessage
 
-from custom_components.myhome.cover_motion import CoverMotionModel, MotionPosition
+from custom_components.myhome.cover_motion import (
+    END_SETTLE_MARGIN,
+    CoverMotionModel,
+    MotionPosition,
+)
 from custom_components.myhome.cover_motion_runtime import CoverMotionTracker
 from tests.test_cover_nonlinear_backend import nonlinear
 from tests.test_cover_profiles import plant as plant_fixture
@@ -167,13 +171,16 @@ async def test_failed_direction_keeps_preexisting_motion_and_zero_height_can_sti
         async def anchor(_):
             cover._anchor_run(100)
             return 100
+        waits = []
         async def wait(seconds):
-            assert seconds == 0.5
+            waits.append(seconds)
             cover._motion.stop(100 + seconds)
         with patch.object(cover, '_await_motion_anchor', side_effect=anchor), \
              patch('custom_components.myhome.cover.asyncio.sleep', side_effect=wait):
             await cover.async_set_cover_position(position=0)
             await cover._stop_task
+        # 0 % on the sill is a full run to the limit switch, settled on the travel timer.
+        assert waits == [pytest.approx(cover._travel_for(False) + END_SETTLE_MARGIN)]
         assert cover.is_closed
         plant.gateways[0].send.reset_mock()
         await cover.async_set_cover_position(position=0)

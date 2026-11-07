@@ -2084,10 +2084,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Move with the panel geometry, including its hidden slat phase."""
         target_motion = MotionPosition.at_height(float(target_position) / 100)
         current_motion = self._motion.sample(time.monotonic())
+        if target_position in (0, 100) and current_motion != target_motion:
+            # A full run, as open / close: no Stop frame, the limit switch ends it
+            # and re-anchors the model, and it settles on the travel timer.
+            opening = target_position == 100
+            if self._settles_full_run(opening):
+                await self._async_run_to_end(opening)
+            else:
+                await self._async_move("open" if opening else "close")
+            return
         if current_motion is None:
-            if target_position in (0, 100):
-                await self._async_move("open" if target_position == 100 else "close")
-                return
             raise HomeAssistantError("Complete a full opening or closing run before setting an intermediate position",
                                      translation_domain=DOMAIN, translation_key="cover_position_unknown",
                                      translation_placeholders={"name": self._display_name})
@@ -2096,9 +2102,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 await self.async_stop_cover()
             return
         curr_pos = current_motion.height * 100
-        diff = target_position - curr_pos
-        if diff == 0:  # Height zero still owes the closure of the slats.
-            diff = -1
+        diff = target_position - curr_pos  # never 0: 0 % and 100 % are full runs above
         self._cancel_stop_task()
 
         written = await self._async_move("open" if diff > 0 else "close")

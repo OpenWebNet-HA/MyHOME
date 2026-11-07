@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from OWNd.message import OWNMessage
 
+from custom_components.myhome.cover_motion import END_SETTLE_MARGIN, MotionPosition
 from tests.test_cover_nonlinear_backend import nonlinear
 from tests.test_cover_profiles import plant as plant_fixture
 from tests.test_cover_travel_scaling import write
@@ -132,3 +133,64 @@ async def until(m, motor_start, seconds):
 
 def commands(m):
     return [command for command, _ in m.sent]
+
+
+# set_cover_position 0 / 100: full runs, as open / close.
+
+@pytest.mark.parametrize("known", [True, False], ids=["from_known", "from_unknown"])
+async def test_position_zero_is_a_full_run_that_settles_at_the_model_end(modelled, known):
+    m = modelled
+    if known:
+        at_end(m, 100)
+    await m.cover.async_set_cover_position(position=0)
+    start = await written_and_started(m, CLOSE)
+    await until(m, start, CLOSING_S - 1)
+    assert m.cover.state == "closing"
+    await until(m, start, CLOSING_S + END_SETTLE_MARGIN + 0.1)
+    assert state(m) == ("closed", 0)
+    assert m.cover._motion.position == MotionPosition(0, 0)
+    assert commands(m) == [CLOSE]  # a full run ends on the limit switch: no Stop is written
+
+
+@pytest.mark.parametrize("known", [True, False], ids=["from_known", "from_unknown"])
+async def test_position_hundred_is_a_full_run_that_settles_at_the_model_end(modelled, known):
+    m = modelled
+    if known:
+        at_end(m, 0)
+    await m.cover.async_set_cover_position(position=100)
+    start = await written_and_started(m, OPEN)
+    await until(m, start, OPENING_S + END_SETTLE_MARGIN + 0.1)
+    assert state(m) == ("open", 100)
+    assert commands(m) == [OPEN]
+
+
+async def test_position_zero_on_the_sill_closes_the_slats_with_a_full_run(modelled):
+    """Height 0 with the slats still open: 0 % owes the closure of the slats, run to the limit switch."""
+    m = modelled
+    at_end(m, 0)
+    m.cover._motion.position = MotionPosition(0, 0.4)
+    await m.cover.async_set_cover_position(position=0)
+    start = await written_and_started(m, CLOSE)
+    await until(m, start, CLOSING_S + END_SETTLE_MARGIN + 0.1)
+    assert state(m) == ("closed", 0)
+    assert m.cover._motion.position == MotionPosition(0, 0)
+    assert commands(m) == [CLOSE]
+
+
+async def test_the_late_timer_stop_after_a_position_run_changes_nothing(modelled):
+    m = modelled
+    at_end(m, 100)
+    await m.cover.async_set_cover_position(position=0)
+    start = await written_and_started(m, CLOSE)
+    await until(m, start, TIMER_S)
+    bus(m, STOP)  # the actuator's relay timer, long after the curtain arrived
+    assert state(m) == ("closed", 0)
+    assert m.cover._motion.position == MotionPosition(0, 0)
+    assert commands(m) == [CLOSE]
+
+
+async def test_an_end_already_reached_sends_nothing(modelled):
+    m = modelled
+    at_end(m, 0)
+    await m.cover.async_set_cover_position(position=0)
+    assert commands(m) == []
