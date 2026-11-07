@@ -16,7 +16,7 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/OpenWebNet-HA/MyHOME/issues",
   "requirements": [
-    "OWNd==2.0.0b11"
+    "OWNd==2.0.0b13"
   ],
   "ssdp": [
     {
@@ -48,6 +48,21 @@
       "st": "upnp:rootdevice",
       "manufacturer": "BTicino S.p.A.",
       "modelName": "LN4890A"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
+      "modelName": "067292"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
+      "modelName": "573958"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
+      "modelName": "078479"
     },
     {
       "st": "upnp:rootdevice",
@@ -95,5 +110,5 @@
       "modelName": "MH201"
     }
   ],
-  "version": "2.0.0b16"
+  "version": "2.0.0b17"
 }

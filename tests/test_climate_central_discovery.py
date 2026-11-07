@@ -456,3 +456,573 @@ async def test_yaml_central_unit_and_bus_traffic_coalesce_without_duplicate_enti
 
     assert len(reloaded_entities) == 1
 
+
+async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: HomeAssistant) -> None:
+    """Verify #0 diagnostic burst frames (WHAT 20..24, 30, 31), flag reset on next burst, and state restoration (#819)."""
+    from homeassistant.core import State
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.log_id = "[test 3550 diagnostics]"
+    gateway.name = "MH200N Gateway"
+    gateway.hass = hass
+    gateway.config_entry = entry
+    gateway.device_health = DeviceHealth(gateway)
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    cu = MyHOMEClimate(
+        hass=hass,
+        name="Central Unit 0",
+        device_id="4-#0",
+        who="4",
+        where="#0",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=False,
+        central=True,
+        manufacturer="BTicino",
+        model="Central Unit (3550)",
+        gateway=gateway,
+    )
+    cu.entity_id = "climate.central_unit_0"
+    cu.async_write_ha_state = MagicMock()
+
+    # 1. Replay the exact MH200N + 3550 *#4*#0## status burst from Discussion #819:
+    # *4*1101*#0##, *4*20*#0##, *4*30*#0##, *4*31*#0##, *4*22*#0##
+    for raw in ("*4*1101*#0##", "*4*20*#0##", "*4*30*#0##", "*4*31*#0##", "*4*22*#0##"):
+        cu.handle_event(OWNHeatingEvent(raw))
+
+    attrs = cu.extra_state_attributes
+    assert cu.hvac_mode == HVACMode.HEAT
+    assert attrs["season"] == "heating"
+    assert attrs["program"] == 1
+    assert attrs["remote_control"] == "disabled"
+    assert attrs["failure_detected"] is True
+    assert attrs["battery_fault"] is True
+    assert attrs["at_least_one_probe_off"] is True
+    assert attrs["at_least_one_probe_antifreeze"] is False
+    assert attrs["at_least_one_probe_manual"] is False
+
+    issue_reg = ir.async_get(hass)
+    rc_id = fault_issue_id(entry.entry_id, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0")
+    bat_id = fault_issue_id(entry.entry_id, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0")
+    assert issue_reg.async_get_issue(DOMAIN, rc_id) is not None
+    assert issue_reg.async_get_issue(DOMAIN, bat_id) is not None
+
+    # 2. Next burst: user enabled Telegestione (*4*21*#0##), replaced battery (no *4*31*#0##),
+    # resolved the zone failure (no *4*30*#0##) and turned probe 4 back on (no *4*22*#0##),
+    # while one probe is in antifreeze (*4*23*#0##) and one is in manual (*4*24*#0##)
+    for raw in ("*4*1101*#0##", "*4*21*#0##", "*4*23*#0##", "*4*24*#0##"):
+        cu.handle_event(OWNHeatingEvent(raw))
+
+    attrs2 = cu.extra_state_attributes
+    assert attrs2["remote_control"] == "enabled"
+    assert attrs2["failure_detected"] is False
+    assert attrs2["battery_fault"] is False
+    assert attrs2["at_least_one_probe_off"] is False
+    assert attrs2["at_least_one_probe_antifreeze"] is True
+    assert attrs2["at_least_one_probe_manual"] is True
+    assert issue_reg.async_get_issue(DOMAIN, rc_id) is None
+    assert issue_reg.async_get_issue(DOMAIN, bat_id) is None
+
+    # 3. Restore state round-trip
+    restored = MyHOMEClimate(
+        hass=hass,
+        name="Central Unit 0",
+        device_id="4-#0",
+        who="4",
+        where="#0",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=False,
+        central=True,
+        manufacturer="BTicino",
+        model="Central Unit (3550)",
+        gateway=gateway,
+    )
+    await restored.async_restore_last_state(State("climate.central_unit_0", "heat", attrs2))
+    restored_attrs = restored.extra_state_attributes
+    assert restored_attrs["remote_control"] == "enabled"
+    assert restored_attrs["at_least_one_probe_off"] is False
+    assert restored_attrs["at_least_one_probe_antifreeze"] is True
+    assert restored_attrs["at_least_one_probe_manual"] is True
+    assert restored_attrs["failure_detected"] is False
+    assert restored_attrs["battery_fault"] is False
+
+
+async def test_3550_yaml_default_central_false_and_scs_only_bus_discovery_poll(
+    hass: HomeAssistant,
+) -> None:
+    """Ensure zone='#0' with schema default central=False stays central=True, and bus-discovered #0 on MH200N polls *#4*#0## (#819)."""
+    from custom_components.myhome.discovery import message_has_state
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.supports_zone_status = False  # SCS-only gateway (MH200N / F454)
+    gateway.zone_temperature_poll_needed = False
+    gateway.log_id = "[test MH200N #0]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    # validate.py sets Optional(CONF_CENTRAL, default=False): Boolean() when user omits `central:` in YAML
+    runtime.platforms["climate"] = {
+        "central_unit": {
+            "zone": "#0",
+            "central": False,
+        }
+    }
+
+    entities: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, entities.extend)
+    assert len(entities) == 1
+    cu = entities[0]
+    assert cu._central is True
+    assert cu._device_name == "Central Unit 0"
+    assert cu._poll_on_add is True
+    assert message_has_state(cu, OWNHeatingEvent("*4*1101*#0##")) is False
+
+
+async def test_subordinate_zone_dim12_hydration_and_mode_setpoint_control(
+    hass: HomeAssistant,
+) -> None:
+    """Verify subordinate zone hydrates nominal setpoint from Dimension 12/14 and writes #Z setpoints on mode changes (#819)."""
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.has_central_unit = False
+    gateway.log_id = "[test zone 1 dim12]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    z1 = MyHOMEClimate(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="4-1",
+        who="4",
+        where="1",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z1.entity_id = "climate.climate_zone_1"
+    z1.async_write_ha_state = MagicMock()
+
+    # Probe WHERE with leading '#' (#105) must not mark the plant as having a central unit
+    # via either GatewayEventDispatcher.process_message or MyHOMEClimate.handle_event
+    from OWNd.message import OWNHeatingCommand
+
+    from custom_components.myhome.gateway_events import GatewayEventDispatcher
+
+    gateway.hass = hass
+    gateway.host = "192.168.1.35"
+    gateway.generate_events = False
+    gateway._correlate_shared_bus_traffic = MagicMock()
+    gateway._bridge_to_primary = MagicMock()
+    gateway.health_owner = MagicMock(return_value=None)
+    dispatcher = GatewayEventDispatcher(gateway)
+
+    await dispatcher.process_message(OWNHeatingEvent("*#4*#105*0*0210##"))
+    assert gateway.has_central_unit is False
+    await dispatcher.process_message(OWNHeatingCommand("*#4*#105*#14*0210*1##"))
+    gateway.send_status_request.assert_not_called()
+    z1.handle_event(OWNHeatingEvent("*#4*#105*0*0210##"))
+    assert gateway.has_central_unit is False
+
+    # 1. Replay Discussion #819 Zone 1 (*#4*1##) sequence:
+    # Dimension 0 temperature (*#4*1*0*0199##), Dimension 12 setpoint in force (*#4*1*12*0170*3##)
+    # while hvac_mode is still None, followed by *4*111*#1## (Automatic heating mode on 3550 plant)
+    z1.handle_event(OWNHeatingEvent("*#4*1*0*0199##"))
+    z1.handle_event(OWNHeatingEvent("*#4*1*12*0170*3##"))
+    assert z1.target_temperature == 17.0
+    assert z1._target_temperature is None  # hvac_mode is still None
+    assert z1._effective_nominal_temperature() == 17.0
+
+    await dispatcher.process_message(OWNHeatingEvent("*4*111*#1##"))
+    assert gateway.has_central_unit is True
+    gateway.has_central_unit = False
+
+    # Arrival of *4*111*#1## marks the plant as having a central unit, sets mode to HEAT,
+    # and hydrates _target_temperature from _local_target_temperature - _local_offset
+    z1.handle_event(OWNHeatingEvent("*4*111*#1##"))
+    assert gateway.has_central_unit is True
+    assert z1.hvac_mode == HVACMode.HEAT
+    assert z1._target_temperature == 17.0
+
+    # 2. Switching Zone 1 to manual HEAT writes *#4*#1*#14*0170*1## using the hydrated setpoint
+    await z1.async_set_hvac_mode(HVACMode.HEAT)
+    assert str(gateway.send.call_args[0][0]) == "*#4*#1*#14*0170*1##"
+
+    # 3. Adjusting Zone 1 temperature to 21.0 °C writes *#4*#1*#14*0210*3##
+    gateway.send.reset_mock()
+    await z1.async_set_temperature(temperature=21.0)
+    assert str(gateway.send.call_args[0][0]) == "*#4*#1*#14*0210*3##"
+
+    # 4. Returning Zone 1 to 3550 schedule (AUTO) writes *4*311*#1##
+    gateway.send.reset_mock()
+    await z1.async_set_hvac_mode(HVACMode.AUTO)
+    assert str(gateway.send.call_args[0][0]) == "*4*311*#1##"
+
+    # 5. Zone 2 (Eloisa) sequence from diagnostics.json: Dimension 14 (*#4*2*14*0150*3##)
+    # arrives while hvac_mode is None, followed by *4*111*#2## without Dimension 12
+    z2 = MyHOMEClimate(
+        hass=hass,
+        name="Eloisa",
+        device_id="4-2",
+        who="4",
+        where="2",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z2.entity_id = "climate.eloisa"
+    z2.async_write_ha_state = MagicMock()
+    z2.handle_event(OWNHeatingEvent("*#4*2*0*0194##"))
+    z2.handle_event(OWNHeatingEvent("*#4*2*14*0150*3##"))
+    assert z2._target_temperature == 15.0
+    assert z2._local_target_temperature is None
+    z2.handle_event(OWNHeatingEvent("*4*111*#2##"))
+    assert z2.hvac_mode == HVACMode.HEAT
+    assert z2._local_target_temperature == 15.0
+    assert z2.target_temperature == 15.0
+
+async def test_subordinate_zone_hydration_edge_cases(hass: HomeAssistant) -> None:
+    """Verify subordinate zone hydration with non-zero offsets, central broadcast, and active guard (#819)."""
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.has_central_unit = True
+    gateway.is_standby = False
+    gateway.is_secondary = False
+    gateway.delegated_away_whos = set()
+    gateway.supports_zone_status = True
+    gateway.log_id = "[test hydration edge cases]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    # 1. Hydration with positive knob offset (+2.0 °C):
+    # Dim 13 arrives (+2.0 °C), Dim 12 arrives (19.0 °C local setpoint), then mode becomes HEAT.
+    # Hydrated nominal should be 19.0 - 2.0 = 17.0 °C.
+    z_pos = MyHOMEClimate(
+        hass=hass,
+        name="Zone Pos",
+        device_id="4-1",
+        who="4",
+        where="1",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z_pos.entity_id = "climate.zone_pos"
+    z_pos.async_write_ha_state = MagicMock()
+
+    z_pos.handle_event(OWNHeatingEvent("*#4*1*13*02##"))  # +2 °C offset
+    assert z_pos._local_offset == 2.0
+    z_pos.handle_event(OWNHeatingEvent("*#4*1*12*0190*3##"))  # 19.0 °C local
+    assert z_pos.target_temperature == 19.0
+    assert z_pos._target_temperature is None
+
+    z_pos.handle_event(OWNHeatingEvent("*4*111*#1##"))  # Auto/Heat mode
+    assert z_pos.hvac_mode == HVACMode.HEAT
+    assert z_pos._target_temperature == 17.0
+    assert z_pos.target_temperature == 19.0
+
+    await z_pos.async_set_hvac_mode(HVACMode.HEAT)
+    assert str(gateway.send.call_args[0][0]) == "*#4*#1*#14*0170*1##"
+
+    # 2. Hydration with negative knob offset (-1.0 °C):
+    # Dim 13 arrives (-1.0 °C), Dim 12 arrives (18.0 °C local setpoint), then mode becomes HEAT.
+    # Hydrated nominal should be 18.0 - (-1.0) = 19.0 °C.
+    z_neg = MyHOMEClimate(
+        hass=hass,
+        name="Zone Neg",
+        device_id="4-2",
+        who="4",
+        where="2",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z_neg.entity_id = "climate.zone_neg"
+    z_neg.async_write_ha_state = MagicMock()
+
+    z_neg.handle_event(OWNHeatingEvent("*#4*2*13*11##"))  # -1 °C offset
+    assert z_neg._local_offset == -1.0
+    z_neg.handle_event(OWNHeatingEvent("*#4*2*12*0180*3##"))  # 18.0 °C local
+    assert z_neg._target_temperature is None
+
+    z_neg.handle_event(OWNHeatingEvent("*4*111*#2##"))
+    assert z_neg.hvac_mode == HVACMode.HEAT
+    assert z_neg._target_temperature == 19.0
+    assert z_neg.target_temperature == 18.0
+
+    # 3. Hydration triggered by central unit mode broadcast (_handle_central_mode_update):
+    # Zone starts with mode None, Dim 12 (20.0 °C). Central mode update to HEAT triggers hydration.
+    z_cu = MyHOMEClimate(
+        hass=hass,
+        name="Zone CU Follower",
+        device_id="4-3",
+        who="4",
+        where="3",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z_cu.entity_id = "climate.zone_cu_follower"
+    z_cu.async_write_ha_state = MagicMock()
+
+    z_cu.handle_event(OWNHeatingEvent("*#4*3*12*0200*3##"))
+    assert z_cu.hvac_mode is None
+    assert z_cu._target_temperature is None
+
+    z_cu._handle_central_mode_update(HVACMode.HEAT)
+    assert z_cu.hvac_mode == HVACMode.HEAT
+    assert z_cu._target_temperature == 20.0
+
+    # 4. Mode change when already active does NOT re-hydrate or overwrite nominal:
+    # z_pos is in HEAT with nominal 17.0. Knob moved so local target becomes 22.0.
+    # Mode changes to COOL (*4*211*#1##) with prev_mode == HEAT -> nominal stays 17.0.
+    z_pos._local_target_temperature = 22.0
+    z_pos.handle_event(OWNHeatingEvent("*4*211*#1##"))
+    assert z_pos.hvac_mode == HVACMode.COOL
+    assert z_pos._target_temperature == 17.0
+
+    # 5. Transition from None to active via MESSAGE_TYPE_SEASON (*4*1*4##):
+    z_sea = MyHOMEClimate(
+        hass=hass,
+        name="Zone Season",
+        device_id="4-4",
+        who="4",
+        where="4",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    z_sea.entity_id = "climate.zone_season"
+    z_sea.async_write_ha_state = MagicMock()
+
+    z_sea.handle_event(OWNHeatingEvent("*#4*4*12*0185*3##"))
+    assert z_sea._target_temperature is None
+    z_sea.handle_event(OWNHeatingEvent("*4*1*4##"))  # Season heating frame
+    assert z_sea.hvac_mode == HVACMode.HEAT
+    assert z_sea._target_temperature == 18.5
+
+    # 6. Direct validation of _effective_nominal_temperature():
+    # Setpoint present:
+    assert z_sea._effective_nominal_temperature() == 18.5
+    # Target None, local target present, active mode:
+    z_sea._target_temperature = None
+    assert z_sea._effective_nominal_temperature() == 18.5
+    # Target None, local target present, but mode is OFF: protection guard holds
+    z_sea._attr_hvac_mode = HVACMode.OFF
+    assert z_sea._effective_nominal_temperature() is None
+    # Both None:
+    z_sea._local_target_temperature = None
+    assert z_sea._effective_nominal_temperature() is None
+
+
+async def test_3550_central_unit_burst_and_diagnostic_edge_cases(hass: HomeAssistant) -> None:
+    """Verify all 7 diagnostic WHAT flags simultaneously, season burst reset, holiday mode burst, and non-central isolation (#819)."""
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.log_id = "[test 3550 burst edge cases]"
+    gateway.name = "MH200N Gateway"
+    gateway.hass = hass
+    gateway.config_entry = entry
+    gateway.device_health = DeviceHealth(gateway)
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+
+    cu = MyHOMEClimate(
+        hass=hass,
+        name="Central Unit 0",
+        device_id="4-#0",
+        who="4",
+        where="#0",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=False,
+        central=True,
+        manufacturer="BTicino",
+        model="Central Unit (3550)",
+        gateway=gateway,
+    )
+    cu.entity_id = "climate.central_unit_0"
+    cu.async_write_ha_state = MagicMock()
+
+    # 1. Burst with all 7 diagnostic flags simultaneously active:
+    burst_all = (
+        "*4*1101*#0##",
+        "*4*20*#0##",
+        "*4*22*#0##",
+        "*4*23*#0##",
+        "*4*24*#0##",
+        "*4*30*#0##",
+        "*4*31*#0##",
+    )
+    for raw in burst_all:
+        cu.handle_event(OWNHeatingEvent(raw))
+
+    attrs = cu.extra_state_attributes
+    assert attrs["remote_control"] == "disabled"
+    assert attrs["at_least_one_probe_off"] is True
+    assert attrs["at_least_one_probe_antifreeze"] is True
+    assert attrs["at_least_one_probe_manual"] is True
+    assert attrs["failure_detected"] is True
+    assert attrs["battery_fault"] is True
+
+    # 2. Next burst starts with MESSAGE_TYPE_SEASON (*4*1*#0##):
+    cu.handle_event(OWNHeatingEvent("*4*1*#0##"))
+    attrs_season = cu.extra_state_attributes
+    assert attrs_season["remote_control"] == "disabled"
+    assert attrs_season["at_least_one_probe_off"] is False
+    assert attrs_season["at_least_one_probe_antifreeze"] is False
+    assert attrs_season["at_least_one_probe_manual"] is False
+    assert attrs_season["failure_detected"] is False
+    assert attrs_season["battery_fault"] is False
+
+    # *4*21*#0## explicitly enables remote control
+    cu.handle_event(OWNHeatingEvent("*4*21*#0##"))
+    assert cu.extra_state_attributes["remote_control"] == "enabled"
+
+    # 3. Burst starting with MESSAGE_TYPE_MODE_TARGET (*4*1101#10*#0## - holiday mode):
+    cu.handle_event(OWNHeatingEvent("*4*31*#0##"))
+    assert cu.extra_state_attributes["battery_fault"] is True
+    cu.handle_event(OWNHeatingEvent("*4*1101#10*#0##"))
+    assert cu.extra_state_attributes["battery_fault"] is False
+
+    # 4. Unknown WHAT code (e.g. WHAT 99): ignored without error
+    cu.handle_event(OWNHeatingEvent("*4*99*#0##"))
+    assert cu.extra_state_attributes["battery_fault"] is False
+
+    # 5. Non-central zone receiving WHAT 20 / WHAT 31 ignores them completely
+    sub_zone = MyHOMEClimate(
+        hass=hass,
+        name="Zone 1",
+        device_id="4-1",
+        who="4",
+        where="1",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gateway,
+    )
+    sub_zone.entity_id = "climate.zone_1"
+    sub_zone.async_write_ha_state = MagicMock()
+
+    sub_zone.handle_event(OWNHeatingEvent("*4*20*1##"))
+    sub_zone.handle_event(OWNHeatingEvent("*4*31*1##"))
+    assert "remote_control" not in sub_zone.extra_state_attributes
+    assert "battery_fault" not in sub_zone.extra_state_attributes
+
+
+async def test_is_central_thermo_where_and_routing_edge_cases(hass: HomeAssistant) -> None:
+    """Verify is_central_thermo_where grammar rules and GatewayEventDispatcher follow-up probe guards (#819)."""
+    from OWNd.message import OWNHeatingCommand
+
+    from custom_components.myhome.gateway_events import GatewayEventDispatcher
+    from custom_components.myhome.where_grammar import is_central_thermo_where
+
+    class _Msg:
+        def __init__(self, where: str | None) -> None:
+            self.where = where
+
+    # 1. Grammar checks: central addresses vs probes vs non-central
+    positive = ["#0", "#1", "#99", "#0#1", "#0#2", "#0#3", "#0#4", "#0#4#1", "#1#4#2", "4-#0", "4-#1"]
+    for w in positive:
+        assert is_central_thermo_where(_Msg(w)) is True, f"Expected True for {w}"
+
+    negative = [
+        "#100", "#105", "#201", "4-#105",
+        "1", "0", "0#1", "4-1",
+        None, "", "#abc", "#",
+    ]
+    for w in negative:
+        assert is_central_thermo_where(_Msg(w)) is False, f"Expected False for {w}"
+
+    assert is_central_thermo_where(object()) is False
+
+    # 2. GatewayEventDispatcher Dimension 14 command follow-up routing:
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.host = "192.168.1.35"
+    gateway.is_connected = True
+    gateway.has_central_unit = True
+    gateway.is_standby = False
+    gateway.is_secondary = False
+    gateway.delegated_away_whos = set()
+    gateway.supports_zone_status = True
+    gateway.log_id = "[test dispatcher dim14 follow-up]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    gateway.hass = hass
+    gateway.generate_events = False
+    gateway._correlate_shared_bus_traffic = MagicMock()
+    gateway._bridge_to_primary = MagicMock()
+    gateway.health_owner = MagicMock(return_value=None)
+
+    dispatcher = GatewayEventDispatcher(gateway)
+
+    # Probe command: no status request
+    await dispatcher.process_message(OWNHeatingCommand("*#4*#105*#14*0210*1##"))
+    gateway.send_status_request.assert_not_called()
+
+    # Pump command: no status request
+    await dispatcher.process_message(OWNHeatingCommand("*#4*0#1*#14*0210*1##"))
+    gateway.send_status_request.assert_not_called()
+
+    # Zone command: status request sent for *#4*1##
+    await dispatcher.process_message(OWNHeatingCommand("*#4*#1*#14*0210*1##"))
+    assert str(gateway.send_status_request.call_args[0][0]) == "*#4*1##"
+
+

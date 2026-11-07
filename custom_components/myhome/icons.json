@@ -1,4 +1,24 @@
 {
+  "entity": {
+    "button": {
+      "tuner_seek_up": {
+        "default": "mdi:fast-forward-outline"
+      },
+      "tuner_seek_down": {
+        "default": "mdi:rewind-outline"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "default": "mdi:radio-fm"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "default": "mdi:swap-horizontal"
+      }
+    }
+  },
   "services": {
     "sync_time": {
       "service": "mdi:clock-sync"
@@ -35,6 +55,12 @@
     },
     "tuner_seek_down": {
       "service": "mdi:rewind-outline"
+    },
+    "tuner_set_frequency": {
+      "service": "mdi:radio-fm"
+    },
+    "tuner_store_station": {
+      "service": "mdi:content-save-outline"
     },
     "cancel_cover_request": {
       "service": "mdi:shield-remove-outline"

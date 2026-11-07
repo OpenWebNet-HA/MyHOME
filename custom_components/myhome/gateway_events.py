@@ -31,6 +31,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    BUS_ROUTING,
     CONF_LONG_PRESS,
     CONF_LONG_PRESS_REPEAT,
     CONF_LONG_RELEASE,
@@ -43,6 +44,8 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .topology import peer_handles_who
+from .where_grammar import is_central_thermo_where, is_probe, where_param
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -207,16 +210,34 @@ class GatewayEventDispatcher:
         """Return True if this gateway is the active owner for this WHO subsystem."""
         if getattr(self.handler, "is_standby", False):
             # Standby is only active for bus events if failover is active (primary is offline)
+            # and no connected secondary that routes this subsystem already owns it.
             primary_gw = self.handler._get_primary_gateway()
-            if primary_gw is not None and not primary_gw.is_connected:
-                return who is not None and self.handler._profile_supports_who(who)
+            if primary_gw is not None and not primary_gw.is_connected and who is not None:
+                if who in getattr(primary_gw, "delegated_away_whos", set()):
+                    sec_fn = getattr(primary_gw, "_get_secondary_for_who", None)
+                    sec = sec_fn(who) if callable(sec_fn) else None
+                    if (
+                        sec is not None
+                        and getattr(sec, "is_connected", False)
+                        and peer_handles_who(sec, who)
+                    ):
+                        return False
+                return bool(self.handler._profile_supports_who(who))
             return False
 
         if getattr(self.handler, "is_secondary", False):
-            return who is not None and who in getattr(self.handler, "delegated_whos", set())
+            return (
+                who is not None
+                and who in getattr(self.handler, "delegated_whos", set())
+                and peer_handles_who(self.handler, who)
+            )
 
         # Primary or standalone
-        return who is None or who not in getattr(self.handler, "delegated_away_whos", set())
+        if who is None or who not in getattr(self.handler, "delegated_away_whos", set()):
+            return True
+        sec_fn = getattr(self.handler, "_get_secondary_for_who", None)
+        sec = sec_fn(who) if callable(sec_fn) else None
+        return sec is not None and not peer_handles_who(sec, who)
 
     def _observe_health(self, message: OWNMessage, who: int) -> None:
         """Feed a lighting frame to the tracker that owns this address's issues.
@@ -268,7 +289,7 @@ class GatewayEventDispatcher:
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
             # on a shared bus only that subsystem's owner raises the device's issues.
-            if who_int in (1, 1001):
+            if who_int in (1, 4, 1001):
                 self._observe_health(message, who_int)
 
         if not isinstance(message, OWNMessage):
@@ -285,7 +306,7 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and str(message.where or "").startswith("#0"):
+                if isinstance(message, OWNHeatingEvent) and is_central_thermo_where(message):
                     self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
@@ -424,8 +445,24 @@ class GatewayEventDispatcher:
         elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14 and self._is_active_for_who(4):
             if not getattr(self.handler, "supports_zone_status", True):
                 return
+            iface = getattr(message, "interface", None)
+            raw_tail = where_param(message)
+            tail = raw_tail if isinstance(raw_tail, list) else []
+            has_interface = (isinstance(iface, str) and bool(iface)) or (len(tail) > 1 and tail[0] == "4")
+            if has_interface:
+                if getattr(self.handler, "interface_zone_request_refused", False):
+                    return
+                iface_str: str | None = (iface if isinstance(iface, str) and iface else str(tail[1])).zfill(2)
+                base_tail = tail[:-2] if len(tail) >= 2 and tail[-2] == "4" else []
+            else:
+                iface_str = None
+                base_tail = tail
             where_str = cast(str, message.where)
             where = where_str[1:] if where_str.startswith("#") else where_str
+            if where == "0" or is_probe(where) or base_tail:
+                return
+            if iface_str is not None:
+                where = f"{where}{BUS_ROUTING}{iface_str}"
             self._logger.debug(
                 "%s Received heating command, sending query to zone %s",
                 self.handler.log_id,

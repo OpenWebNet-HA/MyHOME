@@ -107,6 +107,104 @@
       "reconfigure_successful": "Gatewayverbinding succesvol opnieuw geconfigureerd."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Entiteit op SCS-bus aanbieden",
+        "reconfigure": "Aangeboden entiteit herconfigureren"
+      },
+      "entry_type": "Aangeboden entiteit",
+      "step": {
+        "user": {
+          "title": "Home Assistant-entiteit op SCS-bus aanbieden",
+          "description": "Emuleer een virtueel OpenWebNet-apparaat op de SCS-bus op basis van een Home Assistant-entiteit.",
+          "data": {
+            "who": "WHO-subsysteem",
+            "where": "WHERE-adres",
+            "entity_id": "Bronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "dimension": "OpenWebNet-dimensie (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "min_delta": "Minimale deltadrempel (optioneel)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
+            "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
+            "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
+            "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+          }
+        },
+        "reconfigure": {
+          "title": "Aangeboden entiteit herconfigureren",
+          "description": "Werk het OpenWebNet-adres, de bronentiteit of de verzendparameters voor deze koppeling bij.",
+          "data": {
+            "who": "WHO-subsysteem",
+            "where": "WHERE-adres",
+            "entity_id": "Bronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "dimension": "OpenWebNet-dimensie (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "min_delta": "Minimale deltadrempel (optioneel)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
+            "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
+            "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
+            "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Niet-ondersteund WHO-subsysteem (ondersteund: 1, 2, 4, 13, 18).",
+        "where_required": "Een WHERE-adres is vereist voor dit WHO-subsysteem.",
+        "entity_required": "Een Home Assistant-bronentiteit is vereist voor dit WHO-subsysteem.",
+        "invalid_dimension": "Ongeldige dimensie voor het geselecteerde WHO-subsysteem.",
+        "invalid_expose": "Ongeldige configuratie of dubbele WHO/WHERE/dimensie-koppeling."
+      },
+      "abort": {
+        "reconfigure_successful": "Koppeling van aangeboden entiteit succesvol bijgewerkt."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Thermo-actuator / handdoekradiator-schakelaar toevoegen (WHO 4)",
+        "reconfigure": "Thermo-actuatorschakelaar herconfigureren"
+      },
+      "entry_type": "Thermo-actuatorschakelaar",
+      "step": {
+        "user": {
+          "title": "WHO=4 thermo-actuator / handdoekradiator-schakelaar toevoegen",
+          "description": "Configureer een thermoreguleringsrelais zonder temperatuursensor (bijv. BTicino F430/2 of F430/4 handdoekradiator) als aan/uit-schakelaar. Gebruik Z#N (bijv. 7#1) om één actuatorkanaal aan te sturen zonder een echte thermostaat op zone Z te beïnvloeden, of Z (bijv. 7) om de volledige zone als schakelaar te gebruiken. Laat de triggercommando's leeg om directe Dimensie 20-schrijfopdrachten te sturen (*#4*7#1*#20*1## en *#4*7#1*#20*0##). Geef op MyHomeServer1 (Home + Project) bij 'Handdoekradiator'-objecten het paar CEN+-frames (bijv. *25*21#1*21## en *25*21#2*21##) of WHO=1-frames op die gekoppeld zijn aan uw Home + Project-scenario's/automatiseringen.",
+          "data": {
+            "where": "Thermo-actuator WHERE-adres (bijv. 7#1, 7 of 7#1#4#01)",
+            "name": "Weergavenaam (optioneel)",
+            "turn_on_command": "Aangepast AAN OpenWebNet-frame (optioneel, bijv. *25*21#1*21##)",
+            "turn_off_command": "Aangepast UIT OpenWebNet-frame (optioneel, bijv. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "WHO=4 thermo-actuatorschakelaar herconfigureren",
+          "description": "Werk het WHERE-adres, de weergavenaam of de aangepaste OpenWebNet-triggercommando's voor deze sensorloze thermo-actuatorschakelaar bij.",
+          "data": {
+            "where": "Thermo-actuator WHERE-adres (bijv. 7#1, 7 of 7#1#4#01)",
+            "name": "Weergavenaam (optioneel)",
+            "turn_on_command": "Aangepast AAN OpenWebNet-frame (optioneel, bijv. *25*21#1*21##)",
+            "turn_off_command": "Aangepast UIT OpenWebNet-frame (optioneel, bijv. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "Een WHO=4 zone- of actuator-WHERE-adres is vereist (bijv. 7#1 of 7).",
+        "invalid_where": "Ongeldig WHO=4 actuator-WHERE-adres. Verwacht: Z (1..99) of Z#N (N=1..9), optioneel achter #4#IF (00..15).",
+        "paired_commands_required": "Geef zowel het AAN- als het UIT-OpenWebNet-commando samen op, of laat beide leeg voor directe Dimensie 20-aansturing.",
+        "invalid_command": "Ongeldig OpenWebNet-commandoframe (moet een geldig actie- of schrijfframe zijn zoals *25*21#1*21## of *1*1*09##, geen statusaanvraag of ACK).",
+        "already_configured": "Er is al een WHO=4 thermo-actuatorschakelaar geconfigureerd voor dit WHERE-adres."
+      },
+      "abort": {
+        "reconfigure_successful": "Thermo-actuatorschakelaar succesvol bijgewerkt."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {
@@ -298,6 +396,26 @@
       "name": "Tuner achteruit zoeken",
       "description": "Zoek achteruit naar de vorige ontvangbare FM-frequentie op een F500-tunerbron."
     },
+    "tuner_set_frequency": {
+      "name": "Tunerfrequentie instellen",
+      "description": "Stem direct af op een handmatige FM-radiofrequentie (87,50–108,00 MHz) op een F500 / F500N-tunerbron.",
+      "fields": {
+        "frequency": {
+          "name": "Frequentie",
+          "description": "Gewenste FM-radiofrequentie in MHz (87,50–108,00 MHz, stappen van 0,05 MHz)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Tunerzender opslaan",
+      "description": "Sla de huidig afgestemde FM-frequentie op onder een voorkeuzezender (1–15) op een F500 / F500N-tunerbron.",
+      "fields": {
+        "station": {
+          "name": "Zender",
+          "description": "Nummer van het voorkeuzegeheugen (1–5 op F500, tot 1–15 op F500N)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Looptijd rolluik kalibreren",
       "description": "Meet de op- en neerwaartse looptijden van een tijdgestuurd rolluik op de SCS-bus en slaat ze op: het rolluik gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Rolluiken worden per gateway één voor één gekalibreerd."
@@ -318,15 +436,15 @@
       "fields": {
         "travel_time": {
           "name": "Looptijd",
-          "description": "Seconden voor een volledige beweging in beide richtingen (1-180); gebruikt voor elke richting zonder eigen waarde."
+          "description": "Seconden voor een volledige beweging in beide richtingen (1-300); gebruikt voor elke richting zonder eigen waarde."
         },
         "travel_time_down": {
           "name": "Looptijd omlaag",
-          "description": "Seconden voor een volledige sluitbeweging (1-180)."
+          "description": "Seconden voor een volledige sluitbeweging (1-300)."
         },
         "travel_time_up": {
           "name": "Looptijd omhoog",
-          "description": "Seconden voor een volledige openingsbeweging (1-180)."
+          "description": "Seconden voor een volledige openingsbeweging (1-300)."
         },
         "slat_time": {
           "name": "Kanteltijd lamellen",
@@ -370,6 +488,14 @@
     "gateway_authentication_failed": {
       "title": "Authenticatie mislukt voor MyHOME-gateway {gateway}",
       "description": "De gateway heeft de OpenWebNet-inloggegevens geweigerd. Configureer het wachtwoord opnieuw."
+    },
+    "central_remote_control_disabled": {
+      "title": "Afstandsbediening uitgeschakeld op centrale verwarmingseenheid {device} ({gateway})",
+      "description": "De 99-zone centrale eenheid {device} (WHO {who}, adres `{where}`) op {gateway} meldde OpenWebNet-status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nZolang afstandsbediening is uitgeschakeld op de fysieke centrale eenheid (bijv. BTicino 3550), bevestigt de gateway OpenWebNet-opdrachten nog wel met `*#*1##`, maar negeert de centrale eenheid modus- en setpointwijzigingen vanuit Home Assistant.\n\nSchakel **Afstandsbediening** (*Telegestione*) in via het instellingenmenu op de fysieke centrale eenheid. Dit probleem verdwijnt automatisch zodra de centrale eenheid `*4*21*#0##` (`Remote control enabled`) meldt."
+    },
+    "central_battery_fault": {
+      "title": "Storing noodbatterij op centrale verwarmingseenheid {device} ({gateway})",
+      "description": "De 99-zone centrale eenheid {device} (WHO {who}, adres `{where}`) op {gateway} meldde OpenWebNet-status `*4*31*#0##` (`Central unit battery KO`).\n\nControleer of vervang de noodbatterij in de fysieke centrale eenheid (bijv. BTicino 3550) zodat weekprogramma's en klokinstellingen behouden blijven bij stroomuitval. Dit probleem verdwijnt automatisch bij het volgende statusrapport (`*#4*#0##`) zodra `*4*31*#0##` niet meer wordt gemeld."
     },
     "unmapped_device_status": {
       "title": "{device} meldt een ongedocumenteerde status",
@@ -440,14 +566,23 @@
     "calibration_no_stop_status": {
       "message": "{name}: geen stopstatus van de actuator binnen {timeout} s - mogelijk meldt hij geen status; stel travel_time handmatig in"
     },
+    "calibration_actuator_cutoff_open": {
+      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+    },
+    "calibration_actuator_cutoff_close": {
+      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+    },
     "cover_reports_position": {
       "message": "{name} meldt zijn positie (advanced: true in myhome.yaml); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, verwijder dan advanced: true uit myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} wordt al gekalibreerd"
     },
-    "calibration_implausible_run": {
-      "message": "{name}: onwaarschijnlijke {direction}-loop van {seconds} s; niet opgeslagen"
+    "calibration_implausible_run_down": {
+      "message": "{name}: onwaarschijnlijke sluitloop van {seconds} s; niet opgeslagen"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name}: onwaarschijnlijke openingsloop van {seconds} s; niet opgeslagen"
     },
     "travel_time_missing": {
       "message": "Geef ten minste travel_time, travel_time_down/up of min_motor_pulse op"
@@ -503,8 +638,32 @@
     "seek_not_supported": {
       "message": "{entity_id}: frequentie zoeken wordt alleen ondersteund op tunerbron-entiteiten"
     },
+    "tuner_only_operation": {
+      "message": "{entity_id}: deze actie wordt alleen ondersteund op tunerbron-entiteiten"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id}: tuner {where} is nog niet ingesteld; herlaad de integratie als dit aanhoudt"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: volumeniveau {volume} is geen geldig eindig getal"
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} is een WHO=4 thermo-actuator en ondersteunt geen WHO=1 hardware-bustimers; gebruik in plaats daarvan een vertraging in een Home Assistant-automatisering."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} is een configuratieschakelaar voor een binaire sensor en ondersteunt geen WHO=1 hardware-bustimers."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: gateway {gateway} heeft de WHO=6 deurintercom-ontgrendeling geweigerd ({frame}). De firmware routeert WHO 6 (basis-deurintercom) niet."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: gateway {gateway} heeft het WHO=6 ontgrendelcommando geweigerd of genegeerd ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: ontgrendelcommando voor deurintercom is niet binnen {timeout} s bevestigd; het is ingetrokken als het nog niet verzonden was"
+    },
+    "lock_command_failed": {
+      "message": "{name}: ontgrendelcommando voor deurintercom mislukt: {error}"
     }
   },
   "entity": {
@@ -520,6 +679,17 @@
       },
       "calibrate_all_covers": {
         "name": "Alle rolluiken kalibreren"
+      },
+      "tuner_seek_up": {
+        "name": "Vooruit zoeken"
+      },
+      "tuner_seek_down": {
+        "name": "Achteruit zoeken"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequentie"
       }
     },
     "sensor": {
@@ -528,6 +698,11 @@
       },
       "energy_month": {
         "name": "Energie (huidige maand)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Status omkeren"
       }
     }
   },
@@ -551,6 +726,8 @@
         "2": "2 - Rolluiken / zonwering",
         "4": "4 - Thermoregeling",
         "5": "5 - Inbraakalarm",
+        "6": "6 - Deurintercom",
+        "8": "8 - Videofonie / intercom",
         "9": "9 - Hulpkanalen",
         "15": "15 - CEN-scenario's",
         "16": "16 - Geluidsdistributie",

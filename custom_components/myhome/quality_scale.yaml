@@ -140,16 +140,16 @@ rules:
     comment: PlatformDiscovery (discovery.py) creates an entity from the first frame of an unknown address and routes later frames to it; registry entries are restored first so devices exist before the bus speaks.
   entity-category:
     status: done
-    comment: Audited in tests/test_entity_audit.py - lock/unlock and calibration buttons are EntityCategory.CONFIG; every other entity is a primary control or measurement and carries no category (there are no diagnostic entities).
+    comment: Audited in tests/test_entity_audit.py - lock/unlock and calibration buttons plus binary-sensor invert switches are EntityCategory.CONFIG; every other entity is a primary control or measurement and carries no category (there are no diagnostic entities).
   entity-device-class:
     status: done
-    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet), cover (shutter), binary sensors, sensors (power/energy/temperature/illuminance) and media player (speaker) declare device classes; light, climate, button and alarm panel have none applicable.
+    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet; config invert switch has none), cover (shutter), binary sensors, sensors (power/energy/temperature/illuminance) and media player (speaker) declare device classes; light, climate, button and alarm panel have none applicable.
   entity-disabled-by-default:
     status: done
     comment: Audited in tests/test_entity_audit.py - the daily and monthly energy counters are disabled by default; all other entities are primary controls and stay enabled.
   entity-translations:
     status: done
-    comment: Translation keys for the lock / unlock / calibration buttons and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
+    comment: Translation keys for the lock / unlock / calibration buttons, the binary-sensor invert switch and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
   exception-translations:
     status: done
     comment: HomeAssistantError/ServiceValidationError raised from cover calibration, travel-time services and the media player decoder proxy carry translation keys defined under `exceptions` in strings.json / translations/en.json (guarded by test_every_raised_translation_key_is_defined).

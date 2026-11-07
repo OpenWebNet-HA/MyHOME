@@ -37,7 +37,12 @@ def test_address_forms_follow_openwebnet_where_conventions():
     assert (legacy.clean_where, legacy.clean_key) == ("12", "12")
     zone = Address.from_device_id("3#16", key_suffix="#16")
     assert (zone.where, zone.key) == ("3", "3#16")
+    assert Address.from_device_id("2#4#4#01") == Address("2#4", "01")
+    assert Address.from_device_id("#4#01") == Address("#4#01", None)
+    assert Address.from_device_id("2#4#100") == Address("2#4#100", None)
     assert Address.from_config("kitchen", {"where": "12", "bus_interface": "02"}).key == "12#4#02"
+    assert Address.from_config("upstairs", {"zone": "2#4#1"}) == Address("2", "01")
+    assert Address.from_config("malformed", {"zone": "2#4#100"}) == Address("2#4#100", None)
     assert Address.from_config("12", {}).where == "12"  # the yaml key is the WHERE when omitted
     assert Address.from_message(MagicMock(where="", interface=None)) is None
     assert Address.from_message(OWNEvent.parse("*1*1*0311#4#01##")) == Address("0311", "01")

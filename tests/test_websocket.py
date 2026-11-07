@@ -388,7 +388,8 @@ async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection, attach_gat
     mock_ws_connection.send_error.assert_called_once_with(
         25,
         websocket_api.ERR_INVALID_FORMAT,
-        "WHO 4 dimension 22 is a split-unit IR command and is blocked for safety",
+        "WHO 4 dimension 22 in this form crashes the gateway's thermostat daemon "
+        "and is blocked for safety",
     )
 
     # 6. Block signaling and syntactically invalid frames that start with * and end with ##

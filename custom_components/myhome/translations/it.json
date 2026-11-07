@@ -107,6 +107,104 @@
       "reconfigure_successful": "Connessione del gateway riconfigurata con successo."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Esponi entità sul bus SCS",
+        "reconfigure": "Riconfigura entità esposta"
+      },
+      "entry_type": "Entità esposta",
+      "step": {
+        "user": {
+          "title": "Esponi un'entità Home Assistant sul bus SCS",
+          "description": "Emula un dispositivo OpenWebNet virtuale sul bus SCS alimentato da un'entità Home Assistant.",
+          "data": {
+            "who": "Sottosistema WHO",
+            "where": "Indirizzo WHERE",
+            "entity_id": "Entità sorgente",
+            "attribute": "Attributo di stato (opzionale)",
+            "dimension": "Dimensione OpenWebNet (opzionale)",
+            "cooldown": "Intervallo minimo (secondi)",
+            "min_delta": "Soglia minima di variazione (opzionale)",
+            "periodic_send": "Intervallo di invio periodico (secondi)",
+            "respond_to_read": "Rispondi alle richieste di stato/dimensione sul bus",
+            "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
+            "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
+            "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
+            "value_template": "Template del valore (Jinja2, opzionale)"
+          }
+        },
+        "reconfigure": {
+          "title": "Riconfigura entità esposta",
+          "description": "Aggiorna l'indirizzo OpenWebNet, l'entità sorgente o i parametri di invio per questa associazione.",
+          "data": {
+            "who": "Sottosistema WHO",
+            "where": "Indirizzo WHERE",
+            "entity_id": "Entità sorgente",
+            "attribute": "Attributo di stato (opzionale)",
+            "dimension": "Dimensione OpenWebNet (opzionale)",
+            "cooldown": "Intervallo minimo (secondi)",
+            "min_delta": "Soglia minima di variazione (opzionale)",
+            "periodic_send": "Intervallo di invio periodico (secondi)",
+            "respond_to_read": "Rispondi alle richieste di stato/dimensione sul bus",
+            "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
+            "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
+            "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
+            "value_template": "Template del valore (Jinja2, opzionale)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Sottosistema WHO non supportato (supportati: 1, 2, 4, 13, 18).",
+        "where_required": "È richiesto un indirizzo WHERE per questo sottosistema WHO.",
+        "entity_required": "È richiesta un'entità Home Assistant sorgente per questo sottosistema WHO.",
+        "invalid_dimension": "Dimensione non valida per il sottosistema WHO selezionato.",
+        "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata."
+      },
+      "abort": {
+        "reconfigure_successful": "Associazione dell'entità esposta aggiornata correttamente."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Aggiungi attuatore termo / scaldasalviette (WHO 4)",
+        "reconfigure": "Riconfigura interruttore attuatore termo"
+      },
+      "entry_type": "Interruttore attuatore termo",
+      "step": {
+        "user": {
+          "title": "Aggiungi attuatore termo / scaldasalviette WHO=4",
+          "description": "Configura un relè di termoregolazione senza sonda (ad es. scaldasalviette BTicino F430/2 o F430/4) come interruttore ON/OFF. Usa Z#N (es. 7#1) per controllare un singolo canale attuatore senza interferire con un eventuale termostato reale sulla zona Z, oppure Z (es. 7) per assegnare l'intera zona come interruttore. Lascia vuoti i comandi personalizzati per inviare scritture dirette sulla Dimensione 20 (*#4*7#1*#20*1## e *#4*7#1*#20*0##). Su MyHomeServer1 (Home + Project) con oggetti 'Scaldasalviette', inserisci la coppia di frame OpenWebNet CEN+ (es. *25*21#1*21## e *25*21#2*21##) o WHO=1 collegati agli scenari/automazioni di Home + Project.",
+          "data": {
+            "where": "Indirizzo WHERE attuatore termo (es. 7#1, 7 o 7#1#4#01)",
+            "name": "Nome amichevole (opzionale)",
+            "turn_on_command": "Frame OpenWebNet personalizzato ON (opzionale, es. *25*21#1*21##)",
+            "turn_off_command": "Frame OpenWebNet personalizzato OFF (opzionale, es. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "Riconfigura interruttore attuatore termo WHO=4",
+          "description": "Aggiorna l'indirizzo WHERE, il nome amichevole o i comandi OpenWebNet personalizzati per questo attuatore termo senza sonda.",
+          "data": {
+            "where": "Indirizzo WHERE attuatore termo (es. 7#1, 7 o 7#1#4#01)",
+            "name": "Nome amichevole (opzionale)",
+            "turn_on_command": "Frame OpenWebNet personalizzato ON (opzionale, es. *25*21#1*21##)",
+            "turn_off_command": "Frame OpenWebNet personalizzato OFF (opzionale, es. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "È richiesto un indirizzo WHERE di zona o attuatore WHO=4 (es. 7#1 o 7).",
+        "invalid_where": "Indirizzo WHERE attuatore WHO=4 non valido. Atteso Z (1..99) o Z#N (N=1..9), opzionalmente dietro #4#IF (00..15).",
+        "paired_commands_required": "Inserisci entrambi i comandi OpenWebNet di accensione (ON) e spegnimento (OFF), oppure lasciali entrambi vuoti per il controllo diretto tramite Dimensione 20.",
+        "invalid_command": "Frame di comando OpenWebNet non valido (deve essere un comando o scrittura valido come *25*21#1*21## o *1*1*09##, non una lettura di stato o ACK).",
+        "already_configured": "Esiste già un interruttore attuatore termo WHO=4 configurato per questo indirizzo WHERE."
+      },
+      "abort": {
+        "reconfigure_successful": "Interruttore attuatore termo aggiornato correttamente."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {
@@ -298,6 +396,26 @@
       "name": "Ricerca frequenza precedente sintonizzatore",
       "description": "Cerca all'indietro la frequenza radio FM ricevibile precedente su una sorgente sintonizzatore F500."
     },
+    "tuner_set_frequency": {
+      "name": "Imposta frequenza sintonizzatore",
+      "description": "Sintonizza direttamente una frequenza radio FM manuale (87,50–108,00 MHz) su una sorgente sintonizzatore F500 / F500N.",
+      "fields": {
+        "frequency": {
+          "name": "Frequenza",
+          "description": "Frequenza radio FM desiderata in MHz (87,50–108,00 MHz, passi di 0,05 MHz)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Memorizza stazione sintonizzatore",
+      "description": "Memorizza la frequenza radio FM attuale in una posizione preimpostata (1–15) su una sorgente sintonizzatore F500 / F500N.",
+      "fields": {
+        "station": {
+          "name": "Stazione",
+          "description": "Numero della memoria preimpostata (1–5 su F500, fino a 1–15 su F500N)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Calibra il tempo di corsa della tapparella",
       "description": "Misura i tempi di corsa in salita e in discesa di una tapparella temporizzata sul bus SCS e li salva: la tapparella viene portata tutta su, poi tutta giù (cronometrata), poi di nuovo tutta su (cronometrata). Le tapparelle vengono calibrate una alla volta per gateway."
@@ -318,15 +436,15 @@
       "fields": {
         "travel_time": {
           "name": "Tempo di corsa",
-          "description": "Secondi per una corsa completa in entrambe le direzioni (1-180); usato per ogni direzione senza un valore esplicito."
+          "description": "Secondi per una corsa completa in entrambe le direzioni (1-300); usato per ogni direzione senza un valore esplicito."
         },
         "travel_time_down": {
           "name": "Tempo di corsa in discesa",
-          "description": "Secondi per una chiusura completa (1-180)."
+          "description": "Secondi per una chiusura completa (1-300)."
         },
         "travel_time_up": {
           "name": "Tempo di corsa in salita",
-          "description": "Secondi per un'apertura completa (1-180)."
+          "description": "Secondi per un'apertura completa (1-300)."
         },
         "slat_time": {
           "name": "Tempo di orientamento lamelle",
@@ -370,6 +488,14 @@
     "gateway_authentication_failed": {
       "title": "Autenticazione non riuscita sul gateway MyHOME {gateway}",
       "description": "Il gateway ha rifiutato le credenziali OpenWebNet. Riconfigura la password."
+    },
+    "central_remote_control_disabled": {
+      "title": "Telegestione disabilitata sulla centrale di termoregolazione {device} ({gateway})",
+      "description": "La centrale a 99 zone {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nFinché la telegestione è disabilitata sulla centrale fisica (es. BTicino 3550), il gateway conferma i comandi OpenWebNet con `*#*1##`, ma la centrale ignora le modifiche di modalità e setpoint inviate da Home Assistant.\n\nAbilita la **Telegestione** (*Controllo remoto*) nel menu impostazioni della centrale fisica. Questo avviso si risolve automaticamente appena la centrale segnala `*4*21*#0##` (`Remote control enabled`)."
+    },
+    "central_battery_fault": {
+      "title": "Guasto batteria tampone sulla centrale di termoregolazione {device} ({gateway})",
+      "description": "La centrale a 99 zone {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*31*#0##` (`Central unit battery KO`).\n\nControlla o sostituisci la batteria tampone nella centrale fisica (es. BTicino 3550) per preservare i programmi settimanali e l'orologio durante le interruzioni di corrente. Questo avviso si risolve automaticamente al successivo rapporto di stato (`*#4*#0##`) quando `*4*31*#0##` non è più presente."
     },
     "unmapped_device_status": {
       "title": "{device} segnala uno stato non documentato",
@@ -440,14 +566,23 @@
     "calibration_no_stop_status": {
       "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
     },
+    "calibration_actuator_cutoff_open": {
+      "message": "{name}: la corsa di apertura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare questa tapparella - usa il cronometro (Stop & Save) oppure imposta travel_time manualmente"
+    },
+    "calibration_actuator_cutoff_close": {
+      "message": "{name}: la corsa di chiusura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare questa tapparella - usa il cronometro (Stop & Save) oppure imposta travel_time manualmente"
+    },
     "cover_reports_position": {
       "message": "{name} segnala la propria posizione (advanced: true in myhome.yaml); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, rimuovere advanced: true da myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} è già in fase di calibrazione"
     },
-    "calibration_implausible_run": {
-      "message": "{name}: corsa {direction} non plausibile di {seconds} s; non salvata"
+    "calibration_implausible_run_down": {
+      "message": "{name}: corsa di chiusura non plausibile di {seconds} s; non salvata"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name}: corsa di apertura non plausibile di {seconds} s; non salvata"
     },
     "travel_time_missing": {
       "message": "Specifica almeno travel_time, travel_time_down/up oppure min_motor_pulse"
@@ -506,8 +641,32 @@
     "cover_position_unknown": {
       "message": "{name}: esegui un’apertura o una chiusura completa prima di impostare una posizione intermedia."
     },
+    "tuner_only_operation": {
+      "message": "{entity_id}: questa azione è supportata solo sulle entità sorgente sintonizzatore"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id}: il sintonizzatore {where} non è ancora configurato; ricarica l'integrazione se il problema persiste"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} è un attuatore di termoregolazione WHO=4 e non supporta i timer hardware su bus WHO=1; utilizza invece un ritardo nelle automazioni di Home Assistant."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} è un interruttore di configurazione di sensore binario e non supporta i timer hardware su bus WHO=1."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: il gateway {gateway} ha rifiutato il comando di apertura serratura videocitofonica WHO=6 ({frame}). Il suo firmware non instrada il WHO 6 (videocitofonia base)."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: il gateway {gateway} ha rifiutato o scartato il comando di apertura serratura WHO=6 ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: il comando di apertura serratura non è stato confermato entro {timeout} s; è stato ritirato se non era ancora stato inviato"
+    },
+    "lock_command_failed": {
+      "message": "{name}: comando di apertura serratura non riuscito: {error}"
     }
   },
   "entity": {
@@ -523,6 +682,17 @@
       },
       "calibrate_all_covers": {
         "name": "Calibra tutte le tapparelle"
+      },
+      "tuner_seek_up": {
+        "name": "Ricerca avanti"
+      },
+      "tuner_seek_down": {
+        "name": "Ricerca indietro"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequenza"
       }
     },
     "sensor": {
@@ -531,6 +701,11 @@
       },
       "energy_month": {
         "name": "Energia (mese corrente)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Inverti stato"
       }
     }
   },
@@ -554,6 +729,8 @@
         "2": "2 - Tapparelle / tende",
         "4": "4 - Termoregolazione",
         "5": "5 - Antifurto",
+        "6": "6 - Citofonia",
+        "8": "8 - Videocitofonia / intercom",
         "9": "9 - Ausiliari",
         "15": "15 - Scenari CEN",
         "16": "16 - Diffusione sonora",

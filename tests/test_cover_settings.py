@@ -108,7 +108,7 @@ async def test_migration_rejects_missing_profile_and_retries_after_write_failure
     assert cover._travel_time_up == 35
 
 
-async def test_native_write_is_atomic_revisioned_and_defers_during_motion(hass, plant):
+async def test_native_write_is_atomic_revisioned_and_recomputes_during_motion(hass, plant):
     entry, cover = plant.entries[0], plant.covers[0]
     plant.gateways[0].config_entry = entry
     store = get_store(hass, entry.entry_id)
@@ -119,15 +119,15 @@ async def test_native_write_is_atomic_revisioned_and_defers_during_motion(hass, 
     assert store.data == before
     assert cover._travel_time_up == 30
     cover.handle_event(OWNMessage.parse("*2*1*11##"))
+    previous_settle = cover._wall_settle_unsub
+    assert previous_settle is not None
     await cover.async_set_travel_time(travel_time_down=40, travel_time_up=50)
     assert store.data["revision"] == 1
     row = (await overview(hass, entry.entry_id))["covers"][0]
-    assert row["pending"] and row["effective"]["opening"]["value"] == 30
+    assert not row["pending"] and row["effective"]["opening"]["value"] == 50
     assert row["configured"]["opening"]["value"] == 50
-    cover._attr_is_opening = False
-    cover._move_start_time = None
-    cover._apply_pending_cover_profile()
-    row = (await overview(hass, entry.entry_id))["covers"][0]
+    assert cover._wall_settle_unsub is not None and cover._wall_settle_unsub is not previous_settle
+    cover.handle_event(OWNMessage.parse("*2*0*11##"))
     assert row["effective"] == row["configured"]
     assert cover._travel_time_down == 40
     assert CONF_COVER_TRAVEL_TIMES not in entry.options

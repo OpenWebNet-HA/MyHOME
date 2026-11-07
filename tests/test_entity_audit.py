@@ -37,7 +37,7 @@ from custom_components.myhome.sensor import (
     MyHOMEPowerSensor,
     MyHOMETemperatureSensor,
 )
-from custom_components.myhome.switch import MyHOMESwitch
+from custom_components.myhome.switch import MyHOMEInvertSwitch, MyHOMESwitch
 
 
 @pytest.fixture
@@ -106,6 +106,9 @@ AUDIT = [
     ("light", _light, None, None, True),
     ("switch", lambda h, g: _switch(h, g, SwitchDeviceClass.SWITCH), SwitchDeviceClass.SWITCH, None, True),
     ("outlet", lambda h, g: _switch(h, g, SwitchDeviceClass.OUTLET), SwitchDeviceClass.OUTLET, None, True),
+    ("invert switch",
+     lambda h, g: MyHOMEInvertSwitch(hass=h, config_entry=g.config_entry, name="B", device_id="31", who="25", where="31", inverted=False, gateway=g, **COMMON),
+     None, EntityCategory.CONFIG, True),
     ("cover", _cover, CoverDeviceClass.SHUTTER, None, True),
     ("climate", _climate, None, None, True),
     ("dry contact", lambda h, g: _binary(MyHOMEDryContact, h, g, BinarySensorDeviceClass.WINDOW, "25"),

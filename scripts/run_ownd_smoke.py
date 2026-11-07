@@ -175,7 +175,7 @@ def verify_platform_imports() -> Tuple[bool, str]:
     platforms = [
         "myhome", "myhome.const", "myhome.gateway", "myhome.light", "myhome.switch",
         "myhome.cover", "myhome.climate", "myhome.sensor", "myhome.binary_sensor",
-        "myhome.button", "myhome.alarm_control_panel", "myhome.media_player",
+        "myhome.button", "myhome.number", "myhome.alarm_control_panel", "myhome.media_player",
         "myhome.diagnostics", "myhome.websocket",
     ]
     sys.path.insert(0, str(REPO_ROOT))

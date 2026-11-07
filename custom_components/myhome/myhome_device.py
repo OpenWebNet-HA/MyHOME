@@ -13,12 +13,12 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.typing import UNDEFINED
 
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
 from .migrate import preserve_legacy_compat_name
+from .typing_compat import UNDEFINED
 
 __all__ = ["Entity", "MyHOMEEntity"]
 

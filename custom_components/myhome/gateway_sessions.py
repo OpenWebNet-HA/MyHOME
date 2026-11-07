@@ -1346,6 +1346,16 @@ class CommandWorkerPool:
                 try:
                     if task is None:
                         break
+                    written = task.get("written")
+                    if isinstance(written, asyncio.Future) and written.cancelled():
+                        # The caller withdrew the frame (a door-entry unlock past its
+                        # timeout): writing it now would act long after the caller gave up.
+                        LOGGER.debug(
+                            "%s Message `%s` was withdrawn before it was written; not sending.",
+                            self.log_id,
+                            task["message"],
+                        )
+                        continue
 
                     LOGGER.debug(
                         "%s Message `%s` was successfully unqueued by worker %s.",
@@ -1358,16 +1368,6 @@ class CommandWorkerPool:
                         if guard is not None and not guard():
                             _cancel_written(task)
                             continue
-                        task_start = time.time()
-                        self.bus_monitor.record_frame(
-                            direction="tx",
-                            raw=str(task["message"]),
-                            parsed=(
-                                task["message"]
-                                if isinstance(task["message"], OWNMessage)
-                                else None
-                            ),
-                        )
                         # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
                         # or a prior failed send) calls `connect()` directly, preserving
                         # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
@@ -1393,6 +1393,24 @@ class CommandWorkerPool:
                         if guard is not None and not guard():
                             _cancel_written(task)
                             continue
+                        if isinstance(written, asyncio.Future) and written.cancelled():
+                            # The lock/connect await may outlast the caller's timeout.
+                            LOGGER.debug(
+                                "%s Message `%s` was withdrawn while opening command session; not sending.",
+                                self.log_id,
+                                task["message"],
+                            )
+                            continue
+                        task_start = time.time()
+                        self.bus_monitor.record_frame(
+                            direction="tx",
+                            raw=str(task["message"]),
+                            parsed=(
+                                task["message"]
+                                if isinstance(task["message"], OWNMessage)
+                                else None
+                            ),
+                        )
                         written_at = time.monotonic()
                         is_exposed = self._is_exposed_target(task)
                         self._in_flight_messages.append(task["message"])

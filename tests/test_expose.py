@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -438,12 +439,12 @@ async def test_who1_light_brightness_levels_and_default_stepping(hass: HomeAssis
     mgr = ExposeManager(hass, entry)
     await mgr.async_start()
 
-    # Explicit dimmer level 7 (70%) on the bus -> light.turn_on(brightness_pct=70)
+    # Explicit coarse dimmer preset WHAT 7 (50% on BTicino dimmerLevelTo100 curve) -> light.turn_on(brightness_pct=50)
     await mgr.handle_bus_message(OWNMessage.parse("*1*7*96##"))
     assert calls[-1] == (
         "light",
         "turn_on",
-        {"entity_id": "light.hue_lamp", "brightness_pct": 70},
+        {"entity_id": "light.hue_lamp", "brightness_pct": 50},
     )
 
     # Step up without custom action -> light.turn_on(brightness_step_pct=15)
@@ -3008,5 +3009,73 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     await mgr.async_stop()
 
 
+@pytest.mark.asyncio
+async def test_who1_coarse_what_2_to_10_and_translation_presets_map_to_bticino_curve(
+    hass: HomeAssistant,
+) -> None:
+    """Verify WHO=1 virtual dimmer maps WHAT 2..10 and 1000#2..10 via COARSE_PRESET_TO_PERCENT (#466)."""
+    hass.states.async_set("light.hue_lamp", "off")
+    hass.states.async_set("media_player.sonos", "paused")
+    calls: list[tuple[str, str, dict[str, Any]]] = []
 
+    async def _record_call(call: Any) -> None:
+        calls.append((call.domain, call.service, dict(call.data)))
 
+    hass.services.async_register("light", "turn_on", _record_call)
+    hass.services.async_register("media_player", "media_play", _record_call)
+
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {"who": 1, "where": "96", "entity_id": "light.hue_lamp", "cooldown": 0},
+            {"who": 1, "where": "95", "entity_id": "media_player.sonos", "cooldown": 0},
+        ],
+    )
+    mgr = ExposeManager(hass, entry)
+    await mgr.async_start()
+
+    expected_curve = [
+        (2, 1),
+        (3, 10),
+        (4, 20),
+        (5, 30),
+        (6, 40),
+        (7, 50),
+        (8, 60),
+        (9, 75),
+        (10, 100),
+    ]
+
+    for frame_tpl in ("*1*{what}*96##", "*1*1000#{what}*96##"):
+        for what_code, expected_pct in expected_curve:
+            gw.send.reset_mock()
+            # Clear rx deduplication window so consecutive test frames are never throttled
+            mgr._last_rx_by_frame.clear()
+            mgr._tx_echo_guard.clear()
+            await mgr.handle_bus_message(
+                OWNMessage.parse(frame_tpl.format(what=what_code))
+            )
+            assert calls[-1] == (
+                "light",
+                "turn_on",
+                {"entity_id": "light.hue_lamp", "brightness_pct": expected_pct},
+            )
+            assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*1*1*96##"]
+            assert mgr.bindings[0].last_sent_value == (True, expected_pct)
+
+    # Non-light entity bound to WHO=1 still records mapped pct on last_sent_value and falls back to ON
+    gw.send.reset_mock()
+    mgr._last_rx_by_frame.clear()
+    mgr._tx_echo_guard.clear()
+    await mgr.handle_bus_message(OWNMessage.parse("*1*2*95##"))
+    assert calls[-1] == (
+        "media_player",
+        "media_play",
+        {"entity_id": "media_player.sonos"},
+    )
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*1*1*95##"]
+    assert mgr.bindings[1].last_sent_value == (True, 1)
+
+    await mgr.async_stop()

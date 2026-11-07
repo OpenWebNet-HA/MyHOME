@@ -196,8 +196,11 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "canonical_thermo_zone",
     "expose_message_where",
+    "is_actuator_where",
     "is_apl_address",
+    "is_central_thermo_where",
     "is_probe",
     "is_pump",
     "is_valid_hs_tuple",
@@ -215,9 +218,48 @@ __all__ = [
 ]
 
 
+def is_actuator_where(where: str) -> bool:
+    """Whether ``where`` addresses a WHO 4 actuator or split unit rather than a zone or central unit.
+
+    Covers ``Z#N`` / ``Z#0`` / ``0#N`` / ``0#0`` and 3-token ``3#Z#N`` / ``A#B#C`` addresses
+    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#4`` is a 4-zone
+    central unit, not an actuator, and ``Z#4#II`` is a routed zone (note that a 1-digit
+    shorthand ``3#4#1``..``3#4#9`` is normalized as zone 3 behind interface ``01``..``09``;
+    wire frames always write two-digit ``#4#01``..``#4#15``). Dimensionless ``*#4*Z#N##``
+    NACKs on nine gateways, cross-polls local zone ``Z`` on H4684/MH200, and crashes ``coso``
+    with ``SIGSEGV`` on MH202 ``010024`` (where ``libthermo.so`` ``device_recognition`` also
+    classifies non-``#`` 3-token ``A#B#C`` with ``1 <= B <= 99`` and ``1 <= C <= 9`` as local
+    actuator ``B#C``).
+    """
+    clean = (where or "").strip().removeprefix("4-")
+    base, routing, iface = clean.rpartition("#4#")
+    if routing and iface.isdigit() and 1 <= len(iface) <= 2:
+        clean = base
+    if clean in ("#0#1", "#0#2", "#0#3", "#0#4"):
+        return False
+    parts = clean.removeprefix("#").split("#")
+    if len(parts) in (2, 3):
+        return all(part.isdigit() for part in parts) and 0 <= int(parts[-1]) <= 9
+    return False
+
+
 def zone_number(where: str) -> str:
     """The zone without a legacy ``4-`` prefix or ``#``: ``"#0"`` -> ``"0"``, ``"4-12"`` -> ``"12"``."""
     return where.removeprefix("4-").replace("#", "")
+
+
+def canonical_thermo_zone(where: str) -> str | None:
+    """Return canonical zone ``"1"``..``"99"`` for a WHO=4 address, or ``None`` for central/pumps/probes."""
+    clean = str(where).strip().removeprefix("4-")
+    if clean == "#0" or clean.startswith("#0#") or is_probe(clean):
+        return None
+    head = clean.removeprefix("#").split("#", 1)[0]
+    if not head.isdigit():
+        return None
+    zone_int = int(head)
+    if not (1 <= zone_int <= 99):
+        return None
+    return str(zone_int)
 
 
 def is_probe(where: str) -> bool:
@@ -239,6 +281,13 @@ def where_param(message: Any) -> list[str]:
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def is_central_thermo_where(message: Any) -> bool:
+    """Whether a WHO=4 message's WHERE is central-unit addressed (``#0``, ``#Z``, ``#0#N``), excluding probes."""
+    raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
+    head = raw.removeprefix("#").split("#", 1)[0]
+    return raw.startswith("#") and head.isdigit() and not is_probe(head)
 
 
 def canonical_point_spelling(where: str) -> str:
@@ -434,9 +483,25 @@ def validate_thermo_trigger_command(raw: str | None) -> str:
             "OpenWebNet status request cannot be used as a write/trigger command"
         )
     if frame.startswith("*#4*") and "*#22*" in frame:
-        raise ValueError(
-            "WHO=4 Dimension 22 is a status dimension, not an actuator write command"
-        )
+        # Dimension 22 (split control) is read/write, but every spelling without
+        # an actuator token crashes the thermostat daemon; only the published
+        # ``*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`` write may be a trigger, and only
+        # with an OWNd that knows the safe form (services.is_refused_dimension_22).
+        from .services import is_refused_dimension_22, services_has_dimension_22_detector
+
+        if is_refused_dimension_22(frame):
+            if services_has_dimension_22_detector():
+                detail = "only the split-unit write *#4*3#Z#N*#22*MOD*SP*VEL*SWING## is accepted"
+            else:
+                detail = (
+                    "the installed OWNd (< 2.0.0b12) cannot tell the split-unit write "
+                    "*#4*3#Z#N*#22*MOD*SP*VEL*SWING## from the crash forms, so every "
+                    "Dimension 22 write is refused"
+                )
+            raise ValueError(
+                "WHO=4 Dimension 22 in this form crashes the gateway's thermostat daemon; "
+                + detail
+            )
     if not _TRIGGER_COMMAND_RE.fullmatch(frame):
         raise ValueError(f"Invalid OpenWebNet command frame: {frame}")
     try:

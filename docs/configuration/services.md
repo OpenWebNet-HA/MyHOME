@@ -23,6 +23,8 @@ This document provides a comprehensive reference for all custom services registe
 | [`myhome.send_scenario_plus_command`](#13-myhomesend_scenario_plus_command) | Gateway | Send a WHO 25 scenario plus command (on, off, increase, decrease, stop). |
 | [`myhome.cancel_cover_request`](#14-myhomecancel_cover_request) | `cover` | Cancel a pending approval request or running pre-warning countdown. |
 | [`myhome.acknowledge_cover_fault`](#15-myhomeacknowledge_cover_fault) | `cover` | Clear a latched safety watchdog fault after verifying physical gate/door clearance. |
+| [`myhome.tuner_set_frequency`](#16-myhometuner_set_frequency) | `media_player` | Tune an F500 / F500N radio tuner directly to an FM frequency in MHz (`87.50–108.00 MHz`). |
+| [`myhome.tuner_store_station`](#17-myhometuner_store_station) | `media_player` | Memorise the currently tuned FM frequency into a preset station slot (`1–15`). |
 
 ---
 
@@ -158,9 +160,9 @@ action: myhome.sweep_bus
 
 Measures a timed cover's travel times **on the bus** and stores them, replacing the guessed `travel_time`. The cover is driven fully **up** (so its position is known), then fully **down** (timed), then fully **up** again (timed). Covers of one gateway are calibrated **one at a time** — a single-session gateway cannot drive two motors reliably and overlapping runs would confuse the timing. The shutter moves for about three full travels; do not run it while the shutter must stay put.
 
-The measured values are the actuator's run times (motor start → actuator stop status). They equal the physical travel when the installer calibrated the actuator's run-time parameter to closely match the real travel (e.g. by setting the `M` configurator or virtual configuration in MyHOME_Suite). An actuator left at its factory default **60 s run-time limit** (reported with `M=0`, `last_run_seconds` ~60–61 s) stops itself, not at the end stop: such a run ends at about 60–61 s and is **refused** (`failed`, nothing stored) as soon as it ends, whoever called the service. For that shutter, you can either adjust the actuator's timed stop setting (to a couple of seconds above the real travel), or without touching the actuator, stop a run by hand (wall switch or the cover's Stop) once it reaches the end stop, read `last_run_seconds` from the cover's attributes and store it with `myhome.set_cover_travel_time`.
+The measured values are the actuator's run times (motor start → actuator stop status). They equal the physical travel when the installer calibrated the actuator's run-time parameter to closely match the real travel (e.g. by setting the `M` configurator or virtual configuration in MyHOME_Suite). An actuator left at its factory default **60 s run-time limit** (reported with `M=0`, `last_run_seconds` ~60–61 s) stops itself, not at the end stop: such a run ends at about 60–61 s and is **refused** (`failed`, nothing stored) as soon as it ends, whoever called the service. For that shutter, you can either adjust the actuator's timed stop setting in MyHOME_Suite (to a couple of seconds above the real travel when the shutter takes under ~58 s; above 60 s only whole-minute steps exist), or without touching the actuator, stop a run by hand (wall switch or the cover's Stop) once it reaches the end stop, read `last_run_seconds` from the cover's attributes and store it with `myhome.set_cover_travel_time`.
 
-The guard catches **only that factory cutoff** (a run ending in the 59–65 s window). An actuator whose run-time parameter the installer set significantly longer than the physical travel stops itself when its timer expires, and that duration is stored as the travel time: nothing on the bus tells it apart from a real end stop, only a stopwatch can. If the stored time is longer than the shutter visibly takes to move, time a run stopped by hand (`last_run_seconds`) or set `travel_time` manually with `myhome.set_cover_travel_time`.
+The guard catches **only the configurator's whole-minute limits**: a run ending from 1 s before a limit to 5 s per minute after it — 59–65 s at 60 s, 119–130 s at 120 s (the `M=1` setting a 60–86 s shutter needs on an `F411/2` or `F411/4`, and ~125.5–127.1 s observed on `4672` actuators in #433), 179–195 s at 180 s, and so on up to 10 min. The failed event then carries `actuator_limit` (the limit in seconds). Limits above 3 min (and a 3 min stop arriving after the 180 s wait) fail first on the 180 s wait for the stop status. An actuator whose run-time parameter the installer set significantly longer than the physical travel stops itself when its timer expires, and that duration is stored as the travel time: nothing on the bus tells it apart from a real end stop, only a stopwatch can. If the stored time is longer than the shutter visibly takes to move, time a run stopped by hand (`last_run_seconds`) or set `travel_time` manually with `myhome.set_cover_travel_time`.
 
 Results are stored in the config entry options (`cover_travel_times`), survive restarts and reinstalls, apply to discovered covers without any YAML, and show up as entity attributes: `travel_time_down`, `travel_time_up`, `calibration_source` (`measured` / `manual` / `copied` / `yaml` / `default`), `calibrated_at` (and `copied_from` when copied). Every run of a timed cover is measured the same way, calibration or not: `motion_started_at` is the motor-start anchor of the current run and `last_run_seconds` / `last_run_direction` / `last_run_ended_at` describe the last completed run (motor start → stop frame written, re-anchored to the stop status when relayed, or actuator stop status), so a run stopped by hand at the end stop gives the physical travel without the calibration service. Advanced covers (which report their position) are refused. Progress is published on the event bus as `myhome_cover_calibration` (`phase`: `queued`, `start`, `run`, `done`, `failed`).
 
@@ -200,7 +202,7 @@ action: myhome.stop_cover_calibration
 
 ## 9. `myhome.set_cover_travel_time`
 
-Stores the physical travel times of a timed cover **by hand** — the manual alternative to `calibrate_cover` for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators with the 60 s safety cut-off). Measure the closing and opening runs with a stopwatch and pass them here. `travel_time` fills whichever direction has no explicit value; note that `travel_time_down` on its own also sets the up time (the two are assumed equal unless `travel_time_up` is given), whereas `travel_time_up` on its own leaves the stored down time untouched — pass both when you only want to change one. Travel times must lie between 1 s and 180 s. The motor start-up floor (`min_motor_pulse`) can also be configured here (0.0 to 5.0 s, 0.0 disables). When setting travel times, the result is stored like a measured calibration (`calibration_source: manual`); when only `min_motor_pulse` is specified, existing travel times, source, and calibration timestamps remain untouched.
+Stores the physical travel times of a timed cover **by hand** — the manual alternative to `calibrate_cover` for gateways that cannot calibrate reliably (MH200 / MH200N single-session pacing, or actuators at a configurator run-time limit such as 60 s or 120 s). Measure the closing and opening runs with a stopwatch and pass them here. `travel_time` fills whichever direction has no explicit value; note that `travel_time_down` on its own also sets the up time (the two are assumed equal unless `travel_time_up` is given), whereas `travel_time_up` on its own leaves the stored down time untouched — pass both when you only want to change one. Travel times must lie between 1 s and 300 s. The motor start-up floor (`min_motor_pulse`) can also be configured here (0.0 to 5.0 s, 0.0 disables). When setting travel times, the result is stored like a measured calibration (`calibration_source: manual`); when only `min_motor_pulse` is specified, existing travel times, source, and calibration timestamps remain untouched.
 
 ### Fields
 | Parameter | Type | Required | Description | Example |
@@ -338,4 +340,46 @@ Clears the safety fault latched when a gate or garage door did not reach its exp
 action: myhome.acknowledge_cover_fault
 target:
   entity_id: cover.garage_door_1
+```
+
+---
+
+## 16. `myhome.tuner_set_frequency`
+
+Tunes an F500 / F500N sound source tuner entity (`WHERE` 101–109 / `WHO 22` `2#S`) directly to an explicit FM radio frequency (`87.50–108.00 MHz`, `0.05 MHz` step), dispatching `*#16*10S*#6*0*<kHz>##` on `WHO 16` gateways or `*#22*2#S*#5*1*<10kHz>##` on `WHO 22`-only gateways (`MyHomeServer1`, `F459`, `F460`, `F461`). You can also adjust this directly in the UI via the companion `number.<source>_frequency` entity.
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
+| `frequency` | float | **Yes** | Target FM radio frequency in MHz (`87.5`–`108.0`, `0.05` MHz step). | `105.3` |
+
+### Example YAML Call
+```yaml
+action: myhome.tuner_set_frequency
+target:
+  entity_id: media_player.audio_source_1
+data:
+  frequency: 105.3
+```
+
+---
+
+## 17. `myhome.tuner_store_station`
+
+Memorises the currently tuned FM radio frequency into a hardware preset slot (`1–5` on F500, up to `1–15` on F500N), dispatching `*#16*10S*#10*<station>##` for slots `1–5` on `WHO 16` gateways (`bt_difson` ceiling) and `*22*33#<station>*2#S##` for extended slots `6–15` on dual-stack gateways or all slots `1–15` on `WHO 22`-only gateways (`WHO 16`-only gateways such as `MH200` reject slots `6–15`).
+
+### Fields
+| Parameter | Type | Required | Description | Example |
+| :--- | :---: | :---: | :--- | :--- |
+| `entity_id` | target | Yes | Target MyHOME tuner source `media_player` entity. | `media_player.audio_source_1` |
+| `station` | integer | **Yes** | Preset memory slot number (`1`–`5` on `WHO 16`-only gateways, `1`–`15` when `WHO 22` is available). | `5` |
+
+### Example YAML Call
+```yaml
+action: myhome.tuner_store_station
+target:
+  entity_id: media_player.audio_source_1
+data:
+  station: 5
 ```

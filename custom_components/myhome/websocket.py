@@ -37,7 +37,7 @@ from .const import (
     INTEGRATION_VERSION,
 )
 from .data import get_runtime_data
-from .services import _WHO4_DIMENSION_22
+from .services import is_refused_dimension_22
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -393,14 +393,18 @@ async def ws_bus_monitor_send(
         )
         return
 
-    # Safety guard: WHO 4 Dimension 22 split-unit IR requests crash the thermostat daemon
-    # on F461 / F454 / MH200N-class gateways and force a gateway reboot within ~3 minutes
-    # (confirmed in tests/fixtures/traces/f461_live_2026-10-15). Block them from WebSocket injection.
-    if _WHO4_DIMENSION_22.match(frame_str):
+    # Safety guard: a WHO 4 dimension 22 frame whose WHERE carries no actuator token
+    # (zone, general, central unit) crashes the thermostat daemon on F461 / F454 /
+    # MH200N-class gateways; a live F461 rebooted ~3 minutes later
+    # (tests/fixtures/traces/f461_live_2026-10-15). The published split form
+    # *#4*3#Z#N*22## passes once the installed OWNd can tell the forms apart
+    # (services.is_refused_dimension_22).
+    if is_refused_dimension_22(frame_str):
         connection.send_error(
             msg["id"],
             ERR_INVALID_FORMAT,
-            "WHO 4 dimension 22 is a split-unit IR command and is blocked for safety",
+            "WHO 4 dimension 22 in this form crashes the gateway's thermostat daemon "
+            "and is blocked for safety",
         )
         return
 

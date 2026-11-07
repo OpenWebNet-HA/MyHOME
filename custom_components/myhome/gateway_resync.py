@@ -206,8 +206,8 @@ class LightingResyncManager:
         entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
         for entry in entries:
             if entry.domain in ("light", "switch"):
-                _, key = parse_unique_id(entry.unique_id, self.handler.mac)
-                if not key:
+                who, key = parse_unique_id(entry.unique_id, self.handler.mac)
+                if not key or (who is not None and who.isdigit() and who != "1"):
                     continue
                 address = Address.from_device_id(key)
                 clean_where = normalize_where(address.clean_where)

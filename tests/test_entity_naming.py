@@ -74,6 +74,9 @@ EXPECTED = {
     "binary_sensor.cancello_opening": "Cancello Opening",
     "binary_sensor.front_door_contact": "Front Door Contact",
     "binary_sensor.garage": "Garage",  # entity_name == name: the entity is the device
+    "switch.cancello_invert_state": "Cancello Invert state",
+    "switch.front_door_invert_state": "Front Door Invert state",
+    "switch.garage_invert_state": "Garage Invert state",
     "sensor.house_power": "House Power",
     "sensor.house_energy": "House Energy",
     "sensor.probe_100_temperature": "Probe 100 Temperature",

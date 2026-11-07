@@ -4,8 +4,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+import OWNd.message as _ownd_message
 import voluptuous as vol
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -32,8 +34,35 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_SYNC_TIME = "sync_time"
 SERVICE_SEND_MESSAGE = "send_message"
-# *#4*<where>*22## and *#4*<where>*#22*...## (split control): never forwarded, see handle_send_message.
+# WHO 4 dimension 22 (split control). Sent with a WHERE that carries no actuator
+# token (a zone ``*#4*Z*22##``, the general ``*#4*0*22##``, the central unit
+# ``*#4*#0*22##``) the frame kills the thermostat daemon of the Linux IP gateways
+# (own-firmware-oracle ``thermo-dim22``, OWNd#136 / OWNd#151). The published split
+# forms ``*#4*3#Z#N*22##`` and ``*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`` crashed none of
+# the twelve emulated gateways. OWNd >= 2.0.0b12 tells the two apart
+# (``is_who4_dimension_22_crash_form``); with an older OWNd no form is known to be
+# safe, so every dimension 22 frame stays refused. Used by handle_send_message,
+# the bus-monitor WebSocket and the thermo switch trigger validation.
 _WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
+# None on OWNd < 2.0.0b12, where no sendable dimension 22 form is known.
+_is_dimension_22_crash_form: Callable[[object], bool] | None = getattr(
+    _ownd_message, "is_who4_dimension_22_crash_form", None
+)
+
+
+def services_has_dimension_22_detector() -> bool:
+    """True when the installed OWNd can tell the published split form from the crash forms."""
+    return _is_dimension_22_crash_form is not None
+
+
+def is_refused_dimension_22(frame: str) -> bool:
+    """True when ``frame`` is a WHO 4 dimension 22 form that must not reach a gateway."""
+    frame = str(frame).strip()
+    if _is_dimension_22_crash_form is not None:
+        return bool(_is_dimension_22_crash_form(frame))
+    return _WHO4_DIMENSION_22.match(frame) is not None
+
+
 SERVICE_SWEEP_BUS = "sweep_bus"
 
 # Closed schemas: a misspelt key such as `gw_mac` (#189) raises instead of being
@@ -181,13 +210,19 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         handler = _get_gateway_handler(hass, gateway)
         if handler is not None:
             from OWNd.message import OWNCommand
-            if _WHO4_DIMENSION_22.match(str(message).strip()):
+            if is_refused_dimension_22(message):
                 _LOGGER.error(
-                    "%s Refusing to send `%s`: a WHO 4 dimension 22 request kills the thermostat "
-                    "handler of F461 / F454 / MH200N-class gateways and reboots the gateway "
-                    "about three minutes later (tests/fixtures/traces/f461_live_2026-10-15).",
+                    "%s Refusing to send `%s`: every WHO 4 dimension 22 spelling other than the "
+                    "published split forms *#4*3#Z#N*22## and *#4*3#Z#N*#22*MOD*SP*VEL*SWING## "
+                    "kills the thermostat daemon of F461 / F454 / MH200N-class gateways (a live "
+                    "F461 2.0.11 rebooted about three minutes later, "
+                    "tests/fixtures/traces/f461_live_2026-10-15)%s.",
                     handler.log_id,
                     message,
+                    ""
+                    if services_has_dimension_22_detector()
+                    else "; the installed OWNd (< 2.0.0b12) cannot tell the split forms apart, "
+                    "so every dimension 22 frame is refused",
                 )
                 return
             own_message = OWNCommand.parse(message)

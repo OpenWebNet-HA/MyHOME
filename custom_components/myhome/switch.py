@@ -17,11 +17,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
+    EntityCategory,
     Platform,
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_platform
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import RegistryEntry
@@ -34,6 +40,11 @@ from OWNd.message import (
     OWNLightingEvent,
 )
 
+from .binary_sensor import (
+    binary_sensor_canonical_where,
+    classify_binary_sensor_registry_entry,
+    resolve_binary_sensor_inverted,
+)
 from .const import (
     BUS_ROUTING,
     CONF_DEVICE_CLASS,
@@ -41,14 +52,19 @@ from .const import (
     CONF_ENTITY_NAME,
     CONF_ICON,
     CONF_ICON_ON,
+    CONF_INVERTED_BINARY_SENSORS,
     CONF_MANUFACTURER,
     CONF_TURN_OFF_COMMAND,
     CONF_TURN_ON_COMMAND,
+    CONF_WHERE,
     CONF_WHO,
     DOMAIN,
     LOGGER,
     SERVICE_TURN_ON_TIMED,
+    SIGNAL_BINARY_SENSOR_INVERTED,
+    SIGNAL_NEW_BINARY_SENSOR,
     build_timed_turn_on_command,
+    normalize_where,
 )
 from .data import get_runtime_data
 from .discovery import (
@@ -57,8 +73,11 @@ from .discovery import (
     PlatformDiscovery,
     default_known_keys,
     parse_unique_id,
+    prune_entity,
 )
+from .expose import is_exposed_on_bus
 from .gateway import MyHOMEGatewayHandler
+from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
 from .typing_compat import as_any
@@ -154,23 +173,22 @@ async def async_setup_entry(
         # (_ForeignAddresses) and publishes under that spelling too.
         return [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where]
 
-    startup_entities.extend(
-        PlatformDiscovery(
-            hass,
-            config_entry,
-            async_add_entities,
-            platform=PLATFORM,
-            who="1",
-            event_type=None,
-            build=build_who1,
-            announce=True,
-            accept=lambda ctx: str(ctx.cfg.get(CONF_WHO) or "1") == "1",
-            registry_address=who1_registry_address,
-            reject_registry_entry=corrupted,
-            known_keys=known_keys,
-            yaml_device_id=lambda address: address.clean_key,
-        ).start(listen=False, add=False)
+    who1_discovery = PlatformDiscovery(
+        hass,
+        config_entry,
+        async_add_entities,
+        platform=PLATFORM,
+        who="1",
+        event_type=None,
+        build=build_who1,
+        announce=True,
+        accept=lambda ctx: str(ctx.cfg.get(CONF_WHO) or "1") == "1",
+        registry_address=who1_registry_address,
+        reject_registry_entry=corrupted,
+        known_keys=known_keys,
+        yaml_device_id=lambda address: address.clean_key,
     )
+    startup_entities.extend(who1_discovery.start(listen=False, add=False))
 
     # ── WHO 4: probe-less thermo actuator / towel-warmer switches ───────
     def who4_registry_address(entry: RegistryEntry) -> Address | None:
@@ -282,6 +300,197 @@ async def async_setup_entry(
             route_keys=thermo_route_keys,
             yaml_device_id=lambda address: f"4-{address.clean_key}",
         ).start(listen=True, add=False)
+    )
+
+    # ── WHO 25 & WHO 9: per-device 'Invert state' config switches (#826) ──
+    configured_bs = runtime.platforms.get("binary_sensor", {})
+    ignored_bs = IgnoredAddresses.from_config_entry(config_entry)
+    known_invert_switches: set[str] = set()
+    invert_entities: list[MyHOMEInvertSwitch] = []
+
+    def _bs_first_cfg(*keys: str) -> dict[str, Any]:
+        for k in keys:
+            c = configured_bs.get(k)
+            if isinstance(c, dict) and c:
+                return c
+        return {}
+
+    def _create_invert_switch(
+        *,
+        who: str,
+        where: str,
+        device_id: str,
+        name: str,
+        manufacturer: str,
+        model: str,
+        cfg: dict[str, Any] | None = None,
+    ) -> MyHOMEInvertSwitch | None:
+        if who not in ("25", "9"):
+            return None
+        canonical_where = binary_sensor_canonical_where(who, where)
+        opt_key = f"{who}-{canonical_where}"
+        if opt_key in known_invert_switches:
+            return None
+        addr = Address.from_device_id(canonical_where)
+        who_int = int(who)
+        full_where = (
+            f"{addr.where}{BUS_ROUTING}{addr.interface}"
+            if addr.interface
+            else addr.where
+        )
+        if ignored_bs.is_ignored(who_int, addr.where, addr.interface) or is_exposed_on_bus(
+            hass, config_entry, who_int, full_where
+        ):
+            return None
+        known_invert_switches.add(opt_key)
+        return MyHOMEInvertSwitch(
+            hass=hass,
+            config_entry=config_entry,
+            name=name,
+            device_id=device_id,
+            who=who,
+            where=canonical_where,
+            inverted=resolve_binary_sensor_inverted(config_entry, who, where, cfg),
+            manufacturer=manufacturer,
+            model=model,
+            gateway=runtime.gateway,
+        )
+
+    registry, reg_entries = who1_discovery.registry_entries()
+    devices_reg: dr.DeviceRegistry | None = None
+    for reg_entry in reg_entries:
+        if reg_entry.domain != "binary_sensor" or not reg_entry.unique_id:
+            continue
+        classified = classify_binary_sensor_registry_entry(
+            reg_entry, gateway_mac, entry_mac
+        )
+        if classified is None or classified[0] not in ("25", "9"):
+            continue
+        bs_who, candidate = classified
+        clean_cand = candidate.split("-")[-1]
+        if bs_who == "25":
+            bs_cfg = _bs_first_cfg(
+                f"25-{candidate}",
+                candidate,
+                clean_cand,
+                normalize_where(candidate) or "",
+                normalize_where(clean_cand) or "",
+            )
+            bs_where = str(bs_cfg.get(CONF_WHERE, candidate))
+            norm_w = normalize_where(bs_where) or normalize_where(bs_where.split("-")[-1])
+            bs_dev_id = (
+                candidate
+                if candidate in configured_bs
+                else (norm_w or bs_where.split("-")[-1])
+            )
+            default_name = f"Dry Contact {norm_w or bs_where.split('-')[-1]}"
+            default_model = "Dry Contact Interface"
+        else:
+            bs_cfg = _bs_first_cfg(
+                f"9-{candidate}", f"9-{clean_cand}", candidate, clean_cand
+            )
+            bs_where = str(bs_cfg.get(CONF_WHERE, clean_cand or candidate))
+            clean_w = bs_where.split("-")[-1]
+            bs_dev_id = clean_w or clean_cand or candidate
+            default_name = f"Auxiliary Channel {clean_w}"
+            default_model = "Auxiliary Channel"
+        reg_dev_id = getattr(reg_entry, "device_id", None)
+        device = None
+        if isinstance(reg_dev_id, str) and reg_dev_id:
+            if devices_reg is None:
+                devices_reg = dr.async_get(hass)
+            device = devices_reg.async_get(reg_dev_id)
+        if device is not None:
+            for dom, ident in device.identifiers:
+                if dom == DOMAIN and f"-{bs_who}-" in ident:
+                    bs_dev_id = ident.split(f"-{bs_who}-", 1)[1]
+                    break
+        bs_name = str(
+            bs_cfg.get(CONF_NAME)
+            or (device.name if device is not None and device.name else None)
+            or default_name
+        )
+        bs_mfr = str(
+            bs_cfg.get(CONF_MANUFACTURER)
+            or (getattr(device, "manufacturer", None) if device is not None else None)
+            or "BTicino"
+        )
+        bs_model = str(
+            bs_cfg.get(CONF_DEVICE_MODEL)
+            or (getattr(device, "model", None) if device is not None else None)
+            or default_model
+        )
+        inv = _create_invert_switch(
+            who=bs_who,
+            where=bs_where,
+            device_id=bs_dev_id,
+            name=bs_name,
+            manufacturer=bs_mfr,
+            model=bs_model,
+            cfg=bs_cfg,
+        )
+        if inv is not None:
+            invert_entities.append(inv)
+
+    seen_bs_configs: set[int] = set()
+    for dev_id, bs_cfg in configured_bs.items():
+        if not isinstance(bs_cfg, dict) or id(bs_cfg) in seen_bs_configs:
+            continue
+        seen_bs_configs.add(id(bs_cfg))
+        bs_who = str(bs_cfg.get(CONF_WHO, "25"))
+        if bs_who not in ("25", "9"):
+            continue
+        bs_addr = Address.from_config(str(dev_id), bs_cfg)
+        default_model = "Dry Contact" if bs_who == "25" else "Auxiliary Channel"
+        default_name = (
+            f"Dry Contact {bs_addr.where}"
+            if bs_who == "25"
+            else f"Auxiliary Channel {bs_addr.where}"
+        )
+        inv = _create_invert_switch(
+            who=bs_who,
+            where=bs_addr.key,
+            device_id=str(dev_id),
+            name=str(bs_cfg.get(CONF_NAME) or default_name),
+            manufacturer=str(bs_cfg.get(CONF_MANUFACTURER, "BTicino")),
+            model=str(bs_cfg.get(CONF_DEVICE_MODEL, default_model)),
+            cfg=bs_cfg,
+        )
+        if inv is not None:
+            invert_entities.append(inv)
+
+    if registry is not None:
+        active_invert_uids = {s.unique_id for s in invert_entities if s.unique_id}
+        for reg_entry in reg_entries:
+            uid = reg_entry.unique_id or ""
+            if (
+                reg_entry.domain == "switch"
+                and uid.endswith("-invert")
+                and uid not in active_invert_uids
+            ):
+                prune_entity(hass, registry, reg_entry, config_entry.entry_id)
+
+    startup_entities.extend(invert_entities)
+
+    @callback
+    def _async_new_binary_sensor(info: dict[str, Any]) -> None:
+        inv = _create_invert_switch(
+            who=str(info.get("who", "")),
+            where=str(info.get("where", "")),
+            device_id=str(info.get("device_id", "")),
+            name=str(info.get("name", "")),
+            manufacturer=str(info.get("manufacturer", "BTicino")),
+            model=str(info.get("model", "Dry Contact Interface")),
+        )
+        if inv is not None:
+            async_add_entities([inv])
+
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass,
+            SIGNAL_NEW_BINARY_SENSOR.format(gateway_mac),
+            _async_new_binary_sensor,
+        )
     )
 
     if startup_entities:
@@ -710,3 +919,92 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
         self._publish_state()
+
+
+class MyHOMEInvertSwitch(MyHOMEEntity, SwitchEntity):
+    """Configuration switch to invert a WHO=25 dry contact or WHO=9 auxiliary channel (#826)."""
+
+    _poll_on_add = False
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_device_class = None
+    _attr_icon = "mdi:swap-horizontal"
+
+    def __init__(
+        self,
+        hass: HomeAssistant | None,
+        config_entry: ConfigEntry,
+        name: str,
+        device_id: str,
+        who: str,
+        where: str,
+        inverted: bool,
+        manufacturer: str,
+        model: str,
+        gateway: MyHOMEGatewayHandler,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            platform=PLATFORM,
+            device_id=device_id,
+            who=who,
+            where=where,
+            manufacturer=manufacturer,
+            model=model,
+            gateway=gateway,
+            translation_key="invert_state",
+        )
+        clean_dev_id = str(self._device_id)
+        if clean_dev_id.startswith(f"{self._who}-"):
+            clean_dev_id = clean_dev_id[len(f"{self._who}-") :]
+        self._attr_unique_id = f"{gateway.mac}-{self._who}-{clean_dev_id}-invert"
+        self._config_entry = config_entry
+        self._canonical_where = binary_sensor_canonical_where(who, where)
+        self._option_key = f"{who}-{self._canonical_where}"
+        self._attr_is_on = inverted
+
+    @callback
+    def _persist_and_apply(self, inverted: bool) -> None:
+        """Persist inverted polarity in config entry options and notify binary sensor."""
+        target_hass = self.hass or self._hass
+        if target_hass is not None:
+            current_opts = dict(self._config_entry.options)
+            inv_map = dict(current_opts.get(CONF_INVERTED_BINARY_SENSORS) or {})
+            inv_map[self._option_key] = inverted
+            current_opts[CONF_INVERTED_BINARY_SENSORS] = inv_map
+            target_hass.config_entries.async_update_entry(
+                self._config_entry, options=current_opts
+            )
+            async_dispatcher_send(
+                target_hass,
+                SIGNAL_BINARY_SENSOR_INVERTED.format(str(self._gateway_handler.mac)),
+                self._who,
+                self._canonical_where,
+                inverted,
+            )
+        self._attr_is_on = inverted
+        self._publish_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable state inversion for the companion binary sensor."""
+        if "timer" in kwargs or "duration" in kwargs:
+            await self.async_turn_on_timed()
+        self._persist_and_apply(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
+        """Disable state inversion for the companion binary sensor."""
+        self._persist_and_apply(False)
+
+    async def async_turn_on_timed(
+        self,
+        duration: float | None = None,
+        hours: int = 0,
+        minutes: int = 0,
+        seconds: float = 0,
+    ) -> None:
+        """Reject WHO=1 hardware timers on binary sensor invert configuration switches."""
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="invert_switch_no_timer",
+            translation_placeholders={"name": self._device_name},
+        )

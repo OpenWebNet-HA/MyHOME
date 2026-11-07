@@ -218,8 +218,7 @@ class ThermoSwitchSubentryFlowHandler(ConfigSubentryFlow):
                 user_input, exclude_subentry_id=subentry.subentry_id
             )
             if not errors:
-                self.hass.config_entries.async_schedule_reload(entry.entry_id)
-                return self.async_update_and_abort(
+                return self.async_update_reload_and_abort(
                     entry, subentry, title=title, data=cleaned
                 )
 

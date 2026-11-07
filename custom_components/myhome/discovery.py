@@ -65,8 +65,10 @@ class Address:
         device_id = str(device_id)
         if key_suffix and device_id.endswith(key_suffix):
             device_id = device_id[: -len(key_suffix)]
-        where, _, interface = device_id.partition(BUS_ROUTING)
-        return cls(where, interface or None, key_suffix)
+        base, routing, interface = device_id.rpartition(BUS_ROUTING)
+        if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
+            return cls(base, interface.zfill(2), key_suffix)
+        return cls(device_id, None, key_suffix)
 
     @classmethod
     def from_message(cls, message: Any) -> Address | None:
@@ -80,8 +82,12 @@ class Address:
     def from_config(cls, dev_id: str, cfg: dict[str, Any]) -> Address:
         """Address of a ``myhome.yaml`` device: ``where`` (``zone`` for heating), else the key."""
         interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
-        where = cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id))
-        return cls(str(where), str(interface) if interface else None)
+        where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id)))
+        if not interface:
+            base, routing, inline_iface = where.rpartition(BUS_ROUTING)
+            if routing and base and inline_iface.isdigit() and 1 <= len(inline_iface) <= 2:
+                return cls(base, inline_iface.zfill(2))
+        return cls(where, str(interface) if interface else None)
 
     @property
     def key(self) -> str:
@@ -210,6 +216,12 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
         button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
         if button is not None:
             registry.async_remove(button)
+    if entry.domain == "binary_sensor" and entry.device_id:
+        remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+        if not any(e.domain == "binary_sensor" for e in remaining):
+            for e in list(remaining):
+                if e.domain == "switch" and (e.unique_id or "").endswith("-invert"):
+                    registry.async_remove(e.entity_id)
     if entry.device_id and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True):
         dr.async_get(hass).async_remove_device(entry.device_id)
 
@@ -311,7 +323,11 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
 
     # Heating zone: mode, setpoint and temperature arrive in separate frames, so a
     # temperature-only frame must not cancel the poll for the rest on gateways that support it.
+    # A 99-zone central unit (#0) always answers *#4*#0## on all gateways (including SCS-only
+    # gateways like MH200N / F454) with a multi-frame burst of mode + diagnostic flags.
     if isinstance(entity, ClimateEntity):
+        if getattr(entity, "_central", False):
+            return False
         if not getattr(entity, "_gateway_supports_zone_status", True):
             # SCS-only gateway: only a zone that asks for its temperature (#185) still needs to.
             return getattr(entity, "_polls_temperature", False) is not True or (
@@ -393,6 +409,9 @@ class PlatformDiscovery:
         the same WHERE is skipped. Off for sensors, where a power and an
         energy entry may share a meter address. Aliases (one entry under
         several keys) are always created once.
+    route_translations:
+        Route command-translation frames (``is_translation``) to known entities
+        and scope handlers without discovering new devices from them.
     """
 
     def __init__(
@@ -419,6 +438,7 @@ class PlatformDiscovery:
         known_keys: Callable[[DeviceContext], Iterable[str]] | None = None,
         route_keys: Callable[[Any, Address | None], Iterable[str]] | None = None,
         one_per_address: bool = True,
+        route_translations: bool = False,
     ) -> None:
         self.hass = hass
         self.config_entry = config_entry
@@ -441,6 +461,7 @@ class PlatformDiscovery:
         self.known_keys = known_keys or default_known_keys
         self.route_keys = route_keys
         self.one_per_address = one_per_address
+        self.route_translations = route_translations
         self.runtime: MyHOMERuntimeData = config_entry.runtime_data
         # Signals are keyed on the entry's MAC (what the gateway handler publishes under).
         self.mac: str = str(config_entry.data.get(CONF_MAC) or self.runtime.mac)
@@ -662,7 +683,8 @@ class PlatformDiscovery:
         msg_who = getattr(message, "who", getattr(message, "_who", None))
         if isinstance(msg_who, (str, int)) and str(msg_who) != str(self.who):
             return
-        if getattr(message, "is_translation", None) is True:
+        is_translation = getattr(message, "is_translation", None) is True
+        if is_translation and not self.route_translations:
             return
         where_raw = str(getattr(message, "where", ""))
         is_general_msg = (
@@ -685,7 +707,7 @@ class PlatformDiscovery:
                 return
             if self.pre_message and self.pre_message(message, address, self.known):
                 return
-            if address.key not in self.known and self._discovers():
+            if not is_translation and address.key not in self.known and self._discovers():
                 ctx = DeviceContext(
                     address=address, who=str(getattr(message, "who", self.who)), source="bus", message=message,
                     cfg=config_for(self.configured, address),

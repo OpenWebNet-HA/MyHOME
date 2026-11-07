@@ -8,27 +8,38 @@ This guide provides a comprehensive comparison matrix and chronological delta lo
 
 The table below outlines feature availability, gateway support, and protocol capabilities across all release milestones:
 
-| Feature / Subsystem | v2.0.0b1 – b4 | v2.0.0b5 – b8 | v2.0.0b9 – b10 | v2.0.0b11 | v2.0.0b13 | v2.0.0b14 | v2.0.0b15 | v2.0.0b16 (Latest) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Protocol Engine (`OWNd`)** | Embedded `0.7.48` | `2.0.0b5` (PyPI) | `2.0.0b5` (PyPI) | `2.0.0b6` (PyPI) | `2.0.0b8` (HMAC refactor) | `2.0.0b9` | `2.0.0b10` | `2.0.0b11` |
-| **Command Worker Concurrency** | Static (1 worker) | Static (1 worker) | Static (1 worker) | Dynamic (1–4) | Dynamic (1–4, model-capped) | Dynamic (1–4, model-capped) | Per-profile session defaults (#606) | User commands ahead of polls, frame scheduler (#685, #738) |
-| **Gateway In-Place Reconfiguration** | ❌ Delete & Re-add | ❌ Delete & Re-add | ❌ Delete & Re-add | ❌ Delete & Re-add | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options |
-| **Dimmer Transitions** | `software_stepped` | `software_stepped` | `software_stepped` (shielded) | `software_stepped` / `native` | `software_stepped` / `native` | `software_stepped` / `native` | `software_stepped` / `native` | Fade steps sent at low priority (#739) |
-| **Command Translation (`WHAT=1000`)** | State flicker | State flicker | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved |
-| **DALI Color & Tunable White** | ❌ | ❌ | ❌ | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) |
-| **Thermoregulation (`WHO = 4`)** | Basic zones | Basic zones | Basic zones | Central Units 3550 / 4695 | Fan mode restore (#404) | Climate zone state & sweep (#457) | Central mode commands aligned (#630) | Seasons, holiday programs, humidity (#657, #689, #712) |
-| **Cover Concurrency Isolation** | Standard | Standard | Standard | Dedicated queue | Dedicated queue | Full run-stop lock (#433) | Full run-stop lock (#433) | Stop overtakes the queue (#694) |
-| **Cover Positioning (`WHO = 2`)** | Travel time | Travel time | Travel time | Travel time | Travel time | Travel time | Travel time | Start-up floor, full runs, slat tilt (#702, #708, #508) |
-| **Sound System (`WHO = 16 / 22`)** | ❌ | Basic Matrix | Basic Matrix | Volume normalization & Proxy | Dynamic Proxy Decoders | FM Tuner stepping + Matrix names | FM Tuner stepping + Matrix names | WHO 22 tuner RDS, source transport (#695, #651) |
-| **CEN / CEN+ Triggers (`WHO = 15/25`)** | Basic events | Basic events | Duplicate ID fix (#247) | UI Device Triggers (all 8 actions) | Long-press repeat debouncing | Centralized control triggers (#466) | 4-digit addresses, fail-closed triggers (#601, #624) | WHO 25 Scenario Plus (#671) |
-| **Expose HA Entities to the Bus** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ WHO 1/2/4/13/18 (#750) |
-| **Lovelace Bus Monitor Card** | ❌ CLI only | ✅ In-band card | Scoped registry fix (#277) | Export trace / Report issue | Filter & style refinements | Offline bus replay tab | Offline bus replay tab | Offline bus replay tab |
-| **Trace Replay CI Engine** | ❌ Unit tests only | ❌ Unit tests only | Golden frame checks | ✅ Synthetic plant fixtures | Plant #247 & MH200 fixtures | Multi-plant matrix (F454, MH202, H4890) | F455, MH200 + F422, Living Now captures | Live F461 plants, firmware oracle checks |
-| **Test Suite Statements Covered** | ~850 tests | 984 tests (100%) | 1,140 tests (100%) | 1,294 tests (100%) | 1,320 tests (100%) | 1,350+ tests (100%) | 3,464 tests (100%) | 4,393 tests (100%) |
+| Feature / Subsystem | v2.0.0b1 – b4 | v2.0.0b5 – b8 | v2.0.0b9 – b10 | v2.0.0b11 | v2.0.0b13 | v2.0.0b14 | v2.0.0b15 | v2.0.0b16 | v2.0.0b17 (Latest) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Protocol Engine (`OWNd`)** | Embedded `0.7.48` | `2.0.0b5` (PyPI) | `2.0.0b5` (PyPI) | `2.0.0b6` (PyPI) | `2.0.0b8` (HMAC refactor) | `2.0.0b9` | `2.0.0b10` | `2.0.0b11` | `2.0.0b13` |
+| **Command Worker Concurrency** | Static (1 worker) | Static (1 worker) | Static (1 worker) | Dynamic (1–4) | Dynamic (1–4, model-capped) | Dynamic (1–4, model-capped) | Per-profile session defaults (#606) | User commands ahead of polls, frame scheduler (#685, #738) | Dispatcher callback concurrency (#850) |
+| **Gateway In-Place Reconfiguration** | ❌ Delete & Re-add | ❌ Delete & Re-add | ❌ Delete & Re-add | ❌ Delete & Re-add | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options | ✅ IP, Password, Model in Options |
+| **Dimmer Transitions** | `software_stepped` | `software_stepped` | `software_stepped` (shielded) | `software_stepped` / `native` | `software_stepped` / `native` | `software_stepped` / `native` | `software_stepped` / `native` | Fade steps sent at low priority (#739) | Fine preset echo & curve (#828, #852) |
+| **Command Translation (`WHAT=1000`)** | State flicker | State flicker | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | ✅ Filtered / Preserved | Translated stop halts timed runs (#645) |
+| **DALI Color & Tunable White** | ❌ | ❌ | ❌ | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) | ✅ Native HSV (Dim 12) + DT8 (Dim 14) |
+| **Thermoregulation (`WHO = 4`)** | Basic zones | Basic zones | Basic zones | Central Units 3550 / 4695 | Fan mode restore (#404) | Climate zone state & sweep (#457) | Central mode commands aligned (#630) | Seasons, holiday programs, humidity (#657, #689, #712) | 3550 Central Unit hydration & switch (#817, #846) |
+| **Cover Concurrency Isolation** | Standard | Standard | Standard | Dedicated queue | Dedicated queue | Full run-stop lock (#433) | Full run-stop lock (#433) | Stop overtakes the queue (#694) | Settle timer & end-stop tolerance (#834, #847) |
+| **Cover Positioning (`WHO = 2`)** | Travel time | Travel time | Travel time | Travel time | Travel time | Travel time | Travel time | Start-up floor, full runs, slat tilt (#702, #708, #508) | Settle tolerance (0.5 s), min delta 1–5% (#778, #847) |
+| **Sound System (`WHO = 16 / 22`)** | ❌ | Basic Matrix | Basic Matrix | Volume normalization & Proxy | Dynamic Proxy Decoders | FM Tuner stepping + Matrix names | FM Tuner stepping + Matrix names | WHO 22 tuner RDS, source transport (#695, #651) | F500 tuner controls, station bounds (#839, #844) |
+| **CEN / CEN+ Triggers (`WHO = 15/25`)** | Basic events | Basic events | Duplicate ID fix (#247) | UI Device Triggers (all 8 actions) | Long-press repeat debouncing | Centralized control triggers (#466) | 4-digit addresses, fail-closed triggers (#601, #624) | WHO 25 Scenario Plus (#671) | WHO 25 Scenario Plus (#671) |
+| **Expose HA Entities to the Bus** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ WHO 1/2/4/13/18 (#750) | ✅ WHO 1/2/4/13/18 (#750) |
+| **Lovelace Bus Monitor Card** | ❌ CLI only | ✅ In-band card | Scoped registry fix (#277) | Export trace / Report issue | Filter & style refinements | Offline bus replay tab | Offline bus replay tab | Offline bus replay tab | Offline bus replay tab |
+| **Trace Replay CI Engine** | ❌ Unit tests only | ❌ Unit tests only | Golden frame checks | ✅ Synthetic plant fixtures | Plant #247 & MH200 fixtures | Multi-plant matrix (F454, MH202, H4890) | F455, MH200 + F422, Living Now captures | Live F461 plants, firmware oracle checks | F461, HL4684, 067292, F454, MH200N captures |
+| **Test Suite Statements Covered** | ~850 tests | 984 tests (100%) | 1,140 tests (100%) | 1,294 tests (100%) | 1,320 tests (100%) | 1,350+ tests (100%) | 3,464 tests (100%) | 4,393 tests (100%) | 5,202+ tests (100%) |
 
 ---
 
 ## 🔍 Release-by-Release Delta Log & GitHub Compares
+
+### 🚀 v2.0.0b17 (In Traces We Find The Truth)
+- **Direct GitHub Compare**: [`Compare v2.0.0b16...v2.0.0b17`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b16...2.0.0b17)
+- **Key Enhancements** (61 pull requests, on OWNd 2.0.0b13):
+  - **Cover End-Stop Settle & Min Delta (#778, #834, #843, #847)**: Timed covers settle full runs at `travel_time + 2 s` from known positions; 0.5 s early cutoff tolerance recognizes actuator limits arriving just before travel time; configurable `min_position_delta` (1–5%, default 2%); calibration refuses whole-minute configurator cutoffs (1–10 min).
+  - **Thermoregulation (WHO 4) (#816, #817, #846)**: Full 3550 99-zone central unit state hydration, setpoint management, and diagnostic attributes (Discussion #819); new thermo actuator switch platform for manual solenoid control (Issue #785); interface routing and actuator guards.
+  - **Lighting & Dimmers (WHO 1) (#771, #777, #781, #828, #849, #852)**: Fine dimmer preset echo / autodiscovered dimmers; coarse preset brightness curve alignment; coexistence of lighting actuator and motion sensor on the same bus address; Dimension 22 guard form crash fix.
+  - **Gateways & Sound System (#832, #835, #839, #844, #848, #854)**: Official **OWNd 2.0.0b13** pin; Legrand 067292 gateway profile alias; F500 FM tuner controls (frequency, band, presets) and HL4684 touchscreen trace replay; station range bounds; multi-gateway dispatcher callback fix.
+  - **Trace Replay Archive**: Live bus trace fixtures added across F461, HL4684, Legrand 067292, F454 (3486 burglar alarm), MH200N (3550 climate), and MH201 (F414 dimmers).
+
+---
 
 ### 🚀 v2.0.0b16 (Expose Engine, Venetian Slat Tilt & Cover Start-Up Floor)
 - **Direct GitHub Compare**: [`Compare v2.0.0b15...v2.0.0b16`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b15...2.0.0b16)

@@ -28,9 +28,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from OWNd.message import OWNMessage
+from OWNd.message import OWNGatewayEvent, OWNMessage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+MANIFEST_JSON_PATH = REPO_ROOT / "custom_components" / "myhome" / "manifest.json"
 ORACLE_JSON_PATH = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 ENCYCLOPEDIA_EVIDENCE_DIR = REPO_ROOT.parent / "OpenWebNet-Encyclopedia" / "evidence"
@@ -211,6 +212,11 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*#4*68*60##": "MyHomeServer1 2026-10-25: ACK *#4*68*60*55## in 290 ms",
     "*#4*69*60##": "MyHomeServer1 2026-10-25: ACK *#4*69*60*52## in 241 ms",
     "*#4*70*60##": "MyHomeServer1 2026-10-25: ACK *#4*70*60*68## in 245 ms",
+    # --- F461 2.0.11, f461_live_2026-11-04 (F418 dimmer 0010, F411/2 shutter 05)
+    "*1*30*0010##": "F461 2026-11-04: ACK, answered *1*10*0010## (step up at full level)",
+    "*1*31*0010##": "F461 2026-11-04: ACK, answered *1*9*0010## and *#1*0010*1*179*4##",
+    "*2*13*05##": "F461 2026-11-04: ACK, echoed as *2*1000#13#001#1*05##",
+    "*2*14*05##": "F461 2026-11-04: ACK, echoed as *2*1000#14#001#1*05##",
 }
 
 
@@ -708,17 +714,6 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     # Known malformed synthetic frame in f500_tuner fixture (missing leading '#' on WHO 22 dim 6);
     # OWNMessage.parse must return None cleanly without raising.
     known_unparseable_rx = {"*22*2#1*6*2##"}
-    # Authentic frames whose decoder is not in the pinned OWNd yet: they must not raise and
-    # they parse to None; once the pin carries the decoder the assertion below fails so the
-    # entry is removed and the frame is checked like any other.
-    # - *#13**27*70#52#54#49##: WHO 13 dimension 27 model name ("F461" as ASCII codes) answered
-    #   by a live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23); decoder in OWNd#139.
-    # - *#13**27*77#121#...#49##: the same dimension, "MyHomeServer1", from a live MyHomeServer1
-    #   3.87.13 (tests/fixtures/traces/myhomeserver1_live_2026-10-24).
-    pending_decoder_rx = {
-        "*#13**27*70#52#54#49##",
-        "*#13**27*77#121#72#111#109#101#83#101#114#118#101#114#49##",
-    }
 
     failures: list[str] = []
     for frame in sorted(rx_frames):
@@ -727,10 +722,6 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
             if frame in known_unparseable_rx:
                 if parsed is not None:
                     failures.append(f"Expected None for malformed frame {frame}, got {parsed!r}")
-            elif frame in pending_decoder_rx:
-                assert parsed is None, (
-                    f"remove {frame} from pending_decoder_rx: the OWNd pin now decodes it ({parsed!r})"
-                )
             elif parsed is None:
                 failures.append(f"OWNMessage.parse returned None for trace rx frame: {frame}")
         except Exception as exc:  # noqa: BLE001
@@ -739,3 +730,23 @@ def test_tier4_all_trace_rx_frames_parse_cleanly_in_ownd():
     assert not failures, (
         f"OWNd failed to parse {len(failures)} trace rx frames:\n" + "\n".join(failures[:50])
     )
+
+
+@pytest.mark.parametrize(
+    ("frame", "model_name"),
+    [
+        # Live F461 2.0.11 (tests/fixtures/traces/f461_live_2026-10-23)
+        ("*#13**27*70#52#54#49##", "F461"),
+        # Live MyHomeServer1 3.87.13 (tests/fixtures/traces/myhomeserver1_live_2026-10-24)
+        ("*#13**27*77#121#72#111#109#101#83#101#114#118#101#114#49##", "MyHomeServer1"),
+    ],
+)
+def test_tier4_who13_model_name_replies_decode_with_the_pinned_ownd(frame: str, model_name: str) -> None:
+    """The captured WHO 13 dimension 27 replies decode to the gateway model name (OWNd#139, in the pinned release)."""
+    rx_frames = {raw for _src, _gw, direction, raw in ALL_TRACE_RECORDS if direction == "rx"}
+    assert frame in rx_frames, f"not in any capture any more: {frame}"
+    parsed = OWNMessage.parse(frame)
+    assert isinstance(parsed, OWNGatewayEvent), parsed
+    assert parsed.model_name == model_name
+
+

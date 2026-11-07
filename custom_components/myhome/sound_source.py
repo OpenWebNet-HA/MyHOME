@@ -25,6 +25,7 @@ Next / previous station     ``*16*6001*10S##`` / ``*16*6101*10S##``
 Seek up / down              ``*16*5000*10S##`` / ``*16*5100*10S##``
 Start / stop RDS reporting  ``*16*101*10S##`` / ``*16*102*10S##``
 Select stored station       ``*#16*10S*#7*<STATION>##``
+Memorise station (1–5)      ``*#16*10S*#10*<1..5>##``
 Set frequency               ``*#16*10S*#6*0*<KHZ>##``
 Frequency report            ``*#16*10S*6*0*<KHZ>##``
 Station report              ``*#16*10S*7*0*<STATION>##``
@@ -61,6 +62,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.media_player import (  # type: ignore[attr-defined, unused-ignore]
+    BrowseMedia,
+    MediaClass,
     MediaPlayerDeviceClass,
     MediaPlayerEntity,
 )
@@ -72,9 +75,15 @@ from homeassistant.components.media_player.const import (
 from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
-from OWNd.message import OWNSoundCommand, OWNSoundEvent
+from OWNd.message import OWNSoundCommand, OWNSoundDiffusionCommand, OWNSoundEvent
 
-from .const import DOMAIN, LOGGER, TUNER_MAX_STATION_COUNT, TUNER_STATION_COUNT
+from .const import (
+    DOMAIN,
+    LOGGER,
+    TUNER_MAX_STATION_COUNT,
+    TUNER_STATION_COUNT,
+)
+from .data import get_runtime_data
 from .myhome_device import MyHOMEEntity
 from .tuner_decode import FM_MAX_KHZ, FM_MIN_KHZ, decode_who22_tuner, rds_text
 
@@ -87,11 +96,33 @@ __all__ = [
     "FM_MAX_KHZ",
     "FM_MIN_KHZ",
     "MyHOMESoundSource",
+    "parse_station_slot",
     "rds_text",
     "source_address",
+    "supports_who22",
+    "tuner_source",
+    "uses_who22_commands",
     "who22_source_id",
     "who22_tuner_listener",
 ]
+
+
+def parse_station_slot(station: Any) -> int | None:
+    """Parse an integer preset slot, rejecting booleans and fractional floats."""
+    if isinstance(station, bool):
+        return None
+    if isinstance(station, int):
+        return station
+    if isinstance(station, float):
+        if not math.isfinite(station) or not station.is_integer():
+            return None
+        return int(station)
+    if isinstance(station, str):
+        try:
+            return int(station.strip())
+        except ValueError:
+            return None
+    return None
 
 
 def source_address(source: int) -> str:
@@ -99,13 +130,51 @@ def source_address(source: int) -> str:
     return str(100 + int(source))
 
 
+def supports_who22(gateway: Any) -> bool:
+    """Return True when the gateway profile advertises WHO=22 support."""
+    supports = getattr(gateway, "profile_supports_who", None)
+    if not callable(supports):
+        return False
+    return supports(22) is True
+
+
+def uses_who22_commands(gateway: Any) -> bool:
+    """Return True on WHO=22-only gateways (MyHomeServer1, F459, F460, F461)."""
+    supports = getattr(gateway, "profile_supports_who", None)
+    if not callable(supports):
+        return False
+    return supports(16) is False and supports(22) is True
+
+
+def _seek_who22(where: str, what: int) -> OWNSoundDiffusionCommand:
+    """Automatic frequency search (``WHAT`` 5 up / 6 down, empty step); OWNd has no builder."""
+    return OWNSoundDiffusionCommand(f"*22*{what}*{where}##")
+
+
+def tuner_source(config_entry: Any, where: str, entity_id: str | None) -> MyHOMESoundSource:
+    """Return the declared tuner a companion number or button drives.
+
+    Raises:
+        HomeAssistantError: If the media player platform has not set it up yet.
+    """
+    runtime = get_runtime_data(config_entry)
+    source: MyHOMESoundSource | None = runtime.sound_sources.get(where) if runtime is not None else None
+    if source is None:
+        raise HomeAssistantError(
+            f"{entity_id}: tuner {where} is not set up yet",
+            translation_domain=DOMAIN,
+            translation_key="tuner_not_ready",
+            translation_placeholders={"entity_id": str(entity_id), "where": where},
+        )
+    return source
+
 
 class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
-    """A WHO=16 tuner source device.
+    """A WHO=16 / WHO=22 tuner source device.
 
     Presets are exposed as the entity's source list, because that is what a
-    listener picks. The frequency is an attribute rather than a source, since
-    it is continuous.
+    listener picks. The frequency is exposed as an attribute and via a
+    companion ``number.<source>_frequency`` entity.
     """
 
     _attr_device_class = MediaPlayerDeviceClass.RECEIVER
@@ -116,6 +185,7 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         | MediaPlayerEntityFeature.PREVIOUS_TRACK
         | MediaPlayerEntityFeature.SELECT_SOURCE
         | MediaPlayerEntityFeature.PLAY_MEDIA
+        | MediaPlayerEntityFeature.BROWSE_MEDIA
     )
 
     def __init__(
@@ -189,32 +259,76 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    def _who22_addr(self) -> str:
+        """Return the WHO=22 source address ``2#<S>`` for this tuner."""
+        return f"2#{int(self._where) - 100}"
+
+    def _uses_who22_commands(self) -> bool:
+        """Return True on WHO=22-only gateways (MyHomeServer1, F459, F460, F461)."""
+        return uses_who22_commands(self._gateway_handler)
+
+    @property
+    def available(self) -> bool:
+        """Return True if this tuner's active WHO subsystem is available."""
+        who = "22" if self._uses_who22_commands() else self._who
+        return self._gateway_handler.is_who_available(who)
+
+    def _notify_frequency(self) -> None:
+        """Notify companion frequency number entities registered on runtime_data."""
+        if self._frequency_khz is None:
+            return
+        entry = getattr(getattr(self, "platform", None), "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        if runtime is None:
+            return
+        for cb in list(runtime.tuner_frequency_callbacks.get(self._where, ())):
+            cb(self._frequency_khz)
+
     async def async_added_to_hass(self) -> None:
         """Register listeners and ask the tuner to report RDS.
 
-        A tuner does not broadcast its RDS text until asked (`WHAT` 101), so
-        without this the media title stays empty. Gateways that do not support
-        it answer NACK, which costs nothing.
+        A tuner does not broadcast its RDS text until asked (`WHAT` 101 on
+        WHO=16 or `WHAT` 31 on WHO=22), so without this the media title stays
+        empty. Gateways that do not support it answer NACK, which costs nothing.
         """
         self._register_availability_listener()
-        await self._gateway_handler.send(
-            OWNSoundCommand.start_rds(self._where)
-        )
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.start_rds(self._who22_addr())
+            )
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.start_rds(self._where)
+            )
 
     async def async_update(self) -> None:
-        """Request the tuner's frequency, station and RDS text."""
-        for cmd in (
-            OWNSoundCommand.request_frequency(self._where),
-            OWNSoundCommand.request_track(self._where),
-            OWNSoundCommand.request_rds(self._where),
-        ):
+        """Request the tuner's frequency, station and status/RDS text."""
+        if self._uses_who22_commands():
+            addr = self._who22_addr()
+            commands: tuple[Any, ...] = (
+                OWNSoundDiffusionCommand.request_frequency(addr),
+                OWNSoundDiffusionCommand.request_preset(addr),
+                OWNSoundDiffusionCommand.request_device_state(addr),
+            )
+        else:
+            commands = (
+                OWNSoundCommand.request_frequency(self._where),
+                OWNSoundCommand.request_track(self._where),
+                OWNSoundCommand.request_rds(self._where),
+            )
+        for cmd in commands:
             await self._gateway_handler.send_status_request(cmd)
 
     # ── Commands ──────────────────────────────────────────────────────────────
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Switch the source device on."""
-        await self._gateway_handler.send(OWNSoundCommand.turn_on(self._where))
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.turn_on(self._who22_addr())
+            )
+        else:
+            await self._gateway_handler.send(OWNSoundCommand.turn_on(self._where))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Switch the source device to standby.
@@ -222,31 +336,52 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         Rooms listening to this input fall silent; the matrix routing is not
         changed, so they stay pointed at it.
         """
-        await self._gateway_handler.send(OWNSoundCommand.turn_off(self._where))
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.turn_off(self._who22_addr())
+            )
+        else:
+            await self._gateway_handler.send(OWNSoundCommand.turn_off(self._where))
 
     async def async_media_next_track(self) -> None:
         """Advance to the next station."""
-        await self._gateway_handler.send(
-            OWNSoundCommand.next_track(self._where)
-        )
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.next_station(self._who22_addr())
+            )
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.next_track(self._where)
+            )
 
     async def async_media_previous_track(self) -> None:
         """Return to the previous station."""
-        await self._gateway_handler.send(
-            OWNSoundCommand.previous_track(self._where)
-        )
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.previous_station(self._who22_addr())
+            )
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.previous_track(self._where)
+            )
 
     async def async_seek_up(self) -> None:
         """Seek forward to the next receivable FM frequency."""
-        await self._gateway_handler.send(
-            OWNSoundCommand.seek_up(self._where)
-        )
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(_seek_who22(self._who22_addr(), 5))
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.seek_up(self._where)
+            )
 
     async def async_seek_down(self) -> None:
         """Seek backward to the previous receivable FM frequency."""
-        await self._gateway_handler.send(
-            OWNSoundCommand.seek_down(self._where)
-        )
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(_seek_who22(self._who22_addr(), 6))
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.seek_down(self._where)
+            )
 
     async def async_select_source(self, source: str) -> None:
         """Switch to a stored station.
@@ -268,7 +403,8 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
 
     async def async_select_station(self, station: int) -> None:
         """Switch to stored station ``station`` (1-15)."""
-        if not 1 <= int(station) <= TUNER_MAX_STATION_COUNT:
+        st = parse_station_slot(station)
+        if st is None or not 1 <= st <= TUNER_MAX_STATION_COUNT:
             raise HomeAssistantError(
                 f"{self.entity_id}: station {station} is outside the valid range (1-{TUNER_MAX_STATION_COUNT})",
                 translation_domain=DOMAIN,
@@ -278,40 +414,133 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
                     "station": str(station),
                 },
             )
-        await self._gateway_handler.send(
-            OWNSoundCommand.select_track(self._where, station)
-        )
-        self._station = station
-        if station > self._station_count:
-            self._station_count = station
-        self._attr_source = f"Station {station}"
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.set_preset(self._who22_addr(), st)
+            )
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.select_track(self._where, st)
+            )
+        self._station = st
+        if st > self._station_count:
+            self._station_count = st
+        self._attr_source = f"Station {st}"
         self.async_schedule_update_ha_state()
 
-    async def async_set_frequency(self, megahertz: float) -> None:
-        """Tune to ``megahertz``, e.g. ``107.0``.
+    async def async_store_station(self, station: int) -> None:
+        """Memorise the currently tuned frequency into preset ``station``.
+
+        WHO=16 ``DIMENSION 10`` (``*#16*10S*#10*<N>##``) only accepts slots
+        1–5 in ``bt_difson`` (``ownkb:claim:c002128``); extended F500N slots
+        6–15 require WHO=22 ``WHAT 33#<N>`` (``*22*33#<N>*2#<S>##``), used on
+        WHO=22-only gateways and on dual-stack gateways for slots 6–15.
+        """
+        use_who22_only = self._uses_who22_commands()
+        can_use_who22 = use_who22_only or supports_who22(self._gateway_handler)
+        max_station = TUNER_MAX_STATION_COUNT if can_use_who22 else TUNER_STATION_COUNT
+        st = parse_station_slot(station)
+        if st is None or not 1 <= st <= max_station:
+            raise HomeAssistantError(
+                f"{self.entity_id}: station {station} is outside the valid range (1-{max_station})",
+                translation_domain=DOMAIN,
+                translation_key="unknown_station",
+                translation_placeholders={
+                    "entity_id": str(self.entity_id),
+                    "station": str(station),
+                },
+            )
+        cmd: OWNSoundCommand | OWNSoundDiffusionCommand
+        if use_who22_only or st > TUNER_STATION_COUNT:
+            cmd = OWNSoundDiffusionCommand.store_preset(self._who22_addr(), st)
+        else:
+            # Memorized-station write (DIMENSION 10, 1–5); OWNd has no builder for it.
+            cmd = OWNSoundCommand(f"*#16*{self._where}*#10*{st}##")
+        await self._gateway_handler.send(cmd)
+        self._station = st
+        if st > self._station_count:
+            self._station_count = st
+        self._attr_source = f"Station {st}"
+        self.async_schedule_update_ha_state()
+
+    async def async_set_frequency(self, frequency: float) -> None:
+        """Tune to ``frequency`` in MHz, e.g. ``105.3``.
 
         Raises:
             HomeAssistantError: If the frequency is outside the FM band.
         """
-        val = float(megahertz)
-        kilohertz = int(round(val * 1000)) if math.isfinite(val) else 0
+        if isinstance(frequency, bool):
+            kilohertz = 0
+        else:
+            try:
+                val = float(frequency)
+            except (TypeError, ValueError):
+                val = float("nan")
+            kilohertz = int(round(val * 1000)) if math.isfinite(val) else 0
         if not FM_MIN_KHZ <= kilohertz <= FM_MAX_KHZ:
             raise HomeAssistantError(
-                f"{self.entity_id}: {megahertz} MHz is outside the FM band",
+                f"{self.entity_id}: {frequency} MHz is outside the FM band",
                 translation_domain=DOMAIN,
                 translation_key="frequency_out_of_range",
                 translation_placeholders={
-                    "entity_id": str(self.entity_id), "frequency": str(megahertz),
+                    "entity_id": str(self.entity_id), "frequency": str(frequency),
                 },
             )
-        await self._gateway_handler.send(
-            OWNSoundCommand.set_frequency(self._where, kilohertz)
-        )
+        if self._uses_who22_commands():
+            await self._gateway_handler.send(
+                OWNSoundDiffusionCommand.set_frequency(self._who22_addr(), kilohertz)
+            )
+        else:
+            await self._gateway_handler.send(
+                OWNSoundCommand.set_frequency(self._where, kilohertz)
+            )
         self._frequency_khz = kilohertz
         self._station = None
         self._attr_source = None
         self._attr_media_title = None
+        self._notify_frequency()
         self.async_schedule_update_ha_state()
+
+    async def async_browse_media(
+        self,
+        media_content_type: str | None = None,
+        media_content_id: str | None = None,
+    ) -> BrowseMedia:
+        """Expose stored presets and configured station-logo frequencies in Media Browser."""
+        children: list[BrowseMedia] = [
+            BrowseMedia(
+                title=f"Station {n}",
+                media_class=MediaClass.CHANNEL,
+                media_content_id=str(n),
+                media_content_type=MediaType.CHANNEL,
+                can_play=True,
+                can_expand=False,
+            )
+            for n in range(1, self._station_count + 1)
+        ]
+        for khz, url in sorted(self._pictures.items()):
+            mhz_str = f"{khz / 1000.0:.2f}"
+            children.append(
+                BrowseMedia(
+                    title=f"{mhz_str} MHz",
+                    media_class=MediaClass.CHANNEL,
+                    media_content_id=mhz_str,
+                    media_content_type=MediaType.CHANNEL,
+                    can_play=True,
+                    can_expand=False,
+                    thumbnail=url,
+                )
+            )
+        return BrowseMedia(
+            title=str(getattr(self, "name", None) or "FM Tuner"),
+            media_class=MediaClass.DIRECTORY,
+            media_content_id="root",
+            media_content_type=MediaType.CHANNELS,
+            can_play=False,
+            can_expand=True,
+            children=children,
+            children_media_class=MediaClass.CHANNEL,
+        )
 
     async def async_play_media(self, media_type: str, media_id: str, **kwargs: Any) -> None:
         """Tune by station number or by frequency.
@@ -419,34 +648,64 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
             self._station = None
             self._attr_source = None
             self._attr_media_title = None
+            self._notify_frequency()
 
     @callback
     def handle_who22_event(self, message: Any) -> None:
         """Apply a WHO=22 report of this tuner (source address ``5#2#S`` / ``2#S``).
 
-        Dual-stack gateways (MH200N, F454, F453AV) run both ``bt_difson``
-        (WHO=16) and ``bt_multi`` (WHO=22), emitting both families in
-        non-deterministic order for every SCS tuner frame; each update is
+        Dual-stack gateways (MH200N, F454, F453AV, H/L4684 FW >= 6.0) run both
+        ``bt_difson`` (WHO=16) and ``bt_multi`` (WHO=22), emitting both families
+        in non-deterministic order for every SCS tuner frame; each update is
         idempotent, so the repeat changes nothing. On WHO=22-only gateways
         (MyHomeServer1, F459, F460, F461), ``bt_multi`` is the sole translator
-        of the tuner's state (emitting dim 5 alone on manual tuning and dim 5
-        followed by dim 11 on a stored preset).
+        of the tuner's power state, frequency, stored preset and RDS text.
         """
         raw_dim = getattr(message, "dimension", None)
         try:
             dimension = int(raw_dim) if raw_dim is not None else None
         except (ValueError, TypeError):
             return
-        values = [str(v) for v in (getattr(message, "dimension_value", None) or [])]
-        report = decode_who22_tuner(dimension, values)
-        if report is None:
+        values = [
+            str(v)
+            for v in (
+                getattr(message, "dimension_value", None)
+                or getattr(message, "dimension_values", None)
+                or []
+            )
+        ]
+
+        raw_what = getattr(message, "what", None)
+        what_base = str(raw_what).split("#", 1)[0] if isinstance(raw_what, (str, int)) else ""
+        is_on = (
+            getattr(message, "is_on", False) is True
+            or what_base in ("1", "2")
+            or (dimension == 12 and len(values) >= 1 and values[0] == "1")
+        )
+        is_off = (
+            getattr(message, "is_off", False) is True
+            or what_base == "0"
+            or (dimension == 12 and len(values) >= 1 and values[0] == "0")
+        )
+        if is_on:
+            self._attr_state = MediaPlayerState.ON
+        elif is_off:
+            self._attr_state = MediaPlayerState.OFF
+            self._attr_media_title = None
+
+        report = decode_who22_tuner(dimension, values) if dimension is not None else None
+        if report is None and not is_on and not is_off:
             return
-        if report.frequency_khz is not None:
-            self._apply_frequency(report.frequency_khz)
-        if report.preset is not None:
-            self._set_station_from_bus(str(report.preset))
-        if report.rds is not None or report.rds_blank:
-            self._attr_media_title = report.rds
+        if report is not None:
+            if report.frequency_khz is not None:
+                self._apply_frequency(report.frequency_khz)
+                if dimension == 11 and report.preset is None:
+                    self._station = None
+                    self._attr_source = None
+            if report.preset is not None:
+                self._set_station_from_bus(str(report.preset))
+            if report.rds is not None or report.rds_blank:
+                self._attr_media_title = report.rds
         self._publish_state()
 
     def _set_station_from_bus(self, raw: str) -> None:

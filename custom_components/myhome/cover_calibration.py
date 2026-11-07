@@ -966,6 +966,33 @@ class CalibrationInterrupted(HomeAssistantError):
         )
 
 
+class CalibrationCutoff(HomeAssistantError):
+    """A calibration run ended at the actuator's run-time limit, not at the end stop."""
+
+    def __init__(self, name: str, direction: str, seconds: float, limit: float) -> None:
+        self.limit = limit
+        msg = (
+            f"{name}: the {direction} run ended after {seconds:.1f} s, at the actuator's {limit:.0f} s "
+            "run-time limit, not at the end stop; the actuator cannot measure this shutter "
+            "- use the stopwatch (Stop & Save) or set travel_time manually"
+        )
+        placeholders = {"name": name, "seconds": f"{seconds:.1f}", "limit": f"{limit:.0f}"}
+        if direction == "close":
+            super().__init__(
+                msg,
+                translation_domain=DOMAIN,
+                translation_key="calibration_actuator_cutoff_close",
+                translation_placeholders=placeholders,
+            )
+        else:
+            super().__init__(
+                msg,
+                translation_domain=DOMAIN,
+                translation_key="calibration_actuator_cutoff_open",
+                translation_placeholders=placeholders,
+            )
+
+
 class CoverCalibrationHub:
     """Encapsulates calibration state and serialization per gateway."""
 
@@ -1100,6 +1127,7 @@ class CoverCalibrationHub:
         active = self.active_cover
         if active is not None and getattr(active, "_calibrating", False):
             active._calibration_interrupted = "Calibration stopped by user"
+            active._settles_on_timer = True
             active._motor_started.set()
             active._stopped_event.set()
             try:

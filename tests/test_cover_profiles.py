@@ -69,7 +69,11 @@ async def plant(hass):
             await bind_cover(hass, cover)
             covers.append(cover)
             records.append(record)
-    return SimpleNamespace(entries=entries, covers=covers, records=records, gateways=gateways)
+    yield SimpleNamespace(entries=entries, covers=covers, records=records, gateways=gateways)
+    # These standalone entities are not owned by an HA entity platform. Dispose
+    # their app/wall settle timers just as platform removal does on a real entry.
+    for cover in covers:
+        cover._cancel_stop_task()
 
 
 def message(plant, revision=0, index=0, **extra):

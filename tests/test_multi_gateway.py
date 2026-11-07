@@ -1881,6 +1881,19 @@ def _require_f453av_profile() -> None:
         pytest.skip("installed OWNd does not discriminate F453AV firmware yet (OWNd#80)")
 
 
+def test_gateway_supported_whos_import_error_is_not_swallowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missing OWNd symbol must surface, not become an empty WHO set for every gateway."""
+    import custom_components.myhome.gateway as gateway_module
+    from custom_components.myhome.topology import gateway_supported_whos
+
+    def _broken(*_args: object, **_kwargs: object) -> object:
+        raise ImportError("cannot import name '_profile_for_model'")
+
+    monkeypatch.setattr(gateway_module, "_profile_for_model", _broken)
+    with pytest.raises(ImportError):
+        gateway_supported_whos("F461", "2.0.11")
+
+
 def test_gateway_supported_whos_with_firmware() -> None:
     """Verify gateway_supported_whos discriminates firmware-gated capabilities (e.g. F453AV CEN+)."""
     _require_f453av_profile()
@@ -2568,3 +2581,1075 @@ def test_validate_shared_bus_topology_scenarios(hass: HomeAssistant) -> None:
     )
     assert errs_circular[CONF_PRIMARY_GATEWAY] == "circular_gateway_reference"
 
+
+def test_door_entry_who6_who8_capabilities_and_coupling(hass: HomeAssistant) -> None:
+    """Verify WHO 6 / WHO 8 capability boundaries, _profile_supports_who, and coupled delegation."""
+    from custom_components.myhome.topology import (
+        _follower_delegation,
+        gateway_delegatable_whos,
+        gateway_supported_whos,
+        recommend_follower,
+        validate_shared_bus_topology,
+    )
+
+    # A/V gateways assumed to route both WHO 6 and WHO 8 advertise them for inference & delegation
+    for model in ("F453AV", "F452", "F452V"):
+        whos = gateway_supported_whos(model)
+        assert {6, 8} <= whos, f"{model} should advertise WHO 6 and WHO 8"
+        assert {6, 8} <= gateway_delegatable_whos(model)
+
+    # F454 firmware routes bt_vct to WHO 8 only (F459 ships the same image): WHO 6 is never offered
+    for model in ("F454", "F459", "Legrand 003598"):
+        assert 8 in gateway_supported_whos(model) and 6 not in gateway_supported_whos(model)
+        assert 8 in gateway_delegatable_whos(model) and 6 not in gateway_delegatable_whos(model)
+
+    # Single-bus MH scenario programmers with bt_vct (MH200, MH200N / 03565, MH202) accept explicit WHO 6/8
+    # delegation (when bridged via F422) without claiming an AV riser during automatic MH inference
+    for model in ("MH200", "MH200N", "BTicino 03565", "MH202", "BTicino MH202"):
+        assert 6 not in gateway_supported_whos(model) and 8 not in gateway_supported_whos(model)
+        assert {6, 8} <= gateway_delegatable_whos(model), f"{model} should accept WHO 6/8 delegation"
+
+    # WHO 6-only MH gateways accept explicit WHO 6 delegation (via F422) without WHO 8
+    for model in ("F453", "H4684", "H4890", "MH201"):
+        delegatable = gateway_delegatable_whos(model)
+        assert 6 in delegatable and 8 not in delegatable, f"{model} should accept WHO 6 only"
+
+    # Legrand 3578 wireless OpenZigBee USB stick must NOT auto-advertise 2-wire A/V WHO 6 or WHO 8
+    whos_3578 = gateway_supported_whos("Legrand 3578")
+    assert 6 not in whos_3578 and 8 not in whos_3578
+
+    # Automation-only gateways omit bt_vct completely
+    for model in ("MyHomeServer1", "F455", "F461", "F450", "F460"):
+        assert 6 not in gateway_supported_whos(model) and 8 not in gateway_supported_whos(model)
+        assert 6 not in gateway_delegatable_whos(model) and 8 not in gateway_delegatable_whos(model)
+
+    # Defensive fallback if profile lookup raises
+    with patch("custom_components.myhome.gateway._profile_for_model", side_effect=RuntimeError("boom")):
+        assert gateway_supported_whos("MyHomeServer1") == set()
+        assert gateway_delegatable_whos("MyHomeServer1") == set()
+
+    # _profile_supports_who across real MyHOMEGatewayHandler instances
+    _, gw_f454 = _create_mock_gateway(hass, "00:03:50:de:00:01", name="F454")
+    _, gw_f453 = _create_mock_gateway(hass, "00:03:50:de:00:02", name="F453")
+    _, gw_f459 = _create_mock_gateway(hass, "00:03:50:de:00:03", name="F459")
+    _, gw_mh202 = _create_mock_gateway(hass, "00:03:50:de:00:04", name="MH202")
+    _, gw_mhs1 = _create_mock_gateway(hass, "00:03:50:de:00:05", name="MyHomeServer1")
+    _, gw_mh200n = _create_mock_gateway(hass, "00:03:50:de:00:06", name="MH200N")
+    _, gw_03565 = _create_mock_gateway(hass, "00:03:50:de:00:08", name="BTicino 03565")
+    _, gw_generic = _create_mock_gateway(hass, "00:03:50:de:00:07", name="Legrand 3578")
+
+    assert gw_f454.profile_supports_who(6) is False and gw_f454.profile_supports_who(8) is True
+    assert gw_f459.profile_supports_who(6) is False and gw_f459.profile_supports_who(8) is True
+    assert gw_mh200n.profile_supports_who(6) is True and gw_mh200n.profile_supports_who(8) is True
+    assert gw_03565.profile_supports_who(6) is True and gw_03565.profile_supports_who(8) is True
+    assert gw_mh202.profile_supports_who(6) is True and gw_mh202.profile_supports_who(8) is True
+    assert gw_f453.profile_supports_who(6) is True and gw_f453.profile_supports_who(8) is False
+    assert gw_mhs1.profile_supports_who(6) is False and gw_mhs1.profile_supports_who(8) is False
+    assert gw_generic.profile_supports_who(6) is True and gw_generic.profile_supports_who(8) is True
+
+    # Door entry is not coupled like audio: an F454 primary (WHO 8) keeps WHO 8 next to a WHO 6/8 follower
+    role_door, delegated_door, _ = _follower_delegation({1, 2, 4, 8}, {1, 2, 4, 6, 8})
+    assert role_door == ROLE_SECONDARY
+    assert delegated_door == {6}
+
+    # recommend_follower(MyHomeServer1, F454) delegates WHO 8 (not 6) plus audio; Legrand 3578 gets no WHO 6/8
+    entry_mhs1 = MockConfigEntry(
+        domain=DOMAIN,
+        title="MyHomeServer1 Gateway",
+        data={CONF_NAME: "MyHomeServer1", CONF_MAC: "00:03:50:aa:11:01"},
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+        unique_id="00:03:50:aa:11:01",
+    )
+    entry_mhs1.add_to_hass(hass)
+    entry_f454 = MockConfigEntry(
+        domain=DOMAIN,
+        title="F454 Gateway",
+        data={CONF_NAME: "F454", CONF_MAC: "00:03:50:aa:11:02"},
+        unique_id="00:03:50:aa:11:02",
+    )
+    entry_f454.add_to_hass(hass)
+    rec_role, rec_whos = recommend_follower(entry_mhs1, entry_f454)
+    assert rec_role == ROLE_SECONDARY
+    assert rec_whos == {8, 16, 22}
+
+    entry_3578 = MockConfigEntry(
+        domain=DOMAIN,
+        title="Legrand 3578",
+        data={CONF_NAME: "Legrand 3578", CONF_MAC: "00:03:50:aa:11:09"},
+        unique_id="00:03:50:aa:11:09",
+    )
+    entry_3578.add_to_hass(hass)
+    _, rec_3578_whos = recommend_follower(entry_mhs1, entry_3578)
+    assert 6 not in rec_3578_whos and 8 not in rec_3578_whos
+
+    # validate_shared_bus_topology accepts [8] (rejects [6, 8]) on F454; accepts [6, 8] on MH200N and
+    # MH202; accepts [6] (rejects [8]) on F453; and rejects [6] on F455 / F461 / MyHomeServer1
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_f454,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [8],
+        },
+    )
+    errs_f454_who6 = validate_shared_bus_topology(
+        hass,
+        entry_f454,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+    assert errs_f454_who6[CONF_DELEGATED_WHOS] == "who_not_supported_by_gateway"
+    entry_mh200n = MockConfigEntry(
+        domain=DOMAIN,
+        title="MH200N Gateway",
+        data={CONF_NAME: "MH200N", CONF_MAC: "00:03:50:aa:11:03"},
+        unique_id="00:03:50:aa:11:03",
+    )
+    entry_mh200n.add_to_hass(hass)
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_mh200n,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+    entry_mh202 = MockConfigEntry(
+        domain=DOMAIN,
+        title="MH202 Gateway",
+        data={CONF_NAME: "MH202", CONF_MAC: "00:03:50:aa:11:04"},
+        unique_id="00:03:50:aa:11:04",
+    )
+    entry_mh202.add_to_hass(hass)
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_mh202,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+    entry_f453 = MockConfigEntry(
+        domain=DOMAIN,
+        title="F453 Gateway",
+        data={CONF_NAME: "F453", CONF_MAC: "00:03:50:aa:11:06"},
+        unique_id="00:03:50:aa:11:06",
+    )
+    entry_f453.add_to_hass(hass)
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_f453,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [6],
+        },
+    )
+    errs_f453_who8 = validate_shared_bus_topology(
+        hass,
+        entry_f453,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+    assert errs_f453_who8[CONF_DELEGATED_WHOS] == "who_not_supported_by_gateway"
+
+    entry_f455 = MockConfigEntry(
+        domain=DOMAIN,
+        title="F455 Gateway",
+        data={CONF_NAME: "F455", CONF_MAC: "00:03:50:aa:11:05"},
+        unique_id="00:03:50:aa:11:05",
+    )
+    entry_f455.add_to_hass(hass)
+    errs_f455 = validate_shared_bus_topology(
+        hass,
+        entry_f455,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:aa:11:01",
+            CONF_DELEGATED_WHOS: [6],
+        },
+    )
+    assert errs_f455[CONF_DELEGATED_WHOS] == "who_not_supported_by_gateway"
+
+
+@pytest.mark.asyncio
+async def test_shared_bus_who6_who8_delegation_end_to_end(hass: HomeAssistant) -> None:
+    """End-to-end MyHomeServer1 primary + F453AV secondary delegating WHO 6 & WHO 8 for locks and doorbells."""
+    import asyncio
+
+    from homeassistant.const import Platform
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from OWNd.message import OWNEvent
+
+    from custom_components.myhome.lock import MyHOMELock
+    from custom_components.myhome.lock import async_setup_entry as async_setup_lock
+
+    pri_mac = "00:03:50:de:10:01"
+    sec_mac = "00:03:50:de:10:02"
+    entry_pri, gw_pri = _create_mock_gateway(
+        hass,
+        pri_mac,
+        name="MyHomeServer1",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    entry_sec, gw_sec = _create_mock_gateway(
+        hass,
+        sec_mac,
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=pri_mac,
+        delegated_whos=[6, 8],
+    )
+
+    gw_pri.is_connected = True
+    gw_pri._available = True
+    gw_sec.is_connected = True
+    gw_sec._available = True
+
+    entry_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4000": {"who": "6", "where": "4000", "name": "Front Gate"},
+    }
+    entry_sec.runtime_data.platforms[Platform.LOCK] = {
+        "6-4001": {"who": "6", "where": "4001", "name": "Side Gate"},
+    }
+    added_locks: list[MyHOMELock] = []
+    added_sec_locks: list[MyHOMELock] = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        await async_setup_lock(hass, entry_pri, added_locks.extend)
+        await async_setup_lock(hass, entry_sec, added_sec_locks.extend)
+
+    assert len(added_locks) == 1
+    assert len(added_sec_locks) == 1
+    gate_lock = added_locks[0]
+    gate_lock.hass = hass
+    gate_lock.entity_id = "lock.front_gate"
+    gate_lock.async_write_ha_state = MagicMock()
+
+    side_lock = added_sec_locks[0]
+    side_lock.hass = hass
+    side_lock.entity_id = "lock.side_gate"
+    side_lock.async_write_ha_state = MagicMock()
+
+    # 1. Outbound unlock on both Primary-hosted (4000) and Secondary-hosted (4001) YAML locks sends via F453AV
+    fut_ok: asyncio.Future[float] = hass.loop.create_future()
+    fut_ok.set_result(1.0)
+    with (
+        patch.object(gw_pri._command_pool, "send", new_callable=AsyncMock) as pri_send,
+        patch.object(gw_sec._command_pool, "send", new_callable=AsyncMock, return_value=fut_ok) as sec_send,
+    ):
+        await gate_lock.async_unlock()
+        await side_lock.async_unlock()
+        pri_send.assert_not_called()
+        assert [str(c.args[0]) for c in sec_send.call_args_list] == [
+            "*6*10*4000##",
+            "*6*10*4001##",
+        ]
+    assert gate_lock.is_locked is False
+    assert side_lock.is_locked is False
+    await gate_lock.async_lock()
+    await side_lock.async_lock()
+    assert gate_lock.is_locked is True
+    assert side_lock.is_locked is True
+
+    # 2. Availability tracks delegated F453AV: stays available if MyHomeServer1 drops, unavailable if F453AV drops
+    gw_pri._available = False
+    assert gate_lock.available is True
+    assert side_lock.available is True
+
+    gw_pri._available = True
+    gw_sec._available = False
+    gw_sec._notify_availability()
+    assert gate_lock.available is False
+    assert side_lock.available is False
+
+    gw_sec._available = True
+    gw_sec._notify_availability()
+    assert gate_lock.available is True
+    assert side_lock.available is True
+
+    # 3. Inbound *6*10*4000## and *6*10*4001## on F453AV update Primary-hosted and Secondary-hosted locks
+    await gw_sec._process_message(OWNEvent.parse("*6*10*4000##"))
+    await gw_sec._process_message(OWNEvent.parse("*6*10*4001##"))
+    assert gate_lock.is_locked is False
+    assert side_lock.is_locked is False
+    gate_lock._cancel_auto_relock()
+    side_lock._cancel_auto_relock()
+
+    # 4. Inbound WHO 8 doorbell on F453AV fires once while MyHomeServer1 suppresses duplicate
+    doorbells = []
+    unsub_bus = hass.bus.async_listen("myhome_doorbell_event", doorbells.append)
+    try:
+        await gw_pri._process_message(OWNEvent.parse("*8*1#1#4*74##"))
+        await gw_sec._process_message(OWNEvent.parse("*8*1#1#4*74##"))
+        await hass.async_block_till_done()
+    finally:
+        unsub_bus()
+    assert len(doorbells) == 1
+    assert doorbells[0].data["gateway_mac"] == sec_mac
+
+    # 5a. Single-bus MH primary (MH202) does NOT natively hear an unbridged AV riser:
+    #     Secondary F453AV DOES bridge delegated WHO 6 even while MH202 is connected,
+    #     while NOT bridging delegated WHO 16 (only door-entry frames are bridged).
+    _, gw_mh202 = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:03",
+        name="MH202",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_f453av_b = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:04",
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway="00:03:50:de:10:03",
+        delegated_whos=[6, 16],
+    )
+    gw_mh202.is_connected = True
+    bridged: list[Any] = []
+    unsub_bridge = async_dispatcher_connect(hass, f"myhome_message_{gw_mh202.mac}", callback(lambda m: bridged.append(m)))
+    try:
+        gw_f453av_b._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
+        assert len(bridged) == 1
+        gw_f453av_b._bridge_to_primary(OWNEvent.parse("*#16*1*0*1##"))
+        assert len(bridged) == 1
+    finally:
+        unsub_bridge()
+
+    # 5b. Native A/V primary (F453AV) hears WHO 6 directly while connected and only bridges when offline
+    _, gw_f453av_pri = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:06",
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_mh202_c = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:07",
+        name="MH202",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway="00:03:50:de:10:06",
+        delegated_whos=[6],
+    )
+    gw_f453av_pri.is_connected = True
+    bridged_av: list[Any] = []
+    unsub_bridge_av = async_dispatcher_connect(
+        hass, f"myhome_message_{gw_f453av_pri.mac}", callback(lambda m: bridged_av.append(m))
+    )
+    try:
+        gw_mh202_c._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
+        assert bridged_av == []
+        gw_f453av_pri.is_connected = False
+        gw_mh202_c._bridge_to_primary(OWNEvent.parse("*6*10*4000##"))
+        assert len(bridged_av) == 1
+    finally:
+        unsub_bridge_av()
+
+    # 6. Closing/unloading secondary gateway notifies primary availability listeners immediately
+    pri_avail_signals: list[None] = []
+    unsub_avail = async_dispatcher_connect(
+        hass, gw_pri.availability_signal, callback(lambda: pri_avail_signals.append(None))
+    )
+    try:
+        await gw_sec.close_listener()
+        assert len(pri_avail_signals) == 1
+        assert gate_lock.available is False
+    finally:
+        unsub_avail()
+
+    # Orphaned secondary (primary missing) close_listener is a safe no-op on primary signal
+    _, gw_sec_orphan = _create_mock_gateway(
+        hass,
+        "00:03:50:de:10:05",
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway="00:03:50:de:99:99",
+        delegated_whos=[6],
+    )
+    await gw_sec_orphan.close_listener()
+
+    await gate_lock.async_will_remove_from_hass()
+    await side_lock.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_three_gateway_shared_bus_standby_and_who6_secondary(hass: HomeAssistant) -> None:
+    """Verify 3-gateway shared bus (Primary + Warm Standby + WHO 6/8 Secondary) deduplication & partial standby availability."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from OWNd.message import OWNEvent, OWNLightingEvent
+
+    pri_mac = "00:03:50:de:20:01"
+    sb_mac = "00:03:50:de:20:02"
+    sec_mac = "00:03:50:de:20:03"
+    _, gw_pri = _create_mock_gateway(
+        hass, pri_mac, name="MyHomeServer1", topology=TOPOLOGY_SHARED, role=ROLE_PRIMARY
+    )
+    _, gw_sb = _create_mock_gateway(
+        hass,
+        sb_mac,
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_STANDBY,
+        primary_gateway=pri_mac,
+    )
+    _, gw_sec = _create_mock_gateway(
+        hass,
+        sec_mac,
+        name="F452V",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=pri_mac,
+        delegated_whos=[6, 8],
+    )
+
+    # Primary is offline; both Warm Standby (F453AV) and Secondary (F452V) are online
+    gw_pri.is_connected = False
+    gw_pri._available = False
+    gw_sb.is_connected = True
+    gw_sb._available = True
+    gw_sec.is_connected = True
+    gw_sec._available = True
+
+    bridged: list[str] = []
+    doorbells = []
+    unsub_msg = async_dispatcher_connect(
+        hass, f"myhome_message_{pri_mac}", callback(lambda m: bridged.append(str(m)))
+    )
+    unsub_bell = hass.bus.async_listen("myhome_doorbell_event", doorbells.append)
+    try:
+        # 1. Both standby and secondary see *8*1#1#4*74## and *6*10*4000## -> only secondary emits/bridges
+        await gw_sb._process_message(OWNEvent.parse("*8*1#1#4*74##"))
+        await gw_sec._process_message(OWNEvent.parse("*8*1#1#4*74##"))
+        await gw_sb._process_message(OWNEvent.parse("*6*10*4000##"))
+        await gw_sec._process_message(OWNEvent.parse("*6*10*4000##"))
+        # Standby still bridges non-delegated WHO 1 frames
+        await gw_sb._process_message(OWNLightingEvent.parse("*1*1*21##"))
+        await hass.async_block_till_done()
+
+        assert len(doorbells) == 1
+        assert doorbells[0].data["gateway_mac"] == sec_mac
+        assert bridged == ["*8*1#1#4*74##", "*6*10*4000##", "*1*1*21##"]
+
+        # 2. Secondary ALSO drops -> A/V warm standby (F453AV) seamlessly takes over WHO 6/8 bridging & doorbells
+        gw_sec.is_connected = False
+        gw_sec._available = False
+        assert gw_pri.is_who_available(6) is True
+        await gw_sb._process_message(OWNEvent.parse("*8*1#1#4*74##"))
+        await gw_sb._process_message(OWNEvent.parse("*6*10*4000##"))
+        await hass.async_block_till_done()
+
+        assert len(doorbells) == 2
+        # Warm standby failover routes doorbell events under primary's MAC (M-3)
+        assert doorbells[1].data["gateway_mac"] == pri_mac
+        assert bridged == [
+            "*8*1#1#4*74##",
+            "*6*10*4000##",
+            "*1*1*21##",
+            "*8*1#1#4*74##",
+            "*6*10*4000##",
+        ]
+    finally:
+        unsub_msg()
+        unsub_bell()
+
+    # 3. Partial standby coverage: MH202 primary (WHO 6 capable) + F455 standby (omits WHO 6)
+    mh_mac = "00:03:50:de:20:04"
+    f455_mac = "00:03:50:de:20:05"
+    _, gw_mh = _create_mock_gateway(
+        hass, mh_mac, name="MH202", topology=TOPOLOGY_SHARED, role=ROLE_PRIMARY
+    )
+    _, gw_f455 = _create_mock_gateway(
+        hass,
+        f455_mac,
+        name="F455",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_STANDBY,
+        primary_gateway=mh_mac,
+    )
+    gw_mh.is_connected = False
+    gw_mh._available = True
+    gw_f455.is_connected = True
+    gw_f455._available = True
+
+    avail_updates: list[tuple[bool, bool]] = []
+    unsub_mh_avail = async_dispatcher_connect(
+        hass,
+        gw_mh.availability_signal,
+        callback(lambda: avail_updates.append((gw_mh.is_who_available(1), gw_mh.is_who_available(6)))),
+    )
+    try:
+        gw_mh._mark_unavailable(None)
+    finally:
+        unsub_mh_avail()
+
+    assert gw_mh.available is True
+    assert gw_mh.is_who_available(1) is True
+    assert gw_mh.is_who_available(6) is False
+    assert avail_updates == [(True, False)]
+
+
+@pytest.mark.asyncio
+async def test_mh202_live_trace_who6_who8_delegation_and_standby_failover(
+    hass: HomeAssistant,
+) -> None:
+    """Replay authentic physical MH202 FW 1.0 trace (61 frames, WHO 6 + WHO 8) under delegation and warm standby."""
+    import json
+    from pathlib import Path
+
+    from homeassistant.const import Platform
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from OWNd.message import OWNMessage
+
+    from custom_components.myhome.lock import MyHOMELock
+    from custom_components.myhome.lock import async_setup_entry as async_setup_lock
+    from custom_components.myhome.topology import validate_shared_bus_topology
+
+    trace_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "traces"
+        / "mh202_sound_intercom_ducking"
+        / "myhome_trace_MH202_all_2026-10-18T10-27-48.json"
+    )
+    assert trace_path.is_file(), f"Missing live MH202 trace fixture: {trace_path}"
+    trace_payload = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert trace_payload["gateway"]["model"] == "MH202"
+    assert trace_payload["gateway"]["firmware"] == "1.0"
+    frames = trace_payload["frames"]
+    assert len(frames) == 61
+
+    pri_mac = "00:03:50:de:30:01"
+    sec_mac = "00:03:50:de:30:02"
+    entry_pri, gw_pri = _create_mock_gateway(
+        hass,
+        pri_mac,
+        name="MyHomeServer1",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    entry_sec, gw_sec = _create_mock_gateway(
+        hass,
+        sec_mac,
+        name="MH202",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=pri_mac,
+        delegated_whos=[6, 8],
+    )
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_sec,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: pri_mac,
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+
+    gw_pri.is_connected = True
+    gw_pri._available = True
+    gw_sec.is_connected = True
+    gw_sec._available = True
+
+    entry_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-1": {"who": "6", "where": "1", "name": "Indoor Unit Release"},
+        "6-4000": {"who": "6", "where": "4000", "name": "Entrance Panel Strike"},
+    }
+    added_locks: list[MyHOMELock] = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        await async_setup_lock(hass, entry_pri, added_locks.extend)
+
+    assert len(added_locks) == 2
+    locks_by_where = {lk._where: lk for lk in added_locks}
+    for lk in added_locks:
+        lk.hass = hass
+        lk.entity_id = f"lock.mh202_trace_{lk._where}"
+        lk.async_write_ha_state = MagicMock()
+        assert lk.is_locked is True
+
+    try:
+        bridged_to_primary: list[str] = []
+        doorbells = []
+        unsub_bridge = async_dispatcher_connect(
+            hass, f"myhome_message_{pri_mac}", callback(lambda m: bridged_to_primary.append(str(m)))
+        )
+        unsub_bell = hass.bus.async_listen("myhome_doorbell_event", doorbells.append)
+        try:
+            for item in frames:
+                msg = OWNMessage.parse(item["raw"])
+                assert msg is not None, f"Failed to parse trace frame {item['raw']}"
+                await gw_sec._process_message(msg)
+            await hass.async_block_till_done()
+        finally:
+            unsub_bridge()
+            unsub_bell()
+
+        # 1. WHO 8 visitor call (*8*1#1#4#20*11##) fires once; caller notification (*8*9#1#4*20##) is ignored
+        assert len(doorbells) == 1
+        assert doorbells[0].data == {
+            "where": "11",
+            "event": "call",
+            "is_broadcast": False,
+            "gateway_mac": sec_mac,
+            "entry_id": entry_sec.entry_id,
+        }
+
+        # 2. Only delegated WHO 6 & WHO 8 frames are bridged to MyHomeServer1; non-delegated WHO 9/13/16/18/22/25 are not
+        assert bridged_to_primary == [
+            "*8*1#1#4#20*11##",
+            "*8*9#1#4*20##",
+            "*6*22*1##",
+            "*6*10*4000##",
+            "*6*24*1##",
+            "*6*23*4000##",
+            "*6*9**##",
+        ]
+        assert locks_by_where["1"].is_locked is False
+        assert locks_by_where["4000"].is_locked is False
+        for lk in added_locks:
+            await lk.async_lock()
+            assert lk.is_locked is True
+
+        # 3. Warm Standby failover: MH202 standby relays both WHO 8 doorbells (attributed to Primary) and WHO 6 locks
+        pri_av_mac = "00:03:50:de:30:03"
+        sb_mh_mac = "00:03:50:de:30:04"
+        entry_pri_av, gw_pri_av = _create_mock_gateway(
+            hass,
+            pri_av_mac,
+            name="F454",
+            topology=TOPOLOGY_SHARED,
+            role=ROLE_PRIMARY,
+        )
+        _, gw_sb_mh = _create_mock_gateway(
+            hass,
+            sb_mh_mac,
+            name="MH202",
+            topology=TOPOLOGY_SHARED,
+            role=ROLE_STANDBY,
+            primary_gateway=pri_av_mac,
+        )
+        gw_pri_av.is_connected = False
+        gw_pri_av._available = False
+        gw_sb_mh.is_connected = True
+        gw_sb_mh._available = True
+        assert gw_pri_av.is_who_available(6) is True
+        assert gw_pri_av.is_who_available(8) is True
+
+        sb_doorbells = []
+        sb_bridged: list[str] = []
+        unsub_sb_bridge = async_dispatcher_connect(
+            hass, f"myhome_message_{pri_av_mac}", callback(lambda m: sb_bridged.append(str(m)))
+        )
+        unsub_sb_bell = hass.bus.async_listen("myhome_doorbell_event", sb_doorbells.append)
+        try:
+            for item in frames:
+                msg = OWNMessage.parse(item["raw"])
+                assert msg is not None
+                await gw_sb_mh._process_message(msg)
+            await hass.async_block_till_done()
+        finally:
+            unsub_sb_bridge()
+            unsub_sb_bell()
+
+        assert len(sb_doorbells) == 1
+        assert sb_doorbells[0].data == {
+            "where": "11",
+            "event": "call",
+            "is_broadcast": False,
+            "gateway_mac": pri_av_mac,
+            "entry_id": entry_pri_av.entry_id,
+        }
+        assert "*6*22*1##" in sb_bridged
+        assert "*6*10*4000##" in sb_bridged
+    finally:
+        for lk in added_locks:
+            await lk.async_will_remove_from_hass()
+
+
+def test_door_entry_guards_apply_only_to_who6_who8(hass: HomeAssistant) -> None:
+    """An F454 secondary keeps WHO 8 and non-door subsystems but never takes WHO 6."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from OWNd.message import OWNCommand, OWNEvent
+
+    from custom_components.myhome.lock import warn_if_locks_unsupported
+
+    pri_mac = "00:03:50:de:50:01"
+    sec_mac = "00:03:50:de:50:02"
+    _, gw_pri = _create_mock_gateway(
+        hass, pri_mac, name="MyHomeServer1", topology=TOPOLOGY_SHARED, role=ROLE_PRIMARY
+    )
+    _, gw_sec = _create_mock_gateway(
+        hass,
+        sec_mac,
+        name="F454",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=pri_mac,
+        delegated_whos=[1, 6, 8, 9],
+    )
+    for gw in (gw_pri, gw_sec):
+        gw.is_connected = True
+        gw._available = True
+
+    # Outbound: WHO 6 stays on the primary (whose NACK the lock reports); WHO 1 goes to the secondary
+    lock_cmd = OWNCommand.parse("*6*10*4000##")
+    light_cmd = OWNCommand.parse("*1*1*21##")
+    assert lock_cmd is not None and light_cmd is not None
+    assert gw_pri._delegated_target(lock_cmd) is None
+    assert gw_pri._delegated_target(light_cmd) is gw_sec
+
+    # Availability: WHO 8 rides on the F454, WHO 6 has no gateway that routes it, and WHO 9
+    # (in no OWNd profile) keeps the plain primary availability
+    assert gw_pri.is_who_available(8) is True
+    assert gw_pri.is_who_available(6) is False
+    assert gw_pri.is_who_available(9) is True
+
+    # Inbound: the secondary bridges the WHO 8 call the primary cannot hear, not its WHO 1 / 9 frames
+    aux_evt = OWNEvent.parse("*9*1*1##")
+    assert aux_evt is not None
+    bridged: list[str] = []
+    unsub = async_dispatcher_connect(hass, f"myhome_message_{pri_mac}", callback(lambda m: bridged.append(str(m))))
+    try:
+        gw_sec._bridge_to_primary(OWNEvent.parse("*8*1#1#4*74##"))
+        gw_sec._bridge_to_primary(OWNEvent.parse("*1*1*21##"))
+        gw_sec._bridge_to_primary(aux_evt)
+    finally:
+        unsub()
+    assert bridged == ["*8*1#1#4*74##"]
+
+    # Primary-hosted WHO 6 locks warn: delegating WHO 6 to an F454 does not make it routable
+    assert warn_if_locks_unsupported(gw_pri, [MagicMock(_full_where="4000")]) is True
+
+
+@pytest.mark.asyncio
+async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Verify Generic manual WHO 6/8 delegation and runtime WHO=13/1013 resolution warnings & target fallback."""
+    from homeassistant.const import Platform
+    from OWNd.message import OWNCommand
+
+    from custom_components.myhome.lock import MyHOMELock
+    from custom_components.myhome.lock import async_setup_entry as async_setup_lock
+    from custom_components.myhome.topology import (
+        gateway_delegatable_whos,
+        gateway_supported_whos,
+        validate_shared_bus_topology,
+    )
+
+    # 1. Generic manual-IP gateway allows manual WHO 6/8 delegation without auto-inferring WHO 6/8;
+    #    Legrand 3578 USB coordinator excludes WHO 6/8 from both.
+    assert {6, 8}.isdisjoint(gateway_supported_whos("Generic"))
+    assert {6, 8} <= gateway_delegatable_whos("Generic")
+    # ...while its other subsystems still come from the conservative Generic profile
+    assert {5, 9}.isdisjoint(gateway_delegatable_whos("Generic"))
+    assert {6, 8}.isdisjoint(gateway_delegatable_whos("Legrand 3578"))
+
+    entry_pri_check = MockConfigEntry(
+        domain=DOMAIN,
+        title="MyHomeServer1 Gateway",
+        data={CONF_NAME: "MyHomeServer1", CONF_MAC: "00:03:50:de:40:01"},
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+        unique_id="00:03:50:de:40:01",
+    )
+    entry_pri_check.add_to_hass(hass)
+    entry_gen_check = MockConfigEntry(
+        domain=DOMAIN,
+        title="Generic Gateway",
+        data={CONF_NAME: "Generic", CONF_MAC: "00:03:50:de:40:02"},
+        unique_id="00:03:50:de:40:02",
+    )
+    entry_gen_check.add_to_hass(hass)
+    assert not validate_shared_bus_topology(
+        hass,
+        entry_gen_check,
+        {
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: "00:03:50:de:40:01",
+            CONF_DELEGATED_WHOS: [6, 8],
+        },
+    )
+
+    # 2. Standalone Generic gateway with WHO=6 lock warns once as soon as _apply_model resolves MyHomeServer1
+    entry_standalone, gw_standalone = _create_mock_gateway(
+        hass, "00:03:50:de:40:03", name="Generic"
+    )
+    entry_standalone.runtime_data.platforms[Platform.LOCK] = {
+        "6-4000": {"who": "6", "where": "4000", "name": "Standalone Gate"},
+    }
+    standalone_locks: list[MyHOMELock] = []
+    caplog.clear()
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+        caplog.at_level("WARNING"),
+    ):
+        await async_setup_lock(hass, entry_standalone, standalone_locks.extend)
+    assert len(standalone_locks) == 1
+    assert not [r for r in caplog.records if "bt_vct" in r.message]
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        gw_standalone._apply_model("MyHomeServer1")
+        gw_standalone._apply_model("MyHomeServer1")
+    who6_warnings = [r.message for r in caplog.records if "bt_vct" in r.message]
+    assert len(who6_warnings) == 1
+    assert "4000" in who6_warnings[0] and "MyHomeServer1" in who6_warnings[0]
+
+    # 3. Shared-bus MyHomeServer1 Primary + Generic Secondary (delegated_whos=[6, 8]):
+    #    when WHO=13 corrects Secondary to F455, Primary warns, lock availability drops,
+    #    and _delegated_target / claim_in_flight_dimension_where skip F455.
+    pri_mac = "00:03:50:de:40:04"
+    sec_mac = "00:03:50:de:40:05"
+    entry_pri, gw_pri = _create_mock_gateway(
+        hass,
+        pri_mac,
+        name="MyHomeServer1",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    entry_sec, gw_sec = _create_mock_gateway(
+        hass,
+        sec_mac,
+        name="Generic",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=pri_mac,
+        delegated_whos=[6, 8],
+    )
+    gw_pri.is_connected = True
+    gw_pri._available = True
+    gw_sec.is_connected = True
+    gw_sec._available = True
+
+    entry_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4001": {"who": "6", "where": "4001", "name": "Shared Gate"},
+    }
+    pri_locks: list[MyHOMELock] = []
+    caplog.clear()
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+        caplog.at_level("WARNING"),
+    ):
+        await async_setup_lock(hass, entry_pri, pri_locks.extend)
+    assert len(pri_locks) == 1
+    assert not [r for r in caplog.records if "bt_vct" in r.message]
+
+    shared_lock = pri_locks[0]
+    shared_lock.hass = hass
+    shared_lock.entity_id = "lock.shared_gate"
+    shared_lock.async_write_ha_state = MagicMock()
+    assert shared_lock.available is True
+
+    cmd_lock = OWNCommand.parse("*6*10*4001##")
+    assert cmd_lock is not None
+    assert gw_pri._delegated_target(cmd_lock) is gw_sec
+
+    caplog.clear()
+    with caplog.at_level("WARNING"):
+        gw_sec._apply_model("F455")
+    pri_warnings = [r.message for r in caplog.records if "bt_vct" in r.message]
+    assert len(pri_warnings) == 1
+    assert "4001" in pri_warnings[0] and "MyHomeServer1" in pri_warnings[0]
+    assert shared_lock.available is False
+    assert gw_pri._delegated_target(cmd_lock) is None
+    assert gw_pri.claim_in_flight_dimension_where(6, 1) is None
+
+    # 4. Generic Primary (before WHO=13 resolves) bridges WHO 6/8 from Secondary, and refreshes
+    #    Primary-hosted lock availability when _apply_model resolves MyHomeServer1 while Secondary is down.
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+    from OWNd.message import OWNEvent
+
+    from custom_components.myhome.topology import peer_handles_who
+
+    assert peer_handles_who(object(), 6) is True
+
+    gen_pri_mac = "00:03:50:de:40:06"
+    av_sec_mac = "00:03:50:de:40:07"
+    entry_gen_pri, gw_gen_pri = _create_mock_gateway(
+        hass,
+        gen_pri_mac,
+        name="Generic",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_av_sec = _create_mock_gateway(
+        hass,
+        av_sec_mac,
+        name="F453AV",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=gen_pri_mac,
+        delegated_whos=[6, 8],
+    )
+    gw_gen_pri.is_connected = True
+    gw_gen_pri._available = True
+    gw_av_sec.is_connected = True
+    gw_av_sec._available = True
+
+    assert gw_gen_pri._natively_hears_who(6) is False
+    assert gw_gen_pri._natively_hears_who(8) is False
+    assert gw_gen_pri._natively_hears_who(1) is True
+
+    bridged_gen: list[str] = []
+    unsub_gen = async_dispatcher_connect(
+        hass, f"myhome_message_{gen_pri_mac}", callback(lambda m: bridged_gen.append(str(m)))
+    )
+    try:
+        gw_av_sec._bridge_to_primary(OWNEvent.parse("*6*10*4002##"))
+    finally:
+        unsub_gen()
+    assert bridged_gen == ["*6*10*4002##"]
+
+    entry_gen_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4002": {"who": "6", "where": "4002", "name": "Generic Primary Gate"},
+    }
+    gen_pri_locks: list[MyHOMELock] = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        await async_setup_lock(hass, entry_gen_pri, gen_pri_locks.extend)
+    gen_pri_lock = gen_pri_locks[0]
+    gen_pri_lock.hass = hass
+    gen_pri_lock.entity_id = "lock.generic_primary_gate"
+    gen_pri_lock.async_write_ha_state = MagicMock()
+
+    # Secondary drops while Primary is still Generic -> lock stays available until WHO=13 resolves MyHomeServer1
+    gw_av_sec.is_connected = False
+    gw_av_sec._available = False
+    assert gen_pri_lock.available is True
+    gen_pri_avail_events: list[bool] = []
+    unsub_gen_avail = async_dispatcher_connect(
+        hass, gw_gen_pri.availability_signal, callback(lambda: gen_pri_avail_events.append(gen_pri_lock.available))
+    )
+    try:
+        gw_gen_pri._apply_model("MyHomeServer1")
+    finally:
+        unsub_gen_avail()
+    assert gen_pri_lock.available is False
+    assert gen_pri_avail_events == [False]
+
+    # 5. Warm Standby Generic -> F454 refreshes offline Primary lock availability, and
+    #    GatewayEventDispatcher._is_active_for_who partitions WHO 6 vs WHO 8 across Primary/Standby/F454 Secondary.
+    mh_pri_mac = "00:03:50:de:40:08"
+    gen_sb_mac = "00:03:50:de:40:09"
+    f454_sec_mac = "00:03:50:de:40:10"
+    entry_mh_pri, gw_mh_pri = _create_mock_gateway(
+        hass,
+        mh_pri_mac,
+        name="MH202",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_gen_sb = _create_mock_gateway(
+        hass,
+        gen_sb_mac,
+        name="Generic",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_STANDBY,
+        primary_gateway=mh_pri_mac,
+    )
+    _, gw_f454_sec = _create_mock_gateway(
+        hass,
+        f454_sec_mac,
+        name="F454",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_SECONDARY,
+        primary_gateway=mh_pri_mac,
+        delegated_whos=[6, 8],
+    )
+    assert gw_f454_sec._natively_hears_who(8) is True
+    assert gw_f454_sec._natively_hears_who(6) is False
+
+    # Online Primary (MH202) + Online F454 Secondary (stale [6, 8]): MH202 reclaims WHO 6; F454 owns WHO 8 only
+    gw_mh_pri.is_connected = True
+    gw_mh_pri._available = True
+    gw_gen_sb.is_connected = True
+    gw_gen_sb._available = True
+    gw_f454_sec.is_connected = True
+    gw_f454_sec._available = True
+
+    assert gw_f454_sec._event_dispatcher._is_active_for_who(8) is True
+    assert gw_f454_sec._event_dispatcher._is_active_for_who(6) is False
+    assert gw_mh_pri._event_dispatcher._is_active_for_who(6) is True
+    assert gw_mh_pri._event_dispatcher._is_active_for_who(8) is False
+
+    stale_bridged: list[str] = []
+    unsub_stale = async_dispatcher_connect(
+        hass, f"myhome_message_{mh_pri_mac}", callback(lambda m: stale_bridged.append(str(m)))
+    )
+    try:
+        gw_f454_sec._bridge_to_primary(OWNEvent.parse("*6*10*4003##"))
+        gw_f454_sec._bridge_to_primary(OWNEvent.parse("*8*1#1#4*74##"))
+    finally:
+        unsub_stale()
+    assert stale_bridged == ["*8*1#1#4*74##"]
+
+    # Primary drops: Generic Standby carries WHO 6 (since F454 cannot), yields WHO 8 to F454;
+    # once Standby resolves to F454 via WHO=13, Primary availability signal fires and WHO 6 drops.
+    entry_mh_pri.runtime_data.platforms[Platform.LOCK] = {
+        "6-4003": {"who": "6", "where": "4003", "name": "Standby Gate"},
+    }
+    mh_pri_locks: list[MyHOMELock] = []
+    with (
+        patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]),
+        patch("custom_components.myhome.discovery.er.async_get"),
+    ):
+        await async_setup_lock(hass, entry_mh_pri, mh_pri_locks.extend)
+    sb_lock = mh_pri_locks[0]
+    sb_lock.hass = hass
+    sb_lock.entity_id = "lock.standby_gate"
+    sb_lock.async_write_ha_state = MagicMock()
+
+    gw_mh_pri.is_connected = False
+    gw_mh_pri._available = False
+    assert gw_gen_sb._event_dispatcher._is_active_for_who(6) is True
+    assert gw_gen_sb._event_dispatcher._is_active_for_who(8) is False
+    assert sb_lock.available is True
+
+    sb_avail_events: list[bool] = []
+    unsub_sb_avail = async_dispatcher_connect(
+        hass, gw_mh_pri.availability_signal, callback(lambda: sb_avail_events.append(sb_lock.available))
+    )
+    try:
+        gw_gen_sb._apply_model("F454")
+    finally:
+        unsub_sb_avail()
+    assert sb_lock.available is False
+    assert sb_avail_events == [False]
+    assert gw_gen_sb._event_dispatcher._is_active_for_who(6) is False
+
+    for lk in (*standalone_locks, *pri_locks, *gen_pri_locks, *mh_pri_locks):
+        await lk.async_will_remove_from_hass()

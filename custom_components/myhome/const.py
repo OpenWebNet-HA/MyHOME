@@ -23,7 +23,7 @@ ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 ATTR_WHERE = "where"
 ATTR_ACTION = "action"
-INTEGRATION_VERSION = "2.0.0b16"
+INTEGRATION_VERSION = "2.0.0b17"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -58,6 +58,7 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.SENSOR,
     Platform.MEDIA_PLAYER,
     Platform.BUTTON,
+    Platform.NUMBER,
     Platform.ALARM_CONTROL_PANEL,
     Platform.LOCK,
 )
@@ -111,6 +112,9 @@ CONF_LOCK_FEATURES = "lock_features"
 CONF_GATEWAY = "gateway"
 CONF_DEVICE_CLASS = "class"
 CONF_INVERTED = "inverted"
+CONF_INVERTED_BINARY_SENSORS = "inverted_binary_sensors"
+SIGNAL_NEW_BINARY_SENSOR = "myhome_new_binary_sensor_{}"
+SIGNAL_BINARY_SENSOR_INVERTED = "myhome_binary_sensor_inverted_{}"
 CONF_ADVANCED_SHUTTER = "advanced"
 CONF_SLAT_TILT = "slat_tilt"
 CONF_SLAT_TIME = "slat_time"
@@ -186,11 +190,19 @@ CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run
 CALIBRATION_MIN_MOTOR_PULSE = 0.0  # s: 0.0 disables floor
 CALIBRATION_MAX_MOTOR_PULSE = 5.0  # s: upper limit for motor start-up deadband floor
 CALIBRATION_SETTLE = 1.0         # s pause between runs so the actuator relay settles
-# An actuator with the factory 60 s run-time limit stops itself, not at the end
-# stop: measured 61.5 s for a 14 s shutter on a MyHOMEServer1 (#319). A run that
-# ends inside this window measured the actuator, not the shutter, and is refused.
-CALIBRATION_CUTOFF_MIN = 59.0
-CALIBRATION_CUTOFF_MAX = 65.0
+# A timed actuator stops itself at its configured run-time limit, not at the end
+# stop: measured 60.05-61.5 s at the factory 60 s on MH200N / MyHOMEServer1
+# (#319, #565) and 125.45-127.11 s at the 2 min stop on 4672 actuators on MH201
+# (#433). The F411/2 and F411/4 physical configurator M=0..3 sets 1/2/5/10 min and
+# MyHOME_Suite whole minutes from 2 to 10, so a 60-86 s shutter needs M=1 = 120 s
+# (#770, #837). A run that ends inside one of these windows measured the
+# actuator, not the shutter, and is refused; the late margin scales with the
+# limit (5 s per minute) because internal RC timer drift is proportional. Limits
+# above CALIBRATION_RUN_TIMEOUT (and a 3 min stop arriving after the 180 s wait)
+# fail on the timeout first.
+CALIBRATION_CUTOFFS = tuple(60.0 * minutes for minutes in range(1, 11))
+CALIBRATION_CUTOFF_EARLY = 1.0          # s the stop status may precede a limit
+CALIBRATION_CUTOFF_LATE_PER_MIN = 5.0   # s per minute the stop status may follow a limit
 WHO_BURGLAR_ALARM = "5"
 PLATFORM_ALARM = "alarm_control_panel"
 
@@ -223,6 +235,8 @@ TUNER_STATION_COUNT = 5
 TUNER_MAX_STATION_COUNT = 15
 SERVICE_TUNER_SEEK_UP = "tuner_seek_up"
 SERVICE_TUNER_SEEK_DOWN = "tuner_seek_down"
+SERVICE_TUNER_SET_FREQUENCY = "tuner_set_frequency"
+SERVICE_TUNER_STORE_STATION = "tuner_store_station"
 
 # Default source per environment. The F441M routes per output and an output
 # serves one environment, so a default belongs to an environment, not to a
@@ -296,6 +310,22 @@ def percent_to_eight_bits(value: int) -> int:
     return int(round((value * 255) / 100, 0))
 
 
+# BTicino libqtdevices dimmerLevelTo100 mapping for WHO=1 coarse WHAT 2..10 presets
+# (mirrors OWNd.message.COARSE_PRESET_TO_PERCENT while OWNd==2.0.0b11 is pinned;
+# corroborated on physical F414 and F418U2 dimmers, #466 / #767).
+COARSE_PRESET_TO_PERCENT: dict[int, int] = {
+    2: 1,
+    3: 10,
+    4: 20,
+    5: 30,
+    6: 40,
+    7: 50,
+    8: 60,
+    9: 75,
+    10: 100,
+}
+
+
 SERVICE_TURN_ON_TIMED = "turn_on_timed"
 
 PRESET_TIMERS: dict[float, int] = {
@@ -325,6 +355,9 @@ SUPPORTED_GATEWAY_MODELS = [
     "AM4890",
     "H4890",
     "LN4890",
+    "067292",
+    "573958",
+    "078479",
     "H4684",
     "Generic",
 ]

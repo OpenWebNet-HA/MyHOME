@@ -97,7 +97,9 @@ def sync_gateway_profiles(update: bool = False) -> tuple[bool, list[str]]:
     except ImportError:
         from update_gateway_profiles import verify_profiles_against_oracle
 
-    oracle_violations = verify_profiles_against_oracle()
+    oracle_violations = verify_profiles_against_oracle(
+        manifest_path=CUSTOM_COMPONENTS_DIR / "manifest.json",
+    )
     if oracle_violations:
         for violation in oracle_violations:
             messages.append(f"Gateway profile oracle mismatch: {violation}")
@@ -150,12 +152,26 @@ def sync_gateway_profiles(update: bool = False) -> tuple[bool, list[str]]:
 
 
 def get_gateway_discovery_block() -> str:
-    """Build the canonical Gateway Startup Discovery Capabilities table block."""
+    """Build the canonical Gateway Startup Discovery Capabilities table block.
+
+    While manifest.json still pins OWNd==2.0.0b11 (before OWNd #142 is in a pinned
+    release), the committed docs track the pinned OWNd rows (`use_pinned=True`) so
+    CI jobs with unreleased OWNd@master and CI jobs without OWNd agree on the same
+    table. Once manifest.json bumps past 2.0.0b11, `use_pinned` flips to False and
+    both `verify_profiles_against_oracle()` and `--check` enforce regenerating the rows.
+    """
     try:
-        from scripts.update_gateway_profiles import build_discovery_block
+        from scripts.update_gateway_profiles import (
+            build_discovery_block,
+            manifest_pins_pre_who16_ownd,
+        )
     except ImportError:
-        from update_gateway_profiles import build_discovery_block
-    return build_discovery_block()
+        from update_gateway_profiles import (
+            build_discovery_block,
+            manifest_pins_pre_who16_ownd,
+        )
+    manifest_path = CUSTOM_COMPONENTS_DIR / "manifest.json"
+    return build_discovery_block(use_pinned=manifest_pins_pre_who16_ownd(manifest_path))
 
 
 def sync_gateway_discovery(update: bool = False) -> tuple[bool, list[str]]:

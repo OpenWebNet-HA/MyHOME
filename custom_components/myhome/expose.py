@@ -76,6 +76,7 @@ from OWNd.message import (
 )
 
 from .const import (
+    COARSE_PRESET_TO_PERCENT,
     CONF_BIDIRECTIONAL,
     CONF_BRIGHTNESS_STEP_PCT,
     CONF_COOLDOWN,
@@ -1894,7 +1895,7 @@ class ExposeManager:
                     await self._async_execute_who1_step(binding, up=False)
                 elif isinstance(eff_what, int) and 2 <= eff_what <= 10:
                     self._cancel_cooldown_timer(binding.key)
-                    pct = eff_what * 10
+                    pct = COARSE_PRESET_TO_PERCENT[eff_what]
                     confirm = OWNLightingCommand.switch_on(binding.where)
                     binding.last_sent_value = (True, pct)
                     binding.last_sent_at = time.monotonic()

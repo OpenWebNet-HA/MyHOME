@@ -74,7 +74,15 @@ from .repairs import (
     async_delete_unconfigured_timezone_issue,
     async_delete_unknown_model_issue,
 )
-from .topology import GatewayTopologyMixin
+from .topology import (
+    DOOR_ENTRY_AV_MODELS,
+    DOOR_ENTRY_MH_BRIDGE_AV_MODELS,
+    DOOR_ENTRY_UNSUPPORTED_MODELS,
+    DOOR_ENTRY_WHO6_ONLY_MODELS,
+    DOOR_ENTRY_WHO8_ONLY_MODELS,
+    GatewayTopologyMixin,
+    peer_handles_who,
+)
 
 __all__ = [
     "AVAILABILITY_GRACE",
@@ -140,25 +148,18 @@ def _call_get_gateway_profile(
 def _profile_for_model(
     model: str | None, firmware: str | None = None, *, lookup: Any = None
 ) -> Any:
-    """Resolve ``model`` to an OWNd profile, mapping SSDP spellings like ``H/L4684``."""
+    """Resolve ``model`` to an OWNd profile (firmware-aware, e.g. the H4684's WHO 22 from 6.0.0).
+
+    SSDP spellings such as ``H/L4684`` / ``HL4684`` / ``HC4684`` are aliased by the pinned OWNd
+    itself (OWNd#147, in OWNd 2.0.0b13). Touch screen family spellings (067292, etc.) are mapped
+    via ``_MODEL_SPELLINGS`` (#832).
+    """
     profile = _call_get_gateway_profile(model, firmware, lookup=lookup)
     if isinstance(profile, GenericGatewayProfile) and model:
         mapped = _MODEL_SPELLINGS.get(_alnum(model))
         if mapped is not None:
             return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
     return profile
-
-
-def _firmware_at_least(firmware: str | None, minimum: tuple[int, int, int]) -> bool:
-    """Return whether ``firmware`` parses to at least ``minimum`` (V, R, B)."""
-    if not firmware:
-        return False
-    parts = [int(m) for m in re.findall(r"\d+", str(firmware))]
-    if not parts:
-        return False
-    while len(parts) < 3:
-        parts.append(0)
-    return tuple(parts[:3]) >= minimum
 
 
 def command_session_limit(model: str | None) -> int | None:
@@ -219,14 +220,14 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
 # keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
-# A zone behind an F422 bus interface (WHERE Z#4#II) cannot be polled on these gateways: the
-# firmware drops *#4*Z#4#II*0## (and *#4*Z#4#II##) before the bus, nack/silent on ten of the
-# twelve emulated images; only H4684 and MH200 forward them (own-firmware-oracle PR #60,
-# thermo-zone-requests suite, not published yet). Read from the OWNd profile first
-# (``supports_interface_zone_requests``); this table is the fallback until the flag exists there.
-INTERFACE_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F453", "F453AV", "F454", "F459", "F460", "F461", "MH200N", "MH202", "MYHOMESERVER1"}
-)
+# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
+# own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
+# frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
+# local main-bus zone Z (F450, F454, F459, F460, F461, H4684, MH200, MyHomeServer1), or on MH202
+# 010024 misparse trailing #4#01 as local zone 4 actuator 1 and crash coso with SIGSEGV on
+# *#4*Z#4#01## (including while the profile is still Generic). ``interface_zone_request_refused``
+# therefore defaults to True across all models unless ``profile.supports_interface_zone_requests``
+# is explicitly True.
 
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
@@ -267,10 +268,15 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
-# SSDP announces the H4684 as "H/L4684" (issue #466) or "HL4684" (manifest.json), which OWNd<=2.0.0b11
-# does not alias to its H4684 profile yet, and "HC4684" is the other prefixed spelling of the same product.
-# TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
-_MODEL_SPELLINGS = {"HL4684": "H4684", "HC4684": "H4684"}
+# Legrand 067292 Céliane 3.5" touch screen family (issue #832) SSDP model names mapped
+# to the H4890 profile until OWNd aliases them upstream.
+_MODEL_SPELLINGS = {
+    "067292": "H4890",
+    "67292": "H4890",
+    "573958": "H4890",
+    "078479": "H4890",
+    "78479": "H4890",
+}
 
 
 def _alnum(name: object) -> str:
@@ -281,8 +287,9 @@ def _alnum(name: object) -> str:
 def _resolved_model(word: str) -> str | None:
     """The model OWNd resolves one word of a model string to, or ``None`` for a word it does not know.
 
-    ``L4684`` -> ``H4684``, ``003598`` -> ``F454``, ``03565`` -> ``MH200N`` (OWNd's aliases and
-    catalogue item numbers); the spellings OWNd has no alias for are mapped first.
+    ``L4684`` -> ``H4684``, ``HL4684`` / ``HC4684`` -> ``H4684`` (OWNd#147), ``003598`` -> ``F454``,
+    ``03565`` -> ``MH200N`` (OWNd's aliases and catalogue item numbers); spellings OWNd has no
+    alias for are mapped first via ``_MODEL_SPELLINGS``.
     """
     key = _MODEL_SPELLINGS.get(_alnum(word), word)
     profile = get_gateway_profile(key)
@@ -291,10 +298,10 @@ def _resolved_model(word: str) -> str | None:
     return _alnum(profile.model_name)
 
 
-# A WHO 4 zone address: ``Z``, ``#Z``, ``Z#N`` (actuator), each optionally behind an
-# interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
+# A WHO 4 zone address: ``Z`` (0..99), ``#Z``, ``Z#N`` (actuator 0..9), each optionally behind
+# an interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
 # (``OWNHeatingCommand.actuators_status``).
-_ZONE_WHERE = re.compile(rf"^#?[0-9]+(?:#[0-9]+)?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
+_ZONE_WHERE = re.compile(rf"^#?[0-9]{{1,2}}(?:#[0-9])?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
 
 
 def _validate_zone_where(where: str) -> str:
@@ -306,7 +313,7 @@ def _validate_zone_where(where: str) -> str:
     dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
     (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
     """
-    zone, routing, interface = (where or "").partition(BUS_ROUTING)
+    zone, routing, interface = (where or "").rpartition(BUS_ROUTING)
     if routing and len(interface) == 1 and interface.isdigit():
         where = f"{zone}{routing}{interface.zfill(2)}"
     if not _ZONE_WHERE.match(where or ""):
@@ -514,7 +521,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             for k in (
                 "F450",
                 "F455",
-                "HL4684",  # TODO(OWNd>2.0.0b11): remove once manifest.json pins OWNd containing OWNd#147
+                "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
                 "F454",
                 "MH200",
                 "MH201",
@@ -534,8 +541,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         A known OWNd profile names the model; a ``GenericGatewayProfile`` (also what
         ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name.
         There a brand-prefixed alias or catalogue number is resolved word by word through
-        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``), the SSDP
-        spelling ``HL4684`` is read as ``H4684``, and otherwise a known model is looked up as
+        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``, the SSDP
+        spelling ``HL4684`` -> ``H4684``), and otherwise a known model is looked up as
         a substring, longest first (``supports_zone_status`` style), so ``MH200N`` stays
         distinct from ``MH200``. The words are the alphanumeric runs of the string, so
         ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
@@ -608,8 +615,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         for every zone (``all_zone_request``), that frame replaces the local zones' own.
         """
         if dimension == 22:
-            # *#4*Z*22## kills the F461 thermostat handler and reboots the gateway.
-            raise ValueError("WHO 4 dimension 22 is never requested")
+            # A zone WHERE has no actuator token, so *#4*Z*22## is the crash form:
+            # it kills the thermostat daemon (bt_termo) and a live F461 rebooted.
+            # The published split form *#4*3#Z#N*22## goes through send_message once
+            # the installed OWNd (>= 2.0.0b12) can tell the forms apart.
+            raise ValueError("WHO 4 dimension 22 is never requested for a zone")
         self._zone_requests.add((_validate_zone_where(where), dimension))
         if self._zone_request_task is None or self._zone_request_task.done():
             self._zone_request_task = self.hass.async_create_background_task(
@@ -631,6 +641,19 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             target = self._who4_target()
             for dimension in sorted({dim for _where, dim in pending}):
                 wheres = sorted(where for where, dim in pending if dim == dimension)
+                if target.interface_zone_request_refused:
+                    routed = [where for where in wheres if BUS_ROUTING in where]
+                    if routed:
+                        LOGGER.debug(
+                            "%s Zones %s: %s does not route WHO 4 dimension %s behind an interface; not asking",
+                            self.log_id,
+                            routed,
+                            target.model,
+                            dimension,
+                        )
+                        wheres = [where for where in wheres if BUS_ROUTING not in where]
+                        if not wheres:
+                            continue
                 if dimension == 20 and target.actuator_request_refused:
                     LOGGER.debug(
                         "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
@@ -703,11 +726,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def interface_zone_request_refused(self) -> bool:
-        """Whether this gateway drops the status requests of a zone behind an F422 (``*#4*Z#4#II*0##``)."""
+        """Whether WHO 4 requests behind an ``#4#II`` interface are dropped, misrouted, or crash the gateway.
+
+        Zero of the twelve emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
+        emit ``$06EC`` / ``$06E4`` interface-routed SCS frames for WHO 4: gateways either NACK/drop them,
+        truncate ``Z#4#II`` at ``#`` and cross-poll local zone ``Z`` on the main bus, or on MH202 ``010024``
+        misparse trailing ``#4#01`` as local zone 4 actuator 1 and crash ``coso`` with ``SIGSEGV`` on
+        ``*#4*Z#4#01##`` (including before WHO 13 settles while the profile is still ``Generic``).
+        Delegates through ``_who4_target()``; an explicit bool ``supports_interface_zone_requests`` on the
+        OWNd profile overrides this default.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.interface_zone_request_refused
         supported = getattr(getattr(self.gateway, "profile", None), "supports_interface_zone_requests", None)
         if isinstance(supported, bool):
             return not supported
-        return self._model_key in INTERFACE_ZONE_REQUEST_REFUSED
+        return True
 
     @property
     def profile(self) -> Any:
@@ -786,7 +821,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return
         self._available = False
         self._evaluate_failover()
-        if self.available:  # carried by the warm standby; entities stay available
+        if self.available:  # carried by the warm standby; refresh entities whose standby coverage differs
+            async_dispatcher_send(self.hass, self.availability_signal)
             return
         LOGGER.warning(
             "%s Gateway unavailable (outage exceeded %ss).",
@@ -809,11 +845,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return self._profile_supports_who(who)
 
     def _profile_supports_who(self, who: int) -> bool:
-        """Return whether the gateway profile advertises a WHO subsystem (True when unknown)."""
-        # TODO(OWNd>2.0.0b11): remove shim once manifest.json pins an OWNd release containing OWNd#147.
-        if who == 22 and self._model_key == "H4684" and _firmware_at_least(self.firmware, (6, 0, 0)):
-            return True
+        """Return whether the gateway profile advertises a WHO subsystem (True when unknown).
+
+        The H4684's WHO 22 from firmware 6.0.0 comes from the firmware-aware OWNd profile
+        (``_profile_for_model(model, firmware)``, refreshed on ``*#13**16*V*R*B##``).
+        """
         profile = getattr(self.gateway, "profile", None)
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS or self._model_key in DOOR_ENTRY_MH_BRIDGE_AV_MODELS:
+                return True
+            if self._model_key in DOOR_ENTRY_WHO6_ONLY_MODELS:
+                return who == 6
+            if self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS:
+                return who == 8
+            if self._model_key in DOOR_ENTRY_UNSUPPORTED_MODELS:
+                return False
+            if isinstance(profile, GenericGatewayProfile):
+                return True
         supports = getattr(profile, "supports_who", None)
         if not callable(supports):
             return True
@@ -821,6 +869,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return bool(supports(who))
         except Exception:  # pragma: no cover - defensive against foreign profile objects
             return True
+
+    def _natively_hears_who(self, who: int) -> bool:
+        """Return whether this gateway hears ``who`` on its local bus without an external F422 bridge."""
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS:
+                return True
+            return who == 8 and self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS
+        return self._profile_supports_who(who)
 
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
@@ -988,6 +1044,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             if primary is not None and not primary._available:
                 primary._evaluate_failover()
                 async_dispatcher_send(self.hass, primary.availability_signal)
+        elif self.is_secondary and self.delegated_whos:
+            primary = self._get_primary_gateway()
+            if primary is not None:
+                async_dispatcher_send(self.hass, primary.availability_signal)
 
         self._event_runner.close()
         self._command_pool.close()
@@ -1052,7 +1112,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
         if who not in (13, 1013) and who in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who)
-            if sec is not None and sec.is_connected:
+            if sec is not None and sec.is_connected and peer_handles_who(sec, int(who)):
                 return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
         if who not in (13, 1013) and not self.is_connected:
             standby = self._get_standby_gateway()

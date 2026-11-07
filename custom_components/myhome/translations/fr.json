@@ -107,6 +107,104 @@
       "reconfigure_successful": "Connexion de la passerelle reconfigurée avec succès."
     }
   },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Exposer une entité sur le bus SCS",
+        "reconfigure": "Reconfigurer l'entité exposée"
+      },
+      "entry_type": "Entité exposée",
+      "step": {
+        "user": {
+          "title": "Exposer une entité Home Assistant sur le bus SCS",
+          "description": "Émuler un appareil OpenWebNet virtuel sur le bus SCS piloté par une entité Home Assistant.",
+          "data": {
+            "who": "Sous-système WHO",
+            "where": "Adresse WHERE",
+            "entity_id": "Entité source",
+            "attribute": "Attribut d'état (optionnel)",
+            "dimension": "Dimension OpenWebNet (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "min_delta": "Seuil minimal de variation (optionnel)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
+            "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
+            "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
+            "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigurer l'entité exposée",
+          "description": "Mettre à jour l'adresse OpenWebNet, l'entité source ou les paramètres de régulation de cette exposition.",
+          "data": {
+            "who": "Sous-système WHO",
+            "where": "Adresse WHERE",
+            "entity_id": "Entité source",
+            "attribute": "Attribut d'état (optionnel)",
+            "dimension": "Dimension OpenWebNet (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "min_delta": "Seuil minimal de variation (optionnel)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
+            "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
+            "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
+            "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Sous-système WHO non pris en charge (pris en charge : 1, 2, 4, 13, 18).",
+        "where_required": "Une adresse WHERE est requise pour ce sous-système WHO.",
+        "entity_required": "Une entité Home Assistant source est requise pour ce sous-système WHO.",
+        "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
+        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante."
+      },
+      "abort": {
+        "reconfigure_successful": "Liaison de l'entité exposée mise à jour avec succès."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Ajouter un actionneur thermique / sèche-serviettes (WHO 4)",
+        "reconfigure": "Reconfigurer l'interrupteur d'actionneur thermique"
+      },
+      "entry_type": "Interrupteur d'actionneur thermique",
+      "step": {
+        "user": {
+          "title": "Ajouter un actionneur thermique / sèche-serviettes WHO=4",
+          "description": "Configurer un relais de thermorégulation sans sonde (par ex. sèche-serviettes BTicino F430/2 ou F430/4) comme interrupteur marche/arrêt. Utilisez Z#N (ex. 7#1) pour cibler un canal d'actionneur sans affecter un thermostat réel sur la zone Z, ou Z (ex. 7) pour attribuer toute la zone comme interrupteur. Laissez les commandes vides pour envoyer des écritures directes de Dimension 20 (*#4*7#1*#20*1## et *#4*7#1*#20*0##). Sur MyHomeServer1 (Home + Project) pour les objets 'Sèche-serviettes', renseignez la paire de trames OpenWebNet CEN+ (ex. *25*21#1*21## et *25*21#2*21##) ou WHO=1 associées à vos scénarios/automatisations Home + Project.",
+          "data": {
+            "where": "Adresse WHERE de l'actionneur thermique (ex. 7#1, 7 ou 7#1#4#01)",
+            "name": "Nom convivial (optionnel)",
+            "turn_on_command": "Trame OpenWebNet marche personnalisée (optionnel, ex. *25*21#1*21##)",
+            "turn_off_command": "Trame OpenWebNet arrêt personnalisée (optionnel, ex. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigurer l'interrupteur d'actionneur thermique WHO=4",
+          "description": "Mettre à jour l'adresse WHERE, le nom convivial ou les trames OpenWebNet personnalisées de cet actionneur thermique sans sonde.",
+          "data": {
+            "where": "Adresse WHERE de l'actionneur thermique (ex. 7#1, 7 ou 7#1#4#01)",
+            "name": "Nom convivial (optionnel)",
+            "turn_on_command": "Trame OpenWebNet marche personnalisée (optionnel, ex. *25*21#1*21##)",
+            "turn_off_command": "Trame OpenWebNet arrêt personnalisée (optionnel, ex. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "Une adresse WHERE de zone ou d'actionneur WHO=4 est requise (ex. 7#1 ou 7).",
+        "invalid_where": "Adresse WHERE d'actionneur WHO=4 non valide. Attendu : Z (1..99) ou Z#N (N=1..9), éventuellement derrière #4#IF (00..15).",
+        "paired_commands_required": "Renseignez les deux commandes OpenWebNet marche et arrêt ensemble, ou laissez les deux vides pour le contrôle direct par Dimension 20.",
+        "invalid_command": "Trame de commande OpenWebNet non valide (doit être une trame d'action ou d'écriture valide telle que *25*21#1*21## ou *1*1*09##, et non une lecture d'état ou un ACK).",
+        "already_configured": "Un interrupteur d'actionneur thermique WHO=4 est déjà configuré pour cette adresse WHERE."
+      },
+      "abort": {
+        "reconfigure_successful": "Interrupteur d'actionneur thermique mis à jour avec succès."
+      }
+    }
+  },
   "options": {
     "step": {
       "user": {
@@ -298,6 +396,26 @@
       "name": "Recherche fréquence arrière du tuner",
       "description": "Recherche la fréquence radio FM captable précédente sur une source tuner F500."
     },
+    "tuner_set_frequency": {
+      "name": "Régler la fréquence du tuner",
+      "description": "Règle directement une fréquence radio FM manuelle (87,50–108,00 MHz) sur une source tuner F500 / F500N.",
+      "fields": {
+        "frequency": {
+          "name": "Fréquence",
+          "description": "Fréquence radio FM cible en MHz (87,50–108,00 MHz, pas de 0,05 MHz)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Mémoriser une station du tuner",
+      "description": "Mémorise la fréquence radio FM actuelle dans un emplacement de station (1–15) sur une source tuner F500 / F500N.",
+      "fields": {
+        "station": {
+          "name": "Station",
+          "description": "Numéro d'emplacement mémoire (1–5 sur F500, jusqu'à 1–15 sur F500N)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Calibrer le temps de course du volet",
       "description": "Mesure les temps de course en montée et en descente d'un volet temporisé sur le bus SCS et les enregistre : le volet est entièrement monté, puis entièrement descendu (chronométré), puis de nouveau entièrement monté (chronométré). Les volets sont calibrés un par un pour chaque passerelle."
@@ -318,15 +436,15 @@
       "fields": {
         "travel_time": {
           "name": "Temps de course",
-          "description": "Secondes pour une course complète dans les deux sens (1-180) ; utilisé pour chaque sens sans valeur explicite."
+          "description": "Secondes pour une course complète dans les deux sens (1-300) ; utilisé pour chaque sens sans valeur explicite."
         },
         "travel_time_down": {
           "name": "Temps de course en descente",
-          "description": "Secondes pour une fermeture complète (1-180)."
+          "description": "Secondes pour une fermeture complète (1-300)."
         },
         "travel_time_up": {
           "name": "Temps de course en montée",
-          "description": "Secondes pour une ouverture complète (1-180)."
+          "description": "Secondes pour une ouverture complète (1-300)."
         },
         "slat_time": {
           "name": "Temps d'orientation des lames",
@@ -370,6 +488,14 @@
     "gateway_authentication_failed": {
       "title": "Échec de l'authentification de la passerelle MyHOME {gateway}",
       "description": "La passerelle a rejeté les informations d'identification OpenWebNet. Veuillez reconfigurer le mot de passe."
+    },
+    "central_remote_control_disabled": {
+      "title": "Contrôle à distance désactivé sur la centrale de chauffage {device} ({gateway})",
+      "description": "La centrale 99 zones {device} (WHO {who}, adresse `{where}`) sur {gateway} a signalé l'état OpenWebNet `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nTant que le contrôle à distance est désactivé sur la centrale physique (ex. BTicino 3550), la passerelle acquitte les commandes OpenWebNet avec `*#*1##`, mais la centrale ignore les modifications de consigne et de mode envoyées par Home Assistant.\n\nActivez le **Contrôle à distance** (*Telegestione*) dans le menu des paramètres de la centrale physique. Ce problème se résout automatiquement dès que la centrale signale `*4*21*#0##` (`Remote control enabled`)."
+    },
+    "central_battery_fault": {
+      "title": "Défaut de batterie de secours sur la centrale de chauffage {device} ({gateway})",
+      "description": "La centrale 99 zones {device} (WHO {who}, adresse `{where}`) sur {gateway} a signalé l'état OpenWebNet `*4*31*#0##` (`Central unit battery KO`).\n\nVérifiez ou remplacez la batterie de secours de la centrale physique (ex. BTicino 3550) afin de préserver les programmes hebdomadaires et l'horloge en cas de coupure de courant. Ce problème se résout automatiquement au prochain rapport d'état (`*#4*#0##`) lorsque `*4*31*#0##` n'est plus émis."
     },
     "unmapped_device_status": {
       "title": "{device} signale un état non documenté",
@@ -440,14 +566,23 @@
     "calibration_no_stop_status": {
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
+    "calibration_actuator_cutoff_open": {
+      "message": "{name} : la course d'ouverture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
+    },
+    "calibration_actuator_cutoff_close": {
+      "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
+    },
     "cover_reports_position": {
       "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"
     },
-    "calibration_implausible_run": {
-      "message": "{name} : course {direction} invraisemblable de {seconds} s ; non enregistrée"
+    "calibration_implausible_run_down": {
+      "message": "{name} : course de fermeture invraisemblable de {seconds} s ; non enregistrée"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name} : course d'ouverture invraisemblable de {seconds} s ; non enregistrée"
     },
     "travel_time_missing": {
       "message": "Au moins travel_time, travel_time_down/up ou min_motor_pulse doit être indiqué"
@@ -503,8 +638,32 @@
     "seek_not_supported": {
       "message": "{entity_id} : la recherche de fréquence n'est prise en charge que sur les entités tuner"
     },
+    "tuner_only_operation": {
+      "message": "{entity_id} : cette action n'est prise en charge que sur les entités source tuner"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id} : le tuner {where} n'est pas encore configuré ; rechargez l'intégration si le problème persiste"
+    },
     "volume_not_finite": {
       "message": "{entity_id} : le niveau de volume {volume} n'est pas un nombre fini valide"
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} est un actionneur thermique WHO=4 et ne prend pas en charge les temporisations matérielles sur bus WHO=1 ; utilisez plutôt un délai d'automatisation Home Assistant."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} est un interrupteur de configuration de capteur binaire et ne prend pas en charge les temporisations matérielles sur bus WHO=1."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name} : la passerelle {gateway} a refusé l'ouverture de gâche portier WHO=6 ({frame}). Son firmware n'achemine pas le WHO 6 (portier de base)."
+    },
+    "lock_command_rejected": {
+      "message": "{name} : la passerelle {gateway} a refusé ou ignoré la commande d'ouverture WHO=6 ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name} : la commande d'ouverture portier n'a pas été confirmée dans un délai de {timeout} s ; elle a été retirée si elle n'avait pas encore été envoyée"
+    },
+    "lock_command_failed": {
+      "message": "{name} : échec de la commande d'ouverture portier : {error}"
     }
   },
   "entity": {
@@ -520,6 +679,17 @@
       },
       "calibrate_all_covers": {
         "name": "Calibrer tous les volets"
+      },
+      "tuner_seek_up": {
+        "name": "Recherche avant"
+      },
+      "tuner_seek_down": {
+        "name": "Recherche arrière"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Fréquence"
       }
     },
     "sensor": {
@@ -528,6 +698,11 @@
       },
       "energy_month": {
         "name": "Énergie (mois en cours)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Inverser l'état"
       }
     }
   },
@@ -551,6 +726,8 @@
         "2": "2 - Volets / stores",
         "4": "4 - Thermorégulation",
         "5": "5 - Alarme anti-intrusion",
+        "6": "6 - Portier",
+        "8": "8 - Portier vidéo / interphonie",
         "9": "9 - Auxiliaires",
         "15": "15 - Scénarios CEN",
         "16": "16 - Diffusion sonore",

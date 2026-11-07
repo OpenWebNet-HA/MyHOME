@@ -177,7 +177,7 @@
       "step": {
         "user": {
           "title": "Add WHO=4 thermo actuator / towel-warmer switch",
-          "description": "Configure a probe-less thermoregulation relay (e.g. BTicino F430/2 or F430/4 towel warmer) as an on/off switch. Use Z#N (e.g. 7#1) to target one actuator channel without affecting a real thermostat on zone Z, or Z (e.g. 7) to claim the entire zone as a switch. Leave the trigger commands blank to send direct Dimension 20 writes (e.g. *#4*7#1*#20*1## and *#4*7#1*#20*0##; forwarded onto the SCS bus by F454, MH200N, F459, F460, and F461, though listed as read-only in the public OpenWebNet specification and unverified on physical probe-less F430 hardware). On MyHomeServer1 (Home + Project) 'Towel Warmer' objects, provide the paired CEN+ (e.g. *25*21#1*21## and *25*21#2*21##) or WHO=1 OpenWebNet frames linked to your Home + Project scenarios/automations.",
+          "description": "Configure a probe-less thermoregulation relay (e.g. BTicino F430/2 or F430/4 towel warmer) as an on/off switch. Use Z#N (e.g. 7#1) to target one actuator channel without affecting a real thermostat on zone Z, or Z (e.g. 7) to claim the entire zone as a switch. Leave the trigger commands blank to send direct Dimension 20 writes (e.g. *#4*7#1*#20*1## and *#4*7#1*#20*0##; forwarded onto the SCS bus by F454, MH200N, F459, F460, F461, and MyHomeServer1, though listed as read-only in the public OpenWebNet specification). On MyHomeServer1 (Home + Project) 'Towel Warmer' objects, provide the paired CEN+ (e.g. *25*21#1*21## and *25*21#2*21##) or WHO=1 OpenWebNet frames linked to your Home + Project scenarios/automations.",
           "data": {
             "where": "Thermo actuator WHERE address (e.g. 7#1, 7, or 7#1#4#01)",
             "name": "Friendly name (optional)",
@@ -423,15 +423,15 @@
       "fields": {
         "travel_time": {
           "name": "Travel time",
-          "description": "Seconds for a full travel in both directions (1-180); used for whichever direction has no explicit value."
+          "description": "Seconds for a full travel in both directions (1-300); used for whichever direction has no explicit value."
         },
         "travel_time_down": {
           "name": "Travel time down",
-          "description": "Seconds for a full closing run (1-180)."
+          "description": "Seconds for a full closing run (1-300)."
         },
         "travel_time_up": {
           "name": "Travel time up",
-          "description": "Seconds for a full opening run (1-180)."
+          "description": "Seconds for a full opening run (1-300)."
         },
         "slat_time": {
           "name": "Slat time",
@@ -458,6 +458,26 @@
     "tuner_seek_down": {
       "name": "Tuner seek down",
       "description": "Seek backward to the previous receivable FM radio frequency on an F500 tuner source."
+    },
+    "tuner_set_frequency": {
+      "name": "Tuner set frequency",
+      "description": "Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source.",
+      "fields": {
+        "frequency": {
+          "name": "Frequency",
+          "description": "Target FM radio frequency in MHz (87.50–108.00 MHz, 0.05 MHz steps)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Tuner store station",
+      "description": "Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source.",
+      "fields": {
+        "station": {
+          "name": "Station",
+          "description": "Preset memory slot number (1–5 on F500, up to 1–15 on F500N)."
+        }
+      }
     },
     "send_scenario_plus_command": {
       "name": "Send scenario plus command",
@@ -502,6 +522,14 @@
     "unresponsive_zone": {
       "title": "Heating zone {device} no longer answers ({gateway})",
       "description": "The heating zone {device} on {gateway} did not answer its status request on two restarts in a row, so MyHOME stopped asking for it at startup (each unanswered request costs the gateway's command queue several seconds). If the zone no longer exists, remove its device or entity in Home Assistant. If it does exist, this clears as soon as it sends any frame, and it is asked again after a week."
+    },
+    "central_remote_control_disabled": {
+      "title": "Central heating unit {device} has remote control disabled ({gateway})",
+      "description": "The 99-zone central unit {device} (WHO {who}, address `{where}`) on {gateway} reported OpenWebNet status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nWhile remote control is disabled on the physical central unit (e.g., BTicino 3550), the gateway still acknowledges OpenWebNet commands with `*#*1##`, but the central unit ignores remote mode and setpoint writes from Home Assistant.\n\nEnable **Remote Control** (*Telegestione*) in the settings menu on the physical central unit panel. This issue clears automatically as soon as the central unit reports `*4*21*#0##` (`Remote control enabled`)."
+    },
+    "central_battery_fault": {
+      "title": "Central heating unit {device} reports a backup battery fault ({gateway})",
+      "description": "The 99-zone central unit {device} (WHO {who}, address `{where}`) on {gateway} reported OpenWebNet status `*4*31*#0##` (`Central unit battery KO`).\n\nCheck or replace the backup battery inside the physical central unit (e.g., BTicino 3550) so weekly schedules and clock settings are preserved during power outages. This issue clears automatically on the next central unit status report (`*#4*#0##`) once `*4*31*#0##` is no longer present."
     },
     "gateway_authentication_failed": {
       "title": "Authentication failed for MyHOME gateway {gateway}",
@@ -602,14 +630,23 @@
     "calibration_no_stop_status": {
       "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
     },
+    "calibration_actuator_cutoff_open": {
+      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+    },
+    "calibration_actuator_cutoff_close": {
+      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+    },
     "cover_reports_position": {
       "message": "{name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} is already being calibrated"
     },
-    "calibration_implausible_run": {
-      "message": "{name}: implausible {direction} run of {seconds} s; not stored"
+    "calibration_implausible_run_down": {
+      "message": "{name}: implausible down run of {seconds} s; not stored"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name}: implausible up run of {seconds} s; not stored"
     },
     "travel_time_missing": {
       "message": "At least travel_time, travel_time_down/up, or min_motor_pulse must be specified"
@@ -683,6 +720,12 @@
     "panel_timing_managed": {
       "message": "Travel times are managed by the MyHOME panel. Finish its measurement and remove the assigned travel profile before using native timing services."
     },
+    "tuner_only_operation": {
+      "message": "{entity_id}: this action is only supported on tuner source entities"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id}: tuner {where} is not set up yet; reload the integration if this persists"
+    },
     "volume_not_finite": {
       "message": "{entity_id}: volume level {volume} is not a valid finite number"
     },
@@ -706,6 +749,21 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} is a WHO=4 thermo actuator and does not support WHO=1 hardware bus timers; use a Home Assistant automation delay instead."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} is a binary sensor configuration switch and does not support WHO=1 hardware bus timers."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: gateway {gateway} rejected WHO=6 door-entry unlock ({frame}). Its firmware does not route WHO 6 (basic door entry)."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: gateway {gateway} rejected or dropped the WHO=6 door-entry unlock command ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: door-entry unlock command was not confirmed within {timeout} s; it was withdrawn if it had not been sent yet"
+    },
+    "lock_command_failed": {
+      "message": "{name}: door-entry unlock command failed: {error}"
     }
   },
   "entity": {
@@ -721,6 +779,17 @@
       },
       "calibrate_all_covers": {
         "name": "Calibrate all covers"
+      },
+      "tuner_seek_up": {
+        "name": "Seek up"
+      },
+      "tuner_seek_down": {
+        "name": "Seek down"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequency"
       }
     },
     "sensor": {
@@ -729,6 +798,11 @@
       },
       "energy_month": {
         "name": "Energy (current month)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Invert state"
       }
     }
   },
@@ -752,6 +826,8 @@
         "2": "2 - Covers / shutters",
         "4": "4 - Thermoregulation",
         "5": "5 - Burglar alarm",
+        "6": "6 - Door entry",
+        "8": "8 - Video door entry / intercom",
         "9": "9 - Auxiliary",
         "15": "15 - CEN scenarios",
         "16": "16 - Sound diffusion",

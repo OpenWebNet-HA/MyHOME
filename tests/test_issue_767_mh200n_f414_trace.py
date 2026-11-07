@@ -171,14 +171,14 @@ async def test_issue_767_f414_dimmer_61_step_and_ha_dimming_replay(
                     router.publish("1", (str(where),), msg)
             return msg
 
-        # 1. Frames 0..1: physical button turns 61 ON (*1*1000#1*61## -> *1*9*61##)
+        # 1. Frames 0..1: physical button turns 61 ON (*1*1000#1*61## -> *1*9*61## = 75%)
         for frame_entry in frames[0:2]:
             msg = _deliver_rx(frame_entry["raw"])
             await handler._process_message(msg)
         assert light_61.is_on is True
         assert light_61.supported_color_modes == {ColorMode.BRIGHTNESS}
-        assert light_61._attr_brightness_pct == 90
-        assert light_61.brightness == percent_to_eight_bits(90)
+        assert light_61._attr_brightness_pct == 75
+        assert light_61.brightness == percent_to_eight_bits(75)
 
         # 2. Frames 2..15: 7 step-up sequences (*1*1000#30*61## -> *1*10*61##)
         for frame_entry in frames[2:16]:
@@ -188,8 +188,8 @@ async def test_issue_767_f414_dimmer_61_step_and_ha_dimming_replay(
         assert light_61._attr_brightness_pct == 100
         assert light_61.brightness == 255
 
-        # 3. Frames 16..25: 5 step-down sequences (*1*1000#31*61## -> *1*9..5*61##)
-        expected_step_down_pcts = [90, 80, 70, 60, 50]
+        # 3. Frames 16..25: 5 step-down sequences (*1*1000#31*61## -> *1*9..5*61## = 75..30%)
+        expected_step_down_pcts = [75, 60, 50, 40, 30]
         for idx, expected_pct in enumerate(expected_step_down_pcts):
             pair_start = 16 + idx * 2
             for frame_entry in frames[pair_start : pair_start + 2]:
@@ -220,7 +220,7 @@ async def test_issue_767_f414_dimmer_61_step_and_ha_dimming_replay(
         msg = _deliver_rx(frames[30]["raw"])
         await handler._process_message(msg)
         assert light_61.is_on is True
-        assert light_61._attr_brightness_pct == 50
+        assert light_61._attr_brightness_pct == 30
 
         msg_dim1 = _deliver_rx(frames[32]["raw"])
         await handler._process_message(msg_dim1)

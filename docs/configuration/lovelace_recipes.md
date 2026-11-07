@@ -330,6 +330,25 @@ type: media-control
 entity: media_player.kitchen_sound
 ```
 
+#### Option 3: F500 / F500N FM Radio Tuner Control Card (Stock Cards Only)
+When *Source N is a tuner* is ticked in the gateway Options, you get a `media_player`, a manual MHz `number` input, and `Seek up` / `Seek down` buttons on the `Audio Source` device:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: media-control
+    entity: media_player.fm_radio
+  - type: entities
+    title: 📻 FM Radio Tuning
+    entities:
+      - entity: number.fm_radio_frequency
+        name: Frequency (MHz)
+      - entity: button.fm_radio_seek_down
+        name: Seek down
+      - entity: button.fm_radio_seek_up
+        name: Seek up
+```
+
 ---
 
 ## 🚪 Recipe 3: Active Perimeter & Safety Status Center
@@ -457,7 +476,7 @@ cards:
 
 ## 🪟 Recipe 6: Shutter Travel-Time Workbench (stock cards only)
 
-Timed covers measure **every** run they make: after any open or close that you stop by hand, the cover exposes `last_run_seconds` and `last_run_direction` as entity attributes (see [Covers → Method 3](covers.md#method-3-set-explicit-travel-time-via-service-action)). This recipe puts those attributes, the stored travel times and a one-click **Save** on the dashboard, using only built-in cards — the natural tool for actuators with the factory 60 s cutoff or for MH200 / MH200N gateways, where on-bus calibration is refused.
+Timed covers measure **every** run they make: after any open or close that you stop by hand, the cover exposes `last_run_seconds` and `last_run_direction` as entity attributes (see [Covers → Method 3](covers.md#method-3-set-explicit-travel-time-via-service-action)). This recipe puts those attributes, the stored travel times and a one-click **Save** on the dashboard, using only built-in cards — the natural tool for actuators at a configurator run-time cutoff (60 s, 120 s, …), where on-bus calibration is refused, or for MH200 / MH200N gateways.
 
 Add a small script to `scripts.yaml` once (it saves the last run into the matching direction and keeps the other one):
 
@@ -535,7 +554,7 @@ entities:
   - entity: button.living_room_shutter_calibrate_travel_time   # on-bus calibration, when the actuator supports it
 ```
 
-**Workflow**: press **Close** on the first row, press **Stop** the instant the shutter reaches the bottom, check *Last run* / *Last run direction*, press **Save**. Repeat with **Open**. `calibration_source` flips to `manual` and the position slider follows the new times immediately.
+**Workflow**: if your shutter takes longer than the `25 s` default (e.g. a `60–90 s` shutter), first set a temporary larger `travel_time` (such as `180` s) via `myhome.set_cover_travel_time` so the cover does not settle before you press **Stop**. Then press **Close** on the first row, press **Stop** the instant the shutter physically reaches the bottom, check *Last run* / *Last run direction*, and press **Save** (never click **Save** after an unattended `~60 s` `M=0` or `~120 s` `M=1` actuator hardware cutoff). Repeat with **Open**. `calibration_source` flips to `manual` and the position slider follows the new times immediately.
 
 > [!TIP]
 > Only want the number at a glance? A Markdown card does it in one line:
@@ -544,6 +563,106 @@ entities:
 > content: "Last run: **{{ state_attr('cover.living_room_shutter', 'last_run_seconds') }} s** ({{ state_attr('cover.living_room_shutter', 'last_run_direction') }})"
 > ```
 > The measurement itself is done by the integration — the clock starts at the real motor start on the bus, so the queue delay is never in the number; only your reaction time on **Stop** is.
+
+---
+
+## 🔥 Recipe 7: BTicino 3550 Central Unit & Multi-Zone Heating Control
+
+For plants with a **BTicino 3550** (99-zone central unit at `WHERE = #0`) and subordinate room zones (`WHERE = 1..99`), this recipe combines:
+1. A **Central Unit status & health header** displaying the active weekly program (`program`), remote-control state (`remote_control`), battery health (`battery_fault`), and manual-override status (`at_least_one_probe_manual`).
+2. **Per-room thermostat cards** with instant setpoint override and a one-tap **Return All Zones to 3550 Schedule (`Auto`)** button.
+
+```yaml
+type: vertical-stack
+cards:
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: climate.central_unit_0
+        attribute: remote_control
+        state: disabled
+    card:
+      type: markdown
+      content: >-
+        ⚠️ **BTicino 3550 Remote Control Disabled (`*4*20*#0##`)**: Enable *Telegestione*
+        on the physical 3550 panel so Home Assistant commands are applied on the bus.
+
+  - type: tile
+    entity: climate.central_unit_0
+    name: Central Heating Unit (3550)
+    icon: mdi:thermostat-box
+    features:
+      - type: climate-hvac-modes
+        hvac_modes:
+          - auto
+          - heat
+          - cool
+          - "off"
+
+  - type: markdown
+    content: >-
+      **Season:** {{ state_attr('climate.central_unit_0', 'season') | default('unknown') }} |
+      **Program:** {{ state_attr('climate.central_unit_0', 'program') | default('—') }} |
+      **Remote Control:** {{ state_attr('climate.central_unit_0', 'remote_control') | default('unknown') }} |
+      **Manual Override Active:** {{ 'Yes' if state_attr('climate.central_unit_0', 'at_least_one_probe_manual') else 'No' }} |
+      **Battery Fault:** {{ '⚠️ KO' if state_attr('climate.central_unit_0', 'battery_fault') else 'OK' }}
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: thermostat
+        entity: climate.climate_zone_1
+        name: Living Room (Zone 1)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+      - type: thermostat
+        entity: climate.climate_zone_2
+        name: Master Bedroom (Zone 2)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+      - type: thermostat
+        entity: climate.climate_zone_3
+        name: Study (Zone 3)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+      - type: thermostat
+        entity: climate.climate_zone_4
+        name: Bathroom (Zone 4)
+        features:
+          - type: climate-hvac-modes
+            hvac_modes:
+              - auto
+              - heat
+              - "off"
+
+  - type: button
+    name: Return All Zones to 3550 Weekly Program (Auto)
+    icon: mdi:calendar-sync
+    tap_action:
+      action: perform-action
+      perform_action: climate.set_hvac_mode
+      target:
+        entity_id:
+          - climate.climate_zone_1
+          - climate.climate_zone_2
+          - climate.climate_zone_3
+          - climate.climate_zone_4
+      data:
+        hvac_mode: auto
+```
 
 ---
 

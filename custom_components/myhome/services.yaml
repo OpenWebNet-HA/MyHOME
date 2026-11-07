@@ -171,34 +171,34 @@ set_cover_travel_time:
   fields:
     travel_time:
       name: Travel time
-      description: Seconds for a full travel in both directions (1-180). Used for whichever direction has no explicit value.
+      description: Seconds for a full travel in both directions (1-300). Used for whichever direction has no explicit value.
       example: 24.5
       selector:
         number:
           min: 1
-          max: 180
+          max: 300
           step: 0.1
           unit_of_measurement: s
           mode: box
     travel_time_down:
       name: Travel time down
-      description: Seconds for a full closing run (1-180).
+      description: Seconds for a full closing run (1-300).
       example: 24.5
       selector:
         number:
           min: 1
-          max: 180
+          max: 300
           step: 0.1
           unit_of_measurement: s
           mode: box
     travel_time_up:
       name: Travel time up
-      description: Seconds for a full opening run (1-180).
+      description: Seconds for a full opening run (1-300).
       example: 26.0
       selector:
         number:
           min: 1
-          max: 180
+          max: 300
           step: 0.1
           unit_of_measurement: s
           mode: box
@@ -258,6 +258,47 @@ tuner_seek_down:
     entity:
       domain: media_player
       integration: myhome
+
+tuner_set_frequency:
+  name: Tuner set frequency
+  description: Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source.
+  target:
+    entity:
+      domain: media_player
+      integration: myhome
+  fields:
+    frequency:
+      name: Frequency
+      description: Target FM radio frequency in MHz (87.50–108.00 MHz, 0.05 MHz steps).
+      required: true
+      example: 105.3
+      selector:
+        number:
+          min: 87.5
+          max: 108.0
+          step: 0.05
+          unit_of_measurement: MHz
+          mode: box
+
+tuner_store_station:
+  name: Tuner store station
+  description: Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source.
+  target:
+    entity:
+      domain: media_player
+      integration: myhome
+  fields:
+    station:
+      name: Station
+      description: Preset memory slot number (1–5 on F500, up to 1–15 on F500N).
+      required: true
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 15
+          step: 1
+          mode: box
 
 send_scenario_plus_command:
   name: Send scenario plus command
