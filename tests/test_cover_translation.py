@@ -889,3 +889,121 @@ async def test_a_group_stop_drops_its_declared_members_only(hass):
     relay.send("*2*1000#0*#5##")
     assert relay.held() == ["82"]
     relay.relay.close()
+
+
+# ── an advanced Stop or a collective direction inside the window ────
+# The advanced Stop (WHAT 10, `*2*10#…##` or its translation `*2*1000#10#…##`) stops a shutter
+# as the plain one does. A group, area or general Up or Down reaches each shutter it addresses:
+# the cover follows that command, by its status or, when only the translation comes, by what the
+# relay held for it, and the direction held before must never overwrite it a second later.
+
+
+@pytest.mark.parametrize(("stop", "stopped"), [
+    ("*2*1000#10#001#1*81##", ("81",)),  # The translation of an advanced Stop to 81.
+    ("*2*10#001#1*81##", ("81",)),  # Its status.
+    ("*2*1000#10#001#1*0##", ("81", "82", "91")),  # An advanced general Stop.
+    ("*2*10#001#1*0##", ("81", "82", "91")),
+    ("*2*1000#10#001#1*#5##", ("81", "82")),  # Group 5.
+    ("*2*10#001#1*8##", ("81", "82")),  # Area 8.
+])
+async def test_an_advanced_stop_in_the_window_cancels_the_held_movements(scoped, stop, stopped):
+    """Up on 81, 82 and 91 with no status, then an advanced Stop 0.3 s later: the shutters it
+    addresses never start; the others still get their movement, dated at their translation."""
+    await scoped.send("*2*1000#1*81##", "*2*1000#1*82##", "*2*1000#1*91##")
+    up = scoped.clock[0]
+    await scoped.send(stop, step=.3)
+    await scoped.wait(TRANSLATION_GRACE)
+    await scoped.wait(TRANSLATION_GRACE)  # Long after the window: nothing stale arrives.
+    for w, cover in scoped.covers.items():
+        if w in stopped:
+            assert scoped.entered[w] == [] and not cover.is_opening, w
+            assert scoped.hass.states.get(f"cover.cover_{w}").state == "closed"
+        else:
+            assert scoped.entered[w] == ["opening"] and cover._move_start_time == up, w
+    assert _pending_releases(scoped.hass) == []
+
+
+@pytest.mark.parametrize(("held", "command", "moved"), [
+    # Up on each shutter, then a Down to every shutter: its status...
+    ("1", ("*2*2*0##",), ("81", "82", "91")),
+    # ...its translation alone, or its translation and then its status.
+    ("1", ("*2*1000#2*0##",), ("81", "82", "91")),
+    ("1", ("*2*1000#2*0##", "*2*2*0##"), ("81", "82", "91")),
+    ("1", ("*2*2*#5##",), ("81", "82")),  # Group 5.
+    ("1", ("*2*1000#2*#5##",), ("81", "82")),
+    ("1", ("*2*2*8##",), ("81", "82")),  # Area 8.
+    ("1", ("*2*1000#2*8##",), ("81", "82")),
+    ("2", ("*2*1*0##",), ("81", "82", "91")),  # Down on each shutter, then an Up to every shutter.
+    ("2", ("*2*1000#1*#5##",), ("81", "82")),
+])
+async def test_a_collective_direction_in_the_window_overrides_the_held_movements(scoped, held, command, moved):
+    """A direction on 81, 82 and 91 with no status, then the other one to a scope 0.3 s later:
+    the shutters it addresses follow the scope, once; the others still get their own movement."""
+    for cover in scoped.covers.values():  # Half open, so that each can go either way.
+        cover._motion.confirm(50)
+        cover._attr_current_cover_position = cover._start_position = 50
+        cover._attr_is_closed = False
+        cover.async_write_ha_state()
+    for entered in scoped.entered.values():
+        entered.clear()
+    own, other = ("opening", "closing") if held == "1" else ("closing", "opening")
+    await scoped.send(*(f"*2*1000#{held}*{w}##" for w in scoped.covers))
+    first = scoped.clock[0]
+    await scoped.send(command[0], step=.3)
+    await scoped.send(*command[1:], step=.1)
+    last = scoped.clock[0]  # The scope's status when it comes, else its translation, dates the run.
+    await scoped.wait(TRANSLATION_GRACE)
+    await scoped.wait(TRANSLATION_GRACE)  # Long after the window: nothing stale arrives.
+    for w, cover in scoped.covers.items():
+        if w in moved:
+            assert scoped.entered[w] == [other] and cover._move_start_time == pytest.approx(last), w
+        else:
+            assert scoped.entered[w] == [own] and cover._move_start_time == first, w
+    assert _pending_releases(scoped.hass) == []
+
+
+@pytest.mark.parametrize(("command", "superseded"), [
+    ("*2*1000#10#001#1*81##", ["81"]),  # An advanced Stop to 81, translated.
+    ("*2*1000#10#001#1*0##", ["81", "81#4#01", "91#4#02"]),  # Advanced general Stop, main bus.
+    ("*2*10#001#1*0#4#01##", ["81#4#01"]),  # Advanced general Stop behind interface 01.
+    ("*2*1000#10#001#1*8#4#01##", ["81#4#01"]),  # Advanced Stop to area 8 behind interface 01.
+    ("*2*10#001#1*#5#4#02##", ["91#4#02"]),  # Advanced Stop to a group of interface 02.
+    ("*2*2*0##", ["81", "81#4#01", "91#4#02"]),  # A general Down: every shutter follows it.
+    ("*2*2*0#4#01##", ["81#4#01"]),  # A general Down behind interface 01.
+    ("*2*2*8#4#01##", ["81#4#01"]),
+    ("*2*1*#5#4#02##", ["91#4#02"]),  # A group Up is a status of each shutter too.
+    ("*2*1000#2*#5#4#02##", ["91#4#02"]),  # The other way to a group of unknown members: dropped.
+    ("*2*1000#1*#5#4#02##", []),  # The same way: it keeps its own translation.
+])
+async def test_an_advanced_stop_or_a_collective_command_drops_what_is_held(relay, command, superseded):
+    held = ["81", "81#4#01", "91#4#02"]
+    for key in held:
+        where, _, interface = key.partition("#4#")
+        relay.send(f"*2*1000#1*{where}{'#4#' + interface if interface else ''}##")
+    relay.send(command)
+    assert relay.held() == [k for k in held if k not in superseded]
+    assert relay.delivered == []
+
+
+async def test_a_collective_direction_translation_redirects_what_is_held(relay):
+    """Its shutters were moving and now go its way; a shutter already going that way keeps the
+    date of its own translation."""
+    relay.send("*2*1000#1*81##")
+    relay.send("*2*1000#1*81#4#01##")
+    relay.send("*2*1000#2*91#4#01##")
+    relay.send("*2*1000#1*91##")
+    up = relay.relay._held["81#4#01"].timer
+    down_arrived = relay.relay._held["91#4#01"].arrived
+    relay.clock[0] += .3
+    relay.send("*2*1000#2*0#4#01##")  # Every shutter behind interface 01 goes down.
+    assert up.cancelled()
+    assert relay.relay._held["91#4#01"].arrived == down_arrived
+    relay.release("81#4#01")
+    (movement,) = relay.delivered
+    assert movement.is_closing and (movement.where, movement.interface) == ("81", "01")
+    assert str(movement) == "*2*1000#2*0#4#01##"  # The frame that moved it.
+    assert movement.age == pytest.approx(TRANSLATION_GRACE)
+    relay.send("*2*1000#12*9##")  # An advanced Down to area 9 of the main bus.
+    relay.release("91")
+    assert relay.delivered[-1].is_closing and str(relay.delivered[-1]) == "*2*1000#12*9##"
+    assert relay.held() == ["81", "91#4#01"]
