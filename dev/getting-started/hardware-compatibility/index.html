@@ -2285,7 +2285,7 @@
 <td style="text-align: left;"><strong>MH202</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 5, 16, 18</td>
 <td style="text-align: left;">WHO 1, 2, 5, 18 (firmware drops <code>*#4*0##</code>, <code>*#16*0*5##</code>)</td>
-<td style="text-align: left;">Burglar Alarm (<code>*#5*0##</code>) and Energy (<code>*#18*51*...</code>) queries. WHO 4 and WHO 16 are advertised, but the <code>010024</code> firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle), so the sweep leaves both out and each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself.</td>
+<td style="text-align: left;">Burglar Alarm (<code>*#5*0##</code>) and Energy (<code>*#18*51*...</code>) queries. WHO 4 and WHO 16 are advertised, but the <code>010024</code> firmware drops <code>*#4*0##</code> and <code>*#16*0*5##</code> (own-firmware-oracle), so the sweep leaves both out; climate zones are polled with <code>*#4*&lt;WHERE&gt;##</code> (#866).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>H4890 / AM4890</strong></td>
@@ -2297,7 +2297,7 @@
 <td style="text-align: left;"><strong>F454</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 16, 18</td>
 <td style="text-align: left;">WHO 1, 2, 16, 18 (firmware drops <code>*#4*0##</code>)</td>
-<td style="text-align: left;">Full lighting, cover, sound (<code>bt_difson</code> firmware-verified), and energy meter 51 queries. The <code>020051</code> firmware drops <code>*#4*0##</code> (own-firmware-oracle), so each climate zone asks <code>*#4*&lt;WHERE&gt;*0##</code> itself. Alarm query omitted.</td>
+<td style="text-align: left;">Full lighting, cover, sound (<code>bt_difson</code> firmware-verified), and energy meter 51 queries. The <code>020051</code> firmware drops <code>*#4*0##</code> (own-firmware-oracle), so the sweep leaves it out; zones are polled with <code>*#4*&lt;WHERE&gt;##</code> (#629, #866). Alarm query omitted.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>F452 / F453 / F453AV</strong></td>

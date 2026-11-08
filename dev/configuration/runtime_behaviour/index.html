@@ -2295,7 +2295,7 @@
 <tr>
 <td style="text-align: left;"><code>*#4*0##</code></td>
 <td style="text-align: left;">Thermoregulation</td>
-<td style="text-align: left;">All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, <code>tests/fixtures/traces/issue_466</code>); F460, F461 and MyHomeServer1 poll <code>*#4*&lt;WHERE&gt;##</code> per zone instead, and the zones of the SCS-only models (F450, F454, F459, H4684, MH200, MH201, MH202) ask <code>*#4*&lt;WHERE&gt;*0##</code></td>
+<td style="text-align: left;">All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, <code>tests/fixtures/traces/issue_466</code>); F454, MH202, F460, F461 and MyHomeServer1 poll <code>*#4*&lt;WHERE&gt;##</code> per zone instead (#629, #649, #714, #866), and the zones of the remaining SCS-only models (F450, F459, H4684, MH200, MH201) ask <code>*#4*&lt;WHERE&gt;*0##</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#5*0##</code></td>
