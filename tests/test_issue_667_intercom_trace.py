@@ -17,7 +17,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import (
     OWNEvent,
@@ -134,11 +134,12 @@ async def test_issue_667_trace_full_replay(hass: HomeAssistant) -> None:
     captured_events: list[Event] = []
     unsub_event = hass.bus.async_listen(
         "myhome_doorbell_event",
-        lambda event: captured_events.append(event),
+        callback(lambda event: captured_events.append(event)),
     )
 
     dispatcher_messages: list[OWNMessage] = []
 
+    @callback
     def _capture_dispatcher(msg: OWNMessage) -> None:
         dispatcher_messages.append(msg)
 
@@ -212,7 +213,7 @@ async def test_intercom_ts10_firmware_oracle_conformance(hass: HomeAssistant) ->
     captured_events: list[Event] = []
     unsub_event = hass.bus.async_listen(
         "myhome_doorbell_event",
-        lambda event: captured_events.append(event),
+        callback(lambda event: captured_events.append(event)),
     )
 
     try:
@@ -314,7 +315,7 @@ async def test_issue_669_mh202_visitor_doorbell_and_lock_trace_replay(hass: Home
     captured_events: list[Event] = []
     unsub_event = hass.bus.async_listen(
         "myhome_doorbell_event",
-        lambda event: captured_events.append(event),
+        callback(lambda event: captured_events.append(event)),
     )
 
     try:
