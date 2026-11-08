@@ -360,3 +360,15 @@ async def test_restored_mode_of_a_zone_of_the_central_is_kept_on_a_season_frame(
     await zone4.async_restore_last_state(State("climate.test", "auto", {"temperature": 20.5}))
     _replay(zone4, ["*4*0*4##"])
     assert zone4.hvac_mode == HVACMode.AUTO
+
+
+def test_central_off_then_antifreeze_is_heat_and_no_longer_action_off() -> None:
+    # Live 3550: *4*303*#0## answers OFF; a later *4*1*#0## is answered with antifreeze.
+    central = _climate(_gateway(), "#0", standalone=None, central=True)
+    _replay(central, ["*4*303*#0##"])
+    assert central.hvac_mode == HVACMode.OFF
+    assert central.hvac_action == HVACAction.OFF
+    _replay(central, ["*4*102*#0##"])
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.hvac_action == HVACAction.IDLE
+    assert central.extra_state_attributes["central_operation"] == "antifreeze"
