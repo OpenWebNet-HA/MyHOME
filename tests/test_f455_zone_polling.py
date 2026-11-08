@@ -178,6 +178,12 @@ def test_capture_backs_the_f455_refusing_the_zone_actuator_and_humidity_reads() 
 
 async def test_f455_asks_its_actuators_not_its_zones_for_dimension_20(hass, fast_bus_pacing) -> None:
     """A climate zone's watch is not sent to the F455; a thermo actuator switch (``Z#N``) still asks."""
+    only_zone = _handler(hass, "F455")
+    only_zone._initial_discovery_done.set()
+    only_zone.watch_zone_actuators("2")
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(only_zone) == []
+
     handler = _handler(hass, "F455")
     handler._initial_discovery_done.set()
     assert handler.zone_actuator_request_refused is True and handler.humidity_request_refused is True
@@ -203,8 +209,11 @@ def test_the_gateway_that_serves_who_4_decides(hass, monkeypatch) -> None:
     other = _handler(hass, "F455")
     monkeypatch.setattr(primary, "_who4_target", lambda: other)
     assert primary.silent_zone_poll_needed is True
+    assert primary.zone_actuator_request_refused is True
+    monkeypatch.setattr(primary, "_who4_target", lambda: primary)
     monkeypatch.setattr(other, "_who4_target", lambda: primary)
     assert other.silent_zone_poll_needed is False
+    assert other.zone_actuator_request_refused is False
 
 
 def test_a_passive_follower_polls_nothing(hass, monkeypatch) -> None:
