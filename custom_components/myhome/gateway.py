@@ -221,6 +221,23 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # MyHomeServer1 replies from its cache, #649), so their zones keep the zone status poll and are not
 # listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
+# Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
+# one after another), but where a zone that has not reported its temperature, setpoint, mode and
+# an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
+# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its setpoint
+# (*#4*Z*14##), its setpoint in force (*#4*Z*12##, followed by the zone's season frame) and
+# actuator 1 (*#4*Z#1*20##). A value Home Assistant restored from before the restart is not a
+# report. A physical F455 1.0.76 answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
+# standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
+# four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a probe
+# the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
+# (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the poll
+# holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
+# The gate is read when the poll runs (the in-band identity may correct the model after the
+# entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
+SILENT_ZONE_POLL = frozenset({"F455"})
+SILENT_ZONE_GRACE = 120.0
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -236,6 +253,12 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 # Read from the OWNd profile first (``supports_heating_actuator_status``); this table is the
 # fallback until the flag exists there.
 ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+# Gateways that refuse the zone form of that request at once but answer the actuator form
+# (``*#4*Z#N*20##``): a physical F455 1.0.76 NACKed *#4*2*20##, *#4*4*20##, *#4*3*20## and
+# *#4*0*20## in 2-18 ms and answered *#4*2#1*20## / *#4*4#1*20## / *#4*3#1*20## in ~0.09 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl, F455_direct_requests_zone3_2026-11-06.jsonl).
+# A zone's watch is not sent there; a thermo actuator switch (``Z#N``) still asks.
+ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
 # One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
 # the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
 # The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
@@ -251,7 +274,9 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 # F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
 # Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
 # wins, ``None`` = unverified); this table is the fallback until the flag exists there.
-HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "H4684", "MH200", "MH200N", "MH202"})
+HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", "H4684", "MH200", "MH200N", "MH202"})
+# The F455 is not in the oracle: a physical F455 1.0.76 NACKed *#4*2*60## in 19 ms with nothing on
+# the bus (issue_466/F455_direct_requests_2026-11-06.jsonl, t=68.6).
 # Every gateway model the request tables can be keyed on: the twelve images the oracle emulates
 # (results/<P>/<V>, refusing and forwarding alike) and the other models OWNd profiles, so a
 # forwarding model named with a brand prefix ("BTicino F461") is keyed as itself (``F461``)
@@ -265,7 +290,8 @@ KNOWN_GATEWAY_MODELS = frozenset(
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
-    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL,
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL | SILENT_ZONE_POLL
+    | ZONE_ACTUATOR_REQUEST_REFUSED,
     key=len,
     reverse=True,
 )
@@ -325,6 +351,11 @@ def _validate_zone_where(where: str) -> str:
 def _zone_request_frame(where: str, dimension: int) -> str:
     """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder."""
     return f"*#4*{_validate_zone_where(where)}*{dimension}##"
+
+
+def _is_zone_level_where(where: str) -> bool:
+    """A zone as a whole (``Z``, ``#Z``, ``Z#4#II``), not one of its actuators (``Z#N``, ``Z#N#4#II``)."""
+    return "#" not in where.partition(BUS_ROUTING)[0].lstrip("#")
 
 
 class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
@@ -663,6 +694,18 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
                     )
                     continue
+                if dimension == 20 and target.zone_actuator_request_refused:
+                    zones = [where for where in wheres if _is_zone_level_where(where)]
+                    if zones:
+                        LOGGER.debug(
+                            "%s Zones %s: %s refuses the zone form of the actuator request; asking only actuators",
+                            self.log_id,
+                            zones,
+                            target.model,
+                        )
+                        wheres = [where for where in wheres if not _is_zone_level_where(where)]
+                        if not wheres:
+                            continue
                 all_zones = target.all_zone_request(dimension)
                 if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
                     frames.append(all_zones)
@@ -711,6 +754,30 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if not self._profile_supports_who(16):
             return True
         return self._model_key in SOUND_STATUS_REQUEST_REFUSED
+
+    @property
+    def zone_actuator_request_refused(self) -> bool:
+        """Whether this gateway refuses the zone form of the actuator request (``*#4*Z*20##``) only.
+
+        Decided by the gateway the request goes through, like ``humidity_request_refused``.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.zone_actuator_request_refused
+        return self._model_key in ZONE_ACTUATOR_REQUEST_REFUSED
+
+    @property
+    def silent_zone_poll_needed(self) -> bool:
+        """Whether a zone silent after the startup sweep asks its own state once (``SILENT_ZONE_POLL``).
+
+        Decided by the gateway the reads go through (``_who4_target``: a secondary WHO 4 is
+        delegated to, or the warm standby while this primary is down), like
+        ``humidity_request_refused``. A passive follower (a standby, or a secondary without
+        WHO 4) has no zones of its own to ask.
+        """
+        if self.is_follower and 4 not in self.delegated_whos:
+            return False
+        return self._who4_target()._model_key in SILENT_ZONE_POLL
 
     @property
     def zone_temperature_poll_needed(self) -> bool:
