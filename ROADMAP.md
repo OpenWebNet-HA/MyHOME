@@ -15,7 +15,7 @@ gantt
     title MyHOME Integration Status & Roadmap
     dateFormat  YYYY-MM-DD
     section Delivered in v2.0.0b13
-    Phase 1 - Dual Async Transports, Core Features & Bus Monitor    :done, 2026-08-01, 2026-09-01
+    Phase 1 - Async TCP Transport, Core Features & Bus Monitor      :done, 2026-08-01, 2026-09-01
     Phase 2 - Standalone OWNd Library (P1) & CEN Triggers (P2)      :done, 2026-09-01, 2026-09-11
     Phase 2 - Native DIN Bus Timers (WHO 1)                         :done, 2026-09-01, 2026-09-11
     Phase 3 - Central Unit 3550/4695 (P4) & Multi-Gateway (P6)      :done, 2026-09-01, 2026-09-11
@@ -230,7 +230,7 @@ graph TD
         GW_F454["🟢 F454<br/>(High-speed IP)"]
         GW_MH200["🟢 MH200 / MH200N<br/>(107 Frames / Physical Plant)"]
         GW_F461["🟢 F461<br/>(DIN Web Server)"]
-        GW_3578["🟡 Legrand 3578<br/>(Serial/ZigBee Loopback)"]
+        GW_3578["🔴 Legrand 3578<br/>(Deferred to v2.1+ · #879)"]
         GW_MH201["🟢 MH201<br/>(100 Frames / Physical Plant)"]
         GW_MH202["🟡 MH202<br/>(WHO 13 diagnostics only)"]
         GW_F455["🟢 F455<br/>(80 Frames / Physical Plant)"]
@@ -278,8 +278,8 @@ graph TD
     classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
     class GW_MHS1,GW_F454,GW_MH200,GW_MH201,GW_F461,GW_F455,SUB_LIGHT,SUB_DALI,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_ENERGY,SUB_DRY,SUB_ROUTER covered;
-    class GW_3578,GW_MH202,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
-    class SUB_COV_CAL,SUB_CU4695 needed;
+    class GW_MH202,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
+    class GW_3578,SUB_COV_CAL,SUB_CU4695 needed;
 ```
 
 ---
@@ -292,7 +292,7 @@ graph TD
 | **F454** | 🟢 **Covered** | `tests/fixtures/plants/issue_297_f454/` (127 on-wire frames, issue #297; anonymized) | *None needed — full high-speed IP session active in CI.* |
 | **MH200 / MH200N** | 🟢 **Covered** | `tests/fixtures/plants/mh200_physical_plant/` (107 on-wire frames from physical MH200) | *None needed — full physical plant active in CI (62 lights, 7 switches, 11 covers across F422 interfaces).* |
 | **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
-| **Legrand 3578 USB/Serial** | 🟡 **Partial** | Unit test loopback in `tests/test_gateway.py` | **Real-world USB serial stream**: Raw byte capture from physical OpenZigBee installation (`WHERE=<id>#9`). |
+| **Legrand 3578 USB/Serial** | 🔴 **Deferred (v2.1+)** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)) | **Hardware tester & raw serial stream**: Active tester + raw byte capture (`#466`) from physical OpenZigBee installation (`WHERE=<id>#9`). |
 | **MH201** | 🟢 **Covered** | `tests/fixtures/plants/mh201_physical_plant/` (100 on-wire frames from physical MH201, issue #378 / PR #390; anonymized) | *None needed — physical plant active in CI (23 lights, 1 outlet, 7 advanced covers, CEN+ presses, WHO=13 device type / firmware / datetime replies).* |
 | **MH202** | 🟡 **Partial** | `tests/fixtures/plants/pr_420_mh202/` (real WHO 13 / 1013 diagnostic exchanges from a physical MH202) plus synthetic profile tests | **Production plant trace**: General residential traffic through an MH202 scenario programmer. |
 | **F455** | 🟢 **Covered** | `tests/fixtures/plants/issue_466_f455/` (80 on-wire frames, issue #466 @lionelser; anonymized) | *None needed — F455 Basic Gateway active in CI (lighting, dimmers, pushbuttons, gateway diagnostics).* |

@@ -55,7 +55,6 @@ body:
         - "H4684 / AM4890 / LN4890 (Touch Screen Gateway)"
         - "F452 / F453 / F453AV (Web Server)"
         - "F459 (Integration Gateway)"
-        - "Legrand 3578 USB/Serial (Serial Interface)"
         - "Other / Custom OpenWebNet Server"
     validations:
       required: true
@@ -77,7 +76,6 @@ body:
       options:
         - "Ethernet / IP (TCP port 20000, HMAC-SHA2 / SHA1 / OPEN password)"
         - "Ethernet / IP (TCP port 20000, unencrypted / IP range whitelist)"
-        - "USB / Serial (RS-232 / USB-to-serial adapter, e.g. Legrand 3578)"
         - "Virtual / TCP Tunnel"
         - "Other"
     validations:

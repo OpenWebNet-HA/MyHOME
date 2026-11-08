@@ -44,21 +44,12 @@
         "title": "Passerelle MyHOME découverte",
         "description": "Voulez-vous configurer la passerelle {name} ({host}) ?\n\nMyHOME garde ouverte une connexion permanente pour les événements, plus une connexion par worker de commande (1 par défaut). Une passerelle n'accepte qu'un petit nombre de connexions OpenWebNet simultanées (5 sur une F455, moins sur une MH200N), partagées avec tout ce qui s'y connecte : l'application Legrand/BTicino Home+Project, d'autres instances Home Assistant, d'autres intégrations. Si les connexions sont épuisées, MyHOME ou l'autre client est refusé ou déconnecté. Fermez les clients inutiles et gardez un nombre de workers de commande faible."
       },
-      "serial": {
-        "title": "Passerelle USB / Série",
-        "description": "Configurez votre passerelle USB ou série Legrand 3578 / OpenZigBee.",
-        "data": {
-          "port": "Port série",
-          "baudrate": "Vitesse en bauds",
-          "friendly_name": "Nom convivial"
-        }
-      },
       "reconfigure": {
         "title": "Reconfigurer la passerelle MyHome {name}",
         "description": "Mettez à jour les paramètres de connexion ou les identifiants de votre passerelle {name}.",
         "data": {
           "host": "Adresse IP",
-          "port": "Port / débit en bauds",
+          "port": "Port",
           "password": "Mot de passe"
         }
       },

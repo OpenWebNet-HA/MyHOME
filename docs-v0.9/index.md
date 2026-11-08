@@ -13,17 +13,14 @@ This integration connects your BTicino / Legrand MyHOME bus and OpenWebNet gatew
 
 ## 🏛️ Supported Gateways
 
-The integration communicates with the SCS bus using an OpenWebNet IP or serial gateway:
+The integration communicates with the SCS bus using an OpenWebNet TCP/IP gateway:
 
 - **IP Gateways**:
   - **F454**: Standard IP gateway / web server (recommended)
   - **MH202 / MH200 / MH201**: Scenario programmers and IP gateways
   - **MyHomeServer1**: Modern IP gateway
-  - **F455**: Basic IP gateway
+  - **F455 / F461**: Compact DIN IP gateways
   - **F452 / F453**: Older web server gateways
-- **USB / Serial Gateways**:
-  - **Legrand 3578 USB**: USB-to-SCS gateway
-  - **F461**: Serial-to-SCS gateway
 
 ---
 

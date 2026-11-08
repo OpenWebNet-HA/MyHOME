@@ -674,6 +674,6 @@ Every MyHOME installation is unique! Do you have a custom card layout, Mushroom 
 
 - 💬 **GitHub Discussions**: Post your screenshot and YAML in the [Discussions Forum](https://github.com/OpenWebNet-HA/MyHOME/discussions)!
 - 📝 **Contribute a Recipe**: Open a Pull Request adding your recipe to this page in `docs/configuration/lovelace_recipes.md`.
-- 🏷️ **Tag Your Setup**: Share what gateway (F454, MH200N, MyHOMEServer1, USB/Serial 3578) and actuator models you are using.
+- 🏷️ **Tag Your Setup**: Share what gateway (F454, MH200N, MyHOMEServer1, F461) and actuator models you are using.
 
 Let's build the best collection of home automation dashboards together!

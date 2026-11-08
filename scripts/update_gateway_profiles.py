@@ -165,17 +165,6 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "upnp": "✅ SSDP",
         "notes": "Colour touch screen IP gateway (Axolute / LivingLight)",
     },
-    {
-        "model": "**Legrand 3578**",
-        "const_models": [],
-        "ssdp_models": [],
-        "profile_name": "Generic",
-        "protocol": "OpenWebNet (Serial)",
-        "max_workers": "1 worker",
-        "delay": "50 ms",
-        "upnp": "❌ Manual (Serial)",
-        "notes": "USB / Serial gateway & OpenZigBee interface",
-    },
 ]
 
 # Startup discovery rows. With an importable OWNd the WHOs a row advertises are derived from
@@ -384,12 +373,11 @@ def calibrate_metadata_with_ownd(
                 workers = int(prof.max_command_sessions)
                 gw["max_workers"] = f"{workers} {'workers' if workers > 1 else 'worker'}"
                 gw["delay"] = f"{int(round(prof.command_queue_delay * 1000))} ms"
-                if "Serial" not in str(gw.get("protocol", "")):
-                    gw["protocol"] = (
-                        "OpenWebNet / HMAC"
-                        if getattr(prof, "supports_hmac", False)
-                        else "OpenWebNet"
-                    )
+                gw["protocol"] = (
+                    "OpenWebNet / HMAC"
+                    if getattr(prof, "supports_hmac", False)
+                    else "OpenWebNet"
+                )
 
         # Cross-reference UPnP / SSDP discovery
         explicit_ssdp = gw.get("ssdp_models", [])
@@ -398,9 +386,7 @@ def calibrate_metadata_with_ownd(
             m in ssdp_models for m in const_models
         )
 
-        if "Serial" in str(gw.get("protocol", "")):
-            gw["upnp"] = "❌ Manual (Serial)"
-        elif has_ssdp:
+        if has_ssdp:
             if "Port 49153" in str(gw.get("upnp", "")):
                 gw["upnp"] = "✅ Port 49153"
             else:

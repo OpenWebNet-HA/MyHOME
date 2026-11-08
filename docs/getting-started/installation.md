@@ -8,7 +8,7 @@ This guide covers installing the **MyHOME** next-generation integration (`v2-pha
 
 - **Home Assistant**: Home Assistant Core 2026.3 or newer.
 - **Python Runtime**: Python 3.14+ (or official Home Assistant container).
-- **Physical Gateway**: An OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) connected via local Ethernet, or a 3578 USB/RS232 interface.
+- **Physical Gateway**: An OpenWebNet IP gateway (F454, F455, F461, MyHomeServer1, MH200N/201/202, F453AV) connected via local Ethernet.
 
 ---
 

@@ -45,15 +45,12 @@ class ConfigFlowTopologyMixin:
     def _bus_primaries(self) -> list[ConfigEntry]:
         """Configured gateways a new one could share an SCS bus with.
 
-        IP gateways that are not followers themselves; a USB / serial gateway
-        is not on an SCS bus.
+        Gateways that are not ignored or followers themselves.
         """
         return [
             entry
             for entry in self.hass.config_entries.async_entries(DOMAIN)
-            if entry.source != SOURCE_IGNORE
-            and entry.data.get("transport_type") != "serial"
-            and not entry_is_follower(entry)
+            if entry.source != SOURCE_IGNORE and not entry_is_follower(entry)
         ]
 
     async def async_step_bus_topology(

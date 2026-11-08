@@ -135,16 +135,12 @@ async def test_first_gateway_skips_the_topology_step(hass: HomeAssistant) -> Non
     assert CONF_BUS_TOPOLOGY not in result["options"]
 
 
-async def test_followers_and_serial_gateways_cannot_be_the_primary(hass: HomeAssistant) -> None:
-    """With only a follower and a USB gateway configured there is nothing to share a bus with."""
+async def test_followers_cannot_be_the_primary(hass: HomeAssistant) -> None:
+    """Follower entries are excluded from the primary-gateway picker."""
     _existing(hass, PRI, "F454", **{CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY})
     _existing(hass, SB, "F454", **{
         CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_STANDBY, CONF_PRIMARY_GATEWAY: PRI,
     })
-    serial = MockConfigEntry(
-        domain=DOMAIN, data={CONF_MAC: "35:78:00:00:00:01", "transport_type": "serial"}, unique_id="35:78:00:00:00:01"
-    )
-    serial.add_to_hass(hass)
     (result,) = await _add_mh202(hass)
     assert result["step_id"] == "bus_topology"
     options = result["data_schema"].schema[CONF_PRIMARY_GATEWAY].config["options"]

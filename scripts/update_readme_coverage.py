@@ -32,9 +32,6 @@ COMPONENT_NOTES = {
     "custom_components/myhome/bus_monitor.py": "In-band 500-frame circular ring buffer tap (0 extra sockets)",
     "custom_components/myhome/device_trigger.py": "Stateless CEN/CEN+ scenario device automation triggers",
     "custom_components/myhome/diagnostics.py": "Config entry diagnostics with sensitive data redaction",
-    "custom_components/myhome/core/transport/serial.py": "Async Serial/USB transport for Legrand 3578 / OpenZigBee",
-    "custom_components/myhome/core/transport/tcp.py": "Modular TCP/IP socket transport with framed stream parsing",
-    "custom_components/myhome/core/transport/base.py": "Abstract transport layer defining OWN lifecycle contract",
     "custom_components/myhome/light.py": "Relays, auto-dimmer detection, and brightness transitions",
     "custom_components/myhome/config_flow.py": "Step handlers, user entry, reauth, and options flow",
     "custom_components/myhome/button.py": "Scenario buttons and bus diagnostic pings",
@@ -141,7 +138,7 @@ def update_readme_and_svg():
             raw_fn = c.attrib.get("filename", "")
             fn = normalize_coverage_filename(raw_fn)
             # Filter out non-code or trivial init
-            if fn in ("custom_components/myhome/ownd/__main__.py", "custom_components/myhome/ownd/__init__.py", "custom_components/myhome/core/__init__.py", "custom_components/myhome/core/transport/__init__.py"):
+            if fn in ("custom_components/myhome/ownd/__main__.py", "custom_components/myhome/ownd/__init__.py"):
                 continue
             cr = float(c.attrib.get("line-rate", 0)) * 100
             file_rates[fn] = cr

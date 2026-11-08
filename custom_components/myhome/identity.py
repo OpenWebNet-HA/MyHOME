@@ -1,8 +1,8 @@
 """Gateway identity: evidence in, one verdict out.
 
 The protocol handlers only record what they observed - the model picked in the
-config flow, the model the gateway announced over SSDP or that the serial
-transport fixes, the WHO=13 dimension-15 device type, the WHO=1013 dimension-1
+config flow, the model the gateway announced over SSDP, the WHO=13 dimension-15
+device type, the WHO=1013 dimension-1
 OBJECT_MODEL. ``resolve_gateway_identity`` turns that evidence into the model the
 integration should believe, plus the corroboration or conflict state that goes
 with it. It is a pure function of its input, so applying it twice changes nothing,
@@ -10,7 +10,7 @@ and the periodic re-broadcast of a WHO=13 reply cannot flap a repair issue.
 
 Precedence, unchanged from the handler-side rules it replaces:
 
-- an SSDP or serial identity is never overruled (the device said so itself); a
+- an SSDP identity is never overruled (the device said so itself); a
   certain contradiction raises a *mismatch* that asks the owner to confirm;
 - a manual choice is kept unless a certain code contradicts it, and is then
   *corrected*;
@@ -40,7 +40,6 @@ from .const import (
     CONF_SSDP_LOCATION,
     CONF_UDN,
     IDENTIFICATION_MANUAL,
-    IDENTIFICATION_SERIAL,
     IDENTIFICATION_SSDP,
     IDENTIFICATION_UNKNOWN,
     IDENTIFICATION_WHO13,
@@ -192,8 +191,8 @@ class GatewayIdentityEvidence:
     """Everything observed about the gateway's model, each source kept apart."""
 
     manual: str | None = None  # picked in the config or options flow
-    technical: str | None = None  # announced over SSDP, or fixed by the serial transport
-    technical_source: str | None = None  # IDENTIFICATION_SSDP / IDENTIFICATION_SERIAL
+    technical: str | None = None  # announced over SSDP
+    technical_source: str | None = None  # IDENTIFICATION_SSDP
     prior_label: str | None = None  # written to the entry by an earlier in-band resolution
     who13_code: str | None = None  # WHO=13 dimension 15
     who1013_code: str | None = None  # WHO=1013 dimension 1
@@ -205,7 +204,7 @@ class GatewayIdentityResolution:
 
     model: str | None  # effective model; None when nothing is known
     source: str  # the evidence `model` rests on (IDENTIFICATION_*)
-    conflict: str | None = None  # a certain contradiction of an SSDP / serial identity
+    conflict: str | None = None  # a certain contradiction of an SSDP identity
     conflict_reading: CodeReading | None = None  # the code that contradicts
     corrected_from: str | None = None  # the manual model `model` replaces
     corrected_reading: CodeReading | None = None  # the code that corrects it
@@ -318,10 +317,8 @@ class GatewayIdentityMixin:
 
     @property
     def identification_source(self) -> str:
-        """How the configured model was established (SSDP > manual > serial > WHO=13)."""
+        """How the configured model was established (SSDP > manual > WHO=13)."""
         data = getattr(self.config_entry, "data", None) or {}
-        if data.get("transport_type") == "serial":
-            return IDENTIFICATION_SERIAL
         if data.get(CONF_SSDP_LOCATION) or data.get(CONF_UDN):
             return IDENTIFICATION_SSDP
         model_source = data.get("model_source")
@@ -446,8 +443,8 @@ class GatewayIdentityMixin:
         configured = str(self.gateway.model_name or "") or None
         return GatewayIdentityEvidence(
             manual=configured if source == IDENTIFICATION_MANUAL else None,
-            technical=configured if source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL) else None,
-            technical_source=source if source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL) else None,
+            technical=configured if source == IDENTIFICATION_SSDP else None,
+            technical_source=source if source == IDENTIFICATION_SSDP else None,
             prior_label=configured if source == IDENTIFICATION_WHO13 else None,
             who13_code=self._who13["code"],
             who1013_code=self._who1013["code"],
@@ -607,7 +604,7 @@ class GatewayIdentityMixin:
         """
         from . import gateway as _gw
 
-        if self.identification_source == IDENTIFICATION_SERIAL or not self.sending_workers:
+        if not self.sending_workers:
             return
         own_command = getattr(_gw, "OWNCommand")
         log = getattr(_gw, "LOGGER")

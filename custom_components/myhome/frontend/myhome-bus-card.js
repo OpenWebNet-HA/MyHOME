@@ -1070,13 +1070,8 @@ class MyHomeBusCard extends HTMLElement {
       (this._config && this._config.mac ? this._config.mac.substring(0, 8) : "Unknown");
 
     // The bundle is meant to be pasted into a public issue: name the transport,
-    // never the address (LAN IP / port, serial device path) or the browser.
-    let conn = "Unknown";
-    if (gw.serial_port) {
-      conn = "USB / Serial";
-    } else if (gw.host) {
-      conn = "Ethernet TCP";
-    }
+    // never the address (LAN IP / port) or the browser.
+    const conn = gw.host ? "Ethernet TCP" : "Unknown";
 
     const queuePacing = gw.queue_pacing != null ? `${gw.queue_pacing}s` : "0.0s";
     const workerCount = gw.worker_count != null ? gw.worker_count : 1;
@@ -1302,7 +1297,7 @@ ${framesText}
         connection_type: (this._gatewayInfo && this._gatewayInfo.connection_type) || "tcp",
         queue_pacing: (this._gatewayInfo && this._gatewayInfo.queue_pacing) || "standard",
         is_connected: (this._gatewayInfo && this._gatewayInfo.is_connected) !== false,
-        // How the model label was established (ssdp / manual / serial / who13) and the
+        // How the model label was established (ssdp / manual / who13) and the
         // WHO=13 evidence behind it - so a trace never hides a mislabelled gateway.
         identification: (this._gatewayInfo && this._gatewayInfo.identification) || null,
       },

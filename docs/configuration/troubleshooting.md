@@ -25,7 +25,7 @@ Log: `Gateway could not be reached or connection failed at <host>` or `Gateway c
 
 Log: `Gateway rejected the OpenWebNet password (password_error|password_required)`.
 
-Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). MH200 / MH200N / MH201 / AM4890 / 3578 only support the numeric password; HMAC (alphanumeric) is available on F454 / F455 / MH202 / MyHOMEServer1. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.
+Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). MH200 / MH200N / MH201 / AM4890 only support the numeric password; HMAC (alphanumeric) is available on F454 / F455 / MH202 / MyHOMEServer1. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.
 
 ### The gateway was discovered with the wrong model, or a repair issue says the model was corrected
 

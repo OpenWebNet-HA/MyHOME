@@ -84,4 +84,3 @@ OpenWebNet messages always begin with `*` and end with `##`. Fields are separate
 | **F455** | Basic IP Gateway | TCP/IP | 20000 | Open numeric password | 50 ms | Single SCS bus basic gateway (lights, automation, temperature, energy). |
 | **MyHomeServer1** | Modern IoT Gateway | TCP/IP | 20000 | **HMAC-SHA2 (SHA-256)** | 30 ms | Fast SoC, alphanumeric credentials. |
 | **F461** | Next-Gen DIN Server | TCP/IP | 20000 | Alphanumeric / HMAC | 20 ms | Latest generation BTicino DIN-rail server/gateway. |
-| **Legrand 3578** | OpenZigBee USB Interface | Serial USB | `/dev/ttyUSB*` | None (Serial bypass) | 40 ms | 19200 baud, 8N1, ZigBee wireless SCS bridge. |
