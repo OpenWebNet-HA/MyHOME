@@ -26,7 +26,7 @@ body:
     id: gateway_and_versions
     attributes:
       label: Gateway Model, Firmware & MyHOME Integration Version
-      description: Which gateway model, firmware version (or "unknown / unavailable"), and MyHOME integration version (e.g. 2.0.0b16) are you running?
+      description: Which gateway model, firmware version (or "unknown / unavailable"), and MyHOME integration version (e.g. 2.0.0b17) are you running?
       placeholder: "e.g. MyHomeServer1 (FW 3.1.8, or 'unknown / unavailable'), MyHOME 2.0.0b17, HA 2026.10.1"
     validations:
       required: true
