@@ -111,6 +111,19 @@ If the gateway rejects the OpenWebNet password during setup, the integration rai
 
 ---
 
+## 🌡️ F455 zones ask once, 120 s after the sweep
+
+The F455 Basic Gateway returns nothing to `*#4*0##`, ACKs `*#4*<WHERE>##` only after about 9 s (sixteen of them timing out one after another was #674) and refuses `*#4*<WHERE>*20##` at once, so its climate zones ask nothing when they are added. A standalone thermostat on it can then stay `unknown` for hours (#466).
+
+Behaviour (live F455 1.0.76, `tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl`):
+
+- 120 s after the startup sweep, a zone that has not reported its temperature, setpoint, mode and an actuator by itself asks for what is missing, one read at a time: `*#4*<zone>*0##`, `*#4*<zone>*14##`, `*#4*<zone>*12##` (followed by the zone's season frame) and `*#4*<zone>#1*20##`. Each is answered in about 0.1 s. A value restored from before the restart does not count as reported.
+- Each read waits for the previous answer. A zone without a probe (an actuator-only channel) refuses the first read after about 9 s and is asked nothing else, so it costs one read and one command session held for those 9 s, once per zone added or reloaded (`F455_direct_requests_zone3_2026-11-06.jsonl`).
+- Whether the gateway wants this is decided when the poll runs, not when the zone is added, so a model corrected in band (WHO 13 / WHO 1013) after start is honoured; on a shared bus the gateway that serves WHO 4 decides, and a passive standby or secondary asks nothing.
+- The zone's actuator watch (`*#4*<WHERE>*20##`) is not sent to an F455; thermo actuator switches (`*#4*<WHERE>#<N>*20##`) still ask, and the F455 answers them.
+
+---
+
 ## 🌡️ Temperature probes (`WHERE ≥ 100`) are push-driven
 
 Slave / external probes use the `ZPP` address form (zone `Z`, probe `PP`, e.g. `101`). Devices such as a **3455** behind an **L4577** radio interface push `*#4*ZPP*0*T*3##` unsolicited every few seconds and **NACK** the explicit `*#4*ZPP*15##` poll.
