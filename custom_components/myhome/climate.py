@@ -1792,12 +1792,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._central:
                 self._reset_central_status_flags()
             answers_write = self._answers_season_write(message)
+            # A standalone thermostat reports its mode in the plain Z form only as season,
+            # protection or off (WHO 4 p. 63), never as automatic: while its mode is still the
+            # one Home Assistant restored, its own season frame is the mode it runs in (a stale
+            # AUTO saved from an F455 *4*311*#Z## otherwise stays after a restart, 2026-11-08).
+            replaces_restored = self._standalone and self._hvac_mode_restored
             previous_season = self._season
             self._season = message.season
             self._season_reported = True
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
-            if self._central or answers_write or self._attr_hvac_mode in (None, HVACMode.OFF):
+            if self._central or answers_write or replaces_restored or self._attr_hvac_mode in (None, HVACMode.OFF):
                 if season_mode in self._attr_hvac_modes:
                     LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
                     self._attr_hvac_mode = season_mode

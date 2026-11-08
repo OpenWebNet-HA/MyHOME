@@ -321,3 +321,27 @@ async def test_restored_season_alone_does_not_restrict_a_zone_of_the_central() -
     zone4._target_temperature = 20.5
     await zone4.async_set_hvac_mode(HVACMode.HEAT)
     assert _sent(gateway) == ["*#4*#4*#14*0205*1##"]
+
+
+# A stale AUTO restored after a restart: the standalone zone's own season frame replaces it.
+
+
+async def test_restored_auto_on_a_standalone_zone_is_replaced_by_its_season_frame() -> None:
+    from homeassistant.core import State
+
+    zone2 = _climate(_gateway(), "2", standalone=True)
+    await zone2.async_restore_last_state(State("climate.test", "auto", {"temperature": 26.5, "season": "heating"}))
+    assert zone2.hvac_mode == HVACMode.AUTO
+    _replay(zone2, _rx("f455_zone2_after_restart"))  # ends with the F455's *4*311*#2##
+    assert zone2.hvac_mode == HVACMode.HEAT
+    _replay(zone2, ["*4*0*2##"])  # reported since the restart: season frames are season only again
+    assert zone2.hvac_mode == HVACMode.HEAT
+
+
+async def test_restored_mode_of_a_zone_of_the_central_is_kept_on_a_season_frame() -> None:
+    from homeassistant.core import State
+
+    zone4 = _climate(_gateway(), "4", standalone=False)
+    await zone4.async_restore_last_state(State("climate.test", "auto", {"temperature": 20.5}))
+    _replay(zone4, ["*4*0*4##"])
+    assert zone4.hvac_mode == HVACMode.AUTO
