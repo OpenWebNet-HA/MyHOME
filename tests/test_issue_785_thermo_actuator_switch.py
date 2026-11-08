@@ -30,7 +30,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from OWNd.message import OWNHeatingEvent, OWNLightingEvent, OWNMessage
+from OWNd.message import OWNHeatingCommand, OWNHeatingEvent, OWNLightingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     mock_restore_cache,
@@ -38,6 +38,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.myhome.button import async_setup_entry as button_setup_entry
 from custom_components.myhome.climate import (
+    MyHOMEClimate,
     _calling_zones,
 )
 from custom_components.myhome.climate import (
@@ -60,6 +61,7 @@ from custom_components.myhome.const import (
     SUBENTRY_TYPE_THERMO_SWITCH,
 )
 from custom_components.myhome.data import MyHOMERuntimeData
+from custom_components.myhome.gateway_events import GatewayEventDispatcher
 from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
 from custom_components.myhome.light import async_setup_entry as light_setup_entry
 from custom_components.myhome.switch import (
@@ -203,6 +205,30 @@ def test_thermo_event_helpers() -> None:
     assert thermo_event_interface(local_evt) is None
     assert thermo_event_zone(local_evt) == "7"
     assert thermo_event_actuator(local_evt) == "2"
+
+    # Issue #863: actuator #4 (Z#4 and Z#4#4#IF) must not be confused with F422 #4#IF
+    local_act4_evt = OWNHeatingEvent("*#4*30#4*20*1##")
+    assert thermo_event_interface(local_act4_evt) is None
+    assert thermo_event_zone(local_act4_evt) == "30"
+    assert thermo_event_actuator(local_act4_evt) == "4"
+
+    routed_act4_evt = OWNHeatingEvent("*#4*30#4#4#1*20*1##")
+    assert thermo_event_interface(routed_act4_evt) == "01"
+    assert thermo_event_zone(routed_act4_evt) == "30"
+    assert thermo_event_actuator(routed_act4_evt) == "4"
+    assert _calling_zones(routed_act4_evt) == (["30"], "01")
+
+    local_act4_cmd = OWNHeatingCommand("*#4*30#4*#20*1##")
+    assert thermo_event_interface(local_act4_cmd) is None
+    assert thermo_event_zone(local_act4_cmd) == "30"
+    assert thermo_event_actuator(local_act4_cmd) == "4"
+    assert thermo_dim20_is_active(local_act4_cmd) is True
+
+    routed_act4_cmd = OWNHeatingCommand("*#4*30#4#4#01*#20*1##")
+    assert thermo_event_interface(routed_act4_cmd) == "01"
+    assert thermo_event_zone(routed_act4_cmd) == "30"
+    assert thermo_event_actuator(routed_act4_cmd) == "4"
+    assert thermo_dim20_is_active(routed_act4_cmd) is True
 
     routed_act_evt = OWNHeatingEvent("*#4*7#3#4#1*20*1##")
     assert thermo_event_interface(routed_act_evt) == "01"
@@ -2156,3 +2182,147 @@ def test_seed_core_translations_patches_mock_restore_cache_for_ha_2026_11(
         check=False,
     )
     assert proc.returncode == 0, proc.stderr
+
+
+@pytest.mark.asyncio
+async def test_issue_863_actuator_4_does_not_overwrite_actuator_1(
+    hass: HomeAssistant,
+) -> None:
+    """Verify WHO=4 Dimension 20 frames on Z#4 route to actuator 4 and never overwrite Z#1."""
+    gw = _mock_gateway()
+    entry = _mock_entry(
+        hass,
+        gw,
+        platforms={
+            "switch": {
+                "4-30#1": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "30#1",
+                    CONF_NAME: "Riscaldamento Camera Ginevra",
+                },
+                "4-30#4": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "30#4",
+                    CONF_NAME: "Riscaldamento Sala",
+                },
+                "4-30#1-if01": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "30#1",
+                    CONF_BUS_INTERFACE: "01",
+                    CONF_NAME: "Riscaldamento Camera Ginevra F422",
+                },
+                "4-30#4-if01": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "30#4",
+                    CONF_BUS_INTERFACE: "01",
+                    CONF_NAME: "Riscaldamento Sala F422",
+                },
+            }
+        },
+    )
+    added: list[MyHOMEThermoSwitch] = []
+    await switch_setup_entry(hass, entry, lambda ents, _u=False: added.extend(ents))
+    assert len(added) == 4
+    by_key = {(ent._where, ent._interface): ent for ent in added}
+    sw_1 = by_key[("30#1", None)]
+    sw_4 = by_key[("30#4", None)]
+    routed_sw_1 = by_key[("30#1", "01")]
+    routed_sw_4 = by_key[("30#4", "01")]
+    for sw in added:
+        sw.async_write_ha_state = MagicMock()
+
+    # 1. Live burst from issue #863: *#4*30#1*20*0## followed by *#4*30#4*20*1##
+    evt_1_off = OWNHeatingEvent("*#4*30#1*20*0##")
+    evt_4_on = OWNHeatingEvent("*#4*30#4*20*1##")
+
+    for evt in (evt_1_off, evt_4_on):
+        for sw in added:
+            sw.handle_event(evt)
+
+    assert sw_1.is_on is False
+    assert sw_4.is_on is True
+    assert routed_sw_1.is_on is None
+    assert routed_sw_4.is_on is None
+
+    # 2. #20 write/echo frames (OWNHeatingCommand) on local 30#4 / 30#1 and routed 30#4#4#01
+    for cmd in (
+        OWNHeatingCommand("*#4*30#4*#20*0##"),
+        OWNHeatingCommand("*#4*30#1*#20*0##"),
+        OWNHeatingCommand("*#4*30#4*#20*1##"),
+    ):
+        for sw in added:
+            sw.handle_event(cmd)
+
+    assert sw_1.is_on is False
+    assert sw_4.is_on is True
+    assert routed_sw_1.is_on is None
+    assert routed_sw_4.is_on is None
+
+    for cmd in (
+        OWNHeatingCommand("*#4*30#1#4#01*#20*0##"),
+        OWNHeatingCommand("*#4*30#4#4#01*#20*1##"),
+    ):
+        for sw in added:
+            sw.handle_event(cmd)
+
+    assert routed_sw_1.is_on is False
+    assert routed_sw_4.is_on is True
+
+    # 3. MyHOMEClimate Dimension 20 tracking: 30#4 -> "4", routed zone-only 30#4#01 -> "1" (not "4")
+    clim_local = MyHOMEClimate(
+        hass=hass,
+        name="Zone 30",
+        device_id="4-30",
+        who="4",
+        where="30",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=False,
+        central=False,
+        manufacturer="BTicino",
+        model="Thermo",
+        gateway=gw,
+    )
+    clim_local.async_write_ha_state = MagicMock()
+    clim_local.handle_event(OWNHeatingEvent("*#4*30#4*20*1##"))
+    assert clim_local._actuator_states == {"4": True}
+
+    clim_routed = MyHOMEClimate(
+        hass=hass,
+        name="Zone 30 F422",
+        device_id="4-30-if01",
+        who="4",
+        where="30",
+        interface="01",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=False,
+        central=False,
+        manufacturer="BTicino",
+        model="Thermo",
+        gateway=gw,
+    )
+    clim_routed.async_write_ha_state = MagicMock()
+    clim_routed.handle_event(OWNHeatingEvent("*#4*30#4#01*20*1##"))
+    assert clim_routed._actuator_states == {"1": True}
+    clim_routed.handle_event(OWNHeatingEvent("*#4*30#4#4#01*20*1##"))
+    assert clim_routed._actuator_states == {"1": True, "4": True}
+
+    # 4. GatewayEventDispatcher Dimension 14 status-refresh path: Z#4 and Z#4#4#01 are skipped, Z#4#01 polls
+    gw.supports_zone_status = True
+    gw.interface_zone_request_refused = False
+    gw.send_status_request = AsyncMock()
+    dispatcher = GatewayEventDispatcher(gw)
+    dispatcher._is_active_for_who = lambda _w: True  # type: ignore[method-assign]
+
+    await dispatcher.process_message(OWNHeatingCommand("*#4*#30#4*#14*0210*1##"))
+    await dispatcher.process_message(OWNHeatingCommand("*#4*30#4#4#01*#14*0210*1##"))
+    gw.send_status_request.assert_not_awaited()
+
+    await dispatcher.process_message(OWNHeatingCommand("*#4*30#4#01*#14*0210*1##"))
+    assert [str(c.args[0]) for c in gw.send_status_request.await_args_list] == [
+        "*#4*30#4#01##"
+    ]
+

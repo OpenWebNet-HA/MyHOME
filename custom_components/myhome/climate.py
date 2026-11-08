@@ -456,7 +456,7 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     what = getattr(message, "what", None) or getattr(message, "_what", None)
     what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
     tail = where_param(message)
-    if not interface and len(tail) > 1 and tail[0] == "4":
+    if not interface and len(tail) == 2 and tail[0] == "4":
         interface = str(tail[1])
     elif not interface and len(tail) > 2 and tail[1] == "4":
         interface = str(tail[2])
@@ -1908,11 +1908,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             is_active = bool(message.is_active())
             dimension = getattr(message, "dimension", None)
             if dimension == 20:
-                actuator_id = str(
-                    getattr(message, "actuator", None)
-                    or getattr(message, "_actuator", None)
-                    or (message._where_param[0] if getattr(message, "_where_param", None) else "1")
-                )
+                actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
             else:
