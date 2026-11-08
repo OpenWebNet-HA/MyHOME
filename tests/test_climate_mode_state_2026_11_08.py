@@ -5,7 +5,8 @@ thermostat and zone 4 a zone of the 3550, reached through an F461 2.0.11 and an 
 Every service call returned HTTP 200, yet Home Assistant showed the wrong mode:
 
 * the F455 emits ``*4*311*#2##`` after each status report of zone 2, which read as AUTO;
-* a standalone zone's HEAT <-> COOL answer ``*4*0*2##`` / ``*4*1*2##`` was taken as season only;
+* a standalone zone's ``*4*0*2##`` / ``*4*1*2##`` was taken as season only, so HEAT <-> COOL was not
+  shown, and the other gateway's entity kept the old mode;
 * the 3550 answers HEAT / COOL on #0 with antifreeze / thermal protection (102 / 202),
   which read as OFF, and the optimistic HEAT / COOL stayed on the second press;
 * the F455 hands Home Assistant's own ``*4*0*#0##`` back, which cleared the battery flag;
@@ -135,23 +136,37 @@ async def test_standalone_heat_to_cool_shows_cool_from_the_thermostat_answer() -
     assert zone2.extra_state_attributes["season"] == "conditioning"
 
 
-def test_unsolicited_season_frame_keeps_a_running_standalone_zone() -> None:
+def test_unsolicited_season_frame_is_the_standalone_zone_mode() -> None:
+    # Plain-Z 0 / 1 is a standalone thermostat's operation mode (WHO 4 p. 63), whoever changed it.
     zone2 = _climate(_gateway(), "2", standalone=True)
     zone2._attr_hvac_mode = HVACMode.HEAT
     _replay(zone2, ["*4*0*2##"])
-    assert zone2.hvac_mode == HVACMode.HEAT
-
-
-async def test_season_answer_for_the_other_season_is_not_taken_as_the_mode() -> None:
-    gateway = _gateway()
-    zone2 = _climate(gateway, "2", standalone=True)
-    zone2._target_temperature = 26.5
-    zone2._attr_hvac_mode = HVACMode.HEAT
-    await zone2.async_set_hvac_mode(HVACMode.COOL)
+    assert zone2.hvac_mode == HVACMode.COOL
     _replay(zone2, ["*4*1*2##"])
     assert zone2.hvac_mode == HVACMode.HEAT
-    _replay(zone2, ["*4*0*2##"])  # the pending write was answered: later frames are season only
-    assert zone2.hvac_mode == HVACMode.HEAT
+    _replay(zone2, ["*4*303*2##"])  # off wins through its own frame
+    assert zone2.hvac_mode == HVACMode.OFF
+
+
+async def test_both_gateways_show_cool_after_the_f455_switches_the_standalone_zone() -> None:
+    f455, f461 = _gateway(), _gateway()
+    zone2_f455 = _climate(f455, "2", standalone=True)
+    zone2_f461 = _climate(f461, "2", standalone=True)
+    for zone in (zone2_f455, zone2_f461):
+        zone._target_temperature = 26.5
+        zone._attr_hvac_mode = HVACMode.HEAT
+    await zone2_f455.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(f455) == _tx("f455_zone2_cool_from_f455_ui")
+    _replay(zone2_f455, _rx("f455_zone2_cool_from_f455_ui"))
+    _replay(zone2_f461, _rx("f461_zone2_cool_from_f455_ui"))  # incl. a later mode 3 setpoint change
+    assert zone2_f455.hvac_mode == zone2_f461.hvac_mode == HVACMode.COOL
+
+
+def test_zone_of_the_central_keeps_its_mode_on_a_season_frame() -> None:
+    zone4 = _climate(_gateway(), "4", standalone=False)
+    zone4._attr_hvac_mode = HVACMode.AUTO
+    _replay(zone4, ["*4*0*4##"])
+    assert zone4.hvac_mode == HVACMode.AUTO
 
 
 # F3: 102 / 202 on #0 are protection in their season, and HEAT / COOL on #0 waits for the 3550.
@@ -334,8 +349,8 @@ async def test_restored_auto_on_a_standalone_zone_is_replaced_by_its_season_fram
     assert zone2.hvac_mode == HVACMode.AUTO
     _replay(zone2, _rx("f455_zone2_after_restart"))  # ends with the F455's *4*311*#2##
     assert zone2.hvac_mode == HVACMode.HEAT
-    _replay(zone2, ["*4*0*2##"])  # reported since the restart: season frames are season only again
-    assert zone2.hvac_mode == HVACMode.HEAT
+    _replay(zone2, ["*4*0*2##"])  # the zone's own report keeps being its mode
+    assert zone2.hvac_mode == HVACMode.COOL
 
 
 async def test_restored_mode_of_a_zone_of_the_central_is_kept_on_a_season_frame() -> None:
