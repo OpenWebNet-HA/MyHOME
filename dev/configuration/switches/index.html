@@ -992,6 +992,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#master-slave-msla-actuators-vs-decoupled-independent-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔀 Master / Slave (M=SLA) Actuators vs Decoupled Independent Control
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔀 Master / Slave (M=SLA) Actuators vs Decoupled Independent Control">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-pattern-decouple-the-address-single-relay-contact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Pattern: Decouple the Address (Single Relay Contact)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#probe-less-thermo-actuators-towel-warmers-who-4" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2033,6 +2061,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#master-slave-msla-actuators-vs-decoupled-independent-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔀 Master / Slave (M=SLA) Actuators vs Decoupled Independent Control
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔀 Master / Slave (M=SLA) Actuators vs Decoupled Independent Control">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-pattern-decouple-the-address-single-relay-contact" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended Pattern: Decouple the Address (Single Relay Contact)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#probe-less-thermo-actuators-towel-warmers-who-4" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2108,6 +2164,20 @@
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 30 minutes (1800s)</span>
 </span></code></pre></div>
+<hr />
+<h2 id="master-slave-msla-actuators-vs-decoupled-independent-control">🔀 Master / Slave (<code>M=SLA</code>) Actuators vs Decoupled Independent Control<a class="headerlink" href="#master-slave-msla-actuators-vs-decoupled-independent-control" title="Permanent link">&para;</a></h2>
+<p>In traditional physical SCS configuration, auxiliary loads like bathroom extractor fans or secondary contactors are often configured as slaves by inserting <code>M=SLA</code> (or delayed-off configurators <code>M=1..4</code>) and duplicating the master actuator's <code>A</code> and <code>PL</code> address.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>OpenWebNet Limitation with <code>M=SLA</code></strong>:
+On the physical bus, an actuator in <code>M=SLA</code> does not have its own independent OpenWebNet address. It listens to the identical <code>A*PL</code> broadcast telegram as its master. Sending an OpenWebNet frame (<code>*1*1*APL##</code>) turns on both the master and slave simultaneously. It is <strong>not possible</strong> to control an <code>M=SLA</code> slave independently from Home Assistant without also triggering the master.</p>
+</div>
+<h3 id="recommended-pattern-decouple-the-address-single-relay-contact">Recommended Pattern: Decouple the Address (Single Relay Contact)<a class="headerlink" href="#recommended-pattern-decouple-the-address-single-relay-contact" title="Permanent link">&para;</a></h3>
+<p>Instead of wiring two relays in parallel or keeping <code>M=SLA</code>:
+1. <strong>Remove <code>M=SLA</code></strong>: Configure the auxiliary relay (e.g. Channel 2 of an <code>F411/2</code> or <code>F411/4</code>) with its own distinct <code>PL</code> address (e.g. Light = <code>11</code>, Fan = <code>12</code>, with <code>M</code> left empty).
+2. <strong>Expose as Fan / Switch</strong>: Home Assistant discovers <code>12</code> as an independent entity (<code>switch.bathroom_fan</code> or <code>fan.bathroom_fan</code>).
+3. <strong>Automate the Overrun in HA</strong>: Use an automation to turn on the fan when the light turns on, and run an overrun timer (<code>myhome.turn_on_timed</code>) or humidity purge when the light turns off.</p>
+<p>See the complete guide and YAML configuration in <a href="../use_cases/#11-decoupled-bathroom-extractor-fan-with-smart-overrun--humidity-boost-single-f411-contact">Use Cases — Decoupled Bathroom Extractor Fan</a>.</p>
 <hr />
 <h2 id="probe-less-thermo-actuators-towel-warmers-who-4">🔥 Probe-less Thermo Actuators &amp; Towel Warmers (<code>WHO = 4</code>)<a class="headerlink" href="#probe-less-thermo-actuators-towel-warmers-who-4" title="Permanent link">&para;</a></h2>
 <p>Bathroom towel warmers and electric radiant relays are often wired to <code>F430/2</code> or <code>F430/4</code> thermoregulation actuators (<code>WHO = 4</code>, e.g. Zone <code>7</code>, Actuator <code>1</code> → <code>WHERE = 7#1</code>) <strong>without</strong> a room temperature probe.</p>
