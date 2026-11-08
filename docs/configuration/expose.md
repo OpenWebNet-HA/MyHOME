@@ -95,6 +95,7 @@ myhome:
       # -----------------------------------------------------------------
       # 4. Virtual Active Power Meter (WHO = 18, Dimension 113)
       # Publishes grid active power (W) onto meter address 51.
+      # Auto-converts kW -> W if the sensor unit of measurement is kW.
       # -----------------------------------------------------------------
       - who: 18
         where: "51"
@@ -104,12 +105,27 @@ myhome:
         min_delta: 10.0
 
       # -----------------------------------------------------------------
-      # 5. Bus Clock & DST Sync (WHO = 13, Dimension 22)
+      # 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)
+      # Publishes cumulative grid energy totalizer (Wh) onto meter address 51.
+      # Auto-converts kWh -> Wh if the sensor unit of measurement is kWh.
+      # -----------------------------------------------------------------
+      - who: 18
+        where: "51"
+        dimension: 51
+        entity_id: sensor.grid_energy_consumed
+        cooldown: 5.0
+        min_delta: 100.0   # Broadcast on 100 Wh increments
+
+      # -----------------------------------------------------------------
+      # 6. Bus Clock & DST Sync (WHO = 13, Dimension 22)
       # Broadcasts atomic time, date, and calendar once every hour.
+      # Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads
+      # without proactive pushes, ideal for NTP-synchronized gateways).
       # -----------------------------------------------------------------
       - who: 13
         dimension: 22
         periodic_send: 3600
+        respond_to_read: true
 ```
 
 ---
@@ -156,6 +172,9 @@ During script execution, the following template variables are available:
 - `{{ entity_id }}`: The entity ID of the bound entity.
 - `{{ who }}`: The OpenWebNet WHO subsystem integer (`1` or `2`).
 - `{{ where }}`: The bound SCS WHERE address string.
+
+> [!TIP]
+> `{{ who }}` and `{{ where }}` are especially useful when sharing a single reusable Home Assistant script or automation action across multiple exposed wall keys or virtual actuators.
 
 ---
 
