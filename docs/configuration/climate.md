@@ -56,6 +56,10 @@ In plants with secondary temperature sensors (e.g. BTicino `3455` radio probes c
 * **Push-Driven Telemetry**: These battery-powered or radio sensors broadcast their temperature updates periodically on the SCS bus and actively reject direct poll requests.
 * **v2 Quiet Listening**: The v2 climate engine recognizes secondary probe addresses, operates in receive-only mode, and suppresses redundant polling to prevent gateway NACKs.
 
+> [!TIP]
+> **Projecting External Temperatures onto the Bus**:
+> To publish Home Assistant temperature sensors (e.g. Zigbee room thermometers, weather forecasts, or ESPHome probes) onto an SCS probe address for display on wall screens and thermostats, use the [Expose to Bus Guide](expose.md).
+
 ---
 
 ## 🎛️ Supported Features & HVAC Modes
