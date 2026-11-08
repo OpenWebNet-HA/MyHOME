@@ -1169,6 +1169,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../expose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Expose to SCS Bus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../services/" class="md-nav__link">
         
   
@@ -2256,6 +2284,11 @@
 <li><strong>Push-Driven Telemetry</strong>: These battery-powered or radio sensors broadcast their temperature updates periodically on the SCS bus and actively reject direct poll requests.</li>
 <li><strong>v2 Quiet Listening</strong>: The v2 climate engine recognizes secondary probe addresses, operates in receive-only mode, and suppresses redundant polling to prevent gateway NACKs.</li>
 </ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>Projecting External Temperatures onto the Bus</strong>:
+To publish Home Assistant temperature sensors (e.g. Zigbee room thermometers, weather forecasts, or ESPHome probes) onto an SCS probe address for display on wall screens and thermostats, use the <a href="../expose/">Expose to Bus Guide</a>.</p>
+</div>
 <hr />
 <h2 id="supported-features-hvac-modes">🎛️ Supported Features &amp; HVAC Modes<a class="headerlink" href="#supported-features-hvac-modes" title="Permanent link">&para;</a></h2>
 <p>MyHOME climate entities support standard Home Assistant climate controls:</p>

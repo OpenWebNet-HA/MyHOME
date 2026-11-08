@@ -1141,6 +1141,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../expose/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Expose to SCS Bus
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../services/" class="md-nav__link">
         
   
@@ -2161,6 +2189,11 @@
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">meter_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">    </span><span class="c1"># Meter address (e.g. 1 for F520 address 51)</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># Push interval in seconds</span>
 </span></code></pre></div>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>Projecting Smart Meters or Solar Inverters onto the SCS Bus</strong>:
+To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdge, Enphase, or utility smart meters) onto SCS meter addresses for display on wall touchscreens, see the <a href="../expose/">Expose to Bus Guide</a>.</p>
+</div>
 <hr />
 <h2 id="temperature-sensors-who-4">🌡️ Temperature Sensors (WHO = 4)<a class="headerlink" href="#temperature-sensors-who-4" title="Permanent link">&para;</a></h2>
 <p>Standalone and secondary temperature probes operating on WHO 4 are automatically exposed as <code>sensor</code> entities with <code>device_class: temperature</code>:</p>
