@@ -938,3 +938,43 @@ Verbatim `<myhome-bus-card>` sweep + targeted `WHO 4` diagnostic capture contrib
    - **`[tx] *#4*#1*#14*0210*1##` (`frames[143..144]`, `12:52:47.109Z -> 12:52:47.222Z`)**: Manual heating override to `21.0 °C` on `#1` is **immediately rejected** (`+113.2 ms`) by the `3550` with `[rx] *4*111*#1##` (remaining in `Automatic Heating` at `16.0 °C` / `17.0 °C` effective) because `*4*20*#0##` (*Remote Control Disabled*) is active on the `3550`.
    - **`[tx] *4*311*#1##` (`frames[146..147]`, `12:53:03.795Z -> 12:53:03.921Z`)**: Returns `[rx] *4*111*#1##` (`+126.0 ms`).
 
+---
+
+# #466 BTicino H/L4684 (FW 6.0.11) Burglar Alarm (WHO 5), Auxiliary Motion (WHO 9) & Door Entry Lock Release (WHO 6) Traces
+
+Verbatim `<myhome-bus-card>` subsystem-filtered trace exports contributed by **@nachogarcia** on [#466 (comment 6682636224)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6682636224), [#466 (comment 6682939809)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6682939809), and [#466 (comment 6718123941)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6718123941) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b17`, `OWNd 2.0.0b13`).
+
+## Hardware Profile & Firmware Boundary Caveat
+
+- **Gateway Model**: BTicino H/L4684 (`art. H/L4684` 3.5" Living/Light Color Touch Screen with integrated LAN OpenWebNet server, `TS.n. 1`)
+- **Physical System Info (confirmed on screen)**: `FIRMWARE: 6.0.11`, `PIC REL: 12.40.5`, `HARDWARE: 3.0.3`
+- **Discovery & In-Band Identity**: SSDP `modelName = "HL4684"` (`firmware = "Unknown"` in UPnP XML description -> `H4684Profile`), `WHO 13` device type code `23`
+- **Firmware Boundary (`6.0.x` vs `2.0.x` + `MH200`)**:
+  - `H/L4684` units flashed to **`6.0.x`** (`6.0.8` / `6.0.11`) natively bridge dual-dialect `WHO 22` Sound System v2 alongside legacy `WHO 16` (`F441M` matrix + `F500` RDS FM tuner verified on this plant) and route `WHO 6` Door Entry lock-release commands (`*6*10*400X##`).
+  - Lower-firmware **`H4684 2.0.x`** (`2.0.54`, often deployed alongside an **`MH200 2.1.2`** scenario programmer) **does NOT support `WHO 22`** (`H4684Profile.supports_who(22)` is `False` whenever `firmware` is unknown or `< 6.0.0`) and **crashes its daemon if probed with `*#13**12##` (MAC request)**. Automatic startup probing MUST therefore query only `*#13**15##` (device type) and `*#13**16##` (firmware version), never `*#13**12##` and never `*#1013**1##` on non-`200` `WHO 13` codes.
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_HL4684_who5_2026-11-06T10-37-42.json` | Bus Monitor Trace (`46 rx` frames, `filter_who: 5`, `truncated: false`, `SHA-256: e739549ce06037e7058d9dab167ac7acbbd469f96b1a0bb90688529c46f66d4b`) | Complete burglar alarm arming (`*5*8*0##`), empty-`WHERE` battery/mains telemetry (`*5*4*##`, `*5*7*##`), **Zone `#1` technical alarm trigger (`*5*12*#1##`)**, disarming (`*5*2*0## -> *5*9*0##`), and periodic disarmed status dump across zones `#1..#8`. |
+| `myhome_trace_HL4684_who6_2026-11-06T10-37-42.json` | Bus Monitor Trace (`4` frames: `2 tx / 2 rx`, `filter_who: 6`, `truncated: false`, `SHA-256: 574b0bec4749d2748abbb4253691b56206db8c7eb38673117c2dd1bb9b499b62`) | **First committed physical `WHO 6` Door Entry trace in the repository**: `tx -> rx` door lock release commands `*6*10*4004##` (`+5.87 ms` monitor echo, `PE5`) and `*6*10*4003##` (`+8.56 ms` monitor echo, `PE4`). |
+| `myhome_trace_HL4684_who9_2026-11-06T10-37-42.json` | Bus Monitor Trace (`39 rx` frames, `filters.who: "9"`, `truncated: false`, `SHA-256: dfdeb462760e9861edabf257ecdec1b08c869e66f64bedd2a27798947c943e78`) | Auxiliary (`WHO 9`) motion-sensor pulse traffic on `WHERE = 2` (`24` frames: `12` `*9*1*2## -> *9*0*2##` pairs, `~173–502 ms` pulse width) and `WHERE = 4` (`15` frames: `7` `*9*1*4##` ON + `8` `*9*0*4##` OFF). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Burglar Alarm Arm -> Zone `#1` Technical Alarm Trigger -> Disarm (`who5`, `frames[0..45]`, `10:35:58.754Z -> 10:36:37.924Z`)**:
+   - **Away Arming Burst (`frames[0..10]`, `10:35:58.754Z -> 10:35:59.797Z`)**: `*5*8*0##` (*Engage* -> `armed_away`), `*5*1*0##` (*Activation*), active zones `#1, #2, #4` (`*5*11*#1##`, `*5*11*#2##`, `*5*11*#4##`), non-active zones `#3, #5..#8` (`*5*18*#3##`, `*5*18*#5..#8##`), followed by empty-`WHERE` system battery fault `*5*4*##`.
+   - **Alarm Trigger Burst (`frames[11..23]`, `10:36:04.440Z -> 10:36:04.462Z`)**: Empty-`WHERE` status header (`*5*1*##`, `*5*8*##`, `*5*4*##`, `*5*7*##`), zone partition snapshot (`#1..#8`), culminating in **`[rx] *5*12*#1##` (`WHAT 12` = Technical alarm on Zone `#1`)**, which routes to central unit `"0"` (`STATE_TRIGGERED`) without creating a phantom `#1` panel entity.
+   - **Disarming & Follow-Up Dump (`frames[24..45]`, `10:36:07.169Z -> 10:36:37.924Z`)**: `*5*2*0##` (*Deactivation*) -> `*5*9*0##` (*Disengage* -> `disarmed`) -> `*5*1*0##` -> zones `#1..#8` -> `*5*4*##`, repeated in a clean periodic disarmed dump 30.5 s later (`frames[36..45]`).
+
+2. **Door Entry Lock Release (`who6`, `frames[0..3]`, `10:36:44.294Z -> 10:36:54.312Z`)**:
+   - `[0] tx *6*10*4004##` (`10:36:44.294583Z`) -> `[1] rx *6*10*4004##` (`10:36:44.300450Z`, `+5.87 ms` monitor echo on `*99*1##`): Entrance Panel `PE5` door lock release.
+   - `[2] tx *6*10*4003##` (`10:36:54.303791Z`) -> `[3] rx *6*10*4003##` (`10:36:54.312352Z`, `+8.56 ms` monitor echo on `*99*1##`): Entrance Panel `PE4` door lock release.
+
+3. **Auxiliary Motion Sensor Pulses (`who9`, `frames[0..38]`, `10:36:10.968Z -> 10:37:11.650Z`)**:
+   - `WHERE = 2`: `12` clean `*9*1*2##` (`ON`) -> `*9*0*2##` (`OFF`) motion pulses (`24` frames, `~173–502 ms` active duration).
+   - `WHERE = 4`: `7` `*9*1*4##` (`ON`) and `8` `*9*0*4##` (`OFF`) frames (`15` frames, including a back-to-back duplicate `*9*0*4##` at `10:36:27.699Z`).
+   - Confirms `WHO 9` AUX traffic never triggers phantom bus auto-discovery while cleanly driving configured `binary_sensor` motion entities on channels `"2"` and `"4"`.
+
+

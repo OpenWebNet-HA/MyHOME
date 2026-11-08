@@ -389,10 +389,12 @@ class GatewayIdentityMixin:
                     _gw.async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
 
         if dim == 15 and dim_val:
+            self._who13["pending_code"] = False
             self._handle_device_type(str(dim_val[0]))
         elif dim in (23, 24) and dim_val:
             self._who13["kernel" if dim == 23 else "distribution"] = ".".join(str(v) for v in dim_val)
         elif dim == 16:
+            self._who13["pending_firmware"] = False
             fw = getattr(message, "firmware_version", None)
             if fw:
                 self._who13["firmware"] = fw
@@ -593,6 +595,40 @@ class GatewayIdentityMixin:
         for worker in self.sending_workers[limit:]:
             worker.cancel()
         del self.sending_workers[limit:]
+
+    def _request_gateway_identity(self) -> None:
+        """Queue ``*#13**15##`` (device type) and ``*#13**16##`` (firmware) once when unknown.
+
+        SSDP/UPnP gateways such as the BTicino H/L4684 often omit ``modelNumber`` in their
+        UPnP XML description, leaving ``firmware`` unset until a ``WHO=13`` Dimension 16
+        reply is seen. Querying ``*#13**15##`` and ``*#13**16##`` on session startup settles
+        both the hardware model code and the firmware-gated ``GatewayProfile`` (e.g. WHO 22
+        on H/L4684 >= 6.0.0 vs < 6.0.0) without emitting any SCS bus frames.
+        """
+        from . import gateway as _gw
+
+        if self.identification_source == IDENTIFICATION_SERIAL or not self.sending_workers:
+            return
+        own_command = getattr(_gw, "OWNCommand")
+        log = getattr(_gw, "LOGGER")
+        probes: list[tuple[str, str, str]] = []
+        if self._who13.get("code") is None and not self._who13.get("pending_code", False):
+            probes.append(("*#13**15##", "pending_code", "WHO=13 dimension 15 (device type)"))
+        if self._who13.get("firmware") is None and not self._who13.get("pending_firmware", False):
+            probes.append(("*#13**16##", "pending_firmware", "WHO=13 dimension 16 (firmware version)"))
+        for raw, pending_key, label in probes:
+            cmd = own_command.parse(raw)
+            if cmd is None:
+                continue
+            log.debug("%s Requesting %s on startup.", self.log_id, label)
+            try:
+                self.send_buffer.put_nowait(
+                    {"message": cmd, "written": self.hass.loop.create_future(), "is_status_request": True}
+                )
+            except asyncio.QueueFull:
+                log.warning("%s Cannot queue %s request: send buffer full.", self.log_id, label)
+                return
+            self._who13[pending_key] = True
 
     def _request_object_model(self) -> None:
         """Queue ``*#1013**1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once."""

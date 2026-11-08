@@ -94,12 +94,13 @@ PROBE_LOGGER.addFilter(_RecordAtDebug())
 
 
 class GatewayIdentity(typing.NamedTuple):
-    """What ``identify_gateway`` learned: the three answers, and whether the command session wants a password."""
+    """What ``identify_gateway`` learned: MAC, model codes, password gate, and WHO=13 firmware."""
 
     mac: str | None
     who13_code: str | None
     who1013_code: str | None
     password_required: bool = False
+    firmware: str | None = None
 
 
 def mac_request_is_safe(who13_code: str | None, who1013_code: str | None = None) -> bool:
@@ -142,22 +143,24 @@ def _inband_reading(who13_code: str | None, who1013_code: str | None) -> CodeRea
 
 
 async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:
-    """Ask an authenticated gateway who it is: ``(mac, who13_code, who1013_code)``.
+    """Ask an authenticated gateway who it is: ``(mac, who13_code, who1013_code, password_required, firmware)``.
 
     A command session refused with ``password_required`` yields ``password_required=True``
     and nothing else: the gateway protects ``*99*0##`` although its monitor session was
     open, and the runtime command workers will need that password anyway.
 
-    The order follows the runtime identification (#420): ``*#13**15##`` first, which
-    every gateway answers; ``*#1013**1##`` only when that answer is the shared code
-    ``200`` (F454 / F461 / MyHomeServer1 class), keeping older gateways away from a
-    diagnostic frame they may not support; ``*#13**12##`` (MAC) only from a model known
-    to answer it (``MAC_REQUEST_SAFE_MODELS``): it crashes a daemon on the H4684 and the
-    MH200 in the firmware oracle. Best effort: any failure or silence yields ``None``.
+    The order follows the runtime identification (#420): ``*#13**15##`` and ``*#13**16##``
+    first, which every gateway answers locally with zero SCS bus frames; ``*#1013**1##``
+    only when that answer is the shared code ``200`` (F454 / F461 / MyHomeServer1 class),
+    keeping older gateways away from a diagnostic frame they may not support; ``*#13**12##``
+    (MAC) only from a model known to answer it (``MAC_REQUEST_SAFE_MODELS``): it crashes a
+    daemon on the H4684 and the MH200 in the firmware oracle. Best effort: any failure or
+    silence yields ``None``.
     """
     mac: str | None = None
     code13: str | None = None
     code1013: str | None = None
+    firmware: str | None = None
     session = OWNCommandSession(gateway=gateway, logger=PROBE_LOGGER)
 
     async def _ask(request: typing.Any) -> list[typing.Any]:
@@ -174,6 +177,10 @@ async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:
                 value = getattr(reply, "device_type_code", None)
                 if getattr(reply, "who", None) == 13 and value:
                     code13 = code13 or str(value)
+            for reply in await _ask(OWNGatewayCommand.request_firmware_version()):
+                fw_val = getattr(reply, "firmware_version", None)
+                if getattr(reply, "who", None) == 13 and fw_val:
+                    firmware = firmware or str(fw_val)
             # A shared code (WHO13_SHARED_DEVICE_TYPES) names no model: ask WHO=1013 (#420)
             if code13 and read_who13(code13).shared:
                 for reply in await _ask(OWNGatewayDiagnosticCommand.request_diagnostic_object_model()):
@@ -196,7 +203,7 @@ async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:
     finally:
         with contextlib.suppress(Exception):
             await session.close()
-    return GatewayIdentity(mac, code13, code1013)
+    return GatewayIdentity(mac, code13, code1013, firmware=firmware)
 
 
 class MACAddress:
@@ -615,9 +622,12 @@ class ConfigFlowDiscoveryMixin:
         """
         from . import config_flow as _cf
 
-        mac, code13, code, password_required = GatewayIdentity(*await _cf.identify_gateway(gateway))
+        mac, code13, code, password_required, firmware = GatewayIdentity(*await _cf.identify_gateway(gateway))
         if password_required and not gateway.password:
             return None
+        if firmware:
+            gateway.firmware = firmware
+            gateway.profile = _profile_for_model(gateway.model_name, gateway.firmware)
         # A refusal after a password was given is a refusal, not a question: nothing reported
         reported_mac = validated_reported_mac(mac)
         if mac and not reported_mac:
@@ -653,9 +663,8 @@ class ConfigFlowDiscoveryMixin:
                 configured,
             )
             gateway.model_name = gateway.model = model
-            # The firmware is not known yet (the runtime re-resolves with it at connect time);
-            # the same helper as the runtime, so SSDP spellings map the same way.
-            gateway.profile = _profile_for_model(model)
+            # The same helper as the runtime, so SSDP spellings and firmware gates map the same way.
+            gateway.profile = _profile_for_model(model, gateway.firmware)
             gateway._log_id = f"[{model} gateway - {gateway.host}]"  # pylint: disable=protected-access
         return resolution.source
 

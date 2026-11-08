@@ -503,3 +503,54 @@ def test_alarm_states_are_the_core_enum():
     assert mod.STATE_TRIGGERED is AlarmControlPanelState.TRIGGERED
 
 
+async def test_alarm_zone_and_sensor_triggers_route_to_central_without_phantom_discovery(
+    hass: HomeAssistant, mock_gateway
+) -> None:
+    """Zone (#1) and sensor (12) alarm triggers route to central panel '0' without creating phantom entities."""
+    mac = mock_gateway.mac
+    hass.data = {
+        DOMAIN: {
+            mac: {
+                "entity": mock_gateway,
+                CONF_PLATFORMS: {PLATFORM: {}},
+            }
+        }
+    }
+    config_entry = MagicMock()
+    config_entry.data = {"mac": mac}
+    config_entry.entry_id = "alarm_zone_trigger_test"
+
+    added_entities: list[MyHOMEAlarmControlPanel] = []
+    with (
+        patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()),
+        patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]),
+    ):
+        attach_runtime(hass, config_entry)
+        await async_setup_entry(hass, config_entry, added_entities.extend)
+
+        # Auto-discover central unit "0" on Away arming (*5*8*0##)
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*5*8*0##"))
+        assert len(added_entities) == 1
+        central = added_entities[0]
+        assert central.alarm_state == STATE_ARMED_AWAY
+
+        # Technical alarm on Zone #1 (*5*12*#1##, @nachogarcia trace) triggers central without adding #1
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*5*12*#1##"))
+        assert len(added_entities) == 1
+        assert central.alarm_state == STATE_TRIGGERED
+        assert central.extra_state_attributes["raw_state"] == "technical alarm"
+        assert central.extra_state_attributes["state_code"] == 12
+
+        # Disengage (*5*9*0##) clears trigger back to disarmed; re-arm and test 2-digit sensor intrusion (*5*15*12##)
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*5*9*0##"))
+        assert central.alarm_state == STATE_DISARMED
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*5*8*0##"))
+        assert central.alarm_state == STATE_ARMED_AWAY
+
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*5*15*12##"))
+        assert len(added_entities) == 1
+        assert central.alarm_state == STATE_TRIGGERED
+        assert central.extra_state_attributes["raw_state"] == "intrusion alarm"
+        assert central.extra_state_attributes["state_code"] == 15
+
+

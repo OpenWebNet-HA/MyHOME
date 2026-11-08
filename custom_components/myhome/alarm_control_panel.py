@@ -74,7 +74,8 @@ async def async_setup_entry(
     def accept(ctx: DeviceContext) -> bool:
         """Filter alarm device discovery from the bus.
 
-        Individual zones/partitions (WHERE starting with '#', e.g. '#1'..'#8') are
+        Individual zones/partitions (WHERE starting with '#', e.g. '#1'..'#8') and
+        individual sensor addresses (2-digit ZN, e.g. '12' for Zone 1 Sensor 2) are
         not independent alarm control panels (as documented in known limitations),
         and status telemetry (*5*11*#...##, 'active zone') emitted by gateways
         such as the MH200 and MH200N when polled with '*#5*0##' must not trigger autonomous
@@ -82,7 +83,7 @@ async def async_setup_entry(
         """
         if ctx.source != "bus":
             return True
-        return not ctx.address.where.startswith("#")
+        return not ctx.address.where.startswith("#") and getattr(ctx.message, "sensor", None) is None
 
     def reject_registry_entry(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         """Purge phantom zone partition entities previously created from status dumps."""
@@ -94,6 +95,11 @@ async def async_setup_entry(
 
     def route_keys(message: Any, address: Address | None) -> list[str]:
         if address is not None:
+            # Zone/sensor alarm triggers (e.g. *5*12*#1## technical alarm on Zone #1,
+            # *5*15*12## intrusion on Zone 1 Sensor 2) also route to CENTRAL_UNIT_KEY
+            # so the central alarm panel transitions to STATE_TRIGGERED (#466).
+            if getattr(message, "is_alarm", False) and address.key != CENTRAL_UNIT_KEY:
+                return [address.key, CENTRAL_UNIT_KEY]
             return [address.key]
         # System-scope broadcasts with empty WHERE (*5*WHAT*##) route to the
         # central unit, which is followed by all panels.

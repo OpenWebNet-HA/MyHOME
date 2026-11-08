@@ -307,13 +307,14 @@ async def test_manual_flow_worker_count_follows_the_corrected_model(hass: HomeAs
 
 
 async def test_identify_gateway_reads_the_f461_replies() -> None:
-    """identify_gateway asks the model first, then the MAC (an F461 answers both), and decodes the live replies."""
+    """identify_gateway asks device type + firmware first, then WHO=1013 + MAC on F461, and decodes all replies."""
     from custom_components.myhome import config_flow_discovery as cfd
 
     session = MagicMock()
     session.connect = AsyncMock(return_value={"Success": True})
     replies = {
         "*#13**15##": [OWNMessage.parse("*#13**15*200##")],
+        "*#13**16##": [OWNMessage.parse("*#13**16*2*0*11##")],
         "*#13**12##": [OWNMessage.parse(F461_MAC_REPLY)],
         "*#1013**1##": [OWNMessage.parse(F461_MODEL_REPLY)],
     }
@@ -323,15 +324,29 @@ async def test_identify_gateway_reads_the_f461_replies() -> None:
     with patch.object(cfd, "OWNCommandSession", return_value=session) as session_class:
         identity = await cfd.identify_gateway(MagicMock())
 
-    assert identity == cfd.GatewayIdentity("00:03:50:00:07:77", "200", "134")
+    assert identity == cfd.GatewayIdentity("00:03:50:00:07:77", "200", "134", firmware="2.0.11")
     assert session_class.call_args.kwargs["logger"] is cfd.PROBE_LOGGER
-    assert [str(c.args[0]) for c in session.send.await_args_list] == ["*#13**15##", "*#1013**1##", "*#13**12##"]
+    assert [str(c.args[0]) for c in session.send.await_args_list] == [
+        "*#13**15##",
+        "*#13**16##",
+        "*#1013**1##",
+        "*#13**12##",
+    ]
     session.close.assert_awaited()
 
 
-@pytest.mark.parametrize(("model", "who13"), [("H4684", "13"), ("MH200", "4")])
-async def test_identify_gateway_never_asks_the_mac_from_a_gateway_that_crashes_on_it(model, who13) -> None:
-    """*#13**12## crashes a daemon on the H4684 and MH200 (real-binary oracle run): only *#13**15## goes out.
+@pytest.mark.parametrize(
+    ("model", "who13", "fw_frame", "expected_fw"),
+    [
+        ("H4684", "13", "*#13**16*2*0*54##", "2.0.54"),
+        ("H4684", "23", "*#13**16*6*0*11##", "6.0.11"),
+        ("MH200", "4", "*#13**16*2*1*2##", "2.1.2"),
+    ],
+)
+async def test_identify_gateway_never_asks_the_mac_from_a_gateway_that_crashes_on_it(
+    model: str, who13: str, fw_frame: str, expected_fw: str
+) -> None:
+    """*#13**12## crashes a daemon on the H4684 and MH200 (real-binary oracle run): only *#13**15## and *#13**16## go out.
 
     Their WHO=13 device type is not the shared 200, so *#1013**1## is not asked either (#420).
     """
@@ -339,15 +354,49 @@ async def test_identify_gateway_never_asks_the_mac_from_a_gateway_that_crashes_o
 
     session = MagicMock()
     session.connect = AsyncMock(return_value={"Success": True})
-    replies = {"*#13**15##": [OWNMessage.parse(f"*#13**15*{who13}##")]}
+    replies = {
+        "*#13**15##": [OWNMessage.parse(f"*#13**15*{who13}##")],
+        "*#13**16##": [OWNMessage.parse(fw_frame)],
+    }
     session.send = AsyncMock(side_effect=lambda message, is_status_request=False: replies[str(message)])
     session.close = AsyncMock()
 
     with patch.object(cfd, "OWNCommandSession", return_value=session):
         identity = await cfd.identify_gateway(MagicMock())
 
-    assert identity == cfd.GatewayIdentity(None, who13, None)
-    assert [str(c.args[0]) for c in session.send.await_args_list] == ["*#13**15##"]
+    assert identity == cfd.GatewayIdentity(None, who13, None, firmware=expected_fw)
+    assert [str(c.args[0]) for c in session.send.await_args_list] == ["*#13**15##", "*#13**16##"]
+
+
+@pytest.mark.parametrize(
+    ("typed_model", "who13", "firmware", "expected_model", "expected_who22"),
+    [
+        ("H4684", "23", "6.0.11", "H4684", True),
+        ("H4684", "13", "2.0.54", "H4684", False),
+        ("MyHomeServer1", "13", "2.0.54", "H4684", False),
+        ("MH200", "4", "2.1.2", "MH200", False),
+    ],
+)
+async def test_manual_flow_records_firmware_and_gates_h4684_who22_by_version(
+    hass: HomeAssistant,
+    typed_model: str,
+    who13: str,
+    firmware: str,
+    expected_model: str,
+    expected_who22: bool,
+) -> None:
+    """First-use identification stores WHO=13 firmware and preserves the H4684 2.0.x vs 6.0.x WHO 22 gate."""
+    from custom_components.myhome.config_flow_discovery import GatewayIdentity
+    from custom_components.myhome.gateway import _profile_for_model
+
+    identify = AsyncMock(return_value=GatewayIdentity(None, who13, None, firmware=firmware))
+    result = await _manual_flow(hass, _password_then_ok(), identify, model=typed_model)
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["name"] == expected_model
+    assert result["data"]["firmware"] == firmware
+    profile = _profile_for_model(result["data"]["name"], result["data"]["firmware"])
+    assert profile.supports_who(22) is expected_who22
 
 
 def test_mac_request_is_safe_only_for_models_that_answered_it() -> None:

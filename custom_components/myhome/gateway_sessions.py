@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
-from OWNd.message import OWNCommand, OWNMessage
+from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
@@ -224,6 +224,7 @@ class EventSessionRunner:
             and getattr(_event_session, "is_connected", True)
         ):
             self.handler._on_event_connection_state_change(True)
+            self.handler._request_gateway_identity()
             LOGGER.debug(
                 "%s Event session ready, command sessions can now start.",
                 self.log_id,
@@ -1434,6 +1435,13 @@ class CommandWorkerPool:
                                 parsed=resp if isinstance(resp, OWNMessage) else None,
                             )
                             if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                if isinstance(resp, OWNGatewayEvent):
+                                    self.handler._handle_gateway_diagnostics(resp)
+                                elif (
+                                    getattr(resp, "who", None) == 1013
+                                    and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
+                                ):
+                                    self.handler._handle_gateway_identity_diagnostics(resp)
                                 dispatcher_send(
                                     self.hass, f"myhome_message_{self.mac}", resp
                                 )
