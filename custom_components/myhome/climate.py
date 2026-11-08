@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import time
 from typing import Any, cast
 
@@ -77,7 +78,7 @@ from .discovery import (
     default_known_keys,
     is_broadcast_where,
 )
-from .gateway import _ZONE_WHERE, MyHOMEGatewayHandler
+from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
@@ -95,6 +96,8 @@ from .where_grammar import (
 
 PLATFORM = Platform.CLIMATE
 PARALLEL_UPDATES = 0
+# How long one read of the silent-zone poll (#466) waits for its answer before giving up.
+PACED_READ_TIMEOUT = 60.0
 
 _FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
 # BTicino 3550 central unit (#0) diagnostic WHAT codes (OpenWebNet Thermoregulation v2.0.0 Table 5):
@@ -648,6 +651,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # setpoint in force, offset included): dimension 14 and 13 frames then leave it alone.
         self._local_target_reported = False
         self._current_temperature_restored = False
+        # True while the setpoint / the mode are what Home Assistant saved, not what the zone
+        # said since the restart: the silent-zone poll (#466) does not take them for a report.
+        self._target_temperature_restored = False
+        self._hvac_mode_restored = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
         # BTicino 3550 central unit (#0) diagnostic status flags (WHAT 20..24, 30, 31)
@@ -823,6 +830,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode = HVACMode.OFF
             except (ValueError, TypeError):
                 self._attr_hvac_mode = HVACMode.OFF
+            self._hvac_mode_restored = True
             target_temp = last_state.attributes.get("temperature")
             if target_temp is not None:
                 try:
@@ -841,6 +849,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         pass
                     self._target_temperature = shown - self._local_offset
                     self._local_target_temperature = shown
+                    self._target_temperature_restored = True
             if "program" in last_state.attributes:
                 try:
                     self._program = int(last_state.attributes["program"])
@@ -1183,6 +1192,93 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
+            # Whether the gateway wants the silent-zone poll (#466) is decided inside the task,
+            # once the startup sweep and the grace period are over: the in-band identity (WHO 13 /
+            # WHO 1013) can still correct the model after the entities were added, as the
+            # actuator request already allows for (``watch_zone_actuators``). So the task is
+            # scheduled when the gateway wants the poll now, or while the sweep is still to run
+            # and the model may still change.
+            if (
+                not self._interface_poll_refused
+                and not is_actuator_where(self._where)
+                and target_hass is not None
+                and (
+                    getattr(self._gateway_handler, "silent_zone_poll_needed", False) is True
+                    or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+                )
+            ):
+                task = target_hass.async_create_background_task(
+                    self._poll_if_silent(), name=f"myhome_{self.entity_id}_silent_zone_poll"
+                )
+
+                def _cancel_silent_zone_poll() -> None:
+                    task.cancel()
+
+                self.async_on_remove(_cancel_silent_zone_poll)
+
+    def _silent_zone_reads(self) -> list[str]:
+        """The reads of the silent-zone poll (#466) this zone still needs, in the order they go out.
+
+        What the zone said since the restart is not asked again; a value Home Assistant restored
+        is. The temperature (``*0``) comes first because a zone without a probe refuses it, and
+        that refusal ends the poll. The setpoint (``*14``), then the setpoint in force (``*12``,
+        the F455 follows its reply with the zone's season frame, which gives the mode), then
+        actuator 1 (``#1*20``) last: ``hvac_action`` is derived when an actuator report finds the
+        mode known. The zone is named by its number: a ``#Z`` entry of ``myhome.yaml`` would
+        otherwise ask through the central unit, and an actuator behind an interface is
+        ``Z#N#4#II``, not ``Z#4#II#N``.
+        """
+        zone = zone_number(self._where)
+        routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
+        temperature_known = self._attr_native_current_temperature is not None and not self._current_temperature_restored
+        setpoint_known = self.native_target_temperature is not None and not self._target_temperature_restored
+        mode_known = self._attr_hvac_mode is not None and not self._hvac_mode_restored
+        reads: list[str] = []
+        if not temperature_known:
+            reads.append(f"*#4*{zone}{routing}*0##")
+        if not setpoint_known:
+            reads.append(f"*#4*{zone}{routing}*14##")
+        if not setpoint_known or not mode_known:
+            reads.append(f"*#4*{zone}{routing}*12##")
+        if not self._actuator_states and self._zone_active is None:
+            reads.append(f"*#4*{zone}#1{routing}*20##")
+        return reads
+
+    async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
+        """Ask a zone that has not reported by itself since the startup sweep, read by read (#466).
+
+        Only on a gateway in ``SILENT_ZONE_POLL`` (the one that serves WHO 4, read once the
+        in-band identity has had the sweep and the grace period to settle). Nothing goes out for
+        what the zone reported itself (``_silent_zone_reads``). Each read waits for the previous
+        one to be answered, so a refused or unanswered read (a zone without a probe) ends it
+        after one request.
+        """
+        wait = getattr(self._gateway_handler, "wait_for_initial_discovery", None)
+        if callable(wait):
+            waiting = wait()
+            if inspect.isawaitable(waiting):
+                await waiting
+        await asyncio.sleep(grace)
+        if getattr(self._gateway_handler, "silent_zone_poll_needed", False) is not True:
+            return  # not an F455 after all, or its zones are another gateway's to ask
+        reads = self._silent_zone_reads()
+        if not reads:
+            return  # the zone reported its temperature, setpoint, mode and an actuator on its own
+        LOGGER.debug(
+            "%s %s has not reported since the startup sweep; asking %s", self._gateway_handler.log_id, self._display_name, reads
+        )
+        for frame in reads:
+            try:
+                written: object = await self._gateway_handler.send_status_request(
+                    cast(OWNCommand, OWNHeatingCommand.parse(frame))
+                )
+            except Exception:  # a transport error must not end the task silently (#593)
+                LOGGER.exception("%s %s: `%s` could not be sent", self._gateway_handler.log_id, self._display_name, frame)
+                return
+            if isinstance(written, asyncio.Future):
+                await asyncio.wait([written], timeout=PACED_READ_TIMEOUT)
+                if not written.done() or written.cancelled():
+                    return
 
     def _refuse_interface_write(self) -> bool:
         """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
@@ -1627,6 +1723,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._target_temperature = message.set_temperature
+            self._target_temperature_restored = False
             is_protection_or_off = self._dimension_3_is_protection(message)
             # Dimension 14 is the commanded setpoint. The thermostat can regulate to another one
             # (F461: 14 = 21.0 while 12 = 23.5), so a dimension 12 report stays what is shown.
@@ -1671,6 +1768,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._local_target_temperature = message.local_set_temperature
             self._local_target_reported = self._local_target_temperature is not None
+            self._target_temperature_restored = False
             is_protection_or_off = self._dimension_3_is_protection(message)
             if not is_protection_or_off:
                 self._remember_nominal()
@@ -1703,6 +1801,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if season_mode in self._attr_hvac_modes:
                     LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
                     self._attr_hvac_mode = season_mode
+                    self._hvac_mode_restored = False
                     if self._attr_hvac_action == HVACAction.OFF:
                         self._attr_hvac_action = HVACAction.IDLE
             else:
@@ -1729,6 +1828,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif message.message_type == MESSAGE_TYPE_MODE:
             if self._central:
                 self._reset_central_status_flags()
+            self._hvac_mode_restored = False  # the zone itself says what it runs in
             prev_mode = self._attr_hvac_mode
             previous_season = self._season
             self._remember_season(message)
@@ -1811,6 +1911,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._central:
                 self._reset_central_status_flags()
                 self._central_operation = None
+            self._hvac_mode_restored = False
             prev_mode = self._attr_hvac_mode
             self._remember_season(message)
             self._program = getattr(message, "program", None)
@@ -1855,6 +1956,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._mark_actuators_off()
             if message.set_temperature is not None and message.set_temperature >= 0:
                 self._target_temperature = message.set_temperature
+                self._target_temperature_restored = False
                 self._show_nominal()
             else:
                 self._hydrate_nominal_from_local(prev_mode)
