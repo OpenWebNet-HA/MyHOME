@@ -101,10 +101,8 @@ def test_hl4684_trace_fixture_integrity_and_parser_coverage() -> None:
         "H4684",
         "L4684",
         "BTicino H/L4684",
-        "003598",  # F454
         "003594",  # F455
         "003565",  # MH200N
-        "003535",  # MH202
         "573992",  # F453AV
     ],
 )
@@ -124,6 +122,32 @@ def test_scs_gateway_aliases_disable_point_to_point_zone_status(
     )
     handler = MyHOMEGatewayHandler(hass, entry)
     assert handler.supports_zone_status is False
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "003598",  # F454
+        "003535",  # MH202 (#866)
+        "03535",   # MH202 alternate catalogue code (#866)
+    ],
+)
+def test_catalogue_codes_enable_point_to_point_zone_status(
+    hass: HomeAssistant, model: str
+) -> None:
+    """F454 and MH202 catalogue codes enable *#4*Z## zone polling (#866)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.0.2.10",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "12345",
+            CONF_MAC: "00:03:50:aa:bb:cc",
+            CONF_NAME: model,
+        },
+    )
+    handler = MyHOMEGatewayHandler(hass, entry)
+    assert handler.supports_zone_status is True
 
 
 def test_hl4684_ssdp_profile_identity_and_fw6_who22(hass: HomeAssistant) -> None:

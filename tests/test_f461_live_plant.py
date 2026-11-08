@@ -134,7 +134,7 @@ def test_f461_supports_zone_status_and_f455_does_not() -> None:
     from custom_components.myhome.gateway import MyHOMEGatewayHandler
 
     handler = MagicMock(spec=MyHOMEGatewayHandler)
-    for model, expected in (("F461", True), ("f461", True), ("F455", False), ("F454", False), ("MH200N", False), ("MyHomeServer1", True)):
+    for model, expected in (("F461", True), ("f461", True), ("F455", False), ("F454", True), ("MH200N", False), ("MyHomeServer1", True)):
         handler.model = model
         assert MyHOMEGatewayHandler.supports_zone_status.fget(handler) is expected, model
 
