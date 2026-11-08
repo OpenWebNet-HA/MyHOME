@@ -22,7 +22,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from OWNd.message import OWNEvent, OWNMessage
+from OWNd.message import OWNAutomationEvent, OWNEvent, OWNMessage
 
 from custom_components.myhome.cover import MyHOMECover
 
@@ -339,7 +339,19 @@ async def test_poll_during_active_tilt_preserves_tilt_state(mock_gateway: MagicM
         assert cover._is_tilting is True
         assert cover.is_opening is True
 
-        # Poll reply arrives with unchanged position while tilting
+        # Fallback when message omits is_closed (is_closed is None): derives from position == 0
+        msg_pos_no_closed = MagicMock(spec=OWNAutomationEvent)
+        msg_pos_no_closed.is_translation = False
+        msg_pos_no_closed.dimension = 10
+        msg_pos_no_closed.current_position = 75
+        msg_pos_no_closed.is_position_unknown = False
+        msg_pos_no_closed.is_opening = False
+        msg_pos_no_closed.is_closing = False
+        msg_pos_no_closed.is_closed = None
+        msg_pos_no_closed.human_readable_log = "Status 10 level 75 without is_closed"
+        cover.handle_event(msg_pos_no_closed)
+        assert cover._is_tilting is True
+        assert cover.is_closed is False
         cover.handle_event(OWNEvent.parse("*#2*0115*10*10*75*001*0##"))
 
         # State must NOT be prematurely cleared
