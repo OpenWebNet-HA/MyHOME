@@ -375,6 +375,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,
             "firmware": None, "kernel": None, "distribution": None,
+            "pending_code": False, "pending_firmware": False,
         }
         self._who1013: dict[str, Any] = {
             "code": None, "model": None, "names": (), "pending": False,
@@ -778,6 +779,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 )
             self._event_session_ready.set()
             self._who1013["pending"] = False
+            self._who13["pending_code"] = False
+            self._who13["pending_firmware"] = False
             if self._unavailable_timer is not None:
                 self._unavailable_timer()
                 self._unavailable_timer = None

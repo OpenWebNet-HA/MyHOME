@@ -217,6 +217,9 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*1*31*0010##": "F461 2026-11-04: ACK, answered *1*9*0010## and *#1*0010*1*179*4##",
     "*2*13*05##": "F461 2026-11-04: ACK, echoed as *2*1000#13#001#1*05##",
     "*2*14*05##": "F461 2026-11-04: ACK, echoed as *2*1000#14#001#1*05##",
+    # --- H/L4684 6.0.11, issue_466 (myhome_trace_HL4684_who6_2026-11-06T10-37-42)
+    "*6*10*4003##": "H/L4684 6.0.11 2026-11-06: ACK, echoed *6*10*4003## on evt in 8.6 ms (PE4 door lock release)",
+    "*6*10*4004##": "H/L4684 6.0.11 2026-11-06: ACK, echoed *6*10*4004## on evt in 5.9 ms (PE5 door lock release)",
 }
 
 

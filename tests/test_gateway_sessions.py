@@ -1056,3 +1056,55 @@ async def test_close_wakes_pending_cover_waiters(mock_handler: MagicMock) -> Non
     assert await waiter_task is None
     assert pool._terminate_sender is True
 
+
+async def test_read_event_session_requests_gateway_identity_on_connect(mock_handler: MagicMock) -> None:
+    """Successful event-session handshake triggers _request_gateway_identity() after marking connected."""
+    runner = EventSessionRunner(mock_handler)
+    session = MagicMock()
+    session.is_connected = True
+    session.connect = AsyncMock(return_value={"Success": True})
+
+    async def _stop_next() -> None:
+        runner._terminate_listener = True
+        return None
+
+    session.get_next = AsyncMock(side_effect=_stop_next)
+    await runner._read_event_session(session)
+
+    mock_handler._on_event_connection_state_change.assert_called_once_with(True)
+    mock_handler._request_gateway_identity.assert_called_once_with()
+
+
+async def test_sending_loop_routes_command_only_who13_and_who1013_replies(mock_handler: MagicMock) -> None:
+    """WHO=13 and WHO=1013 dim-1 replies collected only on *99*0## route to identity/firmware handlers."""
+    ready = asyncio.Event()
+    ready.set()
+    pool = CommandWorkerPool(mock_handler, event_session_ready=ready)
+
+    session = MagicMock()
+    session.is_connected = True
+    session._stream_reader = object()
+    session._stream_writer = object()
+    session.connect = AsyncMock(return_value={"Success": True})
+    session.close = AsyncMock()
+
+    replies = {
+        "*#13**15##": [OWNMessage.parse("*#13**15*23##")],
+        "*#13**16##": [OWNMessage.parse("*#13**16*6*0*11##")],
+        "*#1013**1##": [OWNMessage.parse("*#1013**1*51*15*5*0##")],
+    }
+    session.send = AsyncMock(side_effect=lambda message, is_status_request=False: replies[str(message)])
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=session):
+        await pool.send_status_request(OWNCommand.parse("*#13**15##"))
+        await pool.send_status_request(OWNCommand.parse("*#13**16##"))
+        await pool.send_status_request(OWNCommand.parse("*#1013**1##"))
+        await pool.send_buffer.put(None)
+        await pool.sending_loop(0)
+
+    assert mock_handler._handle_gateway_diagnostics.call_count == 2
+    diag_frames = [str(c.args[0]) for c in mock_handler._handle_gateway_diagnostics.call_args_list]
+    assert diag_frames == ["*#13**15*23##", "*#13**16*6*0*11##"]
+    mock_handler._handle_gateway_identity_diagnostics.assert_called_once()
+    assert str(mock_handler._handle_gateway_identity_diagnostics.call_args.args[0]) == "*#1013**1*51*15*5*0##"
+
