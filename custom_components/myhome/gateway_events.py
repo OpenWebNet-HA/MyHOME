@@ -448,7 +448,9 @@ class GatewayEventDispatcher:
             iface = getattr(message, "interface", None)
             raw_tail = where_param(message)
             tail = raw_tail if isinstance(raw_tail, list) else []
-            has_interface = (isinstance(iface, str) and bool(iface)) or (len(tail) > 1 and tail[0] == "4")
+            has_interface = (isinstance(iface, str) and bool(iface)) or (
+                len(tail) == 2 and tail[0] == "4"
+            )
             if has_interface:
                 if getattr(self.handler, "interface_zone_request_refused", False):
                     return

@@ -1808,11 +1808,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             is_active = bool(message.is_active())
             dimension = getattr(message, "dimension", None)
             if dimension == 20:
-                actuator_id = str(
-                    getattr(message, "actuator", None)
-                    or getattr(message, "_actuator", None)
-                    or (message._where_param[0] if getattr(message, "_where_param", None) else "1")
-                )
+                actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
             else:
