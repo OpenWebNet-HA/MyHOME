@@ -263,7 +263,13 @@ async def test_only_one_echo_is_dropped_and_only_while_expected() -> None:
     await central.async_set_hvac_mode(HVACMode.COOL)
     _replay(central, ["*4*0*#0##"])  # the echo
     assert central.extra_state_attributes.get("season") is None
-    _replay(central, ["*4*0*#0##"])  # a second identical frame is a report
+    _replay(central, ["*4*0*#0##"])  # another copy of it, e.g. from the second routing
+    assert central.extra_state_attributes.get("season") is None
+    from custom_components.myhome import climate as climate_module
+
+    later = climate_module.time.monotonic() + 0.121
+    with patch("custom_components.myhome.climate.time.monotonic", return_value=later):
+        _replay(central, ["*4*0*#0##"])  # an identical frame after the window is a report
     assert central.hvac_mode == HVACMode.COOL
 
     await central.async_set_hvac_mode(HVACMode.HEAT)
@@ -282,7 +288,7 @@ async def test_heat_on_a_zone_of_the_central_in_conditioning_is_refused() -> Non
     zone4._target_temperature = 20.5
     with pytest.raises(ServiceValidationError) as err:
         await zone4.async_set_hvac_mode(HVACMode.HEAT)
-    assert err.value.translation_key == "zone_mode_outside_central_season"
+    assert err.value.translation_key == "zone_heat_in_conditioning_season"
     gateway.send.assert_not_awaited()
     assert zone4.hvac_mode == HVACMode.COOL
     await zone4.async_set_hvac_mode(HVACMode.COOL)
@@ -372,3 +378,206 @@ def test_central_off_then_antifreeze_is_heat_and_no_longer_action_off() -> None:
     assert central.hvac_mode == HVACMode.HEAT
     assert central.hvac_action == HVACAction.IDLE
     assert central.extra_state_attributes["central_operation"] == "antifreeze"
+
+
+# PR #880 review: the F455's synthetic *4*311*#Z## is not a central unit report.
+
+
+def _dispatcher(gateway: MagicMock) -> Any:
+    from custom_components.myhome.gateway_events import GatewayEventDispatcher
+
+    gateway.hass = MagicMock()
+    gateway.host = "gateway.test"
+    gateway.generate_events = False
+    gateway._correlate_shared_bus_traffic = MagicMock()
+    gateway._bridge_to_primary = MagicMock()
+    gateway.health_owner = MagicMock(return_value=None)
+    return GatewayEventDispatcher(gateway)
+
+
+async def test_f455_synthetic_311_does_not_make_a_standalone_only_plant_central() -> None:
+    gateway = _gateway(has_central_unit=False)
+    dispatcher = _dispatcher(gateway)
+    zone2 = _climate(gateway, "2", standalone=None)  # zero-config: follows the plant
+    for raw in _rx("f455_zone2_after_restart"):
+        await dispatcher.process_message(OWNEvent.parse(raw))
+        zone2.handle_event(OWNEvent.parse(raw))
+    assert gateway.has_central_unit is False
+    assert zone2._standalone is True
+    assert zone2.hvac_mode == HVACMode.HEAT
+    await zone2.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gateway) == ["*#4*2*#14*0265*2##"]
+
+
+async def test_auto_fallback_survives_the_f455_trailing_311() -> None:
+    gateway = _gateway(has_central_unit=False)
+    dispatcher = _dispatcher(gateway)
+    zone2 = _climate(gateway, "2", standalone=True)
+    for raw in _rx("f455_zone2_after_restart"):
+        await dispatcher.process_message(OWNEvent.parse(raw))
+        zone2.handle_event(OWNEvent.parse(raw))
+    assert gateway.has_central_unit is False
+    await zone2.async_set_hvac_mode(HVACMode.AUTO)
+    assert _sent(gateway) == ["*#4*2*#14*0265*3##"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "central"),
+    [
+        ("*4*311*#2##", False),  # generic automatic (WHO 4 p. 9), F455 synthetic
+        ("*4*310*#2##", False),  # generic manual (WHO 4 p. 9)
+        ("*4*303*#2##", False),  # generic off, not a zone status (WHO 4 p. 65)
+        ("*4*111*#2##", True),  # zone automatic by central unit (WHO 4 p. 65)
+        ("*4*210*#4##", True),  # zone manual conditioning by central unit, live 3550
+        ("*4*203*#4##", True),  # zone off conditioning by central unit, live 3550
+        ("*4*102*#0##", True),  # the central unit itself (WHO 4 p. 64)
+        ("*4*303*#0#1##", True),  # 4-zone central unit
+        ("*#4*#4*14*0205*2##", True),  # a dimension of a zone of the central
+        ("*#4*2*0*0238##", False),  # a standalone thermostat's temperature
+        ("*#4*101*0*0205##", False),  # a probe (WHO 4 p. 6)
+        ("*#4*2#1*20*0##", False),  # an actuator of zone 2
+    ],
+)
+async def test_central_unit_detection_by_frame(raw: str, central: bool) -> None:
+    gateway = _gateway(has_central_unit=False)
+    await _dispatcher(gateway).process_message(OWNEvent.parse(raw))
+    assert gateway.has_central_unit is central
+
+
+# PR #880 review: a gateway that does not echo still gets the 3550's identical answer.
+
+
+async def test_identical_central_answer_after_the_echo_window_is_a_report() -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    _replay(central, _rx("f461_central_heat"))
+    central._battery_fault = True
+    assert central.extra_state_attributes["central_operation"] == "antifreeze"
+    await central.async_set_hvac_mode(HVACMode.OFF)
+    assert central.hvac_action == HVACAction.OFF
+    assert "central_operation" not in central.extra_state_attributes
+    from custom_components.myhome import climate as climate_module
+
+    later = climate_module.time.monotonic() + 0.121  # the 3550's first answer came after 121 ms
+    with patch("custom_components.myhome.climate.time.monotonic", return_value=later):
+        _replay(central, ["*4*303*#0##"])
+    assert central.extra_state_attributes["battery_fault"] is False  # its burst starts over
+    assert central.hvac_mode == HVACMode.OFF
+
+
+async def test_failed_send_disarms_the_echo() -> None:
+    gateway = _gateway()
+    gateway.send.side_effect = OSError("gateway gone")
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    with pytest.raises(OSError):
+        await central.async_set_hvac_mode(HVACMode.COOL)
+    assert central._central_echo is None
+
+
+# PR #880 review: a 4-zone central unit (#0#1..#0#4) is not polled, it keeps HEAT / COOL.
+
+
+@pytest.mark.parametrize("hvac_mode", [HVACMode.HEAT, HVACMode.COOL])
+async def test_four_zone_central_keeps_the_mode_it_is_set_to(hvac_mode: HVACMode) -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0#1", standalone=None, central=True)
+    await central.async_set_hvac_mode(hvac_mode)
+    assert central.hvac_mode == hvac_mode
+    assert _sent(gateway) == [f"*4*{1 if hvac_mode == HVACMode.HEAT else 0}*#0#1##"]
+
+
+# PR #880 review: an AUTO the zone itself reports is not cancelled by its season frame.
+
+
+def test_myhomeserver1_schedule_auto_survives_the_trailing_season_frame() -> None:
+    zone1 = _climate(_gateway(has_central_unit=False), "1", standalone=None)
+    _replay(zone1, ["*#4*1*7*3*1*0210##", "*4*1*1##"])
+    assert zone1.hvac_mode == HVACMode.AUTO
+    _replay(zone1, ["*#4*1*7*1*1*0210##", "*4*0*1##"])  # manual context, then conditioning
+    assert zone1.hvac_mode == HVACMode.COOL
+
+
+async def test_restored_auto_then_schedule_auto_is_kept() -> None:
+    from homeassistant.core import State
+
+    zone1 = _climate(_gateway(has_central_unit=False), "1", standalone=None)
+    await zone1.async_restore_last_state(State("climate.test", "auto", {"temperature": 21.0}))
+    _replay(zone1, ["*#4*1*7*3*1*0210##", "*4*1*1##"])
+    assert zone1.hvac_mode == HVACMode.AUTO
+
+
+# PR #880 review: central_operation survives a restart; 302 is the protection of the season.
+
+
+async def test_central_operation_is_restored() -> None:
+    from homeassistant.core import State
+
+    central = _climate(_gateway(), "#0", standalone=None, central=True)
+    await central.async_restore_last_state(
+        State("climate.test", "heat", {"central_operation": "antifreeze", "season": "heating"})
+    )
+    assert central.extra_state_attributes["central_operation"] == "antifreeze"
+    assert central.hvac_mode == HVACMode.HEAT
+
+
+@pytest.mark.parametrize(
+    ("season_frame", "mode", "operation"),
+    [("*4*1*#0##", HVACMode.HEAT, "antifreeze"), ("*4*0*#0##", HVACMode.COOL, "thermal_protection")],
+)
+def test_central_generic_protection_follows_the_season(season_frame: str, mode: HVACMode, operation: str) -> None:
+    central = _climate(_gateway(), "#0", standalone=None, central=True)
+    _replay(central, [season_frame, "*4*302*#0##"])
+    assert central.hvac_mode == mode
+    assert central.extra_state_attributes["central_operation"] == operation
+
+
+# PR #880 review: the season is in the translated text, not an English placeholder.
+
+
+@pytest.mark.parametrize("language", ["strings", "en", "fr", "it", "nl"])
+def test_season_errors_are_translated_without_a_season_placeholder(language: str) -> None:
+    base = Path(__file__).parents[1] / "custom_components" / "myhome"
+    path = base / "strings.json" if language == "strings" else base / "translations" / f"{language}.json"
+    exceptions = json.loads(path.read_text())["exceptions"]
+    assert "zone_mode_outside_central_season" not in exceptions
+    for key in ("zone_heat_in_conditioning_season", "zone_cool_in_heating_season", "auto_standalone_zone"):
+        assert "{season}" not in exceptions[key]["message"]
+        assert "{name}" in exceptions[key]["message"]
+
+
+async def test_cool_on_a_zone_of_the_central_in_heating_is_refused() -> None:
+    gateway = _gateway()
+    zone4 = _climate(gateway, "4", standalone=False)
+    _replay(zone4, ["*4*1*4##"])
+    zone4._target_temperature = 20.5
+    with pytest.raises(ServiceValidationError) as err:
+        await zone4.async_set_hvac_mode(HVACMode.COOL)
+    assert err.value.translation_key == "zone_cool_in_heating_season"
+    gateway.send.assert_not_awaited()
+
+
+async def test_echo_delivered_as_two_copies_changes_nothing() -> None:
+    # The second routing may hand the entity another object for the same frame.
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    _replay(central, _rx("f455_central_cool"))
+    assert central.extra_state_attributes["battery_fault"] is True
+
+    async def send_and_echo(command: Any) -> None:
+        central.handle_event(OWNEvent.parse(str(command)))
+        central.handle_event(OWNEvent.parse(str(command)))
+
+    gateway.send.side_effect = send_and_echo
+    await central.async_set_hvac_mode(HVACMode.COOL)
+    assert central.extra_state_attributes["battery_fault"] is True
+    assert central.extra_state_attributes["central_operation"] == "thermal_protection"
+
+
+def test_zone_of_the_central_found_from_the_3550_quarter_hour_push() -> None:
+    # Live 3550 push (14:45:00): no #0 frame, the zone 4 status in the #Z form.
+    gateway = _gateway(has_central_unit=False)
+    zone4 = _climate(gateway, "4", standalone=None)
+    _replay(zone4, ["*#4*4*12*0205*3##", "*4*0*4##", "*#4*4*14*0205*3##", "*4*210*#4##"])
+    assert gateway.has_central_unit is True
+    assert zone4._standalone is False
+    assert zone4.hvac_mode == HVACMode.COOL

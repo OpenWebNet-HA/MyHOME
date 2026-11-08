@@ -86,6 +86,7 @@ from .where_grammar import (
     canonical_thermo_zone,
     is_actuator_where,
     is_central_thermo_where,
+    is_central_unit_report,
     is_probe,
     is_pump,
     parse_thermo_actuator_where,
@@ -124,9 +125,14 @@ _ZONE_STATES_OFF = ("protection", "off")
 # Central unit protection modes (WHO 4 p. 5 and p. 64): the plant keeps its season and
 # regulates to the protection setpoint; it is not switched off.
 _CENTRAL_PROTECTION = {"102": ("antifreeze", HVACMode.HEAT), "202": ("thermal_protection", HVACMode.COOL)}
-# An F455 hands Home Assistant's own central command back on the event session within
-# milliseconds (live, 2026-11-08); a 3550 reply is a different frame.
-_CENTRAL_ECHO_WINDOW = 2.0
+# 302 is generic protection (WHO 4 p. 5): the protection of the season the plant is in.
+_CENTRAL_GENERIC_PROTECTION = "302"
+# An F455 hands Home Assistant's own central command back on the event session 1 ms after
+# it was sent; the 3550's answers came 121 ms (*4*203*#0## to *4*303*#0##) or later on the
+# F461 and F455 (live, 2026-11-08). Only a frame inside this window can be the echo, so a
+# frame equal to the command that arrives later, from the central unit or another client,
+# is still taken as a report.
+_CENTRAL_ECHO_WINDOW = 0.1
 _CONDITIONING_SEASONS = (SEASON_CONDITIONING, "cooling")
 
 # How long the fan speed poll waits for the one-shot dimension 19 answer (*#4*Z*19##,
@@ -805,6 +811,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 restored_rc = last_state.attributes.get("remote_control")
                 if restored_rc in ("enabled", "disabled"):
                     self._remote_control = str(restored_rc)
+                restored_operation = last_state.attributes.get("central_operation")
+                if restored_operation in ("antifreeze", "thermal_protection"):
+                    self._central_operation = str(restored_operation)
                 self._at_least_one_probe_off = bool(
                     last_state.attributes.get("at_least_one_probe_off", False)
                 )
@@ -1424,13 +1433,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
                 # Set before sending: the echo can arrive while send() is still awaited.
                 self._central_echo = (str(command), time.monotonic() + _CENTRAL_ECHO_WINDOW)
-                await self._gateway_handler.send(command)
-                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
+                try:
+                    await self._gateway_handler.send(command)
+                except BaseException:
+                    self._central_echo = None
+                    raise
+                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
                     # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
                     # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
                     # or nothing when the season does not change (live F461 and F455,
-                    # 2026-11-08), so the mode shown comes from that answer.
+                    # 2026-11-08), so the mode shown comes from that answer. A 4-zone
+                    # central (#0#1..#0#4) is not polled and its reports are routed to the
+                    # zone, so it keeps the mode it was set to.
                     return
+                self._central_operation = None
+                if hvac_mode == HVACMode.OFF:
+                    self._attr_hvac_action = HVACAction.OFF
                 self._attr_hvac_mode = hvac_mode
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -1507,8 +1525,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 raise ServiceValidationError(
                     f"{self._display_name} follows the central unit, which is in the {self._season} season",
                     translation_domain=DOMAIN,
-                    translation_key="zone_mode_outside_central_season",
-                    translation_placeholders={"name": self._display_name, "season": self._season},
+                    translation_key="zone_heat_in_conditioning_season" if heat else "zone_cool_in_heating_season",
+                    translation_placeholders={"name": self._display_name},
                 )
             nominal = self._effective_nominal_temperature()
             if nominal is not None:
@@ -1613,6 +1631,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         mode = _ZONE_CONTEXT_MODES.get(getattr(message, "zone_context", None) or "")
         if mode is not None and mode in self._attr_hvac_modes:
             self._attr_hvac_mode = mode
+            self._hvac_mode_restored = False  # the zone reported the mode it runs in
             if self._attr_hvac_action == HVACAction.OFF:
                 self._attr_hvac_action = HVACAction.IDLE
         temperature = message.set_temperature if state == "setpoint" else None
@@ -1635,7 +1654,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         had just reported and turned the action from OFF to IDLE.
 
         The climate and sensor platforms both route WHO 4 frames to the zone, so the one
-        echo frame can reach this entity twice: it is recognised by identity the second time.
+        echo frame can reach this entity twice, as the same object (live) or as another copy:
+        every frame equal to the command inside the window is the echo, and the same object
+        stays recognised after it.
         """
         if message is self._central_echo_seen:
             return True
@@ -1648,7 +1669,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return False
         if str(message) != frame:
             return False
-        self._central_echo = None
         self._central_echo_seen = message
         return True
 
@@ -1671,7 +1691,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._central and self._is_own_central_echo(message):
             LOGGER.debug("%s %s: own command echoed by the gateway, not a central unit report", self._gateway_handler.log_id, message)
             return
-        if is_central_thermo_where(message):
+        # A central unit's own report first: on a zero-config plant its *4*111*#1## makes zone 1
+        # a zone of the central before the standalone check below looks at it.
+        if is_central_unit_report(message):
             self._gateway_handler.has_central_unit = True
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
@@ -1776,9 +1798,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # it: Home Assistant (*#4*2*#14*0265*2## -> *4*0*2##), another gateway on the bus,
             # a touch screen or the thermostat itself. Two gateways on one bus then show the
             # same mode (live F455 + F461, 2026-11-08), and a stale restored AUTO is replaced.
+            # An AUTO the zone itself reported (a MyHomeServer1 schedule, Dimension 7 context
+            # automatic) is not cancelled: the season frame that follows it is its season.
             if self._central:
                 self._reset_central_status_flags()
-            standalone_mode = self._standalone
+            standalone_mode = self._standalone and not (
+                self._attr_hvac_mode == HVACMode.AUTO and not self._hvac_mode_restored
+            )
             previous_season = self._season
             self._season = message.season
             self._season_reported = True
@@ -1831,6 +1857,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
             protection = _CENTRAL_PROTECTION.get(raw_what) if self._central else None
+            if self._central and raw_what == _CENTRAL_GENERIC_PROTECTION and self._season is not None:
+                protection = _CENTRAL_PROTECTION["102" if self._season == SEASON_HEATING else "202"]
             if self._central:
                 self._central_operation = protection[0] if protection is not None else None
             if protection is not None:

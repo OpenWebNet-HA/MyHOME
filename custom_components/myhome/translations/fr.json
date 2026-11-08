@@ -539,8 +539,11 @@
     "auto_standalone_zone": {
       "message": "{name} est un thermostat autonome : la centrale n'a pas de programme pour lui"
     },
-    "zone_mode_outside_central_season": {
-      "message": "{name} suit la centrale, qui est en saison {season} : changez la saison sur la centrale"
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} suit la centrale, qui est en saison de climatisation : changez la saison sur la centrale"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} suit la centrale, qui est en saison de chauffage : changez la saison sur la centrale"
     },
     "command_delivery_cancelled": {
       "message": "{name} : l'envoi de la commande de direction a été annulé avant d'atteindre le bus"
