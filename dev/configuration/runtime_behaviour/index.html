@@ -1573,6 +1573,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#f455-zones-ask-once-120-s-after-the-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌡️ F455 zones ask once, 120 s after the sweep
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#temperature-probes-where-100-are-push-driven" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2183,6 +2194,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#f455-zones-ask-once-120-s-after-the-sweep" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🌡️ F455 zones ask once, 120 s after the sweep
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#temperature-probes-where-100-are-push-driven" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2472,6 +2494,16 @@ Options Flow if your gateway lags on repeated status requests.</p>
 <hr />
 <h2 id="authentication-failures-use-home-assistants-reauth">🔐 Authentication failures use Home Assistant's reauth<a class="headerlink" href="#authentication-failures-use-home-assistants-reauth" title="Permanent link">&para;</a></h2>
 <p>If the gateway rejects the OpenWebNet password during setup, the integration raises <code>ConfigEntryAuthFailed</code>. Home Assistant then shows the entry as <strong>Reauthentication required</strong> with a repair prompt, instead of <em>Failed to set up</em>, and opens the reauth flow itself. Any other connection-test failure raises <code>ConfigEntryNotReady</code> so Home Assistant retries with backoff.</p>
+<hr />
+<h2 id="f455-zones-ask-once-120-s-after-the-sweep">🌡️ F455 zones ask once, 120 s after the sweep<a class="headerlink" href="#f455-zones-ask-once-120-s-after-the-sweep" title="Permanent link">&para;</a></h2>
+<p>The F455 Basic Gateway returns nothing to <code>*#4*0##</code>, ACKs <code>*#4*&lt;WHERE&gt;##</code> only after about 9 s (sixteen of them timing out one after another was #674) and refuses <code>*#4*&lt;WHERE&gt;*20##</code> at once, so its climate zones ask nothing when they are added. A standalone thermostat on it can then stay <code>unknown</code> for hours (#466).</p>
+<p>Behaviour (live F455 1.0.76, <code>tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl</code>):</p>
+<ul>
+<li>120 s after the startup sweep, a zone that has not reported its temperature, setpoint, mode and an actuator by itself asks for what is missing, one read at a time: <code>*#4*&lt;zone&gt;*0##</code>, <code>*#4*&lt;zone&gt;*14##</code>, <code>*#4*&lt;zone&gt;*12##</code> (followed by the zone's season frame) and <code>*#4*&lt;zone&gt;#1*20##</code>. Each is answered in about 0.1 s. A value restored from before the restart does not count as reported.</li>
+<li>Each read waits for the previous answer. A zone without a probe (an actuator-only channel) refuses the first read after about 9 s and is asked nothing else, so it costs one read and one command session held for those 9 s, once per zone added or reloaded (<code>F455_direct_requests_zone3_2026-11-06.jsonl</code>).</li>
+<li>Whether the gateway wants this is decided when the poll runs, not when the zone is added, so a model corrected in band (WHO 13 / WHO 1013) after start is honoured; on a shared bus the gateway that serves WHO 4 decides, and a passive standby or secondary asks nothing.</li>
+<li>The zone's actuator watch (<code>*#4*&lt;WHERE&gt;*20##</code>) is not sent to an F455; thermo actuator switches (<code>*#4*&lt;WHERE&gt;#&lt;N&gt;*20##</code>) still ask, and the F455 answers them.</li>
+</ul>
 <hr />
 <h2 id="temperature-probes-where-100-are-push-driven">🌡️ Temperature probes (<code>WHERE ≥ 100</code>) are push-driven<a class="headerlink" href="#temperature-probes-where-100-are-push-driven" title="Permanent link">&para;</a></h2>
 <p>Slave / external probes use the <code>ZPP</code> address form (zone <code>Z</code>, probe <code>PP</code>, e.g. <code>101</code>). Devices such as a <strong>3455</strong> behind an <strong>L4577</strong> radio interface push <code>*#4*ZPP*0*T*3##</code> unsolicited every few seconds and <strong>NACK</strong> the explicit <code>*#4*ZPP*15##</code> poll.</p>
