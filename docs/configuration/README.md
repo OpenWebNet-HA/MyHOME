@@ -75,6 +75,7 @@ Explore dedicated guides for each MyHOME subsystem:
 | **Electrical Energy & Power Meters** | `WHO = 18` | [Sensors & Energy Guide](sensors.md) |
 | **Dry Contacts & Motion Detectors** | `WHO = 25`, `WHO = 1` | [Binary Sensors & Contacts Guide](binary-sensors.md) |
 | **Burglar Alarm Central Units** | `WHO = 5` | [Burglar Alarm Guide](alarm.md) |
+| **Expose HA Entities to SCS Bus** | `WHO = 1, 2, 4, 13, 18` | [Expose to Bus Guide](expose.md) |
 | **Integration Service Actions** | All WHOs | [Services Action Reference](services.md) |
 | **In-Band Bus Monitor** | All WHOs | [Lovelace Bus Monitor Card](bus_monitor.md) |
 | **Troubleshooting & Known Limits** | All WHOs | [Troubleshooting Guide](troubleshooting.md) • [Known Limitations](known_limitations.md) |

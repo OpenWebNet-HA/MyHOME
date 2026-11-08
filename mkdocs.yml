@@ -96,6 +96,7 @@ nav:
       - Sensors & Energy: configuration/sensors.md
       - Binary Sensors & Contacts: configuration/binary-sensors.md
       - Burglar Alarm: configuration/alarm.md
+      - Expose to SCS Bus: configuration/expose.md
       - Integration Services: configuration/services.md
   - Diagnostics & Monitoring:
       - Lovelace Bus Monitor Card: configuration/bus_monitor.md
