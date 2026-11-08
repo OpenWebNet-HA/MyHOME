@@ -221,6 +221,16 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # MyHomeServer1 replies from its cache, #649), so their zones keep the zone status poll and are not
 # listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
+# Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
+# one after another), but where a zone still without a temperature or setpoint of its own
+# SILENT_ZONE_GRACE seconds after the startup sweep asks once, read by read: its temperature
+# (*#4*Z*0##), and only if that was answered its setpoint (*#4*Z*14##), its probe status
+# (*#4*Z*12##, followed by the mode frame) and actuator 1 (*#4*Z#1*20##). A physical F455 1.0.76
+# answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 reported nothing on its
+# own in four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log).
+SILENT_ZONE_POLL = frozenset({"F455"})
+SILENT_ZONE_GRACE = 120.0
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -265,7 +275,7 @@ KNOWN_GATEWAY_MODELS = frozenset(
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
-    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL,
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL | SILENT_ZONE_POLL,
     key=len,
     reverse=True,
 )
@@ -711,6 +721,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if not self._profile_supports_who(16):
             return True
         return self._model_key in SOUND_STATUS_REQUEST_REFUSED
+
+    @property
+    def silent_zone_poll_needed(self) -> bool:
+        """Whether a zone silent after the startup sweep asks its own state once (``SILENT_ZONE_POLL``)."""
+        return self._model_key in SILENT_ZONE_POLL
 
     @property
     def zone_temperature_poll_needed(self) -> bool:
