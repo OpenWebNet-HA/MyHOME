@@ -118,6 +118,16 @@ _PROTECTION_FRAME_WINDOW = 2.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
+# Central unit protection modes (WHO 4 p. 5 and p. 64): the plant keeps its season and
+# regulates to the protection setpoint; it is not switched off.
+_CENTRAL_PROTECTION = {"102": ("antifreeze", HVACMode.HEAT), "202": ("thermal_protection", HVACMode.COOL)}
+# An F455 hands Home Assistant's own central command back on the event session within
+# milliseconds (live, 2026-11-08); a 3550 reply is a different frame.
+_CENTRAL_ECHO_WINDOW = 2.0
+# A standalone thermostat answers a setpoint write with mode 1 / 2 with its zone operation
+# mode frame within ~0.1 s (live F461, 2026-11-08).
+_SEASON_WRITE_WINDOW = 10.0
+_CONDITIONING_SEASONS = (SEASON_CONDITIONING, "cooling")
 
 # How long the fan speed poll waits for the one-shot dimension 19 answer (*#4*Z*19##,
 # 0.11 s on the live F461) before asking as it did before.
@@ -616,6 +626,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
         self._attr_native_current_temperature: float | None = None
         self._season: str | None = None
+        # Whether the season came from a frame since start-up, not from the restored state.
+        self._season_reported = False
+        # Central unit: the protection mode last reported (102 antifreeze, 202 thermal protection).
+        self._central_operation: str | None = None
+        # Central unit: Home Assistant's last command and when its local echo stops being expected,
+        # and the echo frame once seen (the same frame object can be delivered more than once).
+        self._central_echo: tuple[str, float] | None = None
+        self._central_echo_seen: object | None = None
+        # Standalone zone: the season a setpoint write with mode 1 / 2 asked for, and until when.
+        self._season_write: tuple[str, float] | None = None
         self._program: int | None = None
         self._holiday_days: int | None = None
         self._scenario: int | None = None
@@ -760,6 +780,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._interface is not None:
             attrs["Int"] = self._interface
         if self._central:
+            if self._central_operation is not None:
+                attrs["central_operation"] = self._central_operation
             if self._remote_control is not None:
                 attrs["remote_control"] = self._remote_control
             attrs["at_least_one_probe_off"] = self._at_least_one_probe_off
@@ -1125,6 +1147,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         season = getattr(message, "season", None)
         if isinstance(season, str):
             self._season = season
+            self._season_reported = True
 
     def _raise_unresponsive_issue(self) -> None:
         self._report_fault(FaultKind.UNRESPONSIVE)
@@ -1304,12 +1327,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             }
             cmd_mode = mode_map.get(hvac_mode)
             if cmd_mode:
-                await self._gateway_handler.send(
-                    OWNHeatingCommand.set_central_mode(
-                        where=self._where,
-                        mode=cmd_mode,
-                    )
+                command = OWNHeatingCommand.set_central_mode(
+                    where=self._where,
+                    mode=cmd_mode,
                 )
+                # Set before sending: the echo can arrive while send() is still awaited.
+                self._central_echo = (str(command), time.monotonic() + _CENTRAL_ECHO_WINDOW)
+                await self._gateway_handler.send(command)
+                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
+                    # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
+                    # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
+                    # or nothing when the season does not change (live F461 and F455,
+                    # 2026-11-08), so the mode shown comes from that answer.
+                    return
                 self._attr_hvac_mode = hvac_mode
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -1357,6 +1387,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     )
                 )
                 return
+            if self._standalone:
+                # *4*311*#Z## asks the central unit to put zone Z on its program (WHO 4
+                # p. 9). A standalone thermostat is not one of its zones: the live F461
+                # (3550 on the bus, zone 2 standalone) ACKs the frame and nothing answers.
+                raise ServiceValidationError(
+                    f"{self._display_name} is a standalone thermostat: the central unit has no program for it",
+                    translation_domain=DOMAIN,
+                    translation_key="auto_standalone_zone",
+                    translation_placeholders={"name": self._display_name},
+                )
             cmd = OWNHeatingCommand.set_mode(
                 where=self._where,
                 mode=CLIMATE_MODE_AUTO,
@@ -1364,25 +1404,31 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             if cmd is not None:
                 await self._gateway_handler.send(cmd)
-        elif hvac_mode == HVACMode.HEAT:
-            nominal = self._effective_nominal_temperature()
-            if nominal is not None:
-                await self._gateway_handler.send(
-                    OWNHeatingCommand.set_temperature(
-                        where=self._where,
-                        temperature=nominal,
-                        mode=CLIMATE_MODE_HEAT,
-                        standalone=self._standalone,
-                    )
+        elif hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
+            heat = hvac_mode == HVACMode.HEAT
+            under_central = not self._standalone and getattr(self._gateway_handler, "has_central_unit", False) is True
+            if under_central and self._season_reported and self._season is not None and (
+                self._season in _CONDITIONING_SEASONS if heat else self._season == SEASON_HEATING
+            ):
+                # A zone of a central unit runs in the central's season. The live 3550
+                # (2026-11-08, plant in conditioning) answers nothing to a heating setpoint
+                # for its zone 4; the season is changed on the central unit.
+                raise ServiceValidationError(
+                    f"{self._display_name} follows the central unit, which is in the {self._season} season",
+                    translation_domain=DOMAIN,
+                    translation_key="zone_mode_outside_central_season",
+                    translation_placeholders={"name": self._display_name, "season": self._season},
                 )
-        elif hvac_mode == HVACMode.COOL:
             nominal = self._effective_nominal_temperature()
             if nominal is not None:
+                if self._standalone:
+                    season = SEASON_HEATING if heat else SEASON_CONDITIONING
+                    self._season_write = (season, time.monotonic() + _SEASON_WRITE_WINDOW)
                 await self._gateway_handler.send(
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
                         temperature=nominal,
-                        mode=CLIMATE_MODE_COOL,
+                        mode=CLIMATE_MODE_HEAT if heat else CLIMATE_MODE_COOL,
                         standalone=self._standalone,
                     )
                 )
@@ -1492,12 +1538,72 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._show_nominal()
 
     @callback
+    def _is_own_central_echo(self, message: OWNHeatingEvent) -> bool:
+        """Whether ``message`` is the gateway handing back Home Assistant's own central command.
+
+        An F455 returns ``*4*0*#0##`` on the event session 1 ms after Home Assistant sent it,
+        whether or not the 3550 answers (live, 2026-11-08); an F461 does not. The echo is not
+        the central unit's state: taken as a season frame it cleared the battery flag the 3550
+        had just reported and turned the action from OFF to IDLE.
+
+        The climate and sensor platforms both route WHO 4 frames to the zone, so the one
+        echo frame can reach this entity twice: it is recognised by identity the second time.
+        """
+        if message is self._central_echo_seen:
+            return True
+        echo = self._central_echo
+        if echo is None:
+            return False
+        frame, deadline = echo
+        if time.monotonic() > deadline:
+            self._central_echo = None
+            return False
+        if str(message) != frame:
+            return False
+        self._central_echo = None
+        self._central_echo_seen = message
+        return True
+
+    def _is_central_addressed_mode_frame(self, message: OWNHeatingEvent) -> bool:
+        """Whether a mode / season frame for a standalone zone is in the ``#Z`` (via central unit) form.
+
+        ``*4*what*#Z##`` is a zone of the central unit (WHO 4 p. 6, p. 9, p. 65). A standalone
+        thermostat answers in the plain ``Z`` form. An F455 emits ``*4*311*#2##`` after every
+        status report of the standalone zone 2 (live, 2026-11-08: 8 of 8, none on the F461
+        monitoring the same bus), which OWNd decodes as zone 2 in automatic.
+        """
+        if self._central or not self._standalone:
+            return False
+        if message.message_type not in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+            return False
+        return is_central_thermo_where(message)
+
+    def _answers_season_write(self, message: OWNHeatingEvent) -> bool:
+        """Whether a season frame is the standalone zone's answer to Home Assistant's mode 1 / 2 setpoint write."""
+        write = self._season_write
+        if write is None or self._central:
+            return False
+        self._season_write = None
+        season, deadline = write
+        return time.monotonic() <= deadline and message.season == season
+
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
+        if self._central and self._is_own_central_echo(message):
+            LOGGER.debug("%s %s: own command echoed by the gateway, not a central unit report", self._gateway_handler.log_id, message)
+            return
         if is_central_thermo_where(message):
             self._gateway_handler.has_central_unit = True
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
+        if self._is_central_addressed_mode_frame(message):
+            LOGGER.debug(
+                "%s %s: %s is a standalone thermostat, a frame for it via the central unit is not its state",
+                self._gateway_handler.log_id,
+                message,
+                self._display_name,
+            )
+            return
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
             LOGGER.debug(
                 "%s %s",
@@ -1582,14 +1688,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # in automatic on it, libqtdevices probe_device.cpp:240-253); a
             # zone that was OFF or not yet known is running again, so it takes
             # the season's mode. For a central unit the season is the plant
-            # mode Home Assistant shows.
+            # mode Home Assistant shows. A standalone thermostat answers a setpoint
+            # write with mode 1 / 2 with this frame in the season it now runs in
+            # (live F461, *#4*2*#14*0265*2## -> *4*0*2##): that answer is its mode.
             if self._central:
                 self._reset_central_status_flags()
+            answers_write = self._answers_season_write(message)
             previous_season = self._season
             self._season = message.season
+            self._season_reported = True
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
-            if self._central or self._attr_hvac_mode in (None, HVACMode.OFF):
+            if self._central or answers_write or self._attr_hvac_mode in (None, HVACMode.OFF):
                 if season_mode in self._attr_hvac_modes:
                     LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
                     self._attr_hvac_mode = season_mode
@@ -1628,11 +1738,26 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             raw_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
             if raw_what in ("0", "1") and not self._central:
                 self._season = SEASON_HEATING if raw_what == "1" else "cooling"
+                self._season_reported = True
                 self._follow_season_change(previous_season)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
-            if message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
+            protection = _CENTRAL_PROTECTION.get(raw_what) if self._central else None
+            if self._central:
+                self._central_operation = protection[0] if protection is not None else None
+            if protection is not None:
+                # *4*102*#0## / *4*202*#0## is the central unit in antifreeze / thermal
+                # protection (WHO 4 p. 5, p. 64): the plant keeps its season and holds the
+                # protection setpoint (live 3550: zone 4 at 7.0 / 35.0 °C), it is not off.
+                # BTicino's client shows it as a status of the season (libqtdevices
+                # thermal_device.cpp WIN_PROTECTION / SUM_PROTECTION).
+                LOGGER.debug("%s %s (%s)", self._gateway_handler.log_id, message.human_readable_log, protection[0])
+                if protection[1] in self._attr_hvac_modes:
+                    self._attr_hvac_mode = protection[1]
+                if self._attr_hvac_action == HVACAction.OFF:
+                    self._attr_hvac_action = HVACAction.IDLE
+            elif message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
                 LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
@@ -1685,6 +1810,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
             if self._central:
                 self._reset_central_status_flags()
+                self._central_operation = None
             prev_mode = self._attr_hvac_mode
             self._remember_season(message)
             self._program = getattr(message, "program", None)

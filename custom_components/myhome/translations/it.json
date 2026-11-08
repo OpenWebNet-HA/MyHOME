@@ -536,6 +536,12 @@
     "fan_speed_zone_only": {
       "message": "{name} non ha una velocità del ventilatore propria: solo una zona (1-99) può averne una"
     },
+    "auto_standalone_zone": {
+      "message": "{name} è un termostato autonomo: la centrale non ha un programma per esso"
+    },
+    "zone_mode_outside_central_season": {
+      "message": "{name} segue la centrale, che è nella stagione {season}: cambia la stagione sulla centrale"
+    },
     "command_delivery_cancelled": {
       "message": "{name}: l'invio del comando di direzione è stato annullato prima di raggiungere il bus"
     },

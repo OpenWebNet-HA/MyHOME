@@ -306,16 +306,22 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
     gateway.send_status_request.assert_called_once()
     assert str(gateway.send_status_request.call_args[0][0]) == "*#4*#0##"
 
-    # 2. Command path: setting mode via HA emits central commands and dispatches signal
+    # 2. Command path: setting mode via HA emits central commands and dispatches signal.
+    # HEAT / COOL only change the season: the mode shown comes from the 3550's answer
+    # (antifreeze / thermal protection, live 3550 2026-11-08).
     await cu.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*4*1*#0##"
+    assert cu.hvac_mode is None
+    cu.handle_event(OWNHeatingEvent("*4*102*#0##"))
     assert cu.hvac_mode == HVACMode.HEAT
     assert central_mode_events[-1] == HVACMode.HEAT
 
     await cu.async_set_hvac_mode(HVACMode.COOL)
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*4*0*#0##"
+    assert cu.hvac_mode == HVACMode.HEAT
+    cu.handle_event(OWNHeatingEvent("*4*202*#0##"))
     assert cu.hvac_mode == HVACMode.COOL
     assert central_mode_events[-1] == HVACMode.COOL
 
@@ -332,6 +338,8 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
     assert central_mode_events[-1] == HVACMode.OFF
 
     # 3. Autonomous operating mode broadcast events update HVACMode and dispatch signal
+    # (later than the 2 s in which a gateway's echo of the last command is expected)
+    cu._central_echo = None
     cu.handle_event(OWNHeatingEvent("*4*110*#0##"))  # Manual heating status event
     assert cu.hvac_mode == HVACMode.HEAT
     assert central_mode_events[-1] == HVACMode.HEAT

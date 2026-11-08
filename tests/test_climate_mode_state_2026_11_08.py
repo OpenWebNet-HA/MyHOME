@@ -1,0 +1,323 @@
+"""Climate mode state from status frames only: live F461 + F455 replay, 2026-11-08.
+
+One SCS bus with a BTicino 3550 99-zone central unit (#0), zone 2 a standalone
+thermostat and zone 4 a zone of the 3550, reached through an F461 2.0.11 and an F455.
+Every service call returned HTTP 200, yet Home Assistant showed the wrong mode:
+
+* the F455 emits ``*4*311*#2##`` after each status report of zone 2, which read as AUTO;
+* a standalone zone's HEAT <-> COOL answer ``*4*0*2##`` / ``*4*1*2##`` was taken as season only;
+* the 3550 answers HEAT / COOL on #0 with antifreeze / thermal protection (102 / 202),
+  which read as OFF, and the optimistic HEAT / COOL stayed on the second press;
+* the F455 hands Home Assistant's own ``*4*0*#0##`` back, which cleared the battery flag;
+* HEAT on a zone of a central in the conditioning season and AUTO on a standalone zone
+  are not answered at all.
+
+Frames: tests/fixtures/traces/climate_mode_2026_11_08/frames.json.
+"""
+
+import json
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.components.climate.const import HVACAction, HVACMode
+from homeassistant.exceptions import ServiceValidationError
+from OWNd.message import OWNEvent
+
+FRAMES = json.loads(
+    (Path(__file__).parent / "fixtures" / "traces" / "climate_mode_2026_11_08" / "frames.json").read_text()
+)
+
+
+def _rx(trace: str) -> list[str]:
+    return [raw for _t, direction, raw in FRAMES[trace] if direction == "rx"]
+
+
+def _tx(trace: str) -> list[str]:
+    return [raw for _t, direction, raw in FRAMES[trace] if direction == "tx"]
+
+
+@pytest.fixture(autouse=True)
+def _entity_base_init() -> Iterator[None]:
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        yield
+
+
+def _gateway(has_central_unit: bool = True) -> MagicMock:
+    gw = MagicMock()
+    gw.mac = "00:03:50:00:00:01"
+    gw.unique_id = gw.mac
+    gw.log_id = "[Test Gateway]"
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    gw.has_central_unit = has_central_unit
+    return gw
+
+
+def _climate(gateway: MagicMock, where: str, *, standalone: bool | None, central: bool = False) -> Any:
+    from custom_components.myhome.climate import MyHOMEClimate
+
+    hass = MagicMock()
+    hass.data = {}
+    entity = MyHOMEClimate(
+        hass=hass,
+        name="Climate",
+        device_id=f"4-{where}",
+        who="4",
+        where=where,
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=standalone,
+        central=central,
+        manufacturer="BTicino",
+        model="Thermostat",
+        gateway=gateway,
+    )
+    entity.platform = MagicMock()
+    entity.entity_id = "climate.test"
+    setattr(entity, "async_schedule_update_ha_state", MagicMock())
+    setattr(entity, "async_write_ha_state", MagicMock())
+    return entity
+
+
+def _replay(entity: Any, frames: list[str]) -> None:
+    for raw in frames:
+        entity.handle_event(OWNEvent.parse(raw))
+
+
+def _sent(gateway: MagicMock) -> list[str]:
+    return [str(call.args[0]) for call in gateway.send.await_args_list]
+
+
+# F1: a standalone zone's state comes from its plain-Z frames, not from the #Z form.
+
+
+def test_f455_trailing_311_does_not_turn_the_standalone_zone_auto() -> None:
+    zone2 = _climate(_gateway(), "2", standalone=True)
+    zone2._attr_hvac_mode = HVACMode.OFF
+    zone2._attr_hvac_action = HVACAction.OFF
+    _replay(zone2, _rx("f455_zone2_heat"))
+    assert zone2.hvac_mode == HVACMode.HEAT
+    assert zone2.target_temperature == 26.5
+
+
+def test_zone_of_the_central_still_takes_its_state_from_the_central() -> None:
+    # *4*what*#Z## from the 3550 is the zone's state (WHO 4 p. 65): it must survive.
+    zone4 = _climate(_gateway(), "4", standalone=False)
+    zone4._attr_hvac_mode = HVACMode.OFF
+    _replay(zone4, _rx("f461_zone4_auto_in_cooling"))
+    assert zone4.hvac_mode == HVACMode.COOL
+    _replay(zone4, ["*4*311*#4##"])
+    assert zone4.hvac_mode == HVACMode.AUTO
+    _replay(zone4, ["*4*203*#4##"])
+    assert zone4.hvac_mode == HVACMode.OFF
+
+
+# F2: the standalone zone's answer to Home Assistant's own mode 1 / 2 setpoint write is its mode.
+
+
+async def test_standalone_heat_to_cool_shows_cool_from_the_thermostat_answer() -> None:
+    gateway = _gateway()
+    zone2 = _climate(gateway, "2", standalone=True)
+    zone2._target_temperature = 26.5
+    _replay(zone2, ["*4*1*2##", "*#4*2*12*0265*3##"])
+    zone2._attr_hvac_mode = HVACMode.HEAT
+    await zone2.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gateway) == _tx("f461_zone2_heat_to_cool")
+    for raw in _rx("f461_zone2_heat_to_cool"):
+        frame = OWNEvent.parse(raw)
+        zone2.handle_event(frame)
+        zone2.handle_event(frame)  # delivered by the climate and the sensor platform
+    assert zone2.hvac_mode == HVACMode.COOL
+    assert zone2.extra_state_attributes["season"] == "conditioning"
+
+
+def test_unsolicited_season_frame_keeps_a_running_standalone_zone() -> None:
+    zone2 = _climate(_gateway(), "2", standalone=True)
+    zone2._attr_hvac_mode = HVACMode.HEAT
+    _replay(zone2, ["*4*0*2##"])
+    assert zone2.hvac_mode == HVACMode.HEAT
+
+
+async def test_season_answer_for_the_other_season_is_not_taken_as_the_mode() -> None:
+    gateway = _gateway()
+    zone2 = _climate(gateway, "2", standalone=True)
+    zone2._target_temperature = 26.5
+    zone2._attr_hvac_mode = HVACMode.HEAT
+    await zone2.async_set_hvac_mode(HVACMode.COOL)
+    _replay(zone2, ["*4*1*2##"])
+    assert zone2.hvac_mode == HVACMode.HEAT
+    _replay(zone2, ["*4*0*2##"])  # the pending write was answered: later frames are season only
+    assert zone2.hvac_mode == HVACMode.HEAT
+
+
+# F3: 102 / 202 on #0 are protection in their season, and HEAT / COOL on #0 waits for the 3550.
+
+
+async def test_central_heat_shows_the_antifreeze_the_3550_answers() -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    _replay(central, _rx("f461_central_cool"))
+    assert central.hvac_mode == HVACMode.COOL
+    assert central.extra_state_attributes["central_operation"] == "thermal_protection"
+
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == _tx("f461_central_heat")
+    assert central.hvac_mode == HVACMode.COOL  # nothing reported yet
+    _replay(central, _rx("f461_central_heat"))
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.hvac_action != HVACAction.OFF
+    attributes = central.extra_state_attributes
+    assert attributes["central_operation"] == "antifreeze"
+    assert attributes["season"] == "heating"
+    assert attributes["battery_fault"] is True
+    assert attributes["remote_control"] == "enabled"
+
+    await central.async_set_hvac_mode(HVACMode.HEAT)  # second press: the 3550 sends nothing
+    assert _sent(gateway)[-1:] == _tx("f461_central_heat_second_press")
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.extra_state_attributes["central_operation"] == "antifreeze"
+
+
+def test_central_protection_does_not_switch_the_zones_off() -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    with patch("custom_components.myhome.climate.async_dispatcher_send") as dispatch:
+        _replay(central, _rx("f461_central_cool"))
+    assert [call.args[2] for call in dispatch.call_args_list] == [HVACMode.COOL]
+
+
+def test_central_operation_clears_on_a_manual_mode_report() -> None:
+    central = _climate(_gateway(), "#0", standalone=None, central=True)
+    _replay(central, _rx("f461_central_heat"))
+    assert central.extra_state_attributes["central_operation"] == "antifreeze"
+    _replay(central, ["*4*110#0215*#0##"])
+    assert "central_operation" not in central.extra_state_attributes
+    assert central.hvac_mode == HVACMode.HEAT
+
+
+async def test_central_off_and_auto_stay_immediate() -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    central._attr_hvac_mode = HVACMode.HEAT
+    await central.async_set_hvac_mode(HVACMode.OFF)
+    assert central.hvac_mode == HVACMode.OFF
+    await central.async_set_hvac_mode(HVACMode.AUTO)
+    assert central.hvac_mode == HVACMode.AUTO
+    assert _sent(gateway) == ["*4*303*#0##", "*4*311*#0##"]
+
+
+# F6: the F455's echo of Home Assistant's own #0 command is not a 3550 report.
+
+
+async def test_f455_echo_of_our_central_command_changes_nothing() -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    first, second = _rx("f455_central_cool"), _rx("f455_central_cool_second_press")
+
+    async def send_and_echo(command: Any) -> None:
+        # The F455 returns the frame before send() is done (1 ms, live). The climate and the
+        # sensor platforms both route WHO 4 frames, so the entity gets the same object twice.
+        echo = OWNEvent.parse(str(command))
+        central.handle_event(echo)
+        central.handle_event(echo)
+
+    gateway.send.side_effect = send_and_echo
+    central._attr_hvac_mode = HVACMode.HEAT
+    central._attr_hvac_action = HVACAction.IDLE
+    await central.async_set_hvac_mode(HVACMode.COOL)
+    assert first[0] == second[0] == _tx("f455_central_cool")[0]
+    assert central.hvac_mode == HVACMode.HEAT  # the echo is not the season report
+    _replay(central, first[1:])
+    assert central.hvac_mode == HVACMode.COOL
+    assert central.extra_state_attributes["battery_fault"] is True
+
+    await central.async_set_hvac_mode(HVACMode.COOL)  # second press, only the echo comes back
+    attributes = central.extra_state_attributes
+    assert attributes["battery_fault"] is True
+    assert attributes["central_operation"] == "thermal_protection"
+    assert central.hvac_mode == HVACMode.COOL
+
+
+async def test_only_one_echo_is_dropped_and_only_while_expected() -> None:
+    gateway = _gateway()
+    central = _climate(gateway, "#0", standalone=None, central=True)
+    await central.async_set_hvac_mode(HVACMode.COOL)
+    _replay(central, ["*4*0*#0##"])  # the echo
+    assert central.extra_state_attributes.get("season") is None
+    _replay(central, ["*4*0*#0##"])  # a second identical frame is a report
+    assert central.hvac_mode == HVACMode.COOL
+
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    with patch("custom_components.myhome.climate.time.monotonic", return_value=float("inf")):
+        _replay(central, ["*4*1*#0##"])  # too late to be the echo
+    assert central.hvac_mode == HVACMode.HEAT
+
+
+# F4: a zone of the central unit runs in the central's season.
+
+
+async def test_heat_on_a_zone_of_the_central_in_conditioning_is_refused() -> None:
+    gateway = _gateway()
+    zone4 = _climate(gateway, "4", standalone=False)
+    _replay(zone4, _rx("f461_zone4_auto_in_cooling"))
+    zone4._target_temperature = 20.5
+    with pytest.raises(ServiceValidationError) as err:
+        await zone4.async_set_hvac_mode(HVACMode.HEAT)
+    assert err.value.translation_key == "zone_mode_outside_central_season"
+    gateway.send.assert_not_awaited()
+    assert zone4.hvac_mode == HVACMode.COOL
+    await zone4.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gateway) == ["*#4*#4*#14*0205*2##"]
+
+
+async def test_zone_of_the_central_with_unknown_season_is_not_restricted() -> None:
+    gateway = _gateway()
+    zone4 = _climate(gateway, "4", standalone=False)
+    zone4._target_temperature = 20.5
+    await zone4.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*#4*#4*#14*0205*1##"]
+
+
+async def test_standalone_zone_is_not_season_restricted() -> None:
+    gateway = _gateway()
+    zone2 = _climate(gateway, "2", standalone=True)
+    _replay(zone2, ["*4*0*2##"])
+    zone2._target_temperature = 26.5
+    await zone2.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*#4*2*#14*0265*1##"]
+
+
+# F5: AUTO is the central unit's program for its zones; a standalone thermostat has none.
+
+
+async def test_auto_on_a_standalone_zone_of_a_plant_with_a_central_is_refused() -> None:
+    gateway = _gateway(has_central_unit=True)
+    zone2 = _climate(gateway, "2", standalone=True)
+    zone2._attr_hvac_mode = HVACMode.HEAT
+    with pytest.raises(ServiceValidationError) as err:
+        await zone2.async_set_hvac_mode(HVACMode.AUTO)
+    assert err.value.translation_key == "auto_standalone_zone"
+    gateway.send.assert_not_awaited()
+    assert zone2.hvac_mode == HVACMode.HEAT
+
+
+async def test_auto_on_a_standalone_zone_without_a_central_keeps_the_setpoint_fallback() -> None:
+    gateway = _gateway(has_central_unit=False)
+    zone2 = _climate(gateway, "2", standalone=True)
+    zone2._target_temperature = 26.5
+    await zone2.async_set_hvac_mode(HVACMode.AUTO)
+    assert _sent(gateway) == ["*#4*2*#14*0265*3##"]
+
+
+async def test_restored_season_alone_does_not_restrict_a_zone_of_the_central() -> None:
+    # After a restart the season comes from the stored state until the zone reports again.
+    gateway = _gateway()
+    zone4 = _climate(gateway, "4", standalone=False)
+    zone4._season = "conditioning"
+    zone4._target_temperature = 20.5
+    await zone4.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*#4*#4*#14*0205*1##"]
