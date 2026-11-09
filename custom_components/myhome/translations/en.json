@@ -600,6 +600,15 @@
     "fan_speed_zone_only": {
       "message": "{name} has no fan speed of its own: only a zone (1-99) takes one"
     },
+    "auto_standalone_zone": {
+      "message": "{name} is a standalone thermostat: the central unit has no program for it"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} follows the central unit, which is in the conditioning season: change the season on the central unit"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} follows the central unit, which is in the heating season: change the season on the central unit"
+    },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
     },

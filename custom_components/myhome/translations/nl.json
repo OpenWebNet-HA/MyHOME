@@ -536,6 +536,15 @@
     "fan_speed_zone_only": {
       "message": "{name} heeft geen eigen ventilatorsnelheid: alleen een zone (1-99) kan er een krijgen"
     },
+    "auto_standalone_zone": {
+      "message": "{name} is een zelfstandige thermostaat: de centrale heeft er geen programma voor"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} volgt de centrale, die in het koelseizoen staat: wijzig het seizoen op de centrale"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} volgt de centrale, die in het stookseizoen staat: wijzig het seizoen op de centrale"
+    },
     "command_delivery_cancelled": {
       "message": "{name}: de aflevering van het richtingscommando is geannuleerd voordat het de bus bereikte"
     },

@@ -176,7 +176,8 @@ async def test_f453av_antifreeze_on_replay(hass: HomeAssistant) -> None:
 
     Verifies that setting Central Unit #0 to Antifreeze via *4*102*#0##:
     1. Replays 112 authentic frames cleanly without errors.
-    2. Sets Central Unit #0 to HVACMode.OFF (antifreeze protection).
+    2. Shows Central Unit #0 in the heating season in antifreeze (102 is protection,
+       not off: WHO 4 p. 5, p. 64), while the zones it puts in antifreeze are OFF (#383).
     3. Replays subordinate zone frames *4*102*#Z## and *4*102*Z##.
     4. Leaves 0 device health faults.
     """
@@ -189,7 +190,11 @@ async def test_f453av_antifreeze_on_replay(hass: HomeAssistant) -> None:
 
     state_0 = hass.states.get("climate.climate_zone_0")
     assert state_0 is not None
-    assert state_0.state == HVACMode.OFF
+    assert state_0.state == HVACMode.HEAT
+    assert state_0.attributes["central_operation"] == "antifreeze"
+    state_3 = hass.states.get("climate.climate_zone_3")
+    assert state_3 is not None
+    assert state_3.state == HVACMode.OFF
 
 
 @pytest.mark.asyncio
@@ -198,7 +203,8 @@ async def test_f453av_one_zone_to_cool_replay(hass: HomeAssistant) -> None:
 
     Verifies that switching from Winter to Summer season into Thermal Protection:
     1. Replays 63 authentic frames cleanly without errors.
-    2. Emits *4*202*#0## putting Central Unit #0 into protection.
+    2. Emits *4*202*#0## putting Central Unit #0 into thermal protection, shown in the
+       conditioning season (202 is protection, not off), while its zones are OFF (#383).
     3. Propagates cooling setpoints *#4*Z*12*0350*3## to zones.
     4. Leaves 0 device health faults.
     """
@@ -211,7 +217,11 @@ async def test_f453av_one_zone_to_cool_replay(hass: HomeAssistant) -> None:
 
     state_0 = hass.states.get("climate.climate_zone_0")
     assert state_0 is not None
-    assert state_0.state == HVACMode.OFF
+    assert state_0.state == HVACMode.COOL
+    assert state_0.attributes["central_operation"] == "thermal_protection"
+    state_3 = hass.states.get("climate.climate_zone_3")
+    assert state_3 is not None
+    assert state_3.state == HVACMode.OFF
 
 
 @pytest.mark.asyncio

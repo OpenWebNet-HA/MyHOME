@@ -201,6 +201,7 @@ __all__ = [
     "is_actuator_where",
     "is_apl_address",
     "is_central_thermo_where",
+    "is_central_unit_report",
     "is_probe",
     "is_pump",
     "is_valid_hs_tuple",
@@ -288,6 +289,34 @@ def is_central_thermo_where(message: Any) -> bool:
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
     head = raw.removeprefix("#").split("#", 1)[0]
     return raw.startswith("#") and head.isdigit() and not is_probe(head)
+
+
+# Zone operation mode by central unit with its season (WHO 4 p. 65, 1.9.4; p. 9): 110 / 210
+# manual, 111 / 211 automatic, 103 / 203 off, 102 / 202 protection. The generic 310 / 311
+# (p. 9 lists them on the monitor session too) are also the command text, and an F455
+# makes up *4*311*#Z## for a standalone thermostat; the live 3550 reported its zone 4 as
+# *4*210*#4##, also in its quarter-hour push, so a central unit is still found.
+_CENTRAL_ZONE_STATUS_WHATS = frozenset({"110", "210", "111", "211", "103", "203", "102", "202"})
+
+
+def is_central_unit_report(message: Any) -> bool:
+    """Whether a WHO=4 frame shows that the plant has a central unit.
+
+    ``#0`` and ``#0#N`` are the central unit itself (WHO 4 p. 6, p. 64). A ``#Z`` frame counts
+    when it is a dimension or a zone status with its season (WHO 4 p. 65). A generic one does
+    not: an F455 puts ``*4*311*#2##`` on its event session after every status of a standalone
+    thermostat, on a plant with or without a central unit (live, 2026-11-08).
+    """
+    if not is_central_thermo_where(message):
+        return False
+    raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
+    if raw.removeprefix("#").split("#", 1)[0] == "0":
+        return True
+    frame = str(message)
+    if not frame.startswith("*4*"):
+        return True
+    what = frame.split("*")[2].split("#", 1)[0]
+    return what in _CENTRAL_ZONE_STATUS_WHATS
 
 
 def canonical_point_spelling(where: str) -> str:

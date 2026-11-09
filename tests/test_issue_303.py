@@ -574,8 +574,10 @@ async def test_central_unit_async_set_hvac_mode(hass: HomeAssistant, mock_gatewa
 
     for mode in [HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO, HVACMode.OFF]:
         mock_gateway.send.reset_mock()
+        before = central.hvac_mode
         await central.async_set_hvac_mode(mode)
-        assert central.hvac_mode == mode
+        # HEAT / COOL only change the season; the 3550's answer sets the mode shown.
+        assert central.hvac_mode == (before if mode in (HVACMode.HEAT, HVACMode.COOL) else mode)
         mock_gateway.send.assert_awaited_once()
 
     # Invalid mode does nothing
