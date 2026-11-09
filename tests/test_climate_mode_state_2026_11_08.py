@@ -111,8 +111,10 @@ def test_zone_of_the_central_still_takes_its_state_from_the_central() -> None:
     zone4._attr_hvac_mode = HVACMode.OFF
     _replay(zone4, _rx("f461_zone4_auto_in_cooling"))
     assert zone4.hvac_mode == HVACMode.COOL
+    # The generic *4*311*#4## is not the zone's state (2026-11-09: F455 / MH201 synthetic frame
+    # before the 3550's seasonal status); the seasonal *4*210*#4## / *4*203*#4## are.
     _replay(zone4, ["*4*311*#4##"])
-    assert zone4.hvac_mode == HVACMode.AUTO
+    assert zone4.hvac_mode == HVACMode.COOL
     _replay(zone4, ["*4*203*#4##"])
     assert zone4.hvac_mode == HVACMode.OFF
 
@@ -461,7 +463,8 @@ async def test_identical_central_answer_after_the_echo_window_is_a_report() -> N
     later = climate_module.time.monotonic() + 0.121  # the 3550's first answer came after 121 ms
     with patch("custom_components.myhome.climate.time.monotonic", return_value=later):
         _replay(central, ["*4*303*#0##"])
-    assert central.extra_state_attributes["battery_fault"] is False  # its burst starts over
+    # a mode frame alone does not clear the 3550's flags: only a settled 20 / 21 burst does (2026-11-09)
+    assert central.extra_state_attributes["battery_fault"] is True
     assert central.hvac_mode == HVACMode.OFF
 
 

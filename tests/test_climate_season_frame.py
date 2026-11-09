@@ -75,6 +75,9 @@ def _climate(mock_gateway, central=False, where="01"):
 
 def test_auto_zone_keeps_auto_on_season_frame(mock_gateway, mock_entity_base_init):
     climate = _climate(mock_gateway)
+    # AUTO as set by Home Assistant or restored: the generic *4*311*#01## is not a zone state
+    # (2026-11-09, F455 / MH201 synthetic frame before the seasonal status).
+    climate._attr_hvac_mode = HVACMode.AUTO
     climate.handle_event(OWNEvent.parse("*4*311*#01##"))
     assert climate.hvac_mode == HVACMode.AUTO
     climate.handle_event(_season_event("*4*1*01##", SEASON_HEATING, "01"))
