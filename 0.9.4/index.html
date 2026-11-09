@@ -1539,17 +1539,14 @@ To upgrade your existing v0.9.4 plant to v2, see the <a href="../beta/migration/
 <p>This integration connects your BTicino / Legrand MyHOME bus and OpenWebNet gateway directly to Home Assistant.</p>
 <hr />
 <h2 id="supported-gateways">🏛️ Supported Gateways<a class="headerlink" href="#supported-gateways" title="Permanent link">&para;</a></h2>
-<p>The integration communicates with the SCS bus using an OpenWebNet IP or serial gateway:</p>
+<p>The integration communicates with the SCS bus using an OpenWebNet TCP/IP gateway:</p>
 <ul>
 <li><strong>IP Gateways</strong>:</li>
 <li><strong>F454</strong>: Standard IP gateway / web server (recommended)</li>
 <li><strong>MH202 / MH200 / MH201</strong>: Scenario programmers and IP gateways</li>
 <li><strong>MyHomeServer1</strong>: Modern IP gateway</li>
-<li><strong>F455</strong>: Basic IP gateway</li>
+<li><strong>F455 / F461</strong>: Compact DIN IP gateways</li>
 <li><strong>F452 / F453</strong>: Older web server gateways</li>
-<li><strong>USB / Serial Gateways</strong>:</li>
-<li><strong>Legrand 3578 USB</strong>: USB-to-SCS gateway</li>
-<li><strong>F461</strong>: Serial-to-SCS gateway</li>
 </ul>
 <hr />
 <h2 id="configuration-overview-v09x">⚙️ Configuration Overview (v0.9.x)<a class="headerlink" href="#configuration-overview-v09x" title="Permanent link">&para;</a></h2>
