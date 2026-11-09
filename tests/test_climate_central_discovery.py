@@ -500,11 +500,13 @@ async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: H
     )
     cu.entity_id = "climate.central_unit_0"
     cu.async_write_ha_state = MagicMock()
+    cu.platform = MagicMock()  # live: the flag cycle runs on its timer
 
     # 1. Replay the exact MH200N + 3550 *#4*#0## status burst from Discussion #819:
     # *4*1101*#0##, *4*20*#0##, *4*30*#0##, *4*31*#0##, *4*22*#0##
     for raw in ("*4*1101*#0##", "*4*20*#0##", "*4*30*#0##", "*4*31*#0##", "*4*22*#0##"):
         cu.handle_event(OWNHeatingEvent(raw))
+    await _settle_burst(hass)
 
     attrs = cu.extra_state_attributes
     assert cu.hvac_mode == HVACMode.HEAT
@@ -528,6 +530,9 @@ async def test_3550_central_unit_diagnostic_attributes_and_state_restore(hass: H
     # while one probe is in antifreeze (*4*23*#0##) and one is in manual (*4*24*#0##)
     for raw in ("*4*1101*#0##", "*4*21*#0##", "*4*23*#0##", "*4*24*#0##"):
         cu.handle_event(OWNHeatingEvent(raw))
+    # Until the burst settles, the flags of the previous burst stay (no False / True flip).
+    assert cu.extra_state_attributes["battery_fault"] is True
+    await _settle_burst(hass)
 
     attrs2 = cu.extra_state_attributes
     assert attrs2["remote_control"] == "enabled"
@@ -903,6 +908,7 @@ async def test_3550_central_unit_burst_and_diagnostic_edge_cases(hass: HomeAssis
     )
     cu.entity_id = "climate.central_unit_0"
     cu.async_write_ha_state = MagicMock()
+    cu.platform = MagicMock()  # live: the flag cycle runs on its timer
 
     # 1. Burst with all 7 diagnostic flags simultaneously active:
     burst_all = (
@@ -916,6 +922,7 @@ async def test_3550_central_unit_burst_and_diagnostic_edge_cases(hass: HomeAssis
     )
     for raw in burst_all:
         cu.handle_event(OWNHeatingEvent(raw))
+    await _settle_burst(hass)
 
     attrs = cu.extra_state_attributes
     assert attrs["remote_control"] == "disabled"
@@ -925,24 +932,36 @@ async def test_3550_central_unit_burst_and_diagnostic_edge_cases(hass: HomeAssis
     assert attrs["failure_detected"] is True
     assert attrs["battery_fault"] is True
 
-    # 2. Next burst starts with MESSAGE_TYPE_SEASON (*4*1*#0##):
+    # 2. A season frame alone (another client's *4*1*#0##, or the 3550's mode before its
+    # remote-control frame) does not touch the flags: only a settled 20 / 21 burst clears them.
     cu.handle_event(OWNHeatingEvent("*4*1*#0##"))
     attrs_season = cu.extra_state_attributes
     assert attrs_season["remote_control"] == "disabled"
-    assert attrs_season["at_least_one_probe_off"] is False
-    assert attrs_season["at_least_one_probe_antifreeze"] is False
-    assert attrs_season["at_least_one_probe_manual"] is False
-    assert attrs_season["failure_detected"] is False
-    assert attrs_season["battery_fault"] is False
+    assert attrs_season["at_least_one_probe_off"] is True
+    assert attrs_season["failure_detected"] is True
+    assert attrs_season["battery_fault"] is True
 
-    # *4*21*#0## explicitly enables remote control
+    # *4*21*#0## explicitly enables remote control; no flag follows it, so the burst clears them
     cu.handle_event(OWNHeatingEvent("*4*21*#0##"))
     assert cu.extra_state_attributes["remote_control"] == "enabled"
+    assert cu.extra_state_attributes["battery_fault"] is True
+    await _settle_burst(hass)
+    attrs_clear = cu.extra_state_attributes
+    assert attrs_clear["at_least_one_probe_off"] is False
+    assert attrs_clear["at_least_one_probe_antifreeze"] is False
+    assert attrs_clear["at_least_one_probe_manual"] is False
+    assert attrs_clear["failure_detected"] is False
+    assert attrs_clear["battery_fault"] is False
 
-    # 3. Burst starting with MESSAGE_TYPE_MODE_TARGET (*4*1101#10*#0## - holiday mode):
-    cu.handle_event(OWNHeatingEvent("*4*31*#0##"))
+    # 3. Holiday mode burst (*4*1101#10*#0##) with the battery flag after the 20 frame
+    for raw in ("*4*1101#10*#0##", "*4*20*#0##", "*4*31*#0##"):
+        cu.handle_event(OWNHeatingEvent(raw))
+    assert cu.extra_state_attributes["battery_fault"] is True
+    await _settle_burst(hass)
     assert cu.extra_state_attributes["battery_fault"] is True
     cu.handle_event(OWNHeatingEvent("*4*1101#10*#0##"))
+    cu.handle_event(OWNHeatingEvent("*4*20*#0##"))
+    await _settle_burst(hass)
     assert cu.extra_state_attributes["battery_fault"] is False
 
     # 4. Unknown WHAT code (e.g. WHAT 99): ignored without error
@@ -1034,3 +1053,12 @@ async def test_is_central_thermo_where_and_routing_edge_cases(hass: HomeAssistan
     assert str(gateway.send_status_request.call_args[0][0]) == "*#4*1##"
 
 
+async def _settle_burst(hass: HomeAssistant) -> None:
+    """Let the central unit's flag cycle (``_CENTRAL_FLAGS_SETTLE``) run out."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2))
+    await hass.async_block_till_done()

@@ -22,6 +22,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import (
     CLIMATE_MODE_AUTO,
@@ -133,6 +134,20 @@ _CENTRAL_GENERIC_PROTECTION = "302"
 # frame equal to the command that arrives later, from the central unit or another client,
 # is still taken as a report.
 _CENTRAL_ECHO_WINDOW = 0.1
+# While the command is still queued or in flight (its ``written`` future not done) the echo has
+# no deadline yet; past this time the gateway's command pool has given up on it
+# (gateway.PACED_WRITE_TIMEOUT), so the echo is no longer expected.
+_CENTRAL_ECHO_PENDING_LIMIT = 60.0
+# The 3550's status reply is its mode, then *4*20*#0## / *4*21*#0## (remote control), then
+# only the optional flags that are active (*4*22..24*#0##, *4*30*#0##, *4*31*#0##; WHO 4 p. 5,
+# p. 24-25). No frame says a flag is clear, so a flag that does not follow a 20 / 21 frame
+# within this time is clear. Live F461 and F455, 2026-11-08 / 11-09: 31 came 0-1 ms after 21.
+_CENTRAL_FLAGS_SETTLE = 1.0
+_CENTRAL_FLAG_WHATS = (22, 23, 24, 30, 31)
+# A generic *4*310/311*#Z## frame waits this long for the zone's seasonal status. An F455 put its
+# synthetic *4*311*#4## 59-61 ms before *4*210*#4## / *4*203*#4## / *4*202*#4## (18 of 18, live
+# 2026-11-08 / 11-09); a generic frame with no seasonal status after it is the zone's state (WHO 4 p. 9).
+_GENERIC_ZONE_FRAME_HOLD = 0.5
 _CONDITIONING_SEASONS = (SEASON_CONDITIONING, "cooling")
 
 # How long the fan speed poll waits for the one-shot dimension 19 answer (*#4*Z*19##,
@@ -638,7 +653,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._central_operation: str | None = None
         # Central unit: Home Assistant's last command and when its local echo stops being expected,
         # and the echo frame once seen (the same frame object can be delivered more than once).
-        self._central_echo: tuple[str, float] | None = None
+        self._central_echo: tuple[str, float | None, float] | None = None
         self._central_echo_seen: object | None = None
         self._program: int | None = None
         self._holiday_days: int | None = None
@@ -665,6 +680,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._at_least_one_probe_manual: bool = False
         self._failure_detected: bool = False
         self._battery_fault: bool = False
+        # The optional flags seen since the last 20 / 21 frame, and the timer that clears the others.
+        self._central_flags_seen: set[int] = set()
+        self._central_flags_unsub: Any = None
+        # A generic *4*310/311*#Z## frame held back until the zone's seasonal status shows whether
+        # it was only a prelude, the timer that applies it otherwise, and the frame being applied.
+        self._generic_zone_frame_unsub: Any = None
+        self._generic_zone_frame_release: object | None = None
 
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_hvac_action: HVACAction | None = None
@@ -1174,7 +1196,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if target_hass is not None:
             if self._central:
                 self._clear_unresponsive_issue()
-            elif self._standalone_config is not True:
+                self.async_on_remove(self._cancel_central_flag_cycle)
+            else:
+                self.async_on_remove(self._cancel_generic_zone_frame)
+            if not self._central and self._standalone_config is not True:
                 self.async_on_remove(
                     async_dispatcher_connect(
                         target_hass,
@@ -1398,21 +1423,58 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         ):
             self._local_target_temperature = self._target_temperature + self._local_offset
 
-    def _reset_central_status_flags(self) -> None:
-        """Reset optional central unit (#0) flags at the start of a new mode/status burst (#819).
+    def _begin_central_flag_cycle(self) -> None:
+        """Start collecting the 3550's optional flags after its remote-control frame (#819).
 
-        On ``*#4*#0##`` (and unsolicited ``#0`` status bursts), the BTicino 3550 emits its
-        operating mode frame first (``*4*1101*#0##``, ``*4*102*#0##``, etc.), followed by
-        ``WHAT 20``/``21`` and whichever optional fault/probe flags (``WHAT 22, 23, 24, 30, 31``)
-        are currently active. Optional flags have no separate all-clear code and are simply
-        omitted once resolved.
+        On ``*#4*#0##`` (and unsolicited ``#0`` bursts) the 3550 sends its operating mode,
+        ``WHAT 20``/``21``, then whichever optional flags (``WHAT 22, 23, 24, 30, 31``) are
+        active (WHO 4 p. 24-25). A flag has no all-clear code; it is omitted once resolved.
+        The flags are not cleared here: clearing them at the start of the burst wrote
+        ``battery_fault`` False and, 2 ms later, True on every reply of a 3550 without a
+        battery (live F461 + F455, 2026-11-09). A flag still missing when the burst has
+        settled is cleared by ``_settle_central_flags``. A second copy of the same frame
+        (climate and sensor platform routing) does not restart an open cycle.
         """
-        self._at_least_one_probe_off = False
-        self._at_least_one_probe_antifreeze = False
-        self._at_least_one_probe_manual = False
-        self._failure_detected = False
-        self._battery_fault = False
-        self._clear_fault(FaultKind.CENTRAL_BATTERY_FAULT)
+        if self._central_flags_unsub is not None:
+            return
+        self._central_flags_seen = set()
+        if self.hass is None or self.platform is None or not self.entity_id:
+            # Not live yet (discovery seed, restore): nothing is written in between, so there is
+            # no flip to avoid; the flags of this burst follow directly.
+            self._settle_central_flags(None)
+            return
+        self._central_flags_unsub = async_call_later(self.hass, _CENTRAL_FLAGS_SETTLE, self._settle_central_flags)
+
+    @callback
+    def _settle_central_flags(self, _now: Any) -> None:
+        """Clear the optional central flags the last burst did not report."""
+        self._central_flags_unsub = None
+        seen = self._central_flags_seen
+        before = self._central_flag_values()
+        self._at_least_one_probe_off = 22 in seen
+        self._at_least_one_probe_antifreeze = 23 in seen
+        self._at_least_one_probe_manual = 24 in seen
+        self._failure_detected = 30 in seen
+        self._battery_fault = 31 in seen
+        if not self._battery_fault:
+            self._clear_fault(FaultKind.CENTRAL_BATTERY_FAULT)
+        if self._central_flag_values() != before:
+            self._publish_state()
+
+    def _central_flag_values(self) -> tuple[bool, ...]:
+        return (
+            self._at_least_one_probe_off,
+            self._at_least_one_probe_antifreeze,
+            self._at_least_one_probe_manual,
+            self._failure_detected,
+            self._battery_fault,
+        )
+
+    @callback
+    def _cancel_central_flag_cycle(self) -> None:
+        if self._central_flags_unsub is not None:
+            self._central_flags_unsub()
+            self._central_flags_unsub = None
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
@@ -1431,13 +1493,26 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     where=self._where,
                     mode=cmd_mode,
                 )
-                # Set before sending: the echo can arrive while send() is still awaited.
-                self._central_echo = (str(command), time.monotonic() + _CENTRAL_ECHO_WINDOW)
+                # Armed before sending, without a deadline: the echo can arrive while the frame
+                # waits in the command pool or while send() is still awaited. The window starts
+                # when the frame is written (the ``written`` future's result), not now, so a busy
+                # CommandWorkerPool does not push the echo out of it.
+                frame = str(command)
+                armed_at = time.monotonic()
+                self._central_echo = (frame, None, armed_at)
                 try:
-                    await self._gateway_handler.send(command)
+                    written: Any = await self._gateway_handler.send(command)
                 except BaseException:
                     self._central_echo = None
                     raise
+                if isinstance(written, asyncio.Future):
+
+                    def _on_written(future: "asyncio.Future[float]", armed_at: float = armed_at) -> None:
+                        self._anchor_central_echo(armed_at, future)
+
+                    written.add_done_callback(_on_written)
+                else:
+                    self._anchor_central_echo(armed_at, None)
                 if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
                     # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
                     # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
@@ -1645,6 +1720,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._show_nominal()
 
     @callback
+    def _anchor_central_echo(self, armed_at: float, written: "asyncio.Future[float] | None") -> None:
+        """Start the echo window at the time the command was written (MyHOMEGatewayHandler.send).
+
+        The future resolves to the monotonic time taken just before the frame went on the
+        socket; it is cancelled when the frame is never written, and then no echo comes.
+        Without a future (a gateway double, a delegated send) the window starts now. Only the
+        command armed at ``armed_at`` is anchored: a later command, even the same frame, keeps
+        waiting for its own write.
+        """
+        echo = self._central_echo
+        if echo is None or echo[2] != armed_at:
+            return
+        frame = echo[0]
+        if written is None:
+            self._central_echo = (frame, time.monotonic() + _CENTRAL_ECHO_WINDOW, echo[2])
+            return
+        if written.cancelled() or written.exception() is not None:
+            self._central_echo = None
+            return
+        self._central_echo = (frame, float(written.result()) + _CENTRAL_ECHO_WINDOW, echo[2])
+
+    @callback
     def _is_own_central_echo(self, message: OWNHeatingEvent) -> bool:
         """Whether ``message`` is the gateway handing back Home Assistant's own central command.
 
@@ -1663,8 +1760,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         echo = self._central_echo
         if echo is None:
             return False
-        frame, deadline = echo
-        if time.monotonic() > deadline:
+        frame, deadline, armed_at = echo
+        now = time.monotonic()
+        if (deadline is None and now - armed_at > _CENTRAL_ECHO_PENDING_LIMIT) or (
+            deadline is not None and now > deadline
+        ):
             self._central_echo = None
             return False
         if str(message) != frame:
@@ -1686,6 +1786,63 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return False
         return is_central_thermo_where(message)
 
+    def _is_generic_central_zone_frame(self, message: OWNHeatingEvent) -> bool:
+        """Whether a ``*4*310*#Z##`` / ``*4*311*#Z##`` frame reaches a zone of the central unit.
+
+        WHO 4 p. 9 lists 310 / 311 (manual / automatic generic) both as the command that sets a
+        zone of the central and as a monitor frame. The 3550 reports its zones' state with the
+        season in the code: ``*4*111*#1##`` for a zone in automatic heating, also as its answer to
+        ``*4*311*#1##`` (MH200N, #466), ``*4*110*#3##`` (F454, #697), ``*4*210*#4##`` (F461, 0 generic
+        frames in 525, 2026-11-08 / 11-09). An F455 and an MH201 put a generic ``*4*311*#Z##`` on
+        their event session right before the zone's real status (``*4*210*#4##`` 59 ms later on the
+        F455, ``*4*110*#4##`` on the MH201): live F455, 2026-11-09 07:45:02, at every quarter-hour
+        push of the 3550, where the F461 shows ``*#4*#4*14*0240*2##`` instead. Taken as the zone's
+        state it turned the zone AUTO and back every 15 minutes. So the generic frame is held
+        (``_GENERIC_ZONE_FRAME_HOLD``): a seasonal status of the zone that follows replaces it, and
+        only a generic frame with none after it is taken as the zone's state.
+        """
+        if self._central or message.message_type != MESSAGE_TYPE_MODE:
+            return False
+        if not is_central_thermo_where(message):
+            return False
+        raw = str(message)  # a MESSAGE_TYPE_MODE frame is *4*WHAT*WHERE##
+        where = raw.split("*")[3] if raw.count("*") >= 3 else ""
+        if where.removeprefix("#").split("#", 1)[0] == "0":
+            return False
+        return raw.split("*")[2] in ("310", "311")
+
+    def _hold_generic_zone_frame(self, message: OWNHeatingEvent) -> bool:
+        """Hold a generic ``#Z`` frame until the zone's seasonal status shows it was a prelude.
+
+        Returns False when the entity is not live yet (nothing to hold it on); the frame is
+        then handled at once, as before.
+        """
+        if self.hass is None or self.platform is None or not self.entity_id:
+            return False
+        self._cancel_generic_zone_frame()
+        LOGGER.debug(
+            "%s %s: generic mode frame for %s via the central unit; waiting for its seasonal status",
+            self._gateway_handler.log_id,
+            message,
+            self._display_name,
+        )
+
+        @callback
+        def _apply(_now: Any) -> None:
+            self._generic_zone_frame_unsub = None
+            self._generic_zone_frame_release = message
+            self.handle_event(message)
+
+        self._generic_zone_frame_unsub = async_call_later(self.hass, _GENERIC_ZONE_FRAME_HOLD, _apply)
+        return True
+
+    @callback
+    def _cancel_generic_zone_frame(self) -> None:
+        """Drop a held generic frame: the zone's own status came, or the entity goes away."""
+        if self._generic_zone_frame_unsub is not None:
+            self._generic_zone_frame_unsub()
+            self._generic_zone_frame_unsub = None
+
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
         if self._central and self._is_own_central_echo(message):
@@ -1705,6 +1862,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._display_name,
             )
             return
+        if message is self._generic_zone_frame_release:
+            self._generic_zone_frame_release = None
+        elif self._is_generic_central_zone_frame(message):
+            if self._hold_generic_zone_frame(message):
+                return
+        elif message.message_type in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+            self._cancel_generic_zone_frame()
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
             LOGGER.debug(
                 "%s %s",
@@ -1800,8 +1964,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # same mode (live F455 + F461, 2026-11-08), and a stale restored AUTO is replaced.
             # An AUTO the zone itself reported (a MyHomeServer1 schedule, Dimension 7 context
             # automatic) is not cancelled: the season frame that follows it is its season.
-            if self._central:
-                self._reset_central_status_flags()
             standalone_mode = self._standalone and not (
                 self._attr_hvac_mode == HVACMode.AUTO and not self._hvac_mode_restored
             )
@@ -1839,8 +2001,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
-            if self._central:
-                self._reset_central_status_flags()
             self._hvac_mode_restored = False  # the zone itself says what it runs in
             prev_mode = self._attr_hvac_mode
             previous_season = self._season
@@ -1924,7 +2084,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
             if self._central:
-                self._reset_central_status_flags()
                 self._central_operation = None
             self._hvac_mode_restored = False
             prev_mode = self._attr_hvac_mode
@@ -2128,6 +2287,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 getattr(message, "human_readable_log", str(message)),
             )
+            if diag_what in (20, 21):
+                self._begin_central_flag_cycle()
+            elif diag_what in _CENTRAL_FLAG_WHATS:
+                self._central_flags_seen.add(diag_what)
             if diag_what == 20:
                 self._remote_control = "disabled"
                 self._report_fault(FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, code="20")
