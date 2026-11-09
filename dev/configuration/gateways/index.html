@@ -2718,7 +2718,7 @@
 <p>This guide details the network connection, authentication, and resilience architecture for Legrand / BTicino OpenWebNet gateways in Home Assistant.</p>
 <hr />
 <h2 id="supported-gateway-hardware">🏛️ Supported Gateway Hardware<a class="headerlink" href="#supported-gateway-hardware" title="Permanent link">&para;</a></h2>
-<p>The MyHOME integration communicates with SCS bus gateways over TCP/IP or RS232/USB serial:</p>
+<p>The MyHOME integration communicates with SCS bus gateways over TCP/IP:</p>
 <!-- GATEWAY_PROFILES_START -->
 <table>
 <thead>
@@ -2820,14 +2820,6 @@
 <td>✅ SSDP</td>
 <td>Colour touch screen IP gateway (Axolute / LivingLight)</td>
 </tr>
-<tr>
-<td><strong>Legrand 3578</strong></td>
-<td>OpenWebNet (Serial)</td>
-<td>1 worker</td>
-<td>50 ms</td>
-<td>❌ Manual (Serial)</td>
-<td>USB / Serial gateway &amp; OpenZigBee interface</td>
-</tr>
 </tbody>
 </table>
 <!-- GATEWAY_PROFILES_END -->
@@ -2872,13 +2864,6 @@
 <td style="text-align: center;">String</td>
 <td style="text-align: center;">None</td>
 <td style="text-align: left;">OpenWebNet password. Can be numeric (4 or 9 digits) or alphanumeric depending on gateway model and firmware. For <strong>MyHomeServer1</strong>, use the installer password configured in MyHOME_Up. Leave blank if open LAN is active.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Serial Device</strong></td>
-<td style="text-align: left;"><code>device</code></td>
-<td style="text-align: center;">String</td>
-<td style="text-align: center;">None</td>
-<td style="text-align: left;">Port path (e.g. <code>/dev/ttyUSB0</code> or <code>COM3</code>) when connecting via BTicino 3578 USB/Serial interface.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Gateway Model</strong></td>
@@ -3063,7 +3048,7 @@
 <ul>
 <li><strong>Range</strong>: <code>1</code> to <code>10</code> (Default: <code>1</code>).</li>
 <li>Dynamically capped and validated against the gateway model's hardware limit:</li>
-<li><strong>1 worker</strong>: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Legrand 3578 Serial, Generic.</li>
+<li><strong>1 worker</strong>: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Generic.</li>
 <li><strong>2 workers</strong>: MH202.</li>
 <li><strong>Up to 4 workers</strong>: F454, F455, F461, MyHomeServer1.</li>
 <li>Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.</li>
@@ -3141,11 +3126,6 @@
 <td style="text-align: left;">Authoritative</td>
 </tr>
 <tr>
-<td style="text-align: left;"><code>serial</code></td>
-<td style="text-align: left;">USB/serial interface (Legrand 3578): model fixed by the transport</td>
-<td style="text-align: left;">Authoritative</td>
-</tr>
-<tr>
 <td style="text-align: left;"><code>manual</code></td>
 <td style="text-align: left;">You picked the model in the config flow</td>
 <td style="text-align: left;">Trusted, but correctable by certain evidence</td>
@@ -3161,7 +3141,7 @@
 <p>Rules applied when the reply arrives:</p>
 <ul>
 <li><strong>Compatible model</strong> (e.g. configured MH200 with code <code>4</code>, or configured F454 / MyHOMEServer1 with code <code>200</code>): consistent, nothing changes. A model the tables list by name must match by name or brand variant: an MH200N has a code of its own (<code>44</code>), so code <code>4</code> contradicts it. Only a variant suffix no table lists is compared by family and never downgraded.</li>
-<li><strong><code>ssdp</code> / <code>serial</code> contradicted</strong>: model kept; a repair issue <em>asks</em> you to confirm.</li>
+<li><strong><code>ssdp</code> contradicted</strong>: model kept; a repair issue <em>asks</em> you to confirm.</li>
 <li><strong><code>manual</code> contradicted by an official code</strong>: model, profile and device registry are corrected and a repair issue tells you (the old manual flow defaulted to F454, which is how mislabelled entries came to exist).</li>
 <li><strong><code>manual</code> contradicted by an observed-only code</strong>: model kept; a repair issue asks you to confirm.</li>
 <li><strong>No model configured</strong>: labelled from an official code; ambiguous codes (such as <code>200</code>) do not auto-label and keep the gateway as generic.</li>

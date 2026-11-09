@@ -2307,7 +2307,7 @@
     title MyHOME Integration Status &amp; Roadmap
     dateFormat  YYYY-MM-DD
     section Delivered in Phase 1 &amp; 2 (b1 – b8)
-    Dual Async Transports &amp; Core Architecture (P1)   :done, 2026-08-01, 2026-09-01
+    Async TCP Transport &amp; Core Architecture (P1)     :done, 2026-08-01, 2026-09-01
     Lovelace In-Band Bus Monitor Card (&lt;myhome-bus-card&gt;) :done, 2026-08-15, 2026-09-10
     Standalone OWNd Library &amp; Master WHO Catalog     :done, 2026-09-01, 2026-09-10
     section Delivered in Phase 3 &amp; 4 (b9 – b13)
@@ -2552,7 +2552,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
         GW_F461["🟢 F461&lt;br/&gt;(DALI DIN Web Server)"]
         GW_H4890["🟢 H4890 / AM4890&lt;br/&gt;(Touchscreen IP gateway #466)"]
         GW_F455["🟢 F455&lt;br/&gt;(Physical plant capture #466)"]
-        GW_3578["🟡 Legrand 3578&lt;br/&gt;(Serial/ZigBee Loopback)"]
+        GW_3578["🔴 Legrand 3578&lt;br/&gt;(Deferred to v2.1+ · #879)"]
     end
 
     subgraph Subsystems["⚙️ Protocol Subsystems &amp; Scenarios"]
@@ -2603,10 +2603,10 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
     SUB_ROUTER --&gt; HARNESS
 
     classDef covered fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
-    classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
+    classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
     class GW_MHS1,GW_F454,GW_MH200,GW_MH202,GW_F461,GW_H4890,GW_F455,SUB_LIGHT,SUB_DALI,SUB_F418,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_CU4695,SUB_FANCOIL,SUB_ENERGY,SUB_DRY,SUB_CEN,SUB_AUDIO,SUB_ALARM,SUB_ROUTER covered;
-    class GW_3578 partial;</code></pre>
+    class GW_3578 needed;</code></pre>
 <hr />
 <h3 id="table-1-gateway-models-hardware-transports">🏛️ Table 1: Gateway Models &amp; Hardware Transports<a class="headerlink" href="#table-1-gateway-models-hardware-transports" title="Permanent link">&para;</a></h3>
 <table>
@@ -2663,9 +2663,9 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 </tr>
 <tr>
 <td><strong>Legrand 3578 USB/Serial</strong></td>
-<td>🟡 <strong>Profile Verified</strong></td>
-<td>Loopback transport tests in <code>tests/test_gateway.py</code></td>
-<td><strong>Real-world USB serial stream</strong>: Raw byte capture from physical OpenZigBee installation (<code>WHERE=&lt;id&gt;#9</code>).</td>
+<td>🔴 <strong>Deferred (v2.1+)</strong></td>
+<td>Deferred out of <code>v2.0.0</code> (<a href="https://github.com/orgs/OpenWebNet-HA/discussions/879">Discussion #879</a>)</td>
+<td><strong>Hardware tester &amp; raw serial stream</strong>: Active tester + raw byte capture (<code>#466</code>) from physical OpenZigBee installation (<code>WHERE=&lt;id&gt;#9</code>).</td>
 </tr>
 </tbody>
 </table>
