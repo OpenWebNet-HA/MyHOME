@@ -6,7 +6,7 @@ This guide details the network connection, authentication, and resilience archit
 
 ## 🏛️ Supported Gateway Hardware
 
-The MyHOME integration communicates with SCS bus gateways over TCP/IP or RS232/USB serial:
+The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 
 <!-- GATEWAY_PROFILES_START -->
 | Gateway Model | Protocol Support | Max Command Workers | Inter-Frame Delay | UPnP Discovery | Notes |
@@ -22,7 +22,6 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP or RS232/U
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
 | **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
-| **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
 
 ---
@@ -41,7 +40,6 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP or RS232/U
 | **Host** | `host` | String | - | IPv4 address or hostname of the OpenWebNet gateway (e.g. `192.168.1.50`). A static IP or permanent DHCP reservation is strongly advised. |
 | **Port** | `port` | Integer | `20000` | TCP port for the OpenWebNet service (standard default is `20000`). |
 | **Password** | `password` | String | None | OpenWebNet password. Can be numeric (4 or 9 digits) or alphanumeric depending on gateway model and firmware. For **MyHomeServer1**, use the installer password configured in MyHOME_Up. Leave blank if open LAN is active. |
-| **Serial Device** | `device` | String | None | Port path (e.g. `/dev/ttyUSB0` or `COM3`) when connecting via BTicino 3578 USB/Serial interface. |
 | **Gateway Model** | `model` | Select | Auto-detected | Hardware model (e.g. `MyHomeServer1`, `F454`, `MH201`, `F453AV`). Auto-detected during handshake, or selected manually. |
 
 ---
@@ -110,7 +108,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 ### 1. Command Worker Concurrency (`worker_count`)
 - **Range**: `1` to `10` (Default: `1`).
 - Dynamically capped and validated against the gateway model's hardware limit:
-  - **1 worker**: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Legrand 3578 Serial, Generic.
+  - **1 worker**: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Generic.
   - **2 workers**: MH202.
   - **Up to 4 workers**: F454, F455, F461, MyHomeServer1.
 - Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.
@@ -180,7 +178,6 @@ The model label decides the gateway profile (command sessions, pacing, queue siz
 | Source | Meaning | Trust |
 | :--- | :--- | :--- |
 | `ssdp` | The gateway announced its own `modelName` over UPnP/SSDP | Authoritative |
-| `serial` | USB/serial interface (Legrand 3578): model fixed by the transport | Authoritative |
 | `manual` | You picked the model in the config flow | Trusted, but correctable by certain evidence |
 | `who13` | No model was configured; labelled from the WHO=13 device-type reply | Best effort |
 
@@ -189,7 +186,7 @@ The model label decides the gateway profile (command sessions, pacing, queue siz
 Rules applied when the reply arrives:
 
 - **Compatible model** (e.g. configured MH200 with code `4`, or configured F454 / MyHOMEServer1 with code `200`): consistent, nothing changes. A model the tables list by name must match by name or brand variant: an MH200N has a code of its own (`44`), so code `4` contradicts it. Only a variant suffix no table lists is compared by family and never downgraded.
-- **`ssdp` / `serial` contradicted**: model kept; a repair issue *asks* you to confirm.
+- **`ssdp` contradicted**: model kept; a repair issue *asks* you to confirm.
 - **`manual` contradicted by an official code**: model, profile and device registry are corrected and a repair issue tells you (the old manual flow defaulted to F454, which is how mislabelled entries came to exist).
 - **`manual` contradicted by an observed-only code**: model kept; a repair issue asks you to confirm.
 - **No model configured**: labelled from an official code; ambiguous codes (such as `200`) do not auto-label and keep the gateway as generic.

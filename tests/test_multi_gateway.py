@@ -2608,10 +2608,6 @@ def test_door_entry_who6_who8_capabilities_and_coupling(hass: HomeAssistant) -> 
         delegatable = gateway_delegatable_whos(model)
         assert 6 in delegatable and 8 not in delegatable, f"{model} should accept WHO 6 only"
 
-    # Legrand 3578 wireless OpenZigBee USB stick must NOT auto-advertise 2-wire A/V WHO 6 or WHO 8
-    whos_3578 = gateway_supported_whos("Legrand 3578")
-    assert 6 not in whos_3578 and 8 not in whos_3578
-
     # Automation-only gateways omit bt_vct completely
     for model in ("MyHomeServer1", "F455", "F461", "F450", "F460"):
         assert 6 not in gateway_supported_whos(model) and 8 not in gateway_supported_whos(model)
@@ -2630,7 +2626,7 @@ def test_door_entry_who6_who8_capabilities_and_coupling(hass: HomeAssistant) -> 
     _, gw_mhs1 = _create_mock_gateway(hass, "00:03:50:de:00:05", name="MyHomeServer1")
     _, gw_mh200n = _create_mock_gateway(hass, "00:03:50:de:00:06", name="MH200N")
     _, gw_03565 = _create_mock_gateway(hass, "00:03:50:de:00:08", name="BTicino 03565")
-    _, gw_generic = _create_mock_gateway(hass, "00:03:50:de:00:07", name="Legrand 3578")
+    _, gw_generic = _create_mock_gateway(hass, "00:03:50:de:00:07", name="Generic")
 
     assert gw_f454.profile_supports_who(6) is False and gw_f454.profile_supports_who(8) is True
     assert gw_f459.profile_supports_who(6) is False and gw_f459.profile_supports_who(8) is True
@@ -2646,7 +2642,7 @@ def test_door_entry_who6_who8_capabilities_and_coupling(hass: HomeAssistant) -> 
     assert role_door == ROLE_SECONDARY
     assert delegated_door == {6}
 
-    # recommend_follower(MyHomeServer1, F454) delegates WHO 8 (not 6) plus audio; Legrand 3578 gets no WHO 6/8
+    # recommend_follower(MyHomeServer1, F454) delegates WHO 8 (not 6) plus audio
     entry_mhs1 = MockConfigEntry(
         domain=DOMAIN,
         title="MyHomeServer1 Gateway",
@@ -2665,16 +2661,6 @@ def test_door_entry_who6_who8_capabilities_and_coupling(hass: HomeAssistant) -> 
     rec_role, rec_whos = recommend_follower(entry_mhs1, entry_f454)
     assert rec_role == ROLE_SECONDARY
     assert rec_whos == {8, 16, 22}
-
-    entry_3578 = MockConfigEntry(
-        domain=DOMAIN,
-        title="Legrand 3578",
-        data={CONF_NAME: "Legrand 3578", CONF_MAC: "00:03:50:aa:11:09"},
-        unique_id="00:03:50:aa:11:09",
-    )
-    entry_3578.add_to_hass(hass)
-    _, rec_3578_whos = recommend_follower(entry_mhs1, entry_3578)
-    assert 6 not in rec_3578_whos and 8 not in rec_3578_whos
 
     # validate_shared_bus_topology accepts [8] (rejects [6, 8]) on F454; accepts [6, 8] on MH200N and
     # MH202; accepts [6] (rejects [8]) on F453; and rejects [6] on F455 / F461 / MyHomeServer1
@@ -3360,13 +3346,11 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
         validate_shared_bus_topology,
     )
 
-    # 1. Generic manual-IP gateway allows manual WHO 6/8 delegation without auto-inferring WHO 6/8;
-    #    Legrand 3578 USB coordinator excludes WHO 6/8 from both.
+    # 1. Generic manual-IP gateway allows manual WHO 6/8 delegation without auto-inferring WHO 6/8
     assert {6, 8}.isdisjoint(gateway_supported_whos("Generic"))
     assert {6, 8} <= gateway_delegatable_whos("Generic")
     # ...while its other subsystems still come from the conservative Generic profile
     assert {5, 9}.isdisjoint(gateway_delegatable_whos("Generic"))
-    assert {6, 8}.isdisjoint(gateway_delegatable_whos("Legrand 3578"))
 
     entry_pri_check = MockConfigEntry(
         domain=DOMAIN,

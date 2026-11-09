@@ -37,8 +37,7 @@ Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** communit
 - **Thermoregulation Central Unit Coordination (P4)**: Dedicated master coordination for 99-zone Central Unit (`#0`, model `Central Unit (3550)`) and 4-zone Central Unit (`#0#1`, model `Central Unit (4695)`). Master Heating/Cooling switches (`*4*3xx*#0##`) propagate across internal dispatchers to subordinate zones (`standalone=False`), automatically synchronizing whole-home climate operations with physical central units.
 - **Multi-Gateway Routing & Plant Isolation (P6)**: Namespaced event dispatchers (`f"myhome_cen_event_{mac}"`, `f"myhome_central_mode_{mac}"`) and device trigger filtering by parent gateway MAC (`via_device`), eliminating cross-talk and phantom triggers across physical plants combining multiple gateways (e.g. F454 + MH200N / MH201).
 - **DALI Tunable White & Color Temperature**: Native support for DALI DT8 ballasts (F429 / F461 gateways) with auto-detection of color temperature (`ColorMode.COLOR_TEMP`, 2000K–6535K / mireds), seamless Kelvin/mireds conversion, and sentinel filtering.
-- **Declarative Hardware Profiles**: Auto-detects and tunes connection limits and queue pacing specifically for your gateway model (`F454`, `F455`, `F461`, `MH202`, `MH201`, `MyHomeServer1`, `MH200N`, `MH200`, `H4890 / AM4890`, `F452 / F453AV`, `HL4684`, and `Legrand 3578`). Eliminates hardware session exhaustion and buffer overflows.
-- **USB / Serial Gateway & OpenZigBee Support**: Native asynchronous transport for the **Legrand 3578 USB/Serial interface** via `pyserial-asyncio` with dynamic port discovery, authentication bypass, and OpenZigBee addressing (`<8-digit id>#9`).
+- **Declarative Hardware Profiles**: Auto-detects and tunes connection limits and queue pacing specifically for your gateway model (`F454`, `F455`, `F461`, `MH202`, `MH201`, `MyHomeServer1`, `MH200N`, `MH200`, `H4890 / AM4890`, `F452 / F453AV`, and `HL4684`). Eliminates hardware session exhaustion and buffer overflows.
 - **Zero-Friction Migration**: Upgrades preserve all existing custom entity IDs (`light.keuken`, `cover.living`) and friendly names. Unique IDs migrate transparently (`MAC-WHERE` → `MAC-WHO-WHERE`) with no broken dashboards or automations.
 - **Adaptive Inter-Frame Bus Pacing**: Hardened priority command queue with model-specific inter-frame delays (e.g. 150ms for legacy MH200 vs 20ms for F454) preventing command dropping during heavy automation bursts.
 - **Dynamic Bus Auto-Discovery**: Automatically discovers entities from physical bus events and status sweeps without requiring manual `myhome.yaml` configuration. Full support for **F422 cross-bus routing** (e.g. `18#4#02`).
@@ -60,7 +59,7 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 ### Key Wiki Resources & Current Status
 - **[WHO Specifications Archive & Status Matrix](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications#openwebnet-who-specifications-matrix)**: Complete catalog of all OpenWebNet WHO families (WHO 0 to WHO 1004, HMAC authentication, and core system intro) with official PDF documentation references, current implementation status, and frame syntax.
 - **[CEN / CEN+ Automations & Community Blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345)**: Community blueprint by **gST84** to trigger actions, toggle non-BTicino smart devices, and dim lights from physical MyHOME pushbuttons.
-- **[Hardware Gateway Profiles](docs/configuration/gateways.md)**: Deep dive into connection constraints, socket limits, pacing delays, and watchdog behaviors across all 12 supported gateway models (F454, F455, F461, MH202, MH201, MyHomeServer1, MH200N, MH200, H4890/AM4890, F452/F453AV, HL4684, and Legrand 3578).
+- **[Hardware Gateway Profiles](docs/configuration/gateways.md)**: Deep dive into connection constraints, socket limits, pacing delays, and watchdog behaviors across all 11 supported gateway models (F454, F455, F461, MH202, MH201, MyHomeServer1, MH200N, MH200, H4890/AM4890, F452/F453AV, and HL4684).
 - **[Sound System 2.0 & Audio Matrix Guide](docs/configuration/media_player.md)**: Setup instructions for F441/F441M matrices, room amplifier calibration, and Dynamic Proxy streaming.
 - **[Bus Monitor Lovelace Card](docs/configuration/bus_monitor.md)**: Bus card installation, live frame decoding, diagnostic logging, and syntax injector reference.
 - **[Community Contribution Guide](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications#how-to-contribute-specifications)**: How to cross-check documentation versions and contribute missing WHO PDF specifications.
@@ -92,7 +91,6 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
 | **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
-| **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
 
 *This table is automatically updated from gateway profile definitions and hardware specifications.*
@@ -290,14 +288,9 @@ The gateway itself is not modified by installing or removing the integration; no
 
 1. Navigate to **Settings → Devices & Services → Add Integration**.
 2. Search for **MyHOME**.
-3. Choose your gateway type:
-   - **Network Gateway (TCP/IP)**:
-     - **Auto-Discovery**: The integration automatically discovers UPnP/SSDP-compatible gateways on your local subnet (e.g. F454, MH202, MyHomeServer1). Discovered gateways appear in the Home Assistant UI with standard **Configure** and **Ignore** options, requiring explicit user confirmation before any config entry is created.
-     - **Manual IP Setup**: For gateways without UPnP (e.g. MH200), enter the gateway IP address, port (default `20000`), MAC address, and OpenWebNet password (default `12345`).
-   - **USB / Serial Gateway (Legrand 3578 / OpenZigBee)**:
-     - Select your physical serial device (e.g. `/dev/ttyUSB0` or `COM3`) from the dynamically populated port picker.
-     - Select your baud rate (default `19200`).
-     - Serial transport operates with zero authentication overhead (no IP password challenge needed) and natively routes OpenZigBee addresses (`<8-digit id>#9`).
+3. Choose how to connect to your TCP/IP gateway:
+   - **Auto-Discovery**: The integration automatically discovers UPnP/SSDP-compatible gateways on your local subnet (e.g. F454, MH202, MyHomeServer1). Discovered gateways appear in the Home Assistant UI with standard **Configure** and **Ignore** options, requiring explicit user confirmation before any config entry is created.
+   - **Manual IP Setup**: For gateways without UPnP (e.g. F461, MH200), enter the gateway IP address, port (default `20000`), MAC address, and OpenWebNet password (default `12345`).
 4. Select or confirm your gateway hardware profile from the dropdown.
 
 ### Options Flow (Fine-Tuning)
@@ -544,7 +537,7 @@ A major CI infrastructure enhancement introduced for beta testing is the **Trace
 ```
 
 #### How it Works:
-1. **Zero Hardware Needed for Bug Triage**: Legrand and BTicino manufacture dozens of gateway models (F454, MyHomeServer1, MH200N, MH202, 3578 USB) and modular DIN actuators with subtle firmware timing variations. When a beta tester reports unexpected behavior, clicking **"📋 Copy Capture"** on the Bus Monitor card (or downloading HA Diagnostics) packages the last 100 on-wire OpenWebNet frames with precise microsecond timestamps.
+1. **Zero Hardware Needed for Bug Triage**: Legrand and BTicino manufacture dozens of gateway models (F454, MyHomeServer1, MH200N, MH202, F461) and modular DIN actuators with subtle firmware timing variations. When a beta tester reports unexpected behavior, clicking **"📋 Copy Capture"** on the Bus Monitor card (or downloading HA Diagnostics) packages the last 100 on-wire OpenWebNet frames with precise microsecond timestamps.
 2. **Automated Discovery & Plant Setup**: Pytest automatically scans `tests/fixtures/plants/*/` for any directory containing `diagnostic_summary.json` and `myhome.yaml`.
 3. **Sequential On-Wire Replay**: The harness initializes a simulated gateway session and streams the frozen frames sequentially into Home Assistant's internal event dispatcher (`f"myhome_message_{mac}"`), exercising the exact same message routing path as physical hardware.
 4. **End-to-End State Verification**: Verifies that every single frame across Lighting (`WHO=1`), Automation (`WHO=2`), Thermoregulation (`WHO=4`), Audio (`WHO=16`), Energy (`WHO=18`), Dry Contacts (`WHO=25`), and ACK/NACK control signals updates entity states accurately with zero unhandled exceptions.
@@ -564,7 +557,7 @@ python scripts/anonymize_plant_fixture.py tests/fixtures/plants/issue_<n>_<model
 
 Devices become `light_10` / `Light 10` (the address is the name), IPs move to the `192.0.2.0/24` documentation range, MACs to `00:03:50:00:<issue>`, the entry id to a synthetic one, passwords to `null`. The script prints the old → new entity-id mapping for the test you write against the fixture. Name the directory after the issue and the gateway model, not after the reporter.
 
-What the integration emits is clean at the source: the card's issue bundle and trace/sweep export name the transport and the gateway model, never the LAN address, the serial device or your browser; the diagnostics download redacts host, MAC, SSDP identity, config-file path, entry id and title, and names a decoder slot's media player `media_player.decoder_<n>` rather than after your room - in the config entry's `data` and `options` only; the gateway, profile, queue, platform and bus-monitor blocks are not touched, so every frame's `where` / `who` / `what` is there for triage. Two things still need the script: your `myhome.yaml` (it is your file, with your room names) and the envelope Home Assistant wraps around every diagnostics download (the list of installed integrations, `setup_times`), which is not ours to strip. `python scripts/anonymize_plant_fixture.py --check tests` reports anything personal under `tests/`; the pre-commit hook in `.pre-commit-config.yaml` runs it before a commit exists, CI runs it on every push.
+What the integration emits is clean at the source: the card's issue bundle and trace/sweep export name the transport and the gateway model, never the LAN address or your browser; the diagnostics download redacts host, MAC, SSDP identity, config-file path, entry id and title, and names a decoder slot's media player `media_player.decoder_<n>` rather than after your room - in the config entry's `data` and `options` only; the gateway, profile, queue, platform and bus-monitor blocks are not touched, so every frame's `where` / `who` / `what` is there for triage. Two things still need the script: your `myhome.yaml` (it is your file, with your room names) and the envelope Home Assistant wraps around every diagnostics download (the list of installed integrations, `setup_times`), which is not ours to strip. `python scripts/anonymize_plant_fixture.py --check tests` reports anything personal under `tests/`; the pre-commit hook in `.pre-commit-config.yaml` runs it before a commit exists, CI runs it on every push.
 
 ---
 
@@ -681,45 +674,62 @@ The integration maintains 5,324 automated tests (100.0% statement coverage acros
 | Component / Module | Coverage | Notes |
 |---|:---:|---|
 | [`__init__.py`](custom_components/myhome/__init__.py) | **100%** | Setup lifecycle and zero-friction entity migration |
+| [`access_policy.py`](custom_components/myhome/access_policy.py) | **100%** | Core integration component |
 | [`alarm_control_panel.py`](custom_components/myhome/alarm_control_panel.py) | **100%** | Core integration component |
 | [`binary_sensor.py`](custom_components/myhome/binary_sensor.py) | **100%** | Magnetic contacts, door/window sensors, motion sensors |
 | [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra sockets) |
 | [`button.py`](custom_components/myhome/button.py) | **100%** | Scenario buttons and bus diagnostic pings |
 | [`climate.py`](custom_components/myhome/climate.py) | **100%** | Heating, cooling, 4-pipe systems, and thermostat controls |
 | [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Step handlers, user entry, reauth, and options flow |
+| [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Core integration component |
+| [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | Core integration component |
+| [`config_flow_expose.py`](custom_components/myhome/config_flow_expose.py) | **100%** | Core integration component |
+| [`config_flow_options.py`](custom_components/myhome/config_flow_options.py) | **100%** | Core integration component |
+| [`config_flow_thermo_switch.py`](custom_components/myhome/config_flow_thermo_switch.py) | **100%** | Core integration component |
+| [`config_flow_topology.py`](custom_components/myhome/config_flow_topology.py) | **100%** | Core integration component |
 | [`const.py`](custom_components/myhome/const.py) | **100%** | Protocol commands, dimensions, and integration constants |
-| [`core/transport/base.py`](custom_components/myhome/core/transport/base.py) | **100%** | Abstract transport layer defining OWN lifecycle contract |
-| [`core/transport/serial.py`](custom_components/myhome/core/transport/serial.py) | **100%** | Async Serial/USB transport for Legrand 3578 / OpenZigBee |
-| [`core/transport/tcp.py`](custom_components/myhome/core/transport/tcp.py) | **100%** | Modular TCP/IP socket transport with framed stream parsing |
 | [`cover.py`](custom_components/myhome/cover.py) | **100%** | Motorized shutters, blinds, roll-ups with state tracking |
 | [`cover_calibration.py`](custom_components/myhome/cover_calibration.py) | **100%** | Core integration component |
 | [`cover_motion.py`](custom_components/myhome/cover_motion.py) | **100%** | Core integration component |
 | [`cover_scope.py`](custom_components/myhome/cover_scope.py) | **100%** | Core integration component |
+| [`cover_strategies/__init__.py`](custom_components/myhome/cover_strategies/__init__.py) | **100%** | Core integration component |
+| [`cover_strategies/base.py`](custom_components/myhome/cover_strategies/base.py) | **100%** | Core integration component |
+| [`cover_strategies/native.py`](custom_components/myhome/cover_strategies/native.py) | **100%** | Core integration component |
+| [`cover_strategies/simple.py`](custom_components/myhome/cover_strategies/simple.py) | **100%** | Core integration component |
+| [`cover_strategies/timed.py`](custom_components/myhome/cover_strategies/timed.py) | **100%** | Core integration component |
+| [`cover_strategies/venetian.py`](custom_components/myhome/cover_strategies/venetian.py) | **100%** | Core integration component |
 | [`data.py`](custom_components/myhome/data.py) | **100%** | Core integration component |
+| [`decoder_allocation.py`](custom_components/myhome/decoder_allocation.py) | **100%** | Core integration component |
 | [`decoder_companion.py`](custom_components/myhome/decoder_companion.py) | **100%** | Core integration component |
 | [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Thread-safe streaming proxy audio pool |
+| [`device_health.py`](custom_components/myhome/device_health.py) | **100%** | Core integration component |
 | [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless CEN/CEN+ scenario device automation triggers |
 | [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Config entry diagnostics with sensitive data redaction |
 | [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Core integration component |
+| [`expose.py`](custom_components/myhome/expose.py) | **100%** | Core integration component |
 | [`gateway.py`](custom_components/myhome/gateway.py) | **100%** | Hardware handler, lockout prevention, adaptive queue pacing |
 | [`gateway_events.py`](custom_components/myhome/gateway_events.py) | **100%** | Core integration component |
 | [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Core integration component |
 | [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Core integration component |
 | [`identity.py`](custom_components/myhome/identity.py) | **100%** | Core integration component |
+| [`ignored.py`](custom_components/myhome/ignored.py) | **100%** | Core integration component |
 | [`legacy_yaml.py`](custom_components/myhome/legacy_yaml.py) | **100%** | Core integration component |
 | [`light.py`](custom_components/myhome/light.py) | **100%** | Relays, auto-dimmer detection, and brightness transitions |
 | [`light_dali.py`](custom_components/myhome/light_dali.py) | **100%** | Core integration component |
 | [`light_fade.py`](custom_components/myhome/light_fade.py) | **100%** | Core integration component |
 | [`light_group.py`](custom_components/myhome/light_group.py) | **100%** | Core integration component |
+| [`lock.py`](custom_components/myhome/lock.py) | **100%** | Core integration component |
 | [`media_player.py`](custom_components/myhome/media_player.py) | **100%** | F441/F441M sound system zones, dynamic proxy, gain-staging |
 | [`media_player_decoder.py`](custom_components/myhome/media_player_decoder.py) | **100%** | Core integration component |
 | [`media_player_group.py`](custom_components/myhome/media_player_group.py) | **100%** | Core integration component |
 | [`media_player_pool.py`](custom_components/myhome/media_player_pool.py) | **100%** | Core integration component |
+| [`media_player_power.py`](custom_components/myhome/media_player_power.py) | **100%** | Core integration component |
 | [`media_player_routing.py`](custom_components/myhome/media_player_routing.py) | **100%** | Core integration component |
 | [`media_player_source.py`](custom_components/myhome/media_player_source.py) | **100%** | Core integration component |
 | [`media_player_zone.py`](custom_components/myhome/media_player_zone.py) | **100%** | Core integration component |
 | [`migrate.py`](custom_components/myhome/migrate.py) | **100%** | Core integration component |
 | [`myhome_device.py`](custom_components/myhome/myhome_device.py) | **100%** | Home Assistant device registry schema compliance |
+| [`number.py`](custom_components/myhome/number.py) | **100%** | Core integration component |
 | [`poll_health.py`](custom_components/myhome/poll_health.py) | **100%** | Core integration component |
 | [`repairs.py`](custom_components/myhome/repairs.py) | **100%** | Core integration component |
 | [`router.py`](custom_components/myhome/router.py) | **100%** | Core integration component |
@@ -727,7 +737,10 @@ The integration maintains 5,324 automated tests (100.0% statement coverage acros
 | [`services.py`](custom_components/myhome/services.py) | **100%** | Core integration component |
 | [`sound_source.py`](custom_components/myhome/sound_source.py) | **100%** | Core integration component |
 | [`switch.py`](custom_components/myhome/switch.py) | **100%** | Relay actuators, auxiliary switches, socket controllers |
+| [`thermo_switch.py`](custom_components/myhome/thermo_switch.py) | **100%** | Core integration component |
 | [`topology.py`](custom_components/myhome/topology.py) | **100%** | Core integration component |
+| [`tuner_decode.py`](custom_components/myhome/tuner_decode.py) | **100%** | Core integration component |
+| [`typing_compat.py`](custom_components/myhome/typing_compat.py) | **100%** | Core integration component |
 | [`validate.py`](custom_components/myhome/validate.py) | **100%** | Device & gateway schemas, custom WHERE validators, sensor injections |
 | [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus streaming, history, and diagnostics |
 | [`where_grammar.py`](custom_components/myhome/where_grammar.py) | **100%** | Core integration component |
@@ -744,7 +757,7 @@ The development of the MyHOME integration is organized into strategic release mi
 
 - [x] **Phase 1: Architecture Modernization & Core Feature Parity (v2.0 — Complete)**
   - [x] Declarative hardware gateway profiles (`MH200` to `F454`).
-  - [x] Dual asynchronous transports: Async TCP & Serial/USB (`Legrand 3578 / OpenZigBee`).
+  - [x] Asynchronous TCP/IP session architecture (`OWNd` event + command worker pools).
   - [x] Adaptive inter-frame bus pacing & sentinel supervisor lifecycle.
   - [x] In-band Lovelace Bus Monitor Card (`<myhome-openwebnet-bus-monitor>`) & WebSocket streaming proxy.
   - [x] Native Home Assistant Diagnostics (`diagnostics.py`) & GitHub Issue Forms.
@@ -766,8 +779,9 @@ The development of the MyHOME integration is organized into strategic release mi
   - [x] Device fault reporting as self-clearing Home Assistant repair issues (`device_health.py`).
   - [x] Cover end-stop settle recomputation and 0.5 s limit-stop cutoff from known positions (#834, #847).
   - [ ] Relay operating cycle counters: no WHO 14 / 1001 / 1004 captures exist yet, so this waits on community traces ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)).
-- [ ] **Phase 5: Extended Lighting Management & DALI-2 (v2.4 — deferred)**
+- [ ] **Phase 5: Extended Lighting Management & Hardware Extensions (v2.4 — deferred)**
   - [ ] Lighting Management Room Controllers (`WHO = 24` BMNE500 / 002645) are deferred as an optional standalone extension; the residential core stays on `WHO = 1` and the DALI gateways. See [ROADMAP.md](ROADMAP.md).
+  - [ ] USB / Serial & OpenZigBee gateway support (`Legrand 3578` / `088328`) is deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)), pending an active hardware tester, raw serial captures ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)), and upstream `OWNd` serial session + `<id>#9` addressing support.
 - [ ] **Phase 6: Smart Energy Management (v2.5 — Q1 2027)**
   - [x] Power meters and energy counters (`WHO = 18`) as Home Assistant energy sensors.
   - [ ] Energy management central units & multi-function power meters (`WHO = 18` F520/F521/F522/F523/3522): not started, needs a scope decision and captures.

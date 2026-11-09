@@ -69,7 +69,7 @@ def test_generate_gateway_profiles_table():
     assert "| **MH200N** | OpenWebNet | 1 worker | 150 ms | ✅ SSDP |" in table
     assert "| **MH200** *(Legacy)* | OpenWebNet | 1 worker | 150 ms | ✅ SSDP |" in table
     assert "| **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP |" in table
-    assert "| **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) |" in table
+    assert "Legrand 3578" not in table
 
     for gw in GATEWAY_METADATA:
         assert gw["model"] in table

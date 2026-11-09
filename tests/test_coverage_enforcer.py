@@ -16,10 +16,10 @@ from scripts.verify_ownd_coverage import (
 def test_normalize_coverage_filename():
     """Verify filename normalization handles relative, absolute, and bare paths."""
     assert normalize_coverage_filename("cover.py") == "custom_components/myhome/cover.py"
-    assert normalize_coverage_filename("core/transport/tcp.py") == "custom_components/myhome/core/transport/tcp.py"
+    assert normalize_coverage_filename("cover_strategies/base.py") == "custom_components/myhome/cover_strategies/base.py"
     assert normalize_coverage_filename("custom_components/myhome/sensor.py") == "custom_components/myhome/sensor.py"
     assert normalize_coverage_filename("myhome/switch.py") == "custom_components/myhome/switch.py"
-    assert normalize_coverage_filename(r"core\transport\tcp.py") == "custom_components/myhome/core/transport/tcp.py"
+    assert normalize_coverage_filename(r"cover_strategies\base.py") == "custom_components/myhome/cover_strategies/base.py"
 
 
 def test_collapse_line_ranges():

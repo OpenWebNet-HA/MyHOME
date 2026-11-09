@@ -514,7 +514,6 @@ GATEWAY_DEVICE_TYPE_MAP: dict[str, str] = {
 # How the configured gateway model was established.
 IDENTIFICATION_SSDP = "ssdp"        # the gateway announced its modelName over UPnP/SSDP
 IDENTIFICATION_MANUAL = "manual"    # the user picked the model in the config flow
-IDENTIFICATION_SERIAL = "serial"    # serial (USB) interface: model fixed by the transport
 IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 dimension 15
 IDENTIFICATION_UNKNOWN = "unknown"
 

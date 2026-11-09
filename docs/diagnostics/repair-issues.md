@@ -62,7 +62,7 @@ Click **Learn More** on the repair issue. This will open a pre-filled GitHub iss
 **Auto-Resolving**: Yes
 
 ### What it means
-The hardware model reported by the gateway over the bus — a WHO=13 device type, or a WHO=1013 OBJECT_MODEL (code `1013-1-<value>`) when WHO=13 answered a shared code — contradicts the model discovered over SSDP or fixed by the serial transport, or a manual choice questioned by field evidence only, and the integration does not overwrite what the device itself announced.
+The hardware model reported by the gateway over the bus — a WHO=13 device type, or a WHO=1013 OBJECT_MODEL (code `1013-1-<value>`) when WHO=13 answered a shared code — contradicts the model discovered over SSDP, or a manual choice questioned by field evidence only, and the integration does not overwrite what the device itself announced.
 
 ### How to resolve
 1. Check the physical hardware label on your gateway unit in the electrical cabinet.

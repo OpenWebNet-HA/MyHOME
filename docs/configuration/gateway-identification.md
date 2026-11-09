@@ -27,7 +27,6 @@ A gateway labelled as a faster model than it is gets flooded; one labelled as a 
 | `source` | Where it comes from | Trust |
 | :--- | :--- | :--- |
 | `ssdp` | The gateway announced its own `modelName` over UPnP/SSDP when it was discovered (F454, F455, MH200N, MH202, MyHomeServer1 …). | **Authoritative** — the device said so itself. |
-| `serial` | Serial / USB interface (Legrand 3578): the model is fixed by the transport. | **Authoritative** |
 | `manual` | You typed the address and picked the model in the config flow. | Trusted, but *correctable* by certain evidence — early versions of the manual flow defaulted to F454, which produced mislabelled entries. |
 | `who13` | No model was configured; the entry was labelled from the WHO=13 reply (see below). | Best effort. |
 
@@ -113,7 +112,7 @@ Two safeguards keep this off legacy hardware and out of your logs:
 - **A legacy gateway never gets the question.** An MH200 answers `4` on `WHO=13`, which is unambiguous, so the `WHO=1013` request is never queued (verified on a physical MH200; there is a regression test for it). Only gateways that answer a shared code are asked, and those are all modern Linux gateways that implement `WHO=1013`.
 - **A gateway that does not answer costs nothing visible.** The request goes out as a *status request*: if the gateway NACKs it, OWNd retries once and logs both attempts at DEBUG. One request is sent per answer: while it is unanswered the periodic re-broadcast of the shared code does not repeat it, and a reconnect of the event session is what gives it another try.
 
-What the answer does depends on the configured source, exactly mirroring the `WHO=13` rule below: it **labels** an unconfigured gateway, **corrects** a manual choice (with a *Gateway model corrected* issue), and **cross-checks** an SSDP or serial identity — which is never overruled, but a *Gateway model mismatch* issue asks you to confirm when the two disagree. Because `WHO=1013` outranks `WHO=13`, the periodic re-broadcast of the shared code that started the check cannot undo its verdict; only a later `WHO=1013` reply changes it. An OBJECT_MODEL outside the catalogue raises the same `unknown_gateway_model` issue as an unknown `WHO=13` code, with the code written as `1013-1-<value>`.
+What the answer does depends on the configured source, exactly mirroring the `WHO=13` rule below: it **labels** an unconfigured gateway, **corrects** a manual choice (with a *Gateway model corrected* issue), and **cross-checks** an SSDP identity — which is never overruled, but a *Gateway model mismatch* issue asks you to confirm when the two disagree. Because `WHO=1013` outranks `WHO=13`, the periodic re-broadcast of the shared code that started the check cannot undo its verdict; only a later `WHO=1013` reply changes it. An OBJECT_MODEL outside the catalogue raises the same `unknown_gateway_model` issue as an unknown `WHO=13` code, with the code written as `1013-1-<value>`.
 
 ### How the verdict is reached
 
@@ -147,7 +146,7 @@ What the answers do:
 - **Model** — the codes go through the same `resolve_gateway_identity` as at runtime: a certain code (2006 table or `WHO=1013`) corrects the chosen model, a brand variant of the reported model (`H4890` for OBJECT_MODEL `30`, `003598` for `51`) is kept, an uncertain code may label a `Generic` entry but never overrides a chosen model. A corrected model also changes the OWNd profile, the entry title and the default number of command workers, and the entry records `model_source: who13` so the diagnostics block below reports it.
 - **Split authentication** — a gateway whose monitor session (`*99*1##`) is open but whose command session (`*99*0##`) wants a password answers the probe with `password_required`; the flow then asks for the password (the runtime command workers need it anyway) and probes again with it. The probe's own OWNd log lines are recorded at DEBUG.
 
-A gateway discovered over SSDP or added through the serial transport is not probed: its identity is authoritative.
+A gateway discovered over SSDP is not probed: its identity is authoritative.
 
 ---
 
@@ -157,7 +156,7 @@ When a dimension-15 reply arrives, the handler compares the reported model with 
 
 | configured `source` | code agrees | code contradicts — **official** 2006 code | code contradicts — **uncertain** code (field evidence or third-party) | code **shared** (`200`) | code unknown |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `ssdp` / `serial` | nothing | model kept; repair issue **asks** you to confirm | model kept, no repair issue | model kept; `WHO=1013` asked and its answer cross-checks (mismatch → repair issue asks) | recorded; repair issue created |
+| `ssdp` | nothing | model kept; repair issue **asks** you to confirm | model kept, no repair issue | model kept; `WHO=1013` asked and its answer cross-checks (mismatch → repair issue asks) | recorded; repair issue created |
 | `manual` | nothing | model, profile and device registry **corrected**; repair issue tells you | model kept, no repair issue | model kept; `WHO=1013` asked and its answer corrects if it differs | recorded; repair issue created |
 | none / `who13` | — | labelled from the code | labelled from the code | `WHO=1013` asked and its answer labels | recorded; repair issue created |
 

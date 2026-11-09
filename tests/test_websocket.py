@@ -493,26 +493,26 @@ def test_extract_gateway_info_edge_cases():
     assert info["queue_depth"] == 0
     assert info["queue_pacing"] == 0.0
 
-    # 3. Serial Gateway
-    serial_gw = MagicMock()
-    serial_gw.gateway = None
-    serial_gw.config_entry.data = {
-        "name": "Legrand 3578 USB/Serial",
-        "serial_port": "/dev/ttyUSB0",
+    # 3. Non-colon MAC and config_data name fallback
+    non_colon_gw = MagicMock()
+    non_colon_gw.gateway = None
+    non_colon_gw.config_entry.data = {
+        "name": "F454",
         "firmware": "3.1.0",
-        "mac": "SERIAL_GW_12345",
+        "mac": "000350AABBCC",
         "command_worker_count": 2,
     }
-    serial_gw.mac = "SERIAL_GW_12345"
-    serial_gw.sending_workers = []
-    serial_gw.send_buffer = None
-    serial_gw.is_connected = True
+    non_colon_gw.mac = "000350AABBCC"
+    non_colon_gw.sending_workers = []
+    non_colon_gw.send_buffer = None
+    non_colon_gw.is_connected = True
 
-    s_info = _extract_gateway_info(serial_gw)
-    assert s_info["model"] == "Legrand 3578 USB/Serial"
-    assert s_info["serial_port"] == "/dev/ttyUSB0"
-    assert s_info["mac_prefix"] == "SERIAL_G"
-    assert s_info["worker_count"] == 2
+    nc_info = _extract_gateway_info(non_colon_gw)
+    assert nc_info["model"] == "F454"
+    assert nc_info["mac_prefix"] == "000350AA"
+    assert nc_info["worker_count"] == 2
+    assert nc_info["integration_version"] == INTEGRATION_VERSION
+    assert "ownd_version" in nc_info
 
     # 4. raw_gw.model attribute fallback
     gw_with_model_attr = MagicMock()
@@ -550,42 +550,6 @@ def test_extract_gateway_info_edge_cases():
     gw_buf_err.send_buffer.qsize.side_effect = RuntimeError("Buffer failure")
     gw_buf_err.config_entry = None
     assert _extract_gateway_info(gw_buf_err)["queue_depth"] == 0
-
-    # 8. Real serial config entry from config_flow (transport_type='serial', host='/dev/ttyUSB0')
-    real_serial_gw = MagicMock()
-    real_serial_gw.gateway = None
-    real_serial_gw.config_entry.data = {
-        "name": "Legrand 3578 Dongle",
-        "host": "/dev/ttyUSB0",
-        "port": 19200,
-        "transport_type": "serial",
-        "baudrate": 19200,
-    }
-    real_serial_gw.mac = None
-    real_serial_gw.sending_workers = []
-    rs_info = _extract_gateway_info(real_serial_gw)
-    assert rs_info["model"] == "Legrand 3578 Dongle"
-    assert rs_info["serial_port"] == "/dev/ttyUSB0"
-    assert rs_info["host"] == ""
-    assert rs_info["port"] is None
-    assert rs_info["integration_version"] == INTEGRATION_VERSION
-    assert "ownd_version" in rs_info
-
-    # 9. String port on raw_gw (e.g. COM3)
-    com_gw = MagicMock()
-    com_gw.gateway.model_name = "Legrand 3578"
-    com_gw.gateway.port = "COM3"
-    com_gw.config_entry = None
-    com_info = _extract_gateway_info(com_gw)
-    assert com_info["serial_port"] == "COM3"
-    assert com_info["host"] == ""
-    assert com_info["port"] is None
-
-    # 10. String port in config_data without transport_type
-    gw_port_str = MagicMock()
-    gw_port_str.gateway = None
-    gw_port_str.config_entry.data = {"port": "/dev/ttyACM0"}
-    assert _extract_gateway_info(gw_port_str)["serial_port"] == "/dev/ttyACM0"
 
 
 async def test_mutating_commands_require_admin(hass: HomeAssistant, attach_gateway):

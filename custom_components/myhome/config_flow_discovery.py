@@ -18,11 +18,10 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from OWNd.connection import OWNCommandSession
 from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
-from voluptuous import All, Coerce, In, Range, Required
+from voluptuous import All, Coerce, Range, Required
 
 from .const import (
     CONF_DEVICE_TYPE,
@@ -223,16 +222,6 @@ class MACAddress:
         return ":".join(["%s" % (self.mac[i : i + 2]) for i in range(0, 12, 2)])
 
 
-def _get_serial_ports() -> list:  # type: ignore
-    """Enumerate serial ports safely without hard dependency on pyserial."""
-    try:
-        import serial.tools.list_ports  # type: ignore
-
-        return list(serial.tools.list_ports.comports())
-    except Exception:
-        return []
-
-
 class ConfigFlowDiscoveryMixin:
     """SSDP discovery, reconfigure, reauth, connection test, port, and password steps."""
 
@@ -324,75 +313,47 @@ class ConfigFlowDiscoveryMixin:
         if entry is None:
             return self.async_abort(reason="unknown")  # type: ignore[attr-defined]
 
-        is_serial = entry.data.get("transport_type") == "serial"
-
         if user_input is not None:
-            if is_serial:
-                port = str(user_input.get("port", "")).strip()
-                if not port:
-                    errors["port"] = "invalid_port"
-                else:
-                    new_data = {**entry.data}
-                    new_data[CONF_HOST] = port
-                    new_data["port"] = port
-                    new_data["baudrate"] = user_input.get("baudrate", 19200)
-                    new_data[CONF_PORT] = new_data["baudrate"]
-                    return self.async_update_reload_and_abort(  # type: ignore[attr-defined]
-                        entry,
-                        data=new_data,
-                        reason="reconfigure_successful",
-                    )
-            else:
-                address = str(user_input.get(CONF_HOST, "")).strip()
-                try:
-                    address = str(ipaddress.IPv4Address(address))
-                except ipaddress.AddressValueError:
-                    errors[CONF_HOST] = "invalid_ip"
+            address = str(user_input.get(CONF_HOST, "")).strip()
+            try:
+                address = str(ipaddress.IPv4Address(address))
+            except ipaddress.AddressValueError:
+                errors[CONF_HOST] = "invalid_ip"
 
-                port = user_input.get(CONF_PORT, 20000)
-                try:
-                    port = int(port)  # type: ignore
-                    if not (1 <= port <= 65535):
-                        errors[CONF_PORT] = "invalid_port"
-                except (ValueError, TypeError):
+            port = user_input.get(CONF_PORT, 20000)
+            try:
+                port = int(port)
+                if not (1 <= port <= 65535):
                     errors[CONF_PORT] = "invalid_port"
+            except (ValueError, TypeError):
+                errors[CONF_PORT] = "invalid_port"
 
-                if not errors:
-                    new_data = {**entry.data}
-                    new_data[CONF_HOST] = address
-                    new_data[CONF_PORT] = port
-                    if CONF_PASSWORD in user_input:
-                        new_data[CONF_PASSWORD] = user_input.get(CONF_PASSWORD) or None
-                    return self.async_update_reload_and_abort(  # type: ignore[attr-defined]
-                        entry,
-                        data=new_data,
-                        reason="reconfigure_successful",
-                    )
+            if not errors:
+                new_data = {**entry.data}
+                new_data[CONF_HOST] = address
+                new_data[CONF_PORT] = port
+                if CONF_PASSWORD in user_input:
+                    new_data[CONF_PASSWORD] = user_input.get(CONF_PASSWORD) or None
+                return self.async_update_reload_and_abort(  # type: ignore[attr-defined]
+                    entry,
+                    data=new_data,
+                    reason="reconfigure_successful",
+                )
 
-        if is_serial:
-            schema = flow_schema(
-                {
-                    Required("port", default=entry.data.get(CONF_HOST, "")): cv.string,
-                    Required("baudrate", default=entry.data.get("baudrate", 19200)): In(
-                        [9600, 19200, 38400, 57600, 115200]
-                    ),
-                }
-            )
-        else:
-            schema = flow_schema(
-                {
-                    Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): str,
-                    Required(CONF_PORT, default=entry.data.get(CONF_PORT, 20000)): All(
-                        Coerce(int), Range(min=1, max=65535)
-                    ),
-                    vol.Optional(
-                        CONF_PASSWORD,
-                        description={
-                            "suggested_value": entry.data.get(CONF_PASSWORD) or ""
-                        },
-                    ): str,
-                }
-            )
+        schema = flow_schema(
+            {
+                Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): str,
+                Required(CONF_PORT, default=entry.data.get(CONF_PORT, 20000)): All(
+                    Coerce(int), Range(min=1, max=65535)
+                ),
+                vol.Optional(
+                    CONF_PASSWORD,
+                    description={
+                        "suggested_value": entry.data.get(CONF_PASSWORD) or ""
+                    },
+                ): str,
+            }
+        )
 
         return self.async_show_form(  # type: ignore[attr-defined]
             step_id="reconfigure",

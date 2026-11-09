@@ -27,7 +27,7 @@ The MyHOME integration operates on a strict **two-tier architecture**:
 
 ```mermaid
 graph TD
-    A["SCS Physical Bus / Gateways<br>(F454, F455, MH200N, MH202, 3578 USB)"] <--> B["Low-Level Protocol Engine<br>OWNd Library (PyPI: OWNd)"]
+    A["SCS Physical Bus / Gateways<br>(F454, F455, MH200N, MH202, MyHomeServer1)"] <--> B["Low-Level Protocol Engine<br>OWNd Library (PyPI: OWNd)"]
     B <--> C["Home Assistant Custom Integration<br>custom_components/myhome"]
     C <--> D["Home Assistant Core & Lovelace Frontend"]
 ```
@@ -36,7 +36,7 @@ graph TD
 - **`OWNd` (Upstream Protocol Engine):**
   - All low-level OpenWebNet packet parsing, regexes, framing, and command generation.
   - All WHO specifications (e.g., WHO=1 Lighting, WHO=2 Automation/Covers, WHO=4 Thermoregulation, WHO=5 Burglar Alarm, WHO=15/25 Dry Contacts).
-  - All dimension decoders, gateway profile definitions (`F454Profile`, `MH200NProfile`, etc.), session concurrency rules, and raw socket/serial transports (`AsyncTcpTransport`, `AsyncSerialTransport`).
+  - All dimension decoders, gateway profile definitions (`F454Profile`, `MH200NProfile`, etc.), session concurrency rules, and raw TCP socket sessions (`OWNSession`, `OWNCommandSession`, `OWNEventSession`).
 - **`custom_components/myhome` (Home Assistant Integration):**
   - Home Assistant platform entities (`light`, `switch`, `cover`, `climate`, `sensor`, `binary_sensor`, `alarm_control_panel`, `button`).
   - Config flows, options flows, reauthentication, and YAML migration handlers.
@@ -63,7 +63,7 @@ PRs that violate this separation by parsing raw frame strings directly within pl
 
 ## 2. Bug Reports & Triage: "No Bus Trace, No Bug"
 
-OpenWebNet gateway hardware and firmware implementations differ significantly across generations (e.g., F454 vs. legacy MH200 scenario programmers vs. Legrand 3578 USB serial interfaces). What works on one gateway can fail on another due to session limits, buffer sizing, or proprietary frame quirks.
+OpenWebNet gateway hardware and firmware implementations differ significantly across generations (e.g., F454 and MyHomeServer1 vs. legacy MH200 scenario programmers). What works on one gateway can fail on another due to session limits, buffer sizing, or proprietary frame quirks.
 
 Because of this, **we cannot diagnose or triage hardware/protocol issues from descriptions alone**.
 

@@ -1,6 +1,6 @@
 # Hardware Compatibility Matrix
 
-The MyHOME integration supports all official BTicino and Legrand OpenWebNet gateways communicating via TCP/IP sockets or USB/Serial interfaces.
+The MyHOME integration supports official BTicino and Legrand OpenWebNet gateways communicating via TCP/IP sockets.
 
 ---
 
@@ -20,7 +20,6 @@ The MyHOME integration supports all official BTicino and Legrand OpenWebNet gate
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
 | **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
-| **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
 
 > [!NOTE]

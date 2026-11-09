@@ -14,7 +14,6 @@ from OWNd.message import OWNEvent
 from custom_components.myhome.const import (
     GATEWAY_DEVICE_TYPE_MAP,
     IDENTIFICATION_MANUAL,
-    IDENTIFICATION_SERIAL,
     IDENTIFICATION_SSDP,
     IDENTIFICATION_UNKNOWN,
     IDENTIFICATION_WHO13,
@@ -264,7 +263,6 @@ def test_resolver_shared_who13_code_is_a_question_not_an_answer():
         Evidence(who13_code="200"),
         Evidence(manual="MH200", who13_code="200"),
         Evidence(technical="F454", technical_source=IDENTIFICATION_SSDP, who13_code="200"),
-        Evidence(technical="MH200", technical_source=IDENTIFICATION_SERIAL, who13_code="200"),
         Evidence(prior_label="F452", who13_code="200"),
     ):
         r = resolve(ev)
@@ -330,28 +328,26 @@ def test_resolver_same_family_with_a_code_of_its_own_is_a_contradiction():
 
 
 def test_resolver_same_family_contradiction_of_a_technical_identity_is_a_conflict():
-    """An SSDP or serial MH200N answering 4 is kept and flagged, never relabelled."""
-    for source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL):
-        r = resolve(Evidence(technical="MH200N", technical_source=source, who13_code="4"))
-        assert (r.model, r.source, r.corrected_from) == ("MH200N", source, None)
-        assert r.conflict == f"configured as MH200N ({source}) but WHO=13 device type 4 identifies MH200 per the OpenWebNet specification"
-        assert r.conflict_reading.raw == "4"
+    """An SSDP MH200N answering 4 is kept and flagged, never relabelled."""
+    r = resolve(Evidence(technical="MH200N", technical_source=IDENTIFICATION_SSDP, who13_code="4"))
+    assert (r.model, r.source, r.corrected_from) == ("MH200N", IDENTIFICATION_SSDP, None)
+    assert r.conflict == "configured as MH200N (ssdp) but WHO=13 device type 4 identifies MH200 per the OpenWebNet specification"
+    assert r.conflict_reading.raw == "4"
 
 
 def test_resolver_technical_identity_is_never_overruled():
-    for source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL):
-        r = resolve(Evidence(technical="F454", technical_source=source, who13_code="4"))
-        assert r.model == "F454" and r.source == source
-        assert r.conflict == f"configured as F454 ({source}) but WHO=13 device type 4 identifies MH200 per the OpenWebNet specification"
-        assert (r.conflict_reading.raw, r.conflict_reading.certain) == ("4", True)
-        r = resolve(Evidence(technical="MH202", technical_source=source, who13_code="200", who1013_code="67"))
-        assert r.model == "MH202"
-        assert r.conflict == f"configured as MH202 ({source}) but WHO=1013 OBJECT_MODEL 67 identifies MyHomeServer1 per diagnostic catalogue"
-        # field evidence only: unverified, no conflict
-        assert resolve(Evidence(technical="MH200", technical_source=source, who13_code="51")).conflict is None
-        # corroborated
-        assert resolve(Evidence(technical="MH202", technical_source=source, who13_code="200", who1013_code="5")).conflict is None
-        assert resolve(Evidence(technical="003598", technical_source=source, who13_code="200", who1013_code="51")).conflict is None
+    r = resolve(Evidence(technical="F454", technical_source=IDENTIFICATION_SSDP, who13_code="4"))
+    assert r.model == "F454" and r.source == IDENTIFICATION_SSDP
+    assert r.conflict == "configured as F454 (ssdp) but WHO=13 device type 4 identifies MH200 per the OpenWebNet specification"
+    assert (r.conflict_reading.raw, r.conflict_reading.certain) == ("4", True)
+    r = resolve(Evidence(technical="MH202", technical_source=IDENTIFICATION_SSDP, who13_code="200", who1013_code="67"))
+    assert r.model == "MH202"
+    assert r.conflict == "configured as MH202 (ssdp) but WHO=1013 OBJECT_MODEL 67 identifies MyHomeServer1 per diagnostic catalogue"
+    # field evidence only: unverified, no conflict
+    assert resolve(Evidence(technical="MH200", technical_source=IDENTIFICATION_SSDP, who13_code="51")).conflict is None
+    # corroborated
+    assert resolve(Evidence(technical="MH202", technical_source=IDENTIFICATION_SSDP, who13_code="200", who1013_code="5")).conflict is None
+    assert resolve(Evidence(technical="003598", technical_source=IDENTIFICATION_SSDP, who13_code="200", who1013_code="51")).conflict is None
 
 
 def test_resolver_who1013_outranks_who13():
@@ -400,7 +396,6 @@ def test_model_family(model, family):
 def test_identification_source_precedence():
     assert _handler({"ssdp_location": "http://192.0.2.40:49153/desc.xml"}).identification_source == IDENTIFICATION_SSDP
     assert _handler({"UDN": "uuid:1234"}).identification_source == IDENTIFICATION_SSDP
-    assert _handler({"transport_type": "serial", "name": "Legrand 3578 USB Gateway"}).identification_source == IDENTIFICATION_SERIAL
     assert _handler().identification_source == IDENTIFICATION_MANUAL
     assert _handler({"name": "Generic"}).identification_source == IDENTIFICATION_UNKNOWN
     assert _handler({"name": "MH200", "model_source": "who13"}).identification_source == IDENTIFICATION_WHO13
@@ -674,26 +669,6 @@ def test_ssdp_model_cross_checked_by_who1013(dev_reg, issues):
     # WHO=1013 outranks WHO=13: an official code arriving later does not reopen the question
     _who13(h, "4")
     assert h._identity_conflict is None
-
-
-def test_serial_model_cross_checked_by_who1013(dev_reg, issues):
-    """A serial-fixed identity is treated like SSDP: cross-checked, never relabelled."""
-    create, delete, corrected = issues
-    h = _handler({"transport_type": "serial", "name": "MH200"})
-    h.gateway.model_name = "MH200"
-    dev_reg.async_get.return_value = MagicMock(model="MH200")
-    _who13(h, "200")  # no serial gateway is known to answer this; the path must still be sound
-    assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013**1##"
-    _who1013(h, "4")  # MH200: corroborated
-    assert h._identity_conflict is None
-    _who1013(h, "44")  # MH200N: same family, but a product with a code of its own
-    assert h.gateway.model_name == "MH200"
-    assert create.call_args.args[1:] == ("entry_ident", "MH200", "MH200N", "1013-1-44", "serial", True)
-    _who1013(h, "51")  # F454
-    assert h.gateway.model_name == "MH200"
-    assert "configured as MH200 (serial)" in h._identity_conflict
-    assert create.call_args.args[1:] == ("entry_ident", "MH200", "F454", "1013-1-51", "serial", True)
-    corrected.assert_not_called()
 
 
 def test_unknown_code_on_configured_gateway_is_recorded_not_applied(dev_reg, issues):

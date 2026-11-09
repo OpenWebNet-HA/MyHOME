@@ -44,21 +44,12 @@
         "title": "Gateway MyHOME rilevato",
         "description": "Vuoi configurare il gateway {name} ({host})?\n\nMyHOME mantiene aperta una connessione permanente per gli eventi, più una connessione per ogni worker di comando (1 di default). Un gateway accetta solo poche connessioni OpenWebNet contemporanee (5 su un F455, meno su un MH200N), condivise con tutto ciò che vi si collega: l'app Legrand/BTicino Home+Project, altre istanze di Home Assistant, altre integrazioni. Se le connessioni si esauriscono, MyHOME o l'altro client viene rifiutato o disconnesso. Chiudi i client non necessari e mantieni basso il numero di worker di comando."
       },
-      "serial": {
-        "title": "Gateway USB / Seriale",
-        "description": "Configura il tuo gateway USB o seriale Legrand 3578 / OpenZigBee.",
-        "data": {
-          "port": "Porta seriale",
-          "baudrate": "Baudrate",
-          "friendly_name": "Nome descrittivo"
-        }
-      },
       "reconfigure": {
         "title": "Riconfigura il gateway MyHome {name}",
         "description": "Aggiorna le impostazioni di connessione o le credenziali del tuo gateway {name}.",
         "data": {
           "host": "Indirizzo IP",
-          "port": "Porta / baudrate",
+          "port": "Porta",
           "password": "Password"
         }
       },

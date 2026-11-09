@@ -471,28 +471,22 @@ async def test_startup_auto_detects_firmware_and_respects_h4684_mh200_safety_bou
     assert updated_device.sw_version == expected_fw
 
 
-async def test_request_gateway_identity_skips_serial_and_already_known_values(hass: HomeAssistant) -> None:
-    """Serial gateways and gateways whose WHO=13 code + firmware are already populated send no startup probes."""
-    serial_entry = MockConfigEntry(
+async def test_request_gateway_identity_skips_without_workers_and_already_known_values(hass: HomeAssistant) -> None:
+    """Gateways with no active command workers or whose WHO=13 code + firmware are already populated send no startup probes."""
+    idle_entry = MockConfigEntry(
         domain=DOMAIN,
         data={
-            CONF_HOST: "/dev/ttyUSB0",
-            CONF_PORT: 0,
+            CONF_HOST: "192.0.2.84",
+            CONF_PORT: 20000,
             CONF_MAC: "00:03:50:aa:bb:cc",
-            CONF_NAME: "L4686SDK",
-            "transport_type": "serial",
+            CONF_NAME: "H4684",
         },
         unique_id="00:03:50:aa:bb:cc",
     )
-    serial_entry.add_to_hass(hass)
-    serial_handler = MyHOMEGatewayHandler(hass=hass, config_entry=serial_entry)
-    dummy = asyncio.create_task(asyncio.sleep(0))
-    serial_handler.sending_workers.append(dummy)
-    try:
-        serial_handler._request_gateway_identity()
-        assert serial_handler.send_buffer.empty()
-    finally:
-        await dummy
+    idle_entry.add_to_hass(hass)
+    idle_handler = MyHOMEGatewayHandler(hass=hass, config_entry=idle_entry)
+    idle_handler._request_gateway_identity()
+    assert idle_handler.send_buffer.empty()
 
     ip_entry = MockConfigEntry(
         domain=DOMAIN,

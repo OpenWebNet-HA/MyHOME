@@ -19,7 +19,7 @@ gantt
     title MyHOME Integration Status & Roadmap
     dateFormat  YYYY-MM-DD
     section Delivered in Phase 1 & 2 (b1 – b8)
-    Dual Async Transports & Core Architecture (P1)   :done, 2026-08-01, 2026-09-01
+    Async TCP Transport & Core Architecture (P1)     :done, 2026-08-01, 2026-09-01
     Lovelace In-Band Bus Monitor Card (<myhome-bus-card>) :done, 2026-08-15, 2026-09-10
     Standalone OWNd Library & Master WHO Catalog     :done, 2026-09-01, 2026-09-10
     section Delivered in Phase 3 & 4 (b9 – b13)
@@ -178,7 +178,7 @@ graph TD
         GW_F461["🟢 F461<br/>(DALI DIN Web Server)"]
         GW_H4890["🟢 H4890 / AM4890<br/>(Touchscreen IP gateway #466)"]
         GW_F455["🟢 F455<br/>(Physical plant capture #466)"]
-        GW_3578["🟡 Legrand 3578<br/>(Serial/ZigBee Loopback)"]
+        GW_3578["🔴 Legrand 3578<br/>(Deferred to v2.1+ · #879)"]
     end
 
     subgraph Subsystems["⚙️ Protocol Subsystems & Scenarios"]
@@ -229,10 +229,10 @@ graph TD
     SUB_ROUTER --> HARNESS
 
     classDef covered fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
-    classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
+    classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
     class GW_MHS1,GW_F454,GW_MH200,GW_MH202,GW_F461,GW_H4890,GW_F455,SUB_LIGHT,SUB_DALI,SUB_F418,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_CU4695,SUB_FANCOIL,SUB_ENERGY,SUB_DRY,SUB_CEN,SUB_AUDIO,SUB_ALARM,SUB_ROUTER covered;
-    class GW_3578 partial;
+    class GW_3578 needed;
 ```
 
 ---
@@ -248,7 +248,7 @@ graph TD
 | **H4890 / AM4890** | 🟢 **Covered** | Livinglight / Axolute 3.5" touchscreen capture in #466 | *None needed — verified against physical display gateway.* |
 | **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
 | **F455** | 🟢 **Covered** | Real-world plant capture in #466 (@lionelser) | *None needed — verified against physical F455 basic gateway.* |
-| **Legrand 3578 USB/Serial** | 🟡 **Profile Verified** | Loopback transport tests in `tests/test_gateway.py` | **Real-world USB serial stream**: Raw byte capture from physical OpenZigBee installation (`WHERE=<id>#9`). |
+| **Legrand 3578 USB/Serial** | 🔴 **Deferred (v2.1+)** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)) | **Hardware tester & raw serial stream**: Active tester + raw byte capture (`#466`) from physical OpenZigBee installation (`WHERE=<id>#9`). |
 
 ---
 

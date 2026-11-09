@@ -28,7 +28,6 @@ A gateway labelled as a faster model than it is gets flooded; one labelled as a 
 | `source` | Where it comes from | Trust |
 | :--- | :--- | :--- |
 | `ssdp` | The gateway announced its own `modelName` over UPnP/SSDP when discovered (F454, F455, MH200N, MH202, MyHomeServer1 …). | **Authoritative** — the device reported it directly. |
-| `serial` | Serial / USB interface (Legrand 3578): the model is fixed by transport. | **Authoritative** |
 | `manual` | Entered manually in configuration. | Trusted, but *correctable* by certain evidence. |
 | `who13` | No model was configured; labelled from WHO=13 reply. | Best effort. |
 
@@ -63,7 +62,7 @@ When a dimension-15 reply arrives, the handler compares the reported model with 
 
 | Configured `source` | Code agrees | Official 2006 code contradicts | Observed-only code contradicts | Unknown code |
 | :--- | :--- | :--- | :--- | :--- |
-| `ssdp` / `serial` | Nothing | Model kept; repair issue asks to confirm | Model kept; repair issue asks | Recorded only |
+| `ssdp` | Nothing | Model kept; repair issue asks to confirm | Model kept; repair issue asks | Recorded only |
 | `manual` | Nothing | Model and profile corrected | Model kept; repair issue asks | Recorded only |
 | None / `who13` | — | Labelled from code | Labelled from code | Recorded only |
 

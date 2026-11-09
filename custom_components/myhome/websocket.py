@@ -140,32 +140,6 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
     if not firmware and isinstance(cfg_fw, str) and cfg_fw.strip().lower() not in ("", "none", "null", "unknown"):
         firmware = cfg_fw
 
-    transport_type = config_data.get("transport_type") or getattr(gw, "transport_type", None)
-    is_serial = isinstance(transport_type, str) and transport_type == "serial"
-
-    raw_serial = (
-        config_data.get("serial_port")
-        or config_data.get("device")
-        or getattr(raw_gw, "serial_port", None)
-        or getattr(gw, "serial_port", None)
-    )
-    serial_port: Optional[str] = raw_serial if isinstance(raw_serial, str) else None
-
-    # Check if host or port was used to store serial device path (e.g. /dev/ttyUSB0 or COM3)
-    raw_port = getattr(raw_gw, "port", None)
-    cfg_port = config_data.get(CONF_PORT)
-    if not serial_port:
-        if isinstance(cfg_port, str) and not cfg_port.isdigit():
-            serial_port = cfg_port
-        elif isinstance(raw_port, str) and not raw_port.isdigit():
-            serial_port = raw_port
-        elif is_serial and isinstance(host, str) and host:
-            serial_port = host
-
-    if is_serial or serial_port:
-        host = ""
-        port = None
-
     mac_val = getattr(gw, "mac", None)
     if not isinstance(mac_val, str):
         mac_val = config_data.get(CONF_MAC)
@@ -216,7 +190,6 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         "firmware": firmware,
         "host": host,
         "port": port,
-        "serial_port": serial_port,
         "mac_prefix": mac_prefix,
         "queue_pacing": queue_pacing,
         "worker_count": worker_count,

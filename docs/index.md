@@ -2,7 +2,7 @@
 
 Welcome to the official documentation for the **MyHOME** Home Assistant integration.
 
-This integration connects your BTicino / Legrand MyHOME SCS bus systems via OpenWebNet IP & Serial gateways (such as **F454**, **MH200**, **MH200N**, **MH201**, **MH202**, **MyHomeServer1**, **F461**, or **Legrand 3578 USB**) directly into Home Assistant.
+This integration connects your BTicino / Legrand MyHOME SCS bus systems via OpenWebNet TCP/IP gateways (such as **F454**, **F455**, **MH200**, **MH200N**, **MH201**, **MH202**, **MyHomeServer1**, or **F461**) directly into Home Assistant.
 
 ---
 
@@ -95,7 +95,6 @@ The v2.0 architecture represents a complete modernization of the integration, fe
 | **MH202** | TCP (`20000`) | 2 | Optional | 2 |
 | **MH200N / MH201 / MH200** | TCP (`20000`) | 1 | No | 1 |
 | **F452 / F452V / MHServer** | TCP (`20000`) | 1 | No | 1 |
-| **Legrand 3578** | USB / RS232 Serial | 1 | N/A | 1 |
 
 ---
 
