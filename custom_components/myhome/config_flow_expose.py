@@ -25,11 +25,21 @@ from .const import (
     CONF_WHO,
 )
 from .data import get_runtime_data
+from .expose import effective_expose_profile, injection_block_reason
 from .typing_compat import flow_schema
 
 
 class ExposeSubentryFlowHandler(ConfigSubentryFlow):
     """Handle ConfigSubentryFlow for exposing Home Assistant entities to the SCS bus."""
+
+    def _gateway_profile_for_who(self, who: int) -> typing.Any:
+        """Return the parent gateway's resolved profile for ``who``, or None if unavailable."""
+        entry = self._get_entry()
+        runtime = get_runtime_data(entry)
+        gw = getattr(runtime, "gateway", None) if runtime is not None else None
+        if gw is not None:
+            return effective_expose_profile(gw, who)
+        return None
 
     def _build_schema(self, defaults: dict[str, typing.Any]) -> typing.Any:
         """Build form schema for adding or reconfiguring an expose subentry."""
@@ -65,16 +75,27 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         except vol.Invalid:
             step_default = 10
 
+        all_who_options = (
+            (1, "WHO 1 — Lighting / Switch / Virtual Actuator"),
+            (2, "WHO 2 — Automation / Cover"),
+            (4, "WHO 4 — Temperature Probe (Dimension 0)"),
+            (13, "WHO 13 — Bus Clock & DST Sync"),
+            (18, "WHO 18 — Energy / Power Meter"),
+        )
+        who_options = [
+            selector.SelectOptionDict(value=str(code), label=label)
+            for code, label in all_who_options
+            if str(code) == who_default
+            or (
+                (prof := self._gateway_profile_for_who(code)) is None
+                or injection_block_reason(prof, code) is None
+            )
+        ]
+
         schema_dict: dict[typing.Any, typing.Any] = {
             Required(CONF_WHO, default=who_default): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(value="1", label="WHO 1 — Lighting / Switch / Virtual Actuator"),
-                        selector.SelectOptionDict(value="2", label="WHO 2 — Automation / Cover"),
-                        selector.SelectOptionDict(value="4", label="WHO 4 — Temperature Probe (Dimension 0)"),
-                        selector.SelectOptionDict(value="13", label="WHO 13 — Bus Clock & DST Sync"),
-                        selector.SelectOptionDict(value="18", label="WHO 18 — Energy / Power Meter"),
-                    ],
+                    options=who_options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                 )
             ),
@@ -174,6 +195,11 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             errors[CONF_WHO] = "invalid_who"
             return {}, errors, ""
 
+        profile = self._gateway_profile_for_who(who)
+        if profile is not None and injection_block_reason(profile, who) is not None:
+            errors[CONF_WHO] = "who_injection_unsupported"
+            return {}, errors, ""
+
         raw_where = user_input.get(CONF_WHERE)
         where = (
             ""
@@ -248,12 +274,20 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             errors["base"] = "invalid_expose"
             return {}, errors, ""
 
+        norm_where = str(cleaned.get(CONF_WHERE) or "")
+        if (
+            profile is not None
+            and injection_block_reason(profile, who, norm_where) is not None
+        ):
+            errors[CONF_WHERE] = "who4_probe_where_unsupported"
+            return {}, errors, ""
+
         # Check for duplicate binding on the parent entry
         entry = self._get_entry()
         candidate_dim = cleaned.get(CONF_DIMENSION)
         if candidate_dim is None:
             candidate_dim = 0 if who == 4 else (22 if who == 13 else None)
-        candidate_key = (int(cleaned[CONF_WHO]), str(cleaned.get(CONF_WHERE) or ""), candidate_dim)
+        candidate_key = (int(cleaned[CONF_WHO]), norm_where, candidate_dim)
 
         runtime = get_runtime_data(entry)
         existing_bindings = (
@@ -268,7 +302,6 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 errors["base"] = "invalid_expose"
                 return {}, errors, ""
 
-        norm_where = str(cleaned.get(CONF_WHERE) or "")
         if who == 13:
             title = f"Bus Clock Sync (WHO 13, dim {dim if dim is not None else 22})"
         else:

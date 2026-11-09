@@ -955,10 +955,13 @@ def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
     )
 
 
-# External probe N00 (N = 1..9) or individual probe PZZ (P = 1..8, ZZ = 01..99).
-# 0, 1..99 and 001..099 address all probes, a zone's master probe and all probes
-# of a zone, so a virtual probe must not answer on them.
-_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
+# Master probe Z of zone 1..99 (required for #0 temperature writes on bt_termo
+# gateways: F461 020011, F460 020012, and MyHomeServer1 028206 translate 1..99
+# to SCS D1 <ZZ> 03 02 F0 <TT> <TT> 00 and silently NACK >= 100), external probe
+# N00 (N = 1..9), or individual probe PZZ (P = 1..8, ZZ = 01..99).
+# 0 and 001..099 address all probes and all probes of a zone, and #Z addresses
+# the central unit's zone object, so a virtual probe must not answer on them.
+_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
 _WHO18_EXPOSE_WHERE_RE = re.compile(
     r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
 )
@@ -966,7 +969,7 @@ _WHO18_EXPOSE_WHERE_RE = re.compile(
 
 def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Validate cross-field constraints on a single expose entry."""
-    from .where_grammar import is_apl_address, is_probe, normalize_expose_where
+    from .where_grammar import is_apl_address, normalize_expose_where
 
     who = int(item[CONF_WHO])
     raw_where_val = item.get(CONF_WHERE)
@@ -1026,9 +1029,9 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
                 f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
             )
     elif who == 4:
-        if not (is_probe(where) and _WHO4_EXPOSE_PROBE_RE.fullmatch(where)):
+        if not _WHO4_EXPOSE_PROBE_RE.fullmatch(where):
             raise Invalid(
-                f"WHO=4 expose 'where' must be a probe address (external probe '100'..'900' or probe PZZ '101'..'899', got {raw_where!r})"
+                f"WHO=4 expose 'where' must be a probe address (zone master probe '1'..'99', external probe '100'..'900', or probe PZZ '101'..'899', got {raw_where!r})"
             )
         if dim is not None and int(dim) != 0:
             raise Invalid(

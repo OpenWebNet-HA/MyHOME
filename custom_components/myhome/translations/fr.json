@@ -150,7 +150,9 @@
         "where_required": "Une adresse WHERE est requise pour ce sous-système WHO.",
         "entity_required": "Une entité Home Assistant source est requise pour ce sous-système WHO.",
         "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
-        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante."
+        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante.",
+        "who_injection_unsupported": "Le firmware de cette passerelle ne permet pas d'injecter des trames pour le sous-système WHO sélectionné sur le bus SCS (pris en charge sur toutes les passerelles : WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "Cette passerelle ne traduit les écritures de température WHO 4 #0 que sur les adresses maîtres de zone inutilisées 1..99 (ex. 50) ; les adresses de sonde à 3 chiffres (100..900) sont rejetées par le firmware."
       },
       "abort": {
         "reconfigure_successful": "Liaison de l'entité exposée mise à jour avec succès."

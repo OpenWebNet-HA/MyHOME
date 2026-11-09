@@ -99,7 +99,7 @@ from .const import (
     SUBENTRY_TYPE_EXPOSE,
     area_of_where,
 )
-from .where_grammar import expose_message_where, normalize_expose_where
+from .where_grammar import expose_message_where, is_probe, normalize_expose_where
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -122,6 +122,63 @@ _INJECTION_FLAGS: dict[int, tuple[str, str]] = {
     4: ("supports_who4_command_injection", "WHO 4 #0 temperature writes"),
     18: ("supports_who18_response_injection", "WHO 18 dimension reports"),
 }
+
+
+def effective_expose_profile(gateway: Any, who: int) -> Any:
+    """Return the active GatewayProfile for ``who``, accounting for shared-bus delegation."""
+    target_gw: Any = gateway
+    delegated_away = getattr(target_gw, "delegated_away_whos", None)
+    if isinstance(delegated_away, (set, frozenset, list, tuple)) and who in delegated_away:
+        get_sec = getattr(target_gw, "_get_secondary_for_who", None)
+        sec = get_sec(who) if callable(get_sec) else None
+        if sec is not None and getattr(sec, "is_connected", False) is True:
+            target_gw = sec
+    profile = getattr(target_gw, "profile", None)
+    if profile is None:
+        return None
+    if isinstance(getattr(profile, "model_name", None), str) or any(
+        isinstance(getattr(profile, attr, None), bool)
+        for attr in (
+            "supports_dimension_response_injection",
+            "supports_who4_command_injection",
+            "supports_who18_response_injection",
+        )
+    ):
+        return profile
+    return None
+
+
+def injection_block_reason(
+    profile: Any, who: int, where: str | None = None
+) -> str | None:
+    """Return why ``profile`` cannot inject expose frames for ``who``/``where``, or None when it can.
+
+    Only WHO 4 and WHO 18 are gated. An unset (None) OWNd flag means the gateway
+    family is unverified, and is treated as unsupported. On ``bt_termo`` gateways
+    where ``supports_dimension_response_injection`` is not True, ``*#4*W*#0*TTTT##``
+    only translates master-probe addresses ``1..99`` onto the SCS bus and rejects
+    3-digit probe addresses ``>= 100``.
+    """
+    gate = _INJECTION_FLAGS.get(who)
+    if gate is None:
+        return None
+    flag_name, frames = gate
+    if profile is None:
+        return f"the gateway profile is not known yet, so {frames} are unverified"
+    if who == 4 and getattr(profile, "supports_dimension_response_injection", None) is True:
+        return None
+    flag = getattr(profile, flag_name, None)
+    model = getattr(profile, "model_name", None) or type(profile).__name__
+    if flag is True:
+        if who == 4 and where and is_probe(where):
+            return (
+                f"gateway {model} only translates WHO 4 #0 temperature writes on "
+                f"zone master probe addresses 1..99 (3-digit WHERE={where} is rejected by firmware)"
+            )
+        return None
+    if flag is False:
+        return f"gateway {model} does not accept {frames} ({flag_name}=False)"
+    return f"gateway {model} is unverified for {frames} ({flag_name} is unset in OWNd)"
 
 
 @dataclass
@@ -1042,43 +1099,19 @@ class ExposeManager:
 
     def _effective_profile(self, who: int) -> Any:
         """Return the active GatewayProfile for ``who``, accounting for shared-bus delegation."""
-        target_gw: Any = self.gateway
-        delegated_away = getattr(target_gw, "delegated_away_whos", None)
-        if isinstance(delegated_away, (set, frozenset, list, tuple)) and who in delegated_away:
-            get_sec = getattr(target_gw, "_get_secondary_for_who", None)
-            sec = get_sec(who) if callable(get_sec) else None
-            if sec is not None and getattr(sec, "is_connected", False) is True:
-                target_gw = sec
-        return getattr(target_gw, "profile", None)
+        return effective_expose_profile(self.gateway, who)
 
-    def _injection_block_reason(self, who: int) -> str | None:
-        """Return why the gateway carrying ``who`` cannot take expose frames, or None when it can.
-
-        Only WHO 4 and WHO 18 are gated. An unset (None) OWNd flag means the gateway
-        family is unverified, and is treated as unsupported.
-        """
-        gate = _INJECTION_FLAGS.get(who)
-        if gate is None:
-            return None
-        flag_name, frames = gate
-        profile = self._effective_profile(who)
-        if profile is None:
-            return f"the gateway profile is not known yet, so {frames} are unverified"
-        if who == 4 and getattr(profile, "supports_dimension_response_injection", None) is True:
-            return None
-        flag = getattr(profile, flag_name, None)
-        if flag is True:
-            return None
-        model = getattr(profile, "model_name", None) or type(profile).__name__
-        if flag is False:
-            return f"gateway {model} does not accept {frames} ({flag_name}=False)"
-        return f"gateway {model} is unverified for {frames} ({flag_name} is unset in OWNd)"
+    def _injection_block_reason(
+        self, who: int, where: str | None = None
+    ) -> str | None:
+        """Return why the gateway carrying ``who`` cannot take expose frames, or None when it can."""
+        return injection_block_reason(self._effective_profile(who), who, where)
 
     @callback
     def _warn_blocked_bindings(self) -> None:
         """Warn once per binding and reason when its gateway cannot take its frames."""
         for binding in self.bindings:
-            reason = self._injection_block_reason(binding.who)
+            reason = self._injection_block_reason(binding.who, binding.where)
             if reason is None or (binding.key, reason) in self._warned_blocked:
                 continue
             self._warned_blocked.add((binding.key, reason))
@@ -1299,7 +1332,7 @@ class ExposeManager:
             return frames, who2_val_key
 
         if binding.who == 4:
-            if self._injection_block_reason(4) is not None:
+            if self._injection_block_reason(4, binding.where) is not None:
                 return [], None
             supports_dim_resp = (
                 getattr(
@@ -1730,7 +1763,13 @@ class ExposeManager:
                         is_reply=True,
                         query_dimension=dim,
                     )
-                elif who == 18 and is_dim_req and dim == 1200 and binding.dimension == 113:
+                elif (
+                    who == 18
+                    and is_dim_req
+                    and dim == 1200
+                    and binding.dimension == 113
+                    and self._injection_block_reason(18) is None
+                ):
                     now_m = time.monotonic()
                     remaining = (
                         max(1, min(255, round((binding.stream_expires_at - now_m) / 60.0)))
@@ -1749,7 +1788,7 @@ class ExposeManager:
 
             # ── 3. WHO=18 Dimension 1200 Streaming Handshake ──────────────────
             if who == 18 and is_dim_write and dim == 1200:
-                if not binding.respond_to_read:
+                if not binding.respond_to_read or self._injection_block_reason(18) is not None:
                     continue
                 if binding.dimension == 113:
                     duration = getattr(message, "stream_duration", None)

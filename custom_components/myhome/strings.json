@@ -153,7 +153,9 @@
         "where_required": "A WHERE address is required for this WHO subsystem.",
         "entity_required": "A source Home Assistant entity is required for this WHO subsystem.",
         "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
-        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding."
+        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding.",
+        "who_injection_unsupported": "This gateway firmware does not support injecting frames for the selected WHO subsystem onto the SCS bus (supported on all gateways: WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "This gateway only translates WHO 4 #0 temperature writes on unused zone master addresses 1..99 (e.g. 50); 3-digit probe addresses (100..900) are rejected by firmware."
       },
       "abort": {
         "reconfigure_successful": "Exposed entity binding updated successfully."

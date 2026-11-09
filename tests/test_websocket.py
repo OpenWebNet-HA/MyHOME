@@ -551,6 +551,38 @@ def test_extract_gateway_info_edge_cases():
     gw_buf_err.config_entry = None
     assert _extract_gateway_info(gw_buf_err)["queue_depth"] == 0
 
+    # 8. Real ConfigEntry with MappingProxyType data (#832)
+    from types import MappingProxyType
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    real_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "name": "Legrand 067292",
+            "host": "192.0.2.50",
+            "port": 20000,
+            "firmware": "1.2.3",
+            "mac": "00:03:50:aa:bb:cc",
+            "command_worker_count": 2,
+        },
+    )
+    assert isinstance(real_entry.data, MappingProxyType)
+    gw_mp = MagicMock()
+    gw_mp.gateway = None
+    gw_mp.model = None
+    gw_mp.mac = None
+    gw_mp.sending_workers = []
+    gw_mp.send_buffer = None
+    gw_mp.config_entry = real_entry
+    mp_info = _extract_gateway_info(gw_mp)
+    assert mp_info["model"] == "Legrand 067292"
+    assert mp_info["host"] == "192.0.2.50"
+    assert mp_info["port"] == 20000
+    assert mp_info["firmware"] == "1.2.3"
+    assert mp_info["mac_prefix"] == "00:03:50"
+    assert mp_info["worker_count"] == 2
+
 
 async def test_mutating_commands_require_admin(hass: HomeAssistant, attach_gateway):
     """Injecting frames onto the bus and wiping the buffer are admin-only."""

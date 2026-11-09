@@ -12,12 +12,12 @@ By emulating virtual OpenWebNet devices, physical wall controls, touchscreens (s
    Tap an icon or slider on a Legrand `067292` or BTicino `H4890` wall screen to control a Zigbee, Matter, or Wi-Fi device in Home Assistant. Changes made in Home Assistant or voice assistants instantly update the status icon and LED on the wall screen.
 2. **Unpopulated Physical Wall Switches (`WHO = 1`)**:
    Use an unused rocker on an `H4652/2` or `K4652M2` physical wall control configured as a point-to-point light (`WHO = 1`) to toggle a TV, media player, or smart bulb with full LED status feedback.
-3. **Virtual Temperature Probes (`WHO = 4`)**:
-   Publish an outdoor weather service temperature, Zigbee room sensor, or ESPHome probe onto an SCS probe address (`DIMENSION 0`), allowing wall screens and thermostats to display real-time temperatures on their Thermoregulation pages.
-4. **Virtual Energy & Power Meters (`WHO = 18`)**:
-   Publish live solar inverter generation, battery power, or grid smart-meter metrics onto SCS energy addresses (`DIMENSION 113` for active power in Watts; `DIMENSION 51..54` for totalizers in Wh), displaying live consumption on wall screens.
+3. **Virtual Temperature Probes (`WHO = 4`, gateway-dependent)**:
+   On gateways whose `bt_termo` daemon translates `#0` temperature writes onto the SCS bus (verified on `F461`), publish an outdoor weather service temperature, Zigbee room sensor, or ESPHome probe onto an unused zone master address (`1..99`, `DIMENSION 0`). *(Rejected by `F454`, `MH200N`, `MH202`, and wall touchscreens such as `067292` / `H4890` — see [Gateway Compatibility](#gateway-compatibility-firmware-verification) below.)*
+4. **Virtual Energy & Power Meters (`WHO = 18`, gateway-dependent)**:
+   On gateways verified for `WHO = 18` dimension reports (`F461`), publish active power (`DIMENSION 113`, Watts) or energy totalizers (`DIMENSION 51..54`, Wh) onto OpenWebNet monitor sessions. *(Cannot inject synthetic power/energy onto a physical 2-wire SCS bus for `067292` / `H4890` wall touchscreens — see [Gateway Compatibility](#gateway-compatibility-firmware-verification) below.)*
 5. **Bus Clock & Calendar Synchronization (`WHO = 13`)**:
-   Keep all wall screens, thermostats, and chronothermostats on the SCS bus synchronized to Home Assistant's local time, date, and daylight saving time (DST).
+   Keep all wall screens (`067292`, `H4890`, `10"` touchscreens), thermostats, and chronothermostats on the SCS bus synchronized to Home Assistant's local time, date, and daylight saving time (DST) across all gateway models.
 
 ---
 
@@ -38,7 +38,7 @@ In Home Assistant, exposed bindings are configured as **Config Subentries** on y
 | Field | Description | Example |
 | :--- | :--- | :--- |
 | **WHO Subsystem** | The OpenWebNet domain to emulate (`1`, `2`, `4`, `13`, or `18`). | `WHO 1 — Lighting / Switch / Virtual Actuator` |
-| **WHERE Address** | Unused SCS address assigned to the button/tile in *MyHOME_Suite*. *(Omit for WHO 13)* | `25` or `100` |
+| **WHERE Address** | Unused SCS address assigned to the button/tile in *MyHOME_Suite*. *(Omit for WHO 13)* | `25` or `50` |
 | **Source Entity** | The Home Assistant entity providing state and commands. | `light.hue_living_room` |
 | **State Attribute** *(Optional)* | Entity attribute providing the value (e.g. `brightness`, `current_position`). | `brightness` |
 | **OpenWebNet Dimension** *(Optional)* | Dimension selector (`0` for temperature; `113` for power; `22` for clock). | `0` |
@@ -82,10 +82,11 @@ myhome:
 
       # -----------------------------------------------------------------
       # 3. Virtual Temperature Probe (WHO = 4, Dimension 0)
-      # Publishes outdoor temperature onto probe address 100 for wall screens.
+      # Publishes outdoor temperature onto unused zone master address 50
+      # (1..99 required on F461 / bt_termo; 100..900 only on reply-injection gateways).
       # -----------------------------------------------------------------
       - who: 4
-        where: "100"
+        where: "50"
         dimension: 0
         entity_id: sensor.outdoor_temperature
         cooldown: 5.0
@@ -228,19 +229,19 @@ Different gateway models handle bus frame injection differently:
 
 | OpenWebNet Domain | Gateway Compatibility | Required Frame Form | Notes |
 | :--- | :---: | :--- | :--- |
-| **`WHO = 1` (Lights / Switches)** | **All Gateways** | `*#1*WHERE*#1*LEVEL*0##` (or `*1*1*WHERE##` / `*1*0*WHERE##`) | Universal support across F454, F455, MH200N, MH201, MH202, MHS1, 067292, and H4890. |
+| **`WHO = 1` (Lights / Switches)** | **All Gateways** | `*#1*WHERE*#1*LEVEL*0##` (or `*1*1*WHERE##` / `*1*0*WHERE##`) | Universal support across F454, F455, F459, MH200N, MH201, MH202, MHS1, F461, 067292, and H4890. |
 | **`WHO = 2` (Covers / Shutters)** | **All Gateways** | `*#2*WHERE*#11#001*POS##` (or `*2*1/2/0*WHERE##`) | Universal support; translation echoes are cleanly absorbed. |
-| **`WHO = 13` (Clock & DST)** | **All Gateways** | `*#13**#22*H*M*S*T*W*D*M*Y##` | Synchronizes on-screen clocks across all models. Set `periodic_send: 0` for query-only mode. |
-| **`WHO = 4` (Virtual Temperature)** | Verified on **`F461`** | `*#4*WHERE*#0*TTTT##` | Gated by firmware injection capabilities. On gateways that reject injected probe values, a warning is logged at startup. |
-| **`WHO = 18` (Virtual Energy Meter)** | Verified on **`F461`** | `*#18*WHERE*113*WATT##` | Gated by firmware injection capabilities. On gateways that reject energy reports, a warning is logged at startup. |
+| **`WHO = 13` (Clock & DST)** | **All Gateways** | `*#13**#22*H*M*S*T*W*D*M*Y##` | Synchronizes on-screen clocks across all models (`067292`, `H4890`, `F454`, etc.). Set `periodic_send: 0` for query-only mode. |
+| **`WHO = 4` (Virtual Temperature)** | Verified on **`F461`** (`WHERE` `1..99`) | `*#4*WHERE*#0*TTTT##` | `bt_termo` (`F461`) translates unused zone master addresses `1..99` (e.g. `"50"`) onto the SCS bus (`D1 <ZZ> 03 02 F0 <TT> <TT> 00`), but rejects 3-digit probe addresses (`100..900`). Rejected (`NACK`) for all addresses on `F454`, `F459`, `MH200N`, `MH202`, `067292`, `H4890`, and `H4684`. |
+| **`WHO = 18` (Virtual Energy Meter)** | Verified on **`F461`** (TCP session only) | `*#18*WHERE*113*WATT##` | Rejected (`NACK`) by wall touchscreens (`067292`, `H4890`, `H4684`). `bt_supervisione` / `bt_energy` gateways (`F454`, `F459`, `MH200N`, `MH202`, `MHS1`, `F461`) `ACK` on TCP but emit an SCS active-power **read** request (`D1 A1 02 33 00 1D 00 00`), discarding the value — so synthetic `WHO = 18` readings cannot reach physical 2-wire SCS wall screens. |
 
 > [!NOTE]
-> For physical wall touchscreens (Legrand `067292`, Arteor `573958`, BTicino `H4890`, `LN4890`), configure the button or tile with an unused address in *MyHOME_Suite*, then create the matching expose binding in Home Assistant.
+> For physical wall touchscreens (Legrand `067292`, Arteor `573958`, BTicino `H4890`, `LN4890`), configure virtual light/switch (`WHO = 1`), shutter (`WHO = 2`), or scenario tiles with unused point-to-point addresses in *MyHOME_Suite*, and add clock sync (`WHO = 13`). On a shared SCS bus with a primary gateway (e.g. `F454` + `067292`), create the expose subentries on the **primary** gateway and keep `WHO = 4` / `WHO = 18` undelegated on the primary gateway.
 
 ---
 
 ## 🔍 Diagnostics & Troubleshooting
 
 - **Check Active Bindings**: Open **Settings → Devices & Services → MyHOME → Download Diagnostics**. The JSON file contains an `"expose"` section detailing all active bindings, throttles, and last-sent timestamps.
-- **Unverified Gateway Warning**: If a warning like *"Expose WHO=4 WHERE=100 is disabled: gateway ... is unverified for WHO 4 #0 writes"* appears in your Home Assistant log, the gateway firmware does not support injected sensor frames.
+- **Unsupported / Unverified Gateway Warning**: The UI Config Subentry flow hides `WHO = 4` and `WHO = 18` on gateways whose firmware cannot inject them onto the SCS bus, and rejects 3-digit `WHO = 4` probe addresses (`100..900`) on `#0`-only gateways (`F461`). If a legacy YAML or pre-existing binding targets an unsupported gateway or address, a single warning is logged at startup (*"Expose WHO=... is disabled: gateway ... Nothing is sent for this binding"*).
 - **Duplicate Address Error (`invalid_expose`)**: Each `(who, where, dimension)` triplet must be unique per gateway.
