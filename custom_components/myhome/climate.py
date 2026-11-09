@@ -671,6 +671,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # said since the restart: the silent-zone poll (#466) does not take them for a report.
         self._target_temperature_restored = False
         self._hvac_mode_restored = False
+        self._humidity_reported = False
+        self._fan_mode_reported = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
         # BTicino 3550 central unit (#0) diagnostic status flags (WHAT 20..24, 30, 31)
@@ -986,27 +988,89 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # 13 ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv). The 10 s socket hang of #674 was an F455,
             # not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing answered. F454
             # (up to 4 command sessions) answers *#4*Z## in ~1.3 s and MH202 in ~160-250 ms with all five
-            # frames on both central units (#629) and standalone thermostats (#866); MyHomeServer1 replies
-            # from its cache (#649); F460 and F461 expand it into one request ($00499013000) and answer it
-            # (#714): those five keep the poll. Where an SCS-only gateway also drops the general request
-            # *#4*0##, the zone asks for its temperature below (_polls_temperature); everywhere else it waits
-            # for the sweep replies or for the thermostat's own reports.
+            # frames on both central units (#629) and standalone thermostats (#866); F460, F461 and
+            # MyHomeServer1 expand it onto the SCS bus ($0499013000) and answer all five frames in
+            # ~1.3-1.9 s (#649, #714, #886): those five keep the poll. Where an SCS-only gateway also drops
+            # the general request *#4*0##, the zone asks for its temperature below (_polls_temperature);
+            # everywhere else it waits for the sweep replies or for the thermostat's own reports.
+            return
+        await self._async_send_zone_polls()
+
+    async def _send_zone_poll_frame(
+        self,
+        request: OWNCommand,
+        *,
+        pace: bool = False,
+        track_health: bool = False,
+    ) -> None:
+        """Send one WHO 4 status frame, register poll health if needed, and optionally pace."""
+        frames_before = self._poll_health.frames
+        written = await self._gateway_handler.send_status_request(request)
+        if track_health and isinstance(written, asyncio.Future):
+            written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
+        if pace:
+            pace_write = getattr(self._gateway_handler, "pace_startup_status_write", None)
+            if callable(pace_write):
+                await pace_write(written, request)
+
+    async def _async_send_zone_polls(
+        self,
+        *,
+        skip_reported: bool = False,
+        humidity_coalesced: bool = False,
+        pace: bool = False,
+    ) -> None:
+        """Dispatch point-to-point WHO 4 status queries needed by this entity."""
+        wants_humidity = (
+            self._humidity
+            and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
+        )
+        ask_status = self._central or (
+            self._gateway_supports_zone_status
+            and (not skip_reported or not self._core_zone_state_reported())
+        )
+        ask_temp = (
+            not self._central
+            and not self._gateway_supports_zone_status
+            and self._polls_temperature
+            and (not skip_reported or not self._temperature_reported())
+        )
+        ask_fan = (
+            self._fan
+            and self._season_has_fan_coil()
+            and (not skip_reported or not self._fan_mode_reported)
+        )
+        ask_humidity = (
+            wants_humidity
+            and not humidity_coalesced
+            and (not skip_reported or not self._humidity_reported)
+        )
+        if skip_reported and not (ask_status or ask_temp or ask_fan or ask_humidity):
+            self._bus_state_complete = True
+            LOGGER.debug(
+                "%s: state already reported on the bus, skipping post-discovery poll",
+                self.entity_id,
+            )
             return
         if self._poll_health.should_skip(time.time()):
-            LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
+            LOGGER.debug(
+                "%s %s did not answer its last polls; not asking again yet",
+                self._gateway_handler.log_id,
+                self._display_name,
+            )
             self._raise_unresponsive_issue()
             return
-        if self._central or self._gateway_supports_zone_status:
+        if ask_status:
             # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
             # reporting its mode via *4*202*#0## (conditional OFF) and operational flags (#629). Dimension 14
             # (*#4*#0*14##) is NACKed. Only an F454 has been captured so far, so the poll is informational:
             # an unanswered one never counts towards the "unresponsive zone" repair.
-            request = OWNHeatingCommand.status(self._full_where)
-            frames_before = self._poll_health.frames
-            written = await self._gateway_handler.send_status_request(request)
-            if isinstance(written, asyncio.Future) and not self._central:
-                written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
-        elif self._polls_temperature:
+            await self._send_zone_poll_frame(
+                OWNHeatingCommand.status(self._full_where),
+                pace=pace,
+                track_health=not self._central,
+            )
+        elif ask_temp:
             # One bus query instead of the four that *#4*Z## expands into: *#4*Z*0## is forwarded on
             # all twelve oracle gateways (thermo-ts10.tsv) and a populated zone answers it in ~120 ms
             # (F461 2.0.11, f461_live_2026-10-23 rows 521-525: *#4*2*0## -> *#4*2*0*0239## + ACK in
@@ -1020,16 +1084,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # 374-376), not a verdict on a populated one. Until a command-session capture of
             # *#4*Z*0## on a single-session SCS-only gateway (MH200 / H4684) exists, the result is
             # left uncounted rather than risk marking a healthy zone unresponsive on a NACK.
-            await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
-        if self._fan and self._season_has_fan_coil():
-            await self._gateway_handler.send_status_request(
-                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
+            await self._send_zone_poll_frame(
+                OWNHeatingCommand.get_temperature(self._full_where),
+                pace=pace,
             )
-        if wants_humidity:
-            await self._gateway_handler.send_status_request(
-                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*60##"))
+        if ask_fan:
+            await self._send_zone_poll_frame(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##")),
+                pace=pace,
             )
-        elif self._humidity:
+        if ask_humidity:
+            await self._send_zone_poll_frame(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*60##")),
+                pace=pace,
+            )
+        elif self._humidity and not wants_humidity:
             LOGGER.debug(
                 "%s Zone %s: this gateway refuses humidity requests; not asked (a *#4*%s*60*HH## event still updates it)",
                 self._gateway_handler.log_id,
@@ -1041,8 +1110,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _poll_answered(self, written: asyncio.Future[float], frames_before: int) -> None:
         """Count a status request the gateway refused or never answered (see ``poll_health``)."""
         if written.cancelled():
-            if not getattr(self._gateway_handler, "is_connected", False) or self._poll_health.frames != frames_before:
-                return  # the gateway was away, or the zone did answer
+            if (
+                getattr(written, "_gateway_desync", False)
+                or not getattr(self._gateway_handler, "is_connected", False)
+                or self._poll_health.frames != frames_before
+            ):
+                return  # gateway FIFO desync (#886), gateway was away, or the zone did answer
             if self._poll_health.failed(time.time()):
                 LOGGER.info("%s %s did not answer its status request twice in a row", self._gateway_handler.log_id, self._display_name)
                 self._raise_unresponsive_issue()
@@ -1050,6 +1123,76 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif self._poll_health.answered():
             self._clear_unresponsive_issue()
             self._publish_state()
+
+    def _temperature_reported(self) -> bool:
+        """Whether this zone's ambient temperature arrived from the bus since startup."""
+        return (
+            self._attr_native_current_temperature is not None
+            and not self._current_temperature_restored
+        )
+
+    def _core_zone_state_reported(self) -> bool:
+        """Whether live temperature, operating mode, and setpoint (when running) arrived on the bus."""
+        if not self._temperature_reported():
+            return False
+        if self._attr_hvac_mode is None or self._hvac_mode_restored:
+            return False
+        if self._attr_hvac_mode == HVACMode.OFF:
+            return True
+        return self.native_target_temperature is not None and not self._target_temperature_restored
+
+    def _refresh_bus_state_complete(self) -> None:
+        """Mark ``_bus_state_complete`` once every field the startup poll asks has arrived live."""
+        if self._central or is_actuator_where(self._where):
+            return
+        if self._gateway_supports_zone_status:
+            core_ok = self._core_zone_state_reported()
+        elif self._polls_temperature:
+            core_ok = self._temperature_reported()
+        else:
+            core_ok = True
+        fan_ok = not (self._fan and self._season_has_fan_coil()) or self._fan_mode_reported
+        wants_humidity = (
+            self._humidity
+            and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
+        )
+        hum_ok = not wants_humidity or self._humidity_reported
+        self._bus_state_complete = bool(core_ok and fan_ok and hum_ok)
+
+    async def _async_poll_after_discovery(self) -> None:
+        """Poll WHO 4 zone state after discovery, coalescing humidity and pacing per-zone reads (#886)."""
+        handler = self._gateway_handler
+        startup_lock = getattr(handler, "_who4_startup_poll_lock", None)
+        if (
+            self._central
+            or is_actuator_where(self._where)
+            or self._interface_poll_refused
+            or not isinstance(startup_lock, asyncio.Lock)
+        ):
+            await super()._async_poll_after_discovery()
+            return
+
+        await handler.wait_for_initial_discovery()
+
+        wants_humidity = (
+            self._humidity
+            and getattr(handler, "humidity_request_refused", False) is not True
+        )
+        humidity_coalesced = False
+        if wants_humidity and not self._humidity_reported and _ZONE_WHERE.match(self._full_where):
+            humidity_coalesced = self._request_zone_dimension(60)
+
+        wait_zone_reqs = getattr(handler, "wait_for_zone_requests", None)
+        if callable(wait_zone_reqs):
+            await wait_zone_reqs()
+
+        async with startup_lock:
+            self._refresh_bus_state_complete()
+            await self._async_send_zone_polls(
+                skip_reported=True,
+                humidity_coalesced=humidity_coalesced,
+                pace=True,
+            )
 
     def _season_has_fan_coil(self) -> bool:
         """Whether the fan speed request makes sense right now.
@@ -1694,6 +1837,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if state in _ZONE_STATES_OFF:
             self._restore_nominal_before_protection()
             self._attr_hvac_mode = HVACMode.OFF
+            self._hvac_mode_restored = False
             self._attr_hvac_action = HVACAction.OFF
             self._mark_actuators_off()
             self._holiday_days = None
@@ -1712,6 +1856,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         temperature = message.set_temperature if state == "setpoint" else None
         if temperature is not None:
             self._target_temperature = temperature
+            self._target_temperature_restored = False
         else:
             self._hydrate_nominal_from_local(prev_mode)
         if self._attr_hvac_mode != HVACMode.OFF and self._target_temperature is not None and (
@@ -1885,6 +2030,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._enable_humidity()
             self._attr_current_humidity = message.main_humidity
+            self._humidity_reported = True
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
             LOGGER.debug(
                 "%s %s",
@@ -2270,6 +2416,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._enable_fan_mode()
+            self._fan_mode_reported = True
             speed = getattr(message, "fan_speed", None)
             if speed == 0:
                 self._attr_fan_mode = "auto"
@@ -2309,4 +2456,5 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._battery_fault = True
                 self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
 
+        self._refresh_bus_state_complete()
         self._publish_state()

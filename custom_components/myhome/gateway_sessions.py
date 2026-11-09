@@ -33,6 +33,10 @@ COMMAND_SESSION_IDLE_TIMEOUT: float = 15.0
 EVENT_STALL_TIMEOUT: float = 600.0
 EVENT_RESTART_BACKOFF_MIN: float = 5.0
 EVENT_RESTART_BACKOFF_MAX: float = 60.0
+# Cool-down applied exclusively to _TIER_STATUS after a gateway command_timeout or
+# cross-session WHO 4 reply bleed (#886), letting the gateway's internal 9600-baud
+# bus-request FIFO drain onto the event session while keeping _TIER_COMMANDS immediate.
+STATUS_TIMEOUT_BACKOFF: float = 2.0
 # OWNd's default EVENT_INACTIVITY_TIMEOUT (3900s) proactively recycles quiet event
 # sessions. On installations with only lights and shutters, no bus traffic occurs
 # overnight, causing cyclic reconnect warning bursts on gateways like MH201.
@@ -522,6 +526,53 @@ def _is_status_report_item(item: Any) -> bool:
     )
 
 
+_WHO4_QUERY_RE = re.compile(r"^\*#4\*(?P<where>[^#*]+(?:#[^*]+)*)(?:\*(?P<dim>\d+))?##$")
+_WHO4_REPLY_RE = re.compile(
+    r"^\*(?:#4\*(?P<dim_where>[^*]+)\*.*|4\*[^*]+\*(?P<act_where>[^*]+))##$"
+)
+
+
+def _who4_zone_token(where_field: str) -> str | None:
+    """Return canonical zone string ``'1'..'99'`` from a WHO 4 WHERE field, or None."""
+    if "#4#" in where_field:
+        where_field, _, _ = where_field.rpartition("#4#")
+    base = where_field.removeprefix("#").split("#", 1)[0]
+    if base.isdigit() and 1 <= int(base) <= 99:
+        return str(int(base))
+    return None
+
+
+def _mismatched_who4_reply_zones(request_msg: Any, collected: Any) -> set[str] | None:
+    """Return foreign zone IDs when a WHO 4 zone query collects only another zone's replies (#886).
+
+    On multi-session gateways whose internal SCS bus-request FIFO overflows or times out
+    (MyHomeServer1 3.87.13 in #886), a closed session's delayed bus replies + ``*#*1##``
+    can flush onto the next open command session. Only point-to-point WHO 4 reads for a
+    concrete zone ``1..99`` are checked, and only when at least one zone-bearing WHO 4
+    frame was collected and zero frames match the queried zone.
+    """
+    if not collected or not isinstance(collected, list):
+        return None
+    m_req = _WHO4_QUERY_RE.match(str(request_msg).strip())
+    if m_req is None:
+        return None
+    req_zone = _who4_zone_token(m_req.group("where"))
+    if req_zone is None:
+        return None
+    reply_zones: set[str] = set()
+    for resp in collected:
+        m_resp = _WHO4_REPLY_RE.match(str(resp).strip())
+        if m_resp is None:
+            continue
+        raw_where = m_resp.group("dim_where") or m_resp.group("act_where") or ""
+        resp_zone = _who4_zone_token(raw_where)
+        if resp_zone is not None:
+            reply_zones.add(resp_zone)
+    if reply_zones and req_zone not in reply_zones:
+        return reply_zones
+    return None
+
+
 class _PriorityQueueStorage:
     """Multi-tier FIFO storage backing FrameScheduler.
 
@@ -700,12 +751,25 @@ class _PriorityQueueStorage:
             return self._others.popleft()
         raise IndexError("pop from an empty priority queue")
 
-    def pop_eligible(self, in_flight_targets: set[tuple[int, str]]) -> Any:
-        """Pop and return the highest priority item whose target does not overlap any in-flight target."""
-        if not in_flight_targets:
+    def pop_eligible(
+        self,
+        in_flight_targets: set[tuple[int, str]],
+        *,
+        allow_status: bool = True,
+    ) -> Any:
+        """Pop and return the highest priority item eligible under target and status gates."""
+        if not in_flight_targets and allow_status:
             return self.popleft()
-        for q in (self._commands, self._fade_steps, self._status, self._others):
+        tiers = (
+            (self._commands, self._fade_steps, self._status, self._others)
+            if allow_status
+            else (self._commands, self._fade_steps, self._others)
+        )
+        for q in tiers:
             for idx, item in enumerate(q):
+                if not in_flight_targets:
+                    del q[idx]
+                    return item
                 target = _extract_target_key(item)
                 if target is None or not any(
                     _targets_overlap(target, active) for active in in_flight_targets
@@ -714,11 +778,23 @@ class _PriorityQueueStorage:
                     return item
         raise IndexError("no eligible item in priority queue")
 
-    def has_eligible(self, in_flight_targets: set[tuple[int, str]]) -> bool:
-        """Return True if at least one queued item's target does not overlap any in-flight target."""
-        if not in_flight_targets:
+    def has_eligible(
+        self,
+        in_flight_targets: set[tuple[int, str]],
+        *,
+        allow_status: bool = True,
+    ) -> bool:
+        """Return True if at least one queued item is eligible under target and status gates."""
+        if not in_flight_targets and allow_status:
             return bool(self)
-        for q in (self._commands, self._fade_steps, self._status, self._others):
+        tiers = (
+            (self._commands, self._fade_steps, self._status, self._others)
+            if allow_status
+            else (self._commands, self._fade_steps, self._others)
+        )
+        for q in tiers:
+            if not in_flight_targets and q:
+                return True
             for item in q:
                 target = _extract_target_key(item)
                 if target is None or not any(
@@ -867,9 +943,10 @@ class FrameScheduler:
     queue inspection and shutdown draining.
     """
 
-    def __init__(self, maxsize: int = 0) -> None:
-        """Initialize the scheduler storage, waiter queues, and target locks."""
+    def __init__(self, maxsize: int = 0, *, max_in_flight_status: int = 1) -> None:
+        """Initialize the scheduler storage, waiter queues, and target/status locks."""
         self._maxsize = maxsize
+        self._max_in_flight_status = max(1, int(max_in_flight_status))
         self._queue = _PriorityQueueStorage()
         self._getters: collections.deque[asyncio.Future[None]] = collections.deque()
         self._putters: collections.deque[asyncio.Future[None]] = collections.deque()
@@ -878,6 +955,9 @@ class FrameScheduler:
         self._finished.set()
         self._is_shutdown = False
         self._in_flight_targets: set[tuple[int, str]] = set()
+        self._in_flight_status = 0
+        self._status_resume_at = 0.0
+        self._status_resume_handle: asyncio.TimerHandle | None = None
 
     @property
     def maxsize(self) -> int:
@@ -922,6 +1002,49 @@ class FrameScheduler:
     def in_flight_targets(self) -> frozenset[tuple[int, str]]:
         """Return the set of (who, where) targets currently executing on a worker."""
         return frozenset(self._in_flight_targets)
+
+    @property
+    def in_flight_status(self) -> int:
+        """Return the number of status requests currently executing on workers."""
+        return self._in_flight_status
+
+    @property
+    def status_paused(self) -> bool:
+        """Return True while status requests are held back after a gateway timeout/desync."""
+        return self._status_resume_at > time.monotonic()
+
+    @property
+    def _allow_status(self) -> bool:
+        """Whether a worker may dequeue another status-tier item right now."""
+        return self._in_flight_status < self._max_in_flight_status and not self.status_paused
+
+    def pause_status(self, duration: float) -> None:
+        """Hold back ``_TIER_STATUS`` items for ``duration`` seconds without blocking commands."""
+        if duration <= 0 or self._is_shutdown:
+            return
+        resume_at = time.monotonic() + duration
+        if resume_at <= self._status_resume_at and self._status_resume_handle is not None:
+            return
+        if self._status_resume_handle is not None:
+            self._status_resume_handle.cancel()
+        self._status_resume_at = resume_at
+        self._status_resume_handle = asyncio.get_running_loop().call_later(
+            duration, self._on_status_resume
+        )
+
+    def clear_status_pause(self) -> None:
+        """Cancel any active status-tier cool-down timer."""
+        if self._status_resume_handle is not None:
+            self._status_resume_handle.cancel()
+            self._status_resume_handle = None
+        self._status_resume_at = 0.0
+
+    def _on_status_resume(self) -> None:
+        """Re-enable status-tier dequeuing once the cool-down expires."""
+        self._status_resume_handle = None
+        self._status_resume_at = 0.0
+        if self._queue.has_eligible(self._in_flight_targets, allow_status=self._allow_status):
+            self._wakeup_all_getters()
 
     def _wakeup_next(self, waiters: collections.deque[asyncio.Future[Any]]) -> None:
         """Wake up the next waiter that is not cancelled."""
@@ -1020,18 +1143,23 @@ class FrameScheduler:
 
     def acquire_nowait(self) -> Any:
         """Pop the highest-priority eligible item and lock its (who, where) target."""
-        if not self._queue.has_eligible(self._in_flight_targets):
+        allow_status = self._allow_status
+        if not self._queue.has_eligible(self._in_flight_targets, allow_status=allow_status):
             raise asyncio.QueueEmpty
-        item = self._queue.pop_eligible(self._in_flight_targets)
+        item = self._queue.pop_eligible(self._in_flight_targets, allow_status=allow_status)
         target = _extract_target_key(item)
         if target is not None:
             self._in_flight_targets.add(target)
+        if _classify_tier(item) == _TIER_STATUS:
+            self._in_flight_status += 1
         self._wakeup_next(self._putters)
         return item
 
     async def acquire_next(self) -> Any:
-        """Wait for and pop the highest-priority item whose target is not in flight."""
-        while not self._queue.has_eligible(self._in_flight_targets):
+        """Wait for and pop the highest-priority item whose target/tier is eligible."""
+        while not self._queue.has_eligible(
+            self._in_flight_targets, allow_status=self._allow_status
+        ):
             if self._is_shutdown and self.empty():
                 raise getattr(asyncio, "QueueShutDown", Exception)
             getter: asyncio.Future[None] = asyncio.get_running_loop().create_future()
@@ -1058,13 +1186,22 @@ class FrameScheduler:
         if matching:
             for t in matching:
                 self._in_flight_targets.discard(t)
-            if self._queue.has_eligible(self._in_flight_targets):
+            if self._queue.has_eligible(
+                self._in_flight_targets, allow_status=self._allow_status
+            ):
                 self._wakeup_all_getters()
 
     def complete_task(self, task: Any) -> None:
-        """Release a task's target lock and mark the queue task done."""
+        """Release a task's target/status lock and mark the queue task done."""
+        was_status = _classify_tier(task) == _TIER_STATUS
+        if was_status and self._in_flight_status > 0:
+            self._in_flight_status -= 1
         target = _extract_target_key(task)
         self.release_target(target)
+        if was_status and self._queue.has_eligible(
+            self._in_flight_targets, allow_status=self._allow_status
+        ):
+            self._wakeup_all_getters()
         self.task_done()
 
     def task_done(self) -> None:
@@ -1083,6 +1220,7 @@ class FrameScheduler:
     def shutdown(self, immediate: bool = False) -> None:
         """Shut down the queue."""
         self._is_shutdown = True
+        self.clear_status_pause()
         if immediate:
             while not self.empty():
                 item = self._queue.popleft()
@@ -1091,6 +1229,7 @@ class FrameScheduler:
                 if self._unfinished_tasks > 0:
                     self._unfinished_tasks -= 1
             self._in_flight_targets.clear()
+            self._in_flight_status = 0
             if self._unfinished_tasks == 0:
                 self._finished.set()
         self._wakeup_all_getters()
@@ -1116,6 +1255,7 @@ class CommandWorkerPool:
         self._terminate_sender: bool = False
         self._sender_stop = asyncio.Event()
         self.sending_workers: list[asyncio.Task[None]] = []
+        self._active_worker_loops: int = 0
         self._in_flight_messages: list[Any] = []
 
         queue_max_size = (
@@ -1305,6 +1445,7 @@ class CommandWorkerPool:
         )
 
         _command_session = command_session_cls(gateway=self.gateway, logger=LOGGER)
+        self._active_worker_loops += 1
         try:
             try:
                 res = await _command_session.connect()
@@ -1417,8 +1558,30 @@ class CommandWorkerPool:
                     finally:
                         with contextlib.suppress(ValueError):
                             self._in_flight_messages.remove(task["message"])
-                    if collected is None and not (is_exposed and session_is_open(_command_session)):
+                    last_error = getattr(_command_session, "last_error", None)
+                    bleed_zones = (
+                        _mismatched_who4_reply_zones(task["message"], collected)
+                        if task["is_status_request"]
+                        else None
+                    )
+                    if bleed_zones is not None:
+                        LOGGER.warning(
+                            "%s Gateway FIFO desync on `%s`: command session returned delayed replies for zone(s) %s instead of target zone; backing off status queue.",
+                            self.log_id,
+                            task["message"],
+                            ", ".join(sorted(bleed_zones, key=int)),
+                        )
+                        if isinstance(written, asyncio.Future) and not written.done():
+                            setattr(written, "_gateway_desync", True)
                         _cancel_written(task)
+                        self._pause_status_after_desync()
+                    elif collected is None and not (is_exposed and session_is_open(_command_session)):
+                        _cancel_written(task)
+                        if (
+                            task["is_status_request"]
+                            and getattr(last_error, "reason", None) == "command_timeout"
+                        ):
+                            self._pause_status_after_desync()
                     else:
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])
@@ -1481,9 +1644,27 @@ class CommandWorkerPool:
                 ):
                     await asyncio.sleep(self.gateway.profile.command_queue_delay)
         finally:
+            self._active_worker_loops = max(0, self._active_worker_loops - 1)
+            if (
+                isinstance(self.send_buffer, FrameScheduler)
+                and (self._active_worker_loops == 0 or self._terminate_sender)
+            ):
+                self.send_buffer.clear_status_pause()
             with contextlib.suppress(Exception):
                 await asyncio.shield(_command_session.close())
             LOGGER.debug("%s Destroying sending worker %s", self.log_id, worker_id)
+
+    def _pause_status_after_desync(self) -> None:
+        """Hold back queued status reads briefly after a gateway command_timeout or FIFO bleed."""
+        if self._terminate_sender or not isinstance(self.send_buffer, FrameScheduler):
+            return
+        from . import gateway as gw_module
+
+        backoff = float(
+            getattr(gw_module, "STATUS_TIMEOUT_BACKOFF", STATUS_TIMEOUT_BACKOFF)
+        )
+        if backoff > 0:
+            self.send_buffer.pause_status(backoff)
 
     def close(self) -> None:
         """Cancel queued frames and unblock workers."""
@@ -1501,6 +1682,8 @@ class CommandWorkerPool:
 
         if isinstance(self.send_buffer, FrameScheduler):
             self.send_buffer._in_flight_targets.clear()
+            self.send_buffer._in_flight_status = 0
+            self.send_buffer.clear_status_pause()
         self._in_flight_messages.clear()
 
         for _ in range(max(1, len(self.sending_workers))):
