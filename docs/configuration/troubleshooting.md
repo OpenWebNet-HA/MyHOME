@@ -63,15 +63,15 @@ Watch the card: if the actuator's own status frame (`*1*1*<where>##`) is missing
 ### Toggling a single light (or pressing a button) unexpectedly triggers an entire scenario / other lights
 
 - **Log / Bus trace**:
-  `Message *1*1*61## was successfully sent.` followed within ~20–65 ms by `Message received: *15*03*61##` → `Message received: *17*1*1##` (`Scene 1 is started`) → multiple other lights switching on.
+    `Message *1*1*61## was successfully sent.` followed within ~20–65 ms by `Message received: *15*03*61##` → `Message received: *17*1*1##` (`Scene 1 is started`) → multiple other lights switching on.
 - **Root causes**:
-  1. **A Basic CEN (`WHO = 15`) control shares an `A`/`PL` address with a physical light or shutter actuator ([#612](https://github.com/OpenWebNet-HA/MyHOME/issues/612), [#773](https://github.com/OpenWebNet-HA/MyHOME/issues/773))**:  
-     A control device configured in Basic CEN mode (`M = CEN`) has been given the same `A`/`PL` address (e.g. `61`) as a physical light actuator (`WHO = 1`). When Home Assistant sends a command (`*1*1*61##`) or status request (`*#1*61##`) to address `61`, the CEN control at `61` reacts on the SCS bus by emitting `*15*<BUTTON>*61##`, which triggers the scenario programmed on your `MH200N` / `MH201` / `MH202` / `F420` (`*17*1*<SCENE>##`). Per BTicino's scenario-programmer manuals, `CEN` controls must use dedicated `A`/`PL` addresses that never duplicate any actuator address.
-  2. **A `CEN` / `CEN+` button is bound in both the MyHome app/programmer and Home Assistant ([Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695))**:  
-     Home Assistant passively observes `WHO = 15` / `WHO = 25` button frames on the bus and cannot suppress native scenario execution. If a physical button is already configured in **MyHome_Up** (`MyHomeServer1`) or **MyHOME_Suite / TiMH200N** to run a bus scenario, attaching a Home Assistant automation to the same button will run both simultaneously.
+    1. **A Basic CEN (`WHO = 15`) control shares an `A`/`PL` address with a physical light or shutter actuator ([#612](https://github.com/OpenWebNet-HA/MyHOME/issues/612), [#773](https://github.com/OpenWebNet-HA/MyHOME/issues/773))**:  
+       A control device configured in Basic CEN mode (`M = CEN`) has been given the same `A`/`PL` address (e.g. `61`) as a physical light actuator (`WHO = 1`). When Home Assistant sends a command (`*1*1*61##`) or status request (`*#1*61##`) to address `61`, the CEN control at `61` reacts on the SCS bus by emitting `*15*<BUTTON>*61##`, which triggers the scenario programmed on your `MH200N` / `MH201` / `MH202` / `F420` (`*17*1*<SCENE>##`). Per BTicino's scenario-programmer manuals, `CEN` controls must use dedicated `A`/`PL` addresses that never duplicate any actuator address.
+    2. **A `CEN` / `CEN+` button is bound in both the MyHome app/programmer and Home Assistant ([Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695))**:  
+       Home Assistant passively observes `WHO = 15` / `WHO = 25` button frames on the bus and cannot suppress native scenario execution. If a physical button is already configured in **MyHome_Up** (`MyHomeServer1`) or **MyHOME_Suite / TiMH200N** to run a bus scenario, attaching a Home Assistant automation to the same button will run both simultaneously.
 - **Resolution**:
-  - Reassign the `M = CEN` control (or the actuator) to a free `A`/`PL` address not used by any actuator, or remove/update the scenario trigger in **TiMH200N / MyHOME_Suite / MyHome_Up**. See [Scenario Controls & Pushbuttons](cen_cenplus.md#native-home-assistant-device-triggers).
-  - As a temporary software-only workaround until the plant configuration is updated, add the colliding address (e.g. `1:61`) to **Settings → Devices & Services → MyHOME → Configure → Ignored addresses** so Home Assistant does not address it.
+    - Reassign the `M = CEN` control (or the actuator) to a free `A`/`PL` address not used by any actuator, or remove/update the scenario trigger in **TiMH200N / MyHOME_Suite / MyHome_Up**. See [Scenario Controls & Pushbuttons](cen_cenplus.md#native-home-assistant-device-triggers).
+    - As a temporary software-only workaround until the plant configuration is updated, add the colliding address (e.g. `1:61`) to **Settings → Devices & Services → MyHOME → Configure → Ignored addresses** so Home Assistant does not address it.
 
 ### A light or cover shows up twice, or as the wrong platform
 
@@ -89,9 +89,9 @@ Log: `Could not send message *#4*<ZPP>*15##`. Probe addresses (`WHERE ≥ 100`) 
 
 - **Central Unit (`#0`) status polling**: In older releases, central units were polled with Dimension 14 status requests (`*#4*#0*14##`), which physical gateways (e.g. F454) reject with fast NACK because OpenWebNet specifies Dimension 14 status queries only for subordinate zones `1..99`. This repeatedly failed polls and triggered a false-positive `"unresponsive zone"` repair alert. Physical bus traces (issue #629) confirmed that 99-zone central units (`#0`) reliably answer the canonical plain status query `*#4*#0##` within ~0.17 s, returning their operating mode (`*4*202*#0##`) and status flags. The integration now polls `#0` using `*#4*#0##` at startup and poll intervals, populating the seasonal mode. An unanswered central-unit poll never raises the repair (verified on an F454 only), and a stale alert from an older release is cleared on startup. 4-zone central units (`#0#1`) remain exempt to prevent gateway timeouts.
 - **"Centrale termoregolazione 99 zone" vs "Climate Zone 99" / "Climate Zone 0"**: The BTicino 3550 is commercially marketed as the *"Centrale termoregolazione 99 zone"* because it can manage up to 99 subordinate zones, but its OpenWebNet central unit address is strictly `#0`.
-  - **Ghost Zone 99**: If a user configured `zone: 99` or `zone: "99"` in `myhome.yaml` based on the commercial product name, Home Assistant created and persisted `<mac>-4-99` in the Entity Registry. Because zone 99 does not physically exist on that bus, its Dimension 14 query (`*#4*99*14##`) failed, raising an `unresponsive_zone` repair alert.
-  - **Resolution**: Delete the phantom entity in **Settings → Devices & services → Entities**. Removing the entity deletes its entry from Home Assistant's Entity Registry; Home Assistant then invokes `async_will_remove_from_hass()`, which confirms the registry entry is gone and permanently clears the repair issue from the Issue Registry. Because physical 3550 traffic is addressed to `#0`, bus sweeps will never resurrect or invent Zone 99. (If an installation physically contains a 99th zone thermostat, genuine traffic addressed to zone 99 will discover and manage it normally).
-  - **YAML & Bus Coalescing**: When configured in `myhome.yaml` (e.g. `zone: "#0"` named `Centrale termoregolazione`), the YAML device and bus discovery coalesce cleanly on address `#0`, routing all broadcast traffic to the configured entity without creating a duplicate `Climate Zone 0` entity.
+    - **Ghost Zone 99**: If a user configured `zone: 99` or `zone: "99"` in `myhome.yaml` based on the commercial product name, Home Assistant created and persisted `<mac>-4-99` in the Entity Registry. Because zone 99 does not physically exist on that bus, its Dimension 14 query (`*#4*99*14##`) failed, raising an `unresponsive_zone` repair alert.
+    - **Resolution**: Delete the phantom entity in **Settings → Devices & services → Entities**. Removing the entity deletes its entry from Home Assistant's Entity Registry; Home Assistant then invokes `async_will_remove_from_hass()`, which confirms the registry entry is gone and permanently clears the repair issue from the Issue Registry. Because physical 3550 traffic is addressed to `#0`, bus sweeps will never resurrect or invent Zone 99. (If an installation physically contains a 99th zone thermostat, genuine traffic addressed to zone 99 will discover and manage it normally).
+    - **YAML & Bus Coalescing**: When configured in `myhome.yaml` (e.g. `zone: "#0"` named `Centrale termoregolazione`), the YAML device and bus discovery coalesce cleanly on address `#0`, routing all broadcast traffic to the configured entity without creating a duplicate `Climate Zone 0` entity.
 
 ### Cover position is wrong
 
@@ -114,11 +114,11 @@ Two conditions must be met for a MyHOME room to appear and accept playback in Mu
 
 - **Question / Misconception:** *"The streamer plugged into the matrix is `Livingroom 1_3519`, but I want to hear music in `Bathroom`. Should I create a group containing `Livingroom 1_3519` and `Bathroom` so both play?"*
 - **Solution:** **No! Never group your backend streamer with a destination room.**
-  - Map `Livingroom 1_3519` as a **Decoder** in MyHOME options (**Configure → Decoders**).
-  - In Music Assistant, target and play directly to **`Bathroom`**.
-  - Behind the scenes, MyHOME automatically claims the streamer from the pool, wakes the Bathroom amplifier, routes the F441/F441M matrix to that input, and forwards the stream URL to the streamer.
-  - Grouping the streamer and the room causes Music Assistant to stream to both the physical streamer and the virtual proxy at the same time, leading to stream collisions, desynchronization, or audio loops.
-  - Groups in Music Assistant are **only** for multi-room playback across **multiple destination rooms** (e.g., Bathroom + Living Room). Never add the backend streamer to that group.
+    - Map `Livingroom 1_3519` as a **Decoder** in MyHOME options (**Configure → Decoders**).
+    - In Music Assistant, target and play directly to **`Bathroom`**.
+    - Behind the scenes, MyHOME automatically claims the streamer from the pool, wakes the Bathroom amplifier, routes the F441/F441M matrix to that input, and forwards the stream URL to the streamer.
+    - Grouping the streamer and the room causes Music Assistant to stream to both the physical streamer and the virtual proxy at the same time, leading to stream collisions, desynchronization, or audio loops.
+    - Groups in Music Assistant are **only** for multi-room playback across **multiple destination rooms** (e.g., Bathroom + Living Room). Never add the backend streamer to that group.
 
 ### How can you have stereo with only 2 wires? / Do I need an L4561N interface?
 
@@ -158,18 +158,18 @@ It needs the **I understand the risk** checkbox and an administrator user; a raw
 #### Unconfigured Shared Bus Detected (`shared_bus_detected`)
 - **Symptoms**: Repair issue `shared_bus_detected` appears in **Settings → System → Repairs**, duplicate entities are created, or startup sweeps trigger bus collisions.
 - **Log lines**:
-  `Recorded shared bus TX echo #1/3 between <mac_a> and <mac_b> (delta <N>ms)`
+    `Recorded shared bus TX echo #1/3 between <mac_a> and <mac_b> (delta <N>ms)`
 - **What to check**:
-  1. Open the Repair issue and review the automated recommendation.
-  2. Click **Submit** to apply the inferred topology automatically (1-click repair).
-  3. If configuring manually in **Configure**, set `bus_topology: shared` on both gateways, designate one as `primary`, and point the follower at the primary.
+    1. Open the Repair issue and review the automated recommendation.
+    2. Click **Submit** to apply the inferred topology automatically (1-click repair).
+    3. If configuring manually in **Configure**, set `bus_topology: shared` on both gateways, designate one as `primary`, and point the follower at the primary.
 
 #### How to inspect automated topology inference decisions
 - **Log lines**:
-  `Evaluating shared bus topology between <Model A> and <Model B>...`
-  `Inferred shared bus topology: Primary=<Model> (<MAC>), Follower=<Model> (<MAC>, role=<role>, delegated=<whos>)...`
+    `Evaluating shared bus topology between <Model A> and <Model B>...`
+    `Inferred shared bus topology: Primary=<Model> (<MAC>), Follower=<Model> (<MAC>, role=<role>, delegated=<whos>)...`
 - **What it tells you**:
-  The log details the exact hardware tiers, supported WHOs, capability delta formula ($\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$), and tie-breaking rule used to assign the primary and follower roles.
+    The log details the exact hardware tiers, supported WHOs, capability delta formula (`Δ = S_sec \ S_pri`), and tie-breaking rule used to assign the primary and follower roles.
 
 #### Gateway Failover Active (`gateway_failover_active`)
 - **Symptoms**: The primary gateway is offline, but entities remain controllable and dashboard states still update.

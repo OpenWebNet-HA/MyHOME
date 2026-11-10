@@ -12,14 +12,14 @@ Authentic on-wire OpenWebNet trace extracted from the Home Assistant debug log c
 ## What the Trace Establishes
 
 1. **Startup queue burst (`plant.unpatched_startup_who4_queue_burst`)**:
-   - At `15:07:16.323`–`15:07:16.338` (15 ms), discovery completion enqueued 66 WHO 4 status queries back-to-back: 41 per-zone `*#4*Z##` polls + 24 per-zone `*#4*Z*60##` humidity polls, followed at the very tail by `*#4*#0*20##` (`ALL_ZONE_REQUESTS` actuator sweep), which starved for 60 s (`PACED_WRITE_TIMEOUT`).
+    - At `15:07:16.323`–`15:07:16.338` (15 ms), discovery completion enqueued 66 WHO 4 status queries back-to-back: 41 per-zone `*#4*Z##` polls + 24 per-zone `*#4*Z*60##` humidity polls, followed at the very tail by `*#4*#0*20##` (`ALL_ZONE_REQUESTS` actuator sweep), which starved for 60 s (`PACED_WRITE_TIMEOUT`).
 2. **Physical SCS bus round-trip vs gateway cache myth**:
-   - Each `*#4*Z##` status query forwards onto the physical 2-wire SCS bus (`$0499013000` in the `MyHomeServer1` `028206` firmware oracle) and elicits a 5-frame burst (`*#4*Z*0*...##`, `*#4*Z*12*...##`, `*4*1*Z##`, `*#4*Z*14*...##`, `*#4*Z*13*...##`) taking ~1.3–1.9 s per zone while thermostats simultaneously emit autonomous `*#4*Z*0*...##`, `*#4*Z*7*1*1*...##`, `*#4*Z*19*...##`, and `*#4*Z*60*...##` frames.
+    - Each `*#4*Z##` status query forwards onto the physical 2-wire SCS bus (`$0499013000` in the `MyHomeServer1` `028206` firmware oracle) and elicits a 5-frame burst (`*#4*Z*0*...##`, `*#4*Z*12*...##`, `*4*1*Z##`, `*#4*Z*14*...##`, `*#4*Z*13*...##`) taking ~1.3–1.9 s per zone while thermostats simultaneously emit autonomous `*#4*Z*0*...##`, `*#4*Z*7*1*1*...##`, `*#4*Z*19*...##`, and `*#4*Z*60*...##` frames.
 3. **Autonomous Dimension 7 broadcasts (`*#4*Z*7*1*1*TTTT##`)**:
-   - Zones continuously report live mode + setpoint via Dimension 7 (`*#4*6*7*1*1*0100##`, `*#4*7*7*1*1*0100##`, etc.) paired with Dimension 0 (`*#4*7*0*0141##`) before post-discovery polling begins.
+    - Zones continuously report live mode + setpoint via Dimension 7 (`*#4*6*7*1*1*0100##`, `*#4*7*7*1*1*0100##`, etc.) paired with Dimension 0 (`*#4*7*0*0141##`) before post-discovery polling begins.
 4. **Dual-worker `_TIER_STATUS` saturation & setpoint starvation**:
-   - With both `MyHomeServer1` command workers simultaneously executing slow `_TIER_STATUS` reads, user setpoint writes (`*#4*59*#14*0105*3##`, `*#4*59*#14*0100*3##`) waited 6.2–7.7 s behind in-flight status timeouts and then entered an already-backed-up gateway SCS transmit FIFO, timing out at 10.0 s.
+    - With both `MyHomeServer1` command workers simultaneously executing slow `_TIER_STATUS` reads, user setpoint writes (`*#4*59*#14*0105*3##`, `*#4*59*#14*0100*3##`) waited 6.2–7.7 s behind in-flight status timeouts and then entered an already-backed-up gateway SCS transmit FIFO, timing out at 10.0 s.
 5. **Cross-session WHO 4 FIFO reply bleed (`fifo_bleed_batches`, 11 batches)**:
-   - After timed-out command sessions closed and re-authenticated, delayed 5-frame replies from earlier queries flushed onto the newly opened TCP command socket: e.g. `*#4*60##` collected Zone 34's 5 frames (`*#4*34*0*0146##` .. `*#4*34*13*00##`), `*#4*60*60##` collected Zone 28's 5 frames, and `*#4*51##` collected Zone 21's 5 frames split `3 + 2` across two consecutive transactions.
+    - After timed-out command sessions closed and re-authenticated, delayed 5-frame replies from earlier queries flushed onto the newly opened TCP command socket: e.g. `*#4*60##` collected Zone 34's 5 frames (`*#4*34*0*0146##` .. `*#4*34*13*00##`), `*#4*60*60##` collected Zone 28's 5 frames, and `*#4*51##` collected Zone 21's 5 frames split `3 + 2` across two consecutive transactions.
 6. **Stray `*#*1##` ACK frames on the event session**:
-   - Under SCS FIFO saturation (`15:11:09`–`15:12:12`), `MyHomeServer1` leaked 10 bare `*#*1##` command-session ACKs onto the `*99*1##` event socket.
+    - Under SCS FIFO saturation (`15:11:09`–`15:12:12`), `MyHomeServer1` leaked 10 bare `*#*1##` command-session ACKs onto the `*99*1##` event socket.

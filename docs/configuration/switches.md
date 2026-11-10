@@ -24,10 +24,10 @@ In legacy configurations, distinguishing between an outlet and a switch required
 2. Select your switch entity (e.g. `switch.kitchen_counter_socket`).
 3. Click the **Settings (gear)** icon.
 4. Under **Show As**, choose how you want the entity presented across your dashboards:
-   - **Switch** (*Default*): Standard relay, appliance, or heater.
-   - **Outlet**: Wall socket / plug load.
-   - **Light**: If the relay controls an external transformer or ballast.
-   - **Valve**: Irrigation or water shutoff valve.
+    - **Switch** (*Default*): Standard relay, appliance, or heater.
+    - **Outlet**: Wall socket / plug load.
+    - **Light**: If the relay controls an external transformer or ballast.
+    - **Valve**: Irrigation or water shutoff valve.
 5. Click **Update**. Home Assistant immediately converts the entity representation across Lovelace dashboards, voice assistants (HomeKit, Alexa, Google Assistant), and automations.
 
 ---
@@ -56,11 +56,12 @@ In traditional physical SCS configuration, auxiliary loads like bathroom extract
 
 ### Recommended Pattern: Decouple the Address (Single Relay Contact)
 Instead of wiring two relays in parallel or keeping `M=SLA`:
+
 1. **Remove `M=SLA`**: Configure the auxiliary relay (e.g. Channel 2 of an `F411/2` or `F411/4`) with its own distinct `PL` address (e.g. Light = `11`, Fan = `12`, with `M` left empty).
 2. **Expose as Fan / Switch**: Home Assistant discovers `12` as an independent entity (`switch.bathroom_fan` or `fan.bathroom_fan`).
 3. **Automate the Overrun in HA**: Use an automation to turn on the fan when the light turns on, and run an overrun timer (`myhome.turn_on_timed`) or humidity purge when the light turns off.
 
-See the complete guide and YAML configuration in [Use Cases — Decoupled Bathroom Extractor Fan](use_cases.md#11-decoupled-bathroom-extractor-fan-with-smart-overrun--humidity-boost-single-f411-contact).
+See the complete guide and YAML configuration in [Use Cases — Decoupled Bathroom Extractor Fan](use_cases.md#11-decoupled-bathroom-extractor-fan-with-smart-overrun-humidity-boost-single-f411-contact).
 
 ---
 
@@ -72,9 +73,9 @@ Bathroom towel warmers and electric radiant relays are often wired to `F430/2` o
 * **UI Configuration (Recommended)**: Navigate to **Settings → Devices & Services → MyHome**, click **Add thermo actuator / towel-warmer switch (WHO 4)** on your gateway, and enter `WHERE` (e.g. `7#1` for actuator 1 of zone 7, `7` for the whole zone, or `7#1#4#01` behind an F422 bus interface).
 * **Direct Dimension 20 Control (`turn_on_command` / `turn_off_command` left blank)**: When left blank, Home Assistant sends `*#4*7#1*#20*1##` / `*#4*7#1*#20*0##` and tracks live relay state in real time from both `*#4*7#1*#20*0/1##` bus writes and `*#4*7#1*20*...##` status replies (plus state restoration across restarts). Although the public OpenWebNet `WHO = 4` specification lists Dimension 20 as read-only, emulated gateway firmwares (`F454`, `MH200N`, `F459`, `F460`, `F461`) and real `MyHomeServer1` hardware translate `#20` writes onto the SCS bus (`$0496813100\r` / `$0496813101\r`; `H4684` and `MH200` drop Dimension 20 frames). If your gateway or actuator ignores direct `#20` writes, bind paired CEN+ or `WHO = 1` scenario triggers instead.
 * **`MyHomeServer1` (Home + Project "Towel Warmer")**: On `MyHomeServer1`, `bt_thermo_manager` actively locks Home + Project *Towel Warmer* (`BNTR`) objects and immediately reverts direct `*#4*Z#N*#20*1/0##` bus writes unless `towel.setSync` is invoked by a Home + Project / Home + Control Scenario or Automation. Create **two** Scenarios (*Turn Towel Warmer ON* and *Turn Towel Warmer OFF*): **important — when adding the Towel Warmer to a Scenario's action list in Home + Project or Home + Control, its default action state is `OFF` (`*#4*Z#N*#20*0##`); tap the Towel Warmer item inside the ON scenario's action list to toggle its target state to `ON` (or select a boost duration) before saving.** Because app-only scenarios do not allocate an OpenWebNet `Scene_Address` entry in `MyHomeServer1`, bind the two scenarios to any of the following triggers (even when every visible wall switch plate is already in use) and enter the corresponding frames in `turn_on_command` and `turn_off_command`:
-  1. **Unpopulated button slots on existing SCS modules (`WHO = 25` CEN+, zero wall keys lost)**: 2-module pushbuttons (`H4652/2`, `L4652/2`, `K4652M2`, `LN4652`, `KW8010/8011/13`) fitted with a single-rocker keycap and flush 2-channel actuator-controls (`H4672M2`, `LN4672M2`, `K4672M2L`) mounted behind blind covers or in junction boxes expose unused button slots in *Home + Project* that can be bound to CEN+ scenarios (e.g. `*25*21#1*21##` for ON and `*25*21#2*21##` for OFF) without changing any physical wall keycap.
-  2. **A single unwired relay terminal (`WHO = 1`, only 1 channel needed)**: Register one unwired output terminal on any multi-channel actuator (`F411/4`, `F411/2`, `K8002L`, etc.) as a light/socket in *Home + Project* (e.g. `WHERE = 09` in a technical room) and trigger the ON scenario when `09` turns ON (`*1*1*09##`) and the OFF scenario when `09` turns OFF (`*1*0*09##`).
-  3. **Zero-SCS-slot fallback (`emulated_hue`)**: If every button slot and relay terminal on the SCS bus is occupied, pair Home Assistant's built-in `emulated_hue` bridge as a local Philips Hue light (`BN3L`) in *Home + Project* and trigger the ON/OFF scenarios from that virtual light.
+    1. **Unpopulated button slots on existing SCS modules (`WHO = 25` CEN+, zero wall keys lost)**: 2-module pushbuttons (`H4652/2`, `L4652/2`, `K4652M2`, `LN4652`, `KW8010/8011/13`) fitted with a single-rocker keycap and flush 2-channel actuator-controls (`H4672M2`, `LN4672M2`, `K4672M2L`) mounted behind blind covers or in junction boxes expose unused button slots in *Home + Project* that can be bound to CEN+ scenarios (e.g. `*25*21#1*21##` for ON and `*25*21#2*21##` for OFF) without changing any physical wall keycap.
+    2. **A single unwired relay terminal (`WHO = 1`, only 1 channel needed)**: Register one unwired output terminal on any multi-channel actuator (`F411/4`, `F411/2`, `K8002L`, etc.) as a light/socket in *Home + Project* (e.g. `WHERE = 09` in a technical room) and trigger the ON scenario when `09` turns ON (`*1*1*09##`) and the OFF scenario when `09` turns OFF (`*1*0*09##`).
+    3. **Zero-SCS-slot fallback (`emulated_hue`)**: If every button slot and relay terminal on the SCS bus is occupied, pair Home Assistant's built-in `emulated_hue` bridge as a local Philips Hue light (`BN3L`) in *Home + Project* and trigger the ON/OFF scenarios from that virtual light.
 
 ```yaml
 # Optional YAML equivalent in myhome.yaml:

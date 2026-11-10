@@ -51,7 +51,7 @@ You do **not** need to manually dismiss the repair issue in Home Assistant:
 
 1. When the gateway completes its reboot or applies the new clock settings, it broadcasts an updated WHO=13 frame carrying a valid timezone offset.
 2. Home Assistant listens for this telemetry:
-   - When a valid offset is received (e.g. `+01:00`, `+02:00`), the integration automatically removes the `unconfigured_timezone` issue from **Settings → System → Repairs**.
+    - When a valid offset is received (e.g. `+01:00`, `+02:00`), the integration automatically removes the `unconfigured_timezone` issue from **Settings → System → Repairs**.
 
 ---
 

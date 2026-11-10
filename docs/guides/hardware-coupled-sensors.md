@@ -68,19 +68,19 @@ If you cannot easily modify physical configurator plugs in electrical panels, us
 * **Manual Installation**:
   Download `dusk_curfew.yaml` and save it to `<config>/blueprints/automation/myhome/dusk_curfew.yaml` in your Home Assistant configuration directory.
 * **Key Features**:
-  - **Bedtime Curfew**: Enforces a strict cutoff time (`curfew_time`, e.g. `23:00:00`) to turn off the hardware-coupled light and all companion lights.
-  - **Configurable Morning Curfew End**: Configurable `curfew_end_time` (default `06:00:00`), after which daytime behavior resumes.
-  - **Max Run Duration**: Optional timeout (e.g. 180 minutes) to guarantee the light turns off even on dark winter afternoons when dusk occurs early.
-  - **Companion Synchronization**: When the hardware twilight light turns on at dusk, automatically illuminates additional outdoor lights (e.g. pathway spots, facade accents) and turns them off together at curfew.
-  - **Presence Gating**: Supports `zone.*` (evaluates as away when occupant count is 0), `person.*`, `device_tracker.*`, `group.*`, `binary_sensor.*`, or `alarm_control_panel.*` (away when `armed_away` or `armed_vacation`). When occupants are away, reduces the runtime to a configurable `away_timeout`. Dynamic presence tracking automatically turns off lights if occupants leave mid-evening.
-  - **Optional Daylight Guard**: Optional `after_sunset_only` (default `false`) gates companion activation to astronomical night. Keep disabled if your twilight photocell trips before sunset on overcast or winter afternoons. While it is disabled, switching the light on by hand during the day also turns the companion lights on.
-  - **Service & Maintenance Overrides**:
-    - **Service Power (Gardener / Power Tools)**: Energizes the circuit immediately on demand during daylight hours, suspends curfew and presence shutoffs, and turns everything off again after `service_timeout_hours` (default 4 hours). A Home Assistant restart re-arms the full timeout.
-    - **Maintenance Hold**: Turns the circuit off and switches any photocell or wall switch turn-on straight back off. It is a convenience, not electrical isolation; see the warning below.
-    - **Pause Automation**: Leaves lights under manual control, temporarily bypassing all curfew and timer logic.
-  - **Reconnection Resilience**: Uses `from: "off"` to ensure temporary gateway drops or Home Assistant restarts (`unavailable -> on`) do not re-run curfew sequences in the middle of the night.
-  - **Turn-Ons During Curfew**: A turn-on between `curfew_time` and `curfew_end_time` is turned off after 2 minutes. This includes deliberate turn-ons from a wall switch; use the `pause_automation` override if you need the light for longer at night.
-  - **Restarts**: Home Assistant does not keep a running `max_duration` timer across a restart; the curfew still applies afterwards.
+    - **Bedtime Curfew**: Enforces a strict cutoff time (`curfew_time`, e.g. `23:00:00`) to turn off the hardware-coupled light and all companion lights.
+    - **Configurable Morning Curfew End**: Configurable `curfew_end_time` (default `06:00:00`), after which daytime behavior resumes.
+    - **Max Run Duration**: Optional timeout (e.g. 180 minutes) to guarantee the light turns off even on dark winter afternoons when dusk occurs early.
+    - **Companion Synchronization**: When the hardware twilight light turns on at dusk, automatically illuminates additional outdoor lights (e.g. pathway spots, facade accents) and turns them off together at curfew.
+    - **Presence Gating**: Supports `zone.*` (evaluates as away when occupant count is 0), `person.*`, `device_tracker.*`, `group.*`, `binary_sensor.*`, or `alarm_control_panel.*` (away when `armed_away` or `armed_vacation`). When occupants are away, reduces the runtime to a configurable `away_timeout`. Dynamic presence tracking automatically turns off lights if occupants leave mid-evening.
+    - **Optional Daylight Guard**: Optional `after_sunset_only` (default `false`) gates companion activation to astronomical night. Keep disabled if your twilight photocell trips before sunset on overcast or winter afternoons. While it is disabled, switching the light on by hand during the day also turns the companion lights on.
+    - **Service & Maintenance Overrides**:
+        - **Service Power (Gardener / Power Tools)**: Energizes the circuit immediately on demand during daylight hours, suspends curfew and presence shutoffs, and turns everything off again after `service_timeout_hours` (default 4 hours). A Home Assistant restart re-arms the full timeout.
+        - **Maintenance Hold**: Turns the circuit off and switches any photocell or wall switch turn-on straight back off. It is a convenience, not electrical isolation; see the warning below.
+        - **Pause Automation**: Leaves lights under manual control, temporarily bypassing all curfew and timer logic.
+    - **Reconnection Resilience**: Uses `from: "off"` to ensure temporary gateway drops or Home Assistant restarts (`unavailable -> on`) do not re-run curfew sequences in the middle of the night.
+    - **Turn-Ons During Curfew**: A turn-on between `curfew_time` and `curfew_end_time` is turned off after 2 minutes. This includes deliberate turn-ons from a wall switch; use the `pause_automation` override if you need the light for longer at night.
+    - **Restarts**: Home Assistant does not keep a running `max_duration` timer across a restart; the curfew still applies afterwards.
 
 ### Example Automation Configuration
 
@@ -141,11 +141,11 @@ If you prefer Home Assistant to hold **100% software authority** over whether an
 
 1. Using **MyHOME_Suite** (Virtual Configuration), reconfigure the 3477 contact interface into **Dry Contact Mode** (`WHO = 25`, virtual address range 1..201).
 2. **Result**: The interface transmits OpenWebNet dry contact frames where `WHAT` is `31` for contact closed and `32` for contact open:
-   - Contact closed (dusk): `*25*31#1*WHERE##`
-   - Contact opened (dawn): `*25*32#1*WHERE##`
+    - Contact closed (dusk): `*25*31#1*WHERE##`
+    - Contact opened (dawn): `*25*32#1*WHERE##`
 3. In Home Assistant, the contact is discovered automatically the first time it changes state (see [Binary Sensors](../configuration/binary-sensors.md)). The contact closes at dusk, so the sensor reads `on` when it is dark. If you want Home Assistant's **Light** device class (`on` = light detected) without editing YAML:
-   - Open the dry contact entity settings and set **Show as** to **Light**.
-   - On the device page under **Configuration**, enable the **Invert state** toggle (`inverted: true` in `myhome.yaml` also remains supported).
+    - Open the dry contact entity settings and set **Show as** to **Light**.
+    - On the device page under **Configuration**, enable the **Invert state** toggle (`inverted: true` in `myhome.yaml` also remains supported).
 4. You now have full separation of concerns:
-   - The dry contact binary sensor accurately mirrors daylight/darkness in real time.
-   - `light.light_98` remains a pure actuator controlled exclusively by Home Assistant schedules, presence logic, and automations.
+    - The dry contact binary sensor accurately mirrors daylight/darkness in real time.
+    - `light.light_98` remains a pure actuator controlled exclusively by Home Assistant schedules, presence logic, and automations.

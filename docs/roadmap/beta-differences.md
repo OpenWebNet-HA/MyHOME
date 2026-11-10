@@ -31,25 +31,25 @@ The table below outlines feature availability, gateway support, and protocol cap
 ## 🔍 Release-by-Release Delta Log & GitHub Compares
 
 ### 🚀 v2.0.0b17 (In Traces We Find The Truth)
-- **Direct GitHub Compare**: [`Compare v2.0.0b16...v2.0.0b17`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b16...2.0.0b17)
+- **Direct GitHub Compare**: [`Compare v2.0.0b16...v2.0.0b17`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b16...v2.0.0b17)
 - **Key Enhancements** (61 pull requests, on OWNd 2.0.0b13):
-  - **Cover End-Stop Settle & Min Delta (#778, #834, #843, #847)**: Timed covers settle full runs at `travel_time + 2 s` from known positions; 0.5 s early cutoff tolerance recognizes actuator limits arriving just before travel time; configurable `min_position_delta` (1–5%, default 2%); calibration refuses whole-minute configurator cutoffs (1–10 min).
-  - **Thermoregulation (WHO 4) (#816, #817, #846)**: Full 3550 99-zone central unit state hydration, setpoint management, and diagnostic attributes (Discussion #819); new thermo actuator switch platform for manual solenoid control (Issue #785); interface routing and actuator guards.
-  - **Lighting & Dimmers (WHO 1) (#771, #777, #781, #828, #849, #852)**: Fine dimmer preset echo / autodiscovered dimmers; coarse preset brightness curve alignment; coexistence of lighting actuator and motion sensor on the same bus address; Dimension 22 guard form crash fix.
-  - **Gateways & Sound System (#832, #835, #839, #844, #848, #854)**: Official **OWNd 2.0.0b13** pin; Legrand 067292 gateway profile alias; F500 FM tuner controls (frequency, band, presets) and HL4684 touchscreen trace replay; station range bounds; multi-gateway dispatcher callback fix.
-  - **Trace Replay Archive**: Live bus trace fixtures added across F461, HL4684, Legrand 067292, F454 (3486 burglar alarm), MH200N (3550 climate), and MH201 (F414 dimmers).
+    - **Cover End-Stop Settle & Min Delta (#778, #834, #843, #847)**: Timed covers settle full runs at `travel_time + 2 s` from known positions; 0.5 s early cutoff tolerance recognizes actuator limits arriving just before travel time; configurable `min_position_delta` (1–5%, default 2%); calibration refuses whole-minute configurator cutoffs (1–10 min).
+    - **Thermoregulation (WHO 4) (#816, #817, #846)**: Full 3550 99-zone central unit state hydration, setpoint management, and diagnostic attributes (Discussion #819); new thermo actuator switch platform for manual solenoid control (Issue #785); interface routing and actuator guards.
+    - **Lighting & Dimmers (WHO 1) (#771, #777, #781, #828, #849, #852)**: Fine dimmer preset echo / autodiscovered dimmers; coarse preset brightness curve alignment; coexistence of lighting actuator and motion sensor on the same bus address; Dimension 22 guard form crash fix.
+    - **Gateways & Sound System (#832, #835, #839, #844, #848, #854)**: Official **OWNd 2.0.0b13** pin; Legrand 067292 gateway profile alias; F500 FM tuner controls (frequency, band, presets) and HL4684 touchscreen trace replay; station range bounds; multi-gateway dispatcher callback fix.
+    - **Trace Replay Archive**: Live bus trace fixtures added across F461, HL4684, Legrand 067292, F454 (3486 burglar alarm), MH200N (3550 climate), and MH201 (F414 dimmers).
 
 ---
 
 ### 🚀 v2.0.0b16 (Expose Engine, Venetian Slat Tilt & Cover Start-Up Floor)
 - **Direct GitHub Compare**: [`Compare v2.0.0b15...v2.0.0b16`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b15...2.0.0b16)
 - **Key Enhancements** (83 pull requests, on OWNd 2.0.0b11):
-  - **Expose HA Entities to the Bus (#750)**: Declarative `expose` engine projecting Home Assistant entities and the clock onto free SCS addresses: virtual WHO 1 / WHO 2 actuators driven by wall controls, WHO 4 virtual temperature probes, WHO 18 virtual energy meters and the WHO 13 bus clock.
-  - **Cover Motor Start-Up Floor & Endpoint Full Runs (#466, #702, #707, #708)**: Timed covers enforce a per-cover `min_motor_pulse` floor (default `0.4 s`, `0` disables) and book the stretched run; timed and advanced covers send plain `UP` / `DOWN` (`*2*1*WHERE##` / `*2*2*WHERE##`) full runs at `0%` and `100%` (advanced covers widen sub-2% moves when stationary); timed endpoint runs settle at `travel_time + 2 s`, and timed runs end at the actuator's stop status.
-  - **Venetian Blind Slat Tilt (#492, #508)** and **Impulse Gate / Garage Covers with Intercom Events (#667)**.
-  - **Thermoregulation**: WHO 4 season frames, holiday programs, zone humidity, and F461 zone polling (#657, #689, #712, #714).
-  - **Sound & Scenarios**: WHO 22 tuner frequency, preset and RDS (#695); WHO 25 Scenario Plus (#671).
-  - **Behaviour changes**: `myhome.sync_time` refuses half-hour time zones (#764); `advanced: true` on a standard F411 logs a warning (#762).
+    - **Expose HA Entities to the Bus (#750)**: Declarative `expose` engine projecting Home Assistant entities and the clock onto free SCS addresses: virtual WHO 1 / WHO 2 actuators driven by wall controls, WHO 4 virtual temperature probes, WHO 18 virtual energy meters and the WHO 13 bus clock.
+    - **Cover Motor Start-Up Floor & Endpoint Full Runs (#466, #702, #707, #708)**: Timed covers enforce a per-cover `min_motor_pulse` floor (default `0.4 s`, `0` disables) and book the stretched run; timed and advanced covers send plain `UP` / `DOWN` (`*2*1*WHERE##` / `*2*2*WHERE##`) full runs at `0%` and `100%` (advanced covers widen sub-2% moves when stationary); timed endpoint runs settle at `travel_time + 2 s`, and timed runs end at the actuator's stop status.
+    - **Venetian Blind Slat Tilt (#492, #508)** and **Impulse Gate / Garage Covers with Intercom Events (#667)**.
+    - **Thermoregulation**: WHO 4 season frames, holiday programs, zone humidity, and F461 zone polling (#657, #689, #712, #714).
+    - **Sound & Scenarios**: WHO 22 tuner frequency, preset and RDS (#695); WHO 25 Scenario Plus (#671).
+    - **Behaviour changes**: `myhome.sync_time` refuses half-hour time zones (#764); `advanced: true` on a standard F411 logs a warning (#762).
 
 ---
 
@@ -57,12 +57,12 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 7 October 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b14...v2.0.0b15`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b14...2.0.0b15)
 - **Key Enhancements** (41 pull requests, on OWNd 2.0.0b10):
-  - **Device Fault Repairs (#593)**: Actuator hardware anomalies surface as self-clearing Home Assistant repair issues (`actuator_fault`).
-  - **Ignored Addresses (#621)**: Silence faulty or unwanted devices and their repair issues from the Options Flow.
-  - **Dimmers**: Dimmer no-load state (`WHAT 19`) handled without dropping light entities (#622); brightness 0 % routes to `switch_off` (#635).
-  - **Thermoregulation**: Central unit mode commands aligned with `libqtdevices`; invalid fan speeds caught as service errors; central units exempt from status polling (#630, #636, #641).
-  - **Burglar Alarm & Scenarios**: Empty-`WHERE` routing to the central panel and read-only auxiliary panel mode (#609, #616); 4-digit CEN addresses and fail-closed device triggers (#601, #624).
-  - **Connection Resilience**: Event session inactivity timeouts disabled on quiet plants (#637, #640); per-profile default session counts (#606).
+    - **Device Fault Repairs (#593)**: Actuator hardware anomalies surface as self-clearing Home Assistant repair issues (`actuator_fault`).
+    - **Ignored Addresses (#621)**: Silence faulty or unwanted devices and their repair issues from the Options Flow.
+    - **Dimmers**: Dimmer no-load state (`WHAT 19`) handled without dropping light entities (#622); brightness 0 % routes to `switch_off` (#635).
+    - **Thermoregulation**: Central unit mode commands aligned with `libqtdevices`; invalid fan speeds caught as service errors; central units exempt from status polling (#630, #636, #641).
+    - **Burglar Alarm & Scenarios**: Empty-`WHERE` routing to the central panel and read-only auxiliary panel mode (#609, #616); 4-digit CEN addresses and fail-closed device triggers (#601, #624).
+    - **Connection Resilience**: Event session inactivity timeouts disabled on quiet plants (#637, #640); per-profile default session counts (#606).
 
 ---
 
@@ -70,11 +70,11 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 30 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b13...v2.0.0b14`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b13...2.0.0b14)
 - **Key Enhancements**:
-  - **Multiple Gateway Routing Architecture (#453)**: Full multi-gateway plant isolation with namespaced dispatchers and cross-gateway bus protection.
-  - **Climate Zone State Diagnostics (#457)**: Dynamic HVAC action and climate zone status sweeps resolving restart desynchronization.
-  - **F500 Tuner Dimension Reports**: Tuner frequency stepping, RDS station name decoding, and FM presets for Legrand sound systems.
-  - **Touchscreen Gateway Profiles**: Authoritative profile matching and SSDP discovery for `AM4890`, `H4890`, and `LN4890` Livinglight / Axolute 3.5" displays.
-  - **WHO=2 Centralized Control Triggers**: Added cover and shutter group/general automation triggers.
+    - **Multiple Gateway Routing Architecture (#453)**: Full multi-gateway plant isolation with namespaced dispatchers and cross-gateway bus protection.
+    - **Climate Zone State Diagnostics (#457)**: Dynamic HVAC action and climate zone status sweeps resolving restart desynchronization.
+    - **F500 Tuner Dimension Reports**: Tuner frequency stepping, RDS station name decoding, and FM presets for Legrand sound systems.
+    - **Touchscreen Gateway Profiles**: Authoritative profile matching and SSDP discovery for `AM4890`, `H4890`, and `LN4890` Livinglight / Axolute 3.5" displays.
+    - **WHO=2 Centralized Control Triggers**: Added cover and shutter group/general automation triggers.
 
 ---
 
@@ -82,10 +82,10 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 18 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b11...v2.0.0b13`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b11...2.0.0b13)
 - **Key Enhancements**:
-  - **Engine Upgrade to OWNd 2.0.0b8**: Integrated upstream OWNd HMAC authentication refactor with SHA-1 and SHA-256 session handshakes.
-  - **Climate Fan Mode Persistence (#404, #405)**: Restored fan mode state across Home Assistant restarts and added golden sample tests.
-  - **CI Modernization**: 100% green CI across all 9 GitHub Actions workflows on Python 3.14 and Home Assistant Core 2026.9.2.
-  - **Quality Scale Platinum Alignment**: Strict typing and single-source `entry.runtime_data` across all 9 entity platforms.
+    - **Engine Upgrade to OWNd 2.0.0b8**: Integrated upstream OWNd HMAC authentication refactor with SHA-1 and SHA-256 session handshakes.
+    - **Climate Fan Mode Persistence (#404, #405)**: Restored fan mode state across Home Assistant restarts and added golden sample tests.
+    - **CI Modernization**: 100% green CI across all 9 GitHub Actions workflows on Python 3.14 and Home Assistant Core 2026.9.2.
+    - **Quality Scale Platinum Alignment**: Strict typing and single-source `entry.runtime_data` across all 9 entity platforms.
 
 ---
 
@@ -93,10 +93,10 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 11 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b10...v2.0.0b11`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b10...2.0.0b11)
 - **Key Enhancements**:
-  - **Trace Replay Test Engine**: Automated discovery and deterministic replay of authentic on-wire physical plant fixtures (`tests/test_trace_replay.py`).
-  - **Native DALI HSV Color (Dimension 12)**: Encoded `*#1*WHERE*#12*H*S*V*T##` aligned with F429/F461 DALI gateways.
-  - **Dynamic Diagnostic Bus Sweep (`myhome.sweep_bus`)**: One-click safe bus discovery service with automated credential redaction.
-  - **Hardware Gateway Pacing Profiles**: Dedicated pacing and queue limits for `F454`, `F455`, `F461`, `MH200`, `MH200N`, `MH201`, `MH202`, and `MyHomeServer1`.
+    - **Trace Replay Test Engine**: Automated discovery and deterministic replay of authentic on-wire physical plant fixtures (`tests/test_trace_replay.py`).
+    - **Native DALI HSV Color (Dimension 12)**: Encoded `*#1*WHERE*#12*H*S*V*T##` aligned with F429/F461 DALI gateways.
+    - **Dynamic Diagnostic Bus Sweep (`myhome.sweep_bus`)**: One-click safe bus discovery service with automated credential redaction.
+    - **Hardware Gateway Pacing Profiles**: Dedicated pacing and queue limits for `F454`, `F455`, `F461`, `MH200`, `MH200N`, `MH201`, `MH202`, and `MyHomeServer1`.
 
 ---
 
@@ -104,9 +104,9 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 11 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b9...v2.0.0b10`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b9...2.0.0b10)
 - **Key Enhancements**:
-  - **Dynamic Suffix Stripping (#247, #286)**: Dynamic stripping of `BinarySensorDeviceClass` suffixes from dry contact addresses, preventing invalid bus query frames (`*#25*331-moving##`).
-  - **Normalized Single-WHO Identifiers**: Resolved duplicate device registry entries (`mac-25-31` instead of `mac-25-25-31`).
-  - **CEN/CEN+ Pruning Exemption**: Startup cleanup exempts active CEN scenario units while cleanly pruning ghost auxiliary devices.
+    - **Dynamic Suffix Stripping (#247, #286)**: Dynamic stripping of `BinarySensorDeviceClass` suffixes from dry contact addresses, preventing invalid bus query frames (`*#25*331-moving##`).
+    - **Normalized Single-WHO Identifiers**: Resolved duplicate device registry entries (`mac-25-31` instead of `mac-25-25-31`).
+    - **CEN/CEN+ Pruning Exemption**: Startup cleanup exempts active CEN scenario units while cleanly pruning ghost auxiliary devices.
 
 ---
 
@@ -114,8 +114,8 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 11 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b8...v2.0.0b9`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b8...2.0.0b9)
 - **Key Enhancements**:
-  - **Translation Frame Filtering (#283, #284)**: Platform message dispatchers ignore auxiliary translation frames (`*1*1000#1*WHERE##`), preventing light and switch entities from flickering to `unknown` before actuator feedback arrives.
-  - **Software Fade Protection**: Active stepped brightness fades are protected against premature cancellation by translation frames.
+    - **Translation Frame Filtering (#283, #284)**: Platform message dispatchers ignore auxiliary translation frames (`*1*1000#1*WHERE##`), preventing light and switch entities from flickering to `unknown` before actuator feedback arrives.
+    - **Software Fade Protection**: Active stepped brightness fades are protected against premature cancellation by translation frames.
 
 ---
 
@@ -123,9 +123,9 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 10 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b6...v2.0.0b8`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b6...2.0.0b8)
 - **Key Enhancements**:
-  - **Scoped Registry Self-Healing (#277)**: Dynamic getter and 45-second watchdog interval restoring `<myhome-bus-card>` elements if overwritten by polyfills (such as `scheduler-card`).
-  - **Lovelace Card Picker Integration**: Implemented `getStubConfig()` and `getConfigForm()` for native visual card configuration in Home Assistant dashboards.
-  - **Dual-Route Static Serving**: Registered both `/myhome_static` and automatic sync to `/config/www/` for fail-safe frontend loading.
+    - **Scoped Registry Self-Healing (#277)**: Dynamic getter and 45-second watchdog interval restoring `<myhome-bus-card>` elements if overwritten by polyfills (such as `scheduler-card`).
+    - **Lovelace Card Picker Integration**: Implemented `getStubConfig()` and `getConfigForm()` for native visual card configuration in Home Assistant dashboards.
+    - **Dual-Route Static Serving**: Registered both `/myhome_static` and automatic sync to `/config/www/` for fail-safe frontend loading.
 
 ---
 
@@ -133,15 +133,15 @@ The table below outlines feature availability, gateway support, and protocol cap
 - **Release Date**: 10 September 2026
 - **Direct GitHub Compare**: [`Compare v2.0.0b4...v2.0.0b6`](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b4...2.0.0b6)
 - **Key Enhancements**:
-  - **Decoupled OWNd PyPI Engine**: Pinned integration engine to [`OWNd==2.0.0b5`](https://pypi.org/project/OWNd/2.0.0b5/).
-  - **Master WHO Catalog**: Embedded complete OpenWebNet subsystem dictionary (`WHO = 0` through `WHO = 1013`) into the Bus Monitor card with dynamic auto-registration for custom firmware frames.
-  - **Burglar Alarm Subsystem Filter**: Dedicated badge styling and filtering for `WHO = 5`.
+    - **Decoupled OWNd PyPI Engine**: Pinned integration engine to [`OWNd==2.0.0b5`](https://pypi.org/project/OWNd/2.0.0b5/).
+    - **Master WHO Catalog**: Embedded complete OpenWebNet subsystem dictionary (`WHO = 0` through `WHO = 1013`) into the Bus Monitor card with dynamic auto-registration for custom firmware frames.
+    - **Burglar Alarm Subsystem Filter**: Dedicated badge styling and filtering for `WHO = 5`.
 
 ---
 
 ### 🚀 v2.0.0b1 through v2.0.0b4 (Phase 1 Dual-Session Architecture Beta)
 - **Release Date**: 10 September 2026
 - **Key Enhancements**:
-  - Modernized asynchronous dual-session architecture: dedicated Command Session (`*99*0##`) and Event Stream Session (`*99*1##`).
-  - Full removal of legacy blocking socket calls.
-  - Native Home Assistant UI Config Flow with SSDP auto-discovery.
+    - Modernized asynchronous dual-session architecture: dedicated Command Session (`*99*0##`) and Event Stream Session (`*99*1##`).
+    - Full removal of legacy blocking socket calls.
+    - Native Home Assistant UI Config Flow with SSDP auto-discovery.

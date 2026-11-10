@@ -14,6 +14,7 @@ Captured and documented by **@Interstellar0verdrive** on **2026-10-11** on [Issu
 ## Background & Objectives
 
 Issue #645 addresses latency in sending stop commands for covers timed by Home Assistant. In a strictly first-in, first-out (FIFO) send queue:
+
 - Auto-stops during position positioning (`set_cover_position`) and Venetian slat micro-pulses (#508) suffer latency if queued behind other commands or discovery queries, causing over-travel.
 - The proposal introduces prioritized stop dispatching in `gateway_sessions.py` under the strict constraint: **A stop must never overtake an unwritten frame for the cover it stops (nor overlapping area, group, or general scopes)**.
 - These traces provide empirical ground truth on a physical MyHomeServer1 regarding per-frame queue serialization delay, idle command-session reconnect latency, and back-to-back direction/stop mechanical deadband behavior.
@@ -26,11 +27,11 @@ Issue #645 addresses latency in sending stop commands for covers timed by Home A
 - **Command**: Ten point-to-point status requests `*#2*<WHERE>##` queued within 2 ms to ten distinct covers from one script.
 - **Worker Concurrency**: Processed strictly in order by a single sending worker (worker 0); the second command session supported by MyHomeServer1 profile was not engaged (HA integration default worker count is 1).
 - **Latency Measurements**:
-  - Unqueue-to-ACK round trip: ~148 ms per frame.
-  - Cover status reply arrived 65–105 ms after frame unqueued.
-  - Next frame was unqueued only after the previous frame was acknowledged by the gateway.
-  - 10th frame unqueued at **+1.33 s** and acknowledged at **+1.44 s**.
-  - **Verdict**: In a pure FIFO queue without prioritization, a frame queued behind $n$ items incurs $n \times 145\text{ ms}$ of queue latency.
+    - Unqueue-to-ACK round trip: ~148 ms per frame.
+    - Cover status reply arrived 65–105 ms after frame unqueued.
+    - Next frame was unqueued only after the previous frame was acknowledged by the gateway.
+    - 10th frame unqueued at **+1.33 s** and acknowledged at **+1.44 s**.
+    - **Verdict**: In a pure FIFO queue without prioritization, a frame queued behind `n` items incurs `n × 145 ms` of queue latency.
 
 ### 2. Burst After Idle Session Timeout (Reconnect Penalty)
 - **Command**: The same 10 status requests executed after 90 s of bus idle (exceeding the 15 s command session idle disconnect timeout).

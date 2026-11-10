@@ -38,7 +38,7 @@ In Home Assistant, exposed bindings are configured as **Config Subentries** on y
 | Field | Description | Example |
 | :--- | :--- | :--- |
 | **WHO Subsystem** | The OpenWebNet domain to emulate (`1`, `2`, `4`, `13`, or `18`). | `WHO 1 — Lighting / Switch / Virtual Actuator` |
-| **WHERE Address** | Unused SCS address assigned to the button/tile in *MyHOME_Suite*. *(Omit for WHO 13)* | `25` or `50` |
+| **WHERE Address** | Unused SCS address assigned to the button/tile in **MyHOME_Suite**. *(Omit for WHO 13)* | `25` or `50` |
 | **Source Entity** | The Home Assistant entity providing state and commands. | `light.hue_living_room` |
 | **State Attribute** *(Optional)* | Entity attribute providing the value (e.g. `brightness`, `current_position`). | `brightness` |
 | **OpenWebNet Dimension** *(Optional)* | Dimension selector (`0` for temperature; `113` for power; `22` for clock). | `0` |
@@ -236,7 +236,7 @@ Different gateway models handle bus frame injection differently:
 | **`WHO = 18` (Virtual Energy Meter)** | Verified on **`F461`** (TCP session only) | `*#18*WHERE*113*WATT##` | Rejected (`NACK`) by wall touchscreens (`067292`, `H4890`, `H4684`). `bt_supervisione` / `bt_energy` gateways (`F454`, `F459`, `MH200N`, `MH202`, `MHS1`, `F461`) `ACK` on TCP but emit an SCS active-power **read** request (`D1 A1 02 33 00 1D 00 00`), discarding the value — so synthetic `WHO = 18` readings cannot reach physical 2-wire SCS wall screens. |
 
 > [!NOTE]
-> For physical wall touchscreens (Legrand `067292`, Arteor `573958`, BTicino `H4890`, `LN4890`), configure virtual light/switch (`WHO = 1`), shutter (`WHO = 2`), or scenario tiles with unused point-to-point addresses in *MyHOME_Suite*, and add clock sync (`WHO = 13`). On a shared SCS bus with a primary gateway (e.g. `F454` + `067292`), create the expose subentries on the **primary** gateway and keep `WHO = 4` / `WHO = 18` undelegated on the primary gateway.
+> For physical wall touchscreens (Legrand `067292`, Arteor `573958`, BTicino `H4890`, `LN4890`), configure virtual light/switch (`WHO = 1`), shutter (`WHO = 2`), or scenario tiles with unused point-to-point addresses in **MyHOME_Suite**, and add clock sync (`WHO = 13`). On a shared SCS bus with a primary gateway (e.g. `F454` + `067292`), create the expose subentries on the **primary** gateway and keep `WHO = 4` / `WHO = 18` undelegated on the primary gateway.
 
 ---
 

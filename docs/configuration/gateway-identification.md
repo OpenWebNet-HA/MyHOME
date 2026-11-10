@@ -34,7 +34,7 @@ A gateway labelled as a faster model than it is gets flooded; one labelled as a 
 
 ## What the bus can tell us: WHO=13 dimension 15
 
-Gateways answer the *model request* `*#13**15##` with `*#13**15*<code>##`, and most broadcast it periodically on the monitor session. The **only official meaning of `<code>`** is BTicino's *OpenWebNet_Community_2_device* v1.0.0 (13 June 2006), section 1.2.6 — and that table is complete at six entries:
+Gateways answer the *model request* `*#13**15##` with `*#13**15*<code>##`, and most broadcast it periodically on the monitor session. The **only official meaning of `<code>`** is BTicino's `OpenWebNet_Community_2_device` v1.0.0 (13 June 2006), section 1.2.6 — and that table is complete at six entries:
 
 | code | model | era |
 | :---: | :--- | :--- |

@@ -96,11 +96,12 @@ MyHOME is engineered to achieve the **official Home Assistant 🥇 Platinum Qual
 > [!NOTE]
 > **Community Consultation on Upstream Core Inclusion vs. Independent Distribution**:  
 > While the integration strictly adheres to 100% of Home Assistant Core Platinum standards, the maintainers and community have **not decided** on upstream Core inclusion. As discussed in community channels (see [RFC Discussion #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)), there are important trade-offs:
+>
 > - **Benefits of Core inclusion**: Automatic out-of-the-box discovery for new Home Assistant users without requiring HACS; official documentation on `home-assistant.io`.
 > - **Drawbacks & Advantages of remaining an independent custom component**:
->   - **Release Agility**: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
->   - **Dedicated Diagnostic Frontend**: Continued bundling and rapid iteration of the in-band `<myhome-bus-card>` Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.
->   - **Community Traces & Plant Fixtures**: Fast, unencumbered additions of real-world captures and experimental protocol options.
+>     - **Release Agility**: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
+>     - **Dedicated Diagnostic Frontend**: Continued bundling and rapid iteration of the in-band `<myhome-bus-card>` Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.
+>     - **Community Traces & Plant Fixtures**: Fast, unencumbered additions of real-world captures and experimental protocol options.
 >
 > Feedback from installers and users is actively welcomed in our Discussions.
 
@@ -140,23 +141,24 @@ graph LR
 ```
 
 ### 📋 Quality Scale Audit Highlights
+
 1. **Bronze Tier**:
-   - `has-entity-name`: All entity implementations inherit device names cleanly without manual `self.entity_id` overrides.
-   - `runtime-data`: 100% single-source access via `entry.runtime_data` (`MyHomeData` dataclass); zero legacy `hass.data[DOMAIN]` global lookups.
-   - `action-setup`: Service actions registered once in `async_setup` and preserved across individual entry reloads.
+    - `has-entity-name`: All entity implementations inherit device names cleanly without manual `self.entity_id` overrides.
+    - `runtime-data`: 100% single-source access via `entry.runtime_data` (`MyHomeData` dataclass); zero legacy `hass.data[DOMAIN]` global lookups.
+    - `action-setup`: Service actions registered once in `async_setup` and preserved across individual entry reloads.
 
 2. **Silver Tier**:
-   - `test-coverage`: Enforced strict 100.0% statement and branch coverage across all integration modules (verified by `tests/test_coverage_enforcer.py`).
-   - `parallel-updates`: Explicit `PARALLEL_UPDATES = 0` declared across all 9 platform files to guarantee event-driven thread safety.
+    - `test-coverage`: Enforced strict 100.0% statement and branch coverage across all integration modules (verified by `tests/test_coverage_enforcer.py`).
+    - `parallel-updates`: Explicit `PARALLEL_UPDATES = 0` declared across all 9 platform files to guarantee event-driven thread safety.
 
 3. **Gold Tier**:
-   - `reconfiguration-flow`: In-place gateway IP address, port, password, and model corrections supported natively in the UI.
-   - `repair-issues`: Built-in repairs platform (`repairs.py`) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel `999`, duplicate address alerts, model conflicts).
-   - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
+    - `reconfiguration-flow`: In-place gateway IP address, port, password, and model corrections supported natively in the UI.
+    - `repair-issues`: Built-in repairs platform (`repairs.py`) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel `999`, duplicate address alerts, model conflicts).
+    - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
 
 4. **Platinum Tier**:
-   - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0b8`) on PyPI.
-   - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
+    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0b8`) on PyPI.
+    - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
 
 ---
 

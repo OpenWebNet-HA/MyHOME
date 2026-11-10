@@ -32,13 +32,13 @@ In legacy versions, specifying whether a contact was a door, garage door, or win
 2. Select your binary sensor (e.g. `binary_sensor.garage_entry_door`).
 3. Click the **Settings (gear)** icon.
 4. Under **Show As**, select the appropriate device class:
-   - **Door**: Entry doors, interior doors.
-   - **Window**: Opening windows, skylights.
-   - **Garage Door**: Motorized or monitored garage gates.
-   - **Motion**: PIR motion and occupancy detectors.
-   - **Moisture**: Water leak detectors.
-   - **Gas / Smoke**: Technical safety sensors.
-   - **Lock / Tamper**: Anti-tampering switches on enclosures.
+    - **Door**: Entry doors, interior doors.
+    - **Window**: Opening windows, skylights.
+    - **Garage Door**: Motorized or monitored garage gates.
+    - **Motion**: PIR motion and occupancy detectors.
+    - **Moisture**: Water leak detectors.
+    - **Gas / Smoke**: Technical safety sensors.
+    - **Lock / Tamper**: Anti-tampering switches on enclosures.
 5. Click **Update**. Home Assistant immediately applies appropriate dynamic icons (e.g. open/closed doors, motion waves) and integrates the sensor into Area security summaries.
 
 ---

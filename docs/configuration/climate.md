@@ -25,12 +25,12 @@ MyHOME installations typically deploy one of three climate topologies, all nativ
 * **Subordinate Zones**: Individual room zones (`WHERE = 1..99`) with local probes (`L4693`, `H4693`, `LN4693`, etc.) and `F430/2` or `F430/4` flush/DIN actuators.
 * **Operation**: The integration discovers the central unit (`#0`) as the master `climate` entity and each individual zone (`1..99`) as a controllable `climate` device. Subordinate zone setpoint and mode commands use the central-unit-routed `#Z` address format (`*#4*#Z*#14*TTTT*M##`, `*4*311*#Z##`, `*4*303*#Z##`).
 * **Startup & Reconnect Status Burst (`*#4*#0##`)**: On startup (including on SCS-only gateways such as `MH200N` and `F454`), the central unit entity queries `*#4*#0##`. The `3550` responds with its operating mode frame (e.g. `*4*1101*#0##` for Heating Weekly Program 1, `*4*110#0200*#0##` for Manual 20.0 °C, or `*4*102*#0##` for Antifreeze/Protection) followed by diagnostic status frames (`WHAT 20..24, 30, 31`), exposed on the `#0` entity as state attributes:
-  - `remote_control`: `"enabled"` (`*4*21*#0##`) or `"disabled"` (`*4*20*#0##`, raises the self-clearing `central_remote_control_disabled` repair issue).
-  - `at_least_one_probe_off`: `true` when `*4*22*#0##` is reported in the current burst.
-  - `at_least_one_probe_antifreeze`: `true` when `*4*23*#0##` is reported in the current burst.
-  - `at_least_one_probe_manual`: `true` when `*4*24*#0##` is reported in the current burst.
-  - `failure_detected`: `true` when `*4*30*#0##` (`Failure discovered in a zone`) is reported in the current burst.
-  - `battery_fault`: `true` when `*4*31*#0##` (`Central unit battery KO`) is reported in the current burst (raises the self-clearing `central_battery_fault` repair issue).
+    - `remote_control`: `"enabled"` (`*4*21*#0##`) or `"disabled"` (`*4*20*#0##`, raises the self-clearing `central_remote_control_disabled` repair issue).
+    - `at_least_one_probe_off`: `true` when `*4*22*#0##` is reported in the current burst.
+    - `at_least_one_probe_antifreeze`: `true` when `*4*23*#0##` is reported in the current burst.
+    - `at_least_one_probe_manual`: `true` when `*4*24*#0##` is reported in the current burst.
+    - `failure_detected`: `true` when `*4*30*#0##` (`Failure discovered in a zone`) is reported in the current burst.
+    - `battery_fault`: `true` when `*4*31*#0##` (`Central unit battery KO`) is reported in the current burst (raises the self-clearing `central_battery_fault` repair issue).
 * **Remote Control (*Telegestione*) Requirement**: On a physical BTicino `3550`, **Remote Control (*Telegestione*)** must be set to **Enabled (*Abilitata*)** in the `3550` menu (`*4*21*#0##`) for the central unit to accept remote commands over the bus. When `*4*20*#0##` is active, the gateway still replies `*#*1##` (ACK), but the `3550` ignores remote mode and setpoint writes.
 * **Subordinate Zone Control Patterns (`Auto` vs `Manual`)**:
 
@@ -67,10 +67,10 @@ In plants with secondary temperature sensors (e.g. BTicino `3455` radio probes c
 MyHOME climate entities support standard Home Assistant climate controls:
 
 * **HVAC Modes**:
-  - `heat`: System active in heating mode.
-  - `cool`: System active in cooling / air-conditioning mode.
-  - `auto`: Following scheduled setpoint or central program.
-  - `off`: System frost-protection or thermal shutdown.
+    - `heat`: System active in heating mode.
+    - `cool`: System active in cooling / air-conditioning mode.
+    - `auto`: Following scheduled setpoint or central program.
+    - `off`: System frost-protection or thermal shutdown.
 * **Target Temperature**: Adjustable setpoint slider in 0.5 °C increments.
   The slider shows the setpoint the thermostat regulates to (dimension 12, knob offset included) whenever the zone has reported it; the commanded setpoint (dimension 14) is only shown until then. On an F461 the two can differ (21.0 commanded, 23.5 in force on a live capture), and the attribute `local_target_temperature` carries the same value. When the zone leaves `off`, the value reported while it was off is taken as the protection setpoint (#383), so the commanded setpoint is shown until the zone reports dimension 12 again; after a `set_temperature` call the next report, dimension 12 or 14, is shown. The value restored after a restart of Home Assistant already carries the saved `local_offset`, so the first dimension 13 report does not add it again.
 * **Current Temperature**: Real-time ambient reading reported by the probe.

@@ -98,6 +98,7 @@ filter:
 For a dedicated whole-home music dashboard (e.g. `/lovelace/audio`), Home Assistant's modern **Sections** layout allows organizing zones by floor or area.
 
 Each section includes:
+
 * **Interactive Source Selector Chips**: Tap to route the BTicino matrix to physical sources (e.g. `Radio`, `Streamer`). The chip illuminates amber when that source is active.
 * **All-Off Master Chip**: A one-tap red power button to turn off all amplifiers on that floor.
 * **Full-Width Room Players**: Independent volume adjustments and transport controls for every amplifier.
@@ -558,10 +559,12 @@ entities:
 
 > [!TIP]
 > Only want the number at a glance? A Markdown card does it in one line:
+>
 > ```yaml
 > type: markdown
 > content: "Last run: **{{ state_attr('cover.living_room_shutter', 'last_run_seconds') }} s** ({{ state_attr('cover.living_room_shutter', 'last_run_direction') }})"
 > ```
+>
 > The measurement itself is done by the integration — the clock starts at the real motor start on the bus, so the queue delay is never in the number; only your reaction time on **Stop** is.
 
 ---
@@ -569,6 +572,7 @@ entities:
 ## 🔥 Recipe 7: BTicino 3550 Central Unit & Multi-Zone Heating Control
 
 For plants with a **BTicino 3550** (99-zone central unit at `WHERE = #0`) and subordinate room zones (`WHERE = 1..99`), this recipe combines:
+
 1. A **Central Unit status & health header** displaying the active weekly program (`program`), remote-control state (`remote_control`), battery health (`battery_fault`), and manual-override status (`at_least_one_probe_manual`).
 2. **Per-room thermostat cards** with instant setpoint override and a one-tap **Return All Zones to 3550 Schedule (`Auto`)** button.
 
