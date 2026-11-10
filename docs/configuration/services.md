@@ -215,7 +215,7 @@ Stores the physical travel times of a timed cover **by hand** — the manual alt
 | `copied_from` | entity id | No | The cover the times were taken from; `calibration_source` becomes `copied` and `copied_from` is exposed as an attribute. | `cover.living_room_west` |
 | `min_motor_pulse` | float | No | Minimum duration in seconds (0.0–5.0) of a motor pulse to overcome mechanical deadband and brake inertia. Defaults to 0.4 s (0.0 disables). | `0.4` |
 
-\* at least one of the time fields or min_motor_pulse is required.
+\* at least one of the time fields or `min_motor_pulse` is required.
 
 ### Example YAML Call
 ```yaml

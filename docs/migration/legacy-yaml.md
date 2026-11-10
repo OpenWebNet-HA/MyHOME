@@ -329,14 +329,14 @@ event_data:
 Supported `events` varies between CEN and CEN+:  
 
 * CEN events:
-  * `pushbutton_short_press`
-  * `pushbutton_short_release`
-  * `pushbutton_long_press`
-  * `pushbutton_long_release`  
+    * `pushbutton_short_press`
+    * `pushbutton_short_release`
+    * `pushbutton_long_press`
+    * `pushbutton_long_release`  
 * CEN+ events:
-  * `pushbutton_short_press`
-  * `pushbutton_long_press`
-  * `pushbutton_long_release`
+    * `pushbutton_short_press`
+    * `pushbutton_long_press`
+    * `pushbutton_long_release`
 
 This is a really useful feature, it allows you to have wall switches turn WLED strips ON and OFF; Play/Pause Skip track on your SONOS... The only limit is your imagination!
 

@@ -135,24 +135,27 @@ By combining Shift-Left testing in `OWNd` with nightly canary builds and automat
 ## 5. Translation Lifecycle & Localization Anti-Drift (Crowdin)
 
 Translation catalogs (`custom_components/myhome/translations/`) are subject to two common failure modes in Home Assistant custom components:
+
 1. **Schema & String Drift**: Modifying `strings.json` without updating `en.json`, or having lingering orphaned keys in community locales (`nl`, `fr`, `it`) when features are deprecated.
 2. **Translation Decay**: Non-English catalogs falling behind the English source over time.
 
 ### Single Source of Truth & Developer Workflow
+
 * **Why two English files?**: While standard Home Assistant custom integrations only require `translations/en.json` at runtime, MyHOME adopts the Home Assistant core convention of maintaining `custom_components/myhome/strings.json` as the human-authored source of truth. `translations/en.json` is the compiled runtime and Crowdin distribution file. Maintaining both satisfies Quality Scale Gold rule `entity-translations` and provides a clean build-target for Crowdin.
 * **Developer Workflow**: Developers only edit `strings.json`. Never edit `translations/en.json` manually.
 * **Synchronizer Tool (`scripts/manage_translations.py`)**:
-  * `python scripts/manage_translations.py sync-en`: Compiles and aligns `translations/en.json` from `strings.json` with standard formatting.
-  * `python scripts/manage_translations.py prune`: Scans all non-English translation catalogs and prunes obsolete keys no longer present in `strings.json`.
-  * `python scripts/manage_translations.py status`: Reports coverage percentages, missing keys, and orphaned key counts across all locales.
-  * `python scripts/manage_translations.py check`: Strict sentinel run in CI (`quality-scale.yml`) verifying both `en.json` synchronization and 0 orphaned keys.
+    * `python scripts/manage_translations.py sync-en`: Compiles and aligns `translations/en.json` from `strings.json` with standard formatting.
+    * `python scripts/manage_translations.py prune`: Scans all non-English translation catalogs and prunes obsolete keys no longer present in `strings.json`.
+    * `python scripts/manage_translations.py status`: Reports coverage percentages, missing keys, and orphaned key counts across all locales.
+    * `python scripts/manage_translations.py check`: Strict sentinel run in CI (`quality-scale.yml`) verifying both `en.json` synchronization and 0 orphaned keys.
 * **Architectural Enforcer**: `scripts/verify_ha_standards.py` validates deep structural equality between `strings.json` and `translations/en.json` under Quality Scale Gold rule `entity-translations`.
 
 ### Crowdin Integration & Continuous Localization
 Community translations are managed through **Crowdin** and synchronized via `.github/workflows/crowdin.yml`:
+
 * **Required Repository Secrets**:
-  * `CROWDIN_PROJECT_ID`: The numeric Crowdin project identifier.
-  * `CROWDIN_PERSONAL_TOKEN`: An account personal access token with translation project permissions.
+    * `CROWDIN_PROJECT_ID`: The numeric Crowdin project identifier.
+    * `CROWDIN_PERSONAL_TOKEN`: An account personal access token with translation project permissions.
 * **One-Time Translation Seeding**: On initial repository setup, maintainers trigger `workflow_dispatch` with `upload_translations: true`. This populates Crowdin's translation memory with the existing base translations from `nl.json`, `fr.json`, and `it.json`.
 * **Push to Branch (`v2-phase1-architecture`)**: Pushing changes to `strings.json` or `en.json` automatically uploads updated English sources to Crowdin.
 * **Scheduled / Dispatch Pull Requests**: Weekly scheduled jobs (Sundays at 02:00 UTC) download only **approved** translations (`export_only_approved: true`) and omit incomplete strings (`skip_untranslated_strings: true`). This ensures untranslated keys cleanly fall back to Home Assistant's runtime English fallback rather than overwriting catalogs with English source duplicates. Downloads push to a scoped branch (`l10n_crowdin_v2`) and open clean PRs targeting `v2-phase1-architecture`.

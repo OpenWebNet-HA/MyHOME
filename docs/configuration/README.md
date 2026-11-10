@@ -11,9 +11,9 @@ Before adding the integration to Home Assistant, ensure:
 1. **Network Connectivity**: Your OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) is connected to your local network and powered on.
 2. **Fixed IP Address**: A static IP address or permanent DHCP lease reservation on your local router is strongly recommended.
 3. **OpenWebNet Password**:
-   - For standard gateways (F454, MH201): Note your numeric (4 or 9 digits) or alphanumeric password configured in MyHOME_Suite or TiMyHome.
-   - For MyHomeServer1: Note the installer password configured via the MyHOME_Up app.
-   - If open LAN authentication is disabled on the gateway, no password is required.
+    - For standard gateways (F454, MH201): Note your numeric (4 or 9 digits) or alphanumeric password configured in MyHOME_Suite or TiMyHome.
+    - For MyHomeServer1: Note the installer password configured via the MyHOME_Up app.
+    - If open LAN authentication is disabled on the gateway, no password is required.
 4. **Integration Installed**: The MyHOME custom component is installed (see the [Installation Guide](../getting-started/installation.md)).
 
 ---
@@ -25,12 +25,12 @@ In v2, gateway setup is **100% UI-first**:
 1. In Home Assistant, navigate to **Settings → Devices & Services**.
 2. If your gateway is discovered automatically via SSDP or mDNS, click **Configure** on the discovery card.
 3. If adding manually:
-   - Click **Add Integration** in the bottom right corner.
-   - Search for **MyHOME** and select it.
+    - Click **Add Integration** in the bottom right corner.
+    - Search for **MyHOME** and select it.
 4. Fill in the connection parameters:
-   - **Host**: Gateway IP address (e.g. `192.168.1.50`).
-   - **Port**: `20000` (default OpenWebNet port).
-   - **Password**: Your OpenWebNet or HMAC authentication password.
+    - **Host**: Gateway IP address (e.g. `192.168.1.50`).
+    - **Port**: `20000` (default OpenWebNet port).
+    - **Password**: Your OpenWebNet or HMAC authentication password.
 5. Click **Submit**. Home Assistant will establish the command session (`*99*0##`) and event listening session (`*99*1##`), verify the gateway hardware identity, and create the gateway device entry.
 
 For full parameter specifications and troubleshooting, see [Gateways & Connection Setup](gateways.md).

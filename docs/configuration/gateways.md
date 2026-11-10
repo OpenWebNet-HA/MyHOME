@@ -69,13 +69,13 @@ OpenWebNet gateways manage communication using two distinct connection modes:
 ```
 
 1. **Event Session (`*99*1##`)**:
-   - Long-lived persistent TCP socket opened at startup.
-   - Listens passively for all telegrams occurring on the physical SCS bus (e.g. wall switch presses, sensor readings, actuator confirmations).
-   - Feeds the in-band **Bus Monitor** and updates Home Assistant entity states immediately.
+    - Long-lived persistent TCP socket opened at startup.
+    - Listens passively for all telegrams occurring on the physical SCS bus (e.g. wall switch presses, sensor readings, actuator confirmations).
+    - Feeds the in-band **Bus Monitor** and updates Home Assistant entity states immediately.
 
 2. **Command Session (`*99*0##`)**:
-   - Dedicated transactional channel used to dispatch actions (e.g. turning on a light, opening a shutter, syncing gateway time).
-   - Manages request queueing, rate limiting, and response verification (`*#*1##` ACK vs. `*#*0##` NACK).
+    - Dedicated transactional channel used to dispatch actions (e.g. turning on a light, opening a shutter, syncing gateway time).
+    - Manages request queueing, rate limiting, and response verification (`*#*1##` ACK vs. `*#*0##` NACK).
 
 ---
 
@@ -108,9 +108,9 @@ You can adjust integration runtime parameters at any time without re-adding the 
 ### 1. Command Worker Concurrency (`worker_count`)
 - **Range**: `1` to `10` (Default: `1`).
 - Dynamically capped and validated against the gateway model's hardware limit:
-  - **1 worker**: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Generic.
-  - **2 workers**: MH202.
-  - **Up to 4 workers**: F454, F455, F461, MyHomeServer1.
+    - **1 worker**: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Generic.
+    - **2 workers**: MH202.
+    - **Up to 4 workers**: F454, F455, F461, MyHomeServer1.
 - Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.
 
 ### 2. Dimmer Transition Mode (`transition_mode`)
@@ -181,7 +181,7 @@ The model label decides the gateway profile (command sessions, pacing, queue siz
 | `manual` | You picked the model in the config flow | Trusted, but correctable by certain evidence |
 | `who13` | No model was configured; labelled from the WHO=13 device-type reply | Best effort |
 
-**WHO=13 dimension 15 ("MODEL REQUEST", `*#13**15*<code>##`)** is the only in-band identity signal. Its official table — BTicino *OpenWebNet_Community_2_device* v1.0.0, 13 June 2006, §1.2.6 — is complete at six entries: `2` MHServer, `4` MH200, `6` F452, `7` F452V, `11` MHServer2, `13` H4684. Every gateway sold since (F454, F455, MH200N, MH202, MyHOMEServer1…) is absent and reuses or invents codes, so the reply can **corroborate** an identity but never establish one for a modern gateway. Field evidence: code `200` is reported by both the F454 (#370) and MyHOMEServer1 (#292/#297), corroborating modern gateway models without uniquely identifying either.
+**WHO=13 dimension 15 ("MODEL REQUEST", `*#13**15*<code>##`)** is the only in-band identity signal. Its official table — BTicino `OpenWebNet_Community_2_device` v1.0.0, 13 June 2006, §1.2.6 — is complete at six entries: `2` MHServer, `4` MH200, `6` F452, `7` F452V, `11` MHServer2, `13` H4684. Every gateway sold since (F454, F455, MH200N, MH202, MyHOMEServer1…) is absent and reuses or invents codes, so the reply can **corroborate** an identity but never establish one for a modern gateway. Field evidence: code `200` is reported by both the F454 (#370) and MyHOMEServer1 (#292/#297), corroborating modern gateway models without uniquely identifying either.
 
 Rules applied when the reply arrives:
 
@@ -249,46 +249,48 @@ In complex installations, multiple OpenWebNet gateways may exist in Home Assista
     +---------------+       +---------------+      +---------------+
 ```
 
-### 1. Independent Bus Segments (standalone)
+### 1. Independent Bus Segments (`standalone`)
 Each gateway is connected to its own separate physical SCS bus segment (for example, separate apartment units, outbuildings, or dedicated subsystems connected via galvanically isolated interfaces).
-- **Behavior**: Every gateway independently discovers, polls, and creates entities.
-- **Entity Unique IDs**: Scoped as {mac}-{who}-{where}, guaranteeing uniqueness across different gateways without conflicts.
 
-### 2. Shared Bus (shared)
+- **Behavior**: Every gateway independently discovers, polls, and creates entities.
+- **Entity Unique IDs**: Scoped as `{mac}-{who}-{where}`, guaranteeing uniqueness across different gateways without conflicts.
+
+### 2. Shared Bus (`shared`)
 Two or more gateways are wired to the **same physical SCS wiring** (for example, a modern **MH201** handling general automation alongside a legacy **MH200N** running complex logic scenarios or a **3486** burglar alarm interface).
 
 Without proper coordination on a shared bus:
+
 - Both gateways observe the same bus traffic, causing duplicate Home Assistant entities for every physical light, cover, or thermostat.
-- Startup discovery sweeps (*#2*0##, *#4*0##, etc.) sent simultaneously by multiple gateways collide on the SCS bus, triggering NACK storms and rate-limiting timeouts.
-- Ambiguous service calls (such as myhome.sweep_bus) query all gateways redundantly.
+- Startup discovery sweeps (`*#2*0##`, `*#4*0##`, etc.) sent simultaneously by multiple gateways collide on the SCS bus, triggering NACK storms and rate-limiting timeouts.
+- Ambiguous service calls (such as `myhome.sweep_bus`) query all gateways redundantly.
 
 #### Shared Bus Configuration:
 - **Primary Gateway** (configure it first):
-  - Set us_topology: shared and gateway_role: primary.
-  - Performs active startup sweeps and entity discovery for every subsystem not delegated to a secondary.
-  - Cannot leave the primary role while a secondary or standby still points at it.
+    - Set `bus_topology: shared` and `gateway_role: primary`.
+    - Performs active startup sweeps and entity discovery for every subsystem not delegated to a secondary.
+    - Cannot leave the primary role while a secondary or standby still points at it.
 - **Secondary Gateway (Subsystem Offloading)**:
-  - Set us_topology: shared and gateway_role: secondary.
-  - Select the **Primary Gateway** in the dropdown.
-  - Active startup sweeps for non-delegated subsystems are automatically suppressed.
-  - Automatic entity discovery on bus events is suppressed for non-delegated WHOs.
-  - Any pre-existing duplicate secondary entities matching the primary gateway are pruned on startup.
-  - Changing the role reloads the gateway once the options are saved.
+    - Set `bus_topology: shared` and `gateway_role: secondary`.
+    - Select the **Primary Gateway** in the dropdown.
+    - Active startup sweeps for non-delegated subsystems are automatically suppressed.
+    - Automatic entity discovery on bus events is suppressed for non-delegated WHOs.
+    - Any pre-existing duplicate secondary entities matching the primary gateway are pruned on startup.
+    - Changing the role reloads the gateway once the options are saved.
 - **Warm Standby Gateway (High Availability Failover)**:
-  - Set us_topology: shared and gateway_role: standby.
-  - Select the **Primary Gateway** in the dropdown.
-  - Functions as a warm backup (e.g. an MH202 or secondary F454 standing by behind a main F454).
-  - While the primary gateway is healthy, duplicate entity discovery and startup sweeps are suppressed.
-  - **Transparent Failover**: If the primary gateway loses connection or becomes unresponsive:
-    - Outbound commands and status polls are seamlessly dispatched via the standby gateway, and so are their replies.
-    - Inbound bus frames received by the standby gateway are bridged to primary entities (only from the standby, so a secondary on the same bus does not deliver them twice).
-    - Scenario control events (CEN WHO=15 and CEN+ WHO=25) are bridged with the primary's MAC address and entry ID to both the HA event bus and dispatcher listeners, allowing device triggers to fire transparently.
-    - Once the outage outlasts the 60-second reconnect grace, a **Repair Issue** (gateway_failover_active) is raised alerting you to the offline primary unit while keeping your home fully functional.
-    - When the primary gateway reconnects, Home Assistant automatically performs failback and clears the repair issue.
+    - Set `bus_topology: shared` and `gateway_role: standby`.
+    - Select the **Primary Gateway** in the dropdown.
+    - Functions as a warm backup (e.g. an MH202 or secondary F454 standing by behind a main F454).
+    - While the primary gateway is healthy, duplicate entity discovery and startup sweeps are suppressed.
+    - **Transparent Failover**: If the primary gateway loses connection or becomes unresponsive:
+        - Outbound commands and status polls are seamlessly dispatched via the standby gateway, and so are their replies.
+        - Inbound bus frames received by the standby gateway are bridged to primary entities (only from the standby, so a secondary on the same bus does not deliver them twice).
+        - Scenario control events (CEN `WHO=15` and CEN+ `WHO=25`) are bridged with the primary's MAC address and entry ID to both the HA event bus and dispatcher listeners, allowing device triggers to fire transparently.
+        - Once the outage outlasts the 60-second reconnect grace, a **Repair Issue** (`gateway_failover_active`) is raised alerting you to the offline primary unit while keeping your home fully functional.
+        - When the primary gateway reconnects, Home Assistant automatically performs failback and clears the repair issue.
 
 ```text
 +-------------------------------------------------------------------------------+
-|                      STANDBY FAILOVER STATE MACHINE                            |
+|                      STANDBY FAILOVER STATE MACHINE                           |
 +-------------------------------------------------------------------------------+
 |                                                                               |
 |   +------------------------+                    +-------------------------+   |
@@ -313,9 +315,9 @@ Without proper coordination on a shared bus:
 ```
 
 - **Delegated Subsystems**:
-  - If the secondary gateway is a specialized unit (such as a 3486 for WHO=5 Burglar Alarm or an MH200N dedicated to WHO=16/22 Audio), select those subsystems under **Delegated Subsystems**.
-  - New devices of a delegated subsystem are discovered by the secondary only; the primary stops sweeping and discovering that subsystem.
-  - Devices the primary already had before the delegation stay on the primary, so no entity is renamed or loses its settings. To move one to the secondary, delete it from the primary gateway's device page; the secondary discovers it on its next bus frame.
+    - If the secondary gateway is a specialized unit (such as a 3486 for `WHO=5` Burglar Alarm or an MH200N dedicated to `WHO=16`/`22` Audio), select those subsystems under **Delegated Subsystems**.
+    - New devices of a delegated subsystem are discovered by the secondary only; the primary stops sweeping and discovering that subsystem.
+    - Devices the primary already had before the delegation stay on the primary, so no entity is renamed or loses its settings. To move one to the secondary, delete it from the primary gateway's device page; the secondary discovers it on its next bus frame.
 
 #### Automated Topology & Subsystem Delegation Inference
 Rather than requiring users to manually calculate subsystem overlaps and gateway tiers, Home Assistant automatically infers the optimal shared bus configuration based on gateway hardware models, performance tiers, and OpenWebNet command capabilities.
@@ -373,22 +375,25 @@ Rather than requiring users to manually calculate subsystem overlaps and gateway
 ```
 
 ##### Gateway Performance Tiers & Pacing
-1. **Tier 1 (High Throughput / Multi-Session, $\le 50\text{ ms}$ pacing)**: `F454`, `F455`, `F461`, `MyHomeServer1`.
-2. **Tier 2 (Linux / Touchscreen Gateways, $100\text{ ms}$ pacing)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890`.
-3. **Tier 3 (Legacy Microcontroller Gateways, $150\text{ ms}$ pacing)**: `MH200N`, `MH200`, `F452`, `F453`.
+1. **Tier 1 (High Throughput / Multi-Session, ≤ 50 ms pacing)**: `F454`, `F455`, `F461`, `MyHomeServer1`.
+2. **Tier 2 (Linux / Touchscreen Gateways, 100 ms pacing)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890`.
+3. **Tier 3 (Legacy Microcontroller Gateways, 150 ms pacing)**: `MH200N`, `MH200`, `F452`, `F453`.
 
 When two gateways are paired on a shared bus, the integration ranks them by performance tier (Tier 1 > Tier 2 > Tier 3), supported OpenWebNet subsystem coverage (more supported WHO dimensions wins), and deterministic MAC address ordering (`pri_mac <= sec_mac`) as a final tie-breaker. The broader, more performant gateway is assigned as the **Primary**.
 
 ##### Capability Delta Formula
-The follower gateway's role and delegated subsystems are calculated by evaluating the set difference of supported OpenWebNet subsystems ($S$):
-$$\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$$
+The follower gateway's role and delegated subsystems are calculated by evaluating the set difference of supported OpenWebNet subsystems (`S`):
 
-- **Empty Delta ($\Delta = \emptyset$)**:
-  - When the primary already covers all subsystems supported by the secondary (e.g. **F454 + MH202**), the secondary is assigned the **Warm Standby (`standby`)** role.
-  - No duplicate entities are created, and the secondary transparently takes over bus communication if the primary fails.
-- **Non-Empty Delta ($\Delta \neq \emptyset$)**:
-  - When the secondary supports specialized subsystems absent from the primary (e.g. **MyHomeServer1 + H4890**, where H4890 provides Burglar Alarm `WHO=5`, Auxiliary `WHO=9`, and Sound Diffusion `WHO=16`/`22`), the secondary is assigned the **Secondary (`secondary`)** role with delegated subsystems $\Delta$.
-  - In addition, audio subsystems (`WHO=16` Matrix and `WHO=22` Sound Diffusion) are automatically coupled so both route through the dedicated audio hardware.
+```text
+Δ = S_sec \ S_pri
+```
+
+- **Empty Delta (`Δ = ∅`)**:
+    - When the primary already covers all subsystems supported by the secondary (e.g. **F454 + MH202**), the secondary is assigned the **Warm Standby (`standby`)** role.
+    - No duplicate entities are created, and the secondary transparently takes over bus communication if the primary fails.
+- **Non-Empty Delta (`Δ ≠ ∅`)**:
+    - When the secondary supports specialized subsystems absent from the primary (e.g. **MyHomeServer1 + H4890**, where H4890 provides Burglar Alarm `WHO=5`, Auxiliary `WHO=9`, and Sound Diffusion `WHO=16`/`22`), the secondary is assigned the **Secondary (`secondary`)** role with delegated subsystems `Δ`.
+    - In addition, audio subsystems (`WHO=16` Matrix and `WHO=22` Sound Diffusion) are automatically coupled so both route through the dedicated audio hardware.
 
 ##### Smart Defaults & 1-Click Repair
 - **Options Flow**: Selecting `bus_topology: shared` and picking a Primary gateway dynamically pre-populates the inferred **Gateway Role** and **Delegated Subsystems** multi-select options.
@@ -396,9 +401,10 @@ $$\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$$
 
 #### Automatic Shared Bus Detection
 The integration passively compares the traffic of every pair of gateways that is not configured on the same bus. Due to false positives with external automation platforms, concurrent RX triggers are ignored. The only accepted evidence is a strict **TX-to-RX echo**:
-- Gateway B receives a physical point-to-point frame on the bus that Gateway A transmitted less than 1.5 seconds prior (SHARED_BUS_TX_ECHO_S = 1.5).
-- General lighting (WHERE=0), general automation (WHERE=0), area commands (WHERE starting with # or area codes), and group commands (WHERE=#0) are filtered out to prevent false correlations when automations trigger synchronized broadcast scenes across separate physical buses.
-- Three correlated frames within an evidence window of 10 minutes (SHARED_BUS_EVIDENCE_WINDOW_S = 600.0) raise an actionable **Home Assistant Repair Issue** (shared_bus_detected), alerting you to configure the shared bus relationship. Gateway-local WHO=13/1013 frames are ignored. Configuring the pair on one bus dismisses the issue.
+
+- Gateway B receives a physical point-to-point frame on the bus that Gateway A transmitted less than 1.5 seconds prior (`SHARED_BUS_TX_ECHO_S = 1.5`).
+- General lighting (`WHERE=0`), general automation (`WHERE=0`), area commands (`WHERE` starting with `#` or area codes), and group commands (`WHERE=#0`) are filtered out to prevent false correlations when automations trigger synchronized broadcast scenes across separate physical buses.
+- Three correlated frames within an evidence window of 10 minutes (`SHARED_BUS_EVIDENCE_WINDOW_S = 600.0`) raise an actionable **Home Assistant Repair Issue** (`shared_bus_detected`), alerting you to configure the shared bus relationship. Gateway-local `WHO=13` / `WHO=1013` frames are ignored. Configuring the pair on one bus dismisses the issue.
 
 #### Multi-Gateway Logging & Diagnostic Traces
 When commissioning or diagnosing multi-gateway installations, Home Assistant logs every step of the topology evaluation and failover lifecycle.
@@ -444,6 +450,7 @@ logger:
 
 ##### Opening an Issue on GitHub:
 When reporting behavior relating to shared buses, failover, or inference:
+
 1. Navigate to **Settings → Devices & Services → MyHOME**.
 2. Click **⋮ → Download diagnostics** on both gateway cards. The downloaded JSON includes full `bus_topology`, `gateway_role`, `delegated_whos`, failover state, command queue pacing, and the rolling 500-frame buffer (with credentials redacted).
 3. Attach both diagnostic JSON files to your GitHub issue.

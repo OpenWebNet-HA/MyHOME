@@ -84,9 +84,9 @@ If you prefer not using the command line:
 1. Once Home Assistant restarts, navigate to **Settings → Devices & Services**.
 2. If your gateway is discovered automatically via SSDP/mDNS, click **Configure**.
 3. Otherwise, click **Add Integration**, search for **MyHOME**, and enter:
-   - **Host**: IP address of your gateway.
-   - **Port**: `20000`.
-   - **Password**: OpenWebNet password (or HMAC password for MyHomeServer1).
+    - **Host**: IP address of your gateway.
+    - **Port**: `20000`.
+    - **Password**: OpenWebNet password (or HMAC password for MyHomeServer1).
 4. Home Assistant connects to the gateway, starts the command and event sessions, and automatically discovers your connected bus actuators and sensors.
 
 ### Are Existing Entity IDs Preserved?

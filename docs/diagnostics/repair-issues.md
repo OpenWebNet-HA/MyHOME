@@ -26,15 +26,15 @@ OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=1
 
 ### How to resolve
 1. **Web Interface (F454, F455, MyHomeServer1)**:
-   - Log into the gateway web admin interface (`http://<gateway_ip>`).
-   - Navigate to **System Configuration** → **Date & Time** (or **Device Settings** → **Clock**).
-   - Set the local timezone and enable NTP network time synchronization (e.g. `pool.ntp.org`).
-   - Save and reboot.
+    - Log into the gateway web admin interface (`http://<gateway_ip>`).
+    - Navigate to **System Configuration** → **Date & Time** (or **Device Settings** → **Clock**).
+    - Set the local timezone and enable NTP network time synchronization (e.g. `pool.ntp.org`).
+    - Save and reboot.
 2. **MyHOME_Suite / TiMyHome (MH200N, MH201, MH202, F452)**:
-   - Connect to the gateway via USB or Ethernet.
-   - Open **Gateway Settings** → **Date & Time**.
-   - Configure local time, timezone, and automatic DST.
-   - Send the configuration and reboot.
+    - Connect to the gateway via USB or Ethernet.
+    - Open **Gateway Settings** → **Date & Time**.
+    - Configure local time, timezone, and automatic DST.
+    - Send the configuration and reboot.
 
 ### How it clears
 Once the gateway broadcasts an updated WHO=13 frame with a valid timezone offset, Home Assistant automatically removes this repair issue. You can also trigger an immediate check via **Developer Tools → Actions** using `myhome.sync_time`.
@@ -220,13 +220,13 @@ A configured streaming decoder belongs to an integration that does not accept di
 
 ### How to resolve
 1. **Interactive Repair Flow (Recommended)**:
-   - Click **Submit** on the Repair issue card.
-   - If Home Assistant detects an active **DLNA Digital Media Renderer (DMR)** companion entity for the same physical player, the repair flow automatically updates your MyHOME decoder configuration to use the DLNA companion entity in 1 click.
+    - Click **Submit** on the Repair issue card.
+    - If Home Assistant detects an active **DLNA Digital Media Renderer (DMR)** companion entity for the same physical player, the repair flow automatically updates your MyHOME decoder configuration to use the DLNA companion entity in 1 click.
 2. **Manual Configuration**:
-   - If the DLNA companion is not yet discovered or configured:
-     - Enable UPnP / DLNA in the streamer's mobile app settings.
-     - In Home Assistant, go to **Settings → Devices & Services → Add Integration** and add the **DLNA Digital Media Renderer** integration for your device.
-     - Return to the Repair issue and click **Submit**, or update the entity mapping in **Settings → Devices & Services → MyHOME → Configure**.
+    - If the DLNA companion is not yet discovered or configured:
+        - Enable UPnP / DLNA in the streamer's mobile app settings.
+        - In Home Assistant, go to **Settings → Devices & Services → Add Integration** and add the **DLNA Digital Media Renderer** integration for your device.
+        - Return to the Repair issue and click **Submit**, or update the entity mapping in **Settings → Devices & Services → MyHOME → Configure**.
 
 ### How it clears
 The repair issue automatically withdraws and deletes once the decoder entity is updated to a streaming-compatible entity (e.g. DLNA DMR), or when the decoder is removed from the MyHOME Options Flow.
@@ -245,31 +245,32 @@ The integration passively detected that two configured OpenWebNet gateways share
 
 ### Automated Capability Inference
 Home Assistant automatically inspects the hardware models, command concurrency, queue pacing, and supported OpenWebNet subsystems (`WHO` dimensions) of both gateways:
+
 - **Tier 1 (High Throughput / Multi-Session)**: `F454`, `F455`, `F461`, `MyHomeServer1`.
 - **Tier 2 (Linux / Touchscreen Gateways)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890`.
 - **Tier 3 (Legacy Microcontroller Gateways)**: `MH200N`, `MH200`, `F452`, `F453`.
 
-The integration designates the higher-tier or broader-subsystem-coverage gateway as **Primary** (ranking by hardware tier, supported WHO count, and deterministic MAC address tie-break), and calculates the capability delta for the follower:
-$$\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$$
-- **Empty Delta ($\Delta = \emptyset$)**: Both gateways have equivalent or subordinate capability (e.g. F454 + MH202). The follower is configured as **Warm Standby** for high-availability failover without entity duplication.
-- **Non-Empty Delta ($\Delta \neq \emptyset$)**: The follower gateway provides specialized hardware subsystems not supported by the primary (e.g. MyHomeServer1 + H4890, where H4890 provides Burglar Alarm WHO 5, Auxiliary WHO 9, and Multi-room Sound WHO 16/22). The follower is assigned as **Secondary** with delegated subsystems $\Delta$.
+The integration designates the higher-tier or broader-subsystem-coverage gateway as **Primary** (ranking by hardware tier, supported WHO count, and deterministic MAC address tie-break), and calculates the capability delta for the follower (`Δ = S_sec \ S_pri`):
+
+- **Empty Delta (`Δ = ∅`)**: Both gateways have equivalent or subordinate capability (e.g. F454 + MH202). The follower is configured as **Warm Standby** for high-availability failover without entity duplication.
+- **Non-Empty Delta (`Δ ≠ ∅`)**: The follower gateway provides specialized hardware subsystems not supported by the primary (e.g. MyHomeServer1 + H4890, where H4890 provides Burglar Alarm WHO 5, Auxiliary WHO 9, and Multi-room Sound WHO 16/22). The follower is assigned as **Secondary** with delegated subsystems `Δ`.
 
 ### Why it matters
 Without configuration, each gateway discovers the same physical devices and registers duplicate entities in Home Assistant (e.g. `light.kitchen_light` and `light.kitchen_light_2`), and simultaneous startup sweeps cause SCS bus collisions and NACK storms.
 
 ### How to resolve
 1. **1-Click Repair Flow (Recommended)**:
-   - Click **Submit** on the Repair issue card (*Settings → System → Repairs*).
-   - Home Assistant displays the inferred topology dialog showing the assigned Primary, Follower, Role, and Delegated Subsystems with full rationale.
-   - Click **Submit** to apply the configuration automatically and reload both gateways.
+    - Click **Submit** on the Repair issue card (*Settings → System → Repairs*).
+    - Home Assistant displays the inferred topology dialog showing the assigned Primary, Follower, Role, and Delegated Subsystems with full rationale.
+    - Click **Submit** to apply the configuration automatically and reload both gateways.
 2. **Manual Configuration (Options Flow)**:
-   - Navigate to **Settings → Devices & Services → MyHOME**.
-   - On the primary gateway card, click **Configure** and set **Bus Topology** to `shared` and **Gateway Role** to `primary`.
-   - On the follower gateway card, click **Configure**:
-     - Set **Bus Topology** to `shared`.
-     - Select the primary gateway under **Primary Gateway**.
-     - Notice that **Gateway Role** and **Delegated Subsystems** are automatically pre-populated with the inferred smart defaults.
-     - Click **Submit**. The gateway reloads with its new role, prunes duplicate entities, and stops redundant sweeps.
+    - Navigate to **Settings → Devices & Services → MyHOME**.
+    - On the primary gateway card, click **Configure** and set **Bus Topology** to `shared` and **Gateway Role** to `primary`.
+    - On the follower gateway card, click **Configure**:
+        - Set **Bus Topology** to `shared`.
+        - Select the primary gateway under **Primary Gateway**.
+        - Notice that **Gateway Role** and **Delegated Subsystems** are automatically pre-populated with the inferred smart defaults.
+        - Click **Submit**. The gateway reloads with its new role, prunes duplicate entities, and stops redundant sweeps.
 
 > [!TIP]
 > **Diagnostic Logging**: To inspect the exact hardware tier comparison, supported WHOs, and capability delta calculated by Home Assistant, enable debug logging for `custom_components.myhome.topology` and `custom_components.myhome.repairs`. When opening a GitHub issue, attach the diagnostics download (**Settings → Devices & Services → MyHOME → ⋮ → Download diagnostics**) which captures the topology state and recent bus echoes.
@@ -286,6 +287,7 @@ Without configuration, each gateway discovers the same physical devices and regi
 The primary OpenWebNet gateway (e.g. an F454) has been offline for longer than the 60-second reconnect grace period, and Home Assistant has automatically failed over all bus operations to its warm-standby gateway (e.g. an MH202). A brief reconnect of the primary's event session does not raise this issue, although commands sent during those seconds already go through the standby.
 
 While failover is active:
+
 - Outbound device commands and status polls are seamlessly routed through the standby gateway.
 - Inbound physical bus frames received by the standby gateway are bridged to primary entities, keeping your dashboards, states, and automations fully functional.
 - The primary gateway's entities remain available in Home Assistant UI.

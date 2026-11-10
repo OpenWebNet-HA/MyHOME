@@ -41,14 +41,14 @@ action:
 ```
 
 - **CEN Events**:
-  - `pushbutton_short_press`
-  - `pushbutton_short_release`
-  - `pushbutton_long_press`
-  - `pushbutton_long_release`
+    - `pushbutton_short_press`
+    - `pushbutton_short_release`
+    - `pushbutton_long_press`
+    - `pushbutton_long_release`
 - **CEN+ Events**:
-  - `pushbutton_short_press`
-  - `pushbutton_long_press`
-  - `pushbutton_long_release`
+    - `pushbutton_short_press`
+    - `pushbutton_long_press`
+    - `pushbutton_long_release`
 
 ---
 
@@ -57,11 +57,13 @@ action:
 When group, area, or general commands occur on the physical bus, the integration dispatches corresponding Home Assistant events:
 
 ### Light Events
+
 - `myhome_general_light_event`
 - `myhome_area_light_event`
 - `myhome_group_light_event`
 
 Attributes:
+
 - `event`: `'on'` or `'off'`
 - `area`: Area number (for area events)
 - `group`: Group ID (for group events, without leading `#`)
@@ -83,11 +85,13 @@ action:
 ```
 
 ### Automation (Cover) Events
+
 - `myhome_general_automation_event`
 - `myhome_area_automation_event`
 - `myhome_group_automation_event`
 
 Attributes:
+
 - `event`: `'open'`, `'close'`, or `'stop'`
 - `area`: Area number
 - `group`: Group ID

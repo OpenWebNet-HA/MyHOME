@@ -56,7 +56,7 @@ ha core restart
 > Always ensure integration files reside in `/config/custom_components/myhome/`. Never extract files directly into `/config/custom_components/` root, and never retain backup directories inside `custom_components/` (e.g. `custom_components/myhome_old/`). In modern Home Assistant cores, extra Python packages or stray `__init__.py` files in `custom_components/` can prevent all custom integrations from loading.
 
 5. Restart Home Assistant:
-   - Go to **Developer Tools → YAML → Restart** (or **Settings → System → Restart**).
+    - Go to **Developer Tools → YAML → Restart** (or **Settings → System → Restart**).
 
 ---
 

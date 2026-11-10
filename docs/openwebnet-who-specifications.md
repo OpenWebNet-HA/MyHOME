@@ -5,6 +5,7 @@ Welcome to the **OpenWebNet Protocol & WHO Specifications Archive**. This docume
 Historically, these technical specifications were distributed through the *MyOpen Community* portal (`myopen-legrandgroup.com` / `myopen-bticino.it`), which is no longer active. To ensure that developers, installers, and community members have permanent access to accurate protocol documentation, we maintain this centralized registry.
 
 ### 🌐 Official & Community Documentation Links
+
 - 🏛️ **Official Legrand Developer Portal**: [Legrand Local Interoperability — PDF Documentation](https://developer.legrand.com/local-interoperability/#PDF%20documentation)
 - 📦 **Master Document Archive**: [OWN DOC.zip (GitHub PR #232 Attachment)](https://github.com/user-attachments/files/32008617/OWN.DOC.zip) — Complete 15-document bundle preserved and contributed by **@GianlucaCh**.
 - 🪄 **Home Assistant Community Blueprint**: [MyHome CEN+ Commands Blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345) — Connect physical MyHOME CEN / CEN+ scenario pushbuttons to toggle non-BTicino entities and dim lights.
@@ -21,17 +22,17 @@ If you are a **certified BTicino / Legrand installer**, **system integrator**, o
 ### 🔍 Remaining Specifications & Items Under Review:
 
 1. **Document Versions & Revision Dates**:
-   - Compare your PDF archive against the [Master WHO Family Inventory](#master-who-family-inventory) table below.
-   - Look at the cover page and revision history (e.g. *Last date modify*, *Version number*). If your copy is newer than what is listed, please share the version details!
+    - Compare your PDF archive against the [Master WHO Family Inventory](#master-who-family-inventory) table below.
+    - Look at the cover page and revision history (e.g. *Last date modify*, *Version number*). If your copy is newer than what is listed, please share the version details!
 
 2. **Remaining Missing / Legacy Specifications**:
-   - **`WHO = 3`**: Load control legacy central unit (F421) (Seeking newer official PDF than 2006).
-   - **`WHO = 6`**: Dedicated audio door entry call frames (Seeking standalone document beyond WHO 7 / Intro).
-   - **`WHO = 9`**: Auxiliary channels (AUX 1–9) (Seeking newer official PDF than 2006).
-   - *(Note: **`WHO = 14`** Actuator Lock is fully reverse-engineered and documented below; Legrand never published a public standalone PDF).*
+    - **`WHO = 3`**: Load control legacy central unit (F421) (Seeking newer official PDF than 2006).
+    - **`WHO = 6`**: Dedicated audio door entry call frames (Seeking standalone document beyond WHO 7 / Intro).
+    - **`WHO = 9`**: Auxiliary channels (AUX 1–9) (Seeking newer official PDF than 2006).
+    - *(Note: **`WHO = 14`** Actuator Lock is fully reverse-engineered and documented below; Legrand never published a public standalone PDF).*
 
 3. **Software Tooling & Dictionaries (MyHOME_Suite / TiMyHome)**:
-   - Command definitions or exported XML dictionaries from Legrand/BTicino configuration software (**MyHOME_Suite**, **TiMyHome**, **Virtual Configurator**, **MyHOME_Up**).
+    - Command definitions or exported XML dictionaries from Legrand/BTicino configuration software (**MyHOME_Suite**, **TiMyHome**, **Virtual Configurator**, **MyHOME_Up**).
 
 > **💡 How to Contribute:** You can share filenames, revision dates, technical sheets, or bus monitor traces by opening an issue on the [OpenWebNet-HA/MyHOME GitHub repository](https://github.com/OpenWebNet-HA/MyHOME/issues) or commenting directly in [PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232). Every contribution helps ensure open, permanent documentation for the entire MyHOME ecosystem.
 
@@ -42,6 +43,7 @@ If you are a **certified BTicino / Legrand installer**, **system integrator**, o
 The table below catalogs every known OpenWebNet function family (`WHO`), its official Legrand document title, current known version, archive status, and Home Assistant platform mapping.
 
 ### Status Legend
+
 - 🟢 **Archived & Verified**: Official PDF is preserved in our archive with full syntax verified.
 - 🟡 **Legacy Copy Available / Cross-Check Needed**: Legacy documentation or reverse-engineered definitions exist; seeking confirmation of the latest official version.
 - 🔴 **Needed / Missing**: Seeking the official Legrand/BTicino PDF specification.
@@ -82,25 +84,25 @@ The table below catalogs every known OpenWebNet function family (`WHO`), its off
 A common source of confusion in the OpenWebNet ecosystem stems from the shared `WHO = 25` code. As highlighted by **@GianlucaCh**, these are two completely distinct official specifications:
 
 1. **Scenario Scheduler CEN / CEN+ (`WHO_15-25.pdf`)**:
-   - **Covered Devices**: Scenario Programmers and Controllers (MH200, MH200N, MH201, Legrand 03565).
-   - **Protocol Nature**: Pushbutton scenario trigger events.
-   - **Syntax**: `*25*<WHAT>*<WHERE>##` where `WHAT` encodes:
-     - `21`: Short pressure (< 0.5 seconds).
-     - `22`: Start of extended pressure (>= 0.5 seconds).
-     - `23`: Extended pressure holding.
-     - `24`: Release after extended pressure.
-   - **Addressing (`WHERE`)**: Scenario address up to 256 buttons/scenarios (`[1-256]`).
+    - **Covered Devices**: Scenario Programmers and Controllers (MH200, MH200N, MH201, Legrand 03565).
+    - **Protocol Nature**: Pushbutton scenario trigger events.
+    - **Syntax**: `*25*<WHAT>*<WHERE>##` where `WHAT` encodes:
+        - `21`: Short pressure (< 0.5 seconds).
+        - `22`: Start of extended pressure (>= 0.5 seconds).
+        - `23`: Extended pressure holding.
+        - `24`: Release after extended pressure.
+    - **Addressing (`WHERE`)**: Scenario address up to 256 buttons/scenarios (`[1-256]`).
 
 2. **Dry Contact Interfaces & IR Sensors (`WHO_25.pdf`)**:
-   - **Covered Devices**: Physical interface modules (BTicino 3477, F428, 3480, F482, IR 4610/4611/4640; Legrand 573996, 03553, 067513, etc.).
-   - **Protocol Nature**: Hardware state telemetry for magnetic window/door reed switches, technical contacts, and passive infrared motion detectors.
-   - **Syntax**: `*25*<WHAT>*<WHERE>##` or dimension frames where `WHAT` indicates:
-     - `31`: Contact ON / IR detection (closed contact or motion detected).
-     - `32`: Contact OFF / IR not detected (opened contact or motion cleared).
-   - **Parameter (`PARAM`)**:
-     - `PARAM = 0`: State response upon polling request.
-     - `PARAM = 1`: State response upon real-time system event.
-   - **Home Assistant Entity**: Exposed as `binary_sensor` (e.g. window opened/closed, PIR motion).
+    - **Covered Devices**: Physical interface modules (BTicino 3477, F428, 3480, F482, IR 4610/4611/4640; Legrand 573996, 03553, 067513, etc.).
+    - **Protocol Nature**: Hardware state telemetry for magnetic window/door reed switches, technical contacts, and passive infrared motion detectors.
+    - **Syntax**: `*25*<WHAT>*<WHERE>##` or dimension frames where `WHAT` indicates:
+        - `31`: Contact ON / IR detection (closed contact or motion detected).
+        - `32`: Contact OFF / IR not detected (opened contact or motion cleared).
+    - **Parameter (`PARAM`)**:
+        - `PARAM = 0`: State response upon polling request.
+        - `PARAM = 1`: State response upon real-time system event.
+    - **Home Assistant Entity**: Exposed as `binary_sensor` (e.g. window opened/closed, PIR motion).
 
 ---
 
@@ -109,19 +111,19 @@ A common source of confusion in the OpenWebNet ecosystem stems from the shared `
 The sound subsystem is split across two dedicated OpenWebNet WHO families:
 
 1. **WHO = 16 (Sound Distribution — Zone & Matrix Management)**:
-   - Controls physical audio amplifiers and source matrix units (F441, F441M, F450, 3487).
-   - Functions include: Zone power (ON/OFF), volume attenuation (0–31 scale / percentages), audio input channel routing (IN 1 to IN 4), tone equalizers (bass, treble, balance), and master room follow-me.
-   - Mapped to Home Assistant `media_player` entities.
+    - Controls physical audio amplifiers and source matrix units (F441, F441M, F450, 3487).
+    - Functions include: Zone power (ON/OFF), volume attenuation (0–31 scale / percentages), audio input channel routing (IN 1 to IN 4), tone equalizers (bass, treble, balance), and master room follow-me.
+    - Mapped to Home Assistant `media_player` entities.
 
 2. **WHO = 22 (Sound Diffusion — Source & Speaker Navigation)**:
-   - Controls the audio source devices themselves (FM tuner, CD player, multimedia source) and individual speaker units.
-   - Functions include:
-     - FM tuner frequency step up/down (`WHAT = 5` / `WHAT = 6`).
-     - Station preset navigation (`WHAT = 9` next / `WHAT = 10` previous).
-     - Track navigation (`WHAT = 11` next track / `WHAT = 12` previous track).
-     - RDS text string display streaming (`WHAT = 31` start / `WHAT = 32` stop).
-     - Direct frequency tuning and preset memorization (`WHAT = 33`).
-     - Speaker volume adjustment (`WHAT = 3` increase / `WHAT = 4` decrease).
+    - Controls the audio source devices themselves (FM tuner, CD player, multimedia source) and individual speaker units.
+    - Functions include:
+        - FM tuner frequency step up/down (`WHAT = 5` / `WHAT = 6`).
+        - Station preset navigation (`WHAT = 9` next / `WHAT = 10` previous).
+        - Track navigation (`WHAT = 11` next track / `WHAT = 12` previous track).
+        - RDS text string display streaming (`WHAT = 31` start / `WHAT = 32` stop).
+        - Direct frequency tuning and preset memorization (`WHAT = 33`).
+        - Speaker volume adjustment (`WHAT = 3` increase / `WHAT = 4` decrease).
 
 ---
 
@@ -131,11 +133,11 @@ BTicino and Legrand never distributed a standalone `WHO_14.pdf` in their public 
 
 - **Protocol Function**: Inhibits physical wall buttons (rocker switches, CEN pushbuttons) and remote actuation for safety, maintenance, or child locking on lighting and cover/shutter actuators (F411, F411U2, F418, LN4672M2).
 - **Lock Actuator (Disable Controls)**: `*14*0*<WHERE>##`
-  - Freezes the relay in its current position and disables physical switch inputs.
+    - Freezes the relay in its current position and disables physical switch inputs.
 - **Unlock Actuator (Enable Controls)**: `*14*1*<WHERE>##`
-  - Restores normal operation and re-enables physical wall buttons and bus commands.
+    - Restores normal operation and re-enables physical wall buttons and bus commands.
 - **Status Query**: `*#14*<WHERE>##`
-  - Returns `*14*0*<WHERE>##` (Locked) or `*14*1*<WHERE>##` (Unlocked).
+    - Returns `*14*0*<WHERE>##` (Locked) or `*14*1*<WHERE>##` (Unlocked).
 - **Home Assistant Integration**: Represented via configuration button entities (`DisableCommandButtonEntity` and `EnableCommandButtonEntity`) under each actuator device.
 - **Gateway Support**: Supported on modern gateways (F454, MyHomeServer1). Older gateways (e.g. early F455 firmware) return NACK (`*#*0##`).
 
@@ -153,12 +155,13 @@ A highly recommended blueprint developed by the Home Assistant community (by **g
 👉 **[Raw Blueprint Source YAML (GitHub)](https://github.com/gST84/myHome_blueprints/blob/f4f3151aab73d85b0ab098b67f51d68e731f534f/CENplus/myhome-cen-plus.yaml)**
 
 ### Key Features of the Blueprint:
+
 1. **Control Non-BTicino Devices**: Use your native BTicino wall switches to switch or toggle non-BTicino smart devices (Philips Hue, Zigbee, Z-Wave, Shelly, or Tuya).
 2. **Short vs. Long Press Handling**:
-   - **Short Press (< 0.5s)**: Instantly toggles lights or triggers scenes.
-   - **Extended / Long Press (>= 0.5s)**: Enables smooth dimming up or down.
+    - **Short Press (< 0.5s)**: Instantly toggles lights or triggers scenes.
+    - **Extended / Long Press (>= 0.5s)**: Enables smooth dimming up or down.
 3. **Dimming Direction Helper**:
-   - By creating a simple `input_boolean` helper (e.g. `input_boolean.living_dim_direction`), the blueprint tracks dimming direction so alternating long presses cycle between brightening and dimming.
+    - By creating a simple `input_boolean` helper (e.g. `input_boolean.living_dim_direction`), the blueprint tracks dimming direction so alternating long presses cycle between brightening and dimming.
 4. **Zero-Delay Bus Processing**: Fully compatible with the stateless `myhome.cen` and `myhome.cen_plus` events dispatched by the modernized MyHOME integration.
 
 ---
@@ -193,30 +196,32 @@ OpenWebNet messages always begin with `*` and end with `##`. Fields are separate
    *Example*: `*1*1*21##` (Turn ON light at address A=2, PL=1)
 
 2. **Dimension Request (Query)**:
-   ```text
-   *#WHO*WHERE*DIMENSION##
-   ```
-   *Examples*:
-   - `*#4*1*0##` (Query measured temperature of Zone 1)
-   - `*#4*1*60##` (Query relative humidity of Zone 1)
+    ```text
+    *#WHO*WHERE*DIMENSION##
+    ```
+    *Examples*:
+
+    - `*#4*1*0##` (Query measured temperature of Zone 1)
+    - `*#4*1*60##` (Query relative humidity of Zone 1)
 
 3. **Dimension Writing (Command with Parameters)**:
-   ```text
-   *#WHO*WHERE*#DIMENSION*VAL1*VAL2*...*VALn##
-   ```
-   *Example*: `*#16*1*#1*30##` (Set volume of audio Amplifier 1 to 30%)
+    ```text
+    *#WHO*WHERE*#DIMENSION*VAL1*VAL2*...*VALn##
+    ```
+    *Example*: `*#16*1*#1*30##` (Set volume of audio Amplifier 1 to 30%)
 
 4. **Dimension Response (Status Report)**:
-   ```text
-   *#WHO*WHERE*DIMENSION*VAL1*VAL2*...*VALn##
-   ```
-   *Examples*:
-   - `*#4*1*0*0215*1##` (Zone 1 temperature is 21.5 °C, Heating mode)
-   - `*#4*1*60*55##` (Zone 1 relative humidity is 55%)
+    ```text
+    *#WHO*WHERE*DIMENSION*VAL1*VAL2*...*VALn##
+    ```
+    *Examples*:
+
+    - `*#4*1*0*0215*1##` (Zone 1 temperature is 21.5 °C, Heating mode)
+    - `*#4*1*60*55##` (Zone 1 relative humidity is 55%)
 
 5. **Acknowledge (ACK / NACK)**:
-   - `*#*1##` : **ACK** (Command accepted by gateway/bus)
-   - `*#*0##` : **NACK** (Command rejected, syntax error, or buffer busy)
+    - `*#*1##` : **ACK** (Command accepted by gateway/bus)
+    - `*#*0##` : **NACK** (Command rejected, syntax error, or buffer busy)
 
 ---
 

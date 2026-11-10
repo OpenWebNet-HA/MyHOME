@@ -232,10 +232,12 @@ The integration emits a single native OpenWebNet broadcast frame (`*2*2*0#4#02##
 In traditional BTicino MyHome wiring, bathroom extractor fans are often configured as hardware slaves (`M=SLA` or off-delay `M=1..4`) sharing the exact same `A` and `PL` address as the bathroom light actuator. While this turns the fan on whenever the light turns on, an actuator in `M=SLA` cannot be commanded independently by Home Assistant without also turning the light on, because both physical relays listen to the identical OpenWebNet `A*PL` broadcast telegram.
 
 Instead of wasting a second contact and wiring two relays in parallel, **decouple the fan contact on your F411** by giving it its own distinct Point address:
+
 - **Output 1 (Light)**: `A=1, PL1=1`, `M = [empty]` (Address `11`, discovered as `light.bathroom_light`).
 - **Output 2 (Fan)**: `A=1, PL2=2`, `M = [empty]` (Address `12`, discovered as `switch.bathroom_fan` or shown as a Fan via UI).
 
 Home Assistant now coordinates the master/slave link with far more flexibility than hardware configurators:
+
 - When the bathroom light is turned on at the wall switch, Home Assistant immediately turns on the fan.
 - When the light is turned off, Home Assistant engages an overrun timer (e.g. 10 minutes) using `myhome.turn_on_timed` so the fan automatically switches off at the bus hardware level even if Home Assistant restarts.
 - Because the fan has its own address, Home Assistant can also trigger high-humidity purges or boost ventilation independently without turning on the ceiling light.

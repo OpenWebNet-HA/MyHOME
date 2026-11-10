@@ -178,8 +178,8 @@ For Venetian blinds, motorized louvres, and external venetian blinds (EVBs/BSO) 
 Physical BTicino / Legrand MyHOME Venetian blind actuators (such as the F411U2 configured in Venetian mode) control slat tilt angle mechanically through brief motor pulses: when the motor runs, the slats first rotate through their full angular range (typically 1.5–2.5 seconds) before linear curtain lifting or lowering commences.
 
 The integration models this behavior with timed travel:
-* When a tilt command is issued, the shutter motor runs in the required direction for a calculated duration:
-  $$\text{duration} = \frac{|\text{target\_tilt} - \text{current\_tilt}|}{100} \times \text{slat\_time}$$
+
+* When a tilt command is issued, the shutter motor runs in the required direction for a calculated duration (`duration = (|target_tilt - current_tilt| / 100) × slat_time`).
 * The pulse is timed from the **motor start**, not from the frame write: from the direction status the gateway relays (`*2*1*<WHERE>##` / `*2*2*<WHERE>##`), or, when the gateway relays none, from the write plus the measured 0.55 s motor-start delay (see [Runtime behaviour → Timed covers](runtime_behaviour.md)). Timed from the write, a pulse shorter than about half a second would end before the motor started. Nothing is counted while the frame still waits in the send queue.
 * When the target duration elapses, an automatic stop command (`*2*0*<WHERE>##`) halts the motor. The angle is settled when that stop is **written**, not when it was due: the send queue is first-in first-out, so behind other frames (several blinds tilted at once, a busy gateway) the stop leaves late and the slats turn on until then. The angle follows the real motor time at one full rotation per `slat_time`, also past the target, up to 0 % / 100 %. Motor time past a full rotation moves the curtain, and a timed cover's position estimate moves by that time over its curtain travel time (`travel_time - slat_time`; a position-reporting cover reports its own level).
 * A new tilt target while the previous pulse's stop still waits in the queue waits for that stop to be written, so it starts from the real angle; the new direction frame could not leave before that stop anyway. Tilt requests run one at a time, and a newer target replaces one still waiting, so a dragged slider sends only where it ended.
@@ -219,6 +219,7 @@ When an actuator or external controller broadcasts a Dimension 11 event (such as
 ### Travel Time Calibration & Slat Rotation
 
 End-to-end travel time (`travel_time_down` / `travel_time_up`) includes one full slat rotation (`slat_time`) at the start of the run:
+
 * On a slat blind, linear curtain travel is estimated over `travel_time_down - slat_time` and `travel_time_up - slat_time` after the slats finish rotating.
 * Mid-tilt stops do not corrupt or reset linear curtain position estimation.
 * Tilt commands are safely rejected if the cover is actively running automated travel-time calibration.
@@ -258,6 +259,7 @@ In large MyHOME installations, F422 interfaces physically segment the SCS bus (e
 
 #### 1. Why Naive Fan-Out Overwhelms F422 Hardware Buffers
 In real-world plant operation with an MH200 gateway and F422 interface, an automation triggering 10 individual shutters at sunset (`action: cover.close_cover` targeting 10 individual entities) encountered reproducible dropped frames:
+
 - Home Assistant dispatched 10 concurrent requests via `asyncio.gather()`.
 - When fanning out 10 individual point-to-point OpenWebNet commands (`*2*2*14#4#02##`, `*2*2*19#4#02##`, `*2*2*18#4#02##`, …), even with the gateway's worker queue pacing (e.g., 0.15 s per frame), the burst overwhelmed the physical F422 interface's internal FIFO buffer and secondary SCS bus arbitration.
 - By the 6th or 7th consecutive command, the F422 buffer overflowed. The gateway returned NACK (`*#*0##`), causing OWNd to cancel delivery and abort motion on the un-acknowledged curtain (e.g. `13#4#02`, "Oost 1"). The shutter remained stuck open while the rest closed.
@@ -265,6 +267,7 @@ In real-world plant operation with an MH200 gateway and F422 interface, an autom
 
 #### 2. Native Broadcast: The BTicino Protocol Architecture
 BTicino physical keypads and scenario units (such as `LN4660M2` or CEN/CEN+ controls programmed with `A=GEN` or Area `A=1..9`) never send individual point commands. They emit **native OpenWebNet broadcasts**:
+
 - **Main Bus General**: `*2*WHAT*0##`
 - **Secondary Bus General via F422**: `*2*WHAT*0#4#<interface>##` (e.g., `*2*2*0#4#02##` for General Down on interface 02, `*2*1*0#4#02##` for General Up, `*2*0*0#4#02##` for General Stop)
 - **Secondary Bus Area via F422**: `*2*WHAT*<area>#4#<interface>##` (e.g., `*2*2*1#4#02##`)
@@ -277,9 +280,10 @@ The MyHOME integration implements a dual-layer architecture adhering to both Hom
 
 1. **Native Broadcast for General Scope Covers (`where: '0'`)**:
    When `open_cover`, `close_cover`, or `stop_cover` is called on a General cover behind an interface (`where: '0'`, `bus_interface: '02'`), the integration sends the native OpenWebNet broadcast frame directly (`*2*WHAT*0#4#<bus>##`).
-   - Actuators on the interface bus respond simultaneously without dropping frames.
-   - When the gateway echoes `*2*WHAT*0#4#<bus>##`, the integration scopes the incoming frame strictly to entities on that interface (`interface == "02"`), preserving total bus isolation.
-   - When individual actuators reach their end stops and report status frames (`*2*0*11#4#02##`, etc.), Home Assistant tracks each entity and aggregates the General cover's position automatically.
+
+    - Actuators on the interface bus respond simultaneously without dropping frames.
+    - When the gateway echoes `*2*WHAT*0#4#<bus>##`, the integration scopes the incoming frame strictly to entities on that interface (`interface == "02"`), preserving total bus isolation.
+    - When individual actuators reach their end stops and report status frames (`*2*0*11#4#02##`, etc.), Home Assistant tracks each entity and aggregates the General cover's position automatically.
 
 2. **Paced Member Fan-Out (`PACED_FANOUT_DELAY = 0.3s`) for Percentage Positioning**:
    OpenWebNet has no broadcast protocol for percentage positioning (Dimension 10 positioning `*#2*WHERE*#10*LEVEL##` is strictly point-to-point; there is no broadcast level command).
@@ -354,6 +358,7 @@ actions:
 
 #### Retire the Legacy `delay: 45s` + `stop_cover` Anti-Pattern
 In legacy configurations, users often placed a `delay: 45s` followed by `cover.stop_cover` to ensure motors stopped. **This pattern is unnecessary and counterproductive**:
+
 - BTicino actuators (F411, F401, LN4661M2) incorporate hardware limit switches and configurable travel timers (e.g. configurator `M` or MyHOME_Suite cutoff).
 - The MyHOME integration automatically calculates direction-aware travel times (`travel_time_down` / `travel_time_up`) and handles stop detection.
 - Sending a delayed `cover.stop_cover` floods the bus with redundant frames and can accidentally cement a stalled or out-of-sync shutter. Let the hardware and integration manage motion termination naturally.
@@ -488,10 +493,11 @@ Everything in this part applies **only to a cover that has an `access:` block**.
    Actionable push notifications to the Companion App enforce `authenticationRequired: true` (iOS FaceID/TouchID, Android biometrics/screen lock). The phone must be actively unlocked by the authorized approver.
 4. **Fail-Closed Sensor Direction Checks**:
    A pulse is classified as a pure **OPEN** *only* when the ground-truth state sensor (`state_sensor`, a binary sensor that is `off` when the door is closed and `on` otherwise) proves the door is closed. In all other states, the pulse is classified as **MAY_CLOSE**, requiring:
-   - Verified active safety devices within `safety_check_days`.
-   - The user to be on site (`person` entity reports `home`) or visual confirmation via a camera snapshot.
-   - Any external close-block switch to report `off`.
-   - Any missing, unavailable, or non-binary sensor state immediately fails closed.
+
+    - Verified active safety devices within `safety_check_days`.
+    - The user to be on site (`person` entity reports `home`) or visual confirmation via a camera snapshot.
+    - Any external close-block switch to report `off`.
+    - Any missing, unavailable, or non-binary sensor state immediately fails closed.
 5. **Audible / Visual Pre-Warning & Watchdog**:
    Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
 6. **A Wall Button Starts the Gate, It Does Not Stop It**:
