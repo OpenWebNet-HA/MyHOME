@@ -110,6 +110,7 @@ __all__ = [
     "OWNGateway",
     "OWNSession",
     "STATUS_TIMEOUT_BACKOFF",
+    "WHO4_RECOVERY_QUIET_WINDOWS",
     "_cancel_written",
     "_resolve_written",
     "_session_is_open",
@@ -185,6 +186,17 @@ AVAILABILITY_GRACE = 60
 BUS_QUIET_PERIOD = 0.75
 BUS_QUIET_CAP = 15.0
 PACED_WRITE_TIMEOUT = 60.0
+# Extra BUS_QUIET_CAP windows waited by _wait_for_who4_recovery() when a WHO 4 status read
+# times out or desyncs while event frames are still actively streaming on the bus (#886).
+# On MyHomeServer1 (028206), /home/bticino/cfg/openserver routes WHO 4 to a single-threaded
+# bt_termo daemon (127.0.0.1:30004, 9 s timeout) while bt_thermo_manager periodically walks
+# its internal thermo.conf zone list (5-15 min DIMENSION 7 + DIMENSION 0 or 5-frame *#4*Z##
+# sweeps taking 6 s on fast buses up to 65-115 s across multi-riser plants; zones omitted
+# from thermo.conf such as Zone 59 in #886 never appear in those sweeps). Intentionally
+# bounded at 4 extra windows (up to (1 + 4) * 15 s = 75 s total) so a typical 65-75 s
+# internal sweep can finish and drain the buffered query without stalling forever on a
+# permanently chattering bus.
+WHO4_RECOVERY_QUIET_WINDOWS = 4
 # How long a zone request waits for others once the startup sweep is over: zones discovered
 # from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
 # sweep (*#4*#0*20##) on an F461.
@@ -1062,7 +1074,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             )
 
     async def _wait_for_who4_recovery(self, written: Any) -> None:
-        """Wait for an active bus sweep to finish when a WHO 4 status read timed out or desynced (#886)."""
+        """Wait for an active bus sweep to finish when a WHO 4 status read timed out or desynced (#886).
+
+        Bounded to ``WHO4_RECOVERY_QUIET_WINDOWS`` extra bus-quiet waits so an external
+        ``bt_thermo_manager`` sweep can drain ``bt_termo``'s single-threaded SCS queue
+        without blocking indefinitely when autonomous bus traffic never goes quiet.
+        """
         if not isinstance(written, asyncio.Future):
             return
         if not (
@@ -1070,7 +1087,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             or getattr(written, "_command_timeout", False)
         ):
             return
-        for _ in range(4):
+        for _ in range(WHO4_RECOVERY_QUIET_WINDOWS):
             if (
                 self._last_event_frame_at <= 0
                 or (time.monotonic() - self._last_event_frame_at) >= BUS_QUIET_PERIOD

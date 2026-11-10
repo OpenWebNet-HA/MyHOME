@@ -45,6 +45,7 @@ from custom_components.myhome.const import CONF_FIRMWARE
 from custom_components.myhome.gateway import (
     ALL_ZONE_REQUESTS,
     STATUS_TIMEOUT_BACKOFF,
+    WHO4_RECOVERY_QUIET_WINDOWS,
     FrameScheduler,
     MyHOMEGatewayHandler,
 )
@@ -773,7 +774,8 @@ async def test_send_zone_requests_waits_for_active_sweep_and_who4_recovery_drain
     # 1 initial `_wait_for_bus_quiet` + 2 recovery windows before `_last_event_frame_at` cleared
     assert len(recovery_waits) == 3
 
-    # 4. If an external sweep continues past all 4 recovery windows, `_wait_for_who4_recovery` caps at 4
+    # 4. If an external sweep continues past all recovery windows, `_wait_for_who4_recovery` caps at WHO4_RECOVERY_QUIET_WINDOWS
+    assert WHO4_RECOVERY_QUIET_WINDOWS == 4
     cap_waits: list[float] = []
 
     async def always_busy_quiet(since: float) -> None:
@@ -786,7 +788,7 @@ async def test_send_zone_requests_waits_for_active_sweep_and_who4_recovery_drain
     setattr(desync_fut, "_gateway_desync", True)
     desync_fut.cancel()
     await handler2.pace_startup_status_write(desync_fut, OWNCommand("*#4*59##"))
-    # 1 initial `_wait_for_bus_quiet` in `pace_startup_status_write` + 4 recovery windows = 5 total
-    assert len(cap_waits) == 5
+    # 1 initial `_wait_for_bus_quiet` in `pace_startup_status_write` + WHO4_RECOVERY_QUIET_WINDOWS = 5 total
+    assert len(cap_waits) == 1 + WHO4_RECOVERY_QUIET_WINDOWS
 
 
