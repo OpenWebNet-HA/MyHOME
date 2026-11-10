@@ -547,6 +547,7 @@ async def test_humidity_refusing_gateway_drops_pending_zone_dimension_60_and_sta
 ) -> None:
     """Refusing gateway skips queued Dim 60 requests; `pace_startup_status_write` guards idle vs active."""
     handler = _make_handler(hass, "F454")
+    handler._initial_discovery_done.set()
     handler.send_paced = AsyncMock()  # type: ignore[method-assign]
     handler.request_zone_dimension("2", 60)
     await handler.wait_for_zone_requests()
@@ -621,13 +622,13 @@ async def test_pause_status_edge_cases_and_mixed_non_who4_collected_frames(
     assert handler.send_buffer.status_paused is False
 
 
-# ── 8. Cold-boot restored state skips per-zone `*#4*Z##` polls (`FRIEND.log` Part 1 & Part 2) ──
+# ── 8. Restored state without live bus reports still polls `*#4*Z##` (#185 / #466 / #886) ──
 
 
-async def test_cold_boot_restored_zones_skip_per_zone_status_polls_while_incomplete_zones_poll(
+async def test_restored_zones_without_live_reports_still_poll_while_live_reported_zones_skip(
     hass: Any, issue_886_trace: dict[str, Any]
 ) -> None:
-    """Restored zones skip `*#4*Z##` in `_async_poll_after_discovery` during quiet windows between sweeps (#886)."""
+    """Restored state alone does not suppress `*#4*Z##`; only live post-restart bus reports skip (#886)."""
     zone_ids: list[int] = issue_886_trace["plant"]["zone_ids"]
     humidity_zone_ids = set(issue_886_trace["plant"]["humidity_capable_zone_ids"])
 
@@ -651,35 +652,12 @@ async def test_cold_boot_restored_zones_skip_per_zone_status_polls_while_incompl
     handler._wait_for_bus_quiet = AsyncMock()  # type: ignore[method-assign]
 
     zones: dict[int, MyHOMEClimate] = {}
-    for idx, zid in enumerate(zone_ids):
+    for zid in zone_ids:
         z = _make_zone(hass, str(zid), handler, humidity=(zid in humidity_zone_ids))
         zones[zid] = z
         handler.watch_zone_actuators(str(zid))
         if zid == 34:
-            # Zone 34 is missing current_temperature -> must still poll `*#4*34##`
-            await z.async_restore_last_state(
-                State(f"climate.myhome_zone_{zid}", HVACMode.HEAT, {"temperature": 19.0})
-            )
-            assert z._core_zone_state_known() is False
-        elif zid == 35:
-            # Zone 35 had state "unknown" coerced to HVACMode.OFF on restore without setpoint -> must poll `*#4*35##`
-            await z.async_restore_last_state(
-                State(f"climate.myhome_zone_{zid}", "unknown", {"current_temperature": 18.5})
-            )
-            assert z._attr_hvac_mode == HVACMode.OFF and z._hvac_mode_restored is True
-            assert z._core_zone_state_known() is False
-        elif zid == 36:
-            # Zone 36 has no restored state at all (`_attr_hvac_mode is None` after temperature frame) -> must poll `*#4*36##`
-            _feed(z, f"*#4*{zid}*0*0185##")
-            assert z._core_zone_state_known() is False
-        elif zid == 37:
-            # Zone 37 reported live OFF on the bus (`*4*303*37##`) + temperature without setpoint -> known!
-            _feed(z, "*4*303*37##", "*#4*37*0*0150##")
-            assert z._attr_hvac_mode == HVACMode.OFF and z._hvac_mode_restored is False
-            assert z.native_target_temperature is None
-            assert z._core_zone_state_known() is True
-        elif idx % 2 == 0:
-            # Restored HEAT mode with both current_temperature and target temperature
+            # Zone 34 has restored HEAT state only (no live frames since restart) -> must poll `*#4*34##`
             await z.async_restore_last_state(
                 State(
                     f"climate.myhome_zone_{zid}",
@@ -687,27 +665,49 @@ async def test_cold_boot_restored_zones_skip_per_zone_status_polls_while_incompl
                     {"temperature": 10.0, "current_temperature": 14.5},
                 )
             )
-            assert z._core_zone_state_known() is True
             assert z._core_zone_state_reported() is False
-        else:
-            # Restored OFF/protection mode with current_temperature and protection setpoint
+        elif zid == 35:
+            # Zone 35 has restored state + live temperature only (mode/setpoint still restored) -> must poll `*#4*35##`
             await z.async_restore_last_state(
                 State(
                     f"climate.myhome_zone_{zid}",
-                    HVACMode.OFF,
-                    {"temperature": 7.0, "current_temperature": 14.5},
+                    HVACMode.HEAT,
+                    {"temperature": 10.0, "current_temperature": 14.5},
                 )
             )
-            assert z._core_zone_state_known() is True
+            _feed(z, f"*#4*{zid}*0*0185##")
+            assert z._hvac_mode_restored is True
             assert z._core_zone_state_reported() is False
+        elif zid == 36:
+            # Zone 36 has live temperature + live mode (`*4*110*36##`), but setpoint is still restored -> must poll `*#4*36##`
+            await z.async_restore_last_state(
+                State(
+                    f"climate.myhome_zone_{zid}",
+                    HVACMode.HEAT,
+                    {"temperature": 10.0, "current_temperature": 14.5},
+                )
+            )
+            _feed(z, f"*#4*{zid}*0*0185##", f"*4*110*{zid}##")
+            assert z._hvac_mode_restored is False
+            assert z._target_temperature_restored is True
+            assert z._core_zone_state_reported() is False
+        elif zid == 37:
+            # Zone 37 reported live OFF on the bus (`*4*303*37##`) + live temperature -> complete!
+            _feed(z, "*4*303*37##", "*#4*37*0*0150##")
+            assert z._attr_hvac_mode == HVACMode.OFF and z._hvac_mode_restored is False
+            assert z._core_zone_state_reported() is True
+        else:
+            # Remaining zones reported live Dimension 7 + Dimension 0 since startup -> complete!
+            _feed(z, f"*#4*{zid}*7*1*1*0100##", f"*#4*{zid}*0*0150##")
+            assert z._core_zone_state_reported() is True
 
-    # Run post-discovery polls with NO live Dimension 7 frames (cold boot in quiet window)
     await asyncio.gather(*(z._async_poll_after_discovery() for z in zones.values()))
     if handler._zone_request_task is not None:
         await handler._zone_request_task
 
     assert wire_log[:2] == ["*#4*#0*20##", "*#4*0*60##"]
-    # All 38 fully restored zones skipped `*#4*Z##`; only the 3 incomplete zones polled!
+    # The 3 zones whose core state was only restored (or partially reported) polled `*#4*Z##`;
+    # the 38 zones with live post-restart bus reports skipped `*#4*Z##`.
     assert sorted(wire_log[2:]) == ["*#4*34##", "*#4*35##", "*#4*36##"]
 
 
@@ -719,6 +719,7 @@ async def test_send_zone_requests_waits_for_active_sweep_and_who4_recovery_drain
 ) -> None:
     """`_send_zone_requests`, `send_paced`, and `pace_startup_status_write` wait for active sweeps after timeout/desync."""
     handler = _make_handler(hass, "MyHomeServer1")
+    handler._initial_discovery_done.set()
 
     # 1. `_send_zone_requests` waits for `_wait_for_bus_quiet(self._last_event_frame_at)` when `_last_event_frame_at > 0`
     handler.note_event_frame()

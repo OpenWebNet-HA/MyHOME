@@ -1027,7 +1027,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         )
         ask_status = self._central or (
             self._gateway_supports_zone_status
-            and (not skip_reported or not self._core_zone_state_known())
+            and (not skip_reported or not self._core_zone_state_reported())
         )
         ask_temp = (
             not self._central
@@ -1140,16 +1140,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._attr_hvac_mode == HVACMode.OFF:
             return True
         return self.native_target_temperature is not None and not self._target_temperature_restored
-
-    def _core_zone_state_known(self) -> bool:
-        """Whether temperature, operating mode, and setpoint (when running) are known from the bus or restored state."""
-        if self._attr_native_current_temperature is None:
-            return False
-        if self._attr_hvac_mode is None:
-            return False
-        if self._attr_hvac_mode == HVACMode.OFF and not self._hvac_mode_restored:
-            return True
-        return self.native_target_temperature is not None
 
     def _refresh_bus_state_complete(self) -> None:
         """Mark ``_bus_state_complete`` once every field the startup poll asks has arrived live."""
