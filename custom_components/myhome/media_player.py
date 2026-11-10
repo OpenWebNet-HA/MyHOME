@@ -136,7 +136,13 @@ from .media_player_power import (
     PowerTransition,
     determine_power_transition,
 )
-from .media_player_routing import parse_routing_address, route_pseudo_zones, zone_environment
+from .media_player_routing import (
+    parse_routing_address,
+    parse_who22_routing,
+    route_pseudo_zones,
+    who22_routing_listener,
+    zone_environment,
+)
 from .sound_source import (
     MyHOMESoundSource,
     parse_station_slot,
@@ -250,6 +256,13 @@ async def async_setup_entry(
     )
     # Audio zones are keyed "<zone>#16" in unique ids; the registry restore reads that key back.
     discovery.start()
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass,
+            f"myhome_message_{mac}",
+            who22_routing_listener(runtime.router, discovery.known),
+        )
+    )
 
     platform = entity_platform.current_platform.get()
     if platform is not None:
@@ -1016,12 +1029,17 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
         # that was just turned OFF would be resurrected as a ghost "On" entity
         # whenever a different zone turns on.
         trigger_auto_join = False
-        routing = parse_routing_address(zone_str)
+        routing = parse_routing_address(zone_str) or parse_who22_routing(message)
         if routing is not None:
             source_num, environment = routing
             if zone_environment(self._where) != environment:
                 pass
             elif 1 <= source_num <= CONF_SOURCE_SLOTS:
+                if (
+                    self._attr_state == MediaPlayerState.ON
+                    or self._selected_source_while_off != source_num
+                ):
+                    self._selected_source_while_off = None
                 previous_source = self._source_number(self._attr_source) if self._attr_source else None
                 self._attr_source = self._source_label(source_num)
                 self._warn_unconfigured_source(source_num)
@@ -1088,6 +1106,7 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
             if transition == PowerTransition.WAKE_ON:
                 self._cancel_pending_off()  # confirmed on: nothing left to time out
                 self._parked = False
+                self._selected_source_while_off = None
                 self._attr_state = MediaPlayerState.ON
                 if not self._status_seen:
                     self._mark_status_seen()
@@ -1107,17 +1126,19 @@ class MyHOMEMediaPlayer(ZoneGroupLayer):
                 # group-leave OFF redundant; _async_handle_turn_off below
                 # covers the same cleanup.
                 self._cancel_pending_off()
+                self._selected_source_while_off = None
                 self._attr_state = MediaPlayerState.OFF
                 if not self._turning_off:
                     self.hass.async_create_task(self._async_handle_turn_off(from_bus=True))
 
-        if message.volume is not None and 0 <= message.volume <= 31:
-            self._attr_volume_level = message.volume / 31.0
+        volume = getattr(message, "volume", None)
+        if volume is not None and 0 <= volume <= 31:
+            self._attr_volume_level = volume / 31.0
             # Volume 0 is not a mute: only async_mute_volume() mutes. Music
             # Assistant locks the slider of a muted player and leaves it out of
             # the grouped volume, so a room turned down to 0 would be stuck
             # there. A volume raised above 0 (a wall panel, say) does end a mute.
-            if message.volume > 0 and self._attr_is_volume_muted:
+            if volume > 0 and self._attr_is_volume_muted:
                 self._attr_is_volume_muted = False
 
         if trigger_auto_join:

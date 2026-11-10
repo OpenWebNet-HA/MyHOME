@@ -7,12 +7,18 @@ pure functions of an address, kept apart from the entities that use them.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from homeassistant.core import callback
 
 from .discovery import Address, KnownDevices
+from .sound_source import who22_source_id
+
+# WHO=22 WHAT base codes that announce or command an active area-to-source route:
+# 1 = Turn On (baseband), 2 = Turn On (high quality),
+# 21 = Active Source Notification (baseband), 23 = Active Source Notification (high quality).
+_WHO22_ACTIVE_AREA_WHAT_CODES = ("1", "2", "21", "23")
 
 
 def zone_environment(zone: str) -> str | None:
@@ -86,3 +92,65 @@ def route_pseudo_zones(router: Any) -> Callable[[Any, Address, KnownDevices], bo
         return True
 
     return handler
+
+
+def parse_who22_routing(message: Any) -> tuple[int, str] | None:
+    """Extract ``(source, environment)`` from a WHO=22 area-source routing event.
+
+    Dual-stack gateways (such as the H/L4684 on FW 5.0) sometimes omit or
+    mis-translate the WHO=16 ``*16*3*1ES##`` pseudo-zone frame when an
+    amplifier wakes up on its stored source, while ``bt_multi`` still emits the
+    canonical WHO=22 active-source notification ``*22*23#4#<area>*5#2#<S>##``
+    (or ``*22*21#4#<area>*5#2#<S>##`` / ``*22*1#4#<area>*2#<S>##``).
+
+    Only area-scoped active source frames (``<cmd>#4#<area>`` with ``<cmd>`` in
+    ``1``, ``2``, ``21``, ``23`` and ``<area>`` in ``1``-``9``) are matched;
+    general area ``0`` and inactive notifications (``22#4#<area>``) are ignored.
+    """
+    if str(getattr(message, "who", "")) != "22":
+        return None
+    raw_what = getattr(message, "what", None)
+    if raw_what is None:
+        return None
+    what_str = str(raw_what)
+    if "#" in what_str:
+        what_parts = what_str.split("#")
+    else:
+        what_param = getattr(message, "what_param", None)
+        if what_param is None:
+            what_param = getattr(message, "_what_param", None)
+        what_parts = [what_str, *(str(p) for p in (what_param or []))]
+    if (
+        len(what_parts) != 3
+        or what_parts[0] not in _WHO22_ACTIVE_AREA_WHAT_CODES
+        or what_parts[1] != "4"
+        or len(what_parts[2]) != 1
+        or not what_parts[2].isdigit()
+        or what_parts[2] == "0"
+    ):
+        return None
+
+    source = who22_source_id(message)
+    if source is None:
+        return None
+    return source, what_parts[2]
+
+
+def who22_routing_listener(router: Any, known: Iterable[str]) -> Callable[[Any], None]:
+    """Forward WHO=22 area-source routing events to the environment's audio zones."""
+
+    @callback
+    def listener(message: Any) -> None:
+        parsed = parse_who22_routing(message)
+        if parsed is None:
+            return
+        _source, environment = parsed
+        zones = [
+            player_id
+            for player_id in known
+            if zone_environment(player_id.split("#")[0]) == environment
+        ]
+        if zones:
+            router.publish("16", zones, message)
+
+    return listener
