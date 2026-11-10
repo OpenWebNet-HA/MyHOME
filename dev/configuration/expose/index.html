@@ -2258,12 +2258,12 @@
    Tap an icon or slider on a Legrand <code>067292</code> or BTicino <code>H4890</code> wall screen to control a Zigbee, Matter, or Wi-Fi device in Home Assistant. Changes made in Home Assistant or voice assistants instantly update the status icon and LED on the wall screen.</li>
 <li><strong>Unpopulated Physical Wall Switches (<code>WHO = 1</code>)</strong>:
    Use an unused rocker on an <code>H4652/2</code> or <code>K4652M2</code> physical wall control configured as a point-to-point light (<code>WHO = 1</code>) to toggle a TV, media player, or smart bulb with full LED status feedback.</li>
-<li><strong>Virtual Temperature Probes (<code>WHO = 4</code>)</strong>:
-   Publish an outdoor weather service temperature, Zigbee room sensor, or ESPHome probe onto an SCS probe address (<code>DIMENSION 0</code>), allowing wall screens and thermostats to display real-time temperatures on their Thermoregulation pages.</li>
-<li><strong>Virtual Energy &amp; Power Meters (<code>WHO = 18</code>)</strong>:
-   Publish live solar inverter generation, battery power, or grid smart-meter metrics onto SCS energy addresses (<code>DIMENSION 113</code> for active power in Watts; <code>DIMENSION 51..54</code> for totalizers in Wh), displaying live consumption on wall screens.</li>
+<li><strong>Virtual Temperature Probes (<code>WHO = 4</code>, gateway-dependent)</strong>:
+   On gateways whose <code>bt_termo</code> daemon translates <code>#0</code> temperature writes onto the SCS bus (verified on <code>F461</code>), publish an outdoor weather service temperature, Zigbee room sensor, or ESPHome probe onto an unused zone master address (<code>1..99</code>, <code>DIMENSION 0</code>). <em>(Rejected by <code>F454</code>, <code>MH200N</code>, <code>MH202</code>, and wall touchscreens such as <code>067292</code> / <code>H4890</code> — see <a href="#gateway-compatibility-firmware-verification">Gateway Compatibility</a> below.)</em></li>
+<li><strong>Virtual Energy &amp; Power Meters (<code>WHO = 18</code>, gateway-dependent)</strong>:
+   On gateways verified for <code>WHO = 18</code> dimension reports (<code>F461</code>), publish active power (<code>DIMENSION 113</code>, Watts) or energy totalizers (<code>DIMENSION 51..54</code>, Wh) onto OpenWebNet monitor sessions. <em>(Cannot inject synthetic power/energy onto a physical 2-wire SCS bus for <code>067292</code> / <code>H4890</code> wall touchscreens — see <a href="#gateway-compatibility-firmware-verification">Gateway Compatibility</a> below.)</em></li>
 <li><strong>Bus Clock &amp; Calendar Synchronization (<code>WHO = 13</code>)</strong>:
-   Keep all wall screens, thermostats, and chronothermostats on the SCS bus synchronized to Home Assistant's local time, date, and daylight saving time (DST).</li>
+   Keep all wall screens (<code>067292</code>, <code>H4890</code>, <code>10"</code> touchscreens), thermostats, and chronothermostats on the SCS bus synchronized to Home Assistant's local time, date, and daylight saving time (DST) across all gateway models.</li>
 </ol>
 <hr />
 <h2 id="how-to-configure">🛠️ How to Configure<a class="headerlink" href="#how-to-configure" title="Permanent link">&para;</a></h2>
@@ -2294,7 +2294,7 @@
 <tr>
 <td style="text-align: left;"><strong>WHERE Address</strong></td>
 <td style="text-align: left;">Unused SCS address assigned to the button/tile in <em>MyHOME_Suite</em>. <em>(Omit for WHO 13)</em></td>
-<td style="text-align: left;"><code>25</code> or <code>100</code></td>
+<td style="text-align: left;"><code>25</code> or <code>50</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Source Entity</strong></td>
@@ -2367,50 +2367,51 @@
 </span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>
 </span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
 </span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">      </span><span class="c1"># 3. Virtual Temperature Probe (WHO = 4, Dimension 0)</span>
-</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">      </span><span class="c1"># Publishes outdoor temperature onto probe address 100 for wall screens.</span>
-</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
-</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"100"</span>
-</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
-</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.outdoor_temperature</span>
-</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
-</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
-</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
-</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
-</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">      </span><span class="c1"># 4. Virtual Active Power Meter (WHO = 18, Dimension 113)</span>
-</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">      </span><span class="c1"># Publishes grid active power (W) onto meter address 51.</span>
-</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">      </span><span class="c1"># Auto-converts kW -&gt; W if the sensor unit of measurement is kW.</span>
-</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
-</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
-</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">113</span>
-</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_active_power</span>
-</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span>
-</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>
-</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">      </span><span class="c1"># 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)</span>
-</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">      </span><span class="c1"># Publishes cumulative grid energy totalizer (Wh) onto meter address 51.</span>
-</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="c1"># Auto-converts kWh -&gt; Wh if the sensor unit of measurement is kWh.</span>
-</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
-</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
-</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">51</span>
-</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_energy_consumed</span>
-</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
-</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100.0</span><span class="w">   </span><span class="c1"># Broadcast on 100 Wh increments</span>
-</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a>
-</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">      </span><span class="c1"># 6. Bus Clock &amp; DST Sync (WHO = 13, Dimension 22)</span>
-</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">      </span><span class="c1"># Broadcasts atomic time, date, and calendar once every hour.</span>
-</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">      </span><span class="c1"># Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads</span>
-</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="c1"># without proactive pushes, ideal for NTP-synchronized gateways).</span>
-</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">13</span>
-</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22</span>
-</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">        </span><span class="nt">respond_to_read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">      </span><span class="c1"># Publishes outdoor temperature onto unused zone master address 50</span>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">      </span><span class="c1"># (1..99 required on F461 / bt_termo; 100..900 only on reply-injection gateways).</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"50"</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.outdoor_temperature</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">      </span><span class="c1"># 4. Virtual Active Power Meter (WHO = 18, Dimension 113)</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">      </span><span class="c1"># Publishes grid active power (W) onto meter address 51.</span>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">      </span><span class="c1"># Auto-converts kW -&gt; W if the sensor unit of measurement is kW.</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">113</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_active_power</span>
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span>
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">      </span><span class="c1"># 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)</span>
+</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="c1"># Publishes cumulative grid energy totalizer (Wh) onto meter address 51.</span>
+</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">      </span><span class="c1"># Auto-converts kWh -&gt; Wh if the sensor unit of measurement is kWh.</span>
+</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
+</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">51</span>
+</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_energy_consumed</span>
+</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
+</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100.0</span><span class="w">   </span><span class="c1"># Broadcast on 100 Wh increments</span>
+</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>
+</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">      </span><span class="c1"># 6. Bus Clock &amp; DST Sync (WHO = 13, Dimension 22)</span>
+</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">      </span><span class="c1"># Broadcasts atomic time, date, and calendar once every hour.</span>
+</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="c1"># Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads</span>
+</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">      </span><span class="c1"># without proactive pushes, ideal for NTP-synchronized gateways).</span>
+</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">13</span>
+</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22</span>
+</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">        </span><span class="nt">respond_to_read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <hr />
 <h2 id="advanced-custom-script-actions">🎛️ Advanced: Custom Script Actions<a class="headerlink" href="#advanced-custom-script-actions" title="Permanent link">&para;</a></h2>
@@ -2511,7 +2512,7 @@
 <td style="text-align: left;"><strong><code>WHO = 1</code> (Lights / Switches)</strong></td>
 <td style="text-align: center;"><strong>All Gateways</strong></td>
 <td style="text-align: left;"><code>*#1*WHERE*#1*LEVEL*0##</code> (or <code>*1*1*WHERE##</code> / <code>*1*0*WHERE##</code>)</td>
-<td style="text-align: left;">Universal support across F454, F455, MH200N, MH201, MH202, MHS1, 067292, and H4890.</td>
+<td style="text-align: left;">Universal support across F454, F455, F459, MH200N, MH201, MH202, MHS1, F461, 067292, and H4890.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong><code>WHO = 2</code> (Covers / Shutters)</strong></td>
@@ -2523,31 +2524,31 @@
 <td style="text-align: left;"><strong><code>WHO = 13</code> (Clock &amp; DST)</strong></td>
 <td style="text-align: center;"><strong>All Gateways</strong></td>
 <td style="text-align: left;"><code>*#13**#22*H*M*S*T*W*D*M*Y##</code></td>
-<td style="text-align: left;">Synchronizes on-screen clocks across all models. Set <code>periodic_send: 0</code> for query-only mode.</td>
+<td style="text-align: left;">Synchronizes on-screen clocks across all models (<code>067292</code>, <code>H4890</code>, <code>F454</code>, etc.). Set <code>periodic_send: 0</code> for query-only mode.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong><code>WHO = 4</code> (Virtual Temperature)</strong></td>
-<td style="text-align: center;">Verified on <strong><code>F461</code></strong></td>
+<td style="text-align: center;">Verified on <strong><code>F461</code></strong> (<code>WHERE</code> <code>1..99</code>)</td>
 <td style="text-align: left;"><code>*#4*WHERE*#0*TTTT##</code></td>
-<td style="text-align: left;">Gated by firmware injection capabilities. On gateways that reject injected probe values, a warning is logged at startup.</td>
+<td style="text-align: left;"><code>bt_termo</code> (<code>F461</code>) translates unused zone master addresses <code>1..99</code> (e.g. <code>"50"</code>) onto the SCS bus (<code>D1 &lt;ZZ&gt; 03 02 F0 &lt;TT&gt; &lt;TT&gt; 00</code>), but rejects 3-digit probe addresses (<code>100..900</code>). Rejected (<code>NACK</code>) for all addresses on <code>F454</code>, <code>F459</code>, <code>MH200N</code>, <code>MH202</code>, <code>067292</code>, <code>H4890</code>, and <code>H4684</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong><code>WHO = 18</code> (Virtual Energy Meter)</strong></td>
-<td style="text-align: center;">Verified on <strong><code>F461</code></strong></td>
+<td style="text-align: center;">Verified on <strong><code>F461</code></strong> (TCP session only)</td>
 <td style="text-align: left;"><code>*#18*WHERE*113*WATT##</code></td>
-<td style="text-align: left;">Gated by firmware injection capabilities. On gateways that reject energy reports, a warning is logged at startup.</td>
+<td style="text-align: left;">Rejected (<code>NACK</code>) by wall touchscreens (<code>067292</code>, <code>H4890</code>, <code>H4684</code>). <code>bt_supervisione</code> / <code>bt_energy</code> gateways (<code>F454</code>, <code>F459</code>, <code>MH200N</code>, <code>MH202</code>, <code>MHS1</code>, <code>F461</code>) <code>ACK</code> on TCP but emit an SCS active-power <strong>read</strong> request (<code>D1 A1 02 33 00 1D 00 00</code>), discarding the value — so synthetic <code>WHO = 18</code> readings cannot reach physical 2-wire SCS wall screens.</td>
 </tr>
 </tbody>
 </table>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>For physical wall touchscreens (Legrand <code>067292</code>, Arteor <code>573958</code>, BTicino <code>H4890</code>, <code>LN4890</code>), configure the button or tile with an unused address in <em>MyHOME_Suite</em>, then create the matching expose binding in Home Assistant.</p>
+<p>For physical wall touchscreens (Legrand <code>067292</code>, Arteor <code>573958</code>, BTicino <code>H4890</code>, <code>LN4890</code>), configure virtual light/switch (<code>WHO = 1</code>), shutter (<code>WHO = 2</code>), or scenario tiles with unused point-to-point addresses in <em>MyHOME_Suite</em>, and add clock sync (<code>WHO = 13</code>). On a shared SCS bus with a primary gateway (e.g. <code>F454</code> + <code>067292</code>), create the expose subentries on the <strong>primary</strong> gateway and keep <code>WHO = 4</code> / <code>WHO = 18</code> undelegated on the primary gateway.</p>
 </div>
 <hr />
 <h2 id="diagnostics-troubleshooting">🔍 Diagnostics &amp; Troubleshooting<a class="headerlink" href="#diagnostics-troubleshooting" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Check Active Bindings</strong>: Open <strong>Settings → Devices &amp; Services → MyHOME → Download Diagnostics</strong>. The JSON file contains an <code>"expose"</code> section detailing all active bindings, throttles, and last-sent timestamps.</li>
-<li><strong>Unverified Gateway Warning</strong>: If a warning like <em>"Expose WHO=4 WHERE=100 is disabled: gateway ... is unverified for WHO 4 #0 writes"</em> appears in your Home Assistant log, the gateway firmware does not support injected sensor frames.</li>
+<li><strong>Unsupported / Unverified Gateway Warning</strong>: The UI Config Subentry flow hides <code>WHO = 4</code> and <code>WHO = 18</code> on gateways whose firmware cannot inject them onto the SCS bus, and rejects 3-digit <code>WHO = 4</code> probe addresses (<code>100..900</code>) on <code>#0</code>-only gateways (<code>F461</code>). If a legacy YAML or pre-existing binding targets an unsupported gateway or address, a single warning is logged at startup (<em>"Expose WHO=... is disabled: gateway ... Nothing is sent for this binding"</em>).</li>
 <li><strong>Duplicate Address Error (<code>invalid_expose</code>)</strong>: Each <code>(who, where, dimension)</code> triplet must be unique per gateway.</li>
 </ul>
 
