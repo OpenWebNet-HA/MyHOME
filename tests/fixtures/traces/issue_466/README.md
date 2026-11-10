@@ -977,4 +977,55 @@ Verbatim `<myhome-bus-card>` subsystem-filtered trace exports contributed by **@
    - `WHERE = 4`: `7` `*9*1*4##` (`ON`) and `8` `*9*0*4##` (`OFF`) frames (`15` frames, including a back-to-back duplicate `*9*0*4##` at `10:36:27.699Z`).
    - Confirms `WHO 9` AUX traffic never triggers phantom bus auto-discovery while cleanly driving configured `binary_sensor` motion entities on channels `"2"` and `"4"`.
 
+---
+
+# #466 BTicino H/L4684 (FW 6.0.11) Follow-Up Traces: `11#1` Valve Pulse Cycles, Zone `21` Audio Routing + `F500` Tuner Seek (`101.90 MHz` `"DIM*ROMA"`), and Multi-Zone Setpoint Offset Writes (`Dimension 12` vs `Dimension 14`)
+
+Follow-up verbatim `<myhome-bus-card>` trace exports contributed by **@andrea-mag** on [#466 (comment 6704994284)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6704994284) (`Home Assistant 2026.10.2`, `MyHOME 2.0.0b17`, `OWNd 2.0.0b12`, physical **BTicino H/L4684** firmware `6.0.11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (`FW 6.0.11`, kernel `2.6.2`, distro `6.0.0`, `WHO 13` device type `23`)
+- **Subsystems Captured**:
+  - Thermoregulation (`WHO 4`): 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`), central unit `3550` (`#0`), `F430/4` pure-valve actuators (`11#1`, `22#1`, `33#1`, `33#2`, `44#1`, `55#1`, `66#1..#3`, `77#1..#2`, `88#1`), and zone probes with non-zero local adjustment-wheel offsets (`-1.0 °C` on Zone `33`, `-2.0 °C` on Zone `22`, `-3.0 °C` on Zones `44`, `55`, `88`)
+  - Sound Diffusion (`WHO 16` + `WHO 22` dual-stack): `F441M` audio matrix (`Source 1` = physical **BTicino F500** FM radio tuner at `101` / `2#1` / `5#2#1`, `Source 2` = `102` / `2#2` / `5#2#2`) + Zone `21` (`3#2#1`, Environment `2`, Amplifier `1`)
+  - Lighting (`WHO 1`) + Automation (`WHO 2`) + Load Control (`WHO 3`) + Gateway Management (`WHO 13`)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_HL4684_all_2026-11-05T22-15-31.json` | Bus Card Trace Export (`150 rx` frames, `0 tx`, `truncated: true`, `SHA-256: 073b38d435329e5f0e8948a2d8207904c103624005974178c4b98eecf4ad8b8d`) | Autonomous evening capture showing a `5.69 s` heating valve pulse on Zone `11` (`*#4*11#1*20*1##` -> `*#4*11#1*20*5##`) triggered when ambient temperature (`20.4 °C`) sits near the effective setpoint (`20.5 °C`), plus periodic 15-minute `WHO 4` bursts (`#0` + Zones `11..88`). |
+| `myhome_trace_HL4684_all_2026-11-07T08-54-06.json` | Bus Card Trace Export (`150` frames: `134 rx / 16 tx`, `truncated: true`, `SHA-256: 566179f3fda3e6bfb552c23a74f2bbbab7a326e6ecbd5270888ef2c4fccfc5ad`) | Dual-stack `WHO 16` + `WHO 22` Zone `21` wake (`*16*13*21##` -> `*16*3*21##`), Area `2` -> `Source 2` matrix routing (`*22*23#4#2*5#2#2##` paired with `*16*3*142##`), switch to `Source 1` (`F500` radio tuner `*16*3*101##` + `*16*3*121##` -> `*22*2#4#2*5#2#1##`, RDS `"DIM*SOFT"`), direct frequency write to `96.50 MHz` (`*#16*101*#6*0*96500##` -> `*#16*101*6*0*96500##` + `*#22**5*1*9650##`), auto-seek UP (`*16*5000*101##`) locking onto `101.90 MHz` (`"DIM*ROMA"`, Dimensione Suono Roma), direct volume write (`*#16*21*#1*16##` -> `*#16*21*1*16##` + `*#22*3#2#1*1*16##`), and standby turn-off (`*16*13*21##` -> `*16*13*101##`). |
+| `myhome_trace_HL4684_all_2026-11-07T09-11-53.json` | Bus Card Trace Export (`150` frames: `143 rx / 7 tx`, `truncated: true`, `SHA-256: a31fd777b57cf73b1a7f6a6c28990fd0cdae2b7bd0ed50a89d66698d5bab2c88`) | Initial Home Assistant `WHO 4` manual setpoint writes (`*#4*#Z*#14*TTTT*3##`) across Zones `88`, `33`, `22`, `44`, and `55`, capturing paired `Dimension 12` (`*#4*Z*12*<T_eff>*3##`) and `Dimension 14` (`*#4*Z*14*<T_nom>*3##`) echoes (plus `Dimension 12`-only echoes) that reveal the per-zone physical knob offsets (`-3.0 °C` on `88`/`44`/`55`, `-2.0 °C` on `22`, `-1.0 °C` on `33`) without any `Dimension 13` broadcast. |
+| `myhome_trace_HL4684_all_2026-11-07T09-13-19.json` | Bus Card Trace Export (`150` frames: `137 rx / 13 tx`, `truncated: true`, `SHA-256: e680374eb03d71adceb34e0ac5456407f29a1034afdb4f9e5100be61bdf1aae3`) | Continuation of `09-11-53.json`, capturing 13 manual setpoint writes across Zones `88`, `33`, `22`, `44`, and `55` alongside the `09:11:36 -> 09:12:34` 15-minute `WHO 4` periodic burst (`*#4*55*14*0250*3##` at `09:12:12.660+01:00`) and a `4.77 s` valve pulse (`*#4*11#1*20*1##` -> `*#4*11#1*20*5##`) on Zone `11`. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Autonomous Zone `11` (`11#1`) Short Heating Valve Pulses (`22-15-31.json` & `09-13-19.json`)**:
+   - In `22-15-31.json`, Zone `11` reports ambient temperature `20.4 °C` (`*#4*11*0*0204##`) and nominal setpoint `20.5 °C` (`*#4*11*14*0205*3##`, `0.0 °C` local offset). At `22:01:28.918+01:00`, `11#1` turns ON (`*#4*11#1*20*1##`) accompanied by `*4*1*11##` (*Heating mode*) and `*4*102*11##` (*Protection Heating*), then turns OFF `5.69 s` later (`22:01:34.609+01:00`) with `*#4*11#1*20*5##` + `*4*1*11##` + `*4*102*11##`.
+   - In `09-13-19.json`, Zone `11` (`19.9 °C` ambient vs `19.5 °C` nominal setpoint) executes the identical proportional-band pulse pattern at `09:12:18.308+01:00` (`*#4*11#1*20*1##` -> `*#4*11#1*20*5##` at `09:12:23.081+01:00`, `4.77 s` duration).
+
+2. **Zone `21` Audio Routing (`WHO 16` + `WHO 22`) & `F500` Tuner Manual Tuning + Auto-Seek (`08-54-06.json`)**:
+   - **Zone `21` Wake & Initial `Source 2` Assertion (`frames[90..101]`)**:
+     - HA sends `tx *16*13*21##` -> `tx *16*3*21##`. On `H/L4684`, `bt_difson` translates `*16*3*21##` into SCS environment-2 source-1 routing (`$04 90 01 8F 23`) + amplifier-21 turn-on (`$04 90 01 82 23`), while the physical amplifier wakes on its stored `Source 2` (`*22*23#4#2*5#2#2##`), causing `Source 1` (`F500`) to enter standby (`*16*13*101##`) and `bt_difson` to emit `*16*3*142##` (Environment `4` on `Source 2`) + `*22*2#4#4*5#2#2##` rather than `*16*3*122##`.
+   - **Switch Zone `21` to `Source 1` (`F500` Radio Tuner) (`frames[102..118]`)**:
+     - `tx *16*3*101##` -> `tx *16*3*121##` powers on `Source 1` (`*16*3*101##` + `*#22*2#1*12*1*4##`), routes Area `2` to `Source 1` (`*22*21#4#2*5#2#1##`, `*16*3*121##`, `*22*2#4#2*5#2#1##`), and emits the `F500` RDS broadcast (`"DIM*SOFT"`).
+   - **Direct Frequency Write (`96.50 MHz`) & Auto-Seek UP (`101.90 MHz` `"DIM*ROMA"`) (`frames[122..133]`)**:
+     - `tx *#16*101*#6*0*96500##` tunes the `F500` to `96.50 MHz` (`*#16*101*6*0*96500##` / `*#22**5*1*9650##`, clearing RDS to `"        "`).
+     - `tx *16*5000*101##` (`WHAT 5000` = hardware seek UP) sweeps upward and locks onto **`101.90 MHz`** (`*#16*101*6*0*101900##` / `*#22*5#2#1*5*1*10190##`), decoding live RDS **`"DIM*ROMA"`** (`*#16*101*8*68*73*77*42*82*79*77*65##` / `*#22*5#2#1*10*68*73*77*42*82*79*77*65##`).
+   - **Direct Volume `16` Write & Standby (`frames[135..148]`)**:
+     - `tx *#16*21*#1*16##` is answered with `rx *#16*21*1*16##` paired with `rx *#22*3#2#1*1*16##`.
+     - `tx *16*13*21##` -> `tx *16*13*101##` turns off Zone `21` (`*16*13*21##` / `*#22*3#2#1*12*0*10##`) and `Source 1` (`*16*13*101##` / `*#22*2#1*12*0*10##`).
+
+3. **Multi-Zone `WHO 4` Manual Setpoint Writes & Implicit Local Knob Offsets (`09-11-53.json` & `09-13-19.json`)**:
+   - Because `H/L4684` disables `*#4*Z##` point-to-point zone polling (`supports_zone_status = False`) and the `3550` central unit's 15-minute periodic bursts emit only `Dimension 0` (ambient temperature) and `Dimension 14` (nominal setpoint), `Dimension 13` (`*#4*Z*13*OO##`) is never broadcast autonomously.
+   - Across the `13` setpoint writes (`tx *#4*#Z*#14*TTTT*3##`) in `09-11-53.json` (and the `14th` write in `09-13-19.json`), the zone probe immediately responds (`~370–660 ms`) with `Dimension 12` (`*#4*Z*12*<T_eff>*3##`, effective setpoint in force = `T_nom + offset`), followed `~200 ms` later on `9` of `13` writes by `Dimension 14` (`*#4*Z*14*<T_nom>*3##`, while `4` of `13` writes emit `Dimension 12` alone):
+     - **Zone `88`** (`offset = -3.0 °C`): `tx 21.0 °C` -> `Dim 12 = 18.0 °C`, `Dim 14 = 21.0 °C`; `tx 24.0 °C` -> `Dim 12 = 21.0 °C` (no `Dim 14`).
+     - **Zone `33`** (`offset = -1.0 °C`): `tx 20.0 °C` -> `Dim 12 = 19.0 °C` (no `Dim 14`).
+     - **Zone `22`** (`offset = -2.0 °C`): `tx 19.5 °C` -> `Dim 12 = 17.5 °C`, `Dim 14 = 19.5 °C`.
+     - **Zone `44`** (`offset = -3.0 °C`): `tx 23.0 °C` -> `Dim 12 = 20.0 °C`, `Dim 14 = 23.0 °C`; `tx 20.0 °C` -> `Dim 12 = 17.0 °C`, `Dim 14 = 20.0 °C`; `tx 19.5 °C` -> `Dim 12 = 16.5 °C`, `Dim 14 = 19.5 °C`; `tx 18.5 °C` -> `Dim 12 = 15.5 °C` (no `Dim 14`).
+     - **Zone `55`** (`offset = -3.0 °C`): `tx 24.5 °C` -> `Dim 12 = 21.5 °C`, `Dim 14 = 24.5 °C`; `tx 21.5 °C` -> `Dim 12 = 18.5 °C`, `Dim 14 = 21.5 °C`; `tx 24.5 °C` -> `Dim 12 = 21.5 °C` (no `Dim 14`); `tx 21.5 °C` -> `Dim 12 = 18.5 °C`, `Dim 14 = 21.5 °C`; `tx 25.0 °C` -> `Dim 12 = 22.0 °C`, `Dim 14 = 25.0 °C`; and in `09-13-19.json`, `tx 24.0 °C` -> `Dim 12 = 21.0 °C`, `Dim 14 = 24.0 °C`.
+
+
 

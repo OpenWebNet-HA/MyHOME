@@ -18,6 +18,7 @@ from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, C
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 from OWNd.message import (
+    OWNCommand,
     OWNEvent,
     OWNGatewayDiagnosticEvent,
     OWNGatewayEvent,
@@ -625,4 +626,220 @@ async def test_hl4684_followup_traces_zone66_recovery_who1004_and_f500_tuner(
         freq_number = hass.states.get("number.audio_source_1_frequency")
         assert freq_number is not None
         assert float(freq_number.state) == pytest.approx(105.3)
+
+
+@pytest.mark.parametrize(
+    (
+        "filename",
+        "expected_size",
+        "expected_sha256",
+        "expected_fw",
+        "expected_profile",
+        "expected_tx",
+        "expected_rx",
+    ),
+    [
+        (
+            "myhome_trace_HL4684_all_2026-11-05T22-15-31.json",
+            44949,
+            "073b38d435329e5f0e8948a2d8207904c103624005974178c4b98eecf4ad8b8d",
+            "6.0.11",
+            "GenericGatewayProfile",
+            0,
+            150,
+        ),
+        (
+            "myhome_trace_HL4684_all_2026-11-07T08-54-06.json",
+            45143,
+            "566179f3fda3e6bfb552c23a74f2bbbab7a326e6ecbd5270888ef2c4fccfc5ad",
+            "5.0",
+            "H4684Profile",
+            16,
+            134,
+        ),
+        (
+            "myhome_trace_HL4684_all_2026-11-07T09-11-53.json",
+            44972,
+            "a31fd777b57cf73b1a7f6a6c28990fd0cdae2b7bd0ed50a89d66698d5bab2c88",
+            "5.0",
+            "H4684Profile",
+            7,
+            143,
+        ),
+        (
+            "myhome_trace_HL4684_all_2026-11-07T09-13-19.json",
+            45064,
+            "e680374eb03d71adceb34e0ac5456407f29a1034afdb4f9e5100be61bdf1aae3",
+            "5.0",
+            "H4684Profile",
+            13,
+            137,
+        ),
+    ],
+)
+def test_hl4684_comment_6704994284_traces_integrity_and_parser_coverage(
+    filename: str,
+    expected_size: int,
+    expected_sha256: str,
+    expected_fw: str,
+    expected_profile: str,
+    expected_tx: int,
+    expected_rx: int,
+) -> None:
+    """Verify SHA-256 integrity, gateway metadata, and 100% parser coverage for #466#issuecomment-6704994284."""
+    path = TRACE_PATH.parent / filename
+    raw_bytes = path.read_bytes().replace(b"\r\n", b"\n")
+    assert len(raw_bytes) == expected_size
+    assert hashlib.sha256(raw_bytes).hexdigest() == expected_sha256
+
+    doc = json.loads(raw_bytes.decode("utf-8"))
+    assert doc["gateway"]["model"] == "H/L4684"
+    assert doc["gateway"]["firmware"] == expected_fw
+    assert doc["gateway"]["identification"]["source"] == "ssdp"
+    assert doc["gateway"]["identification"]["ssdp_model"] == "H/L4684"
+    assert doc["gateway"]["identification"]["profile"] == expected_profile
+
+    frames = doc["frames"]
+    assert len(frames) == 150
+    tx_count = sum(1 for f in frames if f["direction"] == "tx")
+    rx_count = sum(1 for f in frames if f["direction"] == "rx")
+    assert tx_count == expected_tx
+    assert rx_count == expected_rx
+
+    for frame in frames:
+        raw = frame["raw"]
+        parsed = (
+            (OWNCommand.parse(raw) or OWNMessage.parse(raw))
+            if frame["direction"] == "tx"
+            else (OWNEvent.parse(raw) or OWNMessage.parse(raw))
+        )
+        assert parsed is not None, f"Failed to parse {frame['direction']} frame {raw} in {filename}"
+
+
+async def test_hl4684_comment_6704994284_zone11_valve_pulse_and_f500_seek_replay(
+    hass: HomeAssistant,
+) -> None:
+    """Replay Zone 11 heating valve pulse (22-15-31.json) and F500 manual/seek tuning (08-54-06.json)."""
+    trace_dir = TRACE_PATH.parent
+    doc_2215 = json.loads(
+        (trace_dir / "myhome_trace_HL4684_all_2026-11-05T22-15-31.json").read_text(encoding="utf-8")
+    )
+    doc_0854 = json.loads(
+        (trace_dir / "myhome_trace_HL4684_all_2026-11-07T08-54-06.json").read_text(encoding="utf-8")
+    )
+
+    # 1. Zone 11 short heating valve pulse (22-15-31.json: *#4*11#1*20*1## -> *#4*11#1*20*5##)
+    gateway = MagicMock()
+    gateway.mac = "00:03:50:aa:bb:cc"
+    gateway.log_id = "[H/L4684 gateway]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    gateway.request_zone_dimension = MagicMock()
+    gateway.has_central_unit = True
+    gateway.supports_zone_status = False
+
+    z11 = MyHOMEClimate(
+        hass=hass,
+        name="Zone 11",
+        device_id="4-11",
+        who="4",
+        where="11",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=False,
+        central=False,
+        manufacturer="BTicino",
+        model="F430/4",
+        gateway=gateway,
+    )
+    z11.hass = hass
+    z11.entity_id = "climate.zone_11"
+    z11.async_write_ha_state = MagicMock()
+    z11.handle_event(OWNHeatingEvent("*#4*11*19*0*0##"))
+
+    actions_seen: list[HVACAction | None] = []
+    for f in doc_2215["frames"]:
+        if f["direction"] != "rx" or f["who"] != "4":
+            continue
+        evt = OWNEvent.parse(f["raw"])
+        assert isinstance(evt, OWNHeatingEvent)
+        addr_obj = _zone_address(evt)
+        if addr_obj and addr_obj.where == "11":
+            z11.handle_event(evt)
+            actions_seen.append(z11.hvac_action)
+
+    assert HVACAction.HEATING in actions_seen
+    assert z11.hvac_action == HVACAction.IDLE
+    assert z11.extra_state_attributes["actuators"] == {"1": "off"}
+    assert not bool(z11.supported_features & ClimateEntityFeature.FAN_MODE)
+
+    # 2. F500 manual tune to 96.5 MHz + auto-seek UP (*16*5000*101##) -> 101.9 MHz ("DIM*ROMA")
+    mac = "00:03:50:aa:bb:cc"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="H/L4684 Gateway",
+        data={
+            CONF_HOST: "192.0.2.10",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "12345",
+            CONF_MAC: mac,
+            CONF_NAME: "H/L4684",
+            CONF_FIRMWARE: "6.0.11",
+        },
+        options={
+            "enable_auto_learning": True,
+            CONF_SOURCE_TUNER.format(1): True,
+        },
+        unique_id=mac,
+    )
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.send", new_callable=AsyncMock),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+        handler: MyHOMEGatewayHandler = hass.data[DOMAIN][mac][CONF_ENTITY]
+        handler._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+
+        frequencies_seen: list[float] = []
+        rds_titles_seen: list[str] = []
+        for f in doc_0854["frames"]:
+            if f["direction"] != "rx":
+                continue
+            msg = OWNMessage.parse(f["raw"])
+            if isinstance(msg, OWNEvent):
+                await handler._process_message(msg)
+                await asyncio.sleep(0)
+                tuner_state = hass.states.get("media_player.audio_source_1")
+                if tuner_state is not None:
+                    freq = tuner_state.attributes.get("frequency")
+                    if freq is not None and (not frequencies_seen or frequencies_seen[-1] != freq):
+                        frequencies_seen.append(freq)
+                    title = tuner_state.attributes.get("media_title")
+                    if title and (not rds_titles_seen or rds_titles_seen[-1] != title):
+                        rds_titles_seen.append(title)
+        await hass.async_block_till_done()
+
+        assert frequencies_seen == [96.5, 101.9]
+        assert rds_titles_seen == ["DIM*SOFT", "DIM*ROMA"]
+
+        final_tuner = hass.states.get("media_player.audio_source_1")
+        assert final_tuner is not None
+        assert final_tuner.state == MediaPlayerState.OFF
+        assert final_tuner.attributes.get("frequency") == 101.9
+
+        freq_number = hass.states.get("number.audio_source_1_frequency")
+        assert freq_number is not None
+        assert float(freq_number.state) == pytest.approx(101.9)
+
 

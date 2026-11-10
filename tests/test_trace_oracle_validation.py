@@ -220,6 +220,8 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     # --- H/L4684 6.0.11, issue_466 (myhome_trace_HL4684_who6_2026-11-06T10-37-42)
     "*6*10*4003##": "H/L4684 6.0.11 2026-11-06: ACK, echoed *6*10*4003## on evt in 8.6 ms (PE4 door lock release)",
     "*6*10*4004##": "H/L4684 6.0.11 2026-11-06: ACK, echoed *6*10*4004## on evt in 5.9 ms (PE5 door lock release)",
+    # --- H/L4684 6.0.11, issue_466 (myhome_trace_HL4684_all_2026-11-07T08-54-06)
+    "*#16*21*#1*16##": "H/L4684 6.0.11 2026-11-07: ACK, echoed *#16*21*1*16## and *#22*3#2#1*1*16## on evt in 228.9 ms (Zone 21 volume 16 write)",
     # --- MyHomeServer1 3.87.13, issue_863 (myhome_sweep_MyHomeServer1_all_2026-11-09T13-00-57)
     "*#4*30#4*#20*0##": "MyHomeServer1 2026-11-09: ACK, echoed *#4*30#4*20*0## on evt in 125.8 ms (actuator 4 off)",
     "*#4*30#4*#20*1##": "MyHomeServer1 2026-11-09: ACK, echoed *#4*30#4*20*1## on evt in 122.8 ms (actuator 4 on)",
