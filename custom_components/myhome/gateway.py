@@ -49,6 +49,7 @@ from .gateway_sessions import (
     EVENT_RESTART_BACKOFF_MAX,
     EVENT_RESTART_BACKOFF_MIN,
     EVENT_STALL_TIMEOUT,
+    STATUS_TIMEOUT_BACKOFF,
     CommandPriorityQueue,
     CommandWorkerPool,
     EventSessionRunner,
@@ -108,6 +109,8 @@ __all__ = [
     "OWNEventSession",
     "OWNGateway",
     "OWNSession",
+    "STATUS_TIMEOUT_BACKOFF",
+    "WHO4_RECOVERY_QUIET_WINDOWS",
     "_cancel_written",
     "_resolve_written",
     "_session_is_open",
@@ -183,6 +186,17 @@ AVAILABILITY_GRACE = 60
 BUS_QUIET_PERIOD = 0.75
 BUS_QUIET_CAP = 15.0
 PACED_WRITE_TIMEOUT = 60.0
+# Extra BUS_QUIET_CAP windows waited by _wait_for_who4_recovery() when a WHO 4 status read
+# times out or desyncs while event frames are still actively streaming on the bus (#886).
+# On MyHomeServer1 (028206), /home/bticino/cfg/openserver routes WHO 4 to a single-threaded
+# bt_termo daemon (127.0.0.1:30004, 9 s timeout) while bt_thermo_manager periodically walks
+# its internal thermo.conf zone list (5-15 min DIMENSION 7 + DIMENSION 0 or 5-frame *#4*Z##
+# sweeps taking 6 s on fast buses up to 65-115 s across multi-riser plants; zones omitted
+# from thermo.conf such as Zone 59 in #886 never appear in those sweeps). Intentionally
+# bounded at 4 extra windows (up to (1 + 4) * 15 s = 75 s total) so a typical 65-75 s
+# internal sweep can finish and drain the buffered query without stalling forever on a
+# permanently chattering bus.
+WHO4_RECOVERY_QUIET_WINDOWS = 4
 # How long a zone request waits for others once the startup sweep is over: zones discovered
 # from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
 # sweep (*#4*#0*20##) on an F461.
@@ -217,9 +231,9 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # sweep trace, the MH201 is not in the oracle). F454, MH202, F460, F461 and MyHomeServer1 refuse
 # *#4*0## too but answer *#4*Z## themselves (F454 supports up to 4 command sessions and answers
 # all five frames in ~1.3 s on both central-unit #629 and standalone #866 plants; MH202 answers
-# all five frames in ~160-250 ms, #866; F460 and F461 expand it into $00499013000 in trace-corpus.tsv;
-# MyHomeServer1 replies from its cache, #649), so their zones keep the zone status poll and are not
-# listed here.
+# all five frames in ~160-250 ms, #866; F460, F461 and MyHomeServer1 expand it into $0499013000 in
+# trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
+# so their zones keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 # Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
 # one after another), but where a zone that has not reported its temperature, setpoint, mode and
@@ -264,9 +278,16 @@ ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
 # The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
 # answered it in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone
 # through the paced sender takes about 32 s; the emulated 028206 forwards it ("out").
+# For humidity (dimension 60), all four humidity-forwarding gateways in own-firmware-oracle
+# (thermo-zone-requests: F459, F460, F461, MyHomeServer1) translate ``*#4*0*60##`` into the
+# broadcast SCS query ``$06D200030308000000`` ("out"); the live MyHomeServer1 3.87.13 ACKed it
+# in 0.50 s with all 17 humidity-probe zones answering (myhomeserver1_live_2026-10-24, #886),
+# and the live F461 2.0.11 answered it in 2.13 s (f461_live_2026-10-23).
 ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
-    "F461": {20: "*#4*#0*20##"},
-    "MYHOMESERVER1": {20: "*#4*#0*20##"},
+    "F459": {60: "*#4*0*60##"},
+    "F460": {60: "*#4*0*60##"},
+    "F461": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
+    "MYHOMESERVER1": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
 }
 # Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
 # nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests suite
@@ -442,6 +463,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._actuator_zones: dict[str, int] = {}
         self._zone_requests: set[tuple[str, int]] = set()
         self._zone_request_task: asyncio.Task[None] | None = None
+        self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -694,6 +716,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
                     )
                     continue
+                if dimension == 60 and target.humidity_request_refused:
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the humidity request; not asking", self.log_id, wheres, target.model
+                    )
+                    continue
                 if dimension == 20 and target.zone_actuator_request_refused:
                     zones = [where for where in wheres if _is_zone_level_where(where)]
                     if zones:
@@ -719,9 +746,34 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             if not frames:
                 continue  # every item skipped (refusing gateway): no empty sweep
             try:
+                if self._last_event_frame_at > 0:
+                    await self._wait_for_bus_quiet(self._last_event_frame_at)
                 await self.send_paced(frames)
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    async def wait_for_zone_requests(self) -> None:
+        """Let same-turn zone dimension requests coalesce and wait for their paced run."""
+        await asyncio.sleep(0)
+        while self._zone_request_task is not None and not self._zone_request_task.done():
+            await asyncio.gather(self._zone_request_task, return_exceptions=True)
+
+    def _has_status_consumer(self, message: OWNCommand) -> bool:
+        """Whether ``send_status_request(message)`` has an active worker, target, or test double."""
+        if self.sending_workers:
+            return True
+        if self._delegated_target(message) is not None or self._failover_target(message) is not None:
+            return True
+        bound = getattr(self.send_status_request, "__func__", None)
+        return bound is not MyHOMEGatewayHandler.send_status_request
+
+    async def pace_startup_status_write(self, written: Any, message: OWNCommand) -> None:
+        """Wait for a startup WHO 4 status query and bus quiet when a consumer is active."""
+        if not self._has_status_consumer(message):
+            return
+        await self._wait_for_write(written, message)
+        await self._wait_for_bus_quiet(time.monotonic())
+        await self._wait_for_who4_recovery(written)
 
     @property
     def humidity_request_refused(self) -> bool:
@@ -1021,6 +1073,28 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 PACED_WRITE_TIMEOUT,
             )
 
+    async def _wait_for_who4_recovery(self, written: Any) -> None:
+        """Wait for an active bus sweep to finish when a WHO 4 status read timed out or desynced (#886).
+
+        Bounded to ``WHO4_RECOVERY_QUIET_WINDOWS`` extra bus-quiet waits so an external
+        ``bt_thermo_manager`` sweep can drain ``bt_termo``'s single-threaded SCS queue
+        without blocking indefinitely when autonomous bus traffic never goes quiet.
+        """
+        if not isinstance(written, asyncio.Future):
+            return
+        if not (
+            getattr(written, "_gateway_desync", False)
+            or getattr(written, "_command_timeout", False)
+        ):
+            return
+        for _ in range(WHO4_RECOVERY_QUIET_WINDOWS):
+            if (
+                self._last_event_frame_at <= 0
+                or (time.monotonic() - self._last_event_frame_at) >= BUS_QUIET_PERIOD
+            ):
+                return
+            await self._wait_for_bus_quiet(self._last_event_frame_at)
+
     async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
         """Send general requests one at a time, each once the bus finished answering the last."""
         epoch = self._begin_sweep()
@@ -1032,6 +1106,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
                 await self._wait_for_write(written, cmd)
                 await self._wait_for_bus_quiet(time.monotonic())
+                if getattr(cmd, "who", None) == 4:
+                    await self._wait_for_who4_recovery(written)
         finally:
             self._end_sweep(epoch)
 

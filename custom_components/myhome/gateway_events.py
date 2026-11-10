@@ -265,6 +265,17 @@ class GatewayEventDispatcher:
             self._logger.debug("%s Data received is not a message: `None`", self.handler.log_id)
             return
 
+        if str(message) in ("*#*1##", "*#*0##"):
+            # Gateways such as MyHomeServer1 occasionally leak a stray session-level
+            # ACK/NACK (*#*1## / *#*0##) onto the *99*1## monitor stream under heavy
+            # WHO 4 bus load (#886); it carries no bus or entity state.
+            self._logger.debug(
+                "%s Ignored stray gateway ACK/NACK on event session: `%s`",
+                self.handler.log_id,
+                message,
+            )
+            return
+
         note_frame = getattr(self.handler, "note_event_frame", None)
         if callable(note_frame):
             note_frame()
