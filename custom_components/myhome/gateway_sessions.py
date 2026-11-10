@@ -1576,12 +1576,14 @@ class CommandWorkerPool:
                         _cancel_written(task)
                         self._pause_status_after_desync()
                     elif collected is None and not (is_exposed and session_is_open(_command_session)):
-                        _cancel_written(task)
                         if (
                             task["is_status_request"]
                             and getattr(last_error, "reason", None) == "command_timeout"
                         ):
+                            if isinstance(written, asyncio.Future) and not written.done():
+                                setattr(written, "_command_timeout", True)
                             self._pause_status_after_desync()
+                        _cancel_written(task)
                     else:
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])

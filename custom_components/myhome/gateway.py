@@ -734,6 +734,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             if not frames:
                 continue  # every item skipped (refusing gateway): no empty sweep
             try:
+                if self._last_event_frame_at > 0:
+                    await self._wait_for_bus_quiet(self._last_event_frame_at)
                 await self.send_paced(frames)
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
@@ -759,6 +761,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return
         await self._wait_for_write(written, message)
         await self._wait_for_bus_quiet(time.monotonic())
+        await self._wait_for_who4_recovery(written)
 
     @property
     def humidity_request_refused(self) -> bool:
@@ -1058,6 +1061,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 PACED_WRITE_TIMEOUT,
             )
 
+    async def _wait_for_who4_recovery(self, written: Any) -> None:
+        """Wait for an active bus sweep to finish when a WHO 4 status read timed out or desynced (#886)."""
+        if not isinstance(written, asyncio.Future):
+            return
+        if not (
+            getattr(written, "_gateway_desync", False)
+            or getattr(written, "_command_timeout", False)
+        ):
+            return
+        for _ in range(4):
+            if (
+                self._last_event_frame_at <= 0
+                or (time.monotonic() - self._last_event_frame_at) >= BUS_QUIET_PERIOD
+            ):
+                return
+            await self._wait_for_bus_quiet(self._last_event_frame_at)
+
     async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
         """Send general requests one at a time, each once the bus finished answering the last."""
         epoch = self._begin_sweep()
@@ -1069,6 +1089,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
                 await self._wait_for_write(written, cmd)
                 await self._wait_for_bus_quiet(time.monotonic())
+                if getattr(cmd, "who", None) == 4:
+                    await self._wait_for_who4_recovery(written)
         finally:
             self._end_sweep(epoch)
 

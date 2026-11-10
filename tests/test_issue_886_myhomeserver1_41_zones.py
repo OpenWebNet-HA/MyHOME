@@ -494,8 +494,9 @@ async def test_worker_fifo_bleed_protects_poll_health_dispatches_foreign_zone_an
         assert zone_34.current_temperature == 14.6
         assert zone_34.hvac_mode == HVACMode.HEAT
         assert zone_34.target_temperature == 10.0
-        # 4. `written_timeout` on `command_timeout` was also cancelled cleanly
+        # 4. `written_timeout` on `command_timeout` was also cancelled cleanly with `_command_timeout=True`
         assert isinstance(written_timeout, asyncio.Future) and written_timeout.cancelled()
+        assert getattr(written_timeout, "_command_timeout", False) is True
     finally:
         unsub()
 
@@ -618,4 +619,173 @@ async def test_pause_status_edge_cases_and_mixed_non_who4_collected_frames(
     pool._terminate_sender = True
     pool._pause_status_after_desync()
     assert handler.send_buffer.status_paused is False
+
+
+# ── 8. Cold-boot restored state skips per-zone `*#4*Z##` polls (`FRIEND.log` Part 1 & Part 2) ──
+
+
+async def test_cold_boot_restored_zones_skip_per_zone_status_polls_while_incomplete_zones_poll(
+    hass: Any, issue_886_trace: dict[str, Any]
+) -> None:
+    """Restored zones skip `*#4*Z##` in `_async_poll_after_discovery` during quiet windows between sweeps (#886)."""
+    zone_ids: list[int] = issue_886_trace["plant"]["zone_ids"]
+    humidity_zone_ids = set(issue_886_trace["plant"]["humidity_capable_zone_ids"])
+
+    handler = _make_handler(hass, "MyHomeServer1")
+    handler._initial_discovery_done.set()
+
+    wire_log: list[str] = []
+
+    async def fake_send_paced(frames: list[Any]) -> None:
+        for f in frames:
+            wire_log.append(str(f))
+
+    async def fake_send_status_request(message: OWNCommand) -> asyncio.Future[float]:
+        wire_log.append(str(message))
+        fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        fut.set_result(1.0)
+        return fut
+
+    handler.send_paced = AsyncMock(side_effect=fake_send_paced)  # type: ignore[method-assign]
+    handler.send_status_request = AsyncMock(side_effect=fake_send_status_request)  # type: ignore[method-assign]
+    handler._wait_for_bus_quiet = AsyncMock()  # type: ignore[method-assign]
+
+    zones: dict[int, MyHOMEClimate] = {}
+    for idx, zid in enumerate(zone_ids):
+        z = _make_zone(hass, str(zid), handler, humidity=(zid in humidity_zone_ids))
+        zones[zid] = z
+        handler.watch_zone_actuators(str(zid))
+        if zid == 34:
+            # Zone 34 is missing current_temperature -> must still poll `*#4*34##`
+            await z.async_restore_last_state(
+                State(f"climate.myhome_zone_{zid}", HVACMode.HEAT, {"temperature": 19.0})
+            )
+            assert z._core_zone_state_known() is False
+        elif zid == 35:
+            # Zone 35 had state "unknown" coerced to HVACMode.OFF on restore without setpoint -> must poll `*#4*35##`
+            await z.async_restore_last_state(
+                State(f"climate.myhome_zone_{zid}", "unknown", {"current_temperature": 18.5})
+            )
+            assert z._attr_hvac_mode == HVACMode.OFF and z._hvac_mode_restored is True
+            assert z._core_zone_state_known() is False
+        elif zid == 36:
+            # Zone 36 has no restored state at all (`_attr_hvac_mode is None` after temperature frame) -> must poll `*#4*36##`
+            _feed(z, f"*#4*{zid}*0*0185##")
+            assert z._core_zone_state_known() is False
+        elif zid == 37:
+            # Zone 37 reported live OFF on the bus (`*4*303*37##`) + temperature without setpoint -> known!
+            _feed(z, "*4*303*37##", "*#4*37*0*0150##")
+            assert z._attr_hvac_mode == HVACMode.OFF and z._hvac_mode_restored is False
+            assert z.native_target_temperature is None
+            assert z._core_zone_state_known() is True
+        elif idx % 2 == 0:
+            # Restored HEAT mode with both current_temperature and target temperature
+            await z.async_restore_last_state(
+                State(
+                    f"climate.myhome_zone_{zid}",
+                    HVACMode.HEAT,
+                    {"temperature": 10.0, "current_temperature": 14.5},
+                )
+            )
+            assert z._core_zone_state_known() is True
+            assert z._core_zone_state_reported() is False
+        else:
+            # Restored OFF/protection mode with current_temperature and protection setpoint
+            await z.async_restore_last_state(
+                State(
+                    f"climate.myhome_zone_{zid}",
+                    HVACMode.OFF,
+                    {"temperature": 7.0, "current_temperature": 14.5},
+                )
+            )
+            assert z._core_zone_state_known() is True
+            assert z._core_zone_state_reported() is False
+
+    # Run post-discovery polls with NO live Dimension 7 frames (cold boot in quiet window)
+    await asyncio.gather(*(z._async_poll_after_discovery() for z in zones.values()))
+    if handler._zone_request_task is not None:
+        await handler._zone_request_task
+
+    assert wire_log[:2] == ["*#4*#0*20##", "*#4*0*60##"]
+    # All 38 fully restored zones skipped `*#4*Z##`; only the 3 incomplete zones polled!
+    assert sorted(wire_log[2:]) == ["*#4*34##", "*#4*35##", "*#4*36##"]
+
+
+# ── 9. Sweep-aware `_send_zone_requests` & `_wait_for_who4_recovery` (`FRIEND.log` Part 2) ──
+
+
+async def test_send_zone_requests_waits_for_active_sweep_and_who4_recovery_drains_timeout(
+    hass: Any,
+) -> None:
+    """`_send_zone_requests`, `send_paced`, and `pace_startup_status_write` wait for active sweeps after timeout/desync."""
+    handler = _make_handler(hass, "MyHomeServer1")
+
+    # 1. `_send_zone_requests` waits for `_wait_for_bus_quiet(self._last_event_frame_at)` when `_last_event_frame_at > 0`
+    handler.note_event_frame()
+    quiet_calls: list[float] = []
+
+    async def record_quiet(since: float) -> None:
+        quiet_calls.append(since)
+
+    handler._wait_for_bus_quiet = AsyncMock(side_effect=record_quiet)  # type: ignore[method-assign]
+    handler.send_paced = AsyncMock()  # type: ignore[method-assign]
+
+    handler.request_zone_dimension("7", 20)
+    await handler.wait_for_zone_requests()
+    assert quiet_calls == [handler._last_event_frame_at]
+    handler.send_paced.assert_awaited_once_with(["*#4*#0*20##"])
+
+    # 2. `_wait_for_who4_recovery` guards: non-Future, normal Future, and idle bus return immediately
+    handler2 = _make_handler(hass, "MyHomeServer1")
+    recovery_waits: list[float] = []
+
+    async def fake_wait_quiet(since: float) -> None:
+        recovery_waits.append(since)
+        # Simulate the sweep ending after the second recovery window
+        if len(recovery_waits) >= 3:
+            handler2._last_event_frame_at = 0.0
+
+    handler2._wait_for_bus_quiet = AsyncMock(side_effect=fake_wait_quiet)  # type: ignore[method-assign]
+
+    await handler2._wait_for_who4_recovery(None)
+    normal_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    normal_fut.set_result(1.0)
+    await handler2._wait_for_who4_recovery(normal_fut)
+    assert recovery_waits == []
+
+    # Timed-out status request while bus is already idle (`_last_event_frame_at == 0.0`) -> 0 extra waits
+    idle_timeout_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    setattr(idle_timeout_fut, "_command_timeout", True)
+    idle_timeout_fut.cancel()
+    await handler2._wait_for_who4_recovery(idle_timeout_fut)
+    assert recovery_waits == []
+
+    # 3. Timed-out WHO 4 status request in `send_paced` while event frames keep streaming
+    # waits additional `_wait_for_bus_quiet` windows until the sweep finishes
+    handler2.note_event_frame()
+    active_timeout_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    setattr(active_timeout_fut, "_command_timeout", True)
+    active_timeout_fut.cancel()
+    handler2.send_status_request = AsyncMock(return_value=active_timeout_fut)  # type: ignore[method-assign]
+
+    await handler2.send_paced(["*#4*#0*20##"])
+    # 1 initial `_wait_for_bus_quiet` + 2 recovery windows before `_last_event_frame_at` cleared
+    assert len(recovery_waits) == 3
+
+    # 4. If an external sweep continues past all 4 recovery windows, `_wait_for_who4_recovery` caps at 4
+    cap_waits: list[float] = []
+
+    async def always_busy_quiet(since: float) -> None:
+        cap_waits.append(since)
+        handler2.note_event_frame()
+
+    handler2._wait_for_bus_quiet = AsyncMock(side_effect=always_busy_quiet)  # type: ignore[method-assign]
+    handler2.note_event_frame()
+    desync_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    setattr(desync_fut, "_gateway_desync", True)
+    desync_fut.cancel()
+    await handler2.pace_startup_status_write(desync_fut, OWNCommand("*#4*59##"))
+    # 1 initial `_wait_for_bus_quiet` in `pace_startup_status_write` + 4 recovery windows = 5 total
+    assert len(cap_waits) == 5
+
 
