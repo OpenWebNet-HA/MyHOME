@@ -206,9 +206,17 @@ def test_expose_schema_validation():
     with pytest.raises(vol.Invalid, match="point-to-point actuator address"):
         expose_entry_schema({"who": 1, "where": "0", "entity_id": "light.test"})
 
-    # WHO=4 invalid WHERE (zone 1..99 not a probe)
-    with pytest.raises(vol.Invalid, match="must be a probe address"):
-        expose_entry_schema({"who": 4, "where": "1", "entity_id": "sensor.temp"})
+    # WHO=4 invalid WHERE (all-probes 0 / zone all-probes 001..099 / central #Z not a probe)
+    for bad_w4 in ("0", "001", "050", "#1", "#50"):
+        with pytest.raises(vol.Invalid, match="must be a probe address"):
+            expose_entry_schema({"who": 4, "where": bad_w4, "entity_id": "sensor.temp"})
+
+    # WHO=4 valid zone master probe WHERE 1..99 (required for bt_termo #0 writes)
+    for ok_w4 in ("1", "50", "99"):
+        assert (
+            expose_entry_schema({"who": 4, "where": ok_w4, "entity_id": "sensor.temp"})["where"]
+            == ok_w4
+        )
 
     # WHO=4 invalid dimension
     with pytest.raises(vol.Invalid, match="supports only dimension 0"):
@@ -566,7 +574,7 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
         expose_list=[
             {
                 "who": 4,
-                "where": "100",
+                "where": "50",
                 "dimension": 0,
                 "entity_id": "sensor.outdoor_temp",
                 "cooldown": 0,
@@ -579,9 +587,9 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
     await mgr.async_start()
     await mgr.async_sync_all()
 
-    # Initial sync sends *#4*100*#0*0215## via low-priority queue
+    # Initial sync sends *#4*50*#0*0215## via low-priority queue
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*100*#0*0215##"
+        "*#4*50*#0*0215##"
     ]
     gw.send_status_request.reset_mock()
 
@@ -594,13 +602,13 @@ async def test_who4_virtual_temperature_probe_and_deadband(hass: HomeAssistant):
     hass.states.async_set("sensor.outdoor_temp", "-3.2")
     await hass.async_block_till_done()
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*100*#0*1032##"
+        "*#4*50*#0*1032##"
     ]
 
-    # Bus query *#4*100*0## replies on high-priority queue with current value (-3.2°C -> 1032)
+    # Bus query *#4*50*0## replies on high-priority queue with current value (-3.2°C -> 1032)
     gw.send.reset_mock()
-    await mgr.handle_bus_message(OWNMessage.parse("*#4*100*0##"))
-    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#4*100*#0*1032##"]
+    await mgr.handle_bus_message(OWNMessage.parse("*#4*50*0##"))
+    assert [str(c.args[0]) for c in gw.send.call_args_list] == ["*#4*50*#0*1032##"]
 
     await mgr.async_stop()
 
@@ -777,6 +785,7 @@ def test_discovery_suppresses_phantom_entities_for_exposed_addresses(hass: HomeA
 
     mgr = ExposeManager(hass, entry)
     entry.runtime_data.expose_manager = mgr
+    entry.runtime_data.platforms["climate"] = {}
 
     added_lights: list = []
 
@@ -864,6 +873,7 @@ async def test_button_platform_skips_exposed_virtual_actuators(hass: HomeAssista
     )
     mgr = ExposeManager(hass, entry)
     entry.runtime_data.expose_manager = mgr
+    entry.runtime_data.platforms["climate"] = {}
     entry.runtime_data.platforms["button"] = {
         "99": {"where": "99", "who": "1", "name": "Virtual TV Switch"},
         "12": {"where": "12", "who": "1", "name": "Physical Relay"},
@@ -1052,12 +1062,29 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     assert clock_res["type"] == FlowResultType.CREATE_ENTRY
     assert "Bus Clock Sync" in clock_res["title"]
 
-    # Submitting valid WHO=4 probe binding succeeds
+    # On F461 (#0-only bt_termo), 3-digit probe WHERE="100" is rejected in the UI flow
+    bad_probe_res = await flow.async_step_user(
+        {
+            CONF_WHO: "4",
+            "where": "100",
+            CONF_DIMENSION: 0,
+            "entity_id": "sensor.outdoor_temp",
+            CONF_COOLDOWN: 30,
+            CONF_MIN_DELTA: 0.1,
+            CONF_PERIODIC_SEND: 900,
+            CONF_RESPOND_TO_READ: True,
+            CONF_BRIGHTNESS_STEP_PCT: 10,
+        }
+    )
+    assert bad_probe_res["type"] == FlowResultType.FORM
+    assert bad_probe_res["errors"]["where"] == "who4_probe_where_unsupported"
+
+    # Submitting valid WHO=4 master-probe binding (WHERE="50") succeeds on F461
     with patch.object(hass.config_entries, "async_schedule_reload") as mock_reload:
         ok_res = await flow.async_step_user(
             {
                 CONF_WHO: "4",
-                "where": "100",
+                "where": "50",
                 CONF_DIMENSION: 0,
                 "entity_id": "sensor.outdoor_temp",
                 CONF_COOLDOWN: 30,
@@ -1070,7 +1097,7 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
         assert mock_reload.called
     assert ok_res["type"] == FlowResultType.CREATE_ENTRY
     assert ok_res["data"]["who"] == 4
-    assert ok_res["data"]["where"] == "100"
+    assert ok_res["data"]["where"] == "50"
     assert ok_res["data"]["dimension"] == 0
 
     # Reconfigure step on existing subentry "sub_1"
@@ -1158,14 +1185,14 @@ async def test_expose_templates_attributes_defaults_and_unit_scaling(hass: HomeA
             },
             {
                 "who": 4,
-                "where": "101",
+                "where": "51",
                 "entity_id": "sensor.unavailable_temp",
                 "default": 19.5,
                 "cooldown": 0,
             },
             {
                 "who": 4,
-                "where": "102",
+                "where": "52",
                 "entity_id": "climate.nest",
                 "attribute": "current_temperature",
                 "value_template": "{{ (value | float) - 0.4 }}",
@@ -1183,8 +1210,8 @@ async def test_expose_templates_attributes_defaults_and_unit_scaling(hass: HomeA
     assert "*#18*51*52*120500##" in sent
     assert "*#18*51*53*4500##" in sent
     assert "*#18*51*54*890##" in sent
-    assert "*#4*101*#0*0195##" in sent
-    assert "*#4*102*#0*0220##" in sent
+    assert "*#4*51*#0*0195##" in sent
+    assert "*#4*52*#0*0220##" in sent
 
     await mgr.async_stop()
 
@@ -1870,13 +1897,19 @@ async def test_expose_edge_cases_and_timers(hass: HomeAssistant):
     mgr_mh200n = ExposeManager(hass, entry_empty, gateway=gw_mh200n)
     hass.states.async_set("sensor.temp_ok", "21.5")
     hass.states.async_set("sensor.temp_bad", "not_a_float")
-    b_w4 = ExposeBinding(who=4, where="100", entity_id="sensor.temp_ok")
+    b_w4 = ExposeBinding(who=4, where="50", entity_id="sensor.temp_ok")
     f455_frames, f455_val = mgr_f455._build_frames(b_w4, force=True, is_reply=False)
-    assert [str(f) for f in f455_frames] == ["*#4*100*#0*0215##"]
+    assert [str(f) for f in f455_frames] == ["*#4*50*#0*0215##"]
     assert f455_val == 21.5
+    # 3-digit probe WHERE >= 100 is blocked on #0-only gateways (supports_dimension_response_injection=False)
+    assert mgr_f455._build_frames(
+        ExposeBinding(who=4, where="100", entity_id="sensor.temp_ok"),
+        force=True,
+        is_reply=False,
+    ) == ([], None)
     assert mgr_mh200n._build_frames(b_w4, force=True, is_reply=False) == ([], None)
     assert mgr_t._build_frames(
-        ExposeBinding(who=4, where="100", entity_id="sensor.temp_bad"),
+        ExposeBinding(who=4, where="50", entity_id="sensor.temp_bad"),
         force=True,
         is_reply=False,
     ) == ([], None)
@@ -2078,6 +2111,7 @@ async def test_audit_regressions_echo_futures_brightness_off_scope_and_actions(h
     )
     mgr = ExposeManager(hass, entry)
     entry.runtime_data.expose_manager = mgr
+    entry.runtime_data.platforms["climate"] = {}
     await mgr.async_start()
     await mgr.async_sync_all()
 
@@ -2346,6 +2380,7 @@ async def test_who2_oracle_40_step_echo_loop_simulation(hass: HomeAssistant):
     )
     mgr = ExposeManager(hass, entry)
     entry.runtime_data.expose_manager = mgr
+    entry.runtime_data.platforms["climate"] = {}
     await mgr.async_start()
 
     bus_q: list[OWNMessage] = []
@@ -2486,18 +2521,18 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     assert is_probe("-105") is False
     assert is_probe("###105") is False
 
-    # WHO=4 group and zone addresses are not probes: all probes (0), a zone's master
-    # probe (1..99), all probes of a zone (001..099), probe P=9 (only 1..8 exist)
-    for group_where in (0, "0", "000", "050", "099", "50", "#50", "901", "999"):
+    # WHO=4 group and central-zone addresses are not probes: all probes (0),
+    # all probes of a zone (001..099), central zone (#50), probe P=9 (only 1..8 exist)
+    for group_where in (0, "0", "000", "050", "099", "#50", "901", "999"):
         with pytest.raises(vol.Invalid, match="must be a probe address"):
             expose_entry_schema({"who": 4, "where": group_where, "entity_id": "sensor.t"})
 
-    # Valid local-bus WHO=1, WHO=4 external probes, WHO=13 with where=None, and valid WHO=4/18 defaults pass
+    # Valid local-bus WHO=1, WHO=4 master/external/PZZ probes, WHO=13 with where=None, and valid WHO=4/18 defaults pass
     valid_local = expose_entry_schema(
         {"who": 1.0, "where": "99#4#01", "entity_id": "light.a"}
     )
     assert valid_local["where"] == "99#4#01"
-    for probe_where, expected in ((100, "100"), ("#900", "900"), ("899", "899")):
+    for probe_where, expected in (("50", "50"), (100, "100"), ("#900", "900"), ("899", "899")):
         valid_probe = expose_entry_schema(
             {"who": 4, "where": probe_where, "entity_id": "sensor.t"}
         )
@@ -2564,7 +2599,7 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
             {"who": 1, "where": "96", "entity_id": "light.bad_b", "attribute": "brightness"},
             {"who": 1, "where": "95", "entity_id": "switch.no_b"},
             {"who": 2, "where": "97", "entity_id": "cover.bad_p", "attribute": "current_position"},
-            {"who": 4, "where": "100", "entity_id": "sensor.bad_t"},
+            {"who": 4, "where": "50", "entity_id": "sensor.bad_t"},
             {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.bad_e"},
             {"who": 13},
         ],
@@ -2955,7 +2990,7 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     hass.states.async_set("sensor.power", "450")
     hass.states.async_set("light.lamp", "on")
     expose_list = [
-        {"who": 4, "where": "150", "entity_id": "sensor.temp"},
+        {"who": 4, "where": "50", "entity_id": "sensor.temp"},
         {"who": 18, "where": "51", "dimension": 113, "entity_id": "sensor.power"},
         {"who": 1, "where": "25", "entity_id": "light.lamp"},
     ]
@@ -2971,13 +3006,21 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     assert sent == ["*1*1*25##", "*1*1*25##"]
     warnings = [r.getMessage() for r in caplog.records if "is disabled" in r.getMessage()]
     assert warnings == [
-        "Expose WHO=4 WHERE=150 dimension=0 (sensor.temp) is disabled: gateway MH202 is unverified for "
+        "Expose WHO=4 WHERE=50 dimension=0 (sensor.temp) is disabled: gateway MH202 is unverified for "
         "WHO 4 #0 temperature writes (supports_who4_command_injection is unset in OWNd). "
         "Nothing is sent for this binding.",
         "Expose WHO=18 WHERE=51 dimension=113 (sensor.power) is disabled: gateway MH202 is unverified for "
         "WHO 18 dimension reports (supports_who18_response_injection is unset in OWNd). "
         "Nothing is sent for this binding.",
     ]
+
+    # WHO=18 Dim 1200 query & streaming handshake are also suppressed while WHO=18 is blocked
+    gw.send.reset_mock()
+    gw.send_status_request.reset_mock()
+    await mgr.handle_bus_message(OWNMessage.parse("*#18*51*1200##"))
+    await mgr.handle_bus_message(OWNMessage.parse("*#18*51*#1200#1*5##"))
+    assert gw.send.call_count == 0
+    assert gw.send_status_request.call_count == 0
 
     # A gateway that rejects the frames, or no profile yet, gives its own reason
     gw.profile = SimpleNamespace(
@@ -3001,11 +3044,24 @@ async def test_unverified_gateway_disables_who4_who18_with_one_warning(
     caplog.clear()
     await mgr.async_sync_all()
     assert [str(c.args[0]) for c in gw.send_status_request.call_args_list] == [
-        "*#4*150*#0*0215##",
+        "*#4*50*#0*0215##",
         "*#18*51*113*450##",
         "*1*1*25##",
     ]
     assert "is disabled" not in caplog.text
+
+    # A 3-digit probe address (WHERE=150) on F461 logs the bt_termo 1..99 restriction once
+    mgr.bindings[0].where = "150"
+    gw.send_status_request.reset_mock()
+    caplog.clear()
+    await mgr.async_sync_all()
+    await mgr.async_sync_all()
+    probe_warnings = [r.getMessage() for r in caplog.records if "is disabled" in r.getMessage()]
+    assert probe_warnings == [
+        "Expose WHO=4 WHERE=150 dimension=0 (sensor.temp) is disabled: gateway F461 only translates "
+        "WHO 4 #0 temperature writes on zone master probe addresses 1..99 "
+        "(3-digit WHERE=150 is rejected by firmware). Nothing is sent for this binding."
+    ]
     await mgr.async_stop()
 
 
@@ -3079,3 +3135,129 @@ async def test_who1_coarse_what_2_to_10_and_translation_presets_map_to_bticino_c
     assert mgr.bindings[1].last_sent_value == (True, 1)
 
     await mgr.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_expose_subentry_flow_hides_and_rejects_unsupported_gateway_whos(
+    hass: HomeAssistant,
+) -> None:
+    """Gateways without WHO 4/18 injection (e.g. 067292 / H4890 / MH202) hide and reject WHO 4 & 18 (#832)."""
+    from custom_components.myhome.expose import effective_expose_profile
+
+    # Auto-created MagicMock gateway profiles (no str model_name and no bool injection flags) resolve to None
+    assert effective_expose_profile(MagicMock(), 4) is None
+
+    gw_h4890 = _make_gateway(
+        profile=SimpleNamespace(
+            model_name="H4890",
+            supports_dimension_response_injection=False,
+            supports_who4_command_injection=None,
+            supports_who18_response_injection=None,
+        )
+    )
+    entry = _make_entry(
+        hass,
+        gateway=gw_h4890,
+        subentries=[
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_legacy_w4",
+                "title": "Exposed WHO 4 WHERE 50",
+                "unique_id": None,
+                "data": {"who": 4, "where": "50", "entity_id": "sensor.temp"},
+            }
+        ],
+    )
+    mgr = ExposeManager(hass, entry)
+    entry.runtime_data.expose_manager = mgr
+    entry.runtime_data.platforms["climate"] = {}
+
+    flow = ExposeSubentryFlowHandler()
+    flow.hass = hass
+    flow.handler = (entry.entry_id, SUBENTRY_TYPE_EXPOSE)
+    flow.context = {"source": "user"}
+
+    form = await flow.async_step_user(None)
+    who_selector = next(iter(form["data_schema"].schema.values()))
+    who_values = [opt["value"] for opt in who_selector.config["options"]]
+    assert who_values == ["1", "2", "13"]
+
+    # Submitting WHO=4 or WHO=18 on H4890 returns who_injection_unsupported
+    for blocked_who in ("4", "18"):
+        res = await flow.async_step_user(
+            {
+                CONF_WHO: blocked_who,
+                "where": "51",
+                CONF_DIMENSION: 113 if blocked_who == "18" else 0,
+                "entity_id": "sensor.temp",
+            }
+        )
+        assert res["type"] == FlowResultType.FORM
+        assert res["errors"][CONF_WHO] == "who_injection_unsupported"
+
+    # Reconfiguring a pre-existing WHO=4 subentry keeps "4" in options so the form renders cleanly
+    flow.context = {"source": "reconfigure", "subentry_id": "sub_legacy_w4"}
+    reconf_form = await flow.async_step_reconfigure(None)
+    reconf_selector = next(iter(reconf_form["data_schema"].schema.values()))
+    reconf_values = [opt["value"] for opt in reconf_selector.config["options"]]
+    assert reconf_values == ["1", "2", "4", "13"]
+
+    # When runtime_data is unloaded/None, _gateway_profile_for_who returns None and all 5 WHOs appear
+    entry.runtime_data = None
+    flow.context = {"source": "user"}
+    unloaded_form = await flow.async_step_user(None)
+    unloaded_selector = next(iter(unloaded_form["data_schema"].schema.values()))
+    unloaded_values = [opt["value"] for opt in unloaded_selector.config["options"]]
+    assert unloaded_values == ["1", "2", "4", "13", "18"]
+
+
+@pytest.mark.asyncio
+async def test_climate_discovery_defers_exposed_who4_master_probe_until_real_zone_frame(
+    hass: HomeAssistant,
+) -> None:
+    """Exposed WHO=4 master probes (1..99) do not spawn phantom climate zones, yet preserve real zones (#832)."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    from custom_components.myhome.climate import async_setup_entry as climate_setup_entry
+
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {"who": 4, "where": "50", "entity_id": "sensor.outdoor_temp"},
+            {"who": 4, "where": "5", "entity_id": "sensor.living_temp"},
+            {"who": 4, "where": "6#4#01", "entity_id": "sensor.annex_temp"},
+        ],
+    )
+    mgr = ExposeManager(hass, entry)
+    entry.runtime_data.expose_manager = mgr
+    entry.runtime_data.platforms["climate"] = {}
+
+    added_climates: list[Any] = []
+
+    def _add_entities(entities: list[Any]) -> None:
+        for ent in entities:
+            ent.hass = hass
+            added_climates.append(ent)
+
+    await climate_setup_entry(hass, entry, _add_entities)
+
+    async def _emit(raw: str) -> None:
+        async_dispatcher_send(hass, f"myhome_message_{gw.mac}", OWNHeatingEvent.parse(raw))
+        await hass.async_block_till_done()
+
+    # 1. Pure virtual master probes on unused zones 50 and 6#4#01 must NOT create phantom climate entities
+    await _emit("*#4*50*0*0215##")
+    await _emit("*#4*6#4#01*0*0195##")
+    # Unexposed zone 8 still discovers normally from a Dimension 0 temperature report
+    await _emit("*#4*8*0*0204##")
+    assert [ent._where for ent in added_climates] == ["8"]
+
+    # 2. Zone 5 receives exposed master-probe temperature first, then a real zone setpoint report ->
+    #    Zone 5 discovers normally AND retains the deferred 21.5°C probe temperature!
+    await _emit("*#4*5*0*0215##")
+    assert [ent._where for ent in added_climates] == ["8"]
+    await _emit("*#4*5*14*0210*1##")
+    assert [ent._where for ent in added_climates] == ["8", "5"]
+    assert added_climates[1].current_temperature == 21.5

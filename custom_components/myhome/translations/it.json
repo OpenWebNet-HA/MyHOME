@@ -150,7 +150,9 @@
         "where_required": "È richiesto un indirizzo WHERE per questo sottosistema WHO.",
         "entity_required": "È richiesta un'entità Home Assistant sorgente per questo sottosistema WHO.",
         "invalid_dimension": "Dimensione non valida per il sottosistema WHO selezionato.",
-        "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata."
+        "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata.",
+        "who_injection_unsupported": "Il firmware di questo gateway non supporta l'iniezione di frame per il sottosistema WHO selezionato sul bus SCS (supportati su tutti i gateway: WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "Questo gateway traduce le scritture di temperatura WHO 4 #0 solo sugli indirizzi sonda master di zona non utilizzati 1..99 (es. 50); gli indirizzi sonda a 3 cifre (100..900) vengono rifiutati dal firmware."
       },
       "abort": {
         "reconfigure_successful": "Associazione dell'entità esposta aggiornata correttamente."

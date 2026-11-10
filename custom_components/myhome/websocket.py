@@ -6,6 +6,7 @@ injection for the Lovelace bus monitor card.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import voluptuous as vol
@@ -122,7 +123,7 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
 
     config_entry = getattr(gw, "config_entry", None)
     config_data = getattr(config_entry, "data", {}) if config_entry else {}
-    if not isinstance(config_data, dict):
+    if not isinstance(config_data, Mapping):
         config_data = {}
 
     if not model and isinstance(config_data.get(CONF_NAME), str):

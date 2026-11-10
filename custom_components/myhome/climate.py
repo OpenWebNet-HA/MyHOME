@@ -79,6 +79,7 @@ from .discovery import (
     default_known_keys,
     is_broadcast_where,
 )
+from .expose import is_exposed_on_bus
 from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
@@ -337,6 +338,25 @@ async def async_setup_entry(
                 ctx.address.key,
             )
             return False
+        if (
+            not ctx.cfg
+            and ctx.source == "bus"
+            and getattr(ctx.message, "dimension", None) == 0
+        ):
+            full_where = (
+                f"{ctx.address.where}#4#{ctx.address.interface}"
+                if ctx.address.interface
+                else ctx.address.where
+            )
+            if is_exposed_on_bus(hass, config_entry, 4, full_where):
+                zone_pair = thermo_zone_pair(ctx.address)
+                if zone_pair is not None:
+                    pending_actions.setdefault(zone_pair, {})["dim0"] = ctx.message
+                LOGGER.debug(
+                    "Deferring climate zone %s creation on exposed WHO=4 virtual probe Dimension 0 frame",
+                    ctx.address.key,
+                )
+                return False
         if (
             ctx.source == "bus"
             and is_thermo_switch_actuator_zone(ctx.address)
