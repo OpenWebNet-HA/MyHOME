@@ -1671,15 +1671,19 @@ Advanced automations, OpenWebNet events, custom message sending, and hardware bu
 </span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">      </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">media_player.sonos_living_room</span>
 </span></code></pre></div>
 <ul>
-<li><strong>CEN Events</strong>:</li>
+<li><strong>CEN Events</strong>:<ul>
 <li><code>pushbutton_short_press</code></li>
 <li><code>pushbutton_short_release</code></li>
 <li><code>pushbutton_long_press</code></li>
 <li><code>pushbutton_long_release</code></li>
-<li><strong>CEN+ Events</strong>:</li>
+</ul>
+</li>
+<li><strong>CEN+ Events</strong>:<ul>
 <li><code>pushbutton_short_press</code></li>
 <li><code>pushbutton_long_press</code></li>
 <li><code>pushbutton_long_release</code></li>
+</ul>
+</li>
 </ul>
 <hr />
 <h2 id="bus-broadcast-events">Bus Broadcast Events<a class="headerlink" href="#bus-broadcast-events" title="Permanent link">&para;</a></h2>
@@ -1690,11 +1694,13 @@ Advanced automations, OpenWebNet events, custom message sending, and hardware bu
 <li><code>myhome_area_light_event</code></li>
 <li><code>myhome_group_light_event</code></li>
 </ul>
-<p>Attributes:
-- <code>event</code>: <code>'on'</code> or <code>'off'</code>
-- <code>area</code>: Area number (for area events)
-- <code>group</code>: Group ID (for group events, without leading <code>#</code>)
-- <code>message</code>: Full raw OpenWebNet frame</p>
+<p>Attributes:</p>
+<ul>
+<li><code>event</code>: <code>'on'</code> or <code>'off'</code></li>
+<li><code>area</code>: Area number (for area events)</li>
+<li><code>group</code>: Group ID (for group events, without leading <code>#</code>)</li>
+<li><code>message</code>: Full raw OpenWebNet frame</li>
+</ul>
 <p><em>Example</em>: Synchronizing a Home Assistant Light Group with an SCS group button:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="s">"Sync</span><span class="nv"> </span><span class="s">MyHOME</span><span class="nv"> </span><span class="s">Group</span><span class="nv"> </span><span class="s">1</span><span class="nv"> </span><span class="s">Wall</span><span class="nv"> </span><span class="s">Switch"</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">trigger</span><span class="p">:</span>
@@ -1713,10 +1719,12 @@ Advanced automations, OpenWebNet events, custom message sending, and hardware bu
 <li><code>myhome_area_automation_event</code></li>
 <li><code>myhome_group_automation_event</code></li>
 </ul>
-<p>Attributes:
-- <code>event</code>: <code>'open'</code>, <code>'close'</code>, or <code>'stop'</code>
-- <code>area</code>: Area number
-- <code>group</code>: Group ID</p>
+<p>Attributes:</p>
+<ul>
+<li><code>event</code>: <code>'open'</code>, <code>'close'</code>, or <code>'stop'</code></li>
+<li><code>area</code>: Area number</li>
+<li><code>group</code>: Group ID</li>
+</ul>
 <hr />
 <h2 id="services">Services<a class="headerlink" href="#services" title="Permanent link">&para;</a></h2>
 <h3 id="instant-power-sampling-myhomestart_sending_instant_power">Instant Power Sampling (<code>myhome.start_sending_instant_power</code>)<a class="headerlink" href="#instant-power-sampling-myhomestart_sending_instant_power" title="Permanent link">&para;</a></h3>

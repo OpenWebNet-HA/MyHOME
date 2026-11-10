@@ -1549,8 +1549,10 @@ What the <strong>"Unconfigured timezone on MyHOME gateway"</strong> repair issue
 <p>You do <strong>not</strong> need to manually dismiss the repair issue in Home Assistant:</p>
 <ol>
 <li>When the gateway completes its reboot or applies the new clock settings, it broadcasts an updated WHO=13 frame carrying a valid timezone offset.</li>
-<li>Home Assistant listens for this telemetry:</li>
+<li>Home Assistant listens for this telemetry:<ul>
 <li>When a valid offset is received (e.g. <code>+01:00</code>, <code>+02:00</code>), the integration automatically removes the <code>unconfigured_timezone</code> issue from <strong>Settings → System → Repairs</strong>.</li>
+</ul>
+</li>
 </ol>
 <hr />
 <h2 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">&para;</a></h2>
