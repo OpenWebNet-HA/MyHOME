@@ -2110,10 +2110,12 @@
 <ol>
 <li><strong>Network Connectivity</strong>: Your OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) is connected to your local network and powered on.</li>
 <li><strong>Fixed IP Address</strong>: A static IP address or permanent DHCP lease reservation on your local router is strongly recommended.</li>
-<li><strong>OpenWebNet Password</strong>:</li>
+<li><strong>OpenWebNet Password</strong>:<ul>
 <li>For standard gateways (F454, MH201): Note your numeric (4 or 9 digits) or alphanumeric password configured in MyHOME_Suite or TiMyHome.</li>
 <li>For MyHomeServer1: Note the installer password configured via the MyHOME_Up app.</li>
 <li>If open LAN authentication is disabled on the gateway, no password is required.</li>
+</ul>
+</li>
 <li><strong>Integration Installed</strong>: The MyHOME custom component is installed (see the <a href="../getting-started/installation/">Installation Guide</a>).</li>
 </ol>
 <hr />
@@ -2122,13 +2124,17 @@
 <ol>
 <li>In Home Assistant, navigate to <strong>Settings → Devices &amp; Services</strong>.</li>
 <li>If your gateway is discovered automatically via SSDP or mDNS, click <strong>Configure</strong> on the discovery card.</li>
-<li>If adding manually:</li>
+<li>If adding manually:<ul>
 <li>Click <strong>Add Integration</strong> in the bottom right corner.</li>
 <li>Search for <strong>MyHOME</strong> and select it.</li>
-<li>Fill in the connection parameters:</li>
+</ul>
+</li>
+<li>Fill in the connection parameters:<ul>
 <li><strong>Host</strong>: Gateway IP address (e.g. <code>192.168.1.50</code>).</li>
 <li><strong>Port</strong>: <code>20000</code> (default OpenWebNet port).</li>
 <li><strong>Password</strong>: Your OpenWebNet or HMAC authentication password.</li>
+</ul>
+</li>
 <li>Click <strong>Submit</strong>. Home Assistant will establish the command session (<code>*99*0##</code>) and event listening session (<code>*99*1##</code>), verify the gateway hardware identity, and create the gateway device entry.</li>
 </ol>
 <p>For full parameter specifications and troubleshooting, see <a href="gateways/">Gateways &amp; Connection Setup</a>.</p>

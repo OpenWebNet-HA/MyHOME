@@ -2386,24 +2386,28 @@
 <p>If you are a <strong>certified BTicino / Legrand installer</strong>, <strong>system integrator</strong>, or <strong>MyHOME software specialist</strong> (such as <strong>@xtimmy86x</strong>, <strong>@lyubomirtraykov</strong>, and fellow community professionals), your real-world experience across varied plant configurations and engineering software continues to help us fill the final remaining gaps:</p>
 <h3 id="remaining-specifications-items-under-review">🔍 Remaining Specifications &amp; Items Under Review:<a class="headerlink" href="#remaining-specifications-items-under-review" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>Document Versions &amp; Revision Dates</strong>:</li>
-<li>Compare your PDF archive against the <a href="#master-who-family-inventory">Master WHO Family Inventory</a> table below.</li>
 <li>
-<p>Look at the cover page and revision history (e.g. <em>Last date modify</em>, <em>Version number</em>). If your copy is newer than what is listed, please share the version details!</p>
+<p><strong>Document Versions &amp; Revision Dates</strong>:</p>
+<ul>
+<li>Compare your PDF archive against the <a href="#master-who-family-inventory">Master WHO Family Inventory</a> table below.</li>
+<li>Look at the cover page and revision history (e.g. <em>Last date modify</em>, <em>Version number</em>). If your copy is newer than what is listed, please share the version details!</li>
+</ul>
 </li>
 <li>
 <p><strong>Remaining Missing / Legacy Specifications</strong>:</p>
-</li>
+<ul>
 <li><strong><code>WHO = 3</code></strong>: Load control legacy central unit (F421) (Seeking newer official PDF than 2006).</li>
 <li><strong><code>WHO = 6</code></strong>: Dedicated audio door entry call frames (Seeking standalone document beyond WHO 7 / Intro).</li>
 <li><strong><code>WHO = 9</code></strong>: Auxiliary channels (AUX 1–9) (Seeking newer official PDF than 2006).</li>
-<li>
-<p><em>(Note: <strong><code>WHO = 14</code></strong> Actuator Lock is fully reverse-engineered and documented below; Legrand never published a public standalone PDF).</em></p>
+<li><em>(Note: <strong><code>WHO = 14</code></strong> Actuator Lock is fully reverse-engineered and documented below; Legrand never published a public standalone PDF).</em></li>
+</ul>
 </li>
 <li>
 <p><strong>Software Tooling &amp; Dictionaries (MyHOME_Suite / TiMyHome)</strong>:</p>
-</li>
+<ul>
 <li>Command definitions or exported XML dictionaries from Legrand/BTicino configuration software (<strong>MyHOME_Suite</strong>, <strong>TiMyHome</strong>, <strong>Virtual Configurator</strong>, <strong>MyHOME_Up</strong>).</li>
+</ul>
+</li>
 </ol>
 <blockquote>
 <p><strong>💡 How to Contribute:</strong> You can share filenames, revision dates, technical sheets, or bus monitor traces by opening an issue on the <a href="https://github.com/OpenWebNet-HA/MyHOME/issues">OpenWebNet-HA/MyHOME GitHub repository</a> or commenting directly in <a href="https://github.com/OpenWebNet-HA/MyHOME/pull/232">PR #232</a>. Every contribution helps ensure open, permanent documentation for the entire MyHOME ecosystem.</p>
@@ -2653,7 +2657,9 @@
 <h3 id="1-cencen-scenario-schedulers-who_15-25pdf-vs-dry-contacts-ir-who_25pdf">1. CEN/CEN+ Scenario Schedulers (<code>WHO_15-25.pdf</code>) vs Dry Contacts &amp; IR (<code>WHO_25.pdf</code>)<a class="headerlink" href="#1-cencen-scenario-schedulers-who_15-25pdf-vs-dry-contacts-ir-who_25pdf" title="Permanent link">&para;</a></h3>
 <p>A common source of confusion in the OpenWebNet ecosystem stems from the shared <code>WHO = 25</code> code. As highlighted by <strong>@GianlucaCh</strong>, these are two completely distinct official specifications:</p>
 <ol>
-<li><strong>Scenario Scheduler CEN / CEN+ (<code>WHO_15-25.pdf</code>)</strong>:</li>
+<li>
+<p><strong>Scenario Scheduler CEN / CEN+ (<code>WHO_15-25.pdf</code>)</strong>:</p>
+<ul>
 <li><strong>Covered Devices</strong>: Scenario Programmers and Controllers (MH200, MH200N, MH201, Legrand 03565).</li>
 <li><strong>Protocol Nature</strong>: Pushbutton scenario trigger events.</li>
 <li><strong>Syntax</strong>: <code>*25*&lt;WHAT&gt;*&lt;WHERE&gt;##</code> where <code>WHAT</code> encodes:<ul>
@@ -2663,12 +2669,12 @@
 <li><code>24</code>: Release after extended pressure.</li>
 </ul>
 </li>
-<li>
-<p><strong>Addressing (<code>WHERE</code>)</strong>: Scenario address up to 256 buttons/scenarios (<code>[1-256]</code>).</p>
+<li><strong>Addressing (<code>WHERE</code>)</strong>: Scenario address up to 256 buttons/scenarios (<code>[1-256]</code>).</li>
+</ul>
 </li>
 <li>
 <p><strong>Dry Contact Interfaces &amp; IR Sensors (<code>WHO_25.pdf</code>)</strong>:</p>
-</li>
+<ul>
 <li><strong>Covered Devices</strong>: Physical interface modules (BTicino 3477, F428, 3480, F482, IR 4610/4611/4640; Legrand 573996, 03553, 067513, etc.).</li>
 <li><strong>Protocol Nature</strong>: Hardware state telemetry for magnetic window/door reed switches, technical contacts, and passive infrared motion detectors.</li>
 <li><strong>Syntax</strong>: <code>*25*&lt;WHAT&gt;*&lt;WHERE&gt;##</code> or dimension frames where <code>WHAT</code> indicates:<ul>
@@ -2682,20 +2688,24 @@
 </ul>
 </li>
 <li><strong>Home Assistant Entity</strong>: Exposed as <code>binary_sensor</code> (e.g. window opened/closed, PIR motion).</li>
+</ul>
+</li>
 </ol>
 <hr />
 <h3 id="2-multi-room-sound-distribution-who-16-vs-sound-diffusion-who-22">2. Multi-Room Sound Distribution (<code>WHO = 16</code>) vs Sound Diffusion (<code>WHO = 22</code>)<a class="headerlink" href="#2-multi-room-sound-distribution-who-16-vs-sound-diffusion-who-22" title="Permanent link">&para;</a></h3>
 <p>The sound subsystem is split across two dedicated OpenWebNet WHO families:</p>
 <ol>
-<li><strong>WHO = 16 (Sound Distribution — Zone &amp; Matrix Management)</strong>:</li>
+<li>
+<p><strong>WHO = 16 (Sound Distribution — Zone &amp; Matrix Management)</strong>:</p>
+<ul>
 <li>Controls physical audio amplifiers and source matrix units (F441, F441M, F450, 3487).</li>
 <li>Functions include: Zone power (ON/OFF), volume attenuation (0–31 scale / percentages), audio input channel routing (IN 1 to IN 4), tone equalizers (bass, treble, balance), and master room follow-me.</li>
-<li>
-<p>Mapped to Home Assistant <code>media_player</code> entities.</p>
+<li>Mapped to Home Assistant <code>media_player</code> entities.</li>
+</ul>
 </li>
 <li>
 <p><strong>WHO = 22 (Sound Diffusion — Source &amp; Speaker Navigation)</strong>:</p>
-</li>
+<ul>
 <li>Controls the audio source devices themselves (FM tuner, CD player, multimedia source) and individual speaker units.</li>
 <li>Functions include:<ul>
 <li>FM tuner frequency step up/down (<code>WHAT = 5</code> / <code>WHAT = 6</code>).</li>
@@ -2706,18 +2716,26 @@
 <li>Speaker volume adjustment (<code>WHAT = 3</code> increase / <code>WHAT = 4</code> decrease).</li>
 </ul>
 </li>
+</ul>
+</li>
 </ol>
 <hr />
 <h3 id="3-actuator-diagnostics-endpoint-safety-locks-who-14">3. Actuator Diagnostics &amp; Endpoint Safety Locks (<code>WHO = 14</code>)<a class="headerlink" href="#3-actuator-diagnostics-endpoint-safety-locks-who-14" title="Permanent link">&para;</a></h3>
 <p>BTicino and Legrand never distributed a standalone <code>WHO_14.pdf</code> in their public developer distributions, retaining it as an internal/installer diagnostic function. However, the protocol grammar is fully reverse-engineered and verified across live systems:</p>
 <ul>
 <li><strong>Protocol Function</strong>: Inhibits physical wall buttons (rocker switches, CEN pushbuttons) and remote actuation for safety, maintenance, or child locking on lighting and cover/shutter actuators (F411, F411U2, F418, LN4672M2).</li>
-<li><strong>Lock Actuator (Disable Controls)</strong>: <code>*14*0*&lt;WHERE&gt;##</code></li>
+<li><strong>Lock Actuator (Disable Controls)</strong>: <code>*14*0*&lt;WHERE&gt;##</code><ul>
 <li>Freezes the relay in its current position and disables physical switch inputs.</li>
-<li><strong>Unlock Actuator (Enable Controls)</strong>: <code>*14*1*&lt;WHERE&gt;##</code></li>
+</ul>
+</li>
+<li><strong>Unlock Actuator (Enable Controls)</strong>: <code>*14*1*&lt;WHERE&gt;##</code><ul>
 <li>Restores normal operation and re-enables physical wall buttons and bus commands.</li>
-<li><strong>Status Query</strong>: <code>*#14*&lt;WHERE&gt;##</code></li>
+</ul>
+</li>
+<li><strong>Status Query</strong>: <code>*#14*&lt;WHERE&gt;##</code><ul>
 <li>Returns <code>*14*0*&lt;WHERE&gt;##</code> (Locked) or <code>*14*1*&lt;WHERE&gt;##</code> (Unlocked).</li>
+</ul>
+</li>
 <li><strong>Home Assistant Integration</strong>: Represented via configuration button entities (<code>DisableCommandButtonEntity</code> and <code>EnableCommandButtonEntity</code>) under each actuator device.</li>
 <li><strong>Gateway Support</strong>: Supported on modern gateways (F454, MyHomeServer1). Older gateways (e.g. early F455 firmware) return NACK (<code>*#*0##</code>).</li>
 </ul>
@@ -2731,11 +2749,15 @@
 <h3 id="key-features-of-the-blueprint">Key Features of the Blueprint:<a class="headerlink" href="#key-features-of-the-blueprint" title="Permanent link">&para;</a></h3>
 <ol>
 <li><strong>Control Non-BTicino Devices</strong>: Use your native BTicino wall switches to switch or toggle non-BTicino smart devices (Philips Hue, Zigbee, Z-Wave, Shelly, or Tuya).</li>
-<li><strong>Short vs. Long Press Handling</strong>:</li>
+<li><strong>Short vs. Long Press Handling</strong>:<ul>
 <li><strong>Short Press (&lt; 0.5s)</strong>: Instantly toggles lights or triggers scenes.</li>
 <li><strong>Extended / Long Press (&gt;= 0.5s)</strong>: Enables smooth dimming up or down.</li>
-<li><strong>Dimming Direction Helper</strong>:</li>
+</ul>
+</li>
+<li><strong>Dimming Direction Helper</strong>:<ul>
 <li>By creating a simple <code>input_boolean</code> helper (e.g. <code>input_boolean.living_dim_direction</code>), the blueprint tracks dimming direction so alternating long presses cycle between brightening and dimming.</li>
+</ul>
+</li>
 <li><strong>Zero-Delay Bus Processing</strong>: Fully compatible with the stateless <code>myhome.cen</code> and <code>myhome.cen_plus</code> events dispatched by the modernized MyHOME integration.</li>
 </ol>
 <hr />
@@ -2858,35 +2880,37 @@
 </li>
 <li>
 <p><strong>Dimension Request (Query)</strong>:
-   <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>*#WHO*WHERE*DIMENSION##
+    <div class="language-text highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>*#WHO*WHERE*DIMENSION##
 </span></code></pre></div>
-   <em>Examples</em>:</p>
-</li>
+    <em>Examples</em>:</p>
+<ul>
 <li><code>*#4*1*0##</code> (Query measured temperature of Zone 1)</li>
-<li>
-<p><code>*#4*1*60##</code> (Query relative humidity of Zone 1)</p>
+<li><code>*#4*1*60##</code> (Query relative humidity of Zone 1)</li>
+</ul>
 </li>
 <li>
 <p><strong>Dimension Writing (Command with Parameters)</strong>:
-   <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>*#WHO*WHERE*#DIMENSION*VAL1*VAL2*...*VALn##
+    <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>*#WHO*WHERE*#DIMENSION*VAL1*VAL2*...*VALn##
 </span></code></pre></div>
-   <em>Example</em>: <code>*#16*1*#1*30##</code> (Set volume of audio Amplifier 1 to 30%)</p>
+    <em>Example</em>: <code>*#16*1*#1*30##</code> (Set volume of audio Amplifier 1 to 30%)</p>
 </li>
 <li>
 <p><strong>Dimension Response (Status Report)</strong>:
-   <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>*#WHO*WHERE*DIMENSION*VAL1*VAL2*...*VALn##
+    <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>*#WHO*WHERE*DIMENSION*VAL1*VAL2*...*VALn##
 </span></code></pre></div>
-   <em>Examples</em>:</p>
-</li>
+    <em>Examples</em>:</p>
+<ul>
 <li><code>*#4*1*0*0215*1##</code> (Zone 1 temperature is 21.5 °C, Heating mode)</li>
-<li>
-<p><code>*#4*1*60*55##</code> (Zone 1 relative humidity is 55%)</p>
+<li><code>*#4*1*60*55##</code> (Zone 1 relative humidity is 55%)</li>
+</ul>
 </li>
 <li>
 <p><strong>Acknowledge (ACK / NACK)</strong>:</p>
-</li>
+<ul>
 <li><code>*#*1##</code> : <strong>ACK</strong> (Command accepted by gateway/bus)</li>
 <li><code>*#*0##</code> : <strong>NACK</strong> (Command rejected, syntax error, or buffer busy)</li>
+</ul>
+</li>
 </ol>
 <hr />
 <h2 id="testing-live-bus-capture-in-home-assistant">🛠️ Testing &amp; Live Bus Capture in Home Assistant<a class="headerlink" href="#testing-live-bus-capture-in-home-assistant" title="Permanent link">&para;</a></h2>

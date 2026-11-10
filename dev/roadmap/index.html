@@ -2470,12 +2470,16 @@
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p><strong>Community Consultation on Upstream Core Inclusion vs. Independent Distribution</strong>:<br />
-While the integration strictly adheres to 100% of Home Assistant Core Platinum standards, the maintainers and community have <strong>not decided</strong> on upstream Core inclusion. As discussed in community channels (see <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248">RFC Discussion #248</a>), there are important trade-offs:
-- <strong>Benefits of Core inclusion</strong>: Automatic out-of-the-box discovery for new Home Assistant users without requiring HACS; official documentation on <code>home-assistant.io</code>.
-- <strong>Drawbacks &amp; Advantages of remaining an independent custom component</strong>:
-  - <strong>Release Agility</strong>: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
-  - <strong>Dedicated Diagnostic Frontend</strong>: Continued bundling and rapid iteration of the in-band <code>&lt;myhome-bus-card&gt;</code> Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.
-  - <strong>Community Traces &amp; Plant Fixtures</strong>: Fast, unencumbered additions of real-world captures and experimental protocol options.</p>
+While the integration strictly adheres to 100% of Home Assistant Core Platinum standards, the maintainers and community have <strong>not decided</strong> on upstream Core inclusion. As discussed in community channels (see <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248">RFC Discussion #248</a>), there are important trade-offs:</p>
+<ul>
+<li><strong>Benefits of Core inclusion</strong>: Automatic out-of-the-box discovery for new Home Assistant users without requiring HACS; official documentation on <code>home-assistant.io</code>.</li>
+<li><strong>Drawbacks &amp; Advantages of remaining an independent custom component</strong>:<ul>
+<li><strong>Release Agility</strong>: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.</li>
+<li><strong>Dedicated Diagnostic Frontend</strong>: Continued bundling and rapid iteration of the in-band <code>&lt;myhome-bus-card&gt;</code> Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.</li>
+<li><strong>Community Traces &amp; Plant Fixtures</strong>: Fast, unencumbered additions of real-world captures and experimental protocol options.</li>
+</ul>
+</li>
+</ul>
 <p>Feedback from installers and users is actively welcomed in our Discussions.</p>
 </div>
 <p>All 54 quality scale rules are tracked in <code>custom_components/myhome/quality_scale.yaml</code> and continuously validated by <code>scripts/verify_ha_standards.py</code>:</p>
@@ -2511,32 +2515,36 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
     Bronze --&gt; Silver --&gt; Gold --&gt; Platinum</code></pre>
 <h3 id="quality-scale-audit-highlights">📋 Quality Scale Audit Highlights<a class="headerlink" href="#quality-scale-audit-highlights" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong>Bronze Tier</strong>:</li>
+<li>
+<p><strong>Bronze Tier</strong>:</p>
+<ul>
 <li><code>has-entity-name</code>: All entity implementations inherit device names cleanly without manual <code>self.entity_id</code> overrides.</li>
 <li><code>runtime-data</code>: 100% single-source access via <code>entry.runtime_data</code> (<code>MyHomeData</code> dataclass); zero legacy <code>hass.data[DOMAIN]</code> global lookups.</li>
-<li>
-<p><code>action-setup</code>: Service actions registered once in <code>async_setup</code> and preserved across individual entry reloads.</p>
+<li><code>action-setup</code>: Service actions registered once in <code>async_setup</code> and preserved across individual entry reloads.</li>
+</ul>
 </li>
 <li>
 <p><strong>Silver Tier</strong>:</p>
-</li>
+<ul>
 <li><code>test-coverage</code>: Enforced strict 100.0% statement and branch coverage across all integration modules (verified by <code>tests/test_coverage_enforcer.py</code>).</li>
-<li>
-<p><code>parallel-updates</code>: Explicit <code>PARALLEL_UPDATES = 0</code> declared across all 9 platform files to guarantee event-driven thread safety.</p>
+<li><code>parallel-updates</code>: Explicit <code>PARALLEL_UPDATES = 0</code> declared across all 9 platform files to guarantee event-driven thread safety.</li>
+</ul>
 </li>
 <li>
 <p><strong>Gold Tier</strong>:</p>
-</li>
+<ul>
 <li><code>reconfiguration-flow</code>: In-place gateway IP address, port, password, and model corrections supported natively in the UI.</li>
 <li><code>repair-issues</code>: Built-in repairs platform (<code>repairs.py</code>) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel <code>999</code>, duplicate address alerts, model conflicts).</li>
-<li>
-<p><code>diagnostics</code>: Comprehensive diagnostics export with automatic redaction of passwords and tokens.</p>
+<li><code>diagnostics</code>: Comprehensive diagnostics export with automatic redaction of passwords and tokens.</li>
+</ul>
 </li>
 <li>
 <p><strong>Platinum Tier</strong>:</p>
-</li>
+<ul>
 <li><code>async-dependency</code>: Zero blocking network calls; standalone asynchronous client engine (<code>OWNd==2.0.0b8</code>) on PyPI.</li>
 <li><code>clean-separation</code>: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.</li>
+</ul>
+</li>
 </ol>
 <hr />
 <h2 id="real-world-trace-coverage-schematic-what-we-have-vs-what-we-need">📊 Real-World Trace Coverage Schematic (What We Have vs. What We Need)<a class="headerlink" href="#real-world-trace-coverage-schematic-what-we-have-vs-what-we-need" title="Permanent link">&para;</a></h2>

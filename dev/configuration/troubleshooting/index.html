@@ -2783,15 +2783,19 @@
 <h3 id="toggling-a-single-light-or-pressing-a-button-unexpectedly-triggers-an-entire-scenario-other-lights">Toggling a single light (or pressing a button) unexpectedly triggers an entire scenario / other lights<a class="headerlink" href="#toggling-a-single-light-or-pressing-a-button-unexpectedly-triggers-an-entire-scenario-other-lights" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Log / Bus trace</strong>:
-  <code>Message *1*1*61## was successfully sent.</code> followed within ~20–65 ms by <code>Message received: *15*03*61##</code> → <code>Message received: *17*1*1##</code> (<code>Scene 1 is started</code>) → multiple other lights switching on.</li>
-<li><strong>Root causes</strong>:</li>
+    <code>Message *1*1*61## was successfully sent.</code> followed within ~20–65 ms by <code>Message received: *15*03*61##</code> → <code>Message received: *17*1*1##</code> (<code>Scene 1 is started</code>) → multiple other lights switching on.</li>
+<li><strong>Root causes</strong>:<ol>
 <li><strong>A Basic CEN (<code>WHO = 15</code>) control shares an <code>A</code>/<code>PL</code> address with a physical light or shutter actuator (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/612">#612</a>, <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/773">#773</a>)</strong>:<br />
-     A control device configured in Basic CEN mode (<code>M = CEN</code>) has been given the same <code>A</code>/<code>PL</code> address (e.g. <code>61</code>) as a physical light actuator (<code>WHO = 1</code>). When Home Assistant sends a command (<code>*1*1*61##</code>) or status request (<code>*#1*61##</code>) to address <code>61</code>, the CEN control at <code>61</code> reacts on the SCS bus by emitting <code>*15*&lt;BUTTON&gt;*61##</code>, which triggers the scenario programmed on your <code>MH200N</code> / <code>MH201</code> / <code>MH202</code> / <code>F420</code> (<code>*17*1*&lt;SCENE&gt;##</code>). Per BTicino's scenario-programmer manuals, <code>CEN</code> controls must use dedicated <code>A</code>/<code>PL</code> addresses that never duplicate any actuator address.</li>
+   A control device configured in Basic CEN mode (<code>M = CEN</code>) has been given the same <code>A</code>/<code>PL</code> address (e.g. <code>61</code>) as a physical light actuator (<code>WHO = 1</code>). When Home Assistant sends a command (<code>*1*1*61##</code>) or status request (<code>*#1*61##</code>) to address <code>61</code>, the CEN control at <code>61</code> reacts on the SCS bus by emitting <code>*15*&lt;BUTTON&gt;*61##</code>, which triggers the scenario programmed on your <code>MH200N</code> / <code>MH201</code> / <code>MH202</code> / <code>F420</code> (<code>*17*1*&lt;SCENE&gt;##</code>). Per BTicino's scenario-programmer manuals, <code>CEN</code> controls must use dedicated <code>A</code>/<code>PL</code> addresses that never duplicate any actuator address.</li>
 <li><strong>A <code>CEN</code> / <code>CEN+</code> button is bound in both the MyHome app/programmer and Home Assistant (<a href="https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19121695">Discussion #770</a>)</strong>:<br />
-     Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> button frames on the bus and cannot suppress native scenario execution. If a physical button is already configured in <strong>MyHome_Up</strong> (<code>MyHomeServer1</code>) or <strong>MyHOME_Suite / TiMH200N</strong> to run a bus scenario, attaching a Home Assistant automation to the same button will run both simultaneously.</li>
-<li><strong>Resolution</strong>:</li>
+   Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> button frames on the bus and cannot suppress native scenario execution. If a physical button is already configured in <strong>MyHome_Up</strong> (<code>MyHomeServer1</code>) or <strong>MyHOME_Suite / TiMH200N</strong> to run a bus scenario, attaching a Home Assistant automation to the same button will run both simultaneously.</li>
+</ol>
+</li>
+<li><strong>Resolution</strong>:<ul>
 <li>Reassign the <code>M = CEN</code> control (or the actuator) to a free <code>A</code>/<code>PL</code> address not used by any actuator, or remove/update the scenario trigger in <strong>TiMH200N / MyHOME_Suite / MyHome_Up</strong>. See <a href="../cen_cenplus/#native-home-assistant-device-triggers">Scenario Controls &amp; Pushbuttons</a>.</li>
 <li>As a temporary software-only workaround until the plant configuration is updated, add the colliding address (e.g. <code>1:61</code>) to <strong>Settings → Devices &amp; Services → MyHOME → Configure → Ignored addresses</strong> so Home Assistant does not address it.</li>
+</ul>
+</li>
 </ul>
 <h3 id="a-light-or-cover-shows-up-twice-or-as-the-wrong-platform">A light or cover shows up twice, or as the wrong platform<a class="headerlink" href="#a-light-or-cover-shows-up-twice-or-as-the-wrong-platform" title="Permanent link">&para;</a></h3>
 <p>Discovery creates a <code>light</code> for every WHO 1 actuator unless the address is configured as a <code>switch</code>, <code>binary_sensor</code> or <code>sensor</code> in <code>myhome.yaml</code>, and a <code>cover</code> for every WHO 2 address. If you have a relay driving a socket, declare it under <code>switch:</code> so no light is created; the stale light entity can then be removed from its device page.</p>
@@ -2802,10 +2806,12 @@
 <h3 id="heating-zone-unresponsive-repair-alert-on-central-unit-3550-4695-or-phantom-climate-zone-99">"Heating zone unresponsive" repair alert on central unit (3550 / 4695) or phantom "Climate Zone 99"<a class="headerlink" href="#heating-zone-unresponsive-repair-alert-on-central-unit-3550-4695-or-phantom-climate-zone-99" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Central Unit (<code>#0</code>) status polling</strong>: In older releases, central units were polled with Dimension 14 status requests (<code>*#4*#0*14##</code>), which physical gateways (e.g. F454) reject with fast NACK because OpenWebNet specifies Dimension 14 status queries only for subordinate zones <code>1..99</code>. This repeatedly failed polls and triggered a false-positive <code>"unresponsive zone"</code> repair alert. Physical bus traces (issue #629) confirmed that 99-zone central units (<code>#0</code>) reliably answer the canonical plain status query <code>*#4*#0##</code> within ~0.17 s, returning their operating mode (<code>*4*202*#0##</code>) and status flags. The integration now polls <code>#0</code> using <code>*#4*#0##</code> at startup and poll intervals, populating the seasonal mode. An unanswered central-unit poll never raises the repair (verified on an F454 only), and a stale alert from an older release is cleared on startup. 4-zone central units (<code>#0#1</code>) remain exempt to prevent gateway timeouts.</li>
-<li><strong>"Centrale termoregolazione 99 zone" vs "Climate Zone 99" / "Climate Zone 0"</strong>: The BTicino 3550 is commercially marketed as the <em>"Centrale termoregolazione 99 zone"</em> because it can manage up to 99 subordinate zones, but its OpenWebNet central unit address is strictly <code>#0</code>.</li>
+<li><strong>"Centrale termoregolazione 99 zone" vs "Climate Zone 99" / "Climate Zone 0"</strong>: The BTicino 3550 is commercially marketed as the <em>"Centrale termoregolazione 99 zone"</em> because it can manage up to 99 subordinate zones, but its OpenWebNet central unit address is strictly <code>#0</code>.<ul>
 <li><strong>Ghost Zone 99</strong>: If a user configured <code>zone: 99</code> or <code>zone: "99"</code> in <code>myhome.yaml</code> based on the commercial product name, Home Assistant created and persisted <code>&lt;mac&gt;-4-99</code> in the Entity Registry. Because zone 99 does not physically exist on that bus, its Dimension 14 query (<code>*#4*99*14##</code>) failed, raising an <code>unresponsive_zone</code> repair alert.</li>
 <li><strong>Resolution</strong>: Delete the phantom entity in <strong>Settings → Devices &amp; services → Entities</strong>. Removing the entity deletes its entry from Home Assistant's Entity Registry; Home Assistant then invokes <code>async_will_remove_from_hass()</code>, which confirms the registry entry is gone and permanently clears the repair issue from the Issue Registry. Because physical 3550 traffic is addressed to <code>#0</code>, bus sweeps will never resurrect or invent Zone 99. (If an installation physically contains a 99th zone thermostat, genuine traffic addressed to zone 99 will discover and manage it normally).</li>
 <li><strong>YAML &amp; Bus Coalescing</strong>: When configured in <code>myhome.yaml</code> (e.g. <code>zone: "#0"</code> named <code>Centrale termoregolazione</code>), the YAML device and bus discovery coalesce cleanly on address <code>#0</code>, routing all broadcast traffic to the configured entity without creating a duplicate <code>Climate Zone 0</code> entity.</li>
+</ul>
+</li>
 </ul>
 <h3 id="cover-position-is-wrong">Cover position is wrong<a class="headerlink" href="#cover-position-is-wrong" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2824,12 +2830,14 @@
 <h3 id="playing-music-to-a-room-vs-backend-streamer-why-you-should-never-group-them">Playing music to a room vs. backend streamer (Why you should never group them)<a class="headerlink" href="#playing-music-to-a-room-vs-backend-streamer-why-you-should-never-group-them" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Question / Misconception:</strong> <em>"The streamer plugged into the matrix is <code>Livingroom 1_3519</code>, but I want to hear music in <code>Bathroom</code>. Should I create a group containing <code>Livingroom 1_3519</code> and <code>Bathroom</code> so both play?"</em></li>
-<li><strong>Solution:</strong> <strong>No! Never group your backend streamer with a destination room.</strong></li>
+<li><strong>Solution:</strong> <strong>No! Never group your backend streamer with a destination room.</strong><ul>
 <li>Map <code>Livingroom 1_3519</code> as a <strong>Decoder</strong> in MyHOME options (<strong>Configure → Decoders</strong>).</li>
 <li>In Music Assistant, target and play directly to <strong><code>Bathroom</code></strong>.</li>
 <li>Behind the scenes, MyHOME automatically claims the streamer from the pool, wakes the Bathroom amplifier, routes the F441/F441M matrix to that input, and forwards the stream URL to the streamer.</li>
 <li>Grouping the streamer and the room causes Music Assistant to stream to both the physical streamer and the virtual proxy at the same time, leading to stream collisions, desynchronization, or audio loops.</li>
 <li>Groups in Music Assistant are <strong>only</strong> for multi-room playback across <strong>multiple destination rooms</strong> (e.g., Bathroom + Living Room). Never add the backend streamer to that group.</li>
+</ul>
+</li>
 </ul>
 <h3 id="how-can-you-have-stereo-with-only-2-wires-do-i-need-an-l4561n-interface">How can you have stereo with only 2 wires? / Do I need an L4561N interface?<a class="headerlink" href="#how-can-you-have-stereo-with-only-2-wires-do-i-need-an-l4561n-interface" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2856,19 +2864,21 @@
 <ul>
 <li><strong>Symptoms</strong>: Repair issue <code>shared_bus_detected</code> appears in <strong>Settings → System → Repairs</strong>, duplicate entities are created, or startup sweeps trigger bus collisions.</li>
 <li><strong>Log lines</strong>:
-  <code>Recorded shared bus TX echo #1/3 between &lt;mac_a&gt; and &lt;mac_b&gt; (delta &lt;N&gt;ms)</code></li>
-<li><strong>What to check</strong>:</li>
+    <code>Recorded shared bus TX echo #1/3 between &lt;mac_a&gt; and &lt;mac_b&gt; (delta &lt;N&gt;ms)</code></li>
+<li><strong>What to check</strong>:<ol>
 <li>Open the Repair issue and review the automated recommendation.</li>
 <li>Click <strong>Submit</strong> to apply the inferred topology automatically (1-click repair).</li>
 <li>If configuring manually in <strong>Configure</strong>, set <code>bus_topology: shared</code> on both gateways, designate one as <code>primary</code>, and point the follower at the primary.</li>
+</ol>
+</li>
 </ul>
 <h4 id="how-to-inspect-automated-topology-inference-decisions">How to inspect automated topology inference decisions<a class="headerlink" href="#how-to-inspect-automated-topology-inference-decisions" title="Permanent link">&para;</a></h4>
 <ul>
 <li><strong>Log lines</strong>:
-  <code>Evaluating shared bus topology between &lt;Model A&gt; and &lt;Model B&gt;...</code>
-  <code>Inferred shared bus topology: Primary=&lt;Model&gt; (&lt;MAC&gt;), Follower=&lt;Model&gt; (&lt;MAC&gt;, role=&lt;role&gt;, delegated=&lt;whos&gt;)...</code></li>
+    <code>Evaluating shared bus topology between &lt;Model A&gt; and &lt;Model B&gt;...</code>
+    <code>Inferred shared bus topology: Primary=&lt;Model&gt; (&lt;MAC&gt;), Follower=&lt;Model&gt; (&lt;MAC&gt;, role=&lt;role&gt;, delegated=&lt;whos&gt;)...</code></li>
 <li><strong>What it tells you</strong>:
-  The log details the exact hardware tiers, supported WHOs, capability delta formula ($\Delta = S_{\text{sec}} \setminus S_{\text{pri}}$), and tie-breaking rule used to assign the primary and follower roles.</li>
+    The log details the exact hardware tiers, supported WHOs, capability delta formula (<code>Δ = S_sec \ S_pri</code>), and tie-breaking rule used to assign the primary and follower roles.</li>
 </ul>
 <h4 id="gateway-failover-active-gateway_failover_active">Gateway Failover Active (<code>gateway_failover_active</code>)<a class="headerlink" href="#gateway-failover-active-gateway_failover_active" title="Permanent link">&para;</a></h4>
 <ul>

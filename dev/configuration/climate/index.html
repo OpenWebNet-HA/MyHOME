@@ -2233,13 +2233,15 @@
 <li><strong>Hardware</strong>: Central thermoregulation unit (BTicino <code>3550</code>, MyHOME_Screen 10, or MyHOME_Screen 3.5) operating at master address <code>WHERE = #0</code>.</li>
 <li><strong>Subordinate Zones</strong>: Individual room zones (<code>WHERE = 1..99</code>) with local probes (<code>L4693</code>, <code>H4693</code>, <code>LN4693</code>, etc.) and <code>F430/2</code> or <code>F430/4</code> flush/DIN actuators.</li>
 <li><strong>Operation</strong>: The integration discovers the central unit (<code>#0</code>) as the master <code>climate</code> entity and each individual zone (<code>1..99</code>) as a controllable <code>climate</code> device. Subordinate zone setpoint and mode commands use the central-unit-routed <code>#Z</code> address format (<code>*#4*#Z*#14*TTTT*M##</code>, <code>*4*311*#Z##</code>, <code>*4*303*#Z##</code>).</li>
-<li><strong>Startup &amp; Reconnect Status Burst (<code>*#4*#0##</code>)</strong>: On startup (including on SCS-only gateways such as <code>MH200N</code> and <code>F454</code>), the central unit entity queries <code>*#4*#0##</code>. The <code>3550</code> responds with its operating mode frame (e.g. <code>*4*1101*#0##</code> for Heating Weekly Program 1, <code>*4*110#0200*#0##</code> for Manual 20.0 °C, or <code>*4*102*#0##</code> for Antifreeze/Protection) followed by diagnostic status frames (<code>WHAT 20..24, 30, 31</code>), exposed on the <code>#0</code> entity as state attributes:</li>
+<li><strong>Startup &amp; Reconnect Status Burst (<code>*#4*#0##</code>)</strong>: On startup (including on SCS-only gateways such as <code>MH200N</code> and <code>F454</code>), the central unit entity queries <code>*#4*#0##</code>. The <code>3550</code> responds with its operating mode frame (e.g. <code>*4*1101*#0##</code> for Heating Weekly Program 1, <code>*4*110#0200*#0##</code> for Manual 20.0 °C, or <code>*4*102*#0##</code> for Antifreeze/Protection) followed by diagnostic status frames (<code>WHAT 20..24, 30, 31</code>), exposed on the <code>#0</code> entity as state attributes:<ul>
 <li><code>remote_control</code>: <code>"enabled"</code> (<code>*4*21*#0##</code>) or <code>"disabled"</code> (<code>*4*20*#0##</code>, raises the self-clearing <code>central_remote_control_disabled</code> repair issue).</li>
 <li><code>at_least_one_probe_off</code>: <code>true</code> when <code>*4*22*#0##</code> is reported in the current burst.</li>
 <li><code>at_least_one_probe_antifreeze</code>: <code>true</code> when <code>*4*23*#0##</code> is reported in the current burst.</li>
 <li><code>at_least_one_probe_manual</code>: <code>true</code> when <code>*4*24*#0##</code> is reported in the current burst.</li>
 <li><code>failure_detected</code>: <code>true</code> when <code>*4*30*#0##</code> (<code>Failure discovered in a zone</code>) is reported in the current burst.</li>
 <li><code>battery_fault</code>: <code>true</code> when <code>*4*31*#0##</code> (<code>Central unit battery KO</code>) is reported in the current burst (raises the self-clearing <code>central_battery_fault</code> repair issue).</li>
+</ul>
+</li>
 <li><strong>Remote Control (<em>Telegestione</em>) Requirement</strong>: On a physical BTicino <code>3550</code>, <strong>Remote Control (<em>Telegestione</em>)</strong> must be set to <strong>Enabled (<em>Abilitata</em>)</strong> in the <code>3550</code> menu (<code>*4*21*#0##</code>) for the central unit to accept remote commands over the bus. When <code>*4*20*#0##</code> is active, the gateway still replies <code>*#*1##</code> (ACK), but the <code>3550</code> ignores remote mode and setpoint writes.</li>
 <li><strong>Subordinate Zone Control Patterns (<code>Auto</code> vs <code>Manual</code>)</strong>:</li>
 </ul>
@@ -2293,11 +2295,13 @@ To publish Home Assistant temperature sensors (e.g. Zigbee room thermometers, we
 <h2 id="supported-features-hvac-modes">🎛️ Supported Features &amp; HVAC Modes<a class="headerlink" href="#supported-features-hvac-modes" title="Permanent link">&para;</a></h2>
 <p>MyHOME climate entities support standard Home Assistant climate controls:</p>
 <ul>
-<li><strong>HVAC Modes</strong>:</li>
+<li><strong>HVAC Modes</strong>:<ul>
 <li><code>heat</code>: System active in heating mode.</li>
 <li><code>cool</code>: System active in cooling / air-conditioning mode.</li>
 <li><code>auto</code>: Following scheduled setpoint or central program.</li>
 <li><code>off</code>: System frost-protection or thermal shutdown.</li>
+</ul>
+</li>
 <li><strong>Target Temperature</strong>: Adjustable setpoint slider in 0.5 °C increments.
   The slider shows the setpoint the thermostat regulates to (dimension 12, knob offset included) whenever the zone has reported it; the commanded setpoint (dimension 14) is only shown until then. On an F461 the two can differ (21.0 commanded, 23.5 in force on a live capture), and the attribute <code>local_target_temperature</code> carries the same value. When the zone leaves <code>off</code>, the value reported while it was off is taken as the protection setpoint (#383), so the commanded setpoint is shown until the zone reports dimension 12 again; after a <code>set_temperature</code> call the next report, dimension 12 or 14, is shown. The value restored after a restart of Home Assistant already carries the saved <code>local_offset</code>, so the first dimension 13 report does not add it again.</li>
 <li><strong>Current Temperature</strong>: Real-time ambient reading reported by the probe.

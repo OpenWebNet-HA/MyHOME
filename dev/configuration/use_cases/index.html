@@ -2420,13 +2420,17 @@
 <p>The integration emits a single native OpenWebNet broadcast frame (<code>*2*2*0#4#02##</code>). All actuators energize simultaneously in total synchrony with zero bus queue latency and zero dropped frames. No artificial <code>delay:</code> or manual <code>cover.stop_cover</code> is needed—actuators stop cleanly on their own limit switches.</p>
 <h2 id="11-decoupled-bathroom-extractor-fan-with-smart-overrun-humidity-boost-single-f411-contact">11. Decoupled bathroom extractor fan with smart overrun &amp; humidity boost (single F411 contact)<a class="headerlink" href="#11-decoupled-bathroom-extractor-fan-with-smart-overrun-humidity-boost-single-f411-contact" title="Permanent link">&para;</a></h2>
 <p>In traditional BTicino MyHome wiring, bathroom extractor fans are often configured as hardware slaves (<code>M=SLA</code> or off-delay <code>M=1..4</code>) sharing the exact same <code>A</code> and <code>PL</code> address as the bathroom light actuator. While this turns the fan on whenever the light turns on, an actuator in <code>M=SLA</code> cannot be commanded independently by Home Assistant without also turning the light on, because both physical relays listen to the identical OpenWebNet <code>A*PL</code> broadcast telegram.</p>
-<p>Instead of wasting a second contact and wiring two relays in parallel, <strong>decouple the fan contact on your F411</strong> by giving it its own distinct Point address:
-- <strong>Output 1 (Light)</strong>: <code>A=1, PL1=1</code>, <code>M = [empty]</code> (Address <code>11</code>, discovered as <code>light.bathroom_light</code>).
-- <strong>Output 2 (Fan)</strong>: <code>A=1, PL2=2</code>, <code>M = [empty]</code> (Address <code>12</code>, discovered as <code>switch.bathroom_fan</code> or shown as a Fan via UI).</p>
-<p>Home Assistant now coordinates the master/slave link with far more flexibility than hardware configurators:
-- When the bathroom light is turned on at the wall switch, Home Assistant immediately turns on the fan.
-- When the light is turned off, Home Assistant engages an overrun timer (e.g. 10 minutes) using <code>myhome.turn_on_timed</code> so the fan automatically switches off at the bus hardware level even if Home Assistant restarts.
-- Because the fan has its own address, Home Assistant can also trigger high-humidity purges or boost ventilation independently without turning on the ceiling light.</p>
+<p>Instead of wasting a second contact and wiring two relays in parallel, <strong>decouple the fan contact on your F411</strong> by giving it its own distinct Point address:</p>
+<ul>
+<li><strong>Output 1 (Light)</strong>: <code>A=1, PL1=1</code>, <code>M = [empty]</code> (Address <code>11</code>, discovered as <code>light.bathroom_light</code>).</li>
+<li><strong>Output 2 (Fan)</strong>: <code>A=1, PL2=2</code>, <code>M = [empty]</code> (Address <code>12</code>, discovered as <code>switch.bathroom_fan</code> or shown as a Fan via UI).</li>
+</ul>
+<p>Home Assistant now coordinates the master/slave link with far more flexibility than hardware configurators:</p>
+<ul>
+<li>When the bathroom light is turned on at the wall switch, Home Assistant immediately turns on the fan.</li>
+<li>When the light is turned off, Home Assistant engages an overrun timer (e.g. 10 minutes) using <code>myhome.turn_on_timed</code> so the fan automatically switches off at the bus hardware level even if Home Assistant restarts.</li>
+<li>Because the fan has its own address, Home Assistant can also trigger high-humidity purges or boost ventilation independently without turning on the ceiling light.</li>
+</ul>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">automation</span><span class="p">:</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="s">"Bathroom</span><span class="nv"> </span><span class="s">Fan</span><span class="nv"> </span><span class="s">-</span><span class="nv"> </span><span class="s">Follow</span><span class="nv"> </span><span class="s">Light</span><span class="nv"> </span><span class="s">with</span><span class="nv"> </span><span class="s">Overrun"</span>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bathroom_fan_follow_light</span>

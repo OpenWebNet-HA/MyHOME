@@ -2512,10 +2512,12 @@
 <ol>
 <li>Once Home Assistant restarts, navigate to <strong>Settings → Devices &amp; Services</strong>.</li>
 <li>If your gateway is discovered automatically via SSDP/mDNS, click <strong>Configure</strong>.</li>
-<li>Otherwise, click <strong>Add Integration</strong>, search for <strong>MyHOME</strong>, and enter:</li>
+<li>Otherwise, click <strong>Add Integration</strong>, search for <strong>MyHOME</strong>, and enter:<ul>
 <li><strong>Host</strong>: IP address of your gateway.</li>
 <li><strong>Port</strong>: <code>20000</code>.</li>
 <li><strong>Password</strong>: OpenWebNet password (or HMAC password for MyHomeServer1).</li>
+</ul>
+</li>
 <li>Home Assistant connects to the gateway, starts the command and event sessions, and automatically discovers your connected bus actuators and sensors.</li>
 </ol>
 <h3 id="are-existing-entity-ids-preserved">Are Existing Entity IDs Preserved?<a class="headerlink" href="#are-existing-entity-ids-preserved" title="Permanent link">&para;</a></h3>

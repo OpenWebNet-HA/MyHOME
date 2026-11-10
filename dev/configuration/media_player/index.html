@@ -3121,20 +3121,27 @@
 <ol>
 <li><strong>Cable the hardware:</strong> Connect the analog line output of each streamer into an audio source interface (e.g. L4561N, 3482, or L4560) connected to a free F441/F441M source input (S1–S4).</li>
 <li><strong>Add the streamer to Home Assistant:</strong> Use its native integration (for example Squeezelite via Music Assistant's Slimproto provider, WiiM, Cast, or DLNA DMR). It must show up as an active <code>media_player</code> entity.</li>
-<li><strong>Configure MyHOME Options:</strong> Open <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong>:</li>
+<li>
+<p><strong>Configure MyHOME Options:</strong> Open <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong>:</p>
+<ul>
 <li><strong>Source names</strong> (<em>Source 1</em>–<em>Source 4</em>): name what is physically wired to each input (e.g. <code>S1 — WiiM Streamer</code>) and leave unused inputs blank.</li>
 <li><strong>Default source per environment</strong> (optional): set which source a room starts on when switched on.</li>
-<li><strong>Decoder rows</strong> (up to 4): map each streamer's <code>media_player</code> entity to its matrix input (S1–S4), and set an optional pre-gain offset (e.g. <code>+15%</code>). See <a href="#gain-staging-bus-noise-elimination">Gain Staging</a>.
+<li><strong>Decoder rows</strong> (up to 4): map each streamer's <code>media_player</code> entity to its matrix input (S1–S4), and set an optional pre-gain offset (e.g. <code>+15%</code>). See <a href="#gain-staging-bus-noise-elimination">Gain Staging</a>.</li>
+</ul>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>Mapping at least one decoder in this step is what unlocks streaming support (<code>play_media</code>) on your MyHOME room entities.</p>
 </div>
 </li>
-<li><strong>Check the room entities:</strong> Each amplifier zone appears as a <code>media_player</code> entity under the MyHOME gateway.</li>
-<li><strong>Set up Music Assistant:</strong></li>
+<li>
+<p><strong>Check the room entities:</strong> Each amplifier zone appears as a <code>media_player</code> entity under the MyHOME gateway.</p>
+</li>
+<li><strong>Set up Music Assistant:</strong><ul>
 <li>Add the <strong>Home Assistant Player Provider</strong> in Music Assistant (<strong>Settings → Providers → Add Provider → Home Assistant</strong>).</li>
 <li>Under provider settings, select and enable your MyHOME room amplifier entities (<code>media_player.&lt;room&gt;</code>).</li>
 <li>For smooth multi-room listening across the whole house, create a <a href="#recommended-one-music-assistant-sync-group-for-the-house">Sync Group</a> with <strong>Dynamic members ON</strong>.</li>
+</ul>
+</li>
 <li><strong>Dashboard:</strong> The stock <code>media-control</code> and <code>tile</code> cards work directly on the room entities. See <a href="#dashboard-display-lovelace-speaker-cards">Dashboard Display</a> for ready-made cards, including dynamic cards that only display actively playing rooms.</li>
 </ol>
 <hr />
@@ -3146,10 +3153,12 @@
 </div>
 <p>Here is why and how the Dynamic Proxy architecture works:</p>
 <ol>
-<li><strong>Understand the distinct roles:</strong></li>
+<li><strong>Understand the distinct roles:</strong><ul>
 <li><strong>Backend Streamer / Decoder</strong> (e.g., <code>media_player.livingroom_1_3519</code>, WiiM, Squeezelite): This is the physical hardware audio streamer plugged into the matrix input. It is registered in the <strong>MyHOME Decoder Pool</strong> (via <strong>Configure → Decoders</strong>). It serves as an internal audio feeder. You do <strong>not</strong> target it for playback, and you do <strong>not</strong> add it to speaker groups.</li>
 <li><strong>Destination Room</strong> (e.g., <code>media_player.bathroom_sound</code>): This is the BTicino room amplifier powering the speakers in that room.</li>
-<li><strong>How to play music in a room (e.g. Bathroom):</strong></li>
+</ul>
+</li>
+<li><strong>How to play music in a room (e.g. Bathroom):</strong><ul>
 <li>Simply select the <strong>Bathroom</strong> player in Music Assistant (or Home Assistant) and press play!</li>
 <li>You do <strong>not</strong> touch or select <code>Livingroom 1_3519</code>.</li>
 <li>Behind the scenes, the MyHOME integration automatically:<ul>
@@ -3160,11 +3169,17 @@
 <li>Mirrors the track title, artist, album art, and volume back onto <code>media_player.bathroom_sound</code>.</li>
 </ul>
 </li>
-<li><strong>What happens if you group the streamer with the room:</strong></li>
+</ul>
+</li>
+<li><strong>What happens if you group the streamer with the room:</strong><ul>
 <li>Music Assistant attempts to stream simultaneously to both the physical streamer (<code>Livingroom 1_3519</code>) and the virtual room proxy (<code>Bathroom</code>). This causes duplicated streams, desynchronized playback, queue collisions, or feedback loops.</li>
-<li><strong>When do you use groups?</strong></li>
+</ul>
+</li>
+<li><strong>When do you use groups?</strong><ul>
 <li>Groups are used <strong>only</strong> when you want to play the same audio across <strong>multiple destination rooms at the same time</strong> (e.g., <code>Bathroom</code> + <code>Kitchen</code> + <code>Living Room</code>).</li>
 <li>Even in a multi-room group: <strong>only add the MyHOME room entities — never add the backend streamer!</strong></li>
+</ul>
+</li>
 </ol>
 <hr />
 <h3 id="exposing-myhome-rooms-in-music-assistant-home-assistant-player-provider">Exposing MyHOME Rooms in Music Assistant (Home Assistant Player Provider)<a class="headerlink" href="#exposing-myhome-rooms-in-music-assistant-home-assistant-player-provider" title="Permanent link">&para;</a></h3>
@@ -3383,19 +3398,20 @@ matrix routing to the wall panels.</p>
 <ol>
 <li><strong>Physical Cabling</strong>: Connect the analog output of your network streamer (e.g. Raspberry Pi running Squeezelite, WiiM Pro, Cambridge Audio) into physical Source 1 on the F441M matrix.</li>
 <li><strong>Matrix Configuration</strong>: Configure your room amplifiers (or physical wall panels) to stay routed to Source 1.</li>
-<li><strong>Automated Power Sequence</strong>: When a stream starts, the integration proxy:</li>
+<li><strong>Automated Power Sequence</strong>: When a stream starts, the integration proxy:<ul>
 <li>Claims an idle decoder from the shared <strong>Decoder Pool</strong>.</li>
 <li>Wakes the decoder if it is in standby.</li>
 <li>Powers the BTicino amplifier on with an OFF → ON sequence (<code>*16*13*&lt;WHERE&gt;##</code>, then <code>*16*3*&lt;WHERE&gt;##</code>) if it is not already on.</li>
 <li>Forwards the stream URL to the streaming decoder.</li>
 <li>Mirrors track metadata (title, artist, album art) and state back onto the Home Assistant room entity.</li>
+</ul>
+</li>
 <li><strong>Shutdown &amp; Release</strong>: When the zone is turned off, the amplifier powers off (<code>*16*13*&lt;WHERE&gt;##</code>), playback on the decoder is stopped and the decoder is released back to the idle pool.</li>
 </ol>
 <hr />
 <h2 id="gain-staging-bus-noise-elimination">🎛️ Gain Staging &amp; Bus Noise Elimination<a class="headerlink" href="#gain-staging-bus-noise-elimination" title="Permanent link">&para;</a></h2>
 <p>Analog SCS audio matrices can suffer from faint ground-loop hum or bus hiss if the input signal level is too low and the room amplifiers have to be turned up to ~75% to reach normal listening volume.</p>
-<p>The MyHOME integration features <strong>fixed line-level hardware gain staging</strong>:
-$$\text{Decoder Volume} = \min(1.0,\; 0.75 + \text{Pre-Gain Offset})$$</p>
+<p>The MyHOME integration features <strong>fixed line-level hardware gain staging</strong> (<code>Decoder Volume = min(1.0, 0.75 + Pre-Gain Offset)</code>):</p>
 <ul>
 <li>When <code>pre_gain</code> is <code>0</code> (<em>Pre-Amp OFF</em>), the backend decoder's volume is left untouched.</li>
 <li>Setting <code>pre_gain &gt; 0</code> (e.g., <code>+20%</code> → <code>95%</code> feed volume, or <code>+25%</code>–<code>+100%</code> → <code>100%</code> full line-level feed) drives the network streamer at a fixed high line-level feed as soon as playback starts, resumes, or a multi-room group is joined / handed over / unparked, independent of any individual room's volume slider.</li>
@@ -3419,11 +3435,13 @@ room's amplifier still switches off.</p>
 <li>Click <strong>Configure</strong>.</li>
 <li><strong>Source names</strong> (<em>Source 1</em>–<em>Source 4</em>): name what is wired to each F441M input and leave unused inputs blank. See <a href="#naming-your-sources">Naming your sources</a>.</li>
 <li><strong>Default source for environment N</strong> (one field per environment with audio zones): pick a source, or keep <em>Leave routing as it is</em>. See <a href="#default-source-per-environment">Default source per environment</a>.</li>
-<li><strong>Decoder mapping</strong>, one row per streaming decoder (up to 4):</li>
+<li><strong>Decoder mapping</strong>, one row per streaming decoder (up to 4):<ul>
 <li><strong>Media player entity</strong>: your backend player (e.g. <code>media_player.squeezelite_salon</code>).</li>
 <li><strong>Source input</strong>: the F441M input it is wired to, chosen from a list that shows your source names (e.g. <code>S1 — Streamer</code>).</li>
 <li><strong>Pre-gain offset</strong>: percentage added to the 75% baseline decoder feed volume (0–100 %, e.g. <code>20</code> for 95% feed or <code>25</code>–<code>100</code> for 100% line-level feed; <code>0</code> = Pre-Amp OFF). See <a href="#gain-staging-bus-noise-elimination">Gain Staging</a>.</li>
 <li>A decoder that is paused from outside (for example a Spotify Connect session started on the device) and not held by one of your zones is left alone by <code>play_media</code> for <strong>5 minutes</strong>; after that it counts as free. This applies to the streaming companion of a two-entity decoder as well.</li>
+</ul>
+</li>
 <li>Click <strong>Submit</strong>.</li>
 </ol>
 <p>Naming a source or setting a default is what switches on automatic routing for
@@ -3454,31 +3472,44 @@ empty keeps the wall-panel routing in charge.</p>
 <li><strong>While music plays</strong>, unticking the sync leader makes Music Assistant re-form the group around the remaining rooms and resume from the same position. This costs the short gap explained in <a href="#why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the group leader gives a short gap</a>.</li>
 </ul>
 <h3 id="how-grouping-works-with-the-analog-matrix">How Grouping Works with the Analog Matrix<a class="headerlink" href="#how-grouping-works-with-the-analog-matrix" title="Permanent link">&para;</a></h3>
-<p>When using <strong>Music Assistant (MA)</strong> or Home Assistant's <code>media_player.join</code> service:
-1. <strong>Single Backend Stream</strong>: Only the group <strong>leader</strong> claims a network decoder from the decoder pool and requests the audio stream (e.g. from Spotify, Tidal, or local FLAC).
-2. <strong>Matrix Route Sharing</strong>: Each joined <strong>member</strong> zone routes its physical environment output to the leader's matrix source input (<code>*16*3*1ES##</code>) and powers on its room amplifier (<code>*16*3*&lt;WHERE&gt;##</code>). Routing follows the same opt-in as the rest of the integration: until you name a source or set an environment default, the wall-panel routing is left alone and only the member amplifiers are switched on. A member only shows the leader's track while it is actually on the leader's input.
-3. <strong>Adding to an existing group is additive</strong>: the <code>group_members</code> a join call names are added to whoever is already grouped — an existing member is never dropped by joining a new one. Music Assistant's own player calls join this way (only the newly added rooms) and always removes a member with a separate <code>unjoin</code>, never by naming a smaller group. <strong>Removing a room is <code>media_player.unjoin</code> on that room, and only that</strong>: a <code>media_player.join</code> call that names fewer rooms than are grouped (for example a script or a dashboard card sending the full selection it wants) adds the ones that are new and leaves the others in the group.
-4. <strong>Cross-Environment &amp; Same-Environment Synchrony</strong>:
-   - Zones in different environments (e.g. Environment 2 living room and Environment 3 kitchen) are bridged to the same analog source input, guaranteeing <strong>zero latency</strong> and perfectly aligned analog audio across rooms.
-   - Zones within the same environment share the matrix output physically.
-5. <strong>Environment Isolation Protection</strong>:
-   - The F441 / F441M matrix routes an entire environment to one input. If an attempt is made to join a zone whose environment is already actively streaming from another decoder, the operation is rejected with an <code>environment_busy</code> error to prevent cutting off an active listener in that environment. The check runs for every requested member before anything is switched, so a refused join changes nothing. A group that is not playing yet does not block its environments.
-6. <strong>A decoder paused by another player is left alone</strong>: a decoder that someone paused from outside (for example a Spotify Connect session started straight on the device) is not handed to <code>play_media</code> during the first 5 minutes of that pause; after that it counts as free, so a forgotten pause cannot lock the input for good. A decoder that one of your zones holds is unaffected.
-7. <strong>Dynamic Disbanding &amp; Member Lifecycle</strong>:
-   - <strong>Leader turns off</strong> (Home Assistant <code>turn_off</code>, or OFF at a wall panel) <strong>while rooms are still in its group</strong>: the group is handed to the first remaining member exactly as for <code>unjoin</code> (see below). Only the leader's own amplifier is switched off; the decoder keeps streaming and the other rooms keep their routes. The last room of a group turning off still stops the decoder and releases it. <strong>This changes what OFF on the room you started in means</strong>: it used to end the party in every room, now that room leaves and the others keep playing. To stop everything, stop the playback (pause or stop in Music Assistant, or <code>media_stop</code> on the leader), or turn off the last remaining room. <strong>Music Assistant will still interrupt the music for a moment when this happens</strong>; see <a href="#why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the leader gives a gap</a>.
-   - <strong>The music stops on its own</strong>: when the leader's decoder goes idle or off, or stays paused, the anti-hiss timer (see below) switches every amplifier of the group off, but the group itself stays as it was, so the group you built in Music Assistant is still there. While parked, the rooms report <code>paused</code> (or <code>idle</code>) and not <code>off</code>, since Music Assistant dissolves a group whose leader is off. Pressing play (or <code>media_play</code>, <code>play_media</code>, <code>turn_on</code>) on the leader wakes the leader and all its members again, routed to the leader's input. Turning the leader of a <em>parked</em> group off (from Home Assistant or a wall panel) disbands it, since it is silent already and that is the "I want silence". A <em>playing</em> leader turned off hands the group on instead (see below). If another room needs the decoder meanwhile, it takes it and the parked group is dissolved.
-   - <strong>Leader calls <code>unjoin</code></strong>: Leadership and the claimed decoder are handed over to the first remaining member atomically, and the old leader's amplifier is powered off. On the bus nothing is interrupted: the new leader and the other members stay on the same matrix input. The player that <em>Music Assistant</em> is playing to does change, though, and that costs a short gap (see below).
-   - <strong>Member leaves the group</strong>: unjoining removes it from the group at once, but its amplifier keeps playing through a <strong>5-second grace period</strong> rather than being switched off immediately — covering the same room being reassigned elsewhere right after. The same grace period applies when a room joining a group was itself leading a different one: that group's other members are orphaned and get the same treatment. Powering the room off immediately would create an audible gap for no reason. If nothing claims the room again within the grace period (<code>play_media</code>, <code>turn_on</code>, or being joined into another group), it is switched off exactly as before, just up to 5 seconds later.
-   - <strong>Tuner groups are restored too</strong>: a group playing a tuner (F500) has no decoder that could confirm it, so it is restored as soon as its amplifiers report on, not on a decoder's say-so.
-   - <strong>Known limit: nothing is sent to the bus at startup</strong>: a member that was moved to another input at a wall panel while Home Assistant was down is restored onto its old leader's decoder, because the bus cannot be asked which input a room is on. The next status report of that room corrects it, and until then the leader's stop switches it off like any other member.
-   - <strong>Physical Wall Switch Interaction</strong>: Pressing OFF on a physical wall control sends a bus OFF frame which immediately cleans up group membership in Home Assistant. The OFF → ON wake sequence the integration sends itself is recognised and ignored for 3 seconds; a wall-switch OFF inside that window is corrected by the zone's next status report.
-   - <strong>Groups survive a restart or reload</strong>: who holds which decoder and who is grouped with whom is saved after every change and restored when the integration starts, since the amplifiers keep playing through a restart. Nothing is sent to the bus. A restored room only counts once its amplifier has reported on the bus: one that reports off gives its books up, one that reports on takes its decoder (or its place in the group) back, and one that has not reported within 2 minutes (a zone that no longer exists) is dropped, so it cannot hold a decoder for good. A room that was renamed or deleted while Home Assistant was down is dropped at once, without waiting. A decoder you moved to another matrix input in the options while Home Assistant was down comes back unclaimed: the books remember which input it was on, and a claim for a different input is dropped. While a restored room's decoder is not playing, the rules below switch it off like any other room.
-   - <strong>Rooms nobody owns follow the music off</strong>: an amplifier that is on plays whatever its environment is routed to, whether or not it is in a group. A room can be on without being in any group in the books (a wall panel can put it on a decoder's input at any time, and groups saved before an outage may be stale). Such a room is switched off when the decoder it hears stops — 3 seconds after it goes idle, standby or off, 60 seconds after it pauses — exactly like the room that owns the decoder, and only if it still hears that decoder when the timer runs out (a room moved to another input, given a decoder of its own, or put to work in a group meanwhile stays on). A decoder that resumes (<code>playing</code> or <code>buffering</code>) inside that window cancels it, which also covers decoder integrations that report <code>off</code> for a moment while they reconnect; <code>unavailable</code> and <code>unknown</code> are ignored. If the decoder or the delay changes while a timer runs (moved to another decoder's input, paused then stopped), the timer is restarted for the new one. Group members are left to their leader. The input is the one last reported on the bus; the bus cannot be asked for it, so right after a restart the environment's <strong>default source</strong> stands in. Set defaults for the environments you use.</p>
-<div class="language-text highlight"><pre><span></span><code> &gt; **After a Home Assistant restart, a room may switch itself off within a few seconds if it was left on an input other than its environment's default** — for example on the tuner while the default is a decoder that is not playing. Turn it back on (or pick its source again at the wall panel) and it stays on: the bus has then reported its real input.
-</code></pre></div>
-<ul>
-<li><strong>Rooms found on at startup</strong>: the gateway's startup sweep asks the bus which amplifiers are on (<code>*#16*0*5##</code>). Gateway profiles that leave WHO=16 out of that sweep (the MH200's) instead have each zone ask for its own status (<code>*#16*&lt;zone&gt;*5##</code>) when it is added, so a restart no longer leaves every room showing off. A room reported on in that first status while its decoder is not playing is switched off the same way; a decoder that is two entities (hardware plus streaming companion) counts as playing if either one plays, and one that does not report yet is decided by its first state change. Rooms you switch on afterwards (from Home Assistant or a wall panel) are left alone until the decoder plays and stops again, so you can turn a room on and then start a Spotify Connect session on the decoder. Rooms on an input no decoder is wired to (a tuner) are never touched. A room the restored groups say owns a decoder is judged by that decoder in the same way.</li>
+<p>When using <strong>Music Assistant (MA)</strong> or Home Assistant's <code>media_player.join</code> service:</p>
+<ol>
+<li><strong>Single Backend Stream</strong>: Only the group <strong>leader</strong> claims a network decoder from the decoder pool and requests the audio stream (e.g. from Spotify, Tidal, or local FLAC).</li>
+<li><strong>Matrix Route Sharing</strong>: Each joined <strong>member</strong> zone routes its physical environment output to the leader's matrix source input (<code>*16*3*1ES##</code>) and powers on its room amplifier (<code>*16*3*&lt;WHERE&gt;##</code>). Routing follows the same opt-in as the rest of the integration: until you name a source or set an environment default, the wall-panel routing is left alone and only the member amplifiers are switched on. A member only shows the leader's track while it is actually on the leader's input.</li>
+<li><strong>Adding to an existing group is additive</strong>: the <code>group_members</code> a join call names are added to whoever is already grouped — an existing member is never dropped by joining a new one. Music Assistant's own player calls join this way (only the newly added rooms) and always removes a member with a separate <code>unjoin</code>, never by naming a smaller group. <strong>Removing a room is <code>media_player.unjoin</code> on that room, and only that</strong>: a <code>media_player.join</code> call that names fewer rooms than are grouped (for example a script or a dashboard card sending the full selection it wants) adds the ones that are new and leaves the others in the group.</li>
+<li><strong>Cross-Environment &amp; Same-Environment Synchrony</strong>:<ul>
+<li>Zones in different environments (e.g. Environment 2 living room and Environment 3 kitchen) are bridged to the same analog source input, guaranteeing <strong>zero latency</strong> and perfectly aligned analog audio across rooms.</li>
+<li>Zones within the same environment share the matrix output physically.</li>
 </ul>
+</li>
+<li><strong>Environment Isolation Protection</strong>:<ul>
+<li>The F441 / F441M matrix routes an entire environment to one input. If an attempt is made to join a zone whose environment is already actively streaming from another decoder, the operation is rejected with an <code>environment_busy</code> error to prevent cutting off an active listener in that environment. The check runs for every requested member before anything is switched, so a refused join changes nothing. A group that is not playing yet does not block its environments.</li>
+</ul>
+</li>
+<li><strong>A decoder paused by another player is left alone</strong>: a decoder that someone paused from outside (for example a Spotify Connect session started straight on the device) is not handed to <code>play_media</code> during the first 5 minutes of that pause; after that it counts as free, so a forgotten pause cannot lock the input for good. A decoder that one of your zones holds is unaffected.</li>
+<li>
+<p><strong>Dynamic Disbanding &amp; Member Lifecycle</strong>:</p>
+<ul>
+<li><strong>Leader turns off</strong> (Home Assistant <code>turn_off</code>, or OFF at a wall panel) <strong>while rooms are still in its group</strong>: the group is handed to the first remaining member exactly as for <code>unjoin</code> (see below). Only the leader's own amplifier is switched off; the decoder keeps streaming and the other rooms keep their routes. The last room of a group turning off still stops the decoder and releases it. <strong>This changes what OFF on the room you started in means</strong>: it used to end the party in every room, now that room leaves and the others keep playing. To stop everything, stop the playback (pause or stop in Music Assistant, or <code>media_stop</code> on the leader), or turn off the last remaining room. <strong>Music Assistant will still interrupt the music for a moment when this happens</strong>; see <a href="#why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the leader gives a gap</a>.</li>
+<li><strong>The music stops on its own</strong>: when the leader's decoder goes idle or off, or stays paused, the anti-hiss timer (see below) switches every amplifier of the group off, but the group itself stays as it was, so the group you built in Music Assistant is still there. While parked, the rooms report <code>paused</code> (or <code>idle</code>) and not <code>off</code>, since Music Assistant dissolves a group whose leader is off. Pressing play (or <code>media_play</code>, <code>play_media</code>, <code>turn_on</code>) on the leader wakes the leader and all its members again, routed to the leader's input. Turning the leader of a <em>parked</em> group off (from Home Assistant or a wall panel) disbands it, since it is silent already and that is the "I want silence". A <em>playing</em> leader turned off hands the group on instead (see below). If another room needs the decoder meanwhile, it takes it and the parked group is dissolved.</li>
+<li><strong>Leader calls <code>unjoin</code></strong>: Leadership and the claimed decoder are handed over to the first remaining member atomically, and the old leader's amplifier is powered off. On the bus nothing is interrupted: the new leader and the other members stay on the same matrix input. The player that <em>Music Assistant</em> is playing to does change, though, and that costs a short gap (see below).</li>
+<li><strong>Member leaves the group</strong>: unjoining removes it from the group at once, but its amplifier keeps playing through a <strong>5-second grace period</strong> rather than being switched off immediately — covering the same room being reassigned elsewhere right after. The same grace period applies when a room joining a group was itself leading a different one: that group's other members are orphaned and get the same treatment. Powering the room off immediately would create an audible gap for no reason. If nothing claims the room again within the grace period (<code>play_media</code>, <code>turn_on</code>, or being joined into another group), it is switched off exactly as before, just up to 5 seconds later.</li>
+<li><strong>Tuner groups are restored too</strong>: a group playing a tuner (F500) has no decoder that could confirm it, so it is restored as soon as its amplifiers report on, not on a decoder's say-so.</li>
+<li><strong>Known limit: nothing is sent to the bus at startup</strong>: a member that was moved to another input at a wall panel while Home Assistant was down is restored onto its old leader's decoder, because the bus cannot be asked which input a room is on. The next status report of that room corrects it, and until then the leader's stop switches it off like any other member.</li>
+<li><strong>Physical Wall Switch Interaction</strong>: Pressing OFF on a physical wall control sends a bus OFF frame which immediately cleans up group membership in Home Assistant. The OFF → ON wake sequence the integration sends itself is recognised and ignored for 3 seconds; a wall-switch OFF inside that window is corrected by the zone's next status report.</li>
+<li><strong>Groups survive a restart or reload</strong>: who holds which decoder and who is grouped with whom is saved after every change and restored when the integration starts, since the amplifiers keep playing through a restart. Nothing is sent to the bus. A restored room only counts once its amplifier has reported on the bus: one that reports off gives its books up, one that reports on takes its decoder (or its place in the group) back, and one that has not reported within 2 minutes (a zone that no longer exists) is dropped, so it cannot hold a decoder for good. A room that was renamed or deleted while Home Assistant was down is dropped at once, without waiting. A decoder you moved to another matrix input in the options while Home Assistant was down comes back unclaimed: the books remember which input it was on, and a claim for a different input is dropped. While a restored room's decoder is not playing, the rules below switch it off like any other room.</li>
+<li>
+<p><strong>Rooms nobody owns follow the music off</strong>: an amplifier that is on plays whatever its environment is routed to, whether or not it is in a group. A room can be on without being in any group in the books (a wall panel can put it on a decoder's input at any time, and groups saved before an outage may be stale). Such a room is switched off when the decoder it hears stops — 3 seconds after it goes idle, standby or off, 60 seconds after it pauses — exactly like the room that owns the decoder, and only if it still hears that decoder when the timer runs out (a room moved to another input, given a decoder of its own, or put to work in a group meanwhile stays on). A decoder that resumes (<code>playing</code> or <code>buffering</code>) inside that window cancels it, which also covers decoder integrations that report <code>off</code> for a moment while they reconnect; <code>unavailable</code> and <code>unknown</code> are ignored. If the decoder or the delay changes while a timer runs (moved to another decoder's input, paused then stopped), the timer is restarted for the new one. Group members are left to their leader. The input is the one last reported on the bus; the bus cannot be asked for it, so right after a restart the environment's <strong>default source</strong> stands in. Set defaults for the environments you use.</p>
+<blockquote>
+<p><strong>After a Home Assistant restart, a room may switch itself off within a few seconds if it was left on an input other than its environment's default</strong> — for example on the tuner while the default is a decoder that is not playing. Turn it back on (or pick its source again at the wall panel) and it stays on: the bus has then reported its real input.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>Rooms found on at startup</strong>: the gateway's startup sweep asks the bus which amplifiers are on (<code>*#16*0*5##</code>). Gateway profiles that leave WHO=16 out of that sweep (the MH200's) instead have each zone ask for its own status (<code>*#16*&lt;zone&gt;*5##</code>) when it is added, so a restart no longer leaves every room showing off. A room reported on in that first status while its decoder is not playing is switched off the same way; a decoder that is two entities (hardware plus streaming companion) counts as playing if either one plays, and one that does not report yet is decided by its first state change. Rooms you switch on afterwards (from Home Assistant or a wall panel) are left alone until the decoder plays and stops again, so you can turn a room on and then start a Spotify Connect session on the decoder. Rooms on an input no decoder is wired to (a tuner) are never touched. A room the restored groups say owns a decoder is judged by that decoder in the same way.</p>
+</li>
+</ul>
+</li>
+</ol>
 <hr />
 <h3 id="why-deselecting-the-group-leader-gives-a-short-gap">Why deselecting the group leader gives a short gap<a class="headerlink" href="#why-deselecting-the-group-leader-gives-a-short-gap" title="Permanent link">&para;</a></h3>
 <blockquote>
@@ -3509,10 +3540,12 @@ empty keeps the wall-panel routing in charge.</p>
 <h3 id="the-cambridge-audio-dilemma">The Cambridge Audio Dilemma<a class="headerlink" href="#the-cambridge-audio-dilemma" title="Permanent link">&para;</a></h3>
 <p>The native Home Assistant <code>cambridge_audio</code> integration (for CXN, CXN V2, Edge NQ, Evo 75/150, MXN10, AXN10) uses the Cambridge StreamMagic API. By design, it only accepts built-in presets, Airable, and internet radio — it <strong>does not accept raw HTTP stream URLs</strong> from Music Assistant or Home Assistant, raising an <code>unsupported_media_type</code> exception.</p>
 <h3 id="solution-configure-via-dlna-digital-media-renderer-dmr">Solution: Configure via DLNA Digital Media Renderer (DMR)<a class="headerlink" href="#solution-configure-via-dlna-digital-media-renderer-dmr" title="Permanent link">&para;</a></h3>
-<p>To stream seamlessly to Cambridge Audio network players:
-1. Enable UPnP / DLNA in the Cambridge StreamMagic app settings.
-2. In Home Assistant, install the <strong>DLNA Digital Media Renderer</strong> integration. It will automatically discover your Cambridge Audio streamer (e.g. <code>media_player.cxn_v2_dlna</code>).
-3. In <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong> -&gt; <strong>Configure</strong>, map the DLNA DMR entity as your decoder instead of the native <code>cambridge_audio</code> entity.</p>
+<p>To stream seamlessly to Cambridge Audio network players:</p>
+<ol>
+<li>Enable UPnP / DLNA in the Cambridge StreamMagic app settings.</li>
+<li>In Home Assistant, install the <strong>DLNA Digital Media Renderer</strong> integration. It will automatically discover your Cambridge Audio streamer (e.g. <code>media_player.cxn_v2_dlna</code>).</li>
+<li>In <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>MyHOME</strong> -&gt; <strong>Configure</strong>, map the DLNA DMR entity as your decoder instead of the native <code>cambridge_audio</code> entity.</li>
+</ol>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p><strong>Streaming companion</strong>: each decoder slot has an optional <strong>Streaming companion</strong> field. Leave it empty and MyHOME looks for the DLNA / UPnP / Cast renderer of the same device, then of the same MAC, then of the same host, then of a device with exactly the same name. If a step finds several different devices (two identical streamers in the rack) MyHOME does not guess: it raises the <em>Several streaming companions found</em> repair and keeps that decoder off streams until you pick the entity here. Control and volume always stay on the decoder entity; only stream URLs go to the companion.</p>
@@ -3525,10 +3558,12 @@ The <code>cambridge_audio</code> decoder stays in the pool: it still provides pa
 </div>
 <hr />
 <h2 id="passive-source-metadata-tracking-streamer-first-workflow">🎧 Passive Source &amp; Metadata Tracking (Streamer-First Workflow)<a class="headerlink" href="#passive-source-metadata-tracking-streamer-first-workflow" title="Permanent link">&para;</a></h2>
-<p>You do not need to initiate playback through Home Assistant or Music Assistant to see track metadata:
-- If you start Spotify Connect, TIDAL Connect, AirPlay, or internet radio directly in the Cambridge StreamMagic or WiiM mobile app, or via a physical matrix source (CD player, tuner):
-- Any BTicino zone turned ON and routed to that physical source automatically mirrors track title, artist name, album art, and transport state (<code>PLAYING</code>, <code>PAUSED</code>).
-- Transport controls (<code>media_play</code>, <code>media_pause</code>, <code>media_next_track</code>, <code>media_previous_track</code>) operated from the Home Assistant zone card are automatically forwarded to the active source decoder.</p>
+<p>You do not need to initiate playback through Home Assistant or Music Assistant to see track metadata:</p>
+<ul>
+<li>If you start Spotify Connect, TIDAL Connect, AirPlay, or internet radio directly in the Cambridge StreamMagic or WiiM mobile app, or via a physical matrix source (CD player, tuner):</li>
+<li>Any BTicino zone turned ON and routed to that physical source automatically mirrors track title, artist name, album art, and transport state (<code>PLAYING</code>, <code>PAUSED</code>).</li>
+<li>Transport controls (<code>media_play</code>, <code>media_pause</code>, <code>media_next_track</code>, <code>media_previous_track</code>) operated from the Home Assistant zone card are automatically forwarded to the active source decoder.</li>
+</ul>
 <hr />
 <h2 id="standalone-fallback-mode-no-decoders">📻 Standalone Fallback Mode (No Decoders)<a class="headerlink" href="#standalone-fallback-mode-no-decoders" title="Permanent link">&para;</a></h2>
 <p>If you do not configure any streaming decoders in the Options Flow, the room amplifier entities operate in <strong>Native WHO = 16 Mode</strong>:</p>

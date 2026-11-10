@@ -2185,8 +2185,10 @@ The v2 architecture is currently published as preview/beta releases from the <co
 Always ensure integration files reside in <code>/config/custom_components/myhome/</code>. Never extract files directly into <code>/config/custom_components/</code> root, and never retain backup directories inside <code>custom_components/</code> (e.g. <code>custom_components/myhome_old/</code>). In modern Home Assistant cores, extra Python packages or stray <code>__init__.py</code> files in <code>custom_components/</code> can prevent all custom integrations from loading.</p>
 </div>
 <ol>
-<li>Restart Home Assistant:</li>
+<li>Restart Home Assistant:<ul>
 <li>Go to <strong>Developer Tools → YAML → Restart</strong> (or <strong>Settings → System → Restart</strong>).</li>
+</ul>
+</li>
 </ol>
 <hr />
 <h2 id="option-2-installation-via-hacs-custom-repository">Option 2: Installation via HACS (Custom Repository)<a class="headerlink" href="#option-2-installation-via-hacs-custom-repository" title="Permanent link">&para;</a></h2>

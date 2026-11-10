@@ -2327,7 +2327,7 @@
 <li><strong>Source File</strong>: <code>blueprints/automation/myhome/dusk_curfew.yaml</code></li>
 <li><strong>Manual Installation</strong>:
   Download <code>dusk_curfew.yaml</code> and save it to <code>&lt;config&gt;/blueprints/automation/myhome/dusk_curfew.yaml</code> in your Home Assistant configuration directory.</li>
-<li><strong>Key Features</strong>:</li>
+<li><strong>Key Features</strong>:<ul>
 <li><strong>Bedtime Curfew</strong>: Enforces a strict cutoff time (<code>curfew_time</code>, e.g. <code>23:00:00</code>) to turn off the hardware-coupled light and all companion lights.</li>
 <li><strong>Configurable Morning Curfew End</strong>: Configurable <code>curfew_end_time</code> (default <code>06:00:00</code>), after which daytime behavior resumes.</li>
 <li><strong>Max Run Duration</strong>: Optional timeout (e.g. 180 minutes) to guarantee the light turns off even on dark winter afternoons when dusk occurs early.</li>
@@ -2343,6 +2343,8 @@
 <li><strong>Reconnection Resilience</strong>: Uses <code>from: "off"</code> to ensure temporary gateway drops or Home Assistant restarts (<code>unavailable -&gt; on</code>) do not re-run curfew sequences in the middle of the night.</li>
 <li><strong>Turn-Ons During Curfew</strong>: A turn-on between <code>curfew_time</code> and <code>curfew_end_time</code> is turned off after 2 minutes. This includes deliberate turn-ons from a wall switch; use the <code>pause_automation</code> override if you need the light for longer at night.</li>
 <li><strong>Restarts</strong>: Home Assistant does not keep a running <code>max_duration</code> timer across a restart; the curfew still applies afterwards.</li>
+</ul>
+</li>
 </ul>
 <h3 id="example-automation-configuration">Example Automation Configuration<a class="headerlink" href="#example-automation-configuration" title="Permanent link">&para;</a></h3>
 <div class="admonition note">
@@ -2397,15 +2399,21 @@
 <h3 id="option-b-configure-3477-as-a-dry-contact-interface-who-25">Option B: Configure 3477 as a Dry Contact Interface (<code>WHO = 25</code>)<a class="headerlink" href="#option-b-configure-3477-as-a-dry-contact-interface-who-25" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Using <strong>MyHOME_Suite</strong> (Virtual Configuration), reconfigure the 3477 contact interface into <strong>Dry Contact Mode</strong> (<code>WHO = 25</code>, virtual address range 1..201).</li>
-<li><strong>Result</strong>: The interface transmits OpenWebNet dry contact frames where <code>WHAT</code> is <code>31</code> for contact closed and <code>32</code> for contact open:</li>
+<li><strong>Result</strong>: The interface transmits OpenWebNet dry contact frames where <code>WHAT</code> is <code>31</code> for contact closed and <code>32</code> for contact open:<ul>
 <li>Contact closed (dusk): <code>*25*31#1*WHERE##</code></li>
 <li>Contact opened (dawn): <code>*25*32#1*WHERE##</code></li>
-<li>In Home Assistant, the contact is discovered automatically the first time it changes state (see <a href="../../configuration/binary-sensors/">Binary Sensors</a>). The contact closes at dusk, so the sensor reads <code>on</code> when it is dark. If you want Home Assistant's <strong>Light</strong> device class (<code>on</code> = light detected) without editing YAML:</li>
+</ul>
+</li>
+<li>In Home Assistant, the contact is discovered automatically the first time it changes state (see <a href="../../configuration/binary-sensors/">Binary Sensors</a>). The contact closes at dusk, so the sensor reads <code>on</code> when it is dark. If you want Home Assistant's <strong>Light</strong> device class (<code>on</code> = light detected) without editing YAML:<ul>
 <li>Open the dry contact entity settings and set <strong>Show as</strong> to <strong>Light</strong>.</li>
 <li>On the device page under <strong>Configuration</strong>, enable the <strong>Invert state</strong> toggle (<code>inverted: true</code> in <code>myhome.yaml</code> also remains supported).</li>
-<li>You now have full separation of concerns:</li>
+</ul>
+</li>
+<li>You now have full separation of concerns:<ul>
 <li>The dry contact binary sensor accurately mirrors daylight/darkness in real time.</li>
 <li><code>light.light_98</code> remains a pure actuator controlled exclusively by Home Assistant schedules, presence logic, and automations.</li>
+</ul>
+</li>
 </ol>
 
 

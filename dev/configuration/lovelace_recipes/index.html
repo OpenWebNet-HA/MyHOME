@@ -2442,10 +2442,12 @@ When no music is playing throughout your home, this entire card collapses and ta
 <hr />
 <h3 id="pattern-b-dedicated-multi-room-audio-control-view-sections-layout">Pattern B: Dedicated Multi-Room Audio Control View (Sections Layout)<a class="headerlink" href="#pattern-b-dedicated-multi-room-audio-control-view-sections-layout" title="Permanent link">&para;</a></h3>
 <p>For a dedicated whole-home music dashboard (e.g. <code>/lovelace/audio</code>), Home Assistant's modern <strong>Sections</strong> layout allows organizing zones by floor or area.</p>
-<p>Each section includes:
-* <strong>Interactive Source Selector Chips</strong>: Tap to route the BTicino matrix to physical sources (e.g. <code>Radio</code>, <code>Streamer</code>). The chip illuminates amber when that source is active.
-* <strong>All-Off Master Chip</strong>: A one-tap red power button to turn off all amplifiers on that floor.
-* <strong>Full-Width Room Players</strong>: Independent volume adjustments and transport controls for every amplifier.</p>
+<p>Each section includes:</p>
+<ul>
+<li><strong>Interactive Source Selector Chips</strong>: Tap to route the BTicino matrix to physical sources (e.g. <code>Radio</code>, <code>Streamer</code>). The chip illuminates amber when that source is active.</li>
+<li><strong>All-Off Master Chip</strong>: A one-tap red power button to turn off all amplifiers on that floor.</li>
+<li><strong>Full-Width Room Players</strong>: Independent volume adjustments and transport controls for every amplifier.</li>
+</ul>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sections</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Audio</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">audio</span>
@@ -2866,17 +2868,19 @@ When no music is playing throughout your home, this entire card collapses and ta
 <p><strong>Workflow</strong>: if your shutter takes longer than the <code>25 s</code> default (e.g. a <code>60–90 s</code> shutter), first set a temporary larger <code>travel_time</code> (such as <code>180</code> s) via <code>myhome.set_cover_travel_time</code> so the cover does not settle before you press <strong>Stop</strong>. Then press <strong>Close</strong> on the first row, press <strong>Stop</strong> the instant the shutter physically reaches the bottom, check <em>Last run</em> / <em>Last run direction</em>, and press <strong>Save</strong> (never click <strong>Save</strong> after an unattended <code>~60 s</code> <code>M=0</code> or <code>~120 s</code> <code>M=1</code> actuator hardware cutoff). Repeat with <strong>Open</strong>. <code>calibration_source</code> flips to <code>manual</code> and the position slider follows the new times immediately.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>Only want the number at a glance? A Markdown card does it in one line:
+<p>Only want the number at a glance? A Markdown card does it in one line:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown</span>
 </span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">content</span><span class="p">:</span><span class="w"> </span><span class="s">"Last</span><span class="nv"> </span><span class="s">run:</span><span class="nv"> </span><span class="s">**{{</span><span class="nv"> </span><span class="s">state_attr('cover.living_room_shutter',</span><span class="nv"> </span><span class="s">'last_run_seconds')</span><span class="nv"> </span><span class="s">}}</span><span class="nv"> </span><span class="s">s**</span><span class="nv"> </span><span class="s">({{</span><span class="nv"> </span><span class="s">state_attr('cover.living_room_shutter',</span><span class="nv"> </span><span class="s">'last_run_direction')</span><span class="nv"> </span><span class="s">}})"</span>
 </span></code></pre></div>
-The measurement itself is done by the integration — the clock starts at the real motor start on the bus, so the queue delay is never in the number; only your reaction time on <strong>Stop</strong> is.</p>
+<p>The measurement itself is done by the integration — the clock starts at the real motor start on the bus, so the queue delay is never in the number; only your reaction time on <strong>Stop</strong> is.</p>
 </div>
 <hr />
 <h2 id="recipe-7-bticino-3550-central-unit-multi-zone-heating-control">🔥 Recipe 7: BTicino 3550 Central Unit &amp; Multi-Zone Heating Control<a class="headerlink" href="#recipe-7-bticino-3550-central-unit-multi-zone-heating-control" title="Permanent link">&para;</a></h2>
-<p>For plants with a <strong>BTicino 3550</strong> (99-zone central unit at <code>WHERE = #0</code>) and subordinate room zones (<code>WHERE = 1..99</code>), this recipe combines:
-1. A <strong>Central Unit status &amp; health header</strong> displaying the active weekly program (<code>program</code>), remote-control state (<code>remote_control</code>), battery health (<code>battery_fault</code>), and manual-override status (<code>at_least_one_probe_manual</code>).
-2. <strong>Per-room thermostat cards</strong> with instant setpoint override and a one-tap <strong>Return All Zones to 3550 Schedule (<code>Auto</code>)</strong> button.</p>
+<p>For plants with a <strong>BTicino 3550</strong> (99-zone central unit at <code>WHERE = #0</code>) and subordinate room zones (<code>WHERE = 1..99</code>), this recipe combines:</p>
+<ol>
+<li>A <strong>Central Unit status &amp; health header</strong> displaying the active weekly program (<code>program</code>), remote-control state (<code>remote_control</code>), battery health (<code>battery_fault</code>), and manual-override status (<code>at_least_one_probe_manual</code>).</li>
+<li><strong>Per-room thermostat cards</strong> with instant setpoint override and a one-tap <strong>Return All Zones to 3550 Schedule (<code>Auto</code>)</strong> button.</li>
+</ol>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vertical-stack</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">cards</span><span class="p">:</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">conditional</span>

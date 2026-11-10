@@ -2154,8 +2154,10 @@
 <h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
 <p>When your gateway connects to Home Assistant:</p>
 <ol>
-<li><strong>Dynamic Bus Discovery</strong>: The first central-unit frame on the SCS bus that names the panel (for example the <code>*5*9*0##</code> a disarmed panel sends when polled, or <code>*5*8*0##</code> when it is armed) registers the <code>alarm_control_panel</code> entity.</li>
+<li><strong>Dynamic Bus Discovery</strong>: The first central-unit frame on the SCS bus that names the panel (for example the <code>*5*9*0##</code> a disarmed panel sends when polled, or <code>*5*8*0##</code> when it is armed) registers the <code>alarm_control_panel</code> entity.<ul>
 <li><strong>Depends on the gateway.</strong> An MH202 answers a poll with <code>*5*9*0##</code>, so the panel appears at once (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/564">#564</a>). An F454 answers with system-level frames that have an empty WHERE (<code>*5*1*##</code>, <code>*5*5*##</code>, <code>*5*7*##</code>, <code>*5*9*##</code>, see <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/311">#311</a>), and MyHOME deliberately creates no entity from an empty WHERE. On such a gateway the panel appears at the first <code>*5*8*0##</code> or <code>*5*9*0##</code>, that is the first real arm or disarm after a blank start.</li>
+</ul>
+</li>
 <li><strong>Global Broadcast Zone 0 Listening</strong>: Entities follow global broadcast zone 0 telemetry (<code>myhome_update_&lt;mac&gt;_5_0</code>) alongside their own address (<code>myhome_update_&lt;mac&gt;_5_&lt;where&gt;</code>), so every alarm panel stays in sync.</li>
 <li><strong>UI Customization</strong>: You can rename the alarm panel, assign it to an Area (e.g. <em>Entrance</em>, <em>Security</em>), and change its icon in the Home Assistant UI.</li>
 </ol>
