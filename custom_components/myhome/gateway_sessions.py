@@ -526,7 +526,7 @@ def _is_status_report_item(item: Any) -> bool:
     )
 
 
-_WHO4_QUERY_RE = re.compile(r"^\*#4\*(?P<where>[^#*]+(?:#[^*]+)*)(?:\*(?P<dim>\d+))?##$")
+_WHO4_QUERY_RE = re.compile(r"^\*#4\*(?P<where>[^#*]+(?:#[^#*]+)*)(?:\*(?P<dim>\d+))?##$")
 _WHO4_REPLY_RE = re.compile(
     r"^\*(?:#4\*(?P<dim_where>[^*]+)\*.*|4\*[^*]+\*(?P<act_where>[^*]+))##$"
 )

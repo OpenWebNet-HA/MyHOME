@@ -588,6 +588,15 @@ async def test_pause_status_edge_cases_and_mixed_non_who4_collected_frames(
         _mismatched_who4_reply_zones("*#4*60##", ["*1*1*11##", "*#4*34*0*0146##"])
         == {"34"}
     )
+    # Multi-segment WHERE (`#4#01`) and linear-time rejection of malformed `#`-repeated input (CodeQL py/redos)
+    assert (
+        _mismatched_who4_reply_zones("*#4*60#4#01*60##", ["*#4*34#4#01*60*55##"])
+        == {"34"}
+    )
+    assert (
+        _mismatched_who4_reply_zones("*#4*1" + "#a" * 40 + "!", ["*#4*34*0*0146##"])
+        is None
+    )
 
     scheduler = FrameScheduler()
     try:
