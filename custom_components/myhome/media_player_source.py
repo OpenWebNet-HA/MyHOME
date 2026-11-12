@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNSoundCommand
 
@@ -234,15 +235,21 @@ class ZoneSourceLayer(ZoneBase):
         )
 
     async def _apply_default_source(self) -> None:
-        """Route this zone's environment to its default source, if one is set.
+        """Route this zone's environment to its pending or default source, if set.
 
-        Only called when the zone is switched on from Home Assistant. Routing
-        announced by a wall panel is left untouched — see
+        Only called when the zone is switched on from Home Assistant. If the
+        user explicitly selected a source while the zone was off, that choice
+        takes precedence and is re-sent unconditionally after the amplifier
+        wake sequence (which wakes the hardware on its stored input and would
+        otherwise clobber the earlier route within ``_ROUTE_REPEAT_WINDOW``).
+        Routing announced by a wall panel is left untouched — see
         :func:`_warn_unconfigured_source` — and so is an environment where
         another zone is streaming: the route is shared, and switching it would
         take that zone off its stream.
         """
-        target = self._default_source()
+        pending = self._selected_source_while_off
+        self._selected_source_while_off = None
+        target = pending if pending is not None else self._default_source()
         if target is None:
             return
         streamer = self._environment_streamer()
@@ -254,7 +261,7 @@ class ZoneSourceLayer(ZoneBase):
                 streamer,
             )
             return
-        await self._route_to(target, coalesce=True)
+        await self._route_to(target, coalesce=(pending is None))
 
     @property
     def source_list(self) -> list[str]:
@@ -313,5 +320,8 @@ class ZoneSourceLayer(ZoneBase):
             environment = str(zone_environment(self._where))
             raise self._environment_busy_error(streamer, environment)
 
+        self._selected_source_while_off = (
+            source_num if self._attr_state != MediaPlayerState.ON else None
+        )
         await self._route_to(source_num)
         self.async_schedule_update_ha_state()

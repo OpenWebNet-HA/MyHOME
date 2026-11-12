@@ -742,15 +742,19 @@ def who22_source_id(message: Any) -> int | None:
     if str(getattr(message, "who", "")) != "22":
         return None
     known = getattr(message, "source_id", None)
-    if isinstance(known, int):
+    if isinstance(known, int) and not isinstance(known, bool):
         return known
     where = getattr(message, "where", None)
     if where is None:
         return None
-    param = getattr(message, "where_param", None)
-    if param is None:
-        param = getattr(message, "_where_param", None)
-    parts = [str(where), *(str(p) for p in (param or []))]
+    where_str = str(where)
+    if "#" in where_str:
+        parts = where_str.split("#")
+    else:
+        param = getattr(message, "where_param", None)
+        if param is None:
+            param = getattr(message, "_where_param", None)
+        parts = [where_str, *(str(p) for p in (param or []))]
     if len(parts) == 2 and parts[0] == "2" and parts[1].isdigit():
         return int(parts[1])
     if len(parts) == 3 and parts[0] == "5" and parts[1] == "2" and parts[2].isdigit():
@@ -769,9 +773,29 @@ def who22_tuner_listener(sources: list[MyHOMESoundSource]) -> Callable[[Any], No
     @callback
     def listener(message: Any) -> None:
         source_id = who22_source_id(message)
-        if source_id is None:
-            return
-        source = by_source.get(source_id)
+        if source_id is not None:
+            source = by_source.get(source_id)
+        elif (
+            str(getattr(message, "who", "")) == "22"
+            and getattr(message, "where", None) == ""
+            and not (
+                getattr(message, "where_param", None)
+                or getattr(message, "_where_param", None)
+            )
+            and str(getattr(message, "dimension", "")) in ("5", "10", "11")
+        ):
+            # H/L4684 bt_multi firmware bug: < 100.0 MHz frequency/RDS reports
+            # can be emitted with an empty WHERE (*#22**5*1*9650##). Route to
+            # the sole declared tuner, or the single ON tuner when several exist.
+            if len(sources) == 1:
+                source = sources[0]
+            else:
+                active = [
+                    s for s in sources if s._attr_state == MediaPlayerState.ON
+                ]
+                source = active[0] if len(active) == 1 else None
+        else:
+            source = None
         if source is not None:
             source.handle_who22_event(message)
 
