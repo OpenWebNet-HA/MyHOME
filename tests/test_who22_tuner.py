@@ -429,8 +429,8 @@ async def test_who22_only_gateway_outbound_commands(hass):
 
     sent_cmds = [str(call.args[0]) for call in gw.send.call_args_list]
     assert sent_cmds == [
-        "*22*1*2#1##",
-        "*22*0*2#1##",
+        "*22*1#4#1*2#1##",
+        "*22*0#4#0*2#1##",
         "*22*9*2#1##",
         "*22*10*2#1##",
         "*22*5*2#1##",
