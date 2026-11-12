@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.climate.const import HVACAction, HVACMode
 from homeassistant.exceptions import ServiceValidationError
-from OWNd.message import OWNEvent
+from OWNd.message import OWNEvent, OWNHeatingCommand
 
 FRAMES = json.loads(
     (Path(__file__).parent / "fixtures" / "traces" / "climate_mode_2026_11_08" / "frames.json").read_text()
@@ -224,7 +224,9 @@ async def test_central_off_and_auto_stay_immediate() -> None:
     assert central.hvac_mode == HVACMode.OFF
     await central.async_set_hvac_mode(HVACMode.AUTO)
     assert central.hvac_mode == HVACMode.AUTO
-    assert _sent(gateway) == ["*4*303*#0##", "*4*311*#0##"]
+    sent = _sent(gateway)
+    assert sent == ["*4*303*#0##", str(OWNHeatingCommand.set_central_mode("#0", "auto"))]
+    assert sent[1] in {"*4*311*#0##", "*4*3100*#0##"}  # 2.0.0b13 / the 3100 builder, both traced live
 
 
 # F6: the F455's echo of Home Assistant's own #0 command is not a 3550 report.
