@@ -46,6 +46,7 @@ MyHOME installations typically deploy one of three climate topologies, all nativ
 ### 3. Standalone Probes (No Central Unit)
 * **Hardware**: Autonomous room thermostats (BTicino `H4691`, `LN4691`, `L4692`) acting as independent temperature controllers without a master central display.
 * **Operation**: Each thermostat is exposed directly as an independent `climate` entity with full target setpoint and mode control.
+* **Modes offered**: on a plant that also has a central unit, a standalone thermostat does not offer `auto` once the central unit is known (the central unit has no program for it: the live F461 ACKs `*4*311*#2##` and nothing answers; `auto` on zone 2 was refused on both gateway entries, 2026-11-12). A zone *of* the central unit does not offer the off-season mode while the season is reported (`heat` on zone 4 of a 3550 in conditioning was refused, 2026-11-12). The mode a zone shows is never dropped from the list.
 
 ---
 

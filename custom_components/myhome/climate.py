@@ -624,16 +624,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # HVACMode.OFF is always available, so climate.turn_off / turn_on must be
         # advertised explicitly (mandatory since core 2025.1).
         self._attr_supported_features = ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
-        self._attr_hvac_modes = [HVACMode.OFF]
         self._heating = heating
         self._cooling = cooling
         if heating or cooling:
             self._attr_supported_features |= ClimateEntityFeature.TARGET_TEMPERATURE
-            self._attr_hvac_modes.append(HVACMode.AUTO)
-            if heating:
-                self._attr_hvac_modes.append(HVACMode.HEAT)
-            if cooling:
-                self._attr_hvac_modes.append(HVACMode.COOL)
+        self._attr_hvac_modes = self._advertised_hvac_modes()
 
         # Fan mode support (fancoil 3-speed + auto)
         self._fan: bool = False
@@ -872,10 +867,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if last_state is not None and last_state.state is not None:
             try:
                 restored_mode = HVACMode(last_state.state)
-                if restored_mode in self._attr_hvac_modes:
+                # Any configured mode is restored (the plant's next frames replace it); the
+                # advertised list is recomputed around it.
+                if restored_mode in self._configured_hvac_modes():
                     self._attr_hvac_mode = restored_mode
                 else:
                     self._attr_hvac_mode = HVACMode.OFF
+                self._refresh_hvac_modes()
             except (ValueError, TypeError):
                 self._attr_hvac_mode = HVACMode.OFF
             self._hvac_mode_restored = True
@@ -1336,6 +1334,60 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return self._standalone_config
         return getattr(self._gateway_handler, "has_central_unit", False) is not True
 
+    def _configured_hvac_modes(self) -> list[HVACMode]:
+        """Every mode the zone's configuration allows, before the plant's topology is applied."""
+        modes = [HVACMode.OFF]
+        if self._heating or self._cooling:
+            modes.append(HVACMode.AUTO)
+            if self._heating:
+                modes.append(HVACMode.HEAT)
+            if self._cooling:
+                modes.append(HVACMode.COOL)
+        return modes
+
+    def _advertised_hvac_modes(self) -> list[HVACMode]:
+        """The modes ``async_set_hvac_mode`` can honour for this zone's place in the plant.
+
+        ``auto`` is the central unit's program: a standalone thermostat on a plant with a
+        central unit has none (``*4*311*#2##`` is ACKed by the live F461 and nothing answers;
+        ``auto`` on zone 2 answered HTTP 400 on both gateway entries, 2026-11-12 14:37 UTC),
+        so it is not offered once the central unit is known. A zone of the central unit runs
+        in the central's season: the off-season mode (``heat`` in conditioning, 2026-11-12
+        15:13 UTC on zone 4, HTTP 400) is not offered while that season is reported. The
+        central unit itself and a standalone thermostat without a central unit keep every
+        mode. The mode shown is never dropped (Home Assistant lists it).
+        """
+        modes = [HVACMode.OFF]
+        if self._heating or self._cooling:
+            has_central = getattr(self._gateway_handler, "has_central_unit", False) is True
+            if self._central or not (self._standalone and has_central):
+                modes.append(HVACMode.AUTO)
+            # Called from the constructor before the season fields exist.
+            season = getattr(self, "_season", None)
+            under_central = (
+                not self._central
+                and not self._standalone
+                and has_central
+                and getattr(self, "_season_reported", False)
+                and season is not None
+            )
+            if self._heating and not (under_central and season in _CONDITIONING_SEASONS):
+                modes.append(HVACMode.HEAT)
+            if self._cooling and not (under_central and season == SEASON_HEATING):
+                modes.append(HVACMode.COOL)
+        current = getattr(self, "_attr_hvac_mode", None)
+        if current is not None and current not in modes:
+            modes.append(current)
+        return modes
+
+    def _refresh_hvac_modes(self) -> bool:
+        """Recompute the advertised modes; True when the list changed."""
+        modes = self._advertised_hvac_modes()
+        if modes == self._attr_hvac_modes:
+            return False
+        self._attr_hvac_modes = modes
+        return True
+
     def _remember_season(self, message: Any) -> None:
         """Keep the season a mode frame carries (``*4*102*#0##`` heating, ``*4*202*#0##`` conditioning).
 
@@ -1503,6 +1555,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._attr_hvac_mode != HVACMode.OFF and HVACMode.AUTO in self._attr_hvac_modes:
                 self._attr_hvac_mode = HVACMode.AUTO
         self._hydrate_nominal_from_local(prev_mode)
+        self._refresh_hvac_modes()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -2136,6 +2189,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             previous_season = self._season
             self._season = message.season
             self._season_reported = True
+            self._refresh_hvac_modes()
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
             if self._central or standalone_mode or self._attr_hvac_mode in (None, HVACMode.OFF):
@@ -2178,6 +2232,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if raw_what in ("0", "1") and not self._central:
                 self._season = SEASON_HEATING if raw_what == "1" else "cooling"
                 self._season_reported = True
+                self._refresh_hvac_modes()
                 self._follow_season_change(previous_season)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
