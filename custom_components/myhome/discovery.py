@@ -625,7 +625,7 @@ class PlatformDiscovery:
         if not unique_id or not isinstance(primary_mac, str) or not primary_mac or not self._is_follower:
             return False
         peer = peer_unique_id(unique_id, self.mac, primary_mac)
-        return peer is not None and registry.async_get_entity_id(self.platform, DOMAIN, peer) is not None
+        return peer is not None and isinstance(registry.async_get_entity_id(self.platform, DOMAIN, peer), str)
 
     def _discovers(self) -> bool:
         """Whether this gateway creates new entities of this platform's WHO from bus traffic.
@@ -647,8 +647,12 @@ class PlatformDiscovery:
             return []
         created: list[MyHOMEEntity] = list(built) if isinstance(built, (list, tuple)) else [cast(MyHOMEEntity, built)]
         keys = list(self.known_keys(ctx))
-        if ctx.source == "bus" and self._is_follower:
+        if ctx.source in ("bus", "yaml") and self._is_follower:
             # A delegated WHO: a device the primary found before the delegation stays there.
+            # The same for a myhome.yaml device of a follower: restore() has just pruned
+            # its registry entry as a duplicate of the primary's, so configure() must not
+            # create it again (a live F455 standby re-created all 17 pruned entities at
+            # every start, polled them and commanded the bus through them, 2026-11-12).
             registry, _entries = self.registry_entries()
             if registry is not None:
                 created = [e for e in created if not self._owned_by_primary(registry, e.unique_id)]
