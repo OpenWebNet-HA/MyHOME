@@ -198,6 +198,10 @@ async def test_async_setup_entry_temperature_illuminance_and_legacy_power(mock_h
             registered = [call[0][0] for call in mock_platform.async_register_entity_service.call_args_list]
             assert "start_sending_instant_power" in registered
             assert "stop_sending_instant_power" in registered
+            # Only power sensors carry the streaming methods (report 33 F1: an energy
+            # sensor raised AttributeError, HTTP 500).
+            for call in mock_platform.async_register_entity_service.call_args_list:
+                assert tuple(call.kwargs["entity_device_classes"]) == (SensorDeviceClass.POWER,)
     finally:
         entity_platform.current_platform.reset(platform_token)
 
