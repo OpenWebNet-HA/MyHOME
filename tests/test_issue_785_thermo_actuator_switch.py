@@ -199,6 +199,26 @@ def test_parse_thermo_actuator_where_valid_and_invalid() -> None:
         parse_thermo_actuator_where("7#1#4#01", "02")
 
 
+def test_thermo_event_interface_leaves_a_split_unit_address_unrouted() -> None:
+    """A Dimension 22 split-unit ``3#Z#N`` with zone 4 is not interface N (OWNd #164 / #168).
+
+    ``*#4*3#4#1*22##`` is the published split-control request, ``*#4*3#Z#N*22##`` with
+    ``Z = 0..99``, ``N = 1..9`` (Encyclopedia ``who-4-temperature-control/dimensions.md``
+    "DIMENSION 22 - split control", WHO 4 PDF pp. 66-68); ``Z = 4`` is the grammar value
+    that the former ``where_param`` fallback misread as an interface (no plant capture of
+    a split unit exists in the fixtures). ``*#4*1#4#01*20*1##`` is the routed F422 form from
+    ``tests/test_issue_431.py``.
+    """
+    split_unit = OWNMessage.parse("*#4*3#4#1*22##")
+    assert getattr(split_unit, "interface", None) is None
+    assert thermo_event_interface(split_unit) is None
+    routed = OWNMessage.parse("*#4*1#4#01*20*1##")
+    assert isinstance(routed, OWNHeatingEvent)
+    assert thermo_event_interface(routed) == "01"
+    assert _calling_zones(split_unit) == (["3"], None)
+    assert _calling_zones(routed) == (["1"], "01")
+
+
 def test_thermo_event_helpers() -> None:
     """Verify thermo_event_interface, thermo_event_zone, and thermo_event_actuator."""
     local_evt = OWNHeatingEvent("*#4*7#2*20*1##")

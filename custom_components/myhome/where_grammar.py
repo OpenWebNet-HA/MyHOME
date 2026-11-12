@@ -419,14 +419,13 @@ def parse_thermo_actuator_where(
 
 
 def thermo_event_interface(message: Any) -> str | None:
-    """Return normalized 2-digit F422 interface from a WHO=4 event, or ``None``."""
+    """Return normalized 2-digit F422 interface from a WHO=4 event, or ``None``.
+
+    OWNd decides what is an interface (``OWNMessage.interface``: ``Z#4#IF`` and
+    ``Z#N#4#IF`` are routed, a Dimension 22 split-unit ``3#Z#N`` is not). The
+    former ``where_param`` fallback re-read ``3#4#N`` as interface ``N``.
+    """
     raw_if = getattr(message, "interface", None)
-    if not raw_if:
-        tail = where_param(message)
-        if len(tail) == 2 and tail[0] == "4":
-            raw_if = str(tail[1])
-        elif len(tail) > 2 and tail[1] == "4":
-            raw_if = str(tail[2])
     if not raw_if:
         return None
     if_str = str(raw_if)

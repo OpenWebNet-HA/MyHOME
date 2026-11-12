@@ -93,7 +93,6 @@ from .where_grammar import (
     is_pump,
     parse_thermo_actuator_where,
     thermo_event_actuator,
-    where_param,
     zone_number,
 )
 
@@ -503,11 +502,8 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     # OWNHeatingEvent keeps WHAT only as ``_what``; it has no ``what`` property.
     what = getattr(message, "what", None) or getattr(message, "_what", None)
     what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
-    tail = where_param(message)
-    if not interface and len(tail) == 2 and tail[0] == "4":
-        interface = str(tail[1])
-    elif not interface and len(tail) > 2 and tail[1] == "4":
-        interface = str(tail[2])
+    # ``interface`` comes from OWNd (routed ``Z#4#IF`` / ``Z#N#4#IF``; a Dimension 22
+    # split-unit ``3#Z#N`` stays unrouted): no ``where_param`` re-read.
     interface = _two_digit_interface(interface)
 
     zones: list[str] = []
