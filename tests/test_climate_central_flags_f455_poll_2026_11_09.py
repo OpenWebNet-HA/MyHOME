@@ -25,7 +25,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.climate.const import HVACMode
-from OWNd.message import OWNEvent
+from OWNd.message import OWNEvent, OWNHeatingCommand
 
 from custom_components.myhome import climate as climate_module
 from custom_components.myhome.where_grammar import is_central_unit_report
@@ -388,7 +388,8 @@ async def test_a_newer_command_is_not_reanchored_by_an_older_future() -> None:
     first.set_result(climate_module.time.monotonic() - 10)  # the OFF frame's late result
     await asyncio.sleep(0)
     assert central._central_echo is not None
-    assert central._central_echo[0] == "*4*311*#0##"
+    assert central._central_echo[0] == str(OWNHeatingCommand.set_central_mode("#0", "auto"))
+    assert central._central_echo[0] in {"*4*311*#0##", "*4*3100*#0##"}
     assert central._central_echo[1] is None  # still waiting for its own write
     second.cancel()
 
