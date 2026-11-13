@@ -329,10 +329,22 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
         if getattr(entity, "_central", False):
             return False
         if not getattr(entity, "_gateway_supports_zone_status", True):
-            # SCS-only gateway: only a zone that asks for its temperature (#185) still needs to.
-            return getattr(entity, "_polls_temperature", False) is not True or (
-                getattr(message, "main_temperature", None) is not None
-            )
+            owes_knob = getattr(entity, "_local_offset_read_pending", False)
+            polls_temperature = getattr(entity, "_polls_temperature", False) is True
+            if not owes_knob:
+                # SCS-only gateway: only a zone that asks for its temperature (#185) still needs to.
+                return not polls_temperature or getattr(message, "main_temperature", None) is not None
+            # A zone that will ask *#4*Z*13## (#466) is not complete until the knob arrives.
+            # No single frame carries both the temperature and the knob, so a temperature-poll
+            # zone keeps polling; a non-temperature-poll zone (MH200N, F453) is complete only
+            # when the revealing frame is itself a Dimension 13 report. Match on the dimension,
+            # not local_offset: a local-OFF (*13*4##) or protection (*13*5##) knob is a valid
+            # Dimension 13 report that handle_event treats as reported, yet OWNd leaves its
+            # local_offset None, so a local_offset test would wrongly keep such a zone polling.
+            # _local_offset_reported is still False here: _create runs before handle_event.
+            if polls_temperature:
+                return False
+            return getattr(message, "dimension", None) == 13
         return False
 
     # Switch / binary device

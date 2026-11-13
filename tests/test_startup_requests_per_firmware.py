@@ -222,7 +222,7 @@ async def test_scs_only_zone_asks_for_its_temperature(hass, model):
     zone = _zone(hass, handler)
     assert zone._poll_on_add is True
     await zone.async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3*0##"]
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3*0##", "*#4*3*13##"]
 
 
 @pytest.mark.parametrize(
@@ -276,7 +276,7 @@ async def test_withheld_interface_poll_also_withholds_humidity_and_fan_cross_pol
     ("model", "flag", "expected_temp", "expected_frames"),
     [
         ("MH202", True, False, ["*#4*3#4#01##"]),
-        ("H4684", True, True, ["*#4*3#4#01*0##"]),
+        ("H4684", True, True, ["*#4*3#4#01*0##", "*#4*3#4#01*13##"]),
         ("H4684", False, False, []),
         ("F461", True, False, ["*#4*3#4#01##"]),
     ],
@@ -325,7 +325,9 @@ def test_bus_discovered_zone_keeps_its_poll_until_a_temperature_arrives(hass):
     polled = _zone(hass, _handler(hass, "MH200"))
     assert polled._polls_temperature is True
     assert message_has_state(polled, OWNHeatingEvent("*#4*3*14*0210*3##")) is False
-    assert message_has_state(polled, OWNHeatingEvent("*#4*3*0*0215##")) is True
+    # #466: a zone that also asks *#4*Z*13## is not complete on a temperature frame alone (no
+    # single frame carries both the temperature and the knob), so poll-on-add is kept.
+    assert message_has_state(polled, OWNHeatingEvent("*#4*3*0*0215##")) is False
     silent = _zone(hass, _handler(hass, "F455"))
     assert message_has_state(silent, OWNHeatingEvent("*#4*3*14*0210*3##")) is True
 
@@ -435,11 +437,13 @@ async def test_captured_f461_dimension_0_reply_clears_a_restored_temperature(has
     assert zone.extra_state_attributes["current_temperature_restored"] is True
     await zone.async_update()
     assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == [
-        _tx(f461_rows, run, "*#4*2*0##")["frame"]
+        _tx(f461_rows, run, "*#4*2*0##")["frame"],
+        "*#4*2*13##",
     ]
     (reply,) = _result(f461_rows, run, "*#4*2*0##")["replies"]
     event = OWNHeatingEvent(reply)
-    assert message_has_state(zone, event) is True
+    # #466: the zone also owes its knob, so a Dimension 0 reply alone no longer completes it.
+    assert message_has_state(zone, event) is False
     zone.handle_event(event)
     assert zone.current_temperature == 23.9
     assert "current_temperature_restored" not in zone.extra_state_attributes
@@ -524,7 +528,7 @@ async def test_mh201_leaves_the_general_request_out_and_polls_the_captured_zone(
     zone = _zone(hass, handler, where="4")
     await zone.async_restore_last_state(State("climate.zone_4", "heat", {"current_temperature": 20.0}))
     await zone.async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*4*0##"]
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*4*0##", "*#4*4*13##"]
     (captured,) = [f["raw"] for f in mh201_trace["frames"] if f["raw"] == "*#4*4*0*0241##"]
     zone.handle_event(OWNHeatingEvent(captured))
     assert zone.current_temperature == 24.1

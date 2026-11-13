@@ -80,7 +80,7 @@ from .discovery import (
     is_broadcast_where,
 )
 from .expose import is_exposed_on_bus
-from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, MyHOMEGatewayHandler
+from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, SILENT_ZONE_POLL, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
@@ -682,6 +682,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._target_temperature: float | None = None
         self._local_offset: float = 0
         self._local_offset_reported = False
+        self._local_offset_read_sent = False
         self._knob_pos: str = "UNKNOWN"
         self._local_target_temperature: float | None = None
         # True while _local_target_temperature is the zone's own dimension 12 report (the
@@ -726,6 +727,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and not self._polls_temperature
                 and not self._fan
                 and not self._humidity
+                and not self._asks_local_offset
             )
         ):
             self._poll_on_add = False
@@ -771,6 +773,51 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._interface_poll_refused
             and not is_actuator_where(self._where)
         )
+
+    @property
+    def _local_offset_read_pending(self) -> bool:
+        """Whether a point-to-point local knob offset (Dimension 13) read is still owed (#466).
+
+        The gateway answers ``*#4*Z*13##`` with ``*#4*Z*13*OO##`` (``OO``: ``00`` centre,
+        ``01``..``03`` +1..+3, ``11``..``13`` -1..-3, ``4`` local OFF, ``5`` local protection; WHO
+        4 spec pages 16-17, Encyclopedia ``who-4-temperature-control/dimensions.md``). Knowing the
+        knob lets a setpoint write compensate it on the first write after a restart, instead of
+        waiting for the Dimension 12/14 echo of a write to derive it (#890). Not for the central
+        unit, a zone whose knob already reported, an actuator or probe address, or a zone behind
+        an interface the gateway does not route. A silent-zone gateway (``F455``,
+        ``SILENT_ZONE_POLL``) is excluded: a single-dimension read on a probe-less channel holds
+        its command session ~9 s before NACKing (#674), so there the knob read is folded into the
+        serial silent-zone poll (``_silent_zone_reads``) instead of a point-to-point request.
+
+        This deliberately ignores the one-shot send guard (``_local_offset_read_sent``): a zone
+        that has sent the read but not yet heard the answer still owes its knob, so
+        ``message_has_state`` must keep treating its state as incomplete until the knob arrives.
+        """
+        gateway = getattr(self, "_gateway_handler", None)
+        silent = (
+            getattr(gateway, "silent_zone_poll_needed", False) is True
+            or getattr(gateway, "model", None) in SILENT_ZONE_POLL
+        )
+        return (
+            not self._central
+            and not self._local_offset_reported
+            and not is_actuator_where(self._where)
+            and not is_probe(self._where)
+            and not self._interface_poll_refused
+            and not silent
+        )
+
+    @property
+    def _asks_local_offset(self) -> bool:
+        """Whether this zone sends ``*#4*Z*13##`` point-to-point now.
+
+        Every emulated gateway forwards the per-zone Dimension 13 request to the bus and none
+        crashes (own-firmware-oracle ``6341ba3``, 13 images; central/general forms are dropped on
+        10 of 13 and are not used). This is the send-path gate: a pending read (see
+        ``_local_offset_read_pending``) that has not already gone out. The model can be corrected
+        in band after ``__init__``, so this is re-evaluated at send time.
+        """
+        return self._local_offset_read_pending and not self._local_offset_read_sent
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
@@ -1005,6 +1052,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._polls_temperature
             and not self._fan
             and not wants_humidity
+            and not self._asks_local_offset
         ):
             # SCS-only gateways without multi-session *#4*Z## verification (F450, F453, F453AV, F459,
             # H4684, MH200, MH200N in the firmware oracle; F455 and MH201 by field reports) expand
@@ -1069,14 +1117,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not humidity_coalesced
             and (not skip_reported or not self._humidity_reported)
         )
-        if skip_reported and not (ask_status or ask_temp or ask_fan or ask_humidity):
+        ask_offset = self._asks_local_offset and not ask_status
+        if skip_reported and not (ask_status or ask_temp or ask_fan or ask_humidity or ask_offset):
             self._bus_state_complete = True
             LOGGER.debug(
                 "%s: state already reported on the bus, skipping post-discovery poll",
                 self.entity_id,
             )
             return
-        if self._poll_health.should_skip(time.time()):
+        if (ask_status or ask_temp or ask_fan or ask_humidity) and self._poll_health.should_skip(time.time()):
             LOGGER.debug(
                 "%s %s did not answer its last polls; not asking again yet",
                 self._gateway_handler.log_id,
@@ -1128,6 +1177,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 self._full_where,
                 self._full_where,
+            )
+        if ask_offset:
+            # *#4*Z*13## carries the knob directly, so the first setpoint write after a
+            # restart is compensated without waiting for a write echo (#890 stays the fallback).
+            # Built from the zone number so a `#Z` / `4-Z` myhome.yaml entry does not send the
+            # central-unit form *#4*#Z*13## (dropped on 10 of 13 oracle images). Sent last,
+            # paced, not counted for poll health: an unpopulated zone NACKs it like *#4*Z*0##.
+            self._local_offset_read_sent = True  # once per entity lifetime; a never-answering zone is not re-asked
+            zone = zone_number(self._where)
+            routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
+            await self._send_zone_poll_frame(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{zone}{routing}*13##")),
+                pace=pace,
             )
 
     @callback
@@ -1432,6 +1494,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         reads: list[str] = []
         if not temperature_known:
             reads.append(f"*#4*{zone}{routing}*0##")
+        if not self._local_offset_reported and not is_probe(self._where):
+            # The knob read (#466) goes after *0## (a probe-less zone refuses *0## and the
+            # serial poll ends there) and before *14## / *12## so a reported knob keeps the
+            # #890 derivation from running on the setpoint echo. A zone that reported its
+            # temperature itself skips *0## and asks only *13## here: it has a probe (the
+            # temperature proves it), so this is safe. F455 1.0.76 answered *#4*2*13## ->
+            # *#4*2*13*00## in 0.108 s (F455_direct_requests_2026-11-06.jsonl line 70).
+            reads.append(f"*#4*{zone}{routing}*13##")
         if not setpoint_known:
             reads.append(f"*#4*{zone}{routing}*14##")
         if not setpoint_known or not mode_known:

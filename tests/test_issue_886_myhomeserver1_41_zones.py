@@ -291,8 +291,15 @@ async def test_41_zone_myhomeserver1_startup_coalesces_sweeps_and_paces_only_sil
     assert wire_log[:2] == ["*#4*#0*20##", "*#4*0*60##"]
     # Zero per-zone `*#4*Z*60##` queries (even for the 3 humidity-restored zones that lacked a physical probe!)
     assert not any(f.endswith("*60##") and f != "*#4*0*60##" for f in wire_log)
-    # Only the 3 silent zones needed point-to-point `*#4*Z##` polls (down from 66 WHO 4 startup queries to 5!)
-    assert sorted(wire_log[2:]) == ["*#4*34##", "*#4*35##", "*#4*36##"]
+    # Only the 3 silent zones need point-to-point `*#4*Z##` polls (down from 66 WHO 4 startup
+    # queries to the 2 sweeps + 3 polls). Each of the 38 zones that reported core state
+    # autonomously then asks its local knob offset once (`*#4*Z*13##`) in the same paced
+    # post-discovery pass (#466); the 3 silent zones do not, their `*#4*Z##` answer carries the
+    # knob (ask_offset is suppressed when `*#4*Z##` is sent).
+    expected_knob_reads = sorted(f"*#4*{zid}*13##" for zid in zone_ids if zid not in silent_zones)
+    assert len(expected_knob_reads) == 38
+    assert sorted(wire_log[2:]) == sorted(["*#4*34##", "*#4*35##", "*#4*36##"] + expected_knob_reads)
+    assert len(wire_log) == 2 + 3 + 38  # 2 sweeps + 3 point-to-point `*#4*Z##` + 38 knob reads
     assert max_concurrent_per_zone_polls == 1
 
 
@@ -716,9 +723,13 @@ async def test_restored_zones_without_live_reports_still_poll_while_live_reporte
         await handler._zone_request_task
 
     assert wire_log[:2] == ["*#4*#0*20##", "*#4*0*60##"]
-    # The 3 zones whose core state was only restored (or partially reported) polled `*#4*Z##`;
-    # the 38 zones with live post-restart bus reports skipped `*#4*Z##`.
-    assert sorted(wire_log[2:]) == ["*#4*34##", "*#4*35##", "*#4*36##"]
+    # The 3 zones whose core state was only restored (or partially reported) poll `*#4*Z##`; the
+    # 38 zones with live post-restart bus reports skip `*#4*Z##` and instead ask their local knob
+    # offset once (`*#4*Z*13##`) in the post-discovery pass (#466).
+    expected_knob_reads = sorted(f"*#4*{zid}*13##" for zid in zone_ids if zid not in {34, 35, 36})
+    assert len(expected_knob_reads) == 38
+    assert sorted(wire_log[2:]) == sorted(["*#4*34##", "*#4*35##", "*#4*36##"] + expected_knob_reads)
+    assert len(wire_log) == 2 + 3 + 38  # 2 sweeps + 3 point-to-point `*#4*Z##` + 38 knob reads
 
 
 # ── 9. Sweep-aware `_send_zone_requests` & `_wait_for_who4_recovery` (`FRIEND.log` Part 2) ──
