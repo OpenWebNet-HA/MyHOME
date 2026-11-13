@@ -144,15 +144,21 @@ async def async_setup_entry(
         nonlocal power_service_registered
         power_service_registered = True
         if platform is not None:
+            # Only MyHOMEPowerSensor has these methods: targeting an energy, temperature or
+            # illuminance sensor raised AttributeError inside Home Assistant (HTTP 500 on
+            # the service call, live F520 plant 2026-11-11 / 2026-11-12). The device-class
+            # filter makes Home Assistant answer "does not support this action" instead.
             platform.async_register_entity_service(
                 SERVICE_SEND_INSTANT_POWER,
                 as_any({Optional(ATTR_DURATION): All(Coerce(int), Range(min=1, max=255))}),
                 "start_sending_instant_power",
+                entity_device_classes=(SensorDeviceClass.POWER,),
             )
             platform.async_register_entity_service(
                 SERVICE_STOP_SENDING_INSTANT_POWER,
                 {},
                 "async_stop_sending_instant_power",
+                entity_device_classes=(SensorDeviceClass.POWER,),
             )
 
     discovery_for: dict[str, PlatformDiscovery] = {}
