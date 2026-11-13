@@ -37,7 +37,7 @@ from custom_components.myhome.gateway import (
 DIRECT = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl"
 ZONE3 = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_zone3_2026-11-06.jsonl"
 MAC = "00:03:50:00:11:06"
-SILENT_READS = ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+SILENT_READS = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 
 def _sent(path: Path = DIRECT) -> dict[str, dict]:
@@ -264,7 +264,7 @@ async def test_a_zone_that_reported_everything_by_itself_is_not_asked(hass) -> N
     handler = _handler(hass, "F455")
     _ready(handler)
     zone = _zone(hass, handler)
-    for frame in ("*#4*2*0*0238##", "*#4*2*14*0220*3##", "*4*0*2##", "*#4*2#1*20*7##"):
+    for frame in ("*#4*2*0*0238##", "*#4*2*14*0220*3##", "*4*0*2##", "*#4*2#1*20*7##", "*#4*2*13*00##"):
         zone.handle_event(OWNHeatingEvent(frame))
     await zone._poll_if_silent(grace=0)
     assert _queued(handler) == []
@@ -277,7 +277,7 @@ async def test_only_what_the_zone_did_not_report_is_asked(hass) -> None:
     zone = _zone(hass, handler, "4")
     zone.handle_event(OWNHeatingEvent("*#4*4*0*0255##"))
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+    assert _queued(handler) == ["*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
 
 
 async def test_a_zone_with_temperature_and_setpoint_still_asks_for_mode_and_actuator(hass) -> None:
@@ -288,7 +288,7 @@ async def test_a_zone_with_temperature_and_setpoint_still_asks_for_mode_and_actu
     zone.handle_event(OWNHeatingEvent("*#4*2*0*0238##"))
     zone.handle_event(OWNHeatingEvent("*#4*2*14*0220*3##"))
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2*12##", "*#4*2#1*20##"]
+    assert _queued(handler) == ["*#4*2*13##", "*#4*2*12##", "*#4*2#1*20##"]
 
 
 # ------------------------------------------------------------------ restored state (review of 195fd13, 1)
@@ -309,7 +309,7 @@ async def test_a_restored_setpoint_and_mode_do_not_count_as_reported(hass) -> No
     zone.handle_event(OWNHeatingEvent("*#4*2*0*0238##"))
     assert zone._current_temperature_restored is False
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    assert _queued(handler) == ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 
 async def test_a_restored_zone_that_reported_nothing_is_asked_everything(hass) -> None:
@@ -377,7 +377,7 @@ async def test_behind_an_interface_the_actuator_comes_before_the_routing(hass) -
     zone = _zone(hass, handler, "2", interface="1")
     assert zone._interface_poll_refused is False
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2#4#01*0##", "*#4*2#4#01*14##", "*#4*2#4#01*12##", "*#4*2#1#4#01*20##"]
+    assert _queued(handler) == ["*#4*2#4#01*0##", "*#4*2#4#01*13##", "*#4*2#4#01*14##", "*#4*2#4#01*12##", "*#4*2#1#4#01*20##"]
 
 
 async def test_behind_an_interface_the_default_profile_asks_nothing(hass, monkeypatch) -> None:

@@ -118,7 +118,7 @@ async def test_f461_zone_still_asks_for_its_humidity(hass):
     assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
 
 
-@pytest.mark.parametrize(("model", "expected"), [("F454", ["*#4*2##"]), ("MH202", ["*#4*2##"]), ("MH200", ["*#4*2*0##"])])
+@pytest.mark.parametrize(("model", "expected"), [("F454", ["*#4*2##"]), ("MH202", ["*#4*2##"]), ("MH200", ["*#4*2*0##", "*#4*2*13##"])])
 async def test_refusing_gateway_zone_does_not_ask(hass, model, expected):
     """No ``*60##``; the zone's own status (F454, #866) or temperature (MH202, #794) poll still goes out."""
     handler = _handler(hass, model)
@@ -270,7 +270,8 @@ def test_a_generic_profile_reads_the_configured_model_not_its_own_name(hass):
 async def test_vendor_prefixed_refusing_gateway_zone_does_not_ask(hass):
     handler = _handler(hass, "Legrand MH200N")
     await _humidity_zone(hass, handler).async_update()
-    assert _sent(handler) == []
+    # #466: MH200N has no temperature poll, but a non-silent gateway still asks the knob once.
+    assert _sent(handler) == ["*#4*2*13##"]
 
 
 # ------------------------------------------------------------------ gateway: WHO 4 delegation and warm standby (review 5644219403, 1)
@@ -386,7 +387,8 @@ async def test_a_refusing_scs_gateway_s_humidity_zone_never_reaches_poll_health(
     zone._poll_health.should_skip = MagicMock(side_effect=AssertionError("should_skip must not run"))
     zone._raise_unresponsive_issue = MagicMock()
     await zone.async_update()
-    assert _sent(handler) == []
+    # #466: a non-silent SCS gateway asks the knob once; it is uncounted, so should_skip is not consulted.
+    assert _sent(handler) == ["*#4*2*13##"]
     zone._raise_unresponsive_issue.assert_not_called()
 
 
@@ -398,7 +400,7 @@ async def test_a_refusing_gateway_that_polls_its_zone_temperature_still_sends_th
     zone._poll_health.should_skip = MagicMock(return_value=False)
     await zone.async_update()
     zone._poll_health.should_skip.assert_called_once()
-    assert _sent(handler) == ["*#4*2*0##"]
+    assert _sent(handler) == ["*#4*2*0##", "*#4*2*13##"]
 
 
 async def test_a_forwarding_gateway_s_humidity_zone_goes_through_poll_health(hass):
@@ -440,7 +442,7 @@ async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity
     assert zone._humidity is True
     assert zone.current_humidity == 45.0
     await zone.async_update()
-    assert _sent(handler) == ["*#4*2*0##"]  # humidity known, dimension 60 still not asked on the MH200; its temperature poll (#794) is
+    assert _sent(handler) == ["*#4*2*0##", "*#4*2*13##"]  # humidity known, dimension 60 still not asked on the MH200; its temperature poll (#794) is
 
 
 def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):

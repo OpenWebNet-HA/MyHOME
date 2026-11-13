@@ -1027,5 +1027,7 @@ Follow-up verbatim `<myhome-bus-card>` trace exports contributed by **@andrea-ma
      - **Zone `44`** (`offset = -3.0 °C`): `tx 23.0 °C` -> `Dim 12 = 20.0 °C`, `Dim 14 = 23.0 °C`; `tx 20.0 °C` -> `Dim 12 = 17.0 °C`, `Dim 14 = 20.0 °C`; `tx 19.5 °C` -> `Dim 12 = 16.5 °C`, `Dim 14 = 19.5 °C`; `tx 18.5 °C` -> `Dim 12 = 15.5 °C` (no `Dim 14`).
      - **Zone `55`** (`offset = -3.0 °C`): `tx 24.5 °C` -> `Dim 12 = 21.5 °C`, `Dim 14 = 24.5 °C`; `tx 21.5 °C` -> `Dim 12 = 18.5 °C`, `Dim 14 = 21.5 °C`; `tx 24.5 °C` -> `Dim 12 = 21.5 °C` (no `Dim 14`); `tx 21.5 °C` -> `Dim 12 = 18.5 °C`, `Dim 14 = 21.5 °C`; `tx 25.0 °C` -> `Dim 12 = 22.0 °C`, `Dim 14 = 25.0 °C`; and in `09-13-19.json`, `tx 24.0 °C` -> `Dim 12 = 21.0 °C`, `Dim 14 = 24.0 °C`.
 
-
-
+4. **One-shot `Dimension 13` reads answered by the `H/L4684` (`myhome_trace_HL4684_all_2026-11-13T06-59-18.json`)**:
+   - Verbatim bus trace contributed by **@andrea-mag** on [#466 (comment 6846511850)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6846511850), answering the quick test for `WHO 4` `Dimension 13`. Gateway **BTicino H/L4684**, Home Assistant `2026.11.0`, MyHOME `2.0.0b17`, OWNd `2.0.0b13`. `30` frames (`26 rx / 4 tx`), window `06:57:34`–`06:59:08 UTC`. `SHA-256: 7f8e2bfd5f1baedca5d6c9638f8d2f0fccd5c5cfe6d86c03a7ea1f2d8c4a0245`. They are facts: never edit a frame.
+   - It settles that the `H/L4684` **answers direct per-zone `Dimension 13` reads** (not only via the dimensionless `*#4*Z##`, which this gateway refuses): `tx *#4*88*13##` -> `rx *#4*88*13*13##` (knob `-3`) in `92 ms`; zone `33` `-> *11##` (`-1`) `83 ms`; zone `22` `-> *12##` (`-2`) `84 ms`; zone `11` `-> *12##` (`-2`) `92 ms`.
+   - Zone `33` also emits four **unrequested** `Dimension 13` frames while its knob is turned (`*#4*33*13*12##`, `*13##`, `*12##`, `*11##`), confirming the gateway forwards knob changes on its own too. The trace carries no setpoint write and no `Dimension 12 / 14` frame.
