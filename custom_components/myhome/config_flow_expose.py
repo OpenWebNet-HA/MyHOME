@@ -20,6 +20,10 @@ from .const import (
     CONF_ON_STATES,
     CONF_PERIODIC_SEND,
     CONF_RESPOND_TO_READ,
+    CONF_STEP_DOWN_ACTION,
+    CONF_STEP_UP_ACTION,
+    CONF_TURN_OFF_ACTION,
+    CONF_TURN_ON_ACTION,
     CONF_VALUE_TEMPLATE,
     CONF_WHERE,
     CONF_WHO,
@@ -27,6 +31,13 @@ from .const import (
 from .data import get_runtime_data
 from .expose import effective_expose_profile, injection_block_reason
 from .typing_compat import flow_schema
+
+_EXPOSE_ACTION_KEYS: tuple[str, ...] = (
+    CONF_TURN_ON_ACTION,
+    CONF_TURN_OFF_ACTION,
+    CONF_STEP_UP_ACTION,
+    CONF_STEP_DOWN_ACTION,
+)
 
 
 class ExposeSubentryFlowHandler(ConfigSubentryFlow):
@@ -176,6 +187,18 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 description={"suggested_value": tpl_default},
             ): selector.TextSelector(),
         }
+        for action_key in _EXPOSE_ACTION_KEYS:
+            action_default = defaults.get(action_key)
+            schema_dict[
+                vol.Optional(
+                    action_key,
+                    description=(
+                        {"suggested_value": action_default}
+                        if action_default
+                        else None
+                    ),
+                )
+            ] = selector.ActionSelector()
         return flow_schema(schema_dict)
 
     def _validate_and_clean(
@@ -224,6 +247,10 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             else:
                 dim = int(raw_dim)
 
+        has_actions = any(
+            user_input.get(k) not in (None, "", [], {})
+            for k in _EXPOSE_ACTION_KEYS
+        )
         if who == 13:
             if dim is not None and dim not in (0, 1, 22):
                 errors[CONF_DIMENSION] = "invalid_dimension"
@@ -231,7 +258,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         else:
             if not where:
                 errors[CONF_WHERE] = "where_required"
-            if not entity_id:
+            if not entity_id and not (who in (1, 2) and has_actions):
                 errors[CONF_ENTITY_ID] = "entity_required"
             if who == 4 and dim is not None and dim != 0:
                 errors[CONF_DIMENSION] = "invalid_dimension"
@@ -267,6 +294,10 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         tpl = str(user_input.get(CONF_VALUE_TEMPLATE) or "").strip()
         if tpl:
             cleaned[CONF_VALUE_TEMPLATE] = tpl
+        for action_key in _EXPOSE_ACTION_KEYS:
+            raw_action = user_input.get(action_key)
+            if raw_action not in (None, "", [], {}):
+                cleaned[action_key] = raw_action
 
         try:
             cleaned = validate.expose_entry_schema(cleaned)
@@ -305,7 +336,8 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         if who == 13:
             title = f"Bus Clock Sync (WHO 13, dim {dim if dim is not None else 22})"
         else:
-            title = f"WHO {who} / WHERE {norm_where} ({entity_id})"
+            target_label = entity_id or "custom actions"
+            title = f"WHO {who} / WHERE {norm_where} ({target_label})"
         return cleaned, errors, title
 
     async def async_step_user(

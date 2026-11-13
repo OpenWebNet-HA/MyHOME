@@ -116,6 +116,15 @@ DEFAULT_MEDIA_PLAYER_ON_STATES: tuple[str, ...] = (
     "buffering",
 )
 TX_ECHO_GUARD_WINDOW_S: float = 1.5
+CROSS_GATEWAY_RX_DEDUP_S: float = 0.5
+# Unpopulated virtual SCS addresses receive no hardware link-layer ACK, so wall controls
+# retransmit each unicast telegram once ~0.18..0.22 s later. Keep strictly below the
+# ~0.48..0.55 s cadence of legitimate ACKed dimmer hold steps (F454/MH200N/MH201/H4890 traces).
+SAME_GATEWAY_TRANSLATION_RETRY_S: float = 0.35
+# On an unacknowledged virtual WHO=1 address, holding UP on a two-button dimmer control
+# (e.g. BTicino H4652/2 M=3 / M=9) repeats *1*1000#1*WHERE## every ~2.0 s instead of
+# transitioning to WHAT 30. Treat consecutive point-to-point 1000#1 frames within 3.0 s as step_up.
+WHO1_TRANSLATION_HOLD_REPEAT_S: float = 3.0
 # OWNd profile flag gating each injected WHO, and the frames it covers. OWNd leaves a
 # flag unset (None) when no capture or oracle verdict exists for that gateway family.
 _INJECTION_FLAGS: dict[int, tuple[str, str]] = {
@@ -574,6 +583,12 @@ class ExposeManager:
         self._tx_echo_guard: dict[str, _EchoGuardEntry] = {}
         self._pre_move_stop_guard: dict[tuple[int, str], _EchoGuardEntry] = {}
         self._last_rx_by_frame: dict[str, tuple[str, float]] = {}
+        self._last_translation_rx_by_target: dict[
+            tuple[str, int, str], tuple[str, float]
+        ] = {}
+        self._last_who1_on_translation_at: dict[
+            tuple[int, str, int | None], float
+        ] = {}
         self._action_scripts: dict[
             tuple[tuple[int, str, int | None], str], Script
         ] = {}
@@ -834,6 +849,8 @@ class ExposeManager:
         self._tx_echo_guard.clear()
         self._pre_move_stop_guard.clear()
         self._last_rx_by_frame.clear()
+        self._last_translation_rx_by_target.clear()
+        self._last_who1_on_translation_at.clear()
         self._warned_blocked.clear()
 
     async def async_sync_all(self) -> None:
@@ -1653,6 +1670,28 @@ class ExposeManager:
                 binding=binding,
             )
 
+    def _who1_binding_supports_step_up(self, binding: ExposeBinding) -> bool:
+        """Return True when a WHO=1 binding can step up on repeated 1000#1 hold frames."""
+        if binding.step_up_action:
+            return True
+        if not binding.entity_id:
+            return False
+        domain = binding.entity_id.split(".", 1)[0]
+        if domain == "media_player":
+            return True
+        if domain == "light":
+            state = self.hass.states.get(binding.entity_id)
+            if state is not None:
+                modes = state.attributes.get("supported_color_modes")
+                if (
+                    isinstance(modes, (list, tuple, set, frozenset))
+                    and modes
+                    and set(modes) <= {"onoff"}
+                ):
+                    return False
+            return True
+        return False
+
     async def _async_handle_secondary_bus_message(
         self, message: OWNMessage, *, source_mac: str | None = None
     ) -> None:
@@ -1672,20 +1711,49 @@ class ExposeManager:
 
         now = time.monotonic()
         raw_frame = str(message)
+        if not self._last_rx_by_frame:
+            self._last_translation_rx_by_target.clear()
         prev_rx = self._last_rx_by_frame.get(raw_frame)
-        if prev_rx is not None and prev_rx[0] != src and (now - prev_rx[1]) < 0.5:
+        if (
+            prev_rx is not None
+            and prev_rx[0] != src
+            and (now - prev_rx[1]) < CROSS_GATEWAY_RX_DEDUP_S
+        ):
             return
+
+        who = getattr(message, "who", None)
+        is_translation = bool(getattr(message, "is_translation", False))
+        msg_where = (
+            expose_message_where(message) if who in EXPOSE_SUPPORTED_WHOS else ""
+        )
+        if who in EXPOSE_SUPPORTED_WHOS:
+            rx_target_key = (src, who, msg_where)
+            if is_translation:
+                prev_trans = self._last_translation_rx_by_target.get(rx_target_key)
+                if (
+                    prev_trans is not None
+                    and prev_trans[0] == raw_frame
+                    and (now - prev_trans[1]) < SAME_GATEWAY_TRANSLATION_RETRY_S
+                ):
+                    return
+                self._last_translation_rx_by_target[rx_target_key] = (raw_frame, now)
+                if len(self._last_translation_rx_by_target) > 64:
+                    self._last_translation_rx_by_target = {
+                        k: v
+                        for k, v in self._last_translation_rx_by_target.items()
+                        if (now - v[1]) < 5.0
+                    }
+            else:
+                self._last_translation_rx_by_target.pop(rx_target_key, None)
+
         self._last_rx_by_frame[raw_frame] = (src, now)
         if len(self._last_rx_by_frame) > 64:
             self._last_rx_by_frame = {
                 k: v for k, v in self._last_rx_by_frame.items() if (now - v[1]) < 2.0
             }
 
-        who = getattr(message, "who", None)
         if who not in EXPOSE_SUPPORTED_WHOS:
             return
-
-        msg_where = expose_message_where(message)
         is_status_req = bool(getattr(message, "is_status_request", False))
         is_dim_req = bool(getattr(message, "is_dimension_request", False))
         is_dim_write = bool(getattr(message, "is_dimension_writing", False))
@@ -1852,6 +1920,7 @@ class ExposeManager:
 
             if who == 1:
                 if is_dim_write and dim in (1, 4):
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     vals = getattr(message, "dimension_value", [])
                     if vals and str(vals[0]).isdigit() and 0 <= int(vals[0]) <= 200:
                         self._cancel_cooldown_timer(binding.key)
@@ -1904,6 +1973,25 @@ class ExposeManager:
                     continue
 
                 if eff_what == 1:
+                    is_p2p_hold_candidate = (
+                        is_translation
+                        and _where_matches_binding(
+                            1, binding.where, msg_where, allow_scope=False
+                        )
+                        and self._who1_binding_supports_step_up(binding)
+                    )
+                    if is_p2p_hold_candidate:
+                        prev_on_at = self._last_who1_on_translation_at.get(binding.key)
+                        self._last_who1_on_translation_at[binding.key] = now
+                        if (
+                            prev_on_at is not None
+                            and (now - prev_on_at) <= WHO1_TRANSLATION_HOLD_REPEAT_S
+                        ):
+                            await self._async_execute_who1_step(binding, up=True)
+                            continue
+                    else:
+                        self._last_who1_on_translation_at.pop(binding.key, None)
+
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNLightingCommand.switch_on(binding.where)
                     binding.last_sent_value = (True, None)
@@ -1914,6 +2002,7 @@ class ExposeManager:
                     )
                     await self._async_execute_who1_on(binding)
                 elif eff_what == 0:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNLightingCommand.switch_off(binding.where)
                     binding.last_sent_value = (
@@ -1929,10 +2018,13 @@ class ExposeManager:
                     )
                     await self._async_execute_who1_off(binding)
                 elif eff_what == 30:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     await self._async_execute_who1_step(binding, up=True)
                 elif eff_what == 31:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     await self._async_execute_who1_step(binding, up=False)
                 elif isinstance(eff_what, int) and 2 <= eff_what <= 10:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     self._cancel_cooldown_timer(binding.key)
                     pct = COARSE_PRESET_TO_PERCENT[eff_what]
                     confirm = OWNLightingCommand.switch_on(binding.where)
