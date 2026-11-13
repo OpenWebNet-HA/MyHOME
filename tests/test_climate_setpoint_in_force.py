@@ -252,17 +252,20 @@ async def test_unreadable_restored_setpoint_is_ignored(hass):
     assert restored._local_offset == 0
 
 
-# ------------------------------------------------------------------ H/L4684 derived local offset without dimension 13 (#466)
+# ------------------------------------------------------------------ H/L4684 derived local offset when dimension 13 is absent (#466)
 
 async def test_hl4684_zone_88_setpoint_sequence_derives_offset_and_compensates_writes(hass):
     """Replay H/L4684 (FW 6.0.11) + 3550 Zone 88 frames from #466 (09-11-53.json).
 
-    On H/L4684, ``*#4*Z##`` is NACKed, the 3550's quarter-hour sweep only surfaces
-    Dimension 0, Dimension 14, and Dimension 20 on the event session, and Dimension 13
-    (``*#4*Z*13*OO##``) is never emitted. On each ``*#4*#88*#14*TTTT*3##`` write, the bus
+    On H/L4684, ``*#4*Z##`` is NACKed and the 3550's quarter-hour sweep only surfaces
+    Dimension 0, Dimension 14, and Dimension 20 on the event session (no Dimension 13 in
+    the 7 November sweep or write bursts; the 13 November follow-up trace 06-59-18.json
+    confirmed H/L4684 answers direct ``*#4*Z*13##`` reads and forwards live knob turns).
+    When Dimension 13 has not been reported yet, each ``*#4*#88*#14*TTTT*3##`` write burst
     emits Dimension 0, Dimension 12 (effective setpoint = nominal + knob offset),
     ``*4*1*88##``, optionally Dimension 14 (present on frames 97-102, 118-123, 126-131;
-    omitted on frames 104-108, 113-117, 132-136), and ``*4*110*#88##``.
+    omitted on frames 104-108, 113-117, 132-136), and ``*4*110*#88##``, deriving the
+    knob offset as a fallback.
     """
     zone = _zone(hass, where="88", standalone=False)
     zone._gateway_handler.has_central_unit = True
