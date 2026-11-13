@@ -676,11 +676,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_current_humidity: float | None = None
         self._target_temperature: float | None = None
         self._local_offset: float = 0
+        self._local_offset_reported = False
         self._knob_pos: str = "UNKNOWN"
         self._local_target_temperature: float | None = None
         # True while _local_target_temperature is the zone's own dimension 12 report (the
         # setpoint in force, offset included): dimension 14 and 13 frames then leave it alone.
         self._local_target_reported = False
+        self._dim12_at: float | None = None
+        self._dim14_at: float | None = None
+        self._written_target_temperature: tuple[float, float] | None = None
         self._current_temperature_restored = False
         # True while the setpoint / the mode are what Home Assistant saved, not what the zone
         # said since the restart: the silent-zone poll (#466) does not take them for a report.
@@ -1626,12 +1630,60 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return self._local_target_temperature - self._local_offset
         return None
 
+    def _derive_local_offset(self, local_target: float | None, nominal_target: float | None) -> bool:
+        """Derive the knob offset from a paired Dimension 12 and Dimension 14 when Dimension 13 is absent (#466)."""
+        if (
+            self._local_offset_reported
+            or self._attr_hvac_mode in (None, HVACMode.OFF)
+            or local_target is None
+            or nominal_target is None
+        ):
+            return False
+        diff = round(local_target - nominal_target, 1)
+        if not (-3.0 <= diff <= 3.0 and float(diff).is_integer()):
+            return False
+        offset = int(diff)
+        if offset == 0 and self._local_offset == 0:
+            return False
+        self._local_offset = offset
+        self._knob_pos = "0" if offset == 0 else f"{offset:+d}"
+        return True
+
+    def _reconcile_local_target(self) -> None:
+        """Update nominal setpoint and derived knob offset from a Dimension 12 report (#466)."""
+        now = time.monotonic()
+        written = self._written_target_temperature
+        self._written_target_temperature = None
+        if written is not None and now - written[1] <= _PROTECTION_FRAME_WINDOW:
+            self._derive_local_offset(self._local_target_temperature, written[0])
+            self._dim12_at = None
+            self._dim14_at = None
+        elif self._dim14_at is not None and now - self._dim14_at <= _PROTECTION_FRAME_WINDOW:
+            self._derive_local_offset(self._local_target_temperature, self._target_temperature)
+            self._dim12_at = None
+            self._dim14_at = None
+        self._target_temperature = (
+            self._local_target_temperature - self._local_offset
+            if self._local_target_temperature is not None
+            else None
+        )
+
     def _hydrate_nominal_from_local(self, prev_mode: HVACMode | None) -> None:
         """Promote an initial Dimension 12/14 reading once the zone is known to be active (#819)."""
         if self._central or prev_mode is not None or self._attr_hvac_mode in (None, HVACMode.OFF):
             return
-        if self._target_temperature is None and self._local_target_temperature is not None:
-            self._target_temperature = self._local_target_temperature - self._local_offset
+        if self._local_target_temperature is not None and self._local_target_reported:
+            if (
+                self._written_target_temperature is None
+                and self._target_temperature is not None
+                and self._dim14_at is not None
+                and time.monotonic() - self._dim14_at <= _PROTECTION_FRAME_WINDOW
+            ):
+                self._derive_local_offset(self._local_target_temperature, self._target_temperature)
+                self._dim12_at = None
+                self._dim14_at = None
+            else:
+                self._reconcile_local_target()
         elif (
             self._local_target_temperature is None
             and self._target_temperature is not None
@@ -1861,6 +1913,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # The write's echo decides what is shown next: dimension 12 where the gateway reports
         # the setpoint in force (F461, MyHomeServer1), else the commanded dimension 14.
         self._local_target_reported = False
+        self._written_target_temperature = (target_temperature, time.monotonic())
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
@@ -1886,6 +1939,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         previous nominal back (#383).
         """
         remembered, self._nominal_before_dim12 = self._nominal_before_dim12, None
+        self._dim12_at = None
+        self._dim14_at = None
         if remembered is not None and time.monotonic() - remembered[1] <= _PROTECTION_FRAME_WINDOW:
             self._target_temperature = remembered[0]
 
@@ -1899,6 +1954,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         self._local_target_temperature = self._target_temperature + self._local_offset
         self._local_target_reported = False
+        self._dim12_at = None
+        self._dim14_at = None
 
     def _apply_zone_state(self, message: OWNHeatingEvent) -> None:
         """Dimension 7: the zone's operating state, and its setpoint in state 'setpoint'.
@@ -2095,6 +2152,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._attr_native_current_temperature = message.main_temperature
             self._current_temperature_restored = False
+            self._dim12_at = None
+            self._dim14_at = None
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
             LOGGER.debug(
                 "%s %s",
@@ -2112,7 +2171,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._target_temperature = message.set_temperature
             self._target_temperature_restored = False
+            self._written_target_temperature = None
+            now = time.monotonic()
             is_protection_or_off = self._dimension_3_is_protection(message)
+            if (
+                not is_protection_or_off
+                and self._dim12_at is not None
+                and now - self._dim12_at <= _PROTECTION_FRAME_WINDOW
+            ):
+                self._derive_local_offset(self._local_target_temperature, self._target_temperature)
+                self._dim12_at = None
+                self._dim14_at = None
+            else:
+                self._dim14_at = (
+                    now
+                    if self._target_temperature is not None and self._attr_hvac_mode != HVACMode.OFF
+                    else None
+                )
             # Dimension 14 is the commanded setpoint. The thermostat can regulate to another one
             # (F461: 14 = 21.0 while 12 = 23.5), so a dimension 12 report stays what is shown.
             if not is_protection_or_off and not self._local_target_reported:
@@ -2128,6 +2203,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._local_offset = message.local_offset if message.local_offset is not None else 0
+            self._local_offset_reported = True
+            self._dim12_at = None
+            self._dim14_at = None
             if message.local_control_state in (LOCAL_CONTROL_UNKNOWN, None):
                 self._knob_pos = "UNKNOWN"
             elif message.local_control_state == LOCAL_CONTROL_OFFSET:
@@ -2156,15 +2234,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._local_target_temperature = message.local_set_temperature
             self._local_target_reported = self._local_target_temperature is not None
+            self._dim12_at = (
+                time.monotonic()
+                if self._local_target_reported and self._attr_hvac_mode != HVACMode.OFF
+                else None
+            )
             self._target_temperature_restored = False
             is_protection_or_off = self._dimension_3_is_protection(message)
             if not is_protection_or_off:
                 self._remember_nominal()
-                self._target_temperature = (
-                    self._local_target_temperature - self._local_offset
-                    if self._local_target_temperature is not None
-                    else None
-                )
+                self._reconcile_local_target()
         elif message.message_type == MESSAGE_TYPE_SEASON:
             # *4*1*Z## / *4*0*Z## is the zone operation mode frame: the zone
             # (or the central unit) runs in the heating / conditioning season
