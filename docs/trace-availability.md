@@ -6,6 +6,7 @@ This matrix documents the real-world physical gateways for which we have capture
 | Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 9<br>Power | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>Diag | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
 | :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
 | **067292** |  | ✅ |  |  | ✅ |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| **F453** |  | ✅ | ✅ |  | ✅ |  |  |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  | ✅ |  |
 | **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ |  |  | ✅ |  |  |  |
 | **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  | ✅ |  |  | ✅ |  |
 | **F455** |  | ✅ | ✅ |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  | ✅ |  |

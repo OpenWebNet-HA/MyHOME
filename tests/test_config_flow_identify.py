@@ -122,6 +122,10 @@ async def test_manual_flow_keeps_a_legrand_name_of_the_reported_model(hass: Home
         ("Generic", ("44", None), "MH200N", "who13"),
         ("MH202", ("44", None), "MH202", "manual"),
         ("Generic", ("200", "134"), "F461", "who13"),
+        ("Generic", ("16", None), "F453", "who13"),
+        ("Generic", ("16", "16"), "F453", "who13"),
+        ("Generic", ("4", "16"), "MH200", "who13"),
+        ("F453AV", ("16", None), "F453AV", "manual"),
     ],
 )
 async def test_manual_flow_uncertain_who13_code_labels_generic_but_never_overrides_a_choice(
@@ -341,6 +345,7 @@ async def test_identify_gateway_reads_the_f461_replies() -> None:
         ("H4684", "13", "*#13**16*2*0*54##", "2.0.54"),
         ("H4684", "23", "*#13**16*6*0*11##", "6.0.11"),
         ("MH200", "4", "*#13**16*2*1*2##", "2.1.2"),
+        ("F453", "16", "*#13**16*2*0*10##", "2.0.10"),
     ],
 )
 async def test_identify_gateway_never_asks_the_mac_from_a_gateway_that_crashes_on_it(
@@ -409,6 +414,8 @@ def test_mac_request_is_safe_only_for_models_that_answered_it() -> None:
     assert cfd.mac_request_is_safe("200", None) is False  # shared code, model unknown
     assert cfd.mac_request_is_safe(None, None) is False
     assert cfd.mac_request_is_safe("13", None) is False  # H4684 by its WHO=13 device type
+    assert cfd.mac_request_is_safe("16", None) is False  # F453 by its WHO=13 device type
+    assert cfd.mac_request_is_safe("16", "16") is False  # F453 by its observed WHO=1013 code
     assert cfd.mac_request_is_safe("999999", None) is False  # unknown code: not asked
 
 

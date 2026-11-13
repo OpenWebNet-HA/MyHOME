@@ -44,6 +44,7 @@ from .identity import (
     read_who13,
     read_who1013,
     resolve_gateway_identity,
+    select_inband_reading,
 )
 from .typing_compat import flow_schema
 
@@ -135,10 +136,10 @@ def validated_reported_mac(mac: typing.Any) -> str | None:
 
 
 def _inband_reading(who13_code: str | None, who1013_code: str | None) -> CodeReading:
-    """The code reading the resolver labelled the gateway from: WHO=1013 when known, else WHO=13."""
-    if who1013_code and read_who1013(who1013_code).known:
-        return read_who1013(who1013_code)
-    return read_who13(who13_code or "")
+    """The code reading the resolver labelled the gateway from."""
+    who13 = read_who13(who13_code) if who13_code is not None else None
+    who1013 = read_who1013(who1013_code) if who1013_code is not None else None
+    return select_inband_reading(who13, who1013) or read_who13(who13_code or "")
 
 
 async def identify_gateway(gateway: typing.Any) -> GatewayIdentity:

@@ -87,6 +87,11 @@
     {
       "st": "upnp:rootdevice",
       "manufacturer": "BTicino S.p.A.",
+      "modelName": "F453"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
       "modelName": "F452"
     },
     {
