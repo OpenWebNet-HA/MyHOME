@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import typing
 
 import voluptuous as vol
@@ -32,12 +33,26 @@ from .data import get_runtime_data
 from .expose import effective_expose_profile, injection_block_reason
 from .typing_compat import flow_schema
 
-_EXPOSE_ACTION_KEYS: tuple[str, ...] = (
+_WHO1_ACTION_KEYS: tuple[str, ...] = (
     CONF_TURN_ON_ACTION,
     CONF_TURN_OFF_ACTION,
     CONF_STEP_UP_ACTION,
     CONF_STEP_DOWN_ACTION,
 )
+_WHO2_ACTION_KEYS: tuple[str, ...] = (
+    CONF_TURN_ON_ACTION,
+    CONF_TURN_OFF_ACTION,
+)
+
+
+def _action_keys_for_who(who: int | str) -> tuple[str, ...]:
+    """Return the custom action keys supported by ``who``."""
+    who_str = str(who)
+    if who_str == "1":
+        return _WHO1_ACTION_KEYS
+    if who_str == "2":
+        return _WHO2_ACTION_KEYS
+    return ()
 
 
 class ExposeSubentryFlowHandler(ConfigSubentryFlow):
@@ -187,7 +202,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 description={"suggested_value": tpl_default},
             ): selector.TextSelector(),
         }
-        for action_key in _EXPOSE_ACTION_KEYS:
+        for action_key in _action_keys_for_who(who_default):
             action_default = defaults.get(action_key)
             schema_dict[
                 vol.Optional(
@@ -247,9 +262,10 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             else:
                 dim = int(raw_dim)
 
+        allowed_actions = _action_keys_for_who(who)
         has_actions = any(
             user_input.get(k) not in (None, "", [], {})
-            for k in _EXPOSE_ACTION_KEYS
+            for k in allowed_actions
         )
         if who == 13:
             if dim is not None and dim not in (0, 1, 22):
@@ -294,16 +310,25 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
         tpl = str(user_input.get(CONF_VALUE_TEMPLATE) or "").strip()
         if tpl:
             cleaned[CONF_VALUE_TEMPLATE] = tpl
-        for action_key in _EXPOSE_ACTION_KEYS:
+        raw_actions: dict[str, list[dict[str, typing.Any]]] = {}
+        for action_key in allowed_actions:
             raw_action = user_input.get(action_key)
             if raw_action not in (None, "", [], {}):
                 cleaned[action_key] = raw_action
+                plain_action = validate._stringify_templates(copy.deepcopy(raw_action))
+                if isinstance(plain_action, dict):
+                    raw_actions[action_key] = [plain_action]
+                elif isinstance(plain_action, list):
+                    raw_actions[action_key] = plain_action
 
         try:
-            cleaned = validate.expose_entry_schema(cleaned)
+            cleaned = validate.expose_entry_schema(dict(cleaned))
         except vol.Invalid:
             errors["base"] = "invalid_expose"
             return {}, errors, ""
+
+        for action_key, raw_seq in raw_actions.items():
+            cleaned[action_key] = raw_seq
 
         norm_where = str(cleaned.get(CONF_WHERE) or "")
         if (

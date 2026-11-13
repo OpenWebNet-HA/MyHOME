@@ -119,11 +119,14 @@ TX_ECHO_GUARD_WINDOW_S: float = 1.5
 CROSS_GATEWAY_RX_DEDUP_S: float = 0.5
 # Unpopulated virtual SCS addresses receive no hardware link-layer ACK, so wall controls
 # retransmit each unicast telegram once ~0.18..0.22 s later. Keep strictly below the
-# ~0.48..0.55 s cadence of legitimate ACKed dimmer hold steps (F454/MH200N/MH201/H4890 traces).
+# ~0.395..0.55 s cadence of legitimate dimmer hold steps (H4890/MH201/F454/MH200N traces;
+# on ACKed buses the actuator's status reply between steps also clears the tracker).
 SAME_GATEWAY_TRANSLATION_RETRY_S: float = 0.35
 # On an unacknowledged virtual WHO=1 address, holding UP on a two-button dimmer control
-# (e.g. BTicino H4652/2 M=3 / M=9) repeats *1*1000#1*WHERE## every ~2.0 s instead of
-# transitioning to WHAT 30. Treat consecutive point-to-point 1000#1 frames within 3.0 s as step_up.
+# (e.g. BTicino H4652/2 M=3 / M=9) repeats *1*1000#1*WHERE## every ~2.0..2.1 s instead of
+# transitioning to WHAT 30. Treat consecutive point-to-point 1000#1 frames arriving within
+# 1.6..3.0 s while the bound target is already on as step_up, keeping quick double-presses idempotent.
+WHO1_TRANSLATION_HOLD_MIN_S: float = 1.6
 WHO1_TRANSLATION_HOLD_REPEAT_S: float = 3.0
 # OWNd profile flag gating each injected WHO, and the frames it covers. OWNd leaves a
 # flag unset (None) when no capture or oracle verdict exists for that gateway family.
@@ -1676,21 +1679,34 @@ class ExposeManager:
             return True
         if not binding.entity_id:
             return False
+        state = self.hass.states.get(binding.entity_id)
+        if state is None:
+            return False
         domain = binding.entity_id.split(".", 1)[0]
-        if domain == "media_player":
+        if domain in ("media_player", "cover"):
             return True
         if domain == "light":
-            state = self.hass.states.get(binding.entity_id)
-            if state is not None:
-                modes = state.attributes.get("supported_color_modes")
-                if (
-                    isinstance(modes, (list, tuple, set, frozenset))
-                    and modes
-                    and set(modes) <= {"onoff"}
-                ):
-                    return False
+            modes = state.attributes.get("supported_color_modes")
+            if (
+                isinstance(modes, (list, tuple, set, frozenset))
+                and modes
+                and set(modes) <= {"onoff"}
+            ):
+                return False
             return True
         return False
+
+    def _who1_binding_is_on_for_hold_step(self, binding: ExposeBinding) -> bool:
+        """Return True when the bound entity is already in an active/on state (or action-only)."""
+        if not binding.entity_id:
+            return bool(binding.step_up_action)
+        state = self.hass.states.get(binding.entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+        norm_state = state.state.strip().lower()
+        if norm_state in binding.on_states:
+            return True
+        return binding.entity_id.startswith("cover.") and norm_state == "opening"
 
     async def _async_handle_secondary_bus_message(
         self, message: OWNMessage, *, source_mac: str | None = None
@@ -1711,8 +1727,6 @@ class ExposeManager:
 
         now = time.monotonic()
         raw_frame = str(message)
-        if not self._last_rx_by_frame:
-            self._last_translation_rx_by_target.clear()
         prev_rx = self._last_rx_by_frame.get(raw_frame)
         if (
             prev_rx is not None
@@ -1985,7 +1999,10 @@ class ExposeManager:
                         self._last_who1_on_translation_at[binding.key] = now
                         if (
                             prev_on_at is not None
-                            and (now - prev_on_at) <= WHO1_TRANSLATION_HOLD_REPEAT_S
+                            and WHO1_TRANSLATION_HOLD_MIN_S
+                            <= (now - prev_on_at)
+                            <= WHO1_TRANSLATION_HOLD_REPEAT_S
+                            and self._who1_binding_is_on_for_hold_step(binding)
                         ):
                             await self._async_execute_who1_step(binding, up=True)
                             continue
