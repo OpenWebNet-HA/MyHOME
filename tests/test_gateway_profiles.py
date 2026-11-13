@@ -52,6 +52,8 @@ def test_extract_ssdp_models_from_manifest():
     """Verify SSDP discovery models extracted from manifest.json."""
     ssdp_models = extract_ssdp_models_from_manifest()
     assert "F454" in ssdp_models
+    assert "F453" in ssdp_models
+    assert "F453AV" in ssdp_models
     assert "MyHomeServer1" in ssdp_models
     assert "AM4890" in ssdp_models
     assert "067292" in ssdp_models

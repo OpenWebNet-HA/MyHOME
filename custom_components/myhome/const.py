@@ -390,10 +390,14 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 #        Shared across modern gateway families (not all Linux-based, e.g. MH201),
 #        so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
 #        It contradicts legacy gateways (e.g. MH200/F452), but only as field evidence.
+#    16: Confirmed on physical BTicino F453 gateway (Discussion #856 comment
+#        19587072, firmware 2.0.10, kernel 2.3.8, distro 3.0.1; UPnP modelName
+#        `F453`).
 #    23: Confirmed on physical BTicino H/L4684 touchscreen gateway (issue #466
 #        comment 6398442412, firmware 6.0.11, kernel 2.6.2, distro 6.0.0; UPnP
 #        modelName `H/L4684`, distinct from 2006 spec code `13` on FW 2.0.54).
 WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
+    "16": ("F453",),
     "23": ("H4684", "H/L4684", "L4684"),
     "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
 }
@@ -420,7 +424,6 @@ WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
 WHO13_THIRD_PARTY_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
     "12": ("F453AV",),
     "15": ("F427",),  # Nmap: "F427 (Gateway Open-KNX)"
-    "16": ("F453",),
     "27": ("L4686SDK",),
     "44": ("MH200N",),
     "51": ("F454",),
@@ -445,8 +448,8 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 # corroborated rather than contradicted. They are *brand variants of one
 # product*, not model numbers or order codes (@anotherjulien in #420): BTicino
 # sold the device as F454, Legrand sold the same hardware as 003598. Which name
-# to show could in principle follow the BRAND field of a WHO=1013 reply, but the
-# only brand value ever traced is 5, "Legrand BTicino", which does not
+# to show could in principle follow the BRAND field of a WHO=1013 reply, but
+# modern dual-branded gateways answer 5 ("Legrand BTicino"), which does not
 # discriminate - so the BTicino name is always the one displayed.
 #
 # Five codes are confirmed on physical hardware: 51 F454, 5 MH202, and 67
@@ -462,8 +465,10 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 #
 #     *#1013**1*OBJECT_MODEL*N_CONF*BRAND*LINE##
 #
-# All four traced gateways answered `*15*5*0`: N_CONF 15, BRAND 5 (Legrand
-# BTicino), LINE 0 (undefined). N_CONF 15 sits outside the ordinary 0..12 physical
+# Modern 200-class gateways traced so far answer `*15*5*0`: N_CONF 15, BRAND 5
+# (Legrand BTicino), LINE 0 (undefined), whereas the legacy ETLinux 3.0.1 F453
+# (firmware 2.0.10, Discussion #856) answers `*#1013**1*16*0*1*0##` (N_CONF 0,
+# BRAND 1 BTicino, LINE 0). N_CONF 15 sits outside the ordinary 0..12 physical
 # configurator range and looks like the 0xF sentinel, so its gateway-specific
 # meaning stays unresolved. None of the three identifies the model, so only
 # OBJECT_MODEL decides the identity; all four are recorded and exported in
@@ -489,14 +494,22 @@ WHO1013_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
     "105": ("F458", "003599"),
     "134": ("F461",),
 }
-# Code -> the model a WHO=13 reply labels a gateway with. Precedence matches
-# read_who13() in identity.py: the 2006 specification, then what this project has
-# observed, then the third-party table.
-# WHO=1013 dimension 1, third value: BRAND. Only the one value every traced
-# gateway answers is listed; the rest of MHCatalogue.db's brand space is not
-# reproduced here because nothing has been seen to use it. Note that 5 covers
-# both houses, so it cannot tell a BTicino-branded unit from a Legrand one.
+# WHO=1013 dimension 1 OBJECT_MODEL values observed on physical hardware outside
+# MHCatalogue.db's Integration Functions table (id_system = 26).
+#    16: Confirmed on physical BTicino F453 firmware 2.0.10 (Discussion #856
+#        comment 19587072, kernel 2.3.8, ETLinux 3.0.1): on `myhome.sweep_bus`,
+#        `*#1013*0*1##` answered `*#1013**1*16*0*1*0##`, echoing its WHO=13
+#        device type `16` with N_CONF `0`, BRAND `1` (BTicino), LINE `0`
+#        rather than MHCatalogue.db's `42`.
+WHO1013_OBSERVED_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
+    "16": ("F453",),
+}
+# WHO=1013 dimension 1, third value: BRAND (MHCatalogue.db EN_BRAND.brand_modobj).
+# Only values observed on real hardware are listed:
+#   1 -> BTicino (physical F453 fw 2.0.10, Discussion #856: *#1013**1*16*0*1*0##)
+#   5 -> Legrand BTicino (F454, MH202, MyHomeServer1, F461: *15*5*0##; covers both houses)
 WHO1013_BRANDS: dict[str, str] = {
+    "1": "BTicino",
     "5": "Legrand BTicino",
 }
 # WHO=1013 dimension 1, fourth value: LINE (product line). Same rule: only what
@@ -505,6 +518,9 @@ WHO1013_LINES: dict[str, str] = {
     "0": "Undefined",
 }
 
+# Code -> the model a WHO=13 reply labels a gateway with. Precedence matches
+# read_who13() in identity.py: the 2006 specification, then what this project has
+# observed, then the third-party table.
 GATEWAY_DEVICE_TYPE_MAP: dict[str, str] = {
     **{code: models[0] for code, models in WHO13_THIRD_PARTY_DEVICE_TYPES.items()},
     **{code: models[0] for code, models in WHO13_OBSERVED_DEVICE_TYPES.items()},

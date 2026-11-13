@@ -24,6 +24,7 @@ from custom_components.myhome.const import (
     WHO1013_BRANDS,
     WHO1013_LINES,
     WHO1013_OBJECT_MODELS,
+    WHO1013_OBSERVED_OBJECT_MODELS,
     gateway_model_family,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler, get_gateway_profile
@@ -92,6 +93,7 @@ def test_official_table_is_the_2006_document_verbatim():
     # code 200: observed on F454 (#370, #420), MyHOMEServer1 (#292 / #297, #420), MH202 (#420);
     # reported for F461 (#370), observed on H4890 (#466), observed on MH201 (OWNd#116)
     assert WHO13_OBSERVED_DEVICE_TYPES == {
+        "16": ("F453",),
         "23": ("H4684", "H/L4684", "L4684"),
         "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
     }
@@ -108,6 +110,8 @@ def test_official_table_is_the_2006_document_verbatim():
         for model in models:
             assert model not in seen, (model, seen.get(model), code)
             seen[model] = code
+    assert not set(WHO1013_OBSERVED_OBJECT_MODELS) & set(WHO1013_OBJECT_MODELS)
+    assert WHO1013_OBSERVED_OBJECT_MODELS == {"16": ("F453",)}
 
 
 # ── reading a code ───────────────────────────────────────────────────────
@@ -125,7 +129,6 @@ def test_third_party_table_is_the_nmap_device_table():
     assert WHO13_THIRD_PARTY_DEVICE_TYPES == {
         "12": ("F453AV",),
         "15": ("F427",),
-        "16": ("F453",),
         "27": ("L4686SDK",),
         "44": ("MH200N",),
         "51": ("F454",),
@@ -134,14 +137,23 @@ def test_third_party_table_is_the_nmap_device_table():
     assert not set(WHO13_THIRD_PARTY_DEVICE_TYPES) & set(WHO13_OFFICIAL_DEVICE_TYPES)
     assert not set(WHO13_THIRD_PARTY_DEVICE_TYPES) & set(WHO13_OBSERVED_DEVICE_TYPES)
     # a code from it labels an unconfigured gateway but never contradicts a configured one
-    r = read_who13("16")
-    assert (r.canonical, r.certain, r.basis) == ("F453", False, "an independent implementation")
-    assert r.compatible_with("F453") is True
+    r = read_who13("12")
+    assert (r.canonical, r.certain, r.basis) == ("F453AV", False, "an independent implementation")
+    assert r.compatible_with("F453AV") is True
     assert r.compatible_with("MH200") is None
+    assert resolve(Evidence(who13_code="12")).model == "F453AV"
+    assert resolve(Evidence(manual="MH200", who13_code="12")).corrected_from is None
+    assert resolve(Evidence(technical="MH200", technical_source=IDENTIFICATION_SSDP, who13_code="12")).conflict is None
+    # ...and it is no longer reported as an unknown code asking for a trace
+    assert resolve(Evidence(who13_code="12")).unknown_code is None
+    # code 16 (F453), originally from Nmap, is now promoted to field evidence (Discussion #856)
+    r16 = read_who13("16")
+    assert (r16.canonical, r16.certain, r16.basis) == ("F453", False, "field evidence")
+    assert r16.compatible_with("F453") is True
+    assert r16.compatible_with("MH200") is None
     assert resolve(Evidence(who13_code="16")).model == "F453"
     assert resolve(Evidence(manual="MH200", who13_code="16")).corrected_from is None
     assert resolve(Evidence(technical="MH200", technical_source=IDENTIFICATION_SSDP, who13_code="16")).conflict is None
-    # ...and it is no longer reported as an unknown code asking for a trace
     assert resolve(Evidence(who13_code="16")).unknown_code is None
     # a model OWNd does not know still resolves to a profile
     assert get_gateway_profile("L4686SDK") is not None
@@ -209,6 +221,18 @@ def test_read_who1013():
     assert r.compatible_with("003598") is True
     assert r.compatible_with("F454") is True
     assert r.compatible_with("MyHomeServer1") is False
+    # F453: catalogue 42 is certain, firmware-observed 16 (Discussion #856) is field evidence
+    r42 = read_who1013("42")
+    assert (r42.models, r42.certain, r42.basis, r42.raw) == (("F453",), True, "diagnostic catalogue", "1013-1-42")
+    assert r42.compatible_with("F453") is True and r42.compatible_with("MH200") is False
+    r16 = read_who1013("16")
+    assert (r16.models, r16.certain, r16.basis, r16.raw) == (("F453",), False, "field evidence", "1013-1-16")
+    assert r16.compatible_with("F453") is True
+    assert r16.compatible_with("MH200") is None
+    assert resolve(Evidence(who1013_code="16")).model == "F453"
+    assert resolve(Evidence(manual="MH200", who1013_code="16")).corrected_from is None
+    assert resolve(Evidence(technical="MH200", technical_source=IDENTIFICATION_SSDP, who1013_code="16")).conflict is None
+    assert resolve(Evidence(technical="F453", technical_source=IDENTIFICATION_SSDP, who13_code="16", who1013_code="16")).unknown_code is None
     assert read_who1013("999").known is False
     assert read_who1013("67").describe() == "WHO=1013 OBJECT_MODEL 67"
 
@@ -1104,7 +1128,7 @@ def test_who1013_metadata_tolerates_unknown_and_missing_values(dev_reg, issues):
 
 
 def test_brand_and_line_tables_hold_only_observed_values():
-    assert WHO1013_BRANDS == {"5": "Legrand BTicino"}
+    assert WHO1013_BRANDS == {"1": "BTicino", "5": "Legrand BTicino"}
     assert WHO1013_LINES == {"0": "Undefined"}
 
 
@@ -1247,3 +1271,132 @@ def test_mh201_identity_resolution(dev_reg, issues):
     assert ident["who1013_code"] == "10"
     assert ident["who13_code"] == "200"
     assert "MH201" in ident["who13_model_observed"]
+
+
+def test_f453_sweep_bus_who13_and_who1013_exchange(dev_reg, issues):
+    """Physical BTicino F453 (Discussion #856) answering *#13**15*16## and *#1013**1*16*0*1*0## raises no repair."""
+    create, _, corrected = issues
+    trace_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "traces"
+        / "discussion_856"
+        / "config_entry-myhome_F453_fw2_0_10.json"
+    )
+    diag = json.loads(trace_path.read_text(encoding="utf-8"))
+    frames = diag["data"]["bus_monitor"]["recent_frames"]
+
+    h = _handler(
+        {"name": "F453", "ssdp_location": "http://192.0.2.1:49153/description.xml", "firmware": "2.0.10"},
+        title="F453 Gateway",
+    )
+    h.gateway.model_name = "F453"
+    dev_reg.async_get.return_value = MagicMock(model="F453", model_id=None)
+
+    with patch("custom_components.myhome.gateway.async_create_unknown_model_issue") as unknown_create, \
+         patch("custom_components.myhome.gateway.async_delete_unknown_model_issue") as unknown_delete:
+        for frame in frames:
+            if frame["direction"] != "rx":
+                continue
+            raw = frame["raw"]
+            if raw.startswith("*#13*"):
+                h._handle_gateway_diagnostics(OWNEvent.parse(raw))
+            elif raw.startswith("*#1013*"):
+                h._handle_gateway_identity_diagnostics(OWNEvent.parse(raw))
+
+        assert h._command_pool.send_buffer.empty()
+        unknown_create.assert_not_called()
+        unknown_delete.assert_called_with(h.hass, "entry_ident")
+
+    create.assert_not_called()
+    corrected.assert_not_called()
+    ident = h.identification()
+    assert ident["model"] == "F453"
+    assert ident["source"] == IDENTIFICATION_SSDP
+    assert ident["who13_code"] == "16"
+    assert ident["who13_model"] == "F453"
+    assert ident["who13_model_official"] is None
+    assert ident["who13_model_observed"] == "F453"
+    assert ident["who13_firmware"] == "2.0.10"
+    assert ident["who13_kernel"] == "2.3.8"
+    assert ident["who13_distribution"] == "3.0.1"
+    assert ident["who1013_code"] == "16"
+    assert ident["who1013_model"] == "F453"
+    assert ident["who1013_other_names"] == []
+    assert ident["who1013_n_conf"] == "0"
+    assert ident["who1013_brand"] == "1 (BTicino)"
+    assert ident["who1013_line"] == "0 (Undefined)"
+    assert ident["conflict"] is None
+
+
+def test_observed_who1013_f453_code_16_precedence_and_non_contradiction(dev_reg, issues):
+    """Observed WHO=1013 code 16 labels untrusted entries, corroborates F453, and never contradicts another model."""
+    r16 = read_who1013("16")
+    assert r16.known and r16.canonical == "F453" and not r16.certain and r16.basis == "field evidence"
+    assert r16.compatible_with("F453") is True
+    assert r16.compatible_with("F453AV") is None
+    assert r16.compatible_with("MH200") is None
+    assert r16.compatible_with("F454") is None
+
+    r42 = read_who1013("42")
+    assert r42.known and r42.canonical == "F453" and r42.certain and r42.basis == "diagnostic catalogue"
+    assert r42.compatible_with("F453") is True
+    assert r42.compatible_with("F453AV") is False
+    assert r42.compatible_with("MH200") is False
+
+    # Generic / unconfigured gateway (identification_source == unknown -> manual=None) is labelled F453 when WHO=1013 reports 16
+    res_generic = resolve(Evidence(who13_code="16", who1013_code="16"))
+    assert res_generic.model == "F453"
+    assert res_generic.source == IDENTIFICATION_WHO13
+    assert res_generic.unknown_code is None
+    assert res_generic.conflict is None
+
+    h_generic = _handler({"name": "Generic"}, title="Generic Gateway")
+    h_generic.gateway.model_name = "Generic"
+    assert h_generic._identity_evidence() == Evidence(who13_code=None, who1013_code=None)
+    h_generic._handle_gateway_identity_diagnostics(OWNEvent.parse("*#1013**1*16*0*1*0##"))
+    assert h_generic.gateway.model_name == "F453"
+
+    # Configured MH200 or SSDP F454 is NOT contradicted or relabelled by field-evidence WHO=1013 code 16
+    res_manual_other = resolve(Evidence(manual="MH200", who1013_code="16"))
+    assert res_manual_other.model == "MH200"
+    assert res_manual_other.corrected_from is None
+    assert res_manual_other.conflict is None
+    assert res_manual_other.unknown_code is None
+
+    res_ssdp_other = resolve(
+        Evidence(technical="F454", technical_source=IDENTIFICATION_SSDP, who1013_code="16")
+    )
+    assert res_ssdp_other.model == "F454"
+    assert res_ssdp_other.conflict is None
+    assert res_ssdp_other.unknown_code is None
+
+    res_f453av = resolve(
+        Evidence(technical="F453AV", technical_source=IDENTIFICATION_SSDP, who13_code="16", who1013_code="16")
+    )
+    assert res_f453av.model == "F453AV"
+    assert res_f453av.conflict is None
+    assert res_f453av.unknown_code is None
+
+    # Field-evidence WHO=1013 (16, certain=False) must NEVER mask a certain WHO=13 spec reading (4 -> MH200)
+    res_certain_who13_manual = resolve(Evidence(manual="F454", who13_code="4", who1013_code="16"))
+    assert res_certain_who13_manual.model == "MH200"
+    assert res_certain_who13_manual.corrected_from == "F454"
+    assert res_certain_who13_manual.corrected_reading == read_who13("4")
+
+    res_certain_who13_ssdp = resolve(
+        Evidence(technical="F454", technical_source=IDENTIFICATION_SSDP, who13_code="4", who1013_code="16")
+    )
+    assert res_certain_who13_ssdp.model == "F454"
+    assert res_certain_who13_ssdp.conflict is not None
+    assert res_certain_who13_ssdp.conflict_reading == read_who13("4")
+
+    res_certain_who13_untrusted = resolve(Evidence(who13_code="4", who1013_code="16"))
+    assert res_certain_who13_untrusted.model == "MH200"
+
+    # Conversely, catalogue WHO=1013 (42, certain=True) outranks uncertain WHO=13 (16, certain=False)
+    res_certain_who1013 = resolve(Evidence(manual="MH200", who13_code="16", who1013_code="42"))
+    assert res_certain_who1013.model == "F453"
+    assert res_certain_who1013.corrected_from == "MH200"
+    assert res_certain_who1013.corrected_reading == read_who1013("42")
+

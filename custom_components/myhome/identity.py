@@ -16,14 +16,16 @@ Precedence, unchanged from the handler-side rules it replaces:
   *corrected*;
 - with no trustworthy model (none configured, or a label an earlier resolution
   wrote), the in-band evidence labels the gateway;
-- WHO=1013 outranks WHO=13 when both are present: its catalogue is one code per
-  model, while a WHO=13 code may be shared by several modern gateways, and the
-  two do not necessarily agree for the same product;
+- certain readings outrank uncertain ones, and within the same certainty tier
+  WHO=1013 outranks WHO=13: its catalogue is one code per model, while a WHO=13
+  code may be shared by several modern gateways, and the two do not necessarily
+  agree for the same product;
 - a shared WHO=13 code is not evidence of any model; it is the cue to ask WHO=1013.
 
 "Certain" means the 2006 specification (official WHO=13 codes) or the WHO=1013
-catalogue. A WHO=13 code known from field evidence only can corroborate a model,
-never contradict it.
+catalogue. A WHO=13 or WHO=1013 code known from field evidence only can label an
+unconfigured gateway and corroborate a model, never contradict it or mask a
+certain contradiction.
 """
 from __future__ import annotations
 
@@ -50,6 +52,7 @@ from .const import (
     WHO1013_BRANDS,
     WHO1013_LINES,
     WHO1013_OBJECT_MODELS,
+    WHO1013_OBSERVED_OBJECT_MODELS,
     gateway_model_family,
 )
 
@@ -76,6 +79,7 @@ def _same_product_names() -> dict[str, frozenset[str]]:
     ]
     entries += list(WHO13_THIRD_PARTY_DEVICE_TYPES.values())
     entries += list(WHO1013_OBJECT_MODELS.values())
+    entries += list(WHO1013_OBSERVED_OBJECT_MODELS.values())
     names: dict[str, frozenset[str]] = {}
     for models in entries:
         product = frozenset(_normalized(m) for m in models)
@@ -174,14 +178,28 @@ def read_who13(code: str) -> CodeReading:
 
 
 def read_who1013(code: str) -> CodeReading:
-    """Interpret a WHO=1013 dimension-1 OBJECT_MODEL."""
+    """Interpret a WHO=1013 dimension-1 OBJECT_MODEL.
+
+    Two sources, in descending order of authority: the diagnostic catalogue
+    (MHCatalogue.db, certain) and values observed on real hardware outside that
+    catalogue (field evidence: can label an unconfigured gateway and corroborate
+    one that has a model, never contradict it).
+    """
+    if code in WHO1013_OBJECT_MODELS:
+        models: tuple[str, ...] = WHO1013_OBJECT_MODELS[code]
+        basis = "diagnostic catalogue"
+        certain = True
+    else:
+        models = WHO1013_OBSERVED_OBJECT_MODELS.get(code, ())
+        basis = "field evidence"
+        certain = False
     return CodeReading(
         label="WHO=1013 OBJECT_MODEL",
         code=code,
         raw=f"1013-1-{code}",
-        models=tuple(WHO1013_OBJECT_MODELS.get(code, ())),
-        basis="diagnostic catalogue",
-        certain=True,
+        models=models,
+        basis=basis,
+        certain=certain,
         shared=False,
     )
 
@@ -218,6 +236,25 @@ class GatewayIdentityResolution:
         return self.unknown_readings[-1].raw if self.unknown_readings else None
 
 
+def select_inband_reading(
+    who13: CodeReading | None, who1013: CodeReading | None
+) -> CodeReading | None:
+    """Pick the strongest discriminating in-band reading.
+
+    Certain readings (2006 WHO=13 specification or WHO=1013 diagnostic catalogue)
+    outrank field-evidence / third-party readings so an unverified WHO=1013 code
+    cannot mask an authoritative WHO=13 contradiction; within the same certainty
+    tier, WHO=1013 outranks WHO=13. A shared WHO=13 code alone says nothing.
+    """
+    who13_disc = who13 if who13 is not None and who13.known and not who13.shared else None
+    who1013_disc = who1013 if who1013 is not None and who1013.known else None
+    if who1013_disc is not None and who1013_disc.certain:
+        return who1013_disc
+    if who13_disc is not None and who13_disc.certain:
+        return who13_disc
+    return who1013_disc or who13_disc
+
+
 def resolve_gateway_identity(evidence: GatewayIdentityEvidence) -> GatewayIdentityResolution:
     """Decide the effective gateway model from the evidence collected so far."""
     who13 = read_who13(evidence.who13_code) if evidence.who13_code is not None else None
@@ -239,14 +276,7 @@ def resolve_gateway_identity(evidence: GatewayIdentityEvidence) -> GatewayIdenti
         source = IDENTIFICATION_WHO13 if configured else IDENTIFICATION_UNKNOWN
         authoritative, trusted = False, False
 
-    # The in-band evidence that can discriminate: WHO=1013 first, else a WHO=13
-    # code that is known and not shared. A shared code alone says nothing.
-    if who1013 is not None and who1013.known:
-        inband: CodeReading | None = who1013
-    elif who13 is not None and who13.known and not who13.shared:
-        inband = who13
-    else:
-        inband = None
+    inband = select_inband_reading(who13, who1013)
 
     def verdict(
         model: str | None,

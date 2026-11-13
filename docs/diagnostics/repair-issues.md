@@ -48,7 +48,7 @@ Once the gateway broadcasts an updated WHO=13 frame with a valid timezone offset
 **Auto-Resolving**: Yes
 
 ### What it means
-The gateway reported a hardware model code that is unrecognized by the official BTicino specification, by this project's field evidence and by the third-party table taken from Nmap: either a WHO=13 dimension 15 device type (`*#13**15*<code>##`, shown as the bare code) or a WHO=1013 dimension 1 OBJECT_MODEL (`*#1013**1*<code>##`, shown as `1013-1-<code>`; this question is only asked after WHO=13 answered a code shared by several models).
+The gateway reported a hardware model code that is unrecognized by the official BTicino specification, by this project's field evidence and by the third-party table taken from Nmap: either a WHO=13 dimension 15 device type (`*#13**15*<code>##`, shown as the bare code) or a WHO=1013 dimension 1 OBJECT_MODEL (`*#1013**1*<code>##`, shown as `1013-1-<code>`; asked automatically after WHO=13 answered a code shared by several models, or manually during `myhome.sweep_bus`).
 
 ### How to resolve
 Click **Learn More** on the repair issue. This will open a pre-filled GitHub issue template (`device_request.yml`). Attach an exported diagnostic trace (*Settings → Devices & Services → MyHOME → ⋮ → Download diagnostics*) so the community can identify the hardware and add native profiling support.
@@ -62,7 +62,7 @@ Click **Learn More** on the repair issue. This will open a pre-filled GitHub iss
 **Auto-Resolving**: Yes
 
 ### What it means
-The hardware model reported by the gateway over the bus — a WHO=13 device type, or a WHO=1013 OBJECT_MODEL (code `1013-1-<value>`) when WHO=13 answered a shared code — contradicts the model discovered over SSDP, or a manual choice questioned by field evidence only, and the integration does not overwrite what the device itself announced.
+An authoritative hardware model code reported by the gateway over the bus — an official 2006 WHO=13 device type, or a catalogue WHO=1013 OBJECT_MODEL (code `1013-1-<value>`) — contradicts the model discovered over SSDP, and the integration does not overwrite what the device itself announced.
 
 ### How to resolve
 1. Check the physical hardware label on your gateway unit in the electrical cabinet.
@@ -78,7 +78,7 @@ The hardware model reported by the gateway over the bus — a WHO=13 device type
 **Auto-Resolving**: Informational
 
 ### What it means
-A manually selected model was contradicted by an authoritative code: an official 2006 BTicino device code (e.g. you selected `F454` but the gateway reported code `6`, which is an `F452`), or a WHO=1013 OBJECT_MODEL (e.g. you selected `F454`, WHO=13 answered the shared code `200`, and WHO=1013 answered `67`, which is a `MyHomeServer1`; shown as `1013-1-67`). The integration automatically updated your gateway profile and device registry to match.
+A manually selected model was contradicted by an authoritative code: an official 2006 BTicino device code (e.g. you selected `F454` but the gateway reported code `6`, which is an `F452`), or a catalogue WHO=1013 OBJECT_MODEL (e.g. you selected `F454`, WHO=13 answered the shared code `200`, and WHO=1013 answered `67`, which is a `MyHomeServer1`; shown as `1013-1-67`). The integration automatically updated your gateway profile and device registry to match.
 
 ### How to resolve
 No action is required unless the correction was incorrect. If your physical hardware truly differs, verify the model label on the device.
