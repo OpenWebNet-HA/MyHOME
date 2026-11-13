@@ -2279,6 +2279,7 @@
 <ul>
 <li><strong>Hardware</strong>: Autonomous room thermostats (BTicino <code>H4691</code>, <code>LN4691</code>, <code>L4692</code>) acting as independent temperature controllers without a master central display.</li>
 <li><strong>Operation</strong>: Each thermostat is exposed directly as an independent <code>climate</code> entity with full target setpoint and mode control.</li>
+<li><strong>Modes offered</strong>: on a plant that also has a central unit, a standalone thermostat does not offer <code>auto</code> once the central unit is known (the central unit has no program for it: the live F461 ACKs <code>*4*311*#2##</code> and nothing answers; <code>auto</code> on zone 2 was refused on both gateway entries, 2026-11-12). A zone <em>of</em> the central unit does not offer the off-season mode while the season is reported (<code>heat</code> on zone 4 of a 3550 in conditioning was refused, 2026-11-12). The mode a zone shows is never dropped from the list.</li>
 </ul>
 <hr />
 <h2 id="push-driven-secondary-probes-where-100">🌡️ Push-Driven Secondary Probes (<code>WHERE ≥ 100</code>)<a class="headerlink" href="#push-driven-secondary-probes-where-100" title="Permanent link">&para;</a></h2>
