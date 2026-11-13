@@ -281,7 +281,7 @@ device with four entities alongside the amplifier zones:
 
 | Home Assistant | OpenWebNet (`WHO 16` / `WHO 22`-only gateways) |
 | :--- | :--- |
-| On / off | `*16*3*10S##` / `*16*13*10S##` (or `*22*1*2#S##` / `*22*0*2#S##`) |
+| On / off | `*16*3*10S##` / `*16*13*10S##` (or the published `*22*1#4#1*2#S##` / `*22*0#4#0*2#S##`) |
 | Next / previous track | next / previous station (`*16*6001*10S##` / `*16*6101*10S##`, or `*22*9*2#S##` / `*22*10*2#S##`) |
 | Source list | stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
 | Manual frequency (`number.<source>_frequency` / `myhome.tuner_set_frequency`) | `87.50–108.00 MHz` (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`) |
