@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -245,6 +246,13 @@ def test_thermo_event_helpers() -> None:
     assert thermo_event_interface(fake_if) == "03"
     fake_alpha_if = MagicMock(interface="busA", _where_param=[], where_param=[])
     assert thermo_event_interface(fake_alpha_if) == "busA"
+    # Pre-b14 OWNd fallback when .interface is None and routing lives in where_param
+    pre_b14_zone_if = SimpleNamespace(where="7", zone=7, interface=None, where_param=["4", "2"])
+    assert thermo_event_interface(pre_b14_zone_if) == "02"
+    assert _calling_zones(pre_b14_zone_if) == (["7"], "02")
+    pre_b14_act_if = SimpleNamespace(where="7", zone=7, interface=None, where_param=["1", "4", "1"])
+    assert thermo_event_interface(pre_b14_act_if) == "01"
+    assert _calling_zones(pre_b14_act_if) == (["7"], "01")
 
     # Explicit .actuator attribute and fallback tail actuator when .actuator is absent
     assert thermo_event_actuator(MagicMock(actuator=2)) == "2"
