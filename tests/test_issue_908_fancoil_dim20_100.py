@@ -57,6 +57,7 @@ MHS1_TRACE_PATH = (
     TRACES_DIR / "myhome_trace_oracle_myhomeserver1_extended_fancoil_off_14_16.json"
 )
 ORACLE_JSON_PATH = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+CORPUS_JSON_PATH = Path(__file__).resolve().parent / "golden" / "corpus.json"
 MAC = "00:03:50:90:80:01"
 
 
@@ -748,3 +749,49 @@ async def test_running_fan_speed_clears_to_off_when_all_actuators_become_inactiv
     assert "running_fan_speed" not in dim19_zone.extra_state_attributes
     dim19_zone.handle_event(OWNHeatingEvent("*#4*4#3*20*100##"))
     assert dim19_zone.extra_state_attributes["running_fan_speed"] == "off"
+
+
+def test_issue_908_golden_corpus_conformance_entries() -> None:
+    """Verify Issue #908 live capture and Encyclopedia frames are registered in Golden Corpus CI."""
+    corpus_by_id = {
+        rec["id"]: rec
+        for rec in json.loads(CORPUS_JSON_PATH.read_text(encoding="utf-8"))
+    }
+    live_raw_frames = {
+        f["raw"]
+        for f in json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))["frames"]
+    }
+
+    expected_capture_ids = {
+        "thermo.capture.dim20.write.fancoil_0pct.z1.act3": "*#4*1#3*#20*100##",
+        "thermo.capture.dim20.status.fancoil_0pct.z1.act3": "*#4*1#3*20*100##",
+        "thermo.capture.dim20.write.fancoil_0pct.z2.act3": "*#4*2#3*#20*100##",
+        "thermo.capture.dim20.status.fancoil_0pct.z2.act3": "*#4*2#3*20*100##",
+        "thermo.capture.dim20.write.valve_off.z2.act1": "*#4*2#1*#20*0##",
+        "thermo.resp.actuator.status.off.zone2.act1": "*#4*2#1*20*0##",
+        "thermo.capture.pump_release.zone2.pump1": "*4*4002#2*0#1##",
+        "thermo.capture.pump_release.zone2": "*4*4002*2##",
+        "thermo.capture.humidity.zone1.60": "*#4*1*60*60##",
+    }
+    for rec_id, raw_frame in expected_capture_ids.items():
+        assert rec_id in corpus_by_id
+        rec = corpus_by_id[rec_id]
+        assert rec["frame"] == raw_frame
+        assert rec["source"] == "community-plant-capture"
+        assert raw_frame in live_raw_frames
+        parsed = OWNMessage.parse(raw_frame)
+        assert parsed is not None
+        if rec.get("dimension") == 20:
+            assert thermo_dim20_status(parsed) == (False, None, None)
+
+    ext_rec = corpus_by_id["thermo.resp.valves.extended_fancoil_off_speed1.zone1"]
+    assert ext_rec["frame"] == "*#4*1*19*0*14##"
+    assert ext_rec["source"] == "encyclopedia"
+    assert thermo_dim19_status(OWNMessage.parse(ext_rec["frame"])) == (
+        False,
+        False,
+        False,
+        None,
+        False,
+        None,
+    )
