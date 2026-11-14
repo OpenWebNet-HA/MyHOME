@@ -71,6 +71,7 @@ from .discovery import (
     Address,
     DeviceContext,
     PlatformDiscovery,
+    binary_sensor_only_on_primary,
     default_known_keys,
     parse_unique_id,
     prune_entity,
@@ -432,6 +433,17 @@ async def async_setup_entry(
         if inv is not None:
             invert_entities.append(inv)
 
+    def _contact_only_on_primary(switch: MyHOMEInvertSwitch) -> bool:
+        """Shared bus: this follower's contact lives on its primary gateway (#453)."""
+        primary_mac = runtime.primary_gateway_mac
+        if registry is None or not runtime.is_follower or not primary_mac:
+            return False
+        identifiers = (switch.device_info or {}).get("identifiers") or set()
+        return any(
+            domain == DOMAIN and binary_sensor_only_on_primary(hass, registry, identifier, entry_mac, primary_mac)
+            for domain, identifier in identifiers
+        )
+
     seen_bs_configs: set[int] = set()
     for dev_id, bs_cfg in configured_bs.items():
         if not isinstance(bs_cfg, dict) or id(bs_cfg) in seen_bs_configs:
@@ -456,8 +468,13 @@ async def async_setup_entry(
             model=str(bs_cfg.get(CONF_DEVICE_MODEL, default_model)),
             cfg=bs_cfg,
         )
-        if inv is not None:
-            invert_entities.append(inv)
+        if inv is None:
+            continue
+        if _contact_only_on_primary(inv):
+            # The binary sensor of this myhome.yaml entry is not created here either
+            known_invert_switches.discard(inv._option_key)
+            continue
+        invert_entities.append(inv)
 
     if registry is not None:
         active_invert_uids = {s.unique_id for s in invert_entities if s.unique_id}

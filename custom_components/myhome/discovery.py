@@ -241,6 +241,30 @@ def actuator_only_on_primary(registry: er.EntityRegistry, actuator_unique_id: st
 
 
 @callback
+def binary_sensor_only_on_primary(
+    hass: HomeAssistant, registry: er.EntityRegistry, device_identifier: str, own_mac: str, primary_mac: str
+) -> bool:
+    """Whether a follower has no binary sensor on this device while its primary gateway does.
+
+    That is the state ``PlatformDiscovery`` leaves behind for a follower's dry contact or
+    auxiliary channel the primary already has (#453): its "Invert state" switch, which
+    shares the device, does not belong on the follower either.
+    """
+    peer = peer_unique_id(device_identifier, own_mac, primary_mac)
+    if peer is None:
+        return False
+    devices = dr.async_get(hass)
+    with_sensor: set[str] = set()
+    for entry in registry.entities.values():
+        if entry.domain != "binary_sensor" or entry.platform != DOMAIN or not entry.device_id:
+            continue
+        device = devices.async_get(entry.device_id)
+        if device is not None:
+            with_sensor.update(identifier for domain, identifier in device.identifiers if domain == DOMAIN)
+    return device_identifier not in with_sensor and peer in with_sensor
+
+
+@callback
 def prune_orphaned_companions(hass: HomeAssistant, config_entry_id: str, own_mac: str, primary_mac: str) -> None:
     """Remove a follower's buttons whose actuator was pruned in favour of the primary (#524).
 
