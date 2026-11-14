@@ -32,7 +32,6 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import RegistryEntry
 from OWNd.message import (
-    MESSAGE_TYPE_ACTION,
     OWNCommand,
     OWNHeatingCommand,
     OWNHeatingEvent,
@@ -83,6 +82,7 @@ from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subent
 from .typing_compat import as_any
 from .where_grammar import (
     parse_thermo_actuator_where,
+    thermo_dim19_status,
     thermo_dim20_is_active,
     thermo_event_actuator,
     thermo_event_interface,
@@ -889,17 +889,10 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             self._bus_state_complete = True
         elif (
             isinstance(message, OWNHeatingEvent)
-            and getattr(message, "message_type", None) == MESSAGE_TYPE_ACTION
-            and getattr(message, "dimension", None) == 19
             and self._actuator is None
+            and (dim19 := thermo_dim19_status(message)) is not None
         ):
-            is_active = bool(
-                message.is_active()
-                or message.is_heating()
-                or message.is_cooling()
-                or getattr(message, "cooling_fan_on", None)
-                or getattr(message, "fan_on", None)
-            )
+            is_active = dim19[2]
             self._zone_active = is_active
             self._active_source = "zone"
             if not is_active:

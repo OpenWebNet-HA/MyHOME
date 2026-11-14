@@ -1,0 +1,187 @@
+{
+  "capture": {
+    "kind": "synthetic-firmware-oracle-trace",
+    "synthetic": true,
+    "source": "firmware-oracle-contract",
+    "provenance": "SYNTHETIC TRACE — NOT A LIVE PLANT CAPTURE. Deterministically constructed from emulated MyHomeServer1 firmware 2.82.6 (028206) bt_termo extended lookup table (0x11e6c..0x11e74: SCS '24'..'26' -> Dimension 19/20 values 14, 15, 16 = fan-coil OFF speeds 1..3, ownkb:claim:c003275/c003276) and bt_thermo_manager proportional write templates (*#4*%s*#%d*100## / *#4*%s*#%d*200##).",
+    "started_at": "2026-11-14T10:00:00.000Z",
+    "filters": {
+      "who": "4,13",
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-11-14T10:00:00.000Z",
+      "last": "2026-11-14T10:02:00.000Z",
+      "frames": 10,
+      "buffer_frames": 10,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.11.1",
+    "integration_version": "2.0.0b18",
+    "ownd_version": "2.0.0b14",
+    "exported_at": "2026-11-14T10:02:01.000Z"
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.82.6",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.02,
+    "is_connected": true
+  },
+  "telemetry": {
+    "total_rx": 9,
+    "total_tx": 1,
+    "captured_in_buffer": 10,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1794650400.05,
+      "iso_time": "2026-11-14T10:00:00.050000+00:00",
+      "direction": "tx",
+      "raw": "*#13**16##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "16",
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (MyHomeServer1 028206 startup): firmware version query."
+    },
+    {
+      "timestamp": 1794650400.09,
+      "iso_time": "2026-11-14T10:00:00.090000+00:00",
+      "direction": "rx",
+      "raw": "*#13**16*2*82*6##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "16",
+      "dimension_values": ["2", "82", "6"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (MyHomeServer1 028206 oracle): firmware 2.82.6."
+    },
+    {
+      "timestamp": 1794650401.0,
+      "iso_time": "2026-11-14T10:00:01.000000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*1##",
+      "who": "4",
+      "what": "1",
+      "where": "1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): heating mode."
+    },
+    {
+      "timestamp": 1794650401.1,
+      "iso_time": "2026-11-14T10:00:01.100000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1*0*0210##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "0",
+      "dimension_values": ["0210"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): 21.0 C."
+    },
+    {
+      "timestamp": 1794650401.2,
+      "iso_time": "2026-11-14T10:00:01.200000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1*14*0195*1##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "14",
+      "dimension_values": ["0195", "1"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): setpoint 19.5 C."
+    },
+    {
+      "timestamp": 1794650401.3,
+      "iso_time": "2026-11-14T10:00:01.300000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1*19*0*14##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "19",
+      "dimension_values": ["0", "14"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (MyHomeServer1 bt_termo 0x11e6c): heating fan-coil OFF speed 1 (14) -> fan side detected, running_fan_speed='off', hvac_action='idle'."
+    },
+    {
+      "timestamp": 1794650402.0,
+      "iso_time": "2026-11-14T10:00:02.000000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1#2*20*15##",
+      "who": "4",
+      "what": null,
+      "where": "1#2",
+      "dimension": "20",
+      "dimension_values": ["15"],
+      "is_ack": false,
+      "is_nack": false,
+      "scs_source": "$04B7813225",
+      "note": "SYNTHETIC (MyHomeServer1 bt_termo 0x11e70): actuator #2 fan-coil OFF speed 2 (15) -> inactive ('off'), hvac_action='idle'."
+    },
+    {
+      "timestamp": 1794650403.0,
+      "iso_time": "2026-11-14T10:00:03.000000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1#2*20*16##",
+      "who": "4",
+      "what": null,
+      "where": "1#2",
+      "dimension": "20",
+      "dimension_values": ["16"],
+      "is_ack": false,
+      "is_nack": false,
+      "scs_source": "$04B7813226",
+      "note": "SYNTHETIC (MyHomeServer1 bt_termo 0x11e74): actuator #2 fan-coil OFF speed 3 (16) -> inactive ('off'), hvac_action='idle'."
+    },
+    {
+      "timestamp": 1794650460.0,
+      "iso_time": "2026-11-14T10:01:00.000000+00:00",
+      "direction": "rx",
+      "raw": "*#4*7#1*20*100##",
+      "who": "4",
+      "what": null,
+      "where": "7#1",
+      "dimension": "20",
+      "dimension_values": ["100"],
+      "is_ack": false,
+      "is_nack": false,
+      "scs_source": "$04B7873180",
+      "note": "SYNTHETIC (probe-less actuator zone 7#1): 0% proportional status defers climate creation (#785) instead of spawning ghost climate.zone_7."
+    },
+    {
+      "timestamp": 1794650520.0,
+      "iso_time": "2026-11-14T10:02:00.000000+00:00",
+      "direction": "rx",
+      "raw": "*#4*7#1*#20*200##",
+      "who": "4",
+      "what": null,
+      "where": "7#1",
+      "dimension": "20",
+      "dimension_values": ["200"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (MyHomeServer1 bt_thermo_manager): #20*200 write turns probe-less 0-10 V actuator 7#1 ON (100%)."
+    }
+  ]
+}

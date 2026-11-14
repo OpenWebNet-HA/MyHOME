@@ -92,6 +92,8 @@ from .where_grammar import (
     is_probe,
     is_pump,
     parse_thermo_actuator_where,
+    thermo_dim19_status,
+    thermo_dim20_status,
     thermo_event_actuator,
     thermo_event_interface,
     zone_number,
@@ -373,47 +375,46 @@ async def async_setup_entry(
             and is_thermo_switch_actuator_zone(ctx.address)
             and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
             and getattr(ctx.message, "dimension", None) == 19
-            and not isinstance(getattr(ctx.message, "cooling_fan_on", None), bool)
-            and not isinstance(getattr(ctx.message, "fan_on", None), bool)
         ):
-            zone_pair = thermo_zone_pair(ctx.address)
-            if zone_pair is not None:
-                events = pending_actions.setdefault(zone_pair, {})
-                dim19_active = bool(
-                    ctx.message.is_active()
-                    or ctx.message.is_heating()
-                    or ctx.message.is_cooling()
+            dim19 = thermo_dim19_status(ctx.message)
+            if dim19 is None or (
+                not isinstance(dim19[3], bool) and not isinstance(dim19[4], bool)
+            ):
+                zone_pair = thermo_zone_pair(ctx.address)
+                if dim19 is not None and zone_pair is not None:
+                    events = pending_actions.setdefault(zone_pair, {})
+                    if dim19[2]:
+                        events.pop("dim19", None)
+                        events["dim19"] = ctx.message
+                    else:
+                        events.pop("dim19", None)
+                        events.pop("dim19_off", None)
+                        events["dim19_off"] = ctx.message
+                LOGGER.debug(
+                    "Deferring climate zone %s creation on Dimension 19 valve-only frame (#785)",
+                    ctx.address.key,
                 )
-                if dim19_active:
-                    events.pop("dim19", None)
-                    events["dim19"] = ctx.message
-                else:
-                    events.pop("dim19", None)
-                    events.pop("dim19_off", None)
-                    events["dim19_off"] = ctx.message
-            LOGGER.debug(
-                "Deferring climate zone %s creation on Dimension 19 valve-only frame (#785)",
-                ctx.address.key,
-            )
-            return False
+                return False
         if (
             ctx.source == "bus"
             and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
             and getattr(ctx.message, "dimension", None) == 20
-            and not isinstance(getattr(ctx.message, "fan_speed", None), int)
-            and not isinstance(getattr(ctx.message, "fan_on", None), bool)
         ):
-            zone_pair = thermo_zone_pair(ctx.address)
-            if zone_pair is not None:
-                slot = f"act:{thermo_event_actuator(ctx.message)}"
-                events = pending_actions.setdefault(zone_pair, {})
-                events.pop(slot, None)
-                events[slot] = ctx.message
-            LOGGER.debug(
-                "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
-                ctx.address.key,
-            )
-            return False
+            dim20 = thermo_dim20_status(ctx.message)
+            if dim20 is None or (
+                not isinstance(dim20[2], int) and not isinstance(dim20[1], bool)
+            ):
+                zone_pair = thermo_zone_pair(ctx.address)
+                if dim20 is not None and zone_pair is not None:
+                    slot = f"act:{thermo_event_actuator(ctx.message)}"
+                    events = pending_actions.setdefault(zone_pair, {})
+                    events.pop(slot, None)
+                    events[slot] = ctx.message
+                LOGGER.debug(
+                    "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
+                    ctx.address.key,
+                )
+                return False
         return True
 
     def duplicate_climate(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
@@ -632,6 +633,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._running_fan_speed: str | None = None
         # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
+        # Per-actuator fan speed from dimension 20 for actuators known to be fan coils.
+        self._actuator_fan_speeds: dict[str, str | None] = {}
         # Zone-level fallback from dimension 19 (*#4*Z*19*C*H##): whether any valve or fan
         # coil of the zone is active; None until seen. Whichever of the two arrived last
         # drives hvac_action, so a stale one cannot keep the zone "heating".
@@ -831,6 +834,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_modes = None
         self._attr_fan_mode = None
         self._running_fan_speed = None
+        self._actuator_fan_speeds.clear()
 
     def _enable_humidity(self) -> None:
         """Dynamically enable humidity support if not already enabled."""
@@ -1376,11 +1380,40 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return bool(self._zone_active)
         return any(self._actuator_states.values())
 
+    @staticmethod
+    def _decode_running_fan_speed(
+        msg_fan_on: bool | None, msg_fan_speed: int | None
+    ) -> str | None:
+        """Map decoded fan flags to ``running_fan_speed`` (``low``/``medium``/``high``/``off``/``None``)."""
+        if msg_fan_speed == 1:
+            return "low"
+        if msg_fan_speed == 2:
+            return "medium"
+        if msg_fan_speed == 3:
+            return "high"
+        if msg_fan_on is False or msg_fan_speed == 4:
+            return "off"
+        return None
+
+    def _sync_actuator_running_fan_speed(self) -> None:
+        """Recompute ``_running_fan_speed`` from tracked fan-coil actuators."""
+        for speed in reversed(self._actuator_fan_speeds.values()):
+            if speed in ("low", "medium", "high"):
+                self._running_fan_speed = speed
+                return
+        if any(speed is None for speed in self._actuator_fan_speeds.values()):
+            self._running_fan_speed = None
+        else:
+            self._running_fan_speed = "off"
+
     def _mark_actuators_off(self) -> None:
         """The zone was switched OFF: every known actuator is off, the attribute stays."""
         self._actuator_states = dict.fromkeys(self._actuator_states, False)
+        self._actuator_fan_speeds = dict.fromkeys(self._actuator_fan_speeds, "off")
         if self._zone_active is not None:
             self._zone_active = False
+        if self._actuator_fan_speeds or self._running_fan_speed in ("low", "medium", "high"):
+            self._running_fan_speed = "off"
 
     @property
     def _standalone(self) -> bool:
@@ -2517,14 +2550,34 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
-            # Valves status (dimension 19): OWNd sets cooling_fan_on / fan_on only for a
-            # fan-coil value (5..8) on that side, so their presence tells which side is a fan coil.
+            dimension = getattr(message, "dimension", None)
             sides_resolved = False
-            if getattr(message, "dimension", None) == 19:
+            cooling_active = False
+            heating_active = False
+            if dimension == 19:
+                dim19 = thermo_dim19_status(message)
+                if dim19 is None:
+                    return
+                (
+                    cooling_active,
+                    heating_active,
+                    is_active,
+                    cooling_fan_on,
+                    heating_fan_on,
+                    msg_fan_speed,
+                ) = dim19
+                if heating_fan_on is True or cooling_fan_on is True:
+                    msg_fan_on: bool | None = True
+                elif heating_fan_on is False or (
+                    cooling_fan_on is False and self._fan
+                ):
+                    msg_fan_on = False
+                else:
+                    msg_fan_on = None
                 sides_resolved = not self._fan_coil_sides
                 self._fan_coil_sides = {
-                    "cooling": isinstance(getattr(message, "cooling_fan_on", None), bool),
-                    "heating": isinstance(getattr(message, "fan_on", None), bool),
+                    "cooling": isinstance(cooling_fan_on, bool),
+                    "heating": isinstance(heating_fan_on, bool),
                 }
                 self._fan_coil_sides_asked_at = None
                 self._fan_coil_sides_held = False
@@ -2534,29 +2587,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     # (*#4*Z*19##) is answered (myhomeserver1_live_2026-10-25 zones 35..70, issue_674 F455):
                     # retract the tentative fan_mode once dimension 19 proves neither side is a fan coil.
                     self._disable_fan_mode()
-            # Actuator status (Dimension 20) with values >= 5 reports fancoil fan status in OWNd,
+            elif dimension == 20:
+                dim20 = thermo_dim20_status(message)
+                if dim20 is None:
+                    return
+                is_active, msg_fan_on, msg_fan_speed = dim20
+            else:
+                cooling_active = bool(message.is_cooling())
+                heating_active = bool(message.is_heating())
+                is_active = bool(message.is_active())
+                msg_fan_on = getattr(message, "fan_on", None)
+                msg_fan_speed = getattr(message, "fan_speed", None)
+
+            # Actuator status (Dimension 20) with fan-coil codes (5..9, 14..16) reports fan status
             # unless dimension 19 already proved neither side of an unconfigured zone is a fan coil.
             is_fan = (
-                isinstance(getattr(message, "fan_speed", None), int)
-                or isinstance(getattr(message, "fan_on", None), bool)
+                isinstance(msg_fan_speed, int) or isinstance(msg_fan_on, bool)
             ) and not (self._has_no_fan_coil_sides() and not self._fan_configured)
             fan_enabled_now = is_fan and not self._fan
             if is_fan:
                 self._enable_fan_mode()
-                if getattr(message, "dimension", None) == 20:
+                if dimension == 20:
                     # The actuator report revealed a fan coil; ask which side it is on.
                     self._ask_fan_coil_sides()
-                speed = getattr(message, "fan_speed", None)
-                if speed == 1:
-                    self._running_fan_speed = "low"
-                elif speed == 2:
-                    self._running_fan_speed = "medium"
-                elif speed == 3:
-                    self._running_fan_speed = "high"
-                elif getattr(message, "fan_on", None) is False or speed == 4:
-                    self._running_fan_speed = "off"
-                else:
-                    self._running_fan_speed = None
             if (
                 (sides_resolved or (fan_enabled_now and self._fan_coil_sides))
                 and self._fan
@@ -2569,36 +2622,74 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # value 5, fan off, carries no speed).
                 self._request_zone_dimension(11)
 
-            is_active = bool(message.is_active())
-            dimension = getattr(message, "dimension", None)
             if dimension == 20:
                 actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
-            else:
-                # Dimension 19 (valves status) is the zone as a whole. OWNd <= 2.0.0b11 clears
-                # _is_active when a fan-coil side is off (value 5), even if the other side's
-                # valve is open (*#4*2*19*5*1##, OWNd#116).
-                if dimension == 19:
-                    is_active = bool(
-                        is_active
-                        or message.is_heating()
-                        or message.is_cooling()
-                        or getattr(message, "cooling_fan_on", None)
-                        or getattr(message, "fan_on", None)
+                if is_fan:
+                    self._actuator_fan_speeds.pop(actuator_id, None)
+                    self._actuator_fan_speeds[actuator_id] = (
+                        self._decode_running_fan_speed(msg_fan_on, msg_fan_speed)
                     )
+                    self._sync_actuator_running_fan_speed()
+                elif actuator_id in self._actuator_fan_speeds:
+                    self._actuator_fan_speeds[actuator_id] = (
+                        None if is_active else "off"
+                    )
+                    self._sync_actuator_running_fan_speed()
+                elif not self._any_actuator_active() and self._running_fan_speed in (
+                    "low",
+                    "medium",
+                    "high",
+                ):
+                    self._running_fan_speed = "off"
+            else:
                 self._zone_active = is_active
                 self._active_source = "zone"
                 if not self._zone_active:
                     # Neither side is active: every actuator of the zone is off.
                     self._actuator_states = dict.fromkeys(self._actuator_states, False)
+                    self._actuator_fan_speeds = dict.fromkeys(
+                        self._actuator_fan_speeds, "off"
+                    )
+                if is_fan:
+                    self._running_fan_speed = self._decode_running_fan_speed(
+                        msg_fan_on, msg_fan_speed
+                    )
+                    if self._running_fan_speed == "off":
+                        self._actuator_fan_speeds = dict.fromkeys(
+                            self._actuator_fan_speeds, "off"
+                        )
+                elif self._fan:
+                    dim_vals = (
+                        getattr(message, "dimension_value", None)
+                        if dimension == 19
+                        else None
+                    )
+                    modulating = isinstance(dim_vals, (list, tuple)) and any(
+                        str(v).isascii() and str(v).isdigit() and 101 <= int(str(v)) <= 200
+                        for v in dim_vals[:2]
+                    )
+                    if modulating:
+                        self._actuator_fan_speeds = dict.fromkeys(
+                            self._actuator_fan_speeds, None
+                        )
+                        self._running_fan_speed = None
+                    elif (dimension == 19 or not self._zone_active) and (
+                        self._actuator_fan_speeds
+                        or self._running_fan_speed in ("low", "medium", "high")
+                    ):
+                        self._actuator_fan_speeds = dict.fromkeys(
+                            self._actuator_fan_speeds, "off"
+                        )
+                        self._running_fan_speed = "off"
             any_active = self._any_actuator_active()
 
             if any_active:
                 if self._heating and self._cooling:
-                    if message.is_heating():
+                    if heating_active:
                         self._attr_hvac_action = HVACAction.HEATING
-                    elif message.is_cooling():
+                    elif cooling_active:
                         self._attr_hvac_action = HVACAction.COOLING
                     elif self._season == SEASON_HEATING:
                         self._attr_hvac_action = HVACAction.HEATING
