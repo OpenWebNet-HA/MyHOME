@@ -481,6 +481,31 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntr
 class MyHOMESensorEntity(MyHOMEEntity, RestoreSensor):
     """Base class for MyHOME sensors restoring native values via RestoreSensor."""
 
+    def _is_numeric_sensor(self) -> bool:
+        """Return True when Home Assistant expects a finite numeric native_value."""
+        return (
+            self.native_unit_of_measurement is not None
+            or self.state_class is not None
+            or self.suggested_display_precision is not None
+        )
+
+    def _coerce_native_value(self, value: Any) -> float | str | None:
+        """Validate and normalize a restored value already in native units."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float, Decimal)):
+            numeric = float(value)
+            return numeric if math.isfinite(numeric) else None
+        if isinstance(value, str):
+            if self._is_numeric_sensor():
+                try:
+                    numeric = float(value)
+                except ValueError:
+                    return None
+                return numeric if math.isfinite(numeric) else None
+            return value
+        return None
+
     def _convert_to_native_unit(
         self, value: Any, from_unit: str, to_unit: str
     ) -> float | None:
@@ -522,22 +547,12 @@ class MyHOMESensorEntity(MyHOMEEntity, RestoreSensor):
             if raw_val is None:
                 return
             stored_unit = sensor_data.native_unit_of_measurement
-            if (
-                stored_unit is None
-                or native_unit is None
-                or stored_unit == native_unit
-            ):
-                if isinstance(raw_val, Decimal):
-                    val_f = float(raw_val)
-                    if math.isfinite(val_f):
-                        self._attr_native_value = val_f
-                elif isinstance(raw_val, (int, float)) and not isinstance(
-                    raw_val, bool
-                ):
-                    if math.isfinite(raw_val):
-                        self._attr_native_value = raw_val
-                elif isinstance(raw_val, str):
-                    self._attr_native_value = raw_val
+            if stored_unit == native_unit:
+                coerced = self._coerce_native_value(raw_val)
+                if coerced is not None:
+                    self._attr_native_value = coerced
+                return
+            if stored_unit is None or native_unit is None:
                 return
             converted = self._convert_to_native_unit(
                 raw_val, stored_unit, native_unit
@@ -552,22 +567,15 @@ class MyHOMESensorEntity(MyHOMEEntity, RestoreSensor):
             return
         raw_state_unit = last_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
         state_unit = str(raw_state_unit) if raw_state_unit is not None else None
-        if (
+        if state_unit == native_unit or (
             state_unit is None
-            or native_unit is None
-            or state_unit == native_unit
+            and self.unit_of_measurement in (None, native_unit)
         ):
-            try:
-                parsed = float(last_state.state)
-            except (ValueError, TypeError):
-                if (
-                    state_unit is None
-                    and self.state_class != SensorStateClass.TOTAL_INCREASING
-                ):
-                    self._attr_native_value = last_state.state
-                return
-            if math.isfinite(parsed):
-                self._attr_native_value = parsed
+            coerced = self._coerce_native_value(last_state.state)
+            if coerced is not None:
+                self._attr_native_value = coerced
+            return
+        if state_unit is None or native_unit is None:
             return
 
         converted = self._convert_to_native_unit(

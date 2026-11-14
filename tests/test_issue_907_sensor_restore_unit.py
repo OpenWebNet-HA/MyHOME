@@ -22,6 +22,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorExtraStoredData,
 )
+from homeassistant.components.sensor.recorder import reset_detected
 from homeassistant.const import (
     ATTR_UNIT_OF_MEASUREMENT,
     CONF_MAC,
@@ -92,7 +93,16 @@ def test_issue_907_oracle_gateway_divergence_on_who18_dim51() -> None:
     by_product = {row["product"]: row for row in oracle["*#18*51*51##"]}
 
     # Forwarding gateways ACK and transmit SCS $06D1A1023350150000\r
-    for model in ("F459", "F454", "F461", "MyHomeServer1", "MH200N", "MH202"):
+    for model in (
+        "F459",
+        "F454",
+        "F461",
+        "MyHomeServer1",
+        "MH200N",
+        "MH202",
+        "F453",
+        "F453AV",
+    ):
         assert by_product[model]["reply"] == "ack"
         assert by_product[model]["verdict"] == "out"
 
@@ -202,11 +212,126 @@ async def test_forwarding_gateway_trace_replay_kwh_display_unit_no_phantom_meter
             assert float(state_end.state) == pytest.approx(8133.615)
 
             # Strictly non-decreasing across the entire boot + poll + streaming window:
-            # zero drops >10% (which would trigger a total_increasing meter reset in recorder).
+            # Home Assistant's own recorder reset_detected() sees zero total_increasing resets.
             assert observed_states
             assert min(observed_states) >= 8133.608
-            for prev, curr in zip(observed_states, observed_states[1:], strict=False):
-                assert curr >= prev
+            prev_val = 8133.608
+            for curr in observed_states:
+                assert curr >= prev_val
+                assert not reset_detected(
+                    hass, entity_id, curr, prev_val, state_end
+                )
+                prev_val = curr
+        finally:
+            unsub()
+            await hass.config_entries.async_unload(entry.entry_id)
+            await hass.async_block_till_done()
+
+
+@pytest.mark.asyncio
+async def test_h4684_poll_refused_config_entry_reload_and_migration_no_meter_reset(
+    hass: HomeAssistant,
+) -> None:
+    """Full config-entry setup + async_reload on H4684 preserves kWh across NACKed polls."""
+    from pytest_homeassistant_custom_component.common import mock_restore_cache
+
+    trace = json.loads(H4684_TRACE_PATH.read_text(encoding="utf-8"))
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_MAC: MAC,
+            "host": "192.0.2.91",
+            "port": 20000,
+            "name": trace["gateway"]["model"],
+        },
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    reg_entry = ent_reg.async_get_or_create(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{MAC}-18-51-total-energy",
+        suggested_object_id="total_power_energy",
+        config_entry=entry,
+    )
+    entity_id = reg_entry.entity_id
+    ent_reg.async_update_entity_options(
+        entity_id, SENSOR_DOMAIN, {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR}
+    )
+
+    # Boot 1: Upgrade from <= 2.0.0b18 — RestoreEntity State only (no SensorExtraStoredData!)
+    mock_restore_cache(
+        hass,
+        [
+            State(
+                entity_id,
+                "8133.608",
+                {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
+            )
+        ],
+    )
+
+    observed_states: list[float] = []
+
+    @callback
+    def _record_state_change(event: Event[Any]) -> None:
+        if event.data.get("entity_id") != entity_id:
+            return
+        new_state: State | None = event.data.get("new_state")
+        if new_state is not None and new_state.state not in (
+            STATE_UNKNOWN,
+            STATE_UNAVAILABLE,
+        ):
+            observed_states.append(float(new_state.state))
+
+    unsub = hass.bus.async_listen(EVENT_STATE_CHANGED, _record_state_change)
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+    ):
+        try:
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+            hass.data[DOMAIN][MAC][CONF_ENTITY]._on_event_connection_state_change(True)
+            await hass.async_block_till_done()
+
+            s1 = hass.states.get(entity_id)
+            assert s1 is not None
+            assert float(s1.state) == pytest.approx(8133.608)
+
+            # Reload while H4684 still NACKs *#18*51*51## (no WHO=18 frame arrived yet):
+            assert await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+            hass.data[DOMAIN][MAC][CONF_ENTITY]._on_event_connection_state_change(True)
+            await hass.async_block_till_done()
+
+            s2 = hass.states.get(entity_id)
+            assert s2 is not None
+            assert float(s2.state) == pytest.approx(8133.608)
+
+            # Unsolicited cyclic meter push arrives later
+            for frame in trace["frames"]:
+                if frame["direction"] != "rx":
+                    continue
+                parsed = OWNMessage.parse(frame["raw"])
+                assert parsed is not None
+                async_dispatcher_send(hass, f"myhome_message_{MAC}", parsed)
+            await hass.async_block_till_done()
+
+            s3 = hass.states.get(entity_id)
+            assert s3 is not None
+            assert float(s3.state) == pytest.approx(8133.62)
+
+            prev_val = 8133.608
+            for curr in observed_states:
+                assert not reset_detected(hass, entity_id, curr, prev_val, s3)
+                prev_val = curr
         finally:
             unsub()
             await hass.config_entries.async_unload(entry.entry_id)
@@ -435,12 +560,16 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
     await s_none.async_restore_last_state(State("sensor.e", "8133.608"))
     assert s_none.native_value is None
 
-    # 4. SensorExtraStoredData with non-finite Decimal / float / bool / str
+    # 4. SensorExtraStoredData with non-finite Decimal / float / bool / str / list:
+    #    Every restored numeric sensor MUST allow reading `.state` without raising ValueError!
     for raw_val, expected in (
         (Decimal("NaN"), None),
         (float("inf"), None),
         (True, None),
-        ("raw_text", "raw_text"),
+        ("raw_text", None),
+        ("nan", None),
+        ("425.5", 425.5),
+        (["bad_list"], None),
     ):
         s_types = MyHOMEIlluminanceSensor(
             hass=hass,
@@ -461,8 +590,64 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
         )
         await s_types.async_restore_last_state(State("sensor.pir", "0"))
         assert s_types.native_value == expected
+        # Accessing `.state` triggers SensorEntity's numeric value validation
+        _ = s_types.state
 
-    # 5. SensorExtraStoredData with stored unit != native unit (convertible vs incompatible)
+    # 4b. Non-numeric unitless MyHOMESensorEntity subclass preserves string native_value
+    #     and rejects mismatched unitful stored/fallback states.
+    class _TextSensor(MyHOMESensorEntity):
+        def __init__(self) -> None:
+            super().__init__(
+                hass=hass,
+                name="Mode",
+                platform="sensor",
+                device_id="18-98",
+                who="18",
+                where="98",
+                manufacturer="BTicino",
+                model="Text",
+                gateway=gw,
+            )
+
+    t_ok = _TextSensor()
+    t_ok.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value="tariff_f1",
+            native_unit_of_measurement=None,
+        )
+    )
+    await t_ok.async_restore_last_state(State("sensor.mode", "tariff_f1"))
+    assert t_ok.native_value == "tariff_f1"
+    assert t_ok.state == "tariff_f1"
+
+    t_unit_mismatch = _TextSensor()
+    t_unit_mismatch.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value="tariff_f1",
+            native_unit_of_measurement="Wh",
+        )
+    )
+    await t_unit_mismatch.async_restore_last_state(State("sensor.mode", "tariff_f1"))
+    assert t_unit_mismatch.native_value is None
+
+    t_fb_unit_mismatch = _TextSensor()
+    t_fb_unit_mismatch.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await t_fb_unit_mismatch.async_restore_last_state(
+        State("sensor.mode", "tariff_f1", {ATTR_UNIT_OF_MEASUREMENT: "Wh"})
+    )
+    assert t_fb_unit_mismatch.native_value is None
+
+    # 5. SensorExtraStoredData with stored unit != native unit (convertible, None, vs incompatible)
+    s_unitless_extra = _new_energy()
+    s_unitless_extra.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value=8133.608,
+            native_unit_of_measurement=None,
+        )
+    )
+    await s_unitless_extra.async_restore_last_state(State("sensor.e", "8133.608"))
+    assert s_unitless_extra.native_value is None
+
     s_conv_extra = _new_energy()
     s_conv_extra.async_get_last_sensor_data = AsyncMock(
         return_value=SensorExtraStoredData(
@@ -492,8 +677,10 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
     helper._attr_device_class = None
     assert helper._convert_to_native_unit(1.0, "kWh", "Wh") is None
 
-    # 7. Migration fallback: unknown/unavailable, non-finite float, non-numeric total_increasing,
-    #    and incompatible display unit on last_state.attributes
+    # 7. Migration fallback: unknown/unavailable, non-finite float, non-numeric on BOTH
+    #    total_increasing (Energy) and measurement (Power) sensors, ambiguous unitless state
+    #    when display unit is overridden to kWh, valid unitless state when display == native,
+    #    and incompatible display unit on last_state.attributes.
     for state_obj in (
         State("sensor.e", STATE_UNKNOWN),
         State("sensor.e", STATE_UNAVAILABLE),
@@ -505,6 +692,48 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
         s_fb.async_get_last_sensor_data = AsyncMock(return_value=None)
         await s_fb.async_restore_last_state(state_obj)
         assert s_fb.native_value is None
+        assert s_fb.state is None
+
+    p_corrupt = MyHOMEPowerSensor(
+        hass=hass,
+        name="Meter",
+        device_id="18-51",
+        who="18",
+        where="51",
+        device_class=SensorDeviceClass.POWER,
+        manufacturer="BTicino",
+        model="F520",
+        gateway=gw,
+    )
+    p_corrupt.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await p_corrupt.async_restore_last_state(State("sensor.p", "corrupt_text"))
+    assert p_corrupt.native_value is None
+    assert p_corrupt.state is None
+
+    p_unitless_same = MyHOMEPowerSensor(
+        hass=hass,
+        name="Meter",
+        device_id="18-51",
+        who="18",
+        where="51",
+        device_class=SensorDeviceClass.POWER,
+        manufacturer="BTicino",
+        model="F520",
+        gateway=gw,
+    )
+    p_unitless_same.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await p_unitless_same.async_restore_last_state(State("sensor.p", "250"))
+    assert p_unitless_same.native_value == pytest.approx(250.0)
+    assert p_unitless_same.state == pytest.approx(250.0)
+
+    # Unitless State("8133.608") when Entity Registry display unit is overridden to kWh
+    # MUST be skipped rather than divided by 1000 into 8.133608 kWh!
+    e_overridden = _new_energy()
+    e_overridden._sensor_option_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    e_overridden.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await e_overridden.async_restore_last_state(State("sensor.e", "8133.608"))
+    assert e_overridden.native_value is None
+    assert e_overridden.state is None
 
     # 8. Generic MyHOMEEntity no longer writes display-unit strings into _attr_native_value
     generic = MyHOMEEntity(
