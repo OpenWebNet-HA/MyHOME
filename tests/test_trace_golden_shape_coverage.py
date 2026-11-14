@@ -322,3 +322,28 @@ def test_sync_golden_corpus_live_and_staged_superset_contracts(tmp_path: Path) -
     assert not mh_staged_yaml.exists()
     ok_grad, _ = sync_corpus.check_staged_superset(mh_dir, ow_dir, require_ownd=True)
     assert ok_grad
+
+    # 7. Fallback resilience when `jsonschema` is absent (`pyyaml`-only environment)
+    no_js_dir = tmp_path / "no_jsonschema_repo"
+    for rel in sync_corpus.LOCKSTEP_INFRA_RELPATHS:
+        dst = no_js_dir / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO_ROOT / rel, dst)
+    shutil.copyfile(
+        REPO_ROOT / "tests" / "golden" / "SOURCE.yaml",
+        no_js_dir / "tests" / "golden" / "SOURCE.yaml",
+    )
+    (no_js_dir / "tests" / "golden" / "frames").mkdir(parents=True, exist_ok=True)
+    (no_js_dir / "tests" / "golden" / "frames" / "who01_lighting.yaml").write_text(
+        yaml.safe_dump([rec_a], sort_keys=False), encoding="utf-8"
+    )
+    val_path = no_js_dir / "tools" / "golden" / "validate_corpus.py"
+    val_path.write_text(
+        val_path.read_text(encoding="utf-8").replace(
+            "import jsonschema", "raise ImportError('no jsonschema')"
+        ),
+        encoding="utf-8",
+    )
+    assert sync_corpus._run_validate_corpus(no_js_dir, check_only=False) == 0
+    assert (no_js_dir / "tests" / "golden" / "corpus.json").is_file()
+    assert sync_corpus._run_validate_corpus(no_js_dir, check_only=True) == 0

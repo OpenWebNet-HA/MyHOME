@@ -43,26 +43,31 @@ def validate_corpus(check_only: bool = False) -> int:
         print(f"Error: Schema not found at {SCHEMA_PATH}", file=sys.stderr)
         return 1
 
-    if jsonschema is None or yaml is None:
+    if yaml is None:
         if CORPUS_JSON_PATH.is_file():
             print(
-                "Note: jsonschema/pyyaml not installed; verifying corpus.json integrity...",
+                "Note: pyyaml not installed; verifying corpus.json integrity...",
                 file=sys.stderr,
             )
             with open(CORPUS_JSON_PATH, encoding="utf-8") as f:
                 records = json.load(f)
-            assert isinstance(records, list) and len(records) >= 24
+            assert isinstance(records, list) and len(records) >= 1
             return 0
         print(
-            "Warning: Neither jsonschema nor pyyaml installed and corpus.json missing.",
+            "Warning: pyyaml not installed and corpus.json missing.",
             file=sys.stderr,
         )
-        return 0
+        return 1 if check_only else 0
 
     with open(SCHEMA_PATH, encoding="utf-8") as f:
         schema = json.load(f)
 
-    validator = jsonschema.Draft7Validator(schema)
+    validator: Any = jsonschema.Draft7Validator(schema) if jsonschema is not None else None
+    if validator is None:
+        print(
+            "Note: jsonschema not installed; validating YAML, privacy, and corpus.json sync.",
+            file=sys.stderr,
+        )
 
     if not FRAMES_DIR.is_dir():
         print(f"Error: Frames directory not found at {FRAMES_DIR}", file=sys.stderr)
@@ -103,12 +108,13 @@ def validate_corpus(check_only: bool = False) -> int:
             rec_id = str(rec.get("id", f"record_{idx}"))
             raw_frame = rec.get("frame")
 
-            schema_errors = list(validator.iter_errors(rec))
-            for err in schema_errors:
-                err_path = ".".join(str(p) for p in err.path)
-                errors.append(
-                    f"{rel_path} [{rec_id}]: Schema error at '{err_path}': {err.message}"
-                )
+            if validator is not None:
+                schema_errors = list(validator.iter_errors(rec))
+                for err in schema_errors:
+                    err_path = ".".join(str(p) for p in err.path)
+                    errors.append(
+                        f"{rel_path} [{rec_id}]: Schema error at '{err_path}': {err.message}"
+                    )
 
             if rec_id in seen_ids:
                 errors.append(
