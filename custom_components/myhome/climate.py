@@ -633,6 +633,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._running_fan_speed: str | None = None
         # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
+        # Per-actuator fan speed from dimension 20 for actuators known to be fan coils.
+        self._actuator_fan_speeds: dict[str, str | None] = {}
         # Zone-level fallback from dimension 19 (*#4*Z*19*C*H##): whether any valve or fan
         # coil of the zone is active; None until seen. Whichever of the two arrived last
         # drives hvac_action, so a stale one cannot keep the zone "heating".
@@ -832,6 +834,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_modes = None
         self._attr_fan_mode = None
         self._running_fan_speed = None
+        self._actuator_fan_speeds.clear()
 
     def _enable_humidity(self) -> None:
         """Dynamically enable humidity support if not already enabled."""
@@ -1377,12 +1380,39 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return bool(self._zone_active)
         return any(self._actuator_states.values())
 
+    @staticmethod
+    def _decode_running_fan_speed(
+        msg_fan_on: bool | None, msg_fan_speed: int | None
+    ) -> str | None:
+        """Map decoded fan flags to ``running_fan_speed`` (``low``/``medium``/``high``/``off``/``None``)."""
+        if msg_fan_speed == 1:
+            return "low"
+        if msg_fan_speed == 2:
+            return "medium"
+        if msg_fan_speed == 3:
+            return "high"
+        if msg_fan_on is False or msg_fan_speed == 4:
+            return "off"
+        return None
+
+    def _sync_actuator_running_fan_speed(self) -> None:
+        """Recompute ``_running_fan_speed`` from tracked fan-coil actuators."""
+        for speed in reversed(self._actuator_fan_speeds.values()):
+            if speed in ("low", "medium", "high"):
+                self._running_fan_speed = speed
+                return
+        if any(speed is None for speed in self._actuator_fan_speeds.values()):
+            self._running_fan_speed = None
+        else:
+            self._running_fan_speed = "off"
+
     def _mark_actuators_off(self) -> None:
         """The zone was switched OFF: every known actuator is off, the attribute stays."""
         self._actuator_states = dict.fromkeys(self._actuator_states, False)
+        self._actuator_fan_speeds = dict.fromkeys(self._actuator_fan_speeds, "off")
         if self._zone_active is not None:
             self._zone_active = False
-        if self._running_fan_speed in ("low", "medium", "high"):
+        if self._actuator_fan_speeds or self._running_fan_speed in ("low", "medium", "high"):
             self._running_fan_speed = "off"
 
     @property
@@ -2580,16 +2610,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if dimension == 20:
                     # The actuator report revealed a fan coil; ask which side it is on.
                     self._ask_fan_coil_sides()
-                if msg_fan_speed == 1:
-                    self._running_fan_speed = "low"
-                elif msg_fan_speed == 2:
-                    self._running_fan_speed = "medium"
-                elif msg_fan_speed == 3:
-                    self._running_fan_speed = "high"
-                elif msg_fan_on is False or msg_fan_speed == 4:
-                    self._running_fan_speed = "off"
-                else:
-                    self._running_fan_speed = None
             if (
                 (sides_resolved or (fan_enabled_now and self._fan_coil_sides))
                 and self._fan
@@ -2606,15 +2626,64 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
+                if is_fan:
+                    self._actuator_fan_speeds.pop(actuator_id, None)
+                    self._actuator_fan_speeds[actuator_id] = (
+                        self._decode_running_fan_speed(msg_fan_on, msg_fan_speed)
+                    )
+                    self._sync_actuator_running_fan_speed()
+                elif actuator_id in self._actuator_fan_speeds:
+                    self._actuator_fan_speeds[actuator_id] = (
+                        None if is_active else "off"
+                    )
+                    self._sync_actuator_running_fan_speed()
+                elif not self._any_actuator_active() and self._running_fan_speed in (
+                    "low",
+                    "medium",
+                    "high",
+                ):
+                    self._running_fan_speed = "off"
             else:
                 self._zone_active = is_active
                 self._active_source = "zone"
                 if not self._zone_active:
                     # Neither side is active: every actuator of the zone is off.
                     self._actuator_states = dict.fromkeys(self._actuator_states, False)
+                    self._actuator_fan_speeds = dict.fromkeys(
+                        self._actuator_fan_speeds, "off"
+                    )
+                if is_fan:
+                    self._running_fan_speed = self._decode_running_fan_speed(
+                        msg_fan_on, msg_fan_speed
+                    )
+                    if self._running_fan_speed == "off":
+                        self._actuator_fan_speeds = dict.fromkeys(
+                            self._actuator_fan_speeds, "off"
+                        )
+                elif self._fan:
+                    dim_vals = (
+                        getattr(message, "dimension_value", None)
+                        if dimension == 19
+                        else None
+                    )
+                    modulating = isinstance(dim_vals, (list, tuple)) and any(
+                        str(v).isascii() and str(v).isdigit() and 101 <= int(str(v)) <= 200
+                        for v in dim_vals[:2]
+                    )
+                    if modulating:
+                        self._actuator_fan_speeds = dict.fromkeys(
+                            self._actuator_fan_speeds, None
+                        )
+                        self._running_fan_speed = None
+                    elif (dimension == 19 or not self._zone_active) and (
+                        self._actuator_fan_speeds
+                        or self._running_fan_speed in ("low", "medium", "high")
+                    ):
+                        self._actuator_fan_speeds = dict.fromkeys(
+                            self._actuator_fan_speeds, "off"
+                        )
+                        self._running_fan_speed = "off"
             any_active = self._any_actuator_active()
-            if not any_active and self._running_fan_speed in ("low", "medium", "high"):
-                self._running_fan_speed = "off"
 
             if any_active:
                 if self._heating and self._cooling:

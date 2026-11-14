@@ -693,3 +693,58 @@ async def test_running_fan_speed_clears_to_off_when_all_actuators_become_inactiv
     assert zone.hvac_action == HVACAction.OFF
     assert zone.extra_state_attributes["actuators"] == {"1": "off", "3": "off"}
     assert zone.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 5. Hybrid zone (#1 floor valve ON + #3 Sabiana fan coil 'medium'):
+    #    #3 stops via 20*100 while #1 stays ON -> hvac_action stays HEATING, running_fan_speed == 'off'!
+    hybrid = _make_zone(hass, gw, "2", fan=True)
+    hybrid._attr_hvac_mode = HVACMode.HEAT
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#1*20*1##"))
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*7##"))
+    assert hybrid.hvac_action == HVACAction.HEATING
+    assert hybrid.extra_state_attributes["running_fan_speed"] == "medium"
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*100##"))
+    assert hybrid.hvac_action == HVACAction.HEATING
+    assert hybrid.extra_state_attributes["actuators"] == {"1": "on", "3": "off"}
+    assert hybrid.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 6. Auto speed (*20*9) or proportional modulation (*20*145) -> stops via *20*100 -> 'off'
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*9##"))
+    assert "running_fan_speed" not in hybrid.extra_state_attributes
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*100##"))
+    assert hybrid.extra_state_attributes["running_fan_speed"] == "off"
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*7##"))
+    assert hybrid.extra_state_attributes["running_fan_speed"] == "medium"
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*145##"))
+    assert "running_fan_speed" not in hybrid.extra_state_attributes
+    hybrid.handle_event(OWNHeatingEvent("*#4*2#3*20*100##"))
+    assert hybrid.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 7. Multi-fancoil zone (#2 'medium', #3 'low'): #3 turning OFF (*20*5) preserves #2's 'medium'
+    multi_fan = _make_zone(hass, gw, "3", fan=True)
+    multi_fan._attr_hvac_mode = HVACMode.COOL
+    multi_fan.handle_event(OWNHeatingEvent("*#4*3#2*20*7##"))
+    multi_fan.handle_event(OWNHeatingEvent("*#4*3#3*20*6##"))
+    assert multi_fan.extra_state_attributes["running_fan_speed"] == "low"
+    multi_fan.handle_event(OWNHeatingEvent("*#4*3#3*20*5##"))
+    assert multi_fan.hvac_action == HVACAction.COOLING
+    assert multi_fan.extra_state_attributes["running_fan_speed"] == "medium"
+    multi_fan.handle_event(OWNHeatingEvent("*#4*3#2*20*100##"))
+    assert multi_fan.hvac_action == HVACAction.IDLE
+    assert multi_fan.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 8. Dimension 19 modulating (150*0) / active non-fan valve (100*1) / Dim 19 -> Dim 20*100 fallback
+    dim19_zone = _make_zone(hass, gw, "4", fan=True)
+    dim19_zone._attr_hvac_mode = HVACMode.HEAT
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4*19*0*7##"))
+    assert dim19_zone.extra_state_attributes["running_fan_speed"] == "medium"
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4#3*20*100##"))
+    assert dim19_zone.extra_state_attributes["running_fan_speed"] == "off"
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4#3*20*7##"))
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4*19*100*1##"))
+    assert dim19_zone.hvac_action == HVACAction.HEATING
+    assert dim19_zone.extra_state_attributes["running_fan_speed"] == "off"
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4#3*20*7##"))
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4*19*150*0##"))
+    assert "running_fan_speed" not in dim19_zone.extra_state_attributes
+    dim19_zone.handle_event(OWNHeatingEvent("*#4*4#3*20*100##"))
+    assert dim19_zone.extra_state_attributes["running_fan_speed"] == "off"

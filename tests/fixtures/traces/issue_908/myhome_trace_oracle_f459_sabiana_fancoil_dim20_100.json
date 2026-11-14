@@ -276,8 +276,8 @@
       "dimension": "19",
       "is_ack": false,
       "is_nack": false,
-      "scs_emitted": "$04A9020213",
-      "note": "SYNTHETIC (F459 020105): Zone 2 Dimension 19 valve status poll."
+      "scs_emitted": "$0499023013",
+      "note": "SYNTHETIC (F459 020105, oracle thermo-zone-requests): Zone 2 Dimension 19 valve status poll ($0499023013; oracle reply=nack without slave)."
     },
     {
       "timestamp": 1794643440.15,
