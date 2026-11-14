@@ -535,7 +535,7 @@ features:
 When managing multiple audio zones across a home, displaying inactive amplifiers clutters your main dashboard. This card automatically stays hidden when all sound zones are idle, and dynamically expands to show only the zones currently **playing or active**, with volume sliders, mute buttons, and track controls:
 
 ```yaml
-# Requires custom:auto-entities (HACS)
+# Requires custom:auto-entities (Marketplace / HACS)
 type: custom:auto-entities
 card:
   type: vertical-stack

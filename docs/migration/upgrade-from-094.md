@@ -35,7 +35,7 @@ This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0
 ## 📦 Step 2: Installing the v2.0 Beta Release
 
 ### Why Manual ZIP / SSH is Recommended for Beta
-While stable releases (like v0.9.4) are distributed through standard HACS tracks on `master`, v2.0 is currently developed on the `v2-phase1-architecture` branch. HACS often fails to track non-default development branches or rejects pre-release beta builds.
+While stable releases (such as v0.9.4, and upcoming stable v2.0.0 once merged to `master`) are distributed through the **Home Assistant Marketplace** (Home Assistant 2026.11+) and **HACS** (`< 2026.11`) on `master`, v2.0 beta builds are currently published from the `v2-phase1-architecture` development branch. Marketplace and HACS track the default branch by default and often hide or reject pre-release beta builds on non-default branches.
 
 ### Installation via ZIP Archive
 
