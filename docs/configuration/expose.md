@@ -38,15 +38,19 @@ In Home Assistant, exposed bindings are configured as **Config Subentries** on y
 | Field | Description | Example |
 | :--- | :--- | :--- |
 | **WHO Subsystem** | The OpenWebNet domain to emulate (`1`, `2`, `4`, `13`, or `18`). | `WHO 1 — Lighting / Switch / Virtual Actuator` |
-| **WHERE Address** | Unused SCS address assigned to the button/tile in **MyHOME_Suite**. *(Omit for WHO 13)* | `25` or `50` |
-| **Source Entity** | The Home Assistant entity providing state and commands. | `light.hue_living_room` |
-| **State Attribute** *(Optional)* | Entity attribute providing the value (e.g. `brightness`, `current_position`). | `brightness` |
-| **OpenWebNet Dimension** *(Optional)* | Dimension selector (`0` for temperature; `113` for power; `22` for clock). | `0` |
+| **WHERE Address** | Unused SCS address assigned to the button/tile in **MyHOME_Suite**. *(Omit for WHO 13)* | `25` or `83` |
+| **Source Entity** *(Optional on WHO 1/2 if custom actions are set)* | The Home Assistant entity providing state and commands. | `light.hue_living_room` |
+| **State Attribute** *(Optional)* | Entity attribute providing the value (`brightness` for `WHO = 1` dimmers; `current_position` for `WHO = 2` covers). | `brightness` |
+| **OpenWebNet Dimension** *(Optional)* | Dimension selector (`0` for temperature; `51..54` / `113` for energy/power; `0`, `1`, `22` for clock). *(Not used for WHO 1 or WHO 2)* | `0` |
 | **Cooldown** *(Optional)* | Rate-limiting debounce window in seconds (default: `1.0` s). | `1.0` |
 | **Minimum Delta** *(Optional)* | Deadband threshold; changes smaller than this value are not sent. | `0.5` |
 | **Periodic Broadcast Interval** *(Optional)* | Interval in seconds for recurring heartbeat broadcasts. | `60` |
+| **Respond to Bus Queries** | Reply to incoming `*#WHO*WHERE...##` status and dimension read requests (default: `true`). | `true` |
+| **Bidirectional** | Act on incoming `WHO = 1` / `WHO = 2` bus commands and wall-switch presses (default: `true`). | `true` |
+| **Brightness Step (%)** | Relative step size (`1..100%`) applied per `WHO = 1` dimmer step-up / step-down command (default: `10%`). | `25` |
 | **Custom 'On' States** *(Optional)* | Comma-separated list of states considered ON (e.g. `on, playing, open`). | `on, playing` |
-| **Value Template** *(Optional)* | Jinja2 template to extract or transform values before publishing. | `{{ value | round(1) }}` |
+| **Value Template** *(Optional)* | Jinja2 template to extract or transform values before publishing. | `{{ value \| round(1) }}` |
+| **Turn-on / Turn-off / Step-up / Step-down Actions** *(Optional)* | Visual Home Assistant action sequences overriding default entity service calls (`turn_on` / `turn_off` for `WHO = 1` & `WHO = 2`; `step_up` / `step_down` for `WHO = 1`; hidden for `WHO = 4`, `13`, and `18`). | `media_player.volume_up` |
 
 Click **Submit**. The binding activates immediately without requiring a Home Assistant restart.
 
@@ -61,14 +65,17 @@ myhome:
   00:03:50:XX:XX:XX:   # Your Gateway MAC address
     expose:
       # -----------------------------------------------------------------
-      # 1. Virtual Light / Switch (WHO = 1)
-      # Tapping button at WHERE "25" toggles the Hue light.
-      # Changes in Home Assistant update the button status on the bus.
+      # 1. Virtual Light / Dimmer (WHO = 1)
+      # Short press on WHERE "83" turns the smart bulb ON/OFF; holding up/down
+      # steps brightness by 25%. Setting 'attribute: brightness' also mirrors
+      # brightness level changes back onto the bus.
       # -----------------------------------------------------------------
       - who: 1
-        where: "25"
-        entity_id: light.hue_living_room
+        where: "83"
+        entity_id: light.smart_bedroom
+        attribute: brightness
         bidirectional: true
+        brightness_step_pct: 25
         cooldown: 0.5
 
       # -----------------------------------------------------------------
@@ -131,9 +138,31 @@ myhome:
 
 ---
 
+## 💡 Virtual Dimmers & `MyHOME_Suite` Wall Control Modes (`WHO = 1` vs `CEN+`)
+
+When using a physical 2-wire SCS wall control (such as BTicino `H4652/2`, `L4652/2`, `AM5832/2`, `K4652M2`, or Legrand `067552`) to dim a Home Assistant light on an **unpopulated** SCS address (an address with no physical BTicino actuator wired on the 2-wire bus):
+
+### 1. Recommended `MyHOME_Suite` Modes for `WHO = 1` Expose
+In **MyHOME_Suite**, configure the wall control channel as **Light control** (`Object 400`, *Beleuchtung/schalten*) with **Point-to-point** addressing (`A` / `PL`, e.g. `A = 8, PL = 3` → `WHERE = 83`) and either of the two standard two-button (`O/I`) dimmer modalities:
+
+- **`ON/OFF and point to point dimming`** (`M = 9` — German: *"ON/OFF und Regelung nur Punkt-Punkt"*; identical to physical configurator `M = O/I`)
+- **`ON/OFF and dimming`** (`M = 3` — German: *"EIN/AUS und Dimmerregelung"*)
+
+Both modalities work identically for a point-to-point virtual dimmer:
+
+- **Short press UP / DOWN**: Sends `*1*1000#1*WHERE##` / `*1*1000#0*WHERE##` to turn the Home Assistant entity ON or OFF and updates the wall control's status LED.
+- **Hold DOWN**: Sends `*1*1000#31*WHERE##` and steps brightness down by `brightness_step_pct` (or runs `step_down_action`).
+- **Hold UP**: Because no physical SCS dimmer hardware-ACKs the unpopulated address on the 2-wire bus, `H4652/2` repeats `*1*1000#1*WHERE##` every **~2 seconds** (with a ~200 ms SCS link-layer retry per step) instead of switching to `*1*1000#30*WHERE##`. `ExposeManager` automatically deduplicates the ~200 ms SCS retries and treats consecutive held `*1*1000#1*WHERE##` frames (`1.6–3.0 s` apart while the bound entity is already on) as `step_up` (`+brightness_step_pct` or `step_up_action`), while keeping single taps, quick double-presses, and turn-on from off idempotent.
+
+> [!TIP]
+> **Want faster (~0.5 s) smooth dimming without the ~2 s unacknowledged SCS timeout?**
+> On `H4652/2` / `L4652/2` / `067552` / `K4652M2`, you can alternatively configure the module in **MyHOME_Suite** as **Scheduled scenario PLUS (`CEN+`, `WHO = 25`, `Object 406`)** instead of `WHO = 1` Expose. `CEN+` frames are broadcast events (`*25*21#<btn>*2<addr>##` short press, `22` hold start, `23` ~0.5 s hold repeat, `24` hold release) that require no physical actuator ACK on the 2-wire bus and appear directly as Home Assistant device triggers — at the trade-off that `CEN+` buttons do not track `WHO = 1` load-state LEDs or Area/General light commands.
+
+---
+
 ## 🎛️ Advanced: Custom Script Actions
 
-For complex integrations (such as cycling media playlists, executing sequences, or calling third-party services with conditions), you can configure custom actions in YAML using Home Assistant's native `Script` syntax:
+For complex integrations (such as cycling media playlists, executing sequences, or calling third-party services with conditions), you can configure `turn_on_action`, `turn_off_action`, `step_up_action`, and `step_down_action` either directly in the **UI Config Subentry** action pickers or in `myhome.yaml` using Home Assistant's native `Script` syntax:
 
 ```yaml
 myhome:

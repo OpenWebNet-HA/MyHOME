@@ -3261,3 +3261,711 @@ async def test_climate_discovery_defers_exposed_who4_master_probe_until_real_zon
     await _emit("*#4*5*14*0210*1##")
     assert [ent._where for ent in added_climates] == ["8", "5"]
     assert added_climates[1].current_temperature == 21.5
+
+
+@pytest.mark.asyncio
+async def test_who1_virtual_dimmer_unacknowledged_scs_retries_and_hold_up_repeat(
+    hass: HomeAssistant,
+) -> None:
+    """Replay Issue #903: H4652/2 on MH200N virtual WHERE 83 (~0.2 s SCS retries + ~2.0 s 1000#1 hold UP)."""
+    hass.states.async_set(
+        "light.smart_schlafzimmer",
+        "on",
+        {"brightness": 128, "supported_color_modes": ["brightness"]},
+    )
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def _record_call(call: Any) -> None:
+        calls.append((call.domain, call.service, dict(call.data)))
+
+    hass.services.async_register("light", "turn_on", _record_call)
+    hass.services.async_register("light", "turn_off", _record_call)
+
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 1,
+                "where": "83",
+                "entity_id": "light.smart_schlafzimmer",
+                "bidirectional": True,
+                "brightness_step_pct": 25,
+                "cooldown": 0,
+            }
+        ],
+    )
+    mgr = ExposeManager(hass, entry, gateway=gw)
+    await mgr.async_start()
+
+    clock = [100.0]
+    with patch(
+        "custom_components.myhome.expose.time.monotonic",
+        side_effect=lambda: clock[0],
+    ):
+        # 1. Exact Issue #903 held-UP trace (with _tx_echo_guard intact):
+        #    19:22:17.5 -> *1*1000#1*83## (anchors hold, idempotent turn_on, arms *1*1*83## echo guard)
+        #    19:22:17.7 -> *1*1000#1*83## (+0.2 s SCS retry -> absorbed by echo guard)
+        #    19:22:19.5 -> *1*1000#1*83## (+2.0 s hold -> +25% step_up)
+        #    19:22:19.7 -> *1*1000#1*83## (+0.2 s SCS retry -> dropped by SAME_GATEWAY_TRANSLATION_RETRY_S)
+        #    19:22:21.6 -> *1*1000#1*83## (+2.1 s hold -> +25% step_up)
+        clock[0] = 117.5
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*83##"))
+        clock[0] = 117.7
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*83##"))
+        clock[0] = 119.5
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*83##"))
+        clock[0] = 119.7
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*83##"))
+        clock[0] = 121.6
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*83##"))
+
+        assert calls == [
+            ("light", "turn_on", {"entity_id": "light.smart_schlafzimmer"}),
+            (
+                "light",
+                "turn_on",
+                {"entity_id": "light.smart_schlafzimmer", "brightness_step_pct": 25},
+            ),
+            (
+                "light",
+                "turn_on",
+                {"entity_id": "light.smart_schlafzimmer", "brightness_step_pct": 25},
+            ),
+        ]
+
+        # 2. Held-DOWN trace with ~0.2 s SCS retries applies -25% once per ~2 s cycle (never -50%)
+        calls.clear()
+        clock[0] = 130.0
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#31*83##"))
+        clock[0] = 130.2
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#31*83##"))
+        clock[0] = 132.0
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#31*83##"))
+        clock[0] = 132.2
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#31*83##"))
+
+        assert calls == [
+            (
+                "light",
+                "turn_on",
+                {"entity_id": "light.smart_schlafzimmer", "brightness_step_pct": -25},
+            ),
+            (
+                "light",
+                "turn_on",
+                {"entity_id": "light.smart_schlafzimmer", "brightness_step_pct": -25},
+            ),
+        ]
+
+        # 3. Fastest legitimate dimmer step cadence in repository fixtures (0.395 s / 0.402 s on H4890,
+        #    0.445 s on MH201, 0.483 s on F454) is preserved, even if a 0.200 s retry arrived in between.
+        calls.clear()
+        clock[0] = 140.000
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#30*83##"))
+        clock[0] = 140.200
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#30*83##"))
+        clock[0] = 140.395
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#30*83##"))
+        clock[0] = 140.797
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#30*83##"))
+
+        assert len(calls) == 3
+        assert all(
+            c
+            == (
+                "light",
+                "turn_on",
+                {"entity_id": "light.smart_schlafzimmer", "brightness_step_pct": 25},
+            )
+            for c in calls
+        )
+
+    await mgr.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_who1_hold_up_safety_guards_scope_off_reset_and_non_dimmable_targets(
+    hass: HomeAssistant,
+) -> None:
+    """Ensure 1000#1 hold-up respects the 1.6..3.0 s window, requires an already-on target, and resets cleanly."""
+    hass.states.async_set(
+        "light.dim_lamp",
+        "on",
+        {"supported_color_modes": ["brightness"]},
+    )
+    hass.states.async_set(
+        "light.onoff_lamp",
+        "on",
+        {"supported_color_modes": ["onoff"]},
+    )
+    hass.states.async_set("switch.wall_plug", "on")
+    hass.states.async_set("media_player.bedroom_sonos", "playing")
+    hass.states.async_set("cover.bedroom_blind", "opening")
+
+    calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def _record_call(call: Any) -> None:
+        calls.append((call.domain, call.service, dict(call.data)))
+
+    for dom, svc in (
+        ("light", "turn_on"),
+        ("light", "turn_off"),
+        ("switch", "turn_on"),
+        ("switch", "turn_off"),
+        ("media_player", "volume_up"),
+        ("cover", "open_cover"),
+        ("homeassistant", "turn_on"),
+        ("notify", "send"),
+    ):
+        hass.services.async_register(dom, svc, _record_call)
+
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        expose_list=[
+            {
+                "who": 1,
+                "where": "81",
+                "entity_id": "light.dim_lamp",
+                "brightness_step_pct": 20,
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "82",
+                "entity_id": "light.onoff_lamp",
+                "brightness_step_pct": 20,
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "84",
+                "entity_id": "switch.wall_plug",
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "85",
+                "entity_id": "media_player.bedroom_sonos",
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "86",
+                "turn_on_action": [{"action": "notify.send", "data": {"msg": "on_86"}}],
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "87",
+                "turn_on_action": [{"action": "notify.send", "data": {"msg": "on_87"}}],
+                "step_up_action": [{"action": "notify.send", "data": {"msg": "up_87"}}],
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "88",
+                "entity_id": "cover.bedroom_blind",
+                "cooldown": 0,
+            },
+            {
+                "who": 1,
+                "where": "89",
+                "entity_id": "light.missing_state_object",
+                "brightness_step_pct": 20,
+                "cooldown": 0,
+            },
+        ],
+    )
+    mgr = ExposeManager(hass, entry, gateway=gw)
+    await mgr.async_start()
+
+    clock = [200.0]
+    with patch(
+        "custom_components.myhome.expose.time.monotonic",
+        side_effect=lambda: clock[0],
+    ):
+        # 1. Single short tap followed > 3.0 s later by another short tap stays idempotent turn_on
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 203.5
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert calls == [
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+        ]
+
+        # 2. Quick double-presses (< 1.6 s, even after a +0.2 s SCS retry consumed the echo guard,
+        #    and at +1.488 s as in MH200N trace 2026-09-25T18-53-55) stay idempotent turn_on
+        calls.clear()
+        clock[0] = 210.000
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 210.200  # SCS retry consumes _tx_echo_guard["*1*1000#1*81##"]
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 210.900  # quick second press at +0.9 s (< 1.6 s) -> turn_on
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 211.100  # SCS retry consumes _tx_echo_guard["*1*1000#1*81##"]
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 212.388  # +1.488 s after 210.900 (< 1.6 s) -> turn_on
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert calls == [
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+        ]
+
+        # 3. Light still OFF or UNAVAILABLE (slow cloud bulb / hold started from off):
+        #    +2.0 s repeat does NOT step from 0; once HA state becomes "on", next +2.0 s repeat steps!
+        calls.clear()
+        hass.states.async_set(
+            "light.dim_lamp",
+            "off",
+            {"supported_color_modes": ["brightness"]},
+        )
+        clock[0] = 216.0
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 216.2
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 218.0  # +2.0 s, bulb still "off" -> plain turn_on, NOT brightness_step_pct
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 218.2
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        hass.states.async_set(
+            "light.dim_lamp",
+            "unavailable",
+            {"supported_color_modes": ["brightness"]},
+        )
+        clock[0] = 220.0  # +2.0 s, bulb "unavailable" -> plain turn_on
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 220.2
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        hass.states.async_set(
+            "light.dim_lamp",
+            "on",
+            {"brightness": 204, "supported_color_modes": ["brightness"]},
+        )
+        clock[0] = 222.0  # +2.0 s, bulb now "on" -> steps +20%!
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert calls == [
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            (
+                "light",
+                "turn_on",
+                {"entity_id": "light.dim_lamp", "brightness_step_pct": 20},
+            ),
+        ]
+
+        # 4. ON -> OFF -> ON: OFF supersedes echo guard and resets hold state so next ON is turn_on
+        calls.clear()
+        clock[0] = 226.0
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        clock[0] = 226.8
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#0*81##"))
+        clock[0] = 228.2  # 2.2 s after initial ON, 1.4 s after OFF -> turn_on, not step_up
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert calls == [
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_off", {"entity_id": "light.dim_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.dim_lamp"}),
+        ]
+
+        # 5. Intervening coarse preset (*1*1000#5*81##) and dim write (*#1*81*#1*150*0##) reset hold state
+        clock[0] = 228.6
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#5*81##"))
+        clock[0] = 230.4  # 2.2 s after 228.2 ON (inside 1.6..3.0 s) and 1.8 s after preset (> 1.5 s echo guard)
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert calls[-1] == ("light", "turn_on", {"entity_id": "light.dim_lamp"})
+
+        clock[0] = 230.8
+        await mgr.handle_bus_message(OWNMessage.parse("*#1*81*#1*150*0##"))
+        clock[0] = 232.6  # 2.2 s after 230.4 ON and 1.8 s after dim write -> turn_on
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert calls[-1] == ("light", "turn_on", {"entity_id": "light.dim_lamp"})
+
+        # 6. Area / General ON (*1*1000#1*8##, *1*1*0##) and non-translation *1*1*81## never step brightness
+        calls.clear()
+        clock[0] = 234.6
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*8##"))
+        clock[0] = 236.6
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1*0##"))
+        clock[0] = 238.6
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1*81##"))
+        assert not any("brightness_step_pct" in data for _, _, data in calls)
+
+        # 7. Non-dimmable light (onoff), switch, missing-state light, and action-only without step_up_action
+        calls.clear()
+        for where_code in ("82", "84", "86", "89"):
+            clock[0] += 2.0
+            await mgr.handle_bus_message(OWNMessage.parse(f"*1*1000#1*{where_code}##"))
+            clock[0] += 2.0
+            await mgr.handle_bus_message(OWNMessage.parse(f"*1*1000#1*{where_code}##"))
+        assert calls == [
+            ("light", "turn_on", {"entity_id": "light.onoff_lamp"}),
+            ("light", "turn_on", {"entity_id": "light.onoff_lamp"}),
+            ("switch", "turn_on", {"entity_id": "switch.wall_plug"}),
+            ("switch", "turn_on", {"entity_id": "switch.wall_plug"}),
+            ("notify", "send", {"msg": "on_86"}),
+            ("notify", "send", {"msg": "on_86"}),
+            ("light", "turn_on", {"entity_id": "light.missing_state_object"}),
+            ("light", "turn_on", {"entity_id": "light.missing_state_object"}),
+        ]
+
+        # 8. Media player, active cover, and action-only WITH step_up_action DO step up on held 1000#1
+        calls.clear()
+        for where_code in ("85", "87", "88"):
+            clock[0] += 2.0
+            await mgr.handle_bus_message(OWNMessage.parse(f"*1*1000#1*{where_code}##"))
+            clock[0] += 2.0
+            await mgr.handle_bus_message(OWNMessage.parse(f"*1*1000#1*{where_code}##"))
+        assert calls == [
+            ("homeassistant", "turn_on", {"entity_id": "media_player.bedroom_sonos"}),
+            ("media_player", "volume_up", {"entity_id": "media_player.bedroom_sonos"}),
+            ("notify", "send", {"msg": "on_87"}),
+            ("notify", "send", {"msg": "up_87"}),
+            ("homeassistant", "turn_on", {"entity_id": "cover.bedroom_blind"}),
+            ("cover", "open_cover", {"entity_id": "cover.bedroom_blind"}),
+        ]
+
+        # 9. _last_translation_rx_by_target bounded pruning when > 64 entries
+        for idx in range(70):
+            mgr._last_translation_rx_by_target[("old_src", 1, str(idx))] = (
+                f"*1*1000#1*{idx}##",
+                clock[0] - 10.0,
+            )
+        clock[0] += 4.0
+        await mgr.handle_bus_message(OWNMessage.parse("*1*1000#1*81##"))
+        assert len(mgr._last_translation_rx_by_target) < 10
+
+    await mgr.async_stop()
+
+
+@pytest.mark.asyncio
+async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
+    hass: HomeAssistant,
+) -> None:
+    """Verify UI ExposeSubentryFlowHandler ActionSelectors, timedelta JSON persistence, and WHO gating (#903)."""
+    from homeassistant.helpers import json as ha_json
+    from homeassistant.helpers import selector
+
+    from custom_components.myhome.const import (
+        CONF_STEP_DOWN_ACTION,
+        CONF_STEP_UP_ACTION,
+        CONF_TURN_OFF_ACTION,
+        CONF_TURN_ON_ACTION,
+    )
+
+    gw = _make_gateway()
+    entry = _make_entry(
+        hass,
+        gateway=gw,
+        subentries=[
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_act_1",
+                "title": "WHO 1 / WHERE 83 (custom actions)",
+                "unique_id": None,
+                "data": {
+                    "who": 1,
+                    "where": "83",
+                    "turn_on_action": [
+                        {"action": "light.turn_on", "target": {"entity_id": "light.govee"}}
+                    ],
+                },
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_who2",
+                "title": "WHO 2 / WHERE 31 (cover.blind)",
+                "unique_id": None,
+                "data": {
+                    "who": 2,
+                    "where": "31",
+                    "entity_id": "cover.blind",
+                },
+            },
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_who4",
+                "title": "WHO 4 / WHERE 50 (sensor.temp)",
+                "unique_id": None,
+                "data": {
+                    "who": 4,
+                    "where": "50",
+                    "entity_id": "sensor.temp",
+                },
+            },
+        ],
+    )
+    mgr = ExposeManager(hass, entry, gateway=gw)
+    entry.runtime_data.expose_manager = mgr
+
+    flow = ExposeSubentryFlowHandler()
+    flow.hass = hass
+    flow.handler = (entry.entry_id, SUBENTRY_TYPE_EXPOSE)
+    flow.context = {"source": "user"}
+
+    # 1. Default WHO=1 user form exposes all 4 ActionSelector fields
+    form_res = await flow.async_step_user(None)
+    schema_map = {
+        getattr(k, "schema", k): v for k, v in form_res["data_schema"].schema.items()
+    }
+    for action_key in (
+        CONF_TURN_ON_ACTION,
+        CONF_TURN_OFF_ACTION,
+        CONF_STEP_UP_ACTION,
+        CONF_STEP_DOWN_ACTION,
+    ):
+        assert isinstance(schema_map[action_key], selector.ActionSelector)
+
+    # 2. Empty [] / None action values from HA frontend are omitted cleanly
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        empty_act_res = await flow.async_step_user(
+            {
+                CONF_WHO: "1",
+                "where": "84",
+                "entity_id": "light.govee",
+                CONF_TURN_ON_ACTION: [],
+                CONF_TURN_OFF_ACTION: None,
+                CONF_STEP_UP_ACTION: [],
+                CONF_STEP_DOWN_ACTION: [],
+            }
+        )
+    assert empty_act_res["type"] == FlowResultType.CREATE_ENTRY
+    assert CONF_TURN_ON_ACTION not in empty_act_res["data"]
+
+    # 3. WHO=1 without entity_id AND without actions requires entity_id; invalid non-dict/list action fails
+    no_target = await flow.async_step_user({CONF_WHO: "1", "where": "85"})
+    assert no_target["errors"]["entity_id"] == "entity_required"
+
+    bad_act = await flow.async_step_user(
+        {
+            CONF_WHO: "1",
+            "where": "85",
+            CONF_TURN_ON_ACTION: 12345,
+        }
+    )
+    assert bad_act["errors"]["base"] == "invalid_expose"
+
+    # 4. WHO=4/13/18 reject non-empty custom actions with an explicit form error (instead of silently
+    #    dropping them), omit action fields on the re-rendered WHO=4 form, and accept empty [] payloads
+    who4_no_entity = await flow.async_step_user(
+        {
+            CONF_WHO: "4",
+            "where": "51",
+            CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
+        }
+    )
+    assert who4_no_entity["errors"] == {
+        "base": "action_not_supported_for_who",
+        "entity_id": "entity_required",
+    }
+    who4_form_keys = {
+        getattr(k, "schema", k) for k in who4_no_entity["data_schema"].schema
+    }
+    for action_key in (
+        CONF_TURN_ON_ACTION,
+        CONF_TURN_OFF_ACTION,
+        CONF_STEP_UP_ACTION,
+        CONF_STEP_DOWN_ACTION,
+    ):
+        assert action_key not in who4_form_keys
+
+    who4_with_action = await flow.async_step_user(
+        {
+            CONF_WHO: "4",
+            "where": "51",
+            "entity_id": "sensor.temp",
+            CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
+        }
+    )
+    assert who4_with_action["type"] == FlowResultType.FORM
+    assert who4_with_action["errors"] == {"base": "action_not_supported_for_who"}
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        who4_empty_action = await flow.async_step_user(
+            {
+                CONF_WHO: "4",
+                "where": "51",
+                "entity_id": "sensor.temp",
+                CONF_TURN_ON_ACTION: [],
+            }
+        )
+    assert who4_empty_action["type"] == FlowResultType.CREATE_ENTRY
+    assert CONF_TURN_ON_ACTION not in who4_empty_action["data"]
+
+    # WHO=2 accepts turn_on_action / turn_off_action, but rejects step_up_action / step_down_action
+    who2_step_only = await flow.async_step_user(
+        {
+            CONF_WHO: "2",
+            "where": "32",
+            CONF_STEP_UP_ACTION: [{"action": "cover.open_cover"}],
+        }
+    )
+    assert who2_step_only["errors"] == {
+        "base": "action_not_supported_for_who",
+        "entity_id": "entity_required",
+    }
+
+    who2_entity_with_step = await flow.async_step_user(
+        {
+            CONF_WHO: "2",
+            "where": "32",
+            "entity_id": "cover.blind",
+            CONF_STEP_UP_ACTION: [{"action": "cover.open_cover"}],
+        }
+    )
+    assert who2_entity_with_step["type"] == FlowResultType.FORM
+    assert who2_entity_with_step["errors"] == {"base": "action_not_supported_for_who"}
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        who2_turn_on = await flow.async_step_user(
+            {
+                CONF_WHO: "2",
+                "where": "32",
+                CONF_TURN_ON_ACTION: [{"action": "cover.open_cover"}],
+                CONF_STEP_UP_ACTION: [],
+            }
+        )
+    assert who2_turn_on["type"] == FlowResultType.CREATE_ENTRY
+    assert CONF_TURN_ON_ACTION in who2_turn_on["data"]
+    assert CONF_STEP_UP_ACTION not in who2_turn_on["data"]
+
+    # 5. Custom actions with delay / time values remain JSON-serializable for Store (prepare_save_json)
+    #    in both list and single-dict forms, and compile cleanly when loaded by ExposeManager
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        delay_res = await flow.async_step_user(
+            {
+                CONF_WHO: "1",
+                "where": "86",
+                CONF_TURN_ON_ACTION: [
+                    {"delay": {"hours": 0, "minutes": 0, "seconds": 0, "milliseconds": 5}},
+                    {"action": "light.turn_on", "target": {"entity_id": "light.govee"}},
+                ],
+                CONF_TURN_OFF_ACTION: {
+                    "delay": {"hours": 0, "minutes": 0, "seconds": 0, "milliseconds": 5}
+                },
+                CONF_STEP_UP_ACTION: [
+                    {
+                        "action": "light.turn_on",
+                        "target": {"entity_id": "light.govee"},
+                        "data": {"brightness_step_pct": 25},
+                    }
+                ],
+                CONF_STEP_DOWN_ACTION: [
+                    {
+                        "action": "light.turn_on",
+                        "target": {"entity_id": "light.govee"},
+                        "data": {"brightness_step_pct": -25},
+                    }
+                ],
+            }
+        )
+    assert delay_res["type"] == FlowResultType.CREATE_ENTRY
+    assert delay_res["title"] == "WHO 1 / WHERE 86 (custom actions)"
+    # Must serialize through Home Assistant's config_entries Store serializer without SerializationError
+    ha_json.prepare_save_json({"data": dict(delay_res["data"])}, encoder=None)
+    assert delay_res["data"][CONF_TURN_ON_ACTION][0] == {
+        "delay": {"hours": 0, "minutes": 0, "seconds": 0, "milliseconds": 5}
+    }
+    assert delay_res["data"][CONF_TURN_OFF_ACTION] == [
+        {"delay": {"hours": 0, "minutes": 0, "seconds": 0, "milliseconds": 5}}
+    ]
+
+    # Verify ExposeManager loads and executes the persisted delay + service sequence
+    ran_calls: list[str] = []
+
+    async def _on_govee(call: Any) -> None:
+        ran_calls.append(call.service)
+
+    hass.services.async_register("light", "turn_on", _on_govee)
+    entry_delay = _make_entry(
+        hass,
+        gateway=gw,
+        subentries=[
+            {
+                "subentry_type": SUBENTRY_TYPE_EXPOSE,
+                "subentry_id": "sub_delay",
+                "title": delay_res["title"],
+                "unique_id": None,
+                "data": dict(delay_res["data"]),
+            }
+        ],
+    )
+    mgr_delay = ExposeManager(hass, entry_delay, gateway=gw)
+    await mgr_delay.async_start()
+    await mgr_delay.handle_bus_message(OWNMessage.parse("*1*1000#1*86##"))
+    assert ran_calls == ["turn_on"]
+    await mgr_delay.async_stop()
+
+    # 6. Reconfigure forms: WHO=2 shows only turn_on/turn_off; WHO=4 shows none; WHO=1 pre-populates & clears
+    flow.context = {"source": "reconfigure", "subentry_id": "sub_who2"}
+    reconf_who2 = await flow.async_step_reconfigure(None)
+    who2_keys = {getattr(k, "schema", k) for k in reconf_who2["data_schema"].schema}
+    assert CONF_TURN_ON_ACTION in who2_keys
+    assert CONF_TURN_OFF_ACTION in who2_keys
+    assert CONF_STEP_UP_ACTION not in who2_keys
+    assert CONF_STEP_DOWN_ACTION not in who2_keys
+
+    flow.context = {"source": "reconfigure", "subentry_id": "sub_who4"}
+    reconf_who4 = await flow.async_step_reconfigure(None)
+    who4_reconf_keys = {
+        getattr(k, "schema", k) for k in reconf_who4["data_schema"].schema
+    }
+    assert CONF_TURN_ON_ACTION not in who4_reconf_keys
+
+    flow.context = {"source": "reconfigure", "subentry_id": "sub_act_1"}
+    reconf_form = await flow.async_step_reconfigure(None)
+    reconf_keys = {
+        getattr(k, "schema", k): k for k in reconf_form["data_schema"].schema
+    }
+    assert reconf_keys[CONF_TURN_ON_ACTION].description == {
+        "suggested_value": [
+            {"action": "light.turn_on", "target": {"entity_id": "light.govee"}}
+        ]
+    }
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        reconf_clear = await flow.async_step_reconfigure(
+            {
+                CONF_WHO: "1",
+                "where": "83",
+                "entity_id": "light.govee",
+                CONF_TURN_ON_ACTION: [],
+                CONF_STEP_UP_ACTION: [
+                    {"delay": {"hours": 0, "minutes": 0, "seconds": 2, "milliseconds": 0}},
+                    {"condition": "time", "after": "00:00:00"},
+                ],
+            }
+        )
+    assert reconf_clear["type"] == FlowResultType.ABORT
+    assert reconf_clear["reason"] == "reconfigure_successful"
+    assert CONF_TURN_ON_ACTION not in entry.subentries["sub_act_1"].data
+    ha_json.prepare_save_json(
+        {"data": dict(entry.subentries["sub_act_1"].data)}, encoder=None
+    )
+
+    # 7. End-to-end Home Assistant SubentryFlowManager + ConfigEntries._data_to_save() Store serialization
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        e2e_init = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
+            context={"source": "user"},
+        )
+        e2e_done = await hass.config_entries.subentries.async_configure(
+            e2e_init["flow_id"],
+            {
+                CONF_WHO: "1",
+                "where": "89",
+                CONF_TURN_ON_ACTION: [
+                    {"delay": {"hours": 0, "minutes": 0, "seconds": 1, "milliseconds": 0}},
+                    {"condition": "time", "after": "00:00:00"},
+                    {"action": "light.turn_on", "target": {"entity_id": "light.govee"}},
+                ],
+            },
+        )
+    assert e2e_done["type"] == FlowResultType.CREATE_ENTRY
+    ha_json.prepare_save_json(hass.config_entries._data_to_save(), encoder=None)
+

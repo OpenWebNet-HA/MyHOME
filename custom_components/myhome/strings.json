@@ -125,12 +125,22 @@
             "bidirectional": "Bidirectional (act on incoming bus commands)",
             "brightness_step_pct": "Brightness step per dimmer press (%)",
             "on_states": "Custom 'on' states (comma-separated, optional)",
-            "value_template": "Value template (Jinja2, optional)"
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Turn-on / raise action (optional)",
+            "turn_off_action": "Turn-off / lower action (optional)",
+            "step_up_action": "Step-up action (optional)",
+            "step_down_action": "Step-down action (optional)"
+          },
+          "data_description": {
+            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
+            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
           }
         },
         "reconfigure": {
           "title": "Reconfigure exposed entity",
-          "description": "Update the OpenWebNet address, source entity, or throttling parameters for this exposed binding.",
+          "description": "Update the OpenWebNet address, source entity, throttling parameters, or custom actions for this exposed binding.",
           "data": {
             "who": "WHO subsystem",
             "where": "WHERE address",
@@ -144,14 +154,25 @@
             "bidirectional": "Bidirectional (act on incoming bus commands)",
             "brightness_step_pct": "Brightness step per dimmer press (%)",
             "on_states": "Custom 'on' states (comma-separated, optional)",
-            "value_template": "Value template (Jinja2, optional)"
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Turn-on / raise action (optional)",
+            "turn_off_action": "Turn-off / lower action (optional)",
+            "step_up_action": "Step-up action (optional)",
+            "step_down_action": "Step-down action (optional)"
+          },
+          "data_description": {
+            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
+            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
           }
         }
       },
       "error": {
         "invalid_who": "Unsupported WHO subsystem (supported: 1, 2, 4, 13, 18).",
         "where_required": "A WHERE address is required for this WHO subsystem.",
-        "entity_required": "A source Home Assistant entity is required for this WHO subsystem.",
+        "entity_required": "A source Home Assistant entity (or custom action for WHO 1 / WHO 2) is required.",
+        "action_not_supported_for_who": "Custom actions are supported only on WHO 1 (turn on/off and step up/down) and WHO 2 (turn on/off only); clear unsupported actions or change WHO.",
         "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
         "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding.",
         "who_injection_unsupported": "This gateway firmware does not support injecting frames for the selected WHO subsystem onto the SCS bus (supported on all gateways: WHO 1, 2, 13).",

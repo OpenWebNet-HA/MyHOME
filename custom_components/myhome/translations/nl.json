@@ -122,12 +122,22 @@
             "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
             "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
             "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
-            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+            "value_template": "Waardesjabloon (Jinja2, optioneel)",
+            "turn_on_action": "Inschakel- / omhoog-actie (optioneel)",
+            "turn_off_action": "Uitschakel- / omlaag-actie (optioneel)",
+            "step_up_action": "Stap-omhoog-actie (optioneel)",
+            "step_down_action": "Stap-omlaag-actie (optioneel)"
+          },
+          "data_description": {
+            "turn_on_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "turn_off_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "step_up_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer).",
+            "step_down_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer)."
           }
         },
         "reconfigure": {
           "title": "Aangeboden entiteit herconfigureren",
-          "description": "Werk het OpenWebNet-adres, de bronentiteit of de verzendparameters voor deze koppeling bij.",
+          "description": "Werk het OpenWebNet-adres, de bronentiteit, de verzendparameters of de aangepaste acties voor deze koppeling bij.",
           "data": {
             "who": "WHO-subsysteem",
             "where": "WHERE-adres",
@@ -141,14 +151,25 @@
             "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
             "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
             "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
-            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+            "value_template": "Waardesjabloon (Jinja2, optioneel)",
+            "turn_on_action": "Inschakel- / omhoog-actie (optioneel)",
+            "turn_off_action": "Uitschakel- / omlaag-actie (optioneel)",
+            "step_up_action": "Stap-omhoog-actie (optioneel)",
+            "step_down_action": "Stap-omlaag-actie (optioneel)"
+          },
+          "data_description": {
+            "turn_on_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "turn_off_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "step_up_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer).",
+            "step_down_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer)."
           }
         }
       },
       "error": {
         "invalid_who": "Niet-ondersteund WHO-subsysteem (ondersteund: 1, 2, 4, 13, 18).",
         "where_required": "Een WHERE-adres is vereist voor dit WHO-subsysteem.",
-        "entity_required": "Een Home Assistant-bronentiteit is vereist voor dit WHO-subsysteem.",
+        "entity_required": "Een Home Assistant-bronentiteit (of aangepaste actie voor WHO 1 / WHO 2) is vereist.",
+        "action_not_supported_for_who": "Aangepaste acties worden alleen ondersteund voor WHO 1 (in-/uitschakelen en stap omhoog/omlaag) en WHO 2 (alleen in-/uitschakelen); wis niet-ondersteunde acties of wijzig WHO.",
         "invalid_dimension": "Ongeldige dimensie voor het geselecteerde WHO-subsysteem.",
         "invalid_expose": "Ongeldige configuratie of dubbele WHO/WHERE/dimensie-koppeling.",
         "who_injection_unsupported": "De firmware van deze gateway ondersteunt het injecteren van frames voor het geselecteerde WHO-subsysteem op de SCS-bus niet (ondersteund op alle gateways: WHO 1, 2, 13).",

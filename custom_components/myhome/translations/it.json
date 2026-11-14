@@ -122,12 +122,22 @@
             "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
             "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
             "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
-            "value_template": "Template del valore (Jinja2, opzionale)"
+            "value_template": "Template del valore (Jinja2, opzionale)",
+            "turn_on_action": "Azione di accensione / salita (opzionale)",
+            "turn_off_action": "Azione di spegnimento / discesa (opzionale)",
+            "step_up_action": "Azione passo su dimmer (opzionale)",
+            "step_down_action": "Azione passo giù dimmer (opzionale)"
+          },
+          "data_description": {
+            "turn_on_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "turn_off_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "step_up_action": "Supportata solo per WHO 1 (illuminazione/dimmer).",
+            "step_down_action": "Supportata solo per WHO 1 (illuminazione/dimmer)."
           }
         },
         "reconfigure": {
           "title": "Riconfigura entità esposta",
-          "description": "Aggiorna l'indirizzo OpenWebNet, l'entità sorgente o i parametri di invio per questa associazione.",
+          "description": "Aggiorna l'indirizzo OpenWebNet, l'entità sorgente, i parametri di invio o le azioni personalizzate per questa associazione.",
           "data": {
             "who": "Sottosistema WHO",
             "where": "Indirizzo WHERE",
@@ -141,14 +151,25 @@
             "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
             "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
             "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
-            "value_template": "Template del valore (Jinja2, opzionale)"
+            "value_template": "Template del valore (Jinja2, opzionale)",
+            "turn_on_action": "Azione di accensione / salita (opzionale)",
+            "turn_off_action": "Azione di spegnimento / discesa (opzionale)",
+            "step_up_action": "Azione passo su dimmer (opzionale)",
+            "step_down_action": "Azione passo giù dimmer (opzionale)"
+          },
+          "data_description": {
+            "turn_on_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "turn_off_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "step_up_action": "Supportata solo per WHO 1 (illuminazione/dimmer).",
+            "step_down_action": "Supportata solo per WHO 1 (illuminazione/dimmer)."
           }
         }
       },
       "error": {
         "invalid_who": "Sottosistema WHO non supportato (supportati: 1, 2, 4, 13, 18).",
         "where_required": "È richiesto un indirizzo WHERE per questo sottosistema WHO.",
-        "entity_required": "È richiesta un'entità Home Assistant sorgente per questo sottosistema WHO.",
+        "entity_required": "È richiesta un'entità Home Assistant sorgente (o un'azione personalizzata per WHO 1 / WHO 2).",
+        "action_not_supported_for_who": "Le azioni personalizzate sono supportate solo per WHO 1 (accensione/spegnimento e passo su/giù) e WHO 2 (solo accensione/spegnimento); rimuovi le azioni non supportate o cambia WHO.",
         "invalid_dimension": "Dimensione non valida per il sottosistema WHO selezionato.",
         "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata.",
         "who_injection_unsupported": "Il firmware di questo gateway non supporta l'iniezione di frame per il sottosistema WHO selezionato sul bus SCS (supportati su tutti i gateway: WHO 1, 2, 13).",
