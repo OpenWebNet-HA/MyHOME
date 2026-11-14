@@ -489,17 +489,29 @@ class MyHOMESensorEntity(MyHOMEEntity, RestoreSensor):
             or self.suggested_display_precision is not None
         )
 
-    def _coerce_native_value(self, value: Any) -> float | str | None:
+    def _coerce_native_value(self, value: Any) -> int | float | str | None:
         """Validate and normalize a restored value already in native units."""
         if isinstance(value, bool):
             return None
-        if isinstance(value, (int, float, Decimal)):
+        if isinstance(value, int):
+            return int(value)
+        if isinstance(value, Decimal):
+            exp = value.as_tuple().exponent
+            if not isinstance(exp, int):
+                return None
+            if exp >= 0:
+                return int(value)
             numeric = float(value)
             return numeric if math.isfinite(numeric) else None
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
         if isinstance(value, str):
             if self._is_numeric_sensor():
+                stripped = value.strip()
+                if re.fullmatch(r"[+-]?[0-9]+", stripped):
+                    return int(stripped)
                 try:
-                    numeric = float(value)
+                    numeric = float(stripped)
                 except ValueError:
                     return None
                 return numeric if math.isfinite(numeric) else None

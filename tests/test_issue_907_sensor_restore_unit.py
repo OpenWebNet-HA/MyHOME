@@ -53,6 +53,9 @@ from custom_components.myhome.sensor import (
 )
 
 TRACES_DIR = Path(__file__).resolve().parent / "fixtures" / "traces" / "issue_907"
+MHS1_LIVE_TRACE_PATH = (
+    TRACES_DIR / "myhome_trace_MyHomeServer1_who18_meter51_2026-11-14.json"
+)
 F454_TRACE_PATH = TRACES_DIR / "myhome_trace_oracle_f454_who18_totalizer_delayed_poll.json"
 H4684_TRACE_PATH = (
     TRACES_DIR / "myhome_trace_oracle_h4684_who18_poll_refused_unsolicited_only.json"
@@ -87,6 +90,8 @@ def _make_gateway(model: str = "F459", firmware: str = "2.1.5") -> MagicMock:
 
 def test_issue_907_oracle_gateway_divergence_on_who18_dim51() -> None:
     """Verify the firmware oracle contract backing the two Issue #907 gateway traces."""
+    assert MHS1_LIVE_TRACE_PATH.is_file()
+    assert json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))["synthetic"] is False
     assert F454_TRACE_PATH.is_file()
     assert H4684_TRACE_PATH.is_file()
     oracle = json.loads(ORACLE_JSON_PATH.read_text(encoding="utf-8"))["verdicts"]
@@ -562,14 +567,19 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
 
     # 4. SensorExtraStoredData with non-finite Decimal / float / bool / str / list:
     #    Every restored numeric sensor MUST allow reading `.state` without raising ValueError!
-    for raw_val, expected in (
-        (Decimal("NaN"), None),
-        (float("inf"), None),
-        (True, None),
-        ("raw_text", None),
-        ("nan", None),
-        ("425.5", 425.5),
-        (["bad_list"], None),
+    for raw_val, expected, expected_type in (
+        (Decimal("NaN"), None, type(None)),
+        (Decimal("8133608"), 8133608, int),
+        (Decimal("425.5"), 425.5, float),
+        (float("inf"), None, type(None)),
+        (425.5, 425.5, float),
+        (8133608, 8133608, int),
+        (True, None, type(None)),
+        ("raw_text", None, type(None)),
+        ("nan", None, type(None)),
+        ("8133608", 8133608, int),
+        ("425.5", 425.5, float),
+        (["bad_list"], None, type(None)),
     ):
         s_types = MyHOMEIlluminanceSensor(
             hass=hass,
@@ -590,6 +600,7 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
         )
         await s_types.async_restore_last_state(State("sensor.pir", "0"))
         assert s_types.native_value == expected
+        assert type(s_types.native_value) is expected_type
         # Accessing `.state` triggers SensorEntity's numeric value validation
         _ = s_types.state
 
@@ -752,3 +763,201 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
         State("sensor.generic", "8133.608", {ATTR_UNIT_OF_MEASUREMENT: "kWh"})
     )
     assert generic.__dict__["_attr_native_value"] is None
+
+
+@pytest.mark.asyncio
+async def test_live_myhomeserver1_meter51_trace_replay_wh_and_kwh_preserves_int_and_no_reset(
+    hass: HomeAssistant,
+) -> None:
+    """Replay @xmavgithub's live MyHomeServer1 (2.87.13) meter 51 capture in Wh and kWh.
+
+    Verifies both Issue #907 requirements end-to-end across startup, live bus replay, and
+    config-entry reload:
+    1. Overridden kWh totalizer restores 8151.646 kWh (8151646 Wh int) with zero meter reset.
+    2. Native Wh sensors (daily 3017 Wh via RestoreSensor, monthly 88973 Wh via migration
+       fallback, plus totalizer 8133608 Wh in native Wh) preserve exact ``int`` ``native_value``
+       so ``hass.states.get(entity_id).state`` is ``"3017"`` / ``"88973"`` / ``"8133608"``
+       rather than ``"3017.0"`` / ``"88973.0"`` / ``"8133608.0"``.
+    """
+    trace = json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))
+    live_mac = trace["gateway"]["mac"]
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_MAC: live_mac,
+            "host": trace["gateway"]["host"],
+            "port": 20000,
+            "name": trace["gateway"]["model"],
+        },
+        unique_id=live_mac,
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    total_reg = ent_reg.async_get_or_create(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{live_mac}-18-51-total-energy",
+        suggested_object_id="meter_51_total_energy",
+        config_entry=entry,
+    )
+    daily_reg = ent_reg.async_get_or_create(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{live_mac}-18-51-daily-energy",
+        suggested_object_id="meter_51_daily_energy",
+        config_entry=entry,
+    )
+    monthly_reg = ent_reg.async_get_or_create(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{live_mac}-18-51-monthly-energy",
+        suggested_object_id="meter_51_monthly_energy",
+        config_entry=entry,
+    )
+    native_wh_total_reg = ent_reg.async_get_or_create(
+        SENSOR_DOMAIN,
+        DOMAIN,
+        f"{live_mac}-18-52-total-energy",
+        suggested_object_id="meter_52_native_wh_energy",
+        config_entry=entry,
+    )
+    total_id = total_reg.entity_id
+    daily_id = daily_reg.entity_id
+    monthly_id = monthly_reg.entity_id
+    native_wh_id = native_wh_total_reg.entity_id
+
+    # Override meter 51 totalizer display unit to kWh; keep daily, monthly, and meter 52 in native Wh!
+    ent_reg.async_update_entity_options(
+        total_id, SENSOR_DOMAIN, {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR}
+    )
+
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                State(
+                    total_id,
+                    "8151.646",
+                    {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.KILO_WATT_HOUR},
+                ),
+                SensorExtraStoredData(
+                    native_value=8151646,
+                    native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+                ),
+            ),
+            (
+                State(
+                    daily_id,
+                    "3017",
+                    {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.WATT_HOUR},
+                ),
+                SensorExtraStoredData(
+                    native_value=3017,
+                    native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+                ),
+            ),
+            (
+                State(
+                    monthly_id,
+                    "88973",
+                    {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.WATT_HOUR},
+                ),
+                None,
+            ),
+            (
+                State(
+                    native_wh_id,
+                    "8133608",
+                    {ATTR_UNIT_OF_MEASUREMENT: UnitOfEnergy.WATT_HOUR},
+                ),
+                SensorExtraStoredData(
+                    native_value=8133608,
+                    native_unit_of_measurement=UnitOfEnergy.WATT_HOUR,
+                ),
+            ),
+        ],
+    )
+
+    observed_total_kwh: list[float] = []
+
+    @callback
+    def _record_total(event: Event[Any]) -> None:
+        if event.data.get("entity_id") != total_id:
+            return
+        new_state: State | None = event.data.get("new_state")
+        if new_state is not None and new_state.state not in (
+            STATE_UNKNOWN,
+            STATE_UNAVAILABLE,
+        ):
+            observed_total_kwh.append(float(new_state.state))
+
+    unsub = hass.bus.async_listen(EVENT_STATE_CHANGED, _record_total)
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+    ):
+        try:
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+            hass.data[DOMAIN][live_mac][CONF_ENTITY]._on_event_connection_state_change(True)
+            await hass.async_block_till_done()
+
+            # T+0s before any bus frame arrives:
+            s_total_t0 = hass.states.get(total_id)
+            s_daily_t0 = hass.states.get(daily_id)
+            s_monthly_t0 = hass.states.get(monthly_id)
+            s_wh_t0 = hass.states.get(native_wh_id)
+            assert s_total_t0 is not None and s_total_t0.state == "8151.646"
+            assert s_daily_t0 is not None and s_daily_t0.state == "3017"
+            assert s_monthly_t0 is not None and s_monthly_t0.state == "88973"
+            assert s_wh_t0 is not None and s_wh_t0.state == "8133608"
+
+            # Replay all 96 frames from @xmavgithub's live MyHomeServer1 (2.87.13) capture
+            rx_count = 0
+            for frame in trace["frames"]:
+                if frame["direction"] != "rx":
+                    continue
+                rx_count += 1
+                parsed = OWNMessage.parse(frame["raw"])
+                assert parsed is not None
+                async_dispatcher_send(hass, f"myhome_message_{live_mac}", parsed)
+            await hass.async_block_till_done()
+            assert rx_count == 74
+
+            # Reload config entry so RestoreSensor persists & restores live int native_values
+            assert await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+            hass.data[DOMAIN][live_mac][CONF_ENTITY]._on_event_connection_state_change(True)
+            await hass.async_block_till_done()
+
+            s_total_r = hass.states.get(total_id)
+            s_daily_r = hass.states.get(daily_id)
+            s_monthly_r = hass.states.get(monthly_id)
+            s_wh_r = hass.states.get(native_wh_id)
+            assert s_total_r is not None and s_total_r.state == "8151.646"
+            assert s_daily_r is not None and s_daily_r.state == "3017"
+            assert s_monthly_r is not None and s_monthly_r.state == "88973"
+            assert s_wh_r is not None and s_wh_r.state == "8133608"
+
+            # Underlying entity native_value remains exact int (not float!)
+            sensor_comp = hass.data[SENSOR_DOMAIN]
+            for eid in (total_id, daily_id, monthly_id, native_wh_id):
+                ent_obj = sensor_comp.get_entity(eid)
+                assert ent_obj is not None
+                assert type(ent_obj.native_value) is int
+
+            assert observed_total_kwh
+            prev_val = 8151.646
+            for curr in observed_total_kwh:
+                assert curr == pytest.approx(8151.646)
+                assert not reset_detected(hass, total_id, curr, prev_val, s_total_r)
+                prev_val = curr
+        finally:
+            unsub()
+            await hass.config_entries.async_unload(entry.entry_id)
+            await hass.async_block_till_done()
