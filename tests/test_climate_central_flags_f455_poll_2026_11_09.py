@@ -389,7 +389,7 @@ async def test_a_newer_command_is_not_reanchored_by_an_older_future() -> None:
     await asyncio.sleep(0)
     assert central._central_echo is not None
     assert central._central_echo[0] == str(OWNHeatingCommand.set_central_mode("#0", "auto"))
-    assert central._central_echo[0] in {"*4*311*#0##", "*4*3100*#0##"}
+    assert central._central_echo[0] == "*4*3100*#0##"
     assert central._central_echo[1] is None  # still waiting for its own write
     second.cancel()
 
