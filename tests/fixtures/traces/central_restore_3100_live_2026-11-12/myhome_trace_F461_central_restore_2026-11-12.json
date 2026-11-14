@@ -1,0 +1,3075 @@
+{
+ "capture": {
+  "kind": "derived_trace_archive",
+  "started_at": "2026-11-12T16:08:24.760+00:00",
+  "notes": "Derived archive of the F461 event-session monitor log of the test plant (BTicino F461 2.0.11 and Legrand F455 1.0.76 on one SCS bus, 3550 99-zone central unit), central unit mode run of 2026-11-12. frames holds the monitor rx frames for corpus replay; rows adds the harness log (steps, Home Assistant service calls, command-session sends with their results) in capture order. See README.md.",
+  "window": {
+   "first": "2026-11-12T16:08:24.761+00:00",
+   "last": "2026-11-12T16:09:50.828+00:00",
+   "frames": 176,
+   "rows": 218
+  }
+ },
+ "gateway": {
+  "model": "F461",
+  "manufacturer": "BTicino",
+  "firmware": "2.0.11"
+ },
+ "frames": [
+  {
+   "timestamp": 0.455,
+   "utc": "16:08:25.215",
+   "direction": "rx",
+   "raw": "*4*2101*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 0.457,
+   "utc": "16:08:25.217",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 0.458,
+   "utc": "16:08:25.218",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 0.458,
+   "utc": "16:08:25.218",
+   "direction": "rx",
+   "raw": "*4*24*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 1.751,
+   "utc": "16:08:26.511",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 1.752,
+   "utc": "16:08:26.512",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 1.753,
+   "utc": "16:08:26.513",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 2.334,
+   "utc": "16:08:27.094",
+   "direction": "rx",
+   "raw": "*4*303*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 2.383,
+   "utc": "16:08:27.143",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 2.384,
+   "utc": "16:08:27.144",
+   "direction": "rx",
+   "raw": "*4*303*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 2.43,
+   "utc": "16:08:27.190",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 2.838,
+   "utc": "16:08:27.598",
+   "direction": "rx",
+   "raw": "*4*303*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.214,
+   "utc": "16:08:27.974",
+   "direction": "rx",
+   "raw": "*#4*3*0*0251##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.358,
+   "utc": "16:08:28.118",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.398,
+   "utc": "16:08:28.158",
+   "direction": "rx",
+   "raw": "*4*303*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.446,
+   "utc": "16:08:28.206",
+   "direction": "rx",
+   "raw": "*#4*4*12*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.448,
+   "utc": "16:08:28.208",
+   "direction": "rx",
+   "raw": "*4*303*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.801,
+   "utc": "16:08:28.561",
+   "direction": "rx",
+   "raw": "*#4*3*12*0230*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 3.804,
+   "utc": "16:08:28.564",
+   "direction": "rx",
+   "raw": "*4*303*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 5.235,
+   "utc": "16:08:29.995",
+   "direction": "rx",
+   "raw": "*#4*2#1*#20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 5.238,
+   "utc": "16:08:29.998",
+   "direction": "rx",
+   "raw": "*#4*2#1*20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 8.207,
+   "utc": "16:08:32.967",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 8.209,
+   "utc": "16:08:32.969",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 8.209,
+   "utc": "16:08:32.969",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 8.782,
+   "utc": "16:08:33.542",
+   "direction": "rx",
+   "raw": "*#4*4#2*#20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 8.823,
+   "utc": "16:08:33.583",
+   "direction": "rx",
+   "raw": "*#4*4#2*20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 12.797,
+   "utc": "16:08:37.557",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 12.8,
+   "utc": "16:08:37.560",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 12.8,
+   "utc": "16:08:37.560",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 20.302,
+   "utc": "16:08:45.062",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 20.304,
+   "utc": "16:08:45.064",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 20.305,
+   "utc": "16:08:45.065",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 23.998,
+   "utc": "16:08:48.758",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 24.0,
+   "utc": "16:08:48.760",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 24.0,
+   "utc": "16:08:48.760",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 30.606,
+   "utc": "16:08:55.366",
+   "direction": "rx",
+   "raw": "*4*2101*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 30.608,
+   "utc": "16:08:55.368",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 30.608,
+   "utc": "16:08:55.368",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 30.608,
+   "utc": "16:08:55.368",
+   "direction": "rx",
+   "raw": "*4*22*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.117,
+   "utc": "16:08:55.877",
+   "direction": "rx",
+   "raw": "*#4*2*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.385,
+   "utc": "16:08:56.145",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.428,
+   "utc": "16:08:56.188",
+   "direction": "rx",
+   "raw": "*#4*2*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.43,
+   "utc": "16:08:56.190",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.431,
+   "utc": "16:08:56.191",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.431,
+   "utc": "16:08:56.191",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.708,
+   "utc": "16:08:56.468",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.71,
+   "utc": "16:08:56.470",
+   "direction": "rx",
+   "raw": "*#4*3*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 31.71,
+   "utc": "16:08:56.470",
+   "direction": "rx",
+   "raw": "*4*0*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.027,
+   "utc": "16:08:56.787",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.028,
+   "utc": "16:08:56.788",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.029,
+   "utc": "16:08:56.789",
+   "direction": "rx",
+   "raw": "*#4*3*0*0251##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.34,
+   "utc": "16:08:57.100",
+   "direction": "rx",
+   "raw": "*#4*2*14*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.342,
+   "utc": "16:08:57.102",
+   "direction": "rx",
+   "raw": "*#4*4*#14*0250*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.344,
+   "utc": "16:08:57.104",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.344,
+   "utc": "16:08:57.104",
+   "direction": "rx",
+   "raw": "*4*0*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.345,
+   "utc": "16:08:57.105",
+   "direction": "rx",
+   "raw": "*#4*4*12*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.346,
+   "utc": "16:08:57.106",
+   "direction": "rx",
+   "raw": "*4*0*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.429,
+   "utc": "16:08:57.189",
+   "direction": "rx",
+   "raw": "*#4*2*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.745,
+   "utc": "16:08:57.505",
+   "direction": "rx",
+   "raw": "*#4*3*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.747,
+   "utc": "16:08:57.507",
+   "direction": "rx",
+   "raw": "*4*0*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 32.747,
+   "utc": "16:08:57.507",
+   "direction": "rx",
+   "raw": "*4*211*#2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 33.086,
+   "utc": "16:08:57.846",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 33.377,
+   "utc": "16:08:58.137",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 33.379,
+   "utc": "16:08:58.139",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 33.696,
+   "utc": "16:08:58.456",
+   "direction": "rx",
+   "raw": "*#4*2*14*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 33.801,
+   "utc": "16:08:58.561",
+   "direction": "rx",
+   "raw": "*#4*2*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.111,
+   "utc": "16:08:58.871",
+   "direction": "rx",
+   "raw": "*4*211*#2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.434,
+   "utc": "16:08:59.194",
+   "direction": "rx",
+   "raw": "*#4*3*0*0251##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.437,
+   "utc": "16:08:59.197",
+   "direction": "rx",
+   "raw": "*4*2101*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.437,
+   "utc": "16:08:59.197",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.437,
+   "utc": "16:08:59.197",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.746,
+   "utc": "16:08:59.506",
+   "direction": "rx",
+   "raw": "*#4*3*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 34.749,
+   "utc": "16:08:59.509",
+   "direction": "rx",
+   "raw": "*4*0*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.059,
+   "utc": "16:08:59.819",
+   "direction": "rx",
+   "raw": "*#4*4#2*#20*6##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.061,
+   "utc": "16:08:59.821",
+   "direction": "rx",
+   "raw": "*#4*4#2*20*6##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.064,
+   "utc": "16:08:59.824",
+   "direction": "rx",
+   "raw": "*#4*3*14*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.574,
+   "utc": "16:09:00.334",
+   "direction": "rx",
+   "raw": "*#4*3*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.891,
+   "utc": "16:09:00.651",
+   "direction": "rx",
+   "raw": "*4*211*#3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.893,
+   "utc": "16:09:00.653",
+   "direction": "rx",
+   "raw": "*#4*2#1*#20*8##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 35.896,
+   "utc": "16:09:00.656",
+   "direction": "rx",
+   "raw": "*#4*2#1*20*8##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 36.209,
+   "utc": "16:09:00.969",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 36.513,
+   "utc": "16:09:01.273",
+   "direction": "rx",
+   "raw": "*#4*4*12*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 36.515,
+   "utc": "16:09:01.275",
+   "direction": "rx",
+   "raw": "*4*0*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 36.824,
+   "utc": "16:09:01.584",
+   "direction": "rx",
+   "raw": "*#4*4*14*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 36.901,
+   "utc": "16:09:01.661",
+   "direction": "rx",
+   "raw": "*#4*4*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 37.029,
+   "utc": "16:09:01.789",
+   "direction": "rx",
+   "raw": "*4*211*#4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.189,
+   "utc": "16:09:06.949",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.192,
+   "utc": "16:09:06.952",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.193,
+   "utc": "16:09:06.953",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.733,
+   "utc": "16:09:07.493",
+   "direction": "rx",
+   "raw": "*4*303*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.853,
+   "utc": "16:09:07.613",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.855,
+   "utc": "16:09:07.615",
+   "direction": "rx",
+   "raw": "*4*303*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 42.909,
+   "utc": "16:09:07.669",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 43.261,
+   "utc": "16:09:08.021",
+   "direction": "rx",
+   "raw": "*4*303*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 43.736,
+   "utc": "16:09:08.496",
+   "direction": "rx",
+   "raw": "*#4*3*0*0251##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 43.805,
+   "utc": "16:09:08.565",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 43.845,
+   "utc": "16:09:08.605",
+   "direction": "rx",
+   "raw": "*4*303*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 43.893,
+   "utc": "16:09:08.653",
+   "direction": "rx",
+   "raw": "*#4*4*12*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 43.895,
+   "utc": "16:09:08.655",
+   "direction": "rx",
+   "raw": "*4*303*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 44.246,
+   "utc": "16:09:09.006",
+   "direction": "rx",
+   "raw": "*#4*3*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 44.249,
+   "utc": "16:09:09.009",
+   "direction": "rx",
+   "raw": "*4*303*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 45.888,
+   "utc": "16:09:10.648",
+   "direction": "rx",
+   "raw": "*#4*2#1*#20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 45.891,
+   "utc": "16:09:10.651",
+   "direction": "rx",
+   "raw": "*#4*2#1*20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 48.621,
+   "utc": "16:09:13.381",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 48.623,
+   "utc": "16:09:13.383",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 48.624,
+   "utc": "16:09:13.384",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 49.021,
+   "utc": "16:09:13.781",
+   "direction": "rx",
+   "raw": "*#4*4#2*#20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 49.076,
+   "utc": "16:09:13.836",
+   "direction": "rx",
+   "raw": "*#4*4#2*20*5##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 53.213,
+   "utc": "16:09:17.973",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 53.215,
+   "utc": "16:09:17.975",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 53.215,
+   "utc": "16:09:17.975",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 60.733,
+   "utc": "16:09:25.493",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 60.735,
+   "utc": "16:09:25.495",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 60.736,
+   "utc": "16:09:25.496",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 64.437,
+   "utc": "16:09:29.197",
+   "direction": "rx",
+   "raw": "*4*203*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 64.439,
+   "utc": "16:09:29.199",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 64.439,
+   "utc": "16:09:29.199",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.021,
+   "utc": "16:09:35.781",
+   "direction": "rx",
+   "raw": "*4*2101*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.023,
+   "utc": "16:09:35.783",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.023,
+   "utc": "16:09:35.783",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.023,
+   "utc": "16:09:35.783",
+   "direction": "rx",
+   "raw": "*4*22*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.541,
+   "utc": "16:09:36.301",
+   "direction": "rx",
+   "raw": "*#4*2*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.809,
+   "utc": "16:09:36.569",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.812,
+   "utc": "16:09:36.572",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.812,
+   "utc": "16:09:36.572",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 71.813,
+   "utc": "16:09:36.573",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.113,
+   "utc": "16:09:36.873",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.116,
+   "utc": "16:09:36.876",
+   "direction": "rx",
+   "raw": "*#4*3*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.117,
+   "utc": "16:09:36.877",
+   "direction": "rx",
+   "raw": "*4*0*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.439,
+   "utc": "16:09:37.199",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.441,
+   "utc": "16:09:37.201",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.746,
+   "utc": "16:09:37.506",
+   "direction": "rx",
+   "raw": "*#4*3*0*0252##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.749,
+   "utc": "16:09:37.509",
+   "direction": "rx",
+   "raw": "*#4*2*14*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.751,
+   "utc": "16:09:37.511",
+   "direction": "rx",
+   "raw": "*#4*4*#14*0250*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.752,
+   "utc": "16:09:37.512",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.754,
+   "utc": "16:09:37.514",
+   "direction": "rx",
+   "raw": "*4*0*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.754,
+   "utc": "16:09:37.514",
+   "direction": "rx",
+   "raw": "*#4*4*12*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.755,
+   "utc": "16:09:37.515",
+   "direction": "rx",
+   "raw": "*4*0*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 72.844,
+   "utc": "16:09:37.604",
+   "direction": "rx",
+   "raw": "*#4*2*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 73.16,
+   "utc": "16:09:37.920",
+   "direction": "rx",
+   "raw": "*#4*3*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 73.162,
+   "utc": "16:09:37.922",
+   "direction": "rx",
+   "raw": "*4*0*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 73.163,
+   "utc": "16:09:37.923",
+   "direction": "rx",
+   "raw": "*4*211*#2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 73.784,
+   "utc": "16:09:38.544",
+   "direction": "rx",
+   "raw": "*#4*3*0*0252##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 74.103,
+   "utc": "16:09:38.863",
+   "direction": "rx",
+   "raw": "*#4*3*14*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 74.573,
+   "utc": "16:09:39.333",
+   "direction": "rx",
+   "raw": "*#4*3*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 74.888,
+   "utc": "16:09:39.648",
+   "direction": "rx",
+   "raw": "*4*2101*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 74.89,
+   "utc": "16:09:39.650",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 74.891,
+   "utc": "16:09:39.651",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.202,
+   "utc": "16:09:39.962",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.205,
+   "utc": "16:09:39.965",
+   "direction": "rx",
+   "raw": "*#4*3*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.205,
+   "utc": "16:09:39.965",
+   "direction": "rx",
+   "raw": "*4*0*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.207,
+   "utc": "16:09:39.967",
+   "direction": "rx",
+   "raw": "*4*211*#3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.207,
+   "utc": "16:09:39.967",
+   "direction": "rx",
+   "raw": "*#4*4#2*#20*6##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.219,
+   "utc": "16:09:39.979",
+   "direction": "rx",
+   "raw": "*#4*4#2*20*6##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.527,
+   "utc": "16:09:40.287",
+   "direction": "rx",
+   "raw": "*#4*4#2*20*6##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.848,
+   "utc": "16:09:40.608",
+   "direction": "rx",
+   "raw": "*#4*4*12*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.851,
+   "utc": "16:09:40.611",
+   "direction": "rx",
+   "raw": "*4*0*4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.851,
+   "utc": "16:09:40.611",
+   "direction": "rx",
+   "raw": "*#4*4*14*0250*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.932,
+   "utc": "16:09:40.692",
+   "direction": "rx",
+   "raw": "*#4*4*13*00##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 75.982,
+   "utc": "16:09:40.742",
+   "direction": "rx",
+   "raw": "*#4*2#1*#20*8##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 76.076,
+   "utc": "16:09:40.836",
+   "direction": "rx",
+   "raw": "*4*211*#4##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 76.139,
+   "utc": "16:09:40.899",
+   "direction": "rx",
+   "raw": "*#4*2#1*20*8##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 84.268,
+   "utc": "16:09:49.028",
+   "direction": "rx",
+   "raw": "*4*2101*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 84.27,
+   "utc": "16:09:49.030",
+   "direction": "rx",
+   "raw": "*4*21*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 84.27,
+   "utc": "16:09:49.030",
+   "direction": "rx",
+   "raw": "*4*31*#0##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 84.779,
+   "utc": "16:09:49.539",
+   "direction": "rx",
+   "raw": "*#4*2*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.039,
+   "utc": "16:09:49.799",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.353,
+   "utc": "16:09:50.113",
+   "direction": "rx",
+   "raw": "*#4*2*0*0233##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.355,
+   "utc": "16:09:50.115",
+   "direction": "rx",
+   "raw": "*#4*3*#14*0200*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.357,
+   "utc": "16:09:50.117",
+   "direction": "rx",
+   "raw": "*#4*3*0*0252##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.672,
+   "utc": "16:09:50.432",
+   "direction": "rx",
+   "raw": "*#4*2*12*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.674,
+   "utc": "16:09:50.434",
+   "direction": "rx",
+   "raw": "*4*0*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.977,
+   "utc": "16:09:50.737",
+   "direction": "rx",
+   "raw": "*#4*2*14*0200*3##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.979,
+   "utc": "16:09:50.739",
+   "direction": "rx",
+   "raw": "*#4*4*#14*0250*2##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 85.98,
+   "utc": "16:09:50.740",
+   "direction": "rx",
+   "raw": "*#4*4*0*0253##",
+   "session": "evt"
+  },
+  {
+   "timestamp": 86.068,
+   "utc": "16:09:50.828",
+   "direction": "rx",
+   "raw": "*#4*2*13*00##",
+   "session": "evt"
+  }
+ ],
+ "rows": [
+  {
+   "t": 0.001,
+   "utc": "16:08:24.761",
+   "step": "c baseline read-back *#4*#0## via F461",
+   "dir": "step"
+  },
+  {
+   "t": 0.325,
+   "utc": "16:08:25.085",
+   "step": "c baseline read-back *#4*#0## via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "reply_time_s": 0.134,
+   "replies": [
+    "*4*2101*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##",
+    "*4*24*#0##"
+   ]
+  },
+  {
+   "t": 0.455,
+   "utc": "16:08:25.215",
+   "step": "c baseline read-back *#4*#0## via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*2101*#0##"
+  },
+  {
+   "t": 0.457,
+   "utc": "16:08:25.217",
+   "step": "c baseline read-back *#4*#0## via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 0.458,
+   "utc": "16:08:25.218",
+   "step": "c baseline read-back *#4*#0## via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 0.458,
+   "utc": "16:08:25.218",
+   "step": "c baseline read-back *#4*#0## via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*24*#0##"
+  },
+  {
+   "t": 1.617,
+   "utc": "16:08:26.377",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "step"
+  },
+  {
+   "t": 1.618,
+   "utc": "16:08:26.378",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "call",
+   "service": "climate.set_hvac_mode",
+   "data": {
+    "entity_id": "climate.climate_zone_0",
+    "hvac_mode": "off"
+   },
+   "returned_after_ms": 8,
+   "changed": [
+    "climate.climate_zone_0"
+   ]
+  },
+  {
+   "t": 1.751,
+   "utc": "16:08:26.511",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 1.752,
+   "utc": "16:08:26.512",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 1.753,
+   "utc": "16:08:26.513",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 2.334,
+   "utc": "16:08:27.094",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*2##"
+  },
+  {
+   "t": 2.383,
+   "utc": "16:08:27.143",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 2.384,
+   "utc": "16:08:27.144",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*2##"
+  },
+  {
+   "t": 2.43,
+   "utc": "16:08:27.190",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 2.838,
+   "utc": "16:08:27.598",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*3##"
+  },
+  {
+   "t": 3.214,
+   "utc": "16:08:27.974",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0251##"
+  },
+  {
+   "t": 3.358,
+   "utc": "16:08:28.118",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 3.398,
+   "utc": "16:08:28.158",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*4##"
+  },
+  {
+   "t": 3.446,
+   "utc": "16:08:28.206",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*12*0250*3##"
+  },
+  {
+   "t": 3.448,
+   "utc": "16:08:28.208",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*4##"
+  },
+  {
+   "t": 3.801,
+   "utc": "16:08:28.561",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*12*0230*3##"
+  },
+  {
+   "t": 3.804,
+   "utc": "16:08:28.564",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*3##"
+  },
+  {
+   "t": 5.235,
+   "utc": "16:08:29.995",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*#20*5##"
+  },
+  {
+   "t": 5.238,
+   "utc": "16:08:29.998",
+   "step": "c1 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*20*5##"
+  },
+  {
+   "t": 7.72,
+   "utc": "16:08:32.480",
+   "step": "c1 read-back after off via F455",
+   "dir": "step"
+  },
+  {
+   "t": 8.087,
+   "utc": "16:08:32.847",
+   "step": "c1 read-back after off via F455",
+   "dir": "tx_other_gateway",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "gateway": "f455",
+   "reply_time_s": 1.053,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 8.207,
+   "utc": "16:08:32.967",
+   "step": "c1 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 8.209,
+   "utc": "16:08:32.969",
+   "step": "c1 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 8.209,
+   "utc": "16:08:32.969",
+   "step": "c1 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 8.782,
+   "utc": "16:08:33.542",
+   "step": "c1 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*#20*5##"
+  },
+  {
+   "t": 8.823,
+   "utc": "16:08:33.583",
+   "step": "c1 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*20*5##"
+  },
+  {
+   "t": 10.233,
+   "utc": "16:08:34.993",
+   "step": "c1 F461 set_hvac_mode auto (*4*311*#0## expected)",
+   "dir": "step"
+  },
+  {
+   "t": 10.233,
+   "utc": "16:08:34.993",
+   "step": "c1 F461 set_hvac_mode auto (*4*311*#0## expected)",
+   "dir": "call",
+   "service": "climate.set_hvac_mode",
+   "data": {
+    "entity_id": "climate.climate_zone_0",
+    "hvac_mode": "auto"
+   },
+   "returned_after_ms": 7,
+   "changed": [
+    "climate.climate_zone_0"
+   ]
+  },
+  {
+   "t": 12.335,
+   "utc": "16:08:37.095",
+   "step": "c1 read-back +2 s via F455",
+   "dir": "step"
+  },
+  {
+   "t": 12.686,
+   "utc": "16:08:37.446",
+   "step": "c1 read-back +2 s via F455",
+   "dir": "tx_other_gateway",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "gateway": "f455",
+   "reply_time_s": 1.055,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 12.797,
+   "utc": "16:08:37.557",
+   "step": "c1 read-back +2 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 12.8,
+   "utc": "16:08:37.560",
+   "step": "c1 read-back +2 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 12.8,
+   "utc": "16:08:37.560",
+   "step": "c1 read-back +2 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 19.834,
+   "utc": "16:08:44.594",
+   "step": "c1 read-back +8 s via F461",
+   "dir": "step"
+  },
+  {
+   "t": 20.179,
+   "utc": "16:08:44.939",
+   "step": "c1 read-back +8 s via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "reply_time_s": 0.126,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 20.302,
+   "utc": "16:08:45.062",
+   "step": "c1 read-back +8 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 20.304,
+   "utc": "16:08:45.064",
+   "step": "c1 read-back +8 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 20.305,
+   "utc": "16:08:45.065",
+   "step": "c1 read-back +8 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 21.438,
+   "utc": "16:08:46.198",
+   "step": "c1 F455 set_hvac_mode cool (*4*0*#0## expected)",
+   "dir": "step"
+  },
+  {
+   "t": 21.438,
+   "utc": "16:08:46.198",
+   "step": "c1 F455 set_hvac_mode cool (*4*0*#0## expected)",
+   "dir": "call",
+   "service": "climate.set_hvac_mode",
+   "data": {
+    "entity_id": "climate.central_unit",
+    "hvac_mode": "cool"
+   },
+   "returned_after_ms": 8,
+   "changed": []
+  },
+  {
+   "t": 23.531,
+   "utc": "16:08:48.291",
+   "step": "c1 read-back +2 s via F461",
+   "dir": "step"
+  },
+  {
+   "t": 23.878,
+   "utc": "16:08:48.638",
+   "step": "c1 read-back +2 s via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "reply_time_s": 0.122,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 23.998,
+   "utc": "16:08:48.758",
+   "step": "c1 read-back +2 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 24.0,
+   "utc": "16:08:48.760",
+   "step": "c1 read-back +2 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 24.0,
+   "utc": "16:08:48.760",
+   "step": "c1 read-back +2 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 30.084,
+   "utc": "16:08:54.844",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "step"
+  },
+  {
+   "t": 30.459,
+   "utc": "16:08:55.219",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*4*3100*#0##",
+   "reply_time_s": 0.097,
+   "ack": true
+  },
+  {
+   "t": 30.606,
+   "utc": "16:08:55.366",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*2101*#0##"
+  },
+  {
+   "t": 30.608,
+   "utc": "16:08:55.368",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 30.608,
+   "utc": "16:08:55.368",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 30.608,
+   "utc": "16:08:55.368",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*22*#0##"
+  },
+  {
+   "t": 31.117,
+   "utc": "16:08:55.877",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*#14*0200*2##"
+  },
+  {
+   "t": 31.385,
+   "utc": "16:08:56.145",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 31.428,
+   "utc": "16:08:56.188",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*#14*0200*2##"
+  },
+  {
+   "t": 31.43,
+   "utc": "16:08:56.190",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 31.431,
+   "utc": "16:08:56.191",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 31.431,
+   "utc": "16:08:56.191",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 31.708,
+   "utc": "16:08:56.468",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 31.71,
+   "utc": "16:08:56.470",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*#14*0200*2##"
+  },
+  {
+   "t": 31.71,
+   "utc": "16:08:56.470",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*3##"
+  },
+  {
+   "t": 32.027,
+   "utc": "16:08:56.787",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 32.028,
+   "utc": "16:08:56.788",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 32.029,
+   "utc": "16:08:56.789",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0251##"
+  },
+  {
+   "t": 32.34,
+   "utc": "16:08:57.100",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*14*0200*3##"
+  },
+  {
+   "t": 32.342,
+   "utc": "16:08:57.102",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*#14*0250*2##"
+  },
+  {
+   "t": 32.344,
+   "utc": "16:08:57.104",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 32.344,
+   "utc": "16:08:57.104",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*4##"
+  },
+  {
+   "t": 32.345,
+   "utc": "16:08:57.105",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*12*0250*3##"
+  },
+  {
+   "t": 32.346,
+   "utc": "16:08:57.106",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*4##"
+  },
+  {
+   "t": 32.429,
+   "utc": "16:08:57.189",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*13*00##"
+  },
+  {
+   "t": 32.745,
+   "utc": "16:08:57.505",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*12*0200*3##"
+  },
+  {
+   "t": 32.747,
+   "utc": "16:08:57.507",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*3##"
+  },
+  {
+   "t": 32.747,
+   "utc": "16:08:57.507",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#2##"
+  },
+  {
+   "t": 33.086,
+   "utc": "16:08:57.846",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 33.377,
+   "utc": "16:08:58.137",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 33.379,
+   "utc": "16:08:58.139",
+   "step": "c1 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 33.684,
+   "utc": "16:08:58.444",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "step"
+  },
+  {
+   "t": 33.696,
+   "utc": "16:08:58.456",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*14*0200*3##"
+  },
+  {
+   "t": 33.801,
+   "utc": "16:08:58.561",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*13*00##"
+  },
+  {
+   "t": 34.066,
+   "utc": "16:08:58.826",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "tx_other_gateway",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "gateway": "f455",
+   "reply_time_s": 1.272,
+   "replies": [
+    "*4*2101*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 34.111,
+   "utc": "16:08:58.871",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#2##"
+  },
+  {
+   "t": 34.434,
+   "utc": "16:08:59.194",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0251##"
+  },
+  {
+   "t": 34.437,
+   "utc": "16:08:59.197",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*2101*#0##"
+  },
+  {
+   "t": 34.437,
+   "utc": "16:08:59.197",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 34.437,
+   "utc": "16:08:59.197",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 34.746,
+   "utc": "16:08:59.506",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*12*0200*3##"
+  },
+  {
+   "t": 34.749,
+   "utc": "16:08:59.509",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*3##"
+  },
+  {
+   "t": 35.059,
+   "utc": "16:08:59.819",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*#20*6##"
+  },
+  {
+   "t": 35.061,
+   "utc": "16:08:59.821",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*20*6##"
+  },
+  {
+   "t": 35.064,
+   "utc": "16:08:59.824",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*14*0200*3##"
+  },
+  {
+   "t": 35.574,
+   "utc": "16:09:00.334",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*13*00##"
+  },
+  {
+   "t": 35.891,
+   "utc": "16:09:00.651",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#3##"
+  },
+  {
+   "t": 35.893,
+   "utc": "16:09:00.653",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*#20*8##"
+  },
+  {
+   "t": 35.896,
+   "utc": "16:09:00.656",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*20*8##"
+  },
+  {
+   "t": 36.209,
+   "utc": "16:09:00.969",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 36.513,
+   "utc": "16:09:01.273",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*12*0250*3##"
+  },
+  {
+   "t": 36.515,
+   "utc": "16:09:01.275",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*4##"
+  },
+  {
+   "t": 36.824,
+   "utc": "16:09:01.584",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*14*0250*3##"
+  },
+  {
+   "t": 36.901,
+   "utc": "16:09:01.661",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*13*00##"
+  },
+  {
+   "t": 37.029,
+   "utc": "16:09:01.789",
+   "step": "c1 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#4##"
+  },
+  {
+   "t": 41.468,
+   "utc": "16:09:06.228",
+   "step": "c1 states +9 s",
+   "dir": "step"
+  },
+  {
+   "t": 42.048,
+   "utc": "16:09:06.808",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "step"
+  },
+  {
+   "t": 42.048,
+   "utc": "16:09:06.808",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "call",
+   "service": "climate.set_hvac_mode",
+   "data": {
+    "entity_id": "climate.climate_zone_0",
+    "hvac_mode": "off"
+   },
+   "returned_after_ms": 8,
+   "changed": [
+    "climate.climate_zone_0"
+   ]
+  },
+  {
+   "t": 42.189,
+   "utc": "16:09:06.949",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 42.192,
+   "utc": "16:09:06.952",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 42.193,
+   "utc": "16:09:06.953",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 42.733,
+   "utc": "16:09:07.493",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*2##"
+  },
+  {
+   "t": 42.853,
+   "utc": "16:09:07.613",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 42.855,
+   "utc": "16:09:07.615",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*2##"
+  },
+  {
+   "t": 42.909,
+   "utc": "16:09:07.669",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 43.261,
+   "utc": "16:09:08.021",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*3##"
+  },
+  {
+   "t": 43.736,
+   "utc": "16:09:08.496",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0251##"
+  },
+  {
+   "t": 43.805,
+   "utc": "16:09:08.565",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 43.845,
+   "utc": "16:09:08.605",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*4##"
+  },
+  {
+   "t": 43.893,
+   "utc": "16:09:08.653",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*12*0250*3##"
+  },
+  {
+   "t": 43.895,
+   "utc": "16:09:08.655",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*4##"
+  },
+  {
+   "t": 44.246,
+   "utc": "16:09:09.006",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*12*0200*3##"
+  },
+  {
+   "t": 44.249,
+   "utc": "16:09:09.009",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*303*3##"
+  },
+  {
+   "t": 45.888,
+   "utc": "16:09:10.648",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*#20*5##"
+  },
+  {
+   "t": 45.891,
+   "utc": "16:09:10.651",
+   "step": "c2 F461 set_hvac_mode off",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*20*5##"
+  },
+  {
+   "t": 48.161,
+   "utc": "16:09:12.921",
+   "step": "c2 read-back after off via F455",
+   "dir": "step"
+  },
+  {
+   "t": 48.511,
+   "utc": "16:09:13.271",
+   "step": "c2 read-back after off via F455",
+   "dir": "tx_other_gateway",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "gateway": "f455",
+   "reply_time_s": 1.027,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 48.621,
+   "utc": "16:09:13.381",
+   "step": "c2 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 48.623,
+   "utc": "16:09:13.383",
+   "step": "c2 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 48.624,
+   "utc": "16:09:13.384",
+   "step": "c2 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 49.021,
+   "utc": "16:09:13.781",
+   "step": "c2 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*#20*5##"
+  },
+  {
+   "t": 49.076,
+   "utc": "16:09:13.836",
+   "step": "c2 read-back after off via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*20*5##"
+  },
+  {
+   "t": 50.63,
+   "utc": "16:09:15.390",
+   "step": "c2 F461 set_hvac_mode auto (*4*311*#0## expected)",
+   "dir": "step"
+  },
+  {
+   "t": 50.63,
+   "utc": "16:09:15.390",
+   "step": "c2 F461 set_hvac_mode auto (*4*311*#0## expected)",
+   "dir": "call",
+   "service": "climate.set_hvac_mode",
+   "data": {
+    "entity_id": "climate.climate_zone_0",
+    "hvac_mode": "auto"
+   },
+   "returned_after_ms": 8,
+   "changed": [
+    "climate.climate_zone_0"
+   ]
+  },
+  {
+   "t": 52.705,
+   "utc": "16:09:17.465",
+   "step": "c2 read-back +2 s via F455",
+   "dir": "step"
+  },
+  {
+   "t": 53.101,
+   "utc": "16:09:17.861",
+   "step": "c2 read-back +2 s via F455",
+   "dir": "tx_other_gateway",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "gateway": "f455",
+   "reply_time_s": 1.037,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 53.213,
+   "utc": "16:09:17.973",
+   "step": "c2 read-back +2 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 53.215,
+   "utc": "16:09:17.975",
+   "step": "c2 read-back +2 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 53.215,
+   "utc": "16:09:17.975",
+   "step": "c2 read-back +2 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 60.235,
+   "utc": "16:09:24.995",
+   "step": "c2 read-back +8 s via F461",
+   "dir": "step"
+  },
+  {
+   "t": 60.617,
+   "utc": "16:09:25.377",
+   "step": "c2 read-back +8 s via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "reply_time_s": 0.119,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 60.733,
+   "utc": "16:09:25.493",
+   "step": "c2 read-back +8 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 60.735,
+   "utc": "16:09:25.495",
+   "step": "c2 read-back +8 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 60.736,
+   "utc": "16:09:25.496",
+   "step": "c2 read-back +8 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 61.856,
+   "utc": "16:09:26.616",
+   "step": "c2 F455 set_hvac_mode cool (*4*0*#0## expected)",
+   "dir": "step"
+  },
+  {
+   "t": 61.857,
+   "utc": "16:09:26.617",
+   "step": "c2 F455 set_hvac_mode cool (*4*0*#0## expected)",
+   "dir": "call",
+   "service": "climate.set_hvac_mode",
+   "data": {
+    "entity_id": "climate.central_unit",
+    "hvac_mode": "cool"
+   },
+   "returned_after_ms": 8,
+   "changed": []
+  },
+  {
+   "t": 63.952,
+   "utc": "16:09:28.712",
+   "step": "c2 read-back +2 s via F461",
+   "dir": "step"
+  },
+  {
+   "t": 64.299,
+   "utc": "16:09:29.059",
+   "step": "c2 read-back +2 s via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "reply_time_s": 0.14,
+   "replies": [
+    "*4*203*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##"
+   ]
+  },
+  {
+   "t": 64.437,
+   "utc": "16:09:29.197",
+   "step": "c2 read-back +2 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*203*#0##"
+  },
+  {
+   "t": 64.439,
+   "utc": "16:09:29.199",
+   "step": "c2 read-back +2 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 64.439,
+   "utc": "16:09:29.199",
+   "step": "c2 read-back +2 s via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 70.525,
+   "utc": "16:09:35.285",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "step"
+  },
+  {
+   "t": 70.867,
+   "utc": "16:09:35.627",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*4*3100*#0##",
+   "reply_time_s": 0.111,
+   "ack": true
+  },
+  {
+   "t": 71.021,
+   "utc": "16:09:35.781",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*2101*#0##"
+  },
+  {
+   "t": 71.023,
+   "utc": "16:09:35.783",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 71.023,
+   "utc": "16:09:35.783",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 71.023,
+   "utc": "16:09:35.783",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*22*#0##"
+  },
+  {
+   "t": 71.541,
+   "utc": "16:09:36.301",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*#14*0200*2##"
+  },
+  {
+   "t": 71.809,
+   "utc": "16:09:36.569",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 71.812,
+   "utc": "16:09:36.572",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 71.812,
+   "utc": "16:09:36.572",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 71.813,
+   "utc": "16:09:36.573",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 72.113,
+   "utc": "16:09:36.873",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 72.116,
+   "utc": "16:09:36.876",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*#14*0200*2##"
+  },
+  {
+   "t": 72.117,
+   "utc": "16:09:36.877",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*3##"
+  },
+  {
+   "t": 72.439,
+   "utc": "16:09:37.199",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 72.441,
+   "utc": "16:09:37.201",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 72.746,
+   "utc": "16:09:37.506",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0252##"
+  },
+  {
+   "t": 72.749,
+   "utc": "16:09:37.509",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*14*0200*3##"
+  },
+  {
+   "t": 72.751,
+   "utc": "16:09:37.511",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*#14*0250*2##"
+  },
+  {
+   "t": 72.752,
+   "utc": "16:09:37.512",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 72.754,
+   "utc": "16:09:37.514",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*4##"
+  },
+  {
+   "t": 72.754,
+   "utc": "16:09:37.514",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*12*0250*3##"
+  },
+  {
+   "t": 72.755,
+   "utc": "16:09:37.515",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*4##"
+  },
+  {
+   "t": 72.844,
+   "utc": "16:09:37.604",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*13*00##"
+  },
+  {
+   "t": 73.16,
+   "utc": "16:09:37.920",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*12*0200*3##"
+  },
+  {
+   "t": 73.162,
+   "utc": "16:09:37.922",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*3##"
+  },
+  {
+   "t": 73.163,
+   "utc": "16:09:37.923",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#2##"
+  },
+  {
+   "t": 73.784,
+   "utc": "16:09:38.544",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0252##"
+  },
+  {
+   "t": 74.103,
+   "utc": "16:09:38.863",
+   "step": "c2 TRIAL *4*3100*#0## (PDF 1.6.8 last weekly program) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*14*0200*3##"
+  },
+  {
+   "t": 74.113,
+   "utc": "16:09:38.873",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "step"
+  },
+  {
+   "t": 74.472,
+   "utc": "16:09:39.232",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "tx_other_gateway",
+   "session": "cmd",
+   "frame": "*#4*#0##",
+   "gateway": "f455",
+   "reply_time_s": 2.564,
+   "replies": [
+    "*4*2101*#0##",
+    "*4*21*#0##",
+    "*4*31*#0##",
+    "*4*311*#3##",
+    "*4*211*#3##",
+    "*4*311*#4##",
+    "*4*211*#4##"
+   ]
+  },
+  {
+   "t": 74.573,
+   "utc": "16:09:39.333",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*13*00##"
+  },
+  {
+   "t": 74.888,
+   "utc": "16:09:39.648",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*2101*#0##"
+  },
+  {
+   "t": 74.89,
+   "utc": "16:09:39.650",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 74.891,
+   "utc": "16:09:39.651",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 75.202,
+   "utc": "16:09:39.962",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 75.205,
+   "utc": "16:09:39.965",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*12*0200*3##"
+  },
+  {
+   "t": 75.205,
+   "utc": "16:09:39.965",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*3##"
+  },
+  {
+   "t": 75.207,
+   "utc": "16:09:39.967",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#3##"
+  },
+  {
+   "t": 75.207,
+   "utc": "16:09:39.967",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*#20*6##"
+  },
+  {
+   "t": 75.219,
+   "utc": "16:09:39.979",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*20*6##"
+  },
+  {
+   "t": 75.527,
+   "utc": "16:09:40.287",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4#2*20*6##"
+  },
+  {
+   "t": 75.848,
+   "utc": "16:09:40.608",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*12*0250*3##"
+  },
+  {
+   "t": 75.851,
+   "utc": "16:09:40.611",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*4##"
+  },
+  {
+   "t": 75.851,
+   "utc": "16:09:40.611",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*14*0250*3##"
+  },
+  {
+   "t": 75.932,
+   "utc": "16:09:40.692",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*13*00##"
+  },
+  {
+   "t": 75.982,
+   "utc": "16:09:40.742",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*#20*8##"
+  },
+  {
+   "t": 76.076,
+   "utc": "16:09:40.836",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*211*#4##"
+  },
+  {
+   "t": 76.139,
+   "utc": "16:09:40.899",
+   "step": "c2 read-back +3 s via F455",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2#1*20*8##"
+  },
+  {
+   "t": 83.167,
+   "utc": "16:09:47.927",
+   "step": "c2 states +9 s",
+   "dir": "step"
+  },
+  {
+   "t": 83.748,
+   "utc": "16:09:48.508",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "step"
+  },
+  {
+   "t": 84.1,
+   "utc": "16:09:48.860",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "tx",
+   "session": "cmd",
+   "frame": "*4*2101*#0##",
+   "reply_time_s": 0.117,
+   "ack": true
+  },
+  {
+   "t": 84.268,
+   "utc": "16:09:49.028",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*2101*#0##"
+  },
+  {
+   "t": 84.27,
+   "utc": "16:09:49.030",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*21*#0##"
+  },
+  {
+   "t": 84.27,
+   "utc": "16:09:49.030",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*31*#0##"
+  },
+  {
+   "t": 84.779,
+   "utc": "16:09:49.539",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*#14*0200*2##"
+  },
+  {
+   "t": 85.039,
+   "utc": "16:09:49.799",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 85.353,
+   "utc": "16:09:50.113",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*0*0233##"
+  },
+  {
+   "t": 85.355,
+   "utc": "16:09:50.115",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*#14*0200*2##"
+  },
+  {
+   "t": 85.357,
+   "utc": "16:09:50.117",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*3*0*0252##"
+  },
+  {
+   "t": 85.672,
+   "utc": "16:09:50.432",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*12*0200*3##"
+  },
+  {
+   "t": 85.674,
+   "utc": "16:09:50.434",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*4*0*2##"
+  },
+  {
+   "t": 85.977,
+   "utc": "16:09:50.737",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*14*0200*3##"
+  },
+  {
+   "t": 85.979,
+   "utc": "16:09:50.739",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*#14*0250*2##"
+  },
+  {
+   "t": 85.98,
+   "utc": "16:09:50.740",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*4*0*0253##"
+  },
+  {
+   "t": 86.068,
+   "utc": "16:09:50.828",
+   "step": "c final: *4*2101*#0## (weekly program 1 cool, the pre-audit state) via F461",
+   "dir": "rx",
+   "session": "evt",
+   "frame": "*#4*2*13*00##"
+  }
+ ]
+}

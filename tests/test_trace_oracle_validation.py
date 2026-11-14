@@ -225,6 +225,9 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     # --- MyHomeServer1 3.87.13, issue_863 (myhome_sweep_MyHomeServer1_all_2026-11-09T13-00-57)
     "*#4*30#4*#20*0##": "MyHomeServer1 2026-11-09: ACK, echoed *#4*30#4*20*0## on evt in 125.8 ms (actuator 4 off)",
     "*#4*30#4*#20*1##": "MyHomeServer1 2026-11-09: ACK, echoed *#4*30#4*20*1## on evt in 122.8 ms (actuator 4 on)",
+    # --- F461 2.0.11, central_restore_3100_live_2026-11-12 (3550 central unit #0, conditioning)
+    "*4*2101*#0##": "F461 2026-11-12: ACK in 117 ms (weekly program 1, conditioning)",
+    "*4*3100*#0##": "F461 2026-11-12: ACK in 97 / 111 ms, the 3550 answers *4*2101*#0## 131 to 154 ms after the send",
 }
 
 
