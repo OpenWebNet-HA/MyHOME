@@ -640,10 +640,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#option-2-installation-via-hacs-custom-repository" class="md-nav__link">
+  <a href="#option-2-installation-via-home-assistant-marketplace-hacs-custom-repository" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 2: Installation via HACS (Custom Repository)
+        Option 2: Installation via Home Assistant Marketplace / HACS (Custom Repository)
       
     </span>
   </a>
@@ -2095,10 +2095,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#option-2-installation-via-hacs-custom-repository" class="md-nav__link">
+  <a href="#option-2-installation-via-home-assistant-marketplace-hacs-custom-repository" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Option 2: Installation via HACS (Custom Repository)
+        Option 2: Installation via Home Assistant Marketplace / HACS (Custom Repository)
       
     </span>
   </a>
@@ -2150,7 +2150,7 @@
 <div class="admonition important">
 <p class="admonition-title">Important</p>
 <p><strong>Why Manual Installation is Recommended for v2 Beta</strong>:
-The v2 architecture is currently published as preview/beta releases from the <code>v2-phase1-architecture</code> development branch. HACS tracks the default <code>master</code> branch by default and often fails to detect or rejects pre-release beta tags on non-default branches. Installing via ZIP ensures you receive the exact, tested beta build.</p>
+The v2 architecture is currently published as preview/beta releases from the <code>v2-phase1-architecture</code> development branch while <code>master</code> tracks legacy <code>0.9.4</code>. Both the <strong>Home Assistant Marketplace</strong> (Home Assistant 2026.11+) and <strong>HACS</strong> (<code>&lt; 2026.11</code>) track the default <code>master</code> branch by default and often hide or reject pre-release beta tags on non-default branches. Installing via ZIP ensures you receive the exact, tested beta build.</p>
 </div>
 <h3 id="1-click-terminal-command-home-assistant-terminal-ssh">⚡ 1-Click Terminal Command (Home Assistant Terminal &amp; SSH)<a class="headerlink" href="#1-click-terminal-command-home-assistant-terminal-ssh" title="Permanent link">&para;</a></h3>
 <p>If you have the <strong>Terminal &amp; SSH</strong> add-on installed (or connect via SSH), paste this command directly into your terminal:</p>
@@ -2191,19 +2191,27 @@ Always ensure integration files reside in <code>/config/custom_components/myhome
 </li>
 </ol>
 <hr />
-<h2 id="option-2-installation-via-hacs-custom-repository">Option 2: Installation via HACS (Custom Repository)<a class="headerlink" href="#option-2-installation-via-hacs-custom-repository" title="Permanent link">&para;</a></h2>
-<p>If you prefer managing updates through HACS:</p>
-<ol>
-<li>Open <strong>HACS</strong> in Home Assistant.</li>
-<li>Click the three dots (⋮) in the top right and choose <strong>Custom repositories</strong>.</li>
-<li>Enter the repository URL:
-   <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>https://github.com/OpenWebNet-HA/MyHOME
-</span></code></pre></div></li>
-<li>Select category: <strong>Integration</strong>.</li>
-<li>Click <strong>Add</strong>.</li>
-<li>Search for <strong>MyHOME</strong>. If installing a beta release, toggle <strong>Show beta versions</strong> in the version dropdown, choose the latest <code>2.0.0bX</code> release, and click <strong>Download</strong>.</li>
-<li>Restart Home Assistant.</li>
+<h2 id="option-2-installation-via-home-assistant-marketplace-hacs-custom-repository">Option 2: Installation via Home Assistant Marketplace / HACS (Custom Repository)<a class="headerlink" href="#option-2-installation-via-home-assistant-marketplace-hacs-custom-repository" title="Permanent link">&para;</a></h2>
+<p>From <strong>Home Assistant 2026.11</strong> on, HACS is integrated directly into Home Assistant Core as the <strong>Home Assistant Marketplace</strong> (<strong>Settings → Marketplace</strong>); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (<strong>Home Assistant 2026.3 – 2026.10</strong>), the same steps apply in <strong><a href="https://hacs.xyz">HACS</a></strong>.</p>
+<p>Once stable <code>v2.0.0</code> merges into <code>master</code> (<a href="https://github.com/OpenWebNet-HA/MyHOME/pull/232">PR #232</a>) and enters the default catalog, you will be able to search for <strong>MyHOME</strong> directly in <strong>Settings → Marketplace</strong>. Until then, add <code>OpenWebNet-HA/MyHOME</code> as a custom repository:</p>
+<ul>
+<li><strong>Home Assistant 2026.11+ (Marketplace):</strong><ol>
+<li>Open <strong>Settings → Marketplace</strong> in Home Assistant <em>(accept the community content warning if opening it for the first time)</em>.</li>
+<li>Select <strong>Add from link</strong> in the upper-right corner <em>(connect your GitHub account if prompted)</em>.</li>
+<li>Under <strong>GitHub link</strong>, enter <code>https://github.com/OpenWebNet-HA/MyHOME</code> and select <strong>Add</strong> <em>(if prompted for <strong>Type</strong>, select <strong>Integration</strong> and select <strong>Add</strong> again)</em>.</li>
+<li>Select <strong>MyHOME</strong> from the list to open its page, then select <strong>Install</strong> <em>(to pick a specific release, open <code>⋮</code> → <strong>Install another version</strong>; note that for <code>2.0.0bX</code> pre-releases on <code>v2-phase1-architecture</code>, Option 1 above is strongly recommended)</em>.</li>
+<li>Restart Home Assistant when prompted.</li>
 </ol>
+</li>
+<li><strong>Home Assistant 2026.3 – 2026.10 (HACS):</strong><ol>
+<li>Open <strong>HACS</strong> in Home Assistant.</li>
+<li>Click the three dots (<code>⋮</code>) in the top right and choose <strong>Custom repositories</strong>.</li>
+<li>Enter <code>https://github.com/OpenWebNet-HA/MyHOME</code> with category <strong>Integration</strong>, then click <strong>Add</strong>.</li>
+<li>Search for <strong>MyHOME</strong>, open it, select the desired release version, and click <strong>Download</strong> <em>(for <code>2.0.0bX</code> pre-releases on <code>v2-phase1-architecture</code>, Option 1 above is strongly recommended)</em>.</li>
+<li>Restart Home Assistant when prompted.</li>
+</ol>
+</li>
+</ul>
 <hr />
 <h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <p>Once Home Assistant has restarted:</p>

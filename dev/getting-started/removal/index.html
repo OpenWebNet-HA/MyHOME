@@ -2143,11 +2143,16 @@
 <h2 id="step-4-remove-integration-files-custom-component">Step 4: Remove Integration Files &amp; Custom Component<a class="headerlink" href="#step-4-remove-integration-files-custom-component" title="Permanent link">&para;</a></h2>
 <p>To completely remove the integration code from Home Assistant:</p>
 <ol>
-<li>Using your terminal or file manager, delete the custom component folder:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>/config/custom_components/myhome
+<li><strong>If installed via Home Assistant Marketplace (2026.11+) or HACS (<code>&lt; 2026.11</code>):</strong><ul>
+<li>In <strong>Settings → Marketplace</strong> (<code>2026.11+</code>), open <strong>MyHOME</strong>, open the three dots (<code>⋮</code>) menu in the upper-right corner, and select <strong>Uninstall</strong>.</li>
+<li>In <strong>HACS</strong> (<code>&lt; 2026.11</code>), open <strong>MyHOME</strong>, open the three dots (<code>⋮</code>) menu, and select <strong>Remove</strong>.</li>
+</ul>
+</li>
+<li><strong>If installed manually or via SSH one-liner:</strong> delete the custom component folder using your terminal or file manager:
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>/config/custom_components/myhome
 </span></code></pre></div></li>
 <li>If you maintain a legacy <code>/config/myhome.yaml</code> file, you can safely archive or delete it:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/myhome.yaml
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/myhome.yaml
 </span></code></pre></div></li>
 </ol>
 <hr />
