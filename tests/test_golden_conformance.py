@@ -15,7 +15,9 @@ try:
         OWNAutomationCommand,
         OWNCenCommand,
         OWNCenPlusCommand,
+        OWNCommand,
         OWNEnergyCommand,
+        OWNEvent,
         OWNHeatingCommand,
         OWNLightingCommand,
         OWNMessage,
@@ -33,7 +35,9 @@ except ImportError:
     OWNAlarmCommand = None  # type: ignore[assignment]
     OWNCenCommand = None  # type: ignore[assignment]
     OWNCenPlusCommand = None  # type: ignore[assignment]
+    OWNCommand = None  # type: ignore[assignment]
     OWNEnergyCommand = None  # type: ignore[assignment]
+    OWNEvent = None  # type: ignore[assignment]
     OWNSoundCommand = None  # type: ignore[assignment]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -100,10 +104,35 @@ def test_golden_frame_parsing(fixture: Dict[str, Any]):
     else:
         assert isinstance(parsed, OWNSignaling) or parsed.who is None
 
+    # Unambiguous direction class assertion (*WHO*WHAT*WHERE## command vs event is wire-identical)
+    expected_direction = fixture.get("direction")
+    if expected_direction == "signaling":
+        assert isinstance(parsed, OWNSignaling), (
+            f"Direction 'signaling' expected OWNSignaling for {frame_str}, got {type(parsed).__name__}"
+        )
+    elif expected_direction in ("status_request", "dimension_request", "dimension_write"):
+        if OWNCommand is not None:
+            assert isinstance(parsed, OWNCommand), (
+                f"Direction {expected_direction!r} expected OWNCommand for {frame_str}, got {type(parsed).__name__}"
+            )
+    elif expected_direction == "dimension_response":
+        if OWNEvent is not None:
+            assert isinstance(parsed, OWNEvent), (
+                f"Direction 'dimension_response' expected OWNEvent for {frame_str}, got {type(parsed).__name__}"
+            )
+
     # WHERE assertion
     expected_where = fixture.get("where")
     if expected_where is not None:
         assert parsed.where == expected_where, f"WHERE mismatch: {parsed.where} != {expected_where}"
+
+    # Sub-addressed WHERE parameters assertion (e.g. Z#N actuator or 0#N pump qualifiers)
+    expected_where_params = fixture.get("where_params")
+    if expected_where_params is not None:
+        actual_where_params = getattr(parsed, "where_param", getattr(parsed, "_where_param", []))
+        assert actual_where_params == expected_where_params, (
+            f"WHERE params mismatch for {frame_str}: {actual_where_params} != {expected_where_params}"
+        )
 
     # Scope assertion (WHO 1/2 addressing class: general / area / group / point)
     expected_scope = fixture.get("scope")

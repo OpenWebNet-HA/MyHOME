@@ -21,7 +21,7 @@ Every other source (`legrand-spec`, `encyclopedia`, `openwebnet4j`, `public-read
 - A `builder:` block proves the builder matches the fixture, not that either is right. When both are written in the same change from the same reading, the test only compares the code with itself. Prefer builder parity against a capture or an independent source such as `openwebnet4j`.
 - When a capture arrives for a frame that so far exists only as a spec-derived fixture, add the capture and keep the spec entry only if it agrees.
 
-## Supported Subsystems Catalog (184 Fixtures)
+## Supported Subsystems Catalog (298 Fixtures)
 
 > Frames marked `community-plant-capture` come from real installations contributed by users. They are the only authority for behaviour the official PDFs leave undefined, and they are kept verbatim except where a fixture note records a deliberate substitution.
 
@@ -32,7 +32,8 @@ Every other source (`legrand-spec`, `encyclopedia`, `openwebnet4j`, `public-read
 - **WHO=4 Thermoregulation (`who04_thermo.yaml`)**: Measured temperature queries (`21.5°C`), setpoint writes, Antifreeze/Protection modes, and negative temperature probe status (`-4.8°C`). Two MyHomeServer1 + Home+Control plants (#429) add dimension 7, which carries the zone state and setpoint on those plants and is not in `WHO_4 2.pdf`: cooling and heating setpoints, protection (the zone is OFF, with `*4*202*Z##`), the 35.0 °C protection value sent just before a real setpoint, MyHomeServer1's `*#4*Z*#7*...##` program writes, and the dimension 5 re-assert. An MH200N capture (#466) adds local knob offset transitions (Dimension 13: `*#4*4*13*01##` / `*#4*4*13*11##`). A MyHomeServer1 (`2.87.13`) Sabiana 0–10 V fan-coil + floor-heating capture (#908) adds paired `#20` / `20` actuator broadcasts for proportional 0–10 V `0%` OFF (`*#4*1#3*#20*100##`, `*#4*1#3*20*100##`) and valve closure (`*#4*2#1*#20*0##`), circulation-pump demand release (`*4*4002#2*0#1##`, `*4*4002*2##`), and H4691 humidity (`*#4*1*60*60##`), alongside the Encyclopedia's MyHomeServer1 extended fan-coil OFF code (`*#4*1*19*0*14##`). The full traces are in `tests/fixtures/traces/issue_429`, `tests/fixtures/traces/issue_466`, and `tests/fixtures/traces/issue_908`.
 - **WHO=5 Burglar Alarm (`who05_alarm.yaml`)**: Status requests and silent alarm events across zones and central units.
 - **WHO=9 Auxiliary (`who09_auxiliary.yaml`)**: Activation and deactivation of AUX relay channels.
-- **WHO=13 Gateway Management & WHO=1013 Diagnostics (`who13_gateway.yaml`)**: Firmware versions and gateway internal datetime responses. `*#13**15*4##` is the device type a physical MH200 (firmware 2.1.0) answers. It is also the regression frame for an MH200 set up by hand as MH200N (live 2026-09-23): the code corrects that label to MH200, because the MH200N has a code of its own (`44`) and a family match (`MH200N` → `MH200`) is no longer enough (`test_manual_mh200n_on_a_live_mh200_is_corrected`). An MH200N capture (#466) adds on-wire firmware version 1.1.8 (`*#13**16*1*1*8##`). WHO 1013 diagnostic object model fixtures (`*#1013**1*4##` for MH200 live-verified via openwebnet gateway, and `*#1013**1*19##` / `*#1013**1*26##` for H4684 / LGRH4684 color touch screens reverse-engineered from TiDisplayColor firmware) establish ground-truth model identification.
+- **WHO=13 Gateway Management & WHO=1013 Diagnostics (`who13_gateway.yaml`)**: Firmware versions and gateway internal datetime responses. `*#13**15*4##` is the device type a physical MH200 (firmware 2.1.0) answers. It is also the regression frame for an MH200 set up by hand as MH200N (live 2026-09-23): the code corrects that label to MH200, because the MH200N has a code of its own (`44`) and a family match (`MH200N` → `MH200`) is no longer enough (`test_manual_mh200n_on_a_live_mh200_is_corrected`). An MH200N capture (#466) adds on-wire firmware version 1.1.8 (`*#13**16*1*1*8##`). WHO 1013 diagnostic object model fixtures (`*#1013**1*4##` for MH200 live-verified via openwebnet gateway, and `*#1013**1*19##` / `*#1013**1*26##` for H4684 / LGRH4684 color touch screens reverse-engineered from TiDisplayColor firmware) establish ground-truth model identification. A MyHomeServer1 (`2.87.13`) sweep and bus-clock capture (#907, #908) adds the 4-parameter `WHO=1013` `Dimension 1` reply (`*#1013*0*1##` -> `*#1013**1*67*15*5*0##`, object model `67`), firmware `2.87.13` (`*#13**16*2*87*13##`), Linux kernel (`*#13**23##` -> `*#13**23*5*10*35##`) and distribution (`*#13**24##` -> `*#13**24*2*26*3##`) versions, 1 Hz trailing-empty-timezone clock broadcast (`*#13**#0*14*59*05*##`), unconfigured-timezone `999` time reply (`*#13**0*15*13*25*999##`), and `Dimension 1` date broadcast (`*#13**#1*06*14*11*2026##`).
+- **WHO=15 / WHO=17 MH200N Sweep Events (`who14_etc_issue466.yaml`)**: Additional `WHO=15` CEN and `WHO=17` MH200N scenario-module events captured during a physical MH200N installation sweep (#466).
 
 - **WHO=15 CEN Pushbuttons (`who15_cen.yaml`)**: Pressure, short release, long release and extended pressure (`*15*BUTTON[#1|#2|#3]*WHERE##`), with a four-digit source address captured on an MH200N + MyHomeServer1 bus (`0512`, #624).
 - **WHO=16 Sound System (`who16_sound.yaml`)**: Source devices (`101`-`109`), matrix routing (`1` + environment + source), amplifier ON/OFF, volume (`DIMENSION 1`) and RDS (`DIMENSION 8`). Captured on two independent F441M installations — an MH200 and an MH200N — rather than derived from the specification, because the routing address is not documented in `WHO_16.pdf`.
@@ -47,6 +48,8 @@ tests/golden/
   README.md                     # This documentation
   SOURCE.yaml                   # Provenance manifest of authorities
   schema.json                   # JSON Schema (Draft-07) for frame records
+  corpus.json                   # Zero-dependency standard library runtime cache
+  firmware_oracle.json          # Hash-pinned emulated firmware oracle snapshot
   frames/
     who00_signaling.yaml        # Bus signaling (ACK/NACK)
     who00_scenario.yaml         # WHO=0 Basic Scenarios
@@ -55,22 +58,23 @@ tests/golden/
     who04_thermo.yaml           # WHO=4 Heating & Cooling
     who05_alarm.yaml            # WHO=5 Burglar Alarm
     who09_auxiliary.yaml        # WHO=9 Auxiliary Relays
-    who13_gateway.yaml          # WHO=13 Gateway Management
+    who13_gateway.yaml          # WHO=13 Gateway Management & WHO=1013 Diagnostics
+    who14_etc_issue466.yaml     # WHO=15 / WHO=17 MH200N sweep events (#466)
     who15_cen.yaml              # WHO=15 CEN Scenario Buttons
+    who16_sound.yaml            # WHO=16 Sound System
     who18_energy.yaml           # WHO=18 Energy Management
+    who22_sound_diffusion.yaml  # WHO=22 Sound Diffusion
     who25_cen_plus.yaml         # WHO=25 CEN+ & Dry Contacts
 tools/golden/
   MCP_NOTES.md                  # MCP tool capabilities & verification log
-  validate_corpus.py            # Corpus schema validator
+  validate_corpus.py            # Corpus schema validator & corpus.json generator
   harvest_4j_fixtures.py        # Oracle test harvester & divergence detector
   HARVEST_REPORT.md             # Harvest analysis report
   MASSI_OUTREACH.md             # Community proposal draft for Massi Valla
-tests/golden/
-  corpus.json                   # Zero-dependency standard library runtime cache
 tests/
   test_golden_conformance.py    # Pytest suite running conformance tests
 docs/
-  protocol_conformance_matrix.md # Verifiable truth matrix across all 11 subsystems
+  protocol_conformance_matrix.md # Verifiable truth matrix across subsystems
 ```
 
 ## Running Conformance Verification

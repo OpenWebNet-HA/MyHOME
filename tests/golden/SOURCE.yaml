@@ -176,6 +176,12 @@ authorities:
         date: "2026-10-05"
         gateway: "BTicino MH200N (fw 1.0 as reported over SSDP) and MyHomeServer1 on the same SCS bus"
         devices: "CEN unit 0512 (A 5, PL 12): press, short release, hold (#3 repeated) and long release, emitted identically by both gateways"
+      - name: "Physical Bus Capture (MyHomeServer1 2.87.13, WHO 4 0-10 V fan-coil/pump, WHO 18 meter 51 Wh totalizers & WHO 13/1013 sweep)"
+        reference: "https://github.com/OpenWebNet-HA/MyHOME/issues/907#issuecomment-6879268706"
+        author: "@xmavgithub"
+        date: "2026-11-14"
+        gateway: "BTicino MyHomeServer1, firmware 2.87.13 (kernel 5.10.35, distribution 2.26.3, WHO 1013 object model 67)"
+        devices: "Sabiana 0-10 V modulating fan coils via F459 interface (Z#3 Dim 20=100 0% OFF paired #20/20 broadcasts), floor-heating valve Z#1, circulation-pump release (*4*4002#2*0#1##, *4*4002*2##, MyHOME#908), H4691 humidity (Dim 60), meter 51 cumulative/monthly/daily Wh totalizers (Dims 51/53/54), and 1 Hz trailing-empty-timezone clock sync (*#13**#0*HH*MM*SS*##)"
     role: "Provides authentic on-wire bus frames and status replies captured from live physical hardware."
 
 

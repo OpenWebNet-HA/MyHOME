@@ -781,8 +781,31 @@ def test_issue_908_golden_corpus_conformance_entries() -> None:
         assert raw_frame in live_raw_frames
         parsed = OWNMessage.parse(raw_frame)
         assert parsed is not None
+        if rec["direction"] == "dimension_write":
+            assert isinstance(parsed, OWNHeatingCommand)
+        else:
+            assert isinstance(parsed, OWNHeatingEvent)
+        if "where_params" in rec:
+            assert parsed.where_param == rec["where_params"]
         if rec.get("dimension") == 20:
             assert thermo_dim20_status(parsed) == (False, None, None)
+
+    act_off = OWNMessage.parse("*#4*2#1*20*0##")
+    assert isinstance(act_off, OWNHeatingEvent) and act_off.where_param == ["1"]
+
+    pump_sub = OWNMessage.parse("*4*4002#2*0#1##")
+    assert isinstance(pump_sub, OWNHeatingEvent)
+    assert isinstance(pump_sub.what, int) and pump_sub.what == 4002
+    assert pump_sub.what_param == ["2"]
+    assert pump_sub.where == "0" and pump_sub.where_param == ["1"]
+
+    pump_zone = OWNMessage.parse("*4*4002*2##")
+    assert isinstance(pump_zone, OWNHeatingEvent)
+    assert isinstance(pump_zone.what, int) and pump_zone.what == 4002
+    assert pump_zone.what_param == [] and pump_zone.where == "2"
+
+    hum_z1 = OWNMessage.parse("*#4*1*60*60##")
+    assert isinstance(hum_z1, OWNHeatingEvent) and hum_z1.main_humidity == 60.0
 
     ext_rec = corpus_by_id["thermo.resp.valves.extended_fancoil_off_speed1.zone1"]
     assert ext_rec["frame"] == "*#4*1*19*0*14##"
