@@ -305,12 +305,6 @@ class MyHOMEEntity(RestoreEntity):
                 setattr(self, "_attr_is_on", True)
             elif last_state.state == "off":
                 setattr(self, "_attr_is_on", False)
-        if hasattr(self, "_attr_native_value") and getattr(self, "_attr_native_value") is None:
-            if last_state.state not in ("unknown", "unavailable"):
-                try:
-                    setattr(self, "_attr_native_value", float(last_state.state))
-                except (ValueError, TypeError):
-                    setattr(self, "_attr_native_value", last_state.state)
 
     async def async_removed_from_registry(self) -> None:
         """Drop the device's fault issues when the owner deletes the entity.

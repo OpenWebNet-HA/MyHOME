@@ -1,28 +1,34 @@
 """Support for MyHome sensors (power/energy, temperature, illuminance)."""
 from __future__ import annotations
 
+import math
 import re
 import time
 from collections.abc import Callable
 from datetime import timedelta
+from decimal import Decimal
 from typing import Any, cast
 
 from homeassistant.components.sensor import DOMAIN as PLATFORM
 from homeassistant.components.sensor import (
+    RestoreSensor,
     SensorDeviceClass,
-    SensorEntity,
     SensorStateClass,
 )
+from homeassistant.components.sensor.const import UNIT_CONVERTERS
 from homeassistant.const import (
+    ATTR_UNIT_OF_MEASUREMENT,
     CONF_ENTITIES,
     CONF_MAC,
     CONF_NAME,
     LIGHT_LUX,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
     UnitOfEnergy,
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -472,7 +478,106 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntr
     return True
 
 
-class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
+class MyHOMESensorEntity(MyHOMEEntity, RestoreSensor):
+    """Base class for MyHOME sensors restoring native values via RestoreSensor."""
+
+    def _convert_to_native_unit(
+        self, value: Any, from_unit: str, to_unit: str
+    ) -> float | None:
+        """Convert a finite numeric value from ``from_unit`` to ``to_unit``."""
+        if isinstance(value, bool) or not isinstance(
+            value, (int, float, Decimal, str)
+        ):
+            return None
+        try:
+            numeric = float(value)
+        except (ValueError, TypeError):
+            return None
+        if not math.isfinite(numeric):
+            return None
+        device_class = self.device_class
+        converter = (
+            UNIT_CONVERTERS.get(device_class) if device_class is not None else None
+        )
+        if (
+            converter is None
+            or from_unit not in converter.VALID_UNITS
+            or to_unit not in converter.VALID_UNITS
+        ):
+            return None
+        return converter.convert(numeric, from_unit, to_unit)
+
+    async def async_restore_last_state(self, last_state: State) -> None:
+        """Restore native sensor value without conflating display and native units."""
+        if self._attr_native_value is not None:
+            return
+        try:
+            sensor_data = await self.async_get_last_sensor_data()
+        except Exception:
+            sensor_data = None
+
+        native_unit = self.native_unit_of_measurement
+        if sensor_data is not None:
+            raw_val = sensor_data.native_value
+            if raw_val is None:
+                return
+            stored_unit = sensor_data.native_unit_of_measurement
+            if (
+                stored_unit is None
+                or native_unit is None
+                or stored_unit == native_unit
+            ):
+                if isinstance(raw_val, Decimal):
+                    val_f = float(raw_val)
+                    if math.isfinite(val_f):
+                        self._attr_native_value = val_f
+                elif isinstance(raw_val, (int, float)) and not isinstance(
+                    raw_val, bool
+                ):
+                    if math.isfinite(raw_val):
+                        self._attr_native_value = raw_val
+                elif isinstance(raw_val, str):
+                    self._attr_native_value = raw_val
+                return
+            converted = self._convert_to_native_unit(
+                raw_val, stored_unit, native_unit
+            )
+            if converted is not None:
+                self._attr_native_value = converted
+            return
+
+        # Migration fallback when extra_data is absent (e.g. first restart after
+        # upgrading from RestoreEntity): last_state.state is serialized in display units.
+        if last_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        raw_state_unit = last_state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
+        state_unit = str(raw_state_unit) if raw_state_unit is not None else None
+        if (
+            state_unit is None
+            or native_unit is None
+            or state_unit == native_unit
+        ):
+            try:
+                parsed = float(last_state.state)
+            except (ValueError, TypeError):
+                if (
+                    state_unit is None
+                    and self.state_class != SensorStateClass.TOTAL_INCREASING
+                ):
+                    self._attr_native_value = last_state.state
+                return
+            if math.isfinite(parsed):
+                self._attr_native_value = parsed
+            return
+
+        converted = self._convert_to_native_unit(
+            last_state.state, state_unit, native_unit
+        )
+        if converted is not None:
+            self._attr_native_value = converted
+
+
+class MyHOMEPowerSensor(MyHOMESensorEntity):
     _name_from_device_class = True
 
     def __init__(
@@ -627,7 +732,7 @@ class MyHOMEPowerSensor(MyHOMEEntity, SensorEntity):
         await self.async_stop_sending_instant_power()
 
 
-class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
+class MyHOMEEnergySensor(MyHOMESensorEntity):
     _name_from_device_class = True
 
     def __init__(
@@ -754,7 +859,7 @@ class MyHOMEEnergySensor(MyHOMEEntity, SensorEntity):
         return None
 
 
-class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
+class MyHOMETemperatureSensor(MyHOMESensorEntity):
     _name_from_device_class = True
 
     def __init__(
@@ -877,7 +982,7 @@ class MyHOMETemperatureSensor(MyHOMEEntity, SensorEntity):
         return None
 
 
-class MyHOMEIlluminanceSensor(MyHOMEEntity, SensorEntity):
+class MyHOMEIlluminanceSensor(MyHOMESensorEntity):
     _name_from_device_class = True
 
     def __init__(

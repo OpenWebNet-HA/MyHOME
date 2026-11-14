@@ -1,0 +1,132 @@
+{
+  "capture": {
+    "kind": "synthetic-firmware-oracle-trace",
+    "synthetic": true,
+    "source": "firmware-oracle-contract",
+    "provenance": "SYNTHETIC TRACE — NOT A LIVE PLANT CAPTURE. Deterministically constructed from own-firmware-oracle suite energy-ts10 on emulated H4684 firmware 2.0.54 (020054, target SHA 5a4597747e20), where WHO 18 Dimension 51/53/54 requests return NACK (*#*0##) with verdict SILENT (zero SCS frames emitted), leaving restored sensor values active until an unsolicited bus broadcast arrives.",
+    "started_at": "2026-11-11T10:20:00.000Z",
+    "filters": {
+      "who": "13,18",
+      "where": "51",
+      "direction": null
+    },
+    "window": {
+      "first": "2026-11-11T10:20:00.000Z",
+      "last": "2026-11-11T10:22:00.000Z",
+      "frames": 6,
+      "buffer_frames": 6,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.11.1",
+    "integration_version": "2.0.0b18",
+    "ownd_version": "2.0.0b14",
+    "exported_at": "2026-11-11T10:22:01.000Z"
+  },
+  "gateway": {
+    "model": "H4684",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.0.54",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true
+  },
+  "telemetry": {
+    "total_rx": 2,
+    "total_tx": 4,
+    "captured_in_buffer": 6,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1794392400.05,
+      "iso_time": "2026-11-11T10:20:00.050000+00:00",
+      "direction": "tx",
+      "raw": "*#13**15##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "15",
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (H4684 020054 oracle): WHO 13 model query."
+    },
+    {
+      "timestamp": 1794392400.09,
+      "iso_time": "2026-11-11T10:20:00.090000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*13##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "15",
+      "dimension_values": ["13"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (H4684 020054 oracle): WHO 13 model code 13 (H4684)."
+    },
+    {
+      "timestamp": 1794392405.0,
+      "iso_time": "2026-11-11T10:20:05.000000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*51##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "51",
+      "is_ack": false,
+      "is_nack": false,
+      "oracle_reply": "nack",
+      "oracle_verdict": "silent",
+      "note": "SYNTHETIC (H4684 020054 oracle energy-ts10): NACK (*#*0##) + SILENT drop; no SCS telegram emitted."
+    },
+    {
+      "timestamp": 1794392405.1,
+      "iso_time": "2026-11-11T10:20:05.100000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*53##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "53",
+      "is_ack": false,
+      "is_nack": false,
+      "oracle_reply": "nack",
+      "oracle_verdict": "silent",
+      "note": "SYNTHETIC (H4684 020054 oracle energy-params): monthly partial totalizer poll refused (SILENT)."
+    },
+    {
+      "timestamp": 1794392405.2,
+      "iso_time": "2026-11-11T10:20:05.200000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*54##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "54",
+      "is_ack": false,
+      "is_nack": false,
+      "oracle_reply": "nack",
+      "oracle_verdict": "silent",
+      "note": "SYNTHETIC (H4684 020054 oracle energy-params): daily partial totalizer poll refused (SILENT)."
+    },
+    {
+      "timestamp": 1794392520.0,
+      "iso_time": "2026-11-11T10:22:00.000000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*51*8133620##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "51",
+      "dimension_values": ["8133620"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC: unsolicited WHO 18 totalizer report 2 minutes later (8133620 Wh = 8133.62 kWh)."
+    }
+  ]
+}
