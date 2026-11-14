@@ -501,6 +501,7 @@
   who: 4
   what: null
   where: "1"
+  where_params: ["3"]
   dimension: 20
   dimension_values: ["100"]
   source: community-plant-capture
@@ -514,6 +515,7 @@
   who: 4
   what: null
   where: "1"
+  where_params: ["3"]
   dimension: 20
   dimension_values: ["100"]
   source: community-plant-capture
@@ -527,6 +529,7 @@
   who: 4
   what: null
   where: "2"
+  where_params: ["3"]
   dimension: 20
   dimension_values: ["100"]
   source: community-plant-capture
@@ -540,6 +543,7 @@
   who: 4
   what: null
   where: "2"
+  where_params: ["3"]
   dimension: 20
   dimension_values: ["100"]
   source: community-plant-capture
@@ -553,6 +557,7 @@
   who: 4
   what: null
   where: "2"
+  where_params: ["1"]
   dimension: 20
   dimension_values: ["0"]
   source: community-plant-capture
@@ -566,6 +571,7 @@
   who: 4
   what: "4002#2"
   where: "0"
+  where_params: ["1"]
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Circulation pump 0#1 demand-release frame naming Zone 2 (WHAT=4002#2, WHERE=0#1), emitted ~1.2 s before Zone 2 valve #1 reports OFF (MyHomeServer1 2.87.13 capture, MyHOME#908; openwebnet-mcp accepts grammar and warns 4002#2 is non-standard)"
@@ -579,7 +585,7 @@
   where: "2"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Zone 2 circulation-pump demand release (WHAT=4002, WHERE=2), emitted 59 ms after *4*4002#2*0#1## (MyHomeServer1 2.87.13 capture, MyHOME#908)"
+  mcp_notes: "Zone 2 circulation-pump demand release (WHAT=4002, WHERE=2), emitted 59 ms after *4*4002#2*0#1## (MyHomeServer1 2.87.13 capture, MyHOME#908; openwebnet-mcp accepts grammar and warns 4002 is non-standard)"
   roundtrip: true
 
 - id: thermo.capture.humidity.zone1.60
@@ -605,5 +611,5 @@
   dimension_values: ["0", "14"]
   source: encyclopedia
   mcp_valid: true
-  mcp_notes: "Zone 1 valve status: cooling OFF (0) and heating fan-coil OFF at speed 1 (14; MyHomeServer1 bt_termo 0x11e34..0x11e8c extended range 14..16 <-> SCS '24'..'26', ownkb:claim:c003275, MyHOME#908)"
+  mcp_notes: "Zone 1 valve status (CV=0 conditioning valve OFF, HV=14 heating fan-coil OFF at speed 1; MyHomeServer1 bt_termo 0x11e34..0x11e8c extended range 14..16 <-> SCS '24'..'26', ownkb:claim:c003266, ownkb:claim:c003275, MyHOME#908)"
   roundtrip: true

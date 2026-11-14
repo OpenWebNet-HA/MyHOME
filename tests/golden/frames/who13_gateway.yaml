@@ -193,4 +193,134 @@
   mcp_notes: "Gateway Diagnostic: Gateway reports object model 26 (LGRH4684 Legrand color touch screen, verified from TiDisplayColor firmware)"
   roundtrip: true
 
+# Live MyHomeServer1 (2.87.13) identification, kernel/distribution, & clock/date frames (MyHOME#907, MyHOME#908)
+# Captured in @xmavgithub's MyHomeServer1 (2.87.13) diagnostic sweep & 1 Hz bus clock stream
+# (gist:78754dd5a9e1ad7159231cbbc28bda14, 2026-11-14).
+- id: gateway.capture.req.diagnostic_object_model.where0
+  frame: "*#1013*0*1##"
+  direction: dimension_request
+  who: 1013
+  what: null
+  where: "0"
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: Request gateway diagnostic object model code with WHERE=0 (MyHomeServer1 2.87.13 sweep, MyHOME#907/#908)"
+  roundtrip: true
+
+- id: gateway.capture.resp.diagnostic_object_model.myhomeserver1
+  frame: "*#1013**1*67*15*5*0##"
+  direction: dimension_response
+  who: 1013
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["67", "15", "5", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: MyHomeServer1 4-parameter WHO=1013 Dimension 1 reply (object_model=67 MyHomeServer1, n_conf=15, brand=5 Legrand BTicino, line=0; MyHomeServer1 2.87.13 capture, MyHOME#907/#908)"
+  roundtrip: true
+
+- id: gateway.capture.resp.firmware.version.myhomeserver1.2_87_13
+  frame: "*#13**16*2*87*13##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  dimension_values: ["2", "87", "13"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 reports firmware version 2.87.13 (MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.req.kernel_version
+  frame: "*#13**23##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 23
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request underlying Linux kernel version (Dimension 23, ownkb:chunk:r000329; MyHomeServer1 2.87.13 sweep, MyHOME#907/#908)"
+  roundtrip: true
+
+- id: gateway.capture.resp.kernel_version.myhomeserver1.5_10_35
+  frame: "*#13**23*5*10*35##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 23
+  dimension_values: ["5", "10", "35"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 reports Linux kernel version 5.10.35 (Dimension 23, MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.req.distribution_version
+  frame: "*#13**24##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 24
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request Linux distribution version (Dimension 24; MyHomeServer1 2.87.13 sweep, MyHOME#907/#908)"
+  roundtrip: true
+
+- id: gateway.capture.resp.distribution_version.myhomeserver1.2_26_3
+  frame: "*#13**24*2*26*3##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 24
+  dimension_values: ["2", "26", "3"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 reports distribution version 2.26.3 (Dimension 24, MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.write.clock_sync.empty_tz.myhomeserver1
+  frame: "*#13**#0*14*59*05*##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["14", "59", "05", ""]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 (2.87.13) 1 Hz internal clock broadcast with trailing empty timezone field ('*##' -> dimension_values=['14','59','05',''], MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.resp.time.unconfigured_tz.999
+  frame: "*#13**0*15*13*25*999##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["15", "13", "25", "999"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 (2.87.13) internal time reply 15:13:25 with unconfigured timezone sentinel 999 (MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.write.date_sync.2026_11_14
+  frame: "*#13**#1*06*14*11*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["06", "14", "11", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 (2.87.13) internal date broadcast Saturday 2026-11-14 (Dimension 1 DW*DD*MM*YYYY, MyHOME#907/#908 capture; note openwebnet-mcp's WHO 13 summary table mislabels Dimension 1 as Firmware Version)"
+  roundtrip: true
+
 

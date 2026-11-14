@@ -11,7 +11,7 @@ meter resets in Home Assistant long-term statistics.
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -37,7 +37,15 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from OWNd.message import OWNEnergyEvent, OWNMessage
+from OWNd.message import (
+    OWNEnergyCommand,
+    OWNEnergyEvent,
+    OWNGatewayCommand,
+    OWNGatewayDiagnosticCommand,
+    OWNGatewayDiagnosticEvent,
+    OWNGatewayEvent,
+    OWNMessage,
+)
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     mock_restore_cache_with_extra_data,
@@ -1102,6 +1110,11 @@ def test_issue_907_golden_corpus_conformance_entries() -> None:
         assert rec["frame"] == raw_frame
         assert rec["source"] == "community-plant-capture"
         assert raw_frame in live_raw_frames
+        parsed = OWNMessage.parse(raw_frame)
+        if rec["direction"] == "dimension_request":
+            assert isinstance(parsed, OWNEnergyCommand)
+        else:
+            assert isinstance(parsed, OWNEnergyEvent)
 
     m_total = OWNMessage.parse("*#18*51*51*8151646##")
     m_month = OWNMessage.parse("*#18*51*53*88973##")
@@ -1115,4 +1128,62 @@ def test_issue_907_golden_corpus_conformance_entries() -> None:
         isinstance(m_day, OWNEnergyEvent)
         and m_day.current_day_partial_consumption == 3017
     )
+
+
+def test_issue_907_908_myhomeserver1_gateway_golden_corpus_entries() -> None:
+    """Verify MyHomeServer1 (2.87.13) WHO=13 & WHO=1013 sweep/clock frames in Golden Corpus CI."""
+    corpus_by_id = {
+        rec["id"]: rec
+        for rec in json.loads(CORPUS_JSON_PATH.read_text(encoding="utf-8"))
+    }
+    expected_gateway_ids = {
+        "gateway.capture.req.diagnostic_object_model.where0": "*#1013*0*1##",
+        "gateway.capture.resp.diagnostic_object_model.myhomeserver1": "*#1013**1*67*15*5*0##",
+        "gateway.capture.resp.firmware.version.myhomeserver1.2_87_13": "*#13**16*2*87*13##",
+        "gateway.capture.req.kernel_version": "*#13**23##",
+        "gateway.capture.resp.kernel_version.myhomeserver1.5_10_35": "*#13**23*5*10*35##",
+        "gateway.capture.req.distribution_version": "*#13**24##",
+        "gateway.capture.resp.distribution_version.myhomeserver1.2_26_3": "*#13**24*2*26*3##",
+        "gateway.capture.write.clock_sync.empty_tz.myhomeserver1": "*#13**#0*14*59*05*##",
+        "gateway.capture.resp.time.unconfigured_tz.999": "*#13**0*15*13*25*999##",
+        "gateway.capture.write.date_sync.2026_11_14": "*#13**#1*06*14*11*2026##",
+    }
+    for rec_id, raw_frame in expected_gateway_ids.items():
+        assert rec_id in corpus_by_id
+        rec = corpus_by_id[rec_id]
+        assert rec["frame"] == raw_frame
+        assert rec["source"] == "community-plant-capture"
+        assert str(OWNMessage.parse(raw_frame)) == raw_frame
+
+    diag_req = OWNMessage.parse("*#1013*0*1##")
+    assert isinstance(diag_req, OWNGatewayDiagnosticCommand) and diag_req.where == "0"
+
+    diag_resp = OWNMessage.parse("*#1013**1*67*15*5*0##")
+    assert isinstance(diag_resp, OWNGatewayDiagnosticEvent)
+    assert diag_resp.object_model == "67" and diag_resp.device_type == "MyHomeServer1"
+
+    fw_resp = OWNMessage.parse("*#13**16*2*87*13##")
+    assert isinstance(fw_resp, OWNGatewayEvent) and fw_resp.firmware_version == "2.87.13"
+
+    kern_req = OWNMessage.parse("*#13**23##")
+    assert isinstance(kern_req, OWNGatewayCommand) and kern_req.dimension == 23
+    kern_resp = OWNMessage.parse("*#13**23*5*10*35##")
+    assert isinstance(kern_resp, OWNGatewayEvent) and kern_resp.kernel_version == "5.10.35"
+
+    dist_req = OWNMessage.parse("*#13**24##")
+    assert isinstance(dist_req, OWNGatewayCommand) and dist_req.dimension == 24
+    dist_resp = OWNMessage.parse("*#13**24*2*26*3##")
+    assert isinstance(dist_resp, OWNGatewayEvent) and dist_resp.distribution_version == "2.26.3"
+
+    clk_write = OWNMessage.parse("*#13**#0*14*59*05*##")
+    assert isinstance(clk_write, OWNGatewayCommand)
+    assert clk_write.dimension_value == ["14", "59", "05", ""]
+    assert clk_write.time == time(14, 59, 5)
+
+    clk_resp = OWNMessage.parse("*#13**0*15*13*25*999##")
+    assert isinstance(clk_resp, OWNGatewayEvent)
+    assert clk_resp.time == time(15, 13, 25) and clk_resp.is_timezone_unconfigured is True
+
+    date_write = OWNMessage.parse("*#13**#1*06*14*11*2026##")
+    assert isinstance(date_write, OWNGatewayCommand) and date_write.date == date(2026, 11, 14)
 
