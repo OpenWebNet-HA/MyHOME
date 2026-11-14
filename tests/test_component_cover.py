@@ -1,6 +1,9 @@
 """Tests for the MyHOME cover component."""
 import asyncio
 import time
+from datetime import timedelta
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,20 +15,32 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
 )
 from homeassistant.const import (
+    CONF_FRIENDLY_NAME,
+    CONF_HOST,
+    CONF_MAC,
     CONF_NAME,
+    CONF_PASSWORD,
+    CONF_PORT,
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.util import dt as dt_util
 from OWNd.message import (
     OWNAutomationEvent,
     OWNEvent,
     OWNMessage,
 )
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+import custom_components.myhome.cover as cover_module
 from custom_components.myhome.const import (
     CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
+    CONF_DEVICE_TYPE,
+    CONF_FILE_PATH,
+    CONF_FIRMWARE,
+    CONF_MANUFACTURER,
     CONF_PLATFORMS,
     CONF_SLAT_TILT,
     CONF_WHERE,
@@ -33,7 +48,10 @@ from custom_components.myhome.const import (
 )
 from custom_components.myhome.cover import (
     PLATFORM,
+    CoverFamily,
+    CoverScope,
     MyHOMECover,
+    MyHOMEScopeCover,
     async_setup_entry,
     async_unload_entry,
 )
@@ -43,7 +61,7 @@ from custom_components.myhome.cover_motion import (
     MOTOR_START_DELAY,
 )
 from custom_components.myhome.router import FrameRouter
-from tests.conftest import attach_runtime
+from tests.conftest import attach_runtime, bind_entity
 
 
 @pytest.fixture
@@ -3538,3 +3556,708 @@ async def test_yaml_cover_restores_a_service_set_slat_time(hass, mock_gateway):
     # yaml covers keep their configured travel time
     assert added[0]._travel_time_down == 25.0
     assert added[0]._calibration_source == "default"
+
+
+class TestLivePositionRefreshTicker:
+    """Tests for the ~1 s live position refresh ticker during timed cover runs.
+
+    ``current_cover_position`` interpolates position on demand via
+    ``TimedCurtainStrategy.current_position``; the ticker asks Home Assistant to
+    republish entity state once per second whenever the rounded integer percent
+    changes so the UI slider animates instead of jumping only at settle/stop.
+    """
+
+    @pytest.fixture
+    def timed_cover(self, hass: HomeAssistant, mock_gateway):
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            cover = MyHOMECover(
+                hass=hass,
+                name="Basic Shutter",
+                entity_name="Basic Shutter",
+                device_id="21",
+                who="2",
+                where="21",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="Shutter",
+                gateway=mock_gateway,
+            )
+            cover.entity_id = "cover.basic_shutter"
+            cover.hass = hass
+            bind_entity(hass, cover, gateway=mock_gateway)
+            cover.async_schedule_update_ha_state = MagicMock()
+            cover.async_write_ha_state = MagicMock()
+        yield cover
+        cover._cancel_stop_task()
+        cover._cancel_wall_settle()
+        cover._stop_live_refresh()
+
+    @pytest.fixture
+    def advanced_cover(self, hass: HomeAssistant, mock_gateway):
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            cover = MyHOMECover(
+                hass=hass,
+                name="Advanced Shutter",
+                entity_name="Advanced Shutter",
+                device_id="22#4#02",
+                who="2",
+                where="22",
+                interface="02",
+                advanced=True,
+                manufacturer="BTicino",
+                model="Advanced Shutter",
+                gateway=mock_gateway,
+            )
+            cover.entity_id = "cover.advanced_shutter"
+            cover.hass = hass
+            bind_entity(hass, cover, gateway=mock_gateway)
+            cover.async_schedule_update_ha_state = MagicMock()
+            cover.async_write_ha_state = MagicMock()
+        yield cover
+        cover._cancel_stop_task()
+        cover._stop_live_refresh()
+
+    @pytest.fixture
+    def venetian_cover(self, hass: HomeAssistant, mock_gateway):
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            cover = MyHOMECover(
+                hass=hass,
+                name="Venetian Blind",
+                entity_name="Venetian Blind",
+                device_id="31",
+                who="2",
+                where="31",
+                interface=None,
+                advanced=False,
+                slat_tilt=True,
+                slat_time=2.0,
+                manufacturer="BTicino",
+                model="Venetian Blind",
+                gateway=mock_gateway,
+            )
+            cover.entity_id = "cover.venetian_blind"
+            cover.hass = hass
+            bind_entity(hass, cover, gateway=mock_gateway)
+            cover.async_schedule_update_ha_state = MagicMock()
+            cover.async_write_ha_state = MagicMock()
+        yield cover
+        cover._cancel_stop_task()
+        cover._cancel_wall_settle()
+        cover._stop_live_refresh()
+
+    @pytest.mark.asyncio
+    async def test_open_cover_starts_ticker_with_cancel_on_shutdown(
+        self, hass: HomeAssistant, mock_gateway
+    ):
+        """Ticker arms on motor-start anchor with cancel_on_shutdown=True so HA shutdown never flags a lingering timer."""
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            cover = MyHOMECover(
+                hass=hass,
+                name="Shutdown Check Shutter",
+                entity_name="Shutdown Check Shutter",
+                device_id="29",
+                who="2",
+                where="29",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="Shutter",
+                gateway=mock_gateway,
+            )
+            cover.entity_id = "cover.shutdown_check_shutter"
+            cover.hass = hass
+            bind_entity(hass, cover, gateway=mock_gateway)
+            cover.async_schedule_update_ha_state = MagicMock()
+            cover.async_write_ha_state = MagicMock()
+
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        cover._attr_current_cover_position = cover._start_position = 0
+
+        await cover.async_open_cover()
+        await asyncio.sleep(0)  # let written.add_done_callback(_on_written) anchor the run
+
+        assert cover._live_refresh_unsub is not None
+        tracker = getattr(cover._live_refresh_unsub, "__self__", None)
+        assert tracker is not None
+        assert tracker._track_job.cancel_on_shutdown is True
+        assert cover._live_refresh_last_published == 0
+        # Cancel only the settle asyncio.Task; intentionally leave _live_refresh_unsub armed so
+        # pytest-homeassistant-custom-component's verify_cleanup proves cancel_on_shutdown=True passes!
+        cover._cancel_stop_task()
+
+    @pytest.mark.asyncio
+    async def test_queued_takeover_stops_previous_ticker_until_new_write_completes(self, timed_cover, mock_gateway):
+        """When a new run queues behind a busy gateway, the old ticker stops immediately and re-arms only on write."""
+        first_write = asyncio.get_running_loop().create_future()
+        first_write.set_result(time.monotonic())
+        mock_gateway.send.return_value = first_write
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 20
+
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is not None
+
+        queued_write = asyncio.get_running_loop().create_future()
+        mock_gateway.send.return_value = queued_write
+
+        await timed_cover.async_close_cover()
+        # While the close frame sits in the send queue, _move_start_time is None and the prior ticker is gone.
+        assert timed_cover._move_start_time is None
+        assert timed_cover._live_refresh_unsub is None
+
+        queued_write.set_result(time.monotonic())
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is not None
+
+    @pytest.mark.asyncio
+    async def test_ticker_is_not_armed_for_an_advanced_cover(self, advanced_cover):
+        """Dimension 10 covers report hardware level at start/stop with no local travel-time interpolation."""
+        advanced_cover._attr_current_cover_position = 25
+
+        advanced_cover.handle_event(OWNEvent.parse("*2*1*22#4#02##"))
+
+        assert advanced_cover._live_refresh_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_ticker_is_not_armed_for_assumed_state_simple_cover(self, timed_cover, mock_gateway):
+        """Simple (assumed-state) covers expose no numeric position to interpolate."""
+        timed_cover._demote_to_simple_strategy()
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+
+        assert timed_cover._live_refresh_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_ticker_is_not_armed_from_unknown_start_position(self, timed_cover, mock_gateway):
+        """A run from an unknown start position returns None until an end stop and does not arm a ticker."""
+        fut = asyncio.get_running_loop().create_future()
+        start = time.monotonic()
+        fut.set_result(start)
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = None
+        timed_cover._start_position = None
+
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is None
+
+        # An early actuator stop during _end_run_from_unknown also keeps the ticker unarmed.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 3.0):
+            timed_cover.handle_event(OWNEvent.parse("*2*0*21##"))
+        assert timed_cover._live_refresh_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_ticker_is_not_armed_while_calibrating_and_calibration_stops_active_ticker(
+        self, timed_cover, mock_gateway
+    ):
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 0
+        timed_cover._calibrating = True
+
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is None
+
+        # Starting calibration while a timed run is already in progress tears down the running ticker.
+        timed_cover._calibrating = False
+        fut2 = asyncio.get_running_loop().create_future()
+        fut2.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut2
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is not None
+
+        async def _fake_cal_run(_direction: str) -> float:
+            assert timed_cover._live_refresh_unsub is None
+            return 20.0
+
+        with (
+            patch.object(timed_cover, "_calibration_run", side_effect=_fake_cal_run),
+            patch("custom_components.myhome.cover.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await timed_cover.async_calibrate()
+        assert timed_cover._live_refresh_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_ticker_is_not_armed_for_slat_pulse_or_followed_scope_pulse(
+        self, venetian_cover, mock_gateway
+    ):
+        """Venetian slat pulses and scope-followed pulses never run a curtain ticker."""
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        venetian_cover._attr_current_cover_position = venetian_cover._start_position = 50
+        venetian_cover._attr_current_cover_tilt_position = 0
+
+        await venetian_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert venetian_cover._live_refresh_unsub is not None
+
+        # Following a scope leader's slat pulse cancels the curtain ticker immediately.
+        leader = MagicMock()
+        venetian_cover._follow_pulse(leader, "close")
+        assert venetian_cover._live_refresh_unsub is None
+
+        venetian_cover._abort_tilt()
+        fut_tilt = asyncio.get_running_loop().create_future()
+        fut_tilt.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut_tilt
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await venetian_cover.async_open_cover_tilt()
+            assert venetian_cover._live_refresh_unsub is None
+            if venetian_cover._stop_task is not None:
+                await venetian_cover._stop_task
+
+    @pytest.mark.asyncio
+    async def test_tick_republishes_only_on_changed_integer_percent(self, timed_cover, mock_gateway):
+        """_tick publishes state when rounded current_cover_position changes and skips duplicate ticks."""
+        start = 1000.0
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(start)
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 0
+
+        captured: dict[str, Any] = {}
+
+        def _capture_interval(_hass, action, _interval, **kwargs):
+            captured["tick"] = action
+            captured["kwargs"] = kwargs
+            return MagicMock()
+
+        with (
+            patch.object(cover_module.time, "monotonic", return_value=start),
+            patch("custom_components.myhome.cover.async_track_time_interval", side_effect=_capture_interval),
+        ):
+            await timed_cover.async_open_cover()
+            await asyncio.sleep(0)
+
+        assert captured["kwargs"]["cancel_on_shutdown"] is True
+        tick = captured["tick"]
+        timed_cover.async_schedule_update_ha_state.reset_mock()
+
+        # 0.05 s into a 25 s run -> rounds to 0 % (unchanged from initial 0 %): no publish.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 0.05):
+            tick(dt_util.utcnow())
+        assert timed_cover.async_schedule_update_ha_state.call_count == 0
+
+        # 1.0 s into a 25 s run -> 4 %: publishes once.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 1.0):
+            tick(dt_util.utcnow())
+        assert timed_cover.async_schedule_update_ha_state.call_count == 1
+        assert timed_cover._live_refresh_last_published == 4
+
+        # Second tick still rounding to 4 %: skipped.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 1.05):
+            tick(dt_util.utcnow())
+        assert timed_cover.async_schedule_update_ha_state.call_count == 1
+
+        # 3.0 s into a 25 s run -> 12 %: publishes again.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 3.0):
+            tick(dt_util.utcnow())
+        assert timed_cover.async_schedule_update_ha_state.call_count == 2
+        assert timed_cover._live_refresh_last_published == 12
+
+    @pytest.mark.asyncio
+    async def test_tick_defers_publish_until_platform_is_attached(self, timed_cover, mock_gateway):
+        """A newly discovered cover whose platform is not yet bound must not raise or drop the pending update."""
+        start = 2000.0
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(start)
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 0
+        saved_platform = timed_cover.platform
+        timed_cover.platform = None
+
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(cover_module.time, "monotonic", return_value=start),
+            patch(
+                "custom_components.myhome.cover.async_track_time_interval",
+                side_effect=lambda _h, action, _i, **_kw: captured.setdefault("tick", action) and MagicMock(),
+            ),
+        ):
+            await timed_cover.async_open_cover()
+            await asyncio.sleep(0)
+
+        tick = captured["tick"]
+        timed_cover.async_schedule_update_ha_state.reset_mock()
+
+        # While platform is None, _tick returns safely without consuming _live_refresh_last_published.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 2.5):
+            tick(dt_util.utcnow())
+        assert timed_cover.async_schedule_update_ha_state.call_count == 0
+        assert timed_cover._live_refresh_last_published == 0
+
+        # Once EntityPlatform binds the entity, the very next tick publishes 10 %.
+        timed_cover.platform = saved_platform
+        with patch.object(cover_module.time, "monotonic", return_value=start + 2.5):
+            tick(dt_util.utcnow())
+        assert timed_cover.async_schedule_update_ha_state.call_count == 1
+        assert timed_cover._live_refresh_last_published == 10
+
+    @pytest.mark.asyncio
+    async def test_tick_skips_venetian_slat_lead_then_publishes_curtain_travel(
+        self, venetian_cover, mock_gateway
+    ):
+        """During the slat-rotation lead phase, curtain position stays unchanged and no redundant state write occurs."""
+        start = 3000.0
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(start)
+        mock_gateway.send.return_value = fut
+        venetian_cover._attr_current_cover_position = venetian_cover._start_position = 0
+        venetian_cover._attr_current_cover_tilt_position = 0  # full 2.0 s slat lead before curtain rises
+
+        captured: dict[str, Any] = {}
+        with (
+            patch.object(cover_module.time, "monotonic", return_value=start),
+            patch(
+                "custom_components.myhome.cover.async_track_time_interval",
+                side_effect=lambda _h, action, _i, **_kw: captured.setdefault("tick", action) and MagicMock(),
+            ),
+        ):
+            await venetian_cover.async_open_cover()
+            await asyncio.sleep(0)
+
+        tick = captured["tick"]
+        venetian_cover.async_schedule_update_ha_state.reset_mock()
+
+        # 1.0 s < 2.0 s slat_time: slats are rotating, curtain is still at 0 %.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 1.0):
+            tick(dt_util.utcnow())
+        assert venetian_cover.async_schedule_update_ha_state.call_count == 0
+
+        # 4.3 s > 2.0 s slat_time: 2.3 s of 23.0 s curtain travel = 10 %.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 4.3):
+            tick(dt_util.utcnow())
+        assert venetian_cover.async_schedule_update_ha_state.call_count == 1
+        assert venetian_cover._live_refresh_last_published == 10
+
+    @pytest.mark.asyncio
+    async def test_tick_self_cancels_once_motion_flags_clear(self, timed_cover, mock_gateway):
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 0
+
+        captured: dict[str, Any] = {}
+        unsub = MagicMock()
+        with patch(
+            "custom_components.myhome.cover.async_track_time_interval",
+            side_effect=lambda _h, action, _i, **_kw: captured.setdefault("tick", action) and unsub,
+        ):
+            await timed_cover.async_open_cover()
+            await asyncio.sleep(0)
+
+        timed_cover._attr_is_opening = False
+        timed_cover._attr_is_closing = False
+
+        captured["tick"](dt_util.utcnow())
+
+        unsub.assert_called_once()
+        assert timed_cover._live_refresh_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_all_teardown_paths_stop_the_ticker(self, timed_cover, advanced_cover, mock_gateway):
+        """Freeze, abort, full-run settle, removal, strategy demotion, and bus position reports all cancel the ticker."""
+        # 1. Genuine stop frame -> _freeze_position
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 50
+        with patch("asyncio.sleep", new_callable=AsyncMock):
+            await timed_cover.async_set_cover_position(**{ATTR_POSITION: 80})
+            timed_cover.handle_event(OWNEvent.parse("*2*0*21##"))  # relayed stop echo
+            timed_cover.handle_event(OWNEvent.parse("*2*1*21##"))  # motor start echo -> _anchor_run
+            assert timed_cover._live_refresh_unsub is not None
+            timed_cover.handle_event(OWNEvent.parse("*2*0*21##"))  # genuine stop
+            assert timed_cover._live_refresh_unsub is None
+            if timed_cover._stop_task is not None:
+                await timed_cover._stop_task
+
+        # 2. Failed write -> _abort_motion
+        failed = asyncio.get_running_loop().create_future()
+        failed.set_exception(OSError("connection lost"))
+        mock_gateway.send.return_value = failed
+        with pytest.raises(HomeAssistantError):
+            await timed_cover.async_open_cover()
+        assert timed_cover._live_refresh_unsub is None
+
+        # 3. Full-run settle -> _finish_end_of_run_settle
+        fut2 = asyncio.get_running_loop().create_future()
+        start = time.monotonic()
+        fut2.set_result(start)
+        mock_gateway.send.return_value = fut2
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is not None
+        with (
+            patch("custom_components.myhome.cover.asyncio.sleep", new_callable=AsyncMock),
+            patch.object(
+                cover_module.time,
+                "monotonic",
+                return_value=start + timed_cover._travel_time_up + END_SETTLE_MARGIN + 0.1,
+            ),
+        ):
+            assert timed_cover._stop_task is not None
+            await timed_cover._stop_task
+        assert timed_cover._live_refresh_unsub is None
+        assert timed_cover._attr_current_cover_position == 100
+
+        # 4. Entity removal -> async_will_remove_from_hass
+        fut3 = asyncio.get_running_loop().create_future()
+        fut3.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut3
+        await timed_cover.async_close_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is not None
+        await timed_cover.async_will_remove_from_hass()
+        assert timed_cover._live_refresh_unsub is None
+
+        # 5. Strategy demotion -> _demote_to_simple_strategy
+        fut4 = asyncio.get_running_loop().create_future()
+        fut4.set_result(time.monotonic())
+        mock_gateway.send.return_value = fut4
+        await timed_cover.async_open_cover()
+        await asyncio.sleep(0)
+        assert timed_cover._live_refresh_unsub is not None
+        timed_cover._demote_to_simple_strategy()
+        assert timed_cover._live_refresh_unsub is None
+
+        # 6. Defensive cleanup on real bus position report
+        leaked = MagicMock()
+        advanced_cover._live_refresh_unsub = leaked
+        advanced_cover.handle_event(OWNMessage.parse("*#2*22#4#02*10*55*0##"))
+        leaked.assert_called_once()
+        assert advanced_cover._live_refresh_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_direction_reversal_cancels_previous_ticker_and_seeds_mid_run_position(
+        self, timed_cover, mock_gateway
+    ):
+        """A wall-switch reversal mid-run cancels the old ticker and seeds _live_refresh_last_published at the reversal point."""
+        start = 4000.0
+        fut = asyncio.get_running_loop().create_future()
+        fut.set_result(start)
+        mock_gateway.send.return_value = fut
+        timed_cover._attr_current_cover_position = timed_cover._start_position = 0
+
+        with patch.object(cover_module.time, "monotonic", return_value=start):
+            await timed_cover.async_open_cover()
+            await asyncio.sleep(0)
+        first_unsub = timed_cover._live_refresh_unsub
+        assert first_unsub is not None
+
+        # 5.0 s into a 25.0 s open run -> 20 % when an external close command reverses direction.
+        with patch.object(cover_module.time, "monotonic", return_value=start + 5.0):
+            timed_cover.handle_event(OWNEvent.parse("*2*2*21##"))
+
+        assert timed_cover._live_refresh_unsub is not None
+        assert timed_cover._live_refresh_unsub is not first_unsub
+        assert timed_cover._start_position == 20
+        assert timed_cover._live_refresh_last_published == 20
+
+    @pytest.mark.asyncio
+    async def test_memberless_scope_cover_arms_own_ticker_and_cancels_when_member_joins(
+        self, hass: HomeAssistant, mock_gateway
+    ):
+        """A memberless scope cover runs its own ticker, but stops it immediately if a member joins the family."""
+        family = CoverFamily()
+        scope_def = CoverScope.of("2")
+        assert scope_def is not None
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            scope_cover = MyHOMEScopeCover(
+                hass=hass,
+                name="Area 2",
+                entity_name="Area 2",
+                device_id="2",
+                who="2",
+                where="2",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="Area",
+                gateway=mock_gateway,
+                scope=scope_def,
+            )
+            scope_cover.entity_id = "cover.area_2"
+            scope_cover.hass = hass
+            scope_cover._added = True
+            bind_entity(hass, scope_cover, gateway=mock_gateway)
+            scope_cover.async_schedule_update_ha_state = MagicMock()
+            scope_cover.async_write_ha_state = MagicMock()
+            scope_cover.async_on_remove = MagicMock()
+            family.add(scope_cover)
+
+        try:
+            fut = asyncio.get_running_loop().create_future()
+            fut.set_result(time.monotonic())
+            mock_gateway.send.return_value = fut
+            scope_cover._attr_current_cover_position = scope_cover._start_position = 0
+
+            await scope_cover.async_open_cover()
+            await asyncio.sleep(0)
+            assert scope_cover._live_refresh_unsub is not None
+
+            with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+                member = MyHOMECover(
+                    hass=hass,
+                    name="Shutter 21",
+                    entity_name="Shutter 21",
+                    device_id="21",
+                    who="2",
+                    where="21",
+                    interface=None,
+                    advanced=False,
+                    manufacturer="BTicino",
+                    model="Shutter",
+                    gateway=mock_gateway,
+                )
+                member.entity_id = "cover.shutter_21"
+                member.hass = hass
+                bind_entity(hass, member, gateway=mock_gateway)
+                member.async_schedule_update_ha_state = MagicMock()
+                member.async_on_remove = MagicMock()
+                family.add(member)
+
+            # Adding a member triggers CoverFamily.membership_changed() -> _follow_members() -> _stop_live_refresh().
+            family.membership_changed()
+            assert scope_cover._live_refresh_unsub is None
+        finally:
+            scope_cover._cancel_run_timeout()
+            scope_cover._stop_live_refresh()
+            if scope_cover._unsub_members is not None:
+                scope_cover._unsub_members()
+                scope_cover._unsub_members = None
+
+    @pytest.mark.asyncio
+    async def test_ha_state_machine_animates_point_and_scope_covers_until_settle(
+        self, hass: HomeAssistant, tmp_path
+    ):
+        """End-to-end HA timer test: point cover and area scope cover animate 0 -> 10 -> 50 -> 100 % with zero leaked timers."""
+        mac = "00:03:50:00:09:00"
+        plant_yaml = tmp_path / "myhome.yaml"
+        plant_yaml.write_text(
+            f"gw:\n"
+            f"  mac: '{mac}'\n"
+            f"  cover:\n"
+            f"    shutter_21:\n"
+            f"      where: '21'\n"
+            f"      name: Shutter 21\n"
+            f"      travel_time: 10\n"
+            f"    area_2:\n"
+            f"      where: '2'\n"
+            f"      name: Area 2\n",
+            encoding="utf-8",
+        )
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={
+                CONF_HOST: "192.0.2.9",
+                CONF_PORT: 20000,
+                CONF_PASSWORD: "pass",
+                CONF_MAC: mac,
+                CONF_NAME: "MH201",
+                CONF_DEVICE_TYPE: "urn:schemas-bticino-it:device:IP scenario module:1",
+                CONF_FRIENDLY_NAME: "MH201 Gateway",
+                CONF_MANUFACTURER: "BTicino S.p.A.",
+                CONF_FIRMWARE: "1.0",
+            },
+            options={CONF_FILE_PATH: str(plant_yaml)},
+            unique_id=mac,
+        )
+        entry.add_to_hass(hass)
+
+        async def _fake_send(_cmd):
+            done = asyncio.get_running_loop().create_future()
+            done.set_result(cover_module.time.monotonic())
+            return done
+
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+        ):
+            assert await hass.config_entries.async_setup(entry.entry_id)
+            await hass.async_block_till_done()
+
+        gw = entry.runtime_data.gateway
+        gw._on_event_connection_state_change(True)
+        gw.send = AsyncMock(side_effect=_fake_send)
+
+        component = hass.data[PLATFORM]
+        shutter_entity = component.get_entity("cover.shutter_21")
+        scope_entity = component.get_entity("cover.area_2")
+        assert shutter_entity is not None
+        assert scope_entity is not None
+
+        clock = SimpleNamespace(now=4980.0)
+        fake_time = SimpleNamespace(monotonic=lambda: clock.now, time=time.time)
+        base_utc = dt_util.utcnow()
+
+        with patch.object(cover_module, "time", fake_time):
+            # Anchor a known closed (0 %) baseline via a real full closing run on the bus.
+            async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*2*2*21##"))
+            await hass.async_block_till_done()
+            clock.now = 4990.0
+            async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*2*0*21##"))
+            await hass.async_block_till_done()
+
+            assert hass.states.get("cover.shutter_21").state == "closed"
+            assert hass.states.get("cover.shutter_21").attributes[ATTR_CURRENT_POSITION] == 0
+            assert hass.states.get("cover.area_2").state == "closed"
+            assert hass.states.get("cover.area_2").attributes[ATTR_CURRENT_POSITION] == 0
+
+            clock.now = 5000.0
+            await hass.services.async_call(
+                PLATFORM, "open_cover", {"entity_id": "cover.area_2"}, blocking=True
+            )
+            # Gateway relays the area UP frame on the bus at 5000.0, confirming motor start immediately.
+            async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*2*1*2##"))
+            await hass.async_block_till_done()
+
+            # Scope cover with known members must NOT arm its own ticker; the member owns the ticker.
+            assert scope_entity._live_refresh_unsub is None
+            assert shutter_entity._live_refresh_unsub is not None
+
+            # Tick at +1 s -> 10 % on both the point cover and the area scope cover!
+            clock.now = 5001.0
+            async_fire_time_changed(hass, base_utc + timedelta(seconds=1))
+            await hass.async_block_till_done()
+            assert hass.states.get("cover.shutter_21").state == "opening"
+            assert hass.states.get("cover.shutter_21").attributes[ATTR_CURRENT_POSITION] == 10
+            assert hass.states.get("cover.area_2").state == "opening"
+            assert hass.states.get("cover.area_2").attributes[ATTR_CURRENT_POSITION] == 10
+
+            # Tick at +5 s -> 50 % on both entities!
+            clock.now = 5005.0
+            async_fire_time_changed(hass, base_utc + timedelta(seconds=5))
+            await hass.async_block_till_done()
+            assert hass.states.get("cover.shutter_21").attributes[ATTR_CURRENT_POSITION] == 50
+            assert hass.states.get("cover.area_2").attributes[ATTR_CURRENT_POSITION] == 50
+
+            # Actuator end-stop arrives at +10 s -> settles both to 100 % open and stops the ticker cleanly.
+            clock.now = 5010.0
+            async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*2*0*21##"))
+            await hass.async_block_till_done()
+
+        assert shutter_entity._live_refresh_unsub is None
+        assert scope_entity._live_refresh_unsub is None
+        assert hass.states.get("cover.shutter_21").state == "open"
+        assert hass.states.get("cover.shutter_21").attributes[ATTR_CURRENT_POSITION] == 100
+        assert hass.states.get("cover.area_2").state == "open"
+        assert hass.states.get("cover.area_2").attributes[ATTR_CURRENT_POSITION] == 100
+
+        await hass.config_entries.async_unload(entry.entry_id)
+

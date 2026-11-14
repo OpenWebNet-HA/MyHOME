@@ -130,6 +130,10 @@ class MyHOMEScopeCover(MyHOMECover):
     def _members(self) -> list[MyHOMECover]:
         return self._family.members(self.scope) if self._family is not None and self.scope is not None else []
 
+    def _tracks_own_live_refresh(self) -> bool:
+        """With members, each timed member's ticker triggers ``_member_changed``; only a memberless scope runs its own."""
+        return not self._members()
+
     async def async_added_to_hass(self) -> None:
         self._added = True
         await super().async_added_to_hass()  # ends with membership_changed(): follows the members
@@ -140,6 +144,8 @@ class MyHOMEScopeCover(MyHOMECover):
         if self._unsub_members is not None:
             self._unsub_members()
             self._unsub_members = None
+        if self._members():
+            self._stop_live_refresh()
         if not self._added:
             return
         if entity_ids := [m.entity_id for m in self._members() if m.entity_id]:
