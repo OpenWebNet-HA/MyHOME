@@ -8,6 +8,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: press
+    args: ["11", 2]
 
 - id: cen.event.release_short.btn2.11
   frame: "*15*02#1*11##"
@@ -19,6 +23,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Release after short pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: release_short_press
+    args: ["11", 2]
 
 - id: cen.event.start_long_press.btn2.11
   frame: "*15*02#3*11##"
@@ -30,6 +38,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Extended pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: start_long_press
+    args: ["11", 2]
 
 - id: cen.event.release_long.btn2.11
   frame: "*15*02#2*11##"
@@ -41,6 +53,10 @@
   mcp_valid: true
   mcp_notes: "CEN: Release after extended pressure on button 2 of source 11 (Encyclopedia functional/who-15-cen/README.md @3052786, Action connection table)"
   roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: release
+    args: ["11", 2]
 
 - id: cen.event.extended_press.btn1.0001
   frame: "*15*01#3*0001##"
@@ -67,3 +83,33 @@
     class: OWNCenCommand
     method: start_long_press
     args: ["0512", 3]
+
+- id: cen.capture.press.btn2.55
+  frame: "*15*02*55##"
+  direction: event
+  who: 15
+  what: "02"
+  where: "55"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN: Pushbutton 02 press on CEN object 55 (community plant capture, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: press
+    args: ["55", 2]
+
+- id: cen.capture.press.btn4.83
+  frame: "*15*04*83##"
+  direction: event
+  who: 15
+  what: "04"
+  where: "83"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN: Pushbutton 04 press on CEN object 83 (community plant capture, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNCenCommand
+    method: press
+    args: ["83", 4]

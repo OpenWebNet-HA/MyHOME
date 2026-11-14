@@ -785,8 +785,8 @@ def test_issue_908_golden_corpus_conformance_entries() -> None:
             assert isinstance(parsed, OWNHeatingCommand)
         else:
             assert isinstance(parsed, OWNHeatingEvent)
-        if "where_params" in rec:
-            assert parsed.where_param == rec["where_params"]
+        if "where_param" in rec:
+            assert parsed._interface_and_where_params()[1] == rec["where_param"]
         if rec.get("dimension") == 20:
             assert thermo_dim20_status(parsed) == (False, None, None)
 

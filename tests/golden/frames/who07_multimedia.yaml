@@ -1,0 +1,31 @@
+# WHO=7 Multimedia Video Door Entry — camera video stream control (OWNAVCommand).
+
+- id: av.cmd.receive_video.4000
+  frame: "*7*0*4000##"
+  direction: command
+  who: 7
+  what: 0
+  where: "4000"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Multimedia (WHO 7): Receive video stream from external camera 4000 (WHAT 0; OWNAVCommand.receive_video)"
+  roundtrip: true
+  builder:
+    class: OWNAVCommand
+    method: receive_video
+    args: [4000]
+
+- id: av.cmd.close_video
+  frame: "*7*9**##"
+  direction: command
+  who: 7
+  what: 9
+  where: "*"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "Multimedia (WHO 7): Close active video stream (WHAT 9, WHERE '*'; OWNAVCommand.close_video)"
+  roundtrip: true
+  builder:
+    class: OWNAVCommand
+    method: close_video
+    args: []

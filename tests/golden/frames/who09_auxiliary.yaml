@@ -41,3 +41,18 @@
   mcp_valid: true
   mcp_notes: "Auxiliary: Deactivate AUX channel 4"
   roundtrip: true
+
+- id: aux.req.status.1
+  frame: "*#9*1##"
+  direction: status_request
+  who: 9
+  what: null
+  where: "1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Auxiliary: Request status of AUX channel 1 (WHO_9.pdf & own-firmware-oracle)"
+  roundtrip: true
+  builder:
+    class: OWNStatusRequest
+    method: request
+    args: [9, "1"]

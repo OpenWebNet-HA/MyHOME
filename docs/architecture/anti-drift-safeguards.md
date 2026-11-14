@@ -126,6 +126,8 @@ Both repositories enforce automated zero-tolerance quality gates:
 | **Statement Coverage** | **Strict 100.0%** (0 missing lines across all integration modules) | `pytest --cov --cov-report=term-missing` |
 | **Linting & Formatting** | **0 Ruff Violations** | `ruff check .` |
 | **Home Assistant Standards** | **Gold / Platinum Scale** | `scripts/verify_ha_standards.py` |
+| **Canonical Golden Corpus & Staged-Superset Sync** | **`MyHOME >= OWNd`** (451+ schema-validated fixtures across 21 subsystems; 0 missing `OWNd` IDs, 0 divergent shared IDs, 0 raw-frame collisions, non-mutating `--check`) | `tools/golden/validate_corpus.py --check` & `scripts/sync_golden_corpus.py --check` |
+| **Trace-to-Golden Structural Shape Ratchet** | **0 New Uncovered Trace Shapes** (every frame shape in `tests/fixtures/` & Encyclopedia evidence is covered by `tests/golden/corpus.json` or locked in a monotonically shrinking baseline) | `tools/golden/check_trace_shape_coverage.py` |
 | **Upstream Compatibility** | `dev`, `beta`, `stable` | `.github/workflows/ha-upstream-compat.yml` |
 
 By combining Shift-Left testing in `OWNd` with nightly canary builds and automated release bumping in `MyHOME`, protocol drift is structurally impossible.

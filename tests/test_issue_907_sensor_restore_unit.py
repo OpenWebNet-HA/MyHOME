@@ -1141,7 +1141,7 @@ def test_issue_907_908_myhomeserver1_gateway_golden_corpus_entries() -> None:
         "gateway.capture.resp.diagnostic_object_model.myhomeserver1": "*#1013**1*67*15*5*0##",
         "gateway.capture.resp.firmware.version.myhomeserver1.2_87_13": "*#13**16*2*87*13##",
         "gateway.capture.req.kernel_version": "*#13**23##",
-        "gateway.capture.resp.kernel_version.myhomeserver1.5_10_35": "*#13**23*5*10*35##",
+        "gateway.resp.kernel.version.f461": "*#13**23*5*10*35##",
         "gateway.capture.req.distribution_version": "*#13**24##",
         "gateway.capture.resp.distribution_version.myhomeserver1.2_26_3": "*#13**24*2*26*3##",
         "gateway.capture.write.clock_sync.empty_tz.myhomeserver1": "*#13**#0*14*59*05*##",

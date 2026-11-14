@@ -1,37 +1,16 @@
-# WHO=22 Sound Diffusion — the mirror frames an MH200N emits alongside WHO=16.
+# WHO=22 Sound Diffusion — dual-dialect MH200N mirror captures & OWNSoundDiffusion vectors.
 #
-# Contributed with the plant B captures on PR #422. That gateway announces every
-# sound event twice: once in the WHO=16 dialect and once in WHO=22. The frames
-# below are the WHO=22 halves of those pairs.
-#
-# They are kept because they are independent, structural proof of the WHO=16
-# addressing this integration relies on. WHO=22 writes the environment and the
-# source into separate, separator-delimited fields, where WHO=16 packs them into
-# one three-digit pseudo address:
-#
-#   *16*3*111##  <->  *22*2#4#1*5#2#1##    environment 1, source 1
-#   *16*3*112##  <->  *22*2#4#1*5#2#2##    environment 1, source 2
-#   *16*3*121##  <->  *22*2#4#2*5#2#1##    environment 2, source 1
-#   *16*3*11##   <->  *#22*3#1#1*12*1*4##  area 1, point 1
-#   *16*3*12##   <->  *#22*3#1#2*12*1*4##  area 1, point 2
-#
-# Read with the WHO=22 reference (Encyclopedia, functional/who-22-sound-diffusion):
-# WHAT carries "WHAT#MULTIMEDIA_TYPE#AREA" (2 = source turned on, 4 = stereo),
-# WHERE "2#SOURCE_ID" is a source, "3#AREA#POINT" a speaker and "5#SENDER" the
-# general form. DIMENSION 1 is volume, 12 device state, 10 RDS text.
-#
-# Nothing consumes WHO=22 yet: OWNd parses these as generic events and the
-# integration has no WHO=22 platform, so they are inert. Support for gateways
-# that speak only this dialect is tracked separately.
-
-# ── Routing mirrors: environment and source in separate fields ────────────────
+# Contributed with Plant B captures (MyHOME#422) and MH202 intercom audio-ducking
+# captures (MyHOME#669), paired with Encyclopedia WHO=22 builder conformance vectors.
+# Parsed by OWNd via OWNSoundDiffusionEvent and OWNSoundDiffusionCommand.
 
 - id: sounddiff.event.routing.env1.source1
   frame: "*22*2#4#1*5#2#1##"
   direction: event
   who: 22
-  what: 2
+  what: "2#4#1"
   where: "5"
+  where_param: ["2", "1"]
   source: community-plant-capture
   mcp_valid: false
   mcp_notes: "Grammar valid; openwebnet-mcp's WHO=22 catalog is a stub (two WHAT codes, no dimensions) and cannot judge this frame. The Encyclopedia's WHO=22 page is the authority used here: WHAT 2 'source turned on' with multimedia type 4 (stereo) and area 1, WHERE 5#2#1 naming source 1. Mirrors *16*3*111##."
@@ -41,8 +20,9 @@
   frame: "*22*2#4#1*5#2#2##"
   direction: event
   who: 22
-  what: 2
+  what: "2#4#1"
   where: "5"
+  where_param: ["2", "2"]
   source: community-plant-capture
   mcp_valid: false
   mcp_notes: "Same area, source 2. Against sounddiff.event.routing.env1.source1 only the source field moves, which is what pins the last digit of the WHO=16 form. Mirrors *16*3*112##."
@@ -52,8 +32,9 @@
   frame: "*22*2#4#2*5#2#1##"
   direction: event
   who: 22
-  what: 2
+  what: "2#4#2"
   where: "5"
+  where_param: ["2", "1"]
   source: community-plant-capture
   mcp_valid: false
   mcp_notes: "Area 2, source 1: here the area field moves instead. Mirrors *16*3*121##."
@@ -63,20 +44,20 @@
   frame: "*22*2#4#8*5#2#1##"
   direction: event
   who: 22
-  what: 2
+  what: "2#4#8"
   where: "5"
+  where_param: ["2", "1"]
   source: community-plant-capture
   mcp_valid: false
   mcp_notes: "Last frame of a general power-on that sweeps areas 1..8 onto source 1. Mirrors *16*3*181##."
   roundtrip: true
-
-# ── Speaker mirrors: AREA and POINT are separate fields ───────────────────────
 
 - id: sounddiff.dim.state.area1.point1
   frame: "*#22*3#1#1*12*1*4##"
   direction: dimension_response
   who: 22
   where: "3"
+  where_param: ["1", "1"]
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
@@ -89,6 +70,7 @@
   direction: dimension_response
   who: 22
   where: "3"
+  where_param: ["1", "2"]
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
@@ -101,6 +83,7 @@
   direction: dimension_response
   who: 22
   where: "3"
+  where_param: ["3", "1"]
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
@@ -113,6 +96,7 @@
   direction: dimension_response
   who: 22
   where: "3"
+  where_param: ["1", "1"]
   dimension: 1
   dimension_values: ["17"]
   source: community-plant-capture
@@ -120,13 +104,12 @@
   mcp_notes: "Volume 17 on area 1 point 1, emitted together with *#16*11*1*17##. DIMENSION 1 carries the same 0..31 scale in both dialects."
   roundtrip: true
 
-# ── Source device and RDS mirrors ─────────────────────────────────────────────
-
 - id: sounddiff.dim.state.source1.on
   frame: "*#22*2#1*12*1*4##"
   direction: dimension_response
   who: 22
   where: "2"
+  where_param: ["1"]
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
@@ -139,6 +122,7 @@
   direction: dimension_response
   who: 22
   where: "5"
+  where_param: ["2", "1"]
   dimension: 10
   dimension_values: ["32", "82", "97", "100", "105", "111", "32", "49"]
   source: community-plant-capture
@@ -146,13 +130,12 @@
   mcp_notes: "RDS text for source 1 under DIMENSION 10, where WHO=16 reports the same payload under DIMENSION 8. Station name replaced with ' Radio 1' for the same reason as sound.dim.rds.response.101."
   roundtrip: true
 
-# ── Intercom audio ducking & volume restoration mirrors (Issue #669) ──────────
-
 - id: sounddiff.dim.volume.duck.area4.point1
   frame: "*#22*3#4#1*1*1##"
   direction: dimension_response
   who: 22
   where: "3"
+  where_param: ["4", "1"]
   dimension: 1
   dimension_values: ["1"]
   source: community-plant-capture
@@ -165,9 +148,95 @@
   direction: dimension_response
   who: 22
   where: "3"
+  where_param: ["4", "1"]
   dimension: 1
   dimension_values: ["6"]
   source: community-plant-capture
   mcp_valid: false
   mcp_notes: "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on area 4 point 1 (zone 41). Mirrors *#16*41*1*6##."
   roundtrip: true
+
+- id: sounddiff.req.frequency.source1
+  frame: "*#22*2#1*5##"
+  direction: dimension_request
+  who: 22
+  what: null
+  where: "2"
+  where_param: ["1"]
+  dimension: 5
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Sound Diffusion: Request tuner frequency (Dimension 5) on source 1 (WHERE 2#1; MH200N F500N tuner capture)"
+  roundtrip: true
+  builder:
+    class: OWNSoundDiffusionCommand
+    method: request_frequency
+    args: ["2#1"]
+
+- id: sounddiff.req.preset.source1
+  frame: "*#22*2#1*6##"
+  direction: dimension_request
+  who: 22
+  what: null
+  where: "2"
+  where_param: ["1"]
+  dimension: 6
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Sound Diffusion: Request active station preset (Dimension 6) on source 1 (WHERE 2#1; MH200N F500N tuner capture)"
+  roundtrip: true
+  builder:
+    class: OWNSoundDiffusionCommand
+    method: request_preset
+    args: ["2#1"]
+
+- id: sounddiff.cmd.turn_on_with_source.area1.point1.source1
+  frame: "*22*1#4#1*3#1#1##"
+  direction: command
+  who: 22
+  what: "1#4#1"
+  where: "3"
+  where_param: ["1", "1"]
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Sound Diffusion: Atomic speaker turn-on with stereo multimedia type (4) and source 1 on speaker 3#1#1 (Encyclopedia functional/who-22-sound-diffusion)"
+  roundtrip: true
+  builder:
+    class: OWNSoundDiffusionCommand
+    method: turn_on_with_source
+    args: ["3#1#1", 1, 4]
+
+- id: sounddiff.dim.write.volume.area1.point1.17
+  frame: "*#22*3#1#1*#1*17##"
+  direction: dimension_write
+  who: 22
+  what: null
+  where: "3"
+  where_param: ["1", "1"]
+  dimension: 1
+  dimension_values: ["17"]
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Sound Diffusion: Set speaker 3#1#1 volume to 17 on Dimension #1 (Encyclopedia functional/who-22-sound-diffusion)"
+  roundtrip: true
+  builder:
+    class: OWNSoundDiffusionCommand
+    method: set_volume
+    args: ["3#1#1", 17]
+
+- id: sounddiff.req.device_state.area1.point1
+  frame: "*#22*3#1#1*12##"
+  direction: dimension_request
+  who: 22
+  what: null
+  where: "3"
+  where_param: ["1", "1"]
+  dimension: 12
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Sound Diffusion: Request device state (Dimension 12) on speaker 3#1#1 (Encyclopedia functional/who-22-sound-diffusion)"
+  roundtrip: true
+  builder:
+    class: OWNSoundDiffusionCommand
+    method: request_device_state
+    args: ["3#1#1"]
