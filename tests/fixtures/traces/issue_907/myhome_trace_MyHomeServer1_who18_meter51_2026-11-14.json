@@ -31,7 +31,7 @@
     "mac": "00:03:50:00:09:07",
     "mac_prefix": "00:03:50",
     "connection_type": "tcp",
-    "send_workers": 2,
+    "send_workers": 1,
     "profile": "MyHomeServer1"
   },
   "frames": [

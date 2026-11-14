@@ -11,6 +11,7 @@ meter resets in Home Assistant long-term statistics.
 from __future__ import annotations
 
 import json
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -374,11 +375,14 @@ async def test_h4684_poll_refused_trace_no_compounding_across_restarts(
     energy_r1.async_get_last_sensor_data = AsyncMock(return_value=None)
     await energy_r1.async_added_to_hass()
 
-    # Migration fallback converted 8133.608 kWh -> 8133608.0 Wh despite NACKed startup poll!
-    assert energy_r1.native_value == pytest.approx(8133608.0)
+    # Migration fallback converted 8133.608 kWh -> exact int 8133608 Wh despite NACKed startup poll!
+    assert energy_r1.native_value == 8133608
+    assert type(energy_r1.native_value) is int
+    assert energy_r1.state == 8133608 and str(energy_r1.state) == "8133608"
     dumped_extra = energy_r1.extra_restore_state_data
     assert isinstance(dumped_extra, SensorExtraStoredData)
-    assert dumped_extra.native_value == pytest.approx(8133608.0)
+    assert dumped_extra.native_value == 8133608
+    assert type(dumped_extra.native_value) is int
     assert dumped_extra.native_unit_of_measurement == UnitOfEnergy.WATT_HOUR
 
     # Restart 2 (still no bus response because H4684 drops *#18*51*51## silently):
@@ -404,7 +408,8 @@ async def test_h4684_poll_refused_trace_no_compounding_across_restarts(
     )
     energy_r2.async_get_last_sensor_data = AsyncMock(return_value=dumped_extra)
     await energy_r2.async_added_to_hass()
-    assert energy_r2.native_value == pytest.approx(8133608.0)
+    assert energy_r2.native_value == 8133608
+    assert type(energy_r2.native_value) is int
 
     # Unsolicited report arrives 2 minutes later from the trace
     for frame in trace["frames"]:
@@ -445,7 +450,9 @@ async def test_all_sensor_classes_restore_with_converted_display_units(
     )
     power.async_get_last_sensor_data = AsyncMock(return_value=None)
     await power.async_added_to_hass()
-    assert power.native_value == pytest.approx(1250.0)
+    assert power.native_value == 1250
+    assert type(power.native_value) is int
+    assert power.state == 1250 and str(power.state) == "1250"
 
     # 2. Energy sensor: native Wh, displayed in MWh via RestoreSensor extra_data
     energy_mwh = MyHOMEEnergySensor(
@@ -569,15 +576,19 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
     #    Every restored numeric sensor MUST allow reading `.state` without raising ValueError!
     for raw_val, expected, expected_type in (
         (Decimal("NaN"), None, type(None)),
+        (Decimal("1E+400"), None, type(None)),
         (Decimal("8133608"), 8133608, int),
         (Decimal("425.5"), 425.5, float),
         (float("inf"), None, type(None)),
         (425.5, 425.5, float),
         (8133608, 8133608, int),
+        (10**400, None, type(None)),
         (True, None, type(None)),
         ("raw_text", None, type(None)),
         ("nan", None, type(None)),
         ("8133608", 8133608, int),
+        ("9" * 400, None, type(None)),
+        ("9" * 5000, None, type(None)),
         ("425.5", 425.5, float),
         (["bad_list"], None, type(None)),
     ):
@@ -667,7 +678,20 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
         )
     )
     await s_conv_extra.async_restore_last_state(State("sensor.e", "2.5"))
-    assert s_conv_extra.native_value == pytest.approx(2500.0)
+    assert s_conv_extra.native_value == 2500
+    assert type(s_conv_extra.native_value) is int
+    assert s_conv_extra.state == 2500 and str(s_conv_extra.state) == "2500"
+
+    s_conv_frac = _new_energy()
+    s_conv_frac.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value=2.5005,
+            native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        )
+    )
+    await s_conv_frac.async_restore_last_state(State("sensor.e", "2.5005"))
+    assert s_conv_frac.native_value == pytest.approx(2500.5)
+    assert type(s_conv_frac.native_value) is float
 
     s_bad_extra = _new_energy()
     s_bad_extra.async_get_last_sensor_data = AsyncMock(
@@ -679,14 +703,103 @@ async def test_sensor_restore_defensive_edge_cases(hass: HomeAssistant) -> None:
     await s_bad_extra.async_restore_last_state(State("sensor.e", "2.5"))
     assert s_bad_extra.native_value is None
 
-    # 6. _convert_to_native_unit edge inputs (bool, non-numeric, NaN, no converter)
+    # 6. _convert_to_native_unit edge inputs (bool, non-numeric, OverflowError, NaN, scaled inf, no converter)
     helper = _new_energy()
     assert helper._convert_to_native_unit(True, "kWh", "Wh") is None
     assert helper._convert_to_native_unit(["bad"], "kWh", "Wh") is None
     assert helper._convert_to_native_unit("not-a-number", "kWh", "Wh") is None
+    assert helper._convert_to_native_unit(10**400, "kWh", "Wh") is None
     assert helper._convert_to_native_unit("nan", "kWh", "Wh") is None
+    assert helper._convert_to_native_unit(1e308, "MWh", "Wh") is None
     helper._attr_device_class = None
     assert helper._convert_to_native_unit(1.0, "kWh", "Wh") is None
+
+    # 6b. Unitless numeric device_class (POWER_FACTOR) and non-numeric device classes (ENUM, DATE, TIMESTAMP)
+    pf_sensor = _TextSensor()
+    pf_sensor._attr_device_class = SensorDeviceClass.POWER_FACTOR
+    assert pf_sensor._is_numeric_sensor() is True
+    pf_sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await pf_sensor.async_restore_last_state(State("sensor.pf", "corrupt_text"))
+    assert pf_sensor.native_value is None
+    assert pf_sensor.state is None
+    await pf_sensor.async_restore_last_state(State("sensor.pf", "0.98"))
+    assert pf_sensor.native_value == pytest.approx(0.98)
+    assert pf_sensor.state == 0.98
+
+    enum_sensor = _TextSensor()
+    enum_sensor._attr_device_class = SensorDeviceClass.ENUM
+    enum_sensor._attr_options = ["tariff_f1", "tariff_f2"]
+    assert enum_sensor._is_numeric_sensor() is False
+    enum_sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await enum_sensor.async_restore_last_state(State("sensor.enum", "invalid_option"))
+    assert enum_sensor.native_value is None
+    assert enum_sensor.state is None
+    enum_sensor.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(native_value=123, native_unit_of_measurement=None)
+    )
+    await enum_sensor.async_restore_last_state(State("sensor.enum", "tariff_f1"))
+    assert enum_sensor.native_value is None
+    enum_sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await enum_sensor.async_restore_last_state(State("sensor.enum", "tariff_f1"))
+    assert enum_sensor.native_value == "tariff_f1"
+    assert enum_sensor.state == "tariff_f1"
+
+    date_sensor = _TextSensor()
+    date_sensor._attr_device_class = SensorDeviceClass.DATE
+    date_sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await date_sensor.async_restore_last_state(State("sensor.dt", "not-a-date"))
+    assert date_sensor.native_value is None
+    assert date_sensor.state is None
+    date_sensor.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value=datetime(2026, 11, 14, 12, 0, tzinfo=UTC),
+            native_unit_of_measurement=None,
+        )
+    )
+    await date_sensor.async_restore_last_state(State("sensor.dt", "2026-11-14"))
+    assert date_sensor.native_value is None
+    date_sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await date_sensor.async_restore_last_state(State("sensor.dt", "2026-11-14"))
+    assert date_sensor.native_value == date(2026, 11, 14)
+    assert date_sensor.state == "2026-11-14"
+    date_sensor._attr_native_value = None
+    date_sensor.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value=date(2026, 11, 14),
+            native_unit_of_measurement=None,
+        )
+    )
+    await date_sensor.async_restore_last_state(State("sensor.dt", "2026-11-14"))
+    assert date_sensor.native_value == date(2026, 11, 14)
+
+    ts_sensor = _TextSensor()
+    ts_sensor._attr_device_class = SensorDeviceClass.TIMESTAMP
+    ts_sensor.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value=datetime(2026, 11, 14, 12, 0),  # naive -> rejected
+            native_unit_of_measurement=None,
+        )
+    )
+    await ts_sensor.async_restore_last_state(State("sensor.ts", "2026-11-14T12:00:00"))
+    assert ts_sensor.native_value is None
+    assert ts_sensor.state is None
+    ts_sensor.async_get_last_sensor_data = AsyncMock(return_value=None)
+    await ts_sensor.async_restore_last_state(
+        State("sensor.ts", "2026-11-14T12:00:00+00:00")
+    )
+    assert ts_sensor.native_value == datetime(2026, 11, 14, 12, 0, tzinfo=UTC)
+    assert ts_sensor.state == "2026-11-14T12:00:00+00:00"
+    ts_sensor._attr_native_value = None
+    ts_sensor.async_get_last_sensor_data = AsyncMock(
+        return_value=SensorExtraStoredData(
+            native_value=datetime(2026, 11, 14, 12, 0, tzinfo=UTC),
+            native_unit_of_measurement=None,
+        )
+    )
+    await ts_sensor.async_restore_last_state(
+        State("sensor.ts", "2026-11-14T12:00:00+00:00")
+    )
+    assert ts_sensor.native_value == datetime(2026, 11, 14, 12, 0, tzinfo=UTC)
 
     # 7. Migration fallback: unknown/unavailable, non-finite float, non-numeric on BOTH
     #    total_increasing (Energy) and measurement (Power) sensors, ambiguous unitless state

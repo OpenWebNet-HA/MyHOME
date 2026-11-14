@@ -97,7 +97,7 @@
       "is_nack": false,
       "oracle_reply": "nack",
       "oracle_verdict": "silent",
-      "note": "SYNTHETIC (H4684 020054 oracle energy-params): monthly partial totalizer poll refused (SILENT)."
+      "note": "SYNTHETIC (H4684 020054 oracle energy-ts10): monthly partial totalizer poll refused (SILENT)."
     },
     {
       "timestamp": 1794392405.2,
@@ -112,7 +112,7 @@
       "is_nack": false,
       "oracle_reply": "nack",
       "oracle_verdict": "silent",
-      "note": "SYNTHETIC (H4684 020054 oracle energy-params): daily partial totalizer poll refused (SILENT)."
+      "note": "SYNTHETIC (H4684 020054 oracle energy-ts10): daily partial totalizer poll refused (SILENT)."
     },
     {
       "timestamp": 1794392520.0,
