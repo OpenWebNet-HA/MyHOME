@@ -16,7 +16,7 @@ This guide covers installing the **MyHOME** next-generation integration (`v2-pha
 
 > [!IMPORTANT]
 > **Why Manual Installation is Recommended for v2 Beta**:
-> The v2 architecture is currently published as preview/beta releases from the `v2-phase1-architecture` development branch. HACS tracks the default `master` branch by default and often fails to detect or rejects pre-release beta tags on non-default branches. Installing via ZIP ensures you receive the exact, tested beta build.
+> The v2 architecture is currently published as preview/beta releases from the `v2-phase1-architecture` development branch while `master` tracks legacy `0.9.4`. Both the **Home Assistant Marketplace** (Home Assistant 2026.11+) and **HACS** (`< 2026.11`) track the default `master` branch by default and often hide or reject pre-release beta tags on non-default branches. Installing via ZIP ensures you receive the exact, tested beta build.
 
 ### ⚡ 1-Click Terminal Command (Home Assistant Terminal & SSH)
 
@@ -60,20 +60,24 @@ ha core restart
 
 ---
 
-## Option 2: Installation via HACS (Custom Repository)
+## Option 2: Installation via Home Assistant Marketplace / HACS (Custom Repository)
 
-If you prefer managing updates through HACS:
+From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.3 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
 
-1. Open **HACS** in Home Assistant.
-2. Click the three dots (⋮) in the top right and choose **Custom repositories**.
-3. Enter the repository URL:
-   ```text
-   https://github.com/OpenWebNet-HA/MyHOME
-   ```
-4. Select category: **Integration**.
-5. Click **Add**.
-6. Search for **MyHOME**. If installing a beta release, toggle **Show beta versions** in the version dropdown, choose the latest `2.0.0bX` release, and click **Download**.
-7. Restart Home Assistant.
+Once stable `v2.0.0` merges into `master` ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) and enters the default catalog, you will be able to search for **MyHOME** directly in **Settings → Marketplace**. Until then, add `OpenWebNet-HA/MyHOME` as a custom repository:
+
+- **Home Assistant 2026.11+ (Marketplace):**
+    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
+    2. Select **Add from link** in the upper-right corner *(connect your GitHub account if prompted)*.
+    3. Under **GitHub link**, enter `https://github.com/OpenWebNet-HA/MyHOME` and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
+    4. Select **MyHOME** from the list to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**; note that for `2.0.0bX` pre-releases on `v2-phase1-architecture`, Option 1 above is strongly recommended)*.
+    5. Restart Home Assistant when prompted.
+- **Home Assistant 2026.3 – 2026.10 (HACS):**
+    1. Open **HACS** in Home Assistant.
+    2. Click the three dots (`⋮`) in the top right and choose **Custom repositories**.
+    3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, then click **Add**.
+    4. Search for **MyHOME**, open it, select the desired release version, and click **Download** *(for `2.0.0bX` pre-releases on `v2-phase1-architecture`, Option 1 above is strongly recommended)*.
+    5. Restart Home Assistant when prompted.
 
 ---
 

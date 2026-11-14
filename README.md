@@ -1,14 +1,14 @@
 # MyHOME — OpenWebNet Integration for Home Assistant
 
 [![Validate with hassfest](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/hassfest.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/hassfest.yml)
-[![HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
+[![Marketplace / HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
 [![test-coverage](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml)
 [![Coverage](coverage.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase1-architecture)
 [![Integration Quality Scale](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml)
 [![Quality scale tier](quality_scale.svg)](custom_components/myhome/quality_scale.yaml)
 [![Codecov](https://codecov.io/gh/OpenWebNet-HA/MyHOME/branch/v2-phase1-architecture/graph/badge.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase1-architecture)
 [![PyPI Standards & Packaging](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml/badge.svg?branch=v2-phase1-architecture)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml?query=branch%3Av2-phase1-architecture)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Home Assistant Marketplace](https://img.shields.io/badge/HA%20Marketplace%20%2F%20HACS-Custom-orange.svg)](https://www.home-assistant.io/integrations/marketplace/)
 [![Latest Release](https://img.shields.io/github/v/release/OpenWebNet-HA/MyHOME?include_prereleases&label=release&logo=github)](https://github.com/OpenWebNet-HA/MyHOME/releases)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
 [![mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/)
@@ -160,11 +160,11 @@ We now maintain a comprehensive, community-curated **[GitHub Wiki](https://githu
 > **Rule:** Always keep safety backups **outside** the `custom_components/` folder (e.g. in `/config/myhome_backup/`).
 
 > [!WARNING]
-> **⚠️ Do NOT use HACS to install beta / pre-release versions!**  
-> In **HACS 2.0+**, pre-release access was moved to Home Assistant entity switches (`switch.myhome_pre_release`) that are disabled by default. Due to upstream Home Assistant registry caching, enabling these switches frequently gets stuck in an *"unavailable"* loop or reverts to *"disabled"*. Furthermore, because pre-releases are built on the active development branch (`v2-phase1-architecture`) while the default branch is `master`, HACS download validation frequently fails with:  
-> `The version 2.0.0b18 for this integration can not be used with HACS`  
-> 
-> **To avoid frustration, please use Method 1 (Terminal & SSH) or Method 2 (Manual) below — they take less than 10 seconds and preserve all existing devices, entities, and settings 100% safely.**
+> **⚠️ Use Method 1 (Terminal & SSH) or Method 2 (Manual) for `2.0.0bX` beta builds!**
+>
+> Because v2 pre-releases are currently published from the active development branch (`v2-phase1-architecture`) while the default `master` branch still tracks legacy `0.9.4` (pending [PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)), both the **Home Assistant Marketplace** (Home Assistant 2026.11+) and **HACS** (`< 2026.11`) track `master` by default and frequently hide or reject non-default-branch pre-releases (`The version 2.0.0b18 for this integration can not be used with HACS`, or stuck `switch.myhome_pre_release` switches in HACS 2.0+).
+>
+> **Once `v2.0.0` merges into `master` and enters the default catalog, installing and updating directly from Settings → Marketplace (or HACS on `< 2026.11`) will work out of the box. For `2.0.0bX` betas today, use Method 1 or Method 2 below — they take less than 10 seconds and preserve all existing devices, entities, and settings 100% safely.**
 
 ---
 
@@ -208,35 +208,38 @@ docker restart homeassistant
 
 ---
 
-### Method 3: HACS (Not Recommended for Betas — Stable / Reference Only)
+### Method 3: Home Assistant Marketplace / HACS (Stable Releases & Custom Repository)
 
-*(Available seamlessly once PR #232 is merged into master for the stable `v2.0.0` release)*
+From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.3 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
+
+*(Direct 1-click catalog search in Marketplace / HACS will become the recommended install method once [PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232) merges `v2.0.0` into `master` and `OpenWebNet-HA/MyHOME` lands in the default catalog. Until then, add the organization repository as a Custom Repository:)*
 
 #### Step 1: Add the Organization Repository
 
-1. Open **HACS** in your Home Assistant UI.
-2. Click the **three dots (`⋮`)** in the top-right corner and select **Custom repositories**.
-3. Add the repository details:
-    - **Repository:** `https://github.com/OpenWebNet-HA/MyHOME`
-    - **Type / Category:** `Integration`
-4. Click **Add**.
+- **Home Assistant 2026.11+ (Marketplace):**
+    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
+    2. Select **Add from link** in the upper-right corner *(connect your GitHub account if prompted)*.
+    3. Under **GitHub link**, enter `https://github.com/OpenWebNet-HA/MyHOME` and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
+- **Home Assistant 2026.3 – 2026.10 (HACS):**
+    1. Open **HACS** in your Home Assistant UI.
+    2. Click the **three dots (`⋮`)** in the top-right corner and select **Custom repositories**.
+    3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, then click **Add**.
 
 > [!CAUTION]
-> **Migrating from a personal fork? DO NOT delete the MyHOME integration from Home Assistant Settings!**
-> Deleting the integration from *Settings → Devices & Services* will wipe all configured gateways and devices.
+> **Migrating from a personal fork? DO NOT delete the MyHOME integration from Home Assistant Settings (and NEVER click "Delete and uninstall" in Marketplace)!**
+> Deleting the integration entry under *Settings → Devices & services* — or choosing **Delete and uninstall** in Marketplace's "integration in use" dialog — will wipe all configured gateways, devices, and entities.
 > If you previously tracked a personal fork (such as `GreenGrassBlueOcean/MyHOME` or `anotherjulien/MyHOME`):
 >
-> 1. Open **HACS → ⋮ → Custom repositories**.
-> 2. Click the **red trash can icon** next to the old fork URL to unlink it.
-> 3. Verify `OpenWebNet-HA/MyHOME` is present in the list.
-> 4. All your configured devices, gateways, and automations remain 100% intact.
+> - **If the fork is marked Installed in Home Assistant 2026.11+ (Marketplace):** Marketplace locks `custom_components/myhome` to that fork (`Uninstall it first`) and blocks uninstalling while gateway entries exist. Update `/config/custom_components/myhome/` in place using **Method 1 (Terminal & SSH)** or **Method 2 (Manual)** above — **do not** choose **Delete and uninstall**.
+> - **If the fork was only added as a link (not installed) in Marketplace (`2026.11+`):** open **Settings → Marketplace → `⋮` → Custom repositories**, click **Remove** (trash can icon) next to the old fork, and add `OpenWebNet-HA/MyHOME` via **Add from link**.
+> - **On Home Assistant `< 2026.11` (HACS):** open **HACS → `⋮` → Custom repositories**, click the trash can icon next to the old fork URL, and ensure `OpenWebNet-HA/MyHOME` is added.
+> - All your configured devices, gateways, and automations remain 100% intact.
 
-#### Step 2: Download & Restart
+#### Step 2: Install / Download & Restart
 
-1. Open **HACS → Integrations → MyHome**.
-2. Click the blue **Download** button (or `⋮` → **Redownload**).
-3. Select the version and click **Download**.
-4. Restart Home Assistant (**Settings → System → Restart**).
+1. In **Settings → Marketplace** (or **HACS → Integrations** on `< 2026.11`), search for **MyHOME** and open its page.
+2. Select **Install** in Marketplace, or **Download** in HACS *(to pick a specific release, open `⋮` → **Install another version** in Marketplace, or `⋮` → **Redownload** in HACS)*.
+3. Restart Home Assistant when prompted (**Settings → System → Restart**).
 
 ---
 
@@ -260,7 +263,7 @@ ha core restart
 
 If you ever need to revert to the legacy codebase (`0.9.4`):
 
-- **Via HACS:** Open **MyHome** → click `⋮` → **Redownload** → select **`0.9.4`** → **Download** → Restart Home Assistant.
+- **Via Marketplace / HACS:** Open **MyHOME** in **Settings → Marketplace** → click `⋮` → **Install another version** → select **`0.9.4`** → **Install** (or in **HACS** on `< 2026.11` → click `⋮` → **Redownload** → select **`0.9.4`** → **Download**) → Restart Home Assistant.
 - **Via Terminal & SSH** *(use `Ctrl + Shift + V` to paste)*:
     ```bash
     cd /config/custom_components
@@ -275,7 +278,7 @@ If you ever need to revert to the legacy codebase (`0.9.4`):
 
 1. Go to **Settings → Devices & services → MyHOME**, open the gateway entry's `⋮` menu and choose **Delete**. Repeat for every configured gateway. This closes the bus sessions, unloads all platforms and removes the gateway's devices and entities from the registries.
 2. Restart Home Assistant if you also want to remove the code:
-    - **HACS:** open **MyHome** in HACS → `⋮` → **Remove**.
+    - **Marketplace / HACS:** open **MyHOME** in **Settings → Marketplace** → `⋮` → **Uninstall** (or in **HACS** on `< 2026.11` → `⋮` → **Remove**).
     - **Manual / one-liner installs:** delete the folder:
         ```bash
         rm -rf /config/custom_components/myhome
@@ -501,7 +504,7 @@ A modern custom Lovelace element is automatically registered with zero configura
 > 1. **Manual Resource Verification**: While the integration automatically registers the card resource, you can verify or manually add it under **Settings ➔ Dashboards ➔ Resources** (click the three dots ⋮ in the top-right corner):
 >     - **URL:** `/myhome_static/myhome-bus-card.js`
 >     - **Resource Type:** `JavaScript Module`
-> 2. **Check for Conflicting HACS Cards**: If custom cards fail to load or the card picker spins indefinitely, inspect your browser console (`F12`). A common cause is conflicting or duplicate custom cards (e.g. having both `scheduler-card` and `lovelace-standalone-schedule-card` installed simultaneously). An uncaught `CustomElementRegistry` collision in an earlier card halts the browser's Lovelace resource-loading pipeline before subsequent cards can initialize. Removing the duplicate card resolves the blockage immediately.
+> 2. **Check for Conflicting Custom Cards**: If custom cards fail to load or the card picker spins indefinitely, inspect your browser console (`F12`). A common cause is conflicting or duplicate custom cards installed via Marketplace or HACS (e.g. having both `scheduler-card` and `lovelace-standalone-schedule-card` installed simultaneously). An uncaught `CustomElementRegistry` collision in an earlier card halts the browser's Lovelace resource-loading pipeline before subsequent cards can initialize. Removing the duplicate card resolves the blockage immediately.
 > 3. **Hard Browser Refresh**: After adding resources or updating components, perform a hard refresh (`Ctrl + F5` or `Ctrl + Shift + R`) to ensure the browser loads the latest JavaScript bundle from the gateway.
 
 ### 📝 Structured GitHub Issue Forms
@@ -654,7 +657,7 @@ automated coverage and physical gateway verification steps.
 ### CI Workflows
 
 - **`hassfest`**: Official Home Assistant manifest, translation, and metadata validation.
-- **`validate`**: Official HACS compliance checks.
+- **`validate`**: Official Home Assistant Marketplace / HACS repository & manifest compliance checks (`hacs/action`).
 - **`test-coverage`**: 5,324 automated unit and integration tests with snapshot matching and 100.0% statement coverage enforcement.
 - **`ha-container-smoke`**: Automated containerized smoke testing against official Home Assistant Docker images (`stable`, `beta`, `dev`) verifying `check_config`, clean platform module imports, and zero asyncio loop-blocking calls.
 - **`ownd-smoke`**: Automated smoke testing of the `OWNd` protocol engine across `pinned`, `latest`, and `upstream-dev` distributions on Python 3.14.
@@ -802,7 +805,7 @@ The development of the MyHOME integration is organized into strategic release mi
     - [x] Power meters and energy counters (`WHO = 18`) as Home Assistant energy sensors.
     - [ ] Energy management central units & multi-function power meters (`WHO = 18` F520/F521/F522/F523/3522): not started, needs a scope decision and captures.
     - [x] Multi-room FM tuner presets, frequency, and RDS metadata (`WHO = 22` / `WHO = 16`): native `media_player` tuner controls with band, preset, and frequency tuning (#839, #844).
-- [ ] **Stable v2.0.0**: merge the v2 line ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) into `master` so HACS users receive it; today every release is a pre-release (latest: v2.0.0b18).
+- [ ] **Stable v2.0.0**: merge the v2 line ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) into `master` and publish to the default catalog so Home Assistant Marketplace (2026.11+) and HACS (`< 2026.11`) users receive it directly; today every release is a pre-release (latest: v2.0.0b18).
 
 ---
 

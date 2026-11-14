@@ -16,7 +16,7 @@ rules:
     comment: local_push; only temperature sensors poll (5 min) and probes (WHERE >= 100) are receive-only unless the push stream goes silent.
   brands:
     status: done
-    comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, logo.png, logo@2x.png) for HA 2026.3+ and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
+    comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, logo.png, logo@2x.png) for HA 2026.3+, Home Assistant Marketplace (2026.11+), and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
   common-modules:
     status: done
     comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements); the per-gateway frame router in router.py that delivers bus frames to the entities owning their addresses.
@@ -43,10 +43,10 @@ rules:
     comment: README.md opens with what the integration does and which hardware it targets.
   docs-installation-instructions:
     status: done
-    comment: README.md "Installation & Updating" (terminal, manual, HACS).
+    comment: README.md "Installation & Updating" (terminal, manual, Home Assistant Marketplace / HACS).
   docs-removal-instructions:
     status: done
-    comment: README.md "Removing the Integration" covers deleting the entry, removing the code (HACS / manual) and the optional leftovers (myhome.yaml, dashboard resource, automations).
+    comment: README.md "Removing the Integration" covers deleting the entry, removing the code (Marketplace / HACS / manual) and the optional leftovers (myhome.yaml, dashboard resource, automations).
   entity-event-setup:
     status: done
     comment: Entities subscribe to dispatcher signals in async_added_to_hass and unsubscribe via async_on_remove.

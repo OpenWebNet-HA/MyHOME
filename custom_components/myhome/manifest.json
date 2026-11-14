@@ -6,6 +6,9 @@
     "http",
     "lovelace"
   ],
+  "categories": [
+    "hubs_protocols.building_automation"
+  ],
   "codeowners": [
     "@anotherjulien",
     "@GreenGrassBlueOcean"

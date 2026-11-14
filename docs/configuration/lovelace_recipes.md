@@ -313,7 +313,7 @@ sections:
 
 ### Pattern C: Stock Lovelace Alternative (Zero Custom Cards)
 
-If you prefer not to install custom frontend cards via HACS, you can use Home Assistant's built-in cards:
+If you prefer not to install custom frontend cards via the Home Assistant Marketplace or HACS, you can use Home Assistant's built-in cards:
 
 #### Option 1: Native Tile Card with Controls
 ```yaml

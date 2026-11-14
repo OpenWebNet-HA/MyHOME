@@ -182,7 +182,7 @@ graph LR
     end
 
     subgraph Release["🌐 Stable v2.0.0"]
-        U2["Merge PR #232 into master<br/>(HACS users receive v2)"]
+        U2["Merge PR #232 into master<br/>(Marketplace & HACS receive v2)"]
         P --> U2
     end
 
@@ -225,8 +225,8 @@ graph LR
 
 #### 5. 🌐 Release Status: Stable v2.0.0
 
-* **Branding Assets (`brands`)**: Already in place. The MyHOME icon and logo were merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
-* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b18`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
+* **Branding Assets (`brands`)**: Already in place. Local brand assets (`icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`) are bundled in `custom_components/myhome/brand/` for Home Assistant 2026.3+ and the Home Assistant Marketplace (2026.11+), and the MyHOME icon and logo were also merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
+* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that Home Assistant Marketplace (2026.11+) and HACS (`< 2026.11`) users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b18`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
 
 ---
 
