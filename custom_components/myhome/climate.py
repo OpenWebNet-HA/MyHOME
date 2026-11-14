@@ -370,57 +370,51 @@ async def async_setup_entry(
                 ctx.message,
             )
             return False
-        dim19 = (
-            thermo_dim19_status(ctx.message)
-            if getattr(ctx.message, "dimension", None) == 19
-            else None
-        )
         if (
             ctx.source == "bus"
             and is_thermo_switch_actuator_zone(ctx.address)
-            and dim19 is not None
-            and not isinstance(dim19[3], bool)
-            and not isinstance(dim19[4], bool)
+            and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
+            and getattr(ctx.message, "dimension", None) == 19
         ):
-            zone_pair = thermo_zone_pair(ctx.address)
-            if zone_pair is not None:
-                events = pending_actions.setdefault(zone_pair, {})
-                dim19_active = dim19[2]
-                if dim19_active:
-                    events.pop("dim19", None)
-                    events["dim19"] = ctx.message
-                else:
-                    events.pop("dim19", None)
-                    events.pop("dim19_off", None)
-                    events["dim19_off"] = ctx.message
-            LOGGER.debug(
-                "Deferring climate zone %s creation on Dimension 19 valve-only frame (#785)",
-                ctx.address.key,
-            )
-            return False
-        dim20 = (
-            thermo_dim20_status(ctx.message)
-            if getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
-            and getattr(ctx.message, "dimension", None) == 20
-            else None
-        )
+            dim19 = thermo_dim19_status(ctx.message)
+            if dim19 is None or (
+                not isinstance(dim19[3], bool) and not isinstance(dim19[4], bool)
+            ):
+                zone_pair = thermo_zone_pair(ctx.address)
+                if dim19 is not None and zone_pair is not None:
+                    events = pending_actions.setdefault(zone_pair, {})
+                    if dim19[2]:
+                        events.pop("dim19", None)
+                        events["dim19"] = ctx.message
+                    else:
+                        events.pop("dim19", None)
+                        events.pop("dim19_off", None)
+                        events["dim19_off"] = ctx.message
+                LOGGER.debug(
+                    "Deferring climate zone %s creation on Dimension 19 valve-only frame (#785)",
+                    ctx.address.key,
+                )
+                return False
         if (
             ctx.source == "bus"
-            and dim20 is not None
-            and not isinstance(dim20[2], int)
-            and not isinstance(dim20[1], bool)
+            and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
+            and getattr(ctx.message, "dimension", None) == 20
         ):
-            zone_pair = thermo_zone_pair(ctx.address)
-            if zone_pair is not None:
-                slot = f"act:{thermo_event_actuator(ctx.message)}"
-                events = pending_actions.setdefault(zone_pair, {})
-                events.pop(slot, None)
-                events[slot] = ctx.message
-            LOGGER.debug(
-                "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
-                ctx.address.key,
-            )
-            return False
+            dim20 = thermo_dim20_status(ctx.message)
+            if dim20 is None or (
+                not isinstance(dim20[2], int) and not isinstance(dim20[1], bool)
+            ):
+                zone_pair = thermo_zone_pair(ctx.address)
+                if dim20 is not None and zone_pair is not None:
+                    slot = f"act:{thermo_event_actuator(ctx.message)}"
+                    events = pending_actions.setdefault(zone_pair, {})
+                    events.pop(slot, None)
+                    events[slot] = ctx.message
+                LOGGER.debug(
+                    "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
+                    ctx.address.key,
+                )
+                return False
         return True
 
     def duplicate_climate(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
@@ -2537,13 +2531,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     heating_active,
                     is_active,
                     cooling_fan_on,
-                    msg_fan_on,
+                    heating_fan_on,
                     msg_fan_speed,
                 ) = dim19
+                if heating_fan_on is True or cooling_fan_on is True:
+                    msg_fan_on: bool | None = True
+                elif heating_fan_on is False or (
+                    cooling_fan_on is False and self._fan
+                ):
+                    msg_fan_on = False
+                else:
+                    msg_fan_on = None
                 sides_resolved = not self._fan_coil_sides
                 self._fan_coil_sides = {
                     "cooling": isinstance(cooling_fan_on, bool),
-                    "heating": isinstance(msg_fan_on, bool),
+                    "heating": isinstance(heating_fan_on, bool),
                 }
                 self._fan_coil_sides_asked_at = None
                 self._fan_coil_sides_held = False

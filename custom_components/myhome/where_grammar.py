@@ -493,6 +493,11 @@ def thermo_event_actuator(message: Any) -> str:
     return "1"
 
 
+def _is_ascii_uint(value: str) -> bool:
+    """Return True when ``value`` consists solely of ASCII decimal digits."""
+    return bool(value) and value.isascii() and value.isdigit()
+
+
 def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:
     """Return ``(is_active, fan_on, fan_speed)`` for a WHO=4 Dimension 20 event or ``#20`` write.
 
@@ -502,19 +507,23 @@ def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | 
     ``is_active = True, fan_on = True`` (#908). Falls back to ``message.is_active()``
     only for unit-test mocks without a ``dimension_value`` sequence.
     """
+    who = getattr(message, "who", None)
+    if isinstance(who, (int, str)) and str(who) != "4":
+        return None
     if getattr(message, "dimension", None) != 20:
+        return None
+    is_action = getattr(message, "message_type", None) == "hvac_action"
+    if not is_action and not isinstance(message, OWNCommand):
         return None
     vals = getattr(message, "dimension_value", None)
     if isinstance(vals, (list, tuple)):
         if not vals:
             return None
         first = str(vals[0])
-        if not first.isdigit():
+        if not _is_ascii_uint(first):
             return None
         return _decode_thermo_output_code(int(first))
-    if getattr(message, "message_type", None) == "hvac_action" and callable(
-        getattr(message, "is_active", None)
-    ):
+    if is_action and callable(getattr(message, "is_active", None)):
         raw_fan_on = getattr(message, "fan_on", None)
         raw_speed = getattr(message, "fan_speed", None)
         fan_on = raw_fan_on if isinstance(raw_fan_on, bool) else None
@@ -550,8 +559,12 @@ def thermo_dim19_status(
     Decodes WHO=4 Dimension 19 (``*#4*WHERE*19*CV*HV##``) directly so proportional
     0-10 V 0% OFF (``100``) and ``MyHomeServer1`` extended fan-coil OFF states
     (``14..16``) are not misclassified as active heating/cooling fans by
-    ``OWNd <= 2.0.0b14`` (#908).
+    ``OWNd <= 2.0.0b14`` (#908), and preserves active fan speed across both the
+    heating (``HV``) and cooling (``CV``) sides.
     """
+    who = getattr(message, "who", None)
+    if isinstance(who, (int, str)) and str(who) != "4":
+        return None
     if (
         getattr(message, "dimension", None) != 19
         or getattr(message, "message_type", None) != "hvac_action"
@@ -561,32 +574,46 @@ def thermo_dim19_status(
     if (
         isinstance(vals, (list, tuple))
         and len(vals) >= 2
-        and str(vals[0]).isdigit()
-        and str(vals[1]).isdigit()
+        and _is_ascii_uint(str(vals[0]))
+        and _is_ascii_uint(str(vals[1]))
     ):
         c_dec = _decode_thermo_output_code(int(str(vals[0])))
         h_dec = _decode_thermo_output_code(int(str(vals[1])))
         if c_dec is None or h_dec is None:
             return None
+        fan_speed = (
+            h_dec[2]
+            if h_dec[1] is True
+            else c_dec[2]
+            if c_dec[1] is True
+            else None
+        )
         return (
             c_dec[0],
             h_dec[0],
             bool(c_dec[0] or h_dec[0]),
             c_dec[1],
             h_dec[1],
-            h_dec[2],
+            fan_speed,
         )
     if callable(getattr(message, "is_active", None)):
         raw_cfan = getattr(message, "cooling_fan_on", None)
         raw_hfan = getattr(message, "fan_on", None)
-        raw_speed = getattr(message, "fan_speed", None)
+        raw_cspeed = getattr(message, "cooling_fan_speed", None)
+        raw_hspeed = getattr(message, "fan_speed", None)
         c_fan = raw_cfan if isinstance(raw_cfan, bool) else None
         h_fan = raw_hfan if isinstance(raw_hfan, bool) else None
-        speed = (
-            raw_speed
-            if isinstance(raw_speed, int) and not isinstance(raw_speed, bool)
+        c_speed = (
+            raw_cspeed
+            if isinstance(raw_cspeed, int) and not isinstance(raw_cspeed, bool)
             else None
         )
+        h_speed = (
+            raw_hspeed
+            if isinstance(raw_hspeed, int) and not isinstance(raw_hspeed, bool)
+            else None
+        )
+        speed = h_speed if h_fan is True else c_speed if c_fan is True else h_speed
         c_act = bool(message.is_cooling())
         h_act = bool(message.is_heating())
         z_act = bool(message.is_active() or c_act or h_act or c_fan or h_fan)

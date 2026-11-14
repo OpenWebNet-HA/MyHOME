@@ -3,7 +3,7 @@
     "kind": "synthetic-firmware-oracle-trace",
     "synthetic": true,
     "source": "firmware-oracle-contract",
-    "provenance": "SYNTHETIC TRACE — NOT A LIVE PLANT CAPTURE. Deterministically constructed from own-firmware-oracle suite thermo-zone-requests on emulated F459 firmware 2.1.5 (020105, target SHA b7b1d924fc16), bt_termo disassembly ($04B7813380 -> *#4*1#3*20*100## for 0% 0-10 V OFF; $04B78133B7 -> *#4*1#3*20*155## for 55% active), and the Sabiana fan-coil + floor-heating plant timeline reported in Issue #908.",
+    "provenance": "SYNTHETIC TRACE — NOT A LIVE PLANT CAPTURE. Deterministically constructed from own-firmware-oracle suites thermo-actuator (*#4*1*20##) and thermo-zone-requests (*#4*2*20##) on emulated F459 firmware 2.1.5 (020105, target SHA b7b1d924fc16), bt_termo disassembly ($04B7813380 -> *#4*1#3*20*100## for 0% 0-10 V OFF; $04B78133B7 -> *#4*1#3*20*155## for 55% active), and the Sabiana fan-coil + floor-heating plant timeline reported in Issue #908.",
     "started_at": "2026-11-14T08:00:00.000Z",
     "filters": {
       "who": "4,13",
@@ -135,7 +135,7 @@
       "is_ack": false,
       "is_nack": false,
       "scs_emitted": "$04A9013010",
-      "note": "SYNTHETIC (F459 020105 oracle thermo-zone-requests): ACK + OUT ($04A9013010)."
+      "note": "SYNTHETIC (F459 020105 oracle thermo-actuator): OUT on SCS ($04A9013010; oracle reply=nack without slave)."
     },
     {
       "timestamp": 1794643201.65,
@@ -233,7 +233,7 @@
       "is_ack": false,
       "is_nack": false,
       "scs_emitted": "$04A9023010",
-      "note": "SYNTHETIC (F459 020105 oracle thermo-zone-requests): ACK + OUT ($04A9023010)."
+      "note": "SYNTHETIC (F459 020105 oracle thermo-zone-requests): OUT on SCS ($04A9023010; oracle reply=nack without slave)."
     },
     {
       "timestamp": 1794643202.65,

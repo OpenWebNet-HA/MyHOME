@@ -183,12 +183,32 @@ def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
         assert thermo_dim20_is_active(evt) is True
         assert thermo_dim20_is_active(cmd) is True
 
-    # Status requests, non-digit values, out-of-table codes, and non-Dim20 messages -> None
+    # Status requests, cross-WHO frames, non-ASCII digits, out-of-table codes, and non-Dim20 -> None
     assert thermo_dim20_status(OWNHeatingCommand("*#4*1#3*20##")) is None
     assert thermo_dim20_is_active(OWNHeatingCommand("*#4*1#3*20##")) is None
+    assert thermo_dim20_status(OWNMessage.parse("*#13**20*1##")) is None
+    assert thermo_dim20_is_active(OWNMessage.parse("*#13**20*1##")) is None
     assert thermo_dim20_status(OWNHeatingEvent("*#4*1*0*0200##")) is None
     assert (
-        thermo_dim20_status(SimpleNamespace(dimension=20, dimension_value=["abc"]))
+        thermo_dim20_status(
+            SimpleNamespace(
+                who=4,
+                dimension=20,
+                message_type=MESSAGE_TYPE_ACTION,
+                dimension_value=["abc"],
+            )
+        )
+        is None
+    )
+    assert (
+        thermo_dim20_status(
+            SimpleNamespace(
+                who=4,
+                dimension=20,
+                message_type=MESSAGE_TYPE_ACTION,
+                dimension_value=["\u00b2"],
+            )
+        )
         is None
     )
     assert thermo_dim20_status(OWNHeatingEvent("*#4*1#3*20*999##")) is None
@@ -203,8 +223,14 @@ def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
     mock_d20.is_active.return_value = True
     assert thermo_dim20_status(mock_d20) == (True, True, 2)
     assert thermo_dim20_status(SimpleNamespace(dimension=20, message_type="other")) is None
+    assert (
+        thermo_dim20_status(
+            SimpleNamespace(dimension=20, message_type=MESSAGE_TYPE_ACTION)
+        )
+        is None
+    )
 
-    # Dimension 19 decoding across 100, 101..200, 14..16, and invalid/mock fallbacks
+    # Dimension 19 decoding across 100, 101..200, 14..16, cooling fan speed, and invalid/mock fallbacks
     assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19*0*100##")) == (
         False,
         False,
@@ -237,8 +263,46 @@ def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
         False,
         None,
     )
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*2*19*7*5##")) == (
+        True,
+        False,
+        True,
+        True,
+        False,
+        2,
+    )
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*2*19*7*0##")) == (
+        True,
+        False,
+        True,
+        True,
+        None,
+        2,
+    )
     assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19*0*999##")) is None
     assert thermo_dim19_status(OWNHeatingEvent("*#4*1*0*0200##")) is None
+    assert (
+        thermo_dim19_status(
+            SimpleNamespace(
+                who=13,
+                dimension=19,
+                message_type=MESSAGE_TYPE_ACTION,
+                dimension_value=["7", "5"],
+            )
+        )
+        is None
+    )
+    assert (
+        thermo_dim19_status(
+            SimpleNamespace(
+                who=4,
+                dimension=19,
+                message_type=MESSAGE_TYPE_ACTION,
+                dimension_value=["\u00b2", "0"],
+            )
+        )
+        is None
+    )
 
     mock_d19 = MagicMock(
         dimension=19,
@@ -251,6 +315,19 @@ def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
     mock_d19.is_heating.return_value = True
     mock_d19.is_active.return_value = True
     assert thermo_dim19_status(mock_d19) == (False, True, True, False, True, 3)
+
+    mock_d19_cool = MagicMock(
+        dimension=19,
+        message_type=MESSAGE_TYPE_ACTION,
+        cooling_fan_on=True,
+        cooling_fan_speed=2,
+        fan_on=False,
+        fan_speed=None,
+    )
+    mock_d19_cool.is_cooling.return_value = True
+    mock_d19_cool.is_heating.return_value = False
+    mock_d19_cool.is_active.return_value = True
+    assert thermo_dim19_status(mock_d19_cool) == (True, False, True, True, False, 2)
     assert (
         thermo_dim19_status(
             SimpleNamespace(dimension=19, message_type=MESSAGE_TYPE_ACTION)
@@ -428,14 +505,18 @@ async def test_myhomeserver1_extended_off_14_16_and_probeless_zone_no_ghost_clim
             async_dispatcher_send(hass, f"myhome_message_{MAC}", evt_d19)
         sw_by_where["8"].handle_event(evt_d19)
         assert sw_by_where["8"].is_on is expected_on
-    assert "8" not in {c._where for c in added_climates}
+
+    # Unlisted Dim 20 (250) and Dim 19 (999) codes on probe-less zones ALSO defer (#785)
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7#1*20*250##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*8*19*0*999##"))
+    assert {c._where for c in added_climates} == {"1"}
 
 
 @pytest.mark.asyncio
 async def test_climate_dim19_and_dim20_unrecognized_and_modulating_cooling(
     hass: HomeAssistant,
 ) -> None:
-    """Unrecognized Dim 19/20 codes are ignored cleanly; Dim 19 modulating cooling/heating sets action."""
+    """Unrecognized Dim 19/20 codes are ignored cleanly; Dim 19 modulating & cooling fan speed work."""
     gw = _make_gateway()
     zone = _make_zone(hass, gw, "1")
     zone._attr_hvac_mode = HVACMode.AUTO
@@ -453,3 +534,27 @@ async def test_climate_dim19_and_dim20_unrecognized_and_modulating_cooling(
     assert zone.hvac_action == HVACAction.HEATING
     zone.handle_event(OWNHeatingEvent("*#4*1*19*100*100##"))
     assert zone.hvac_action == HVACAction.IDLE
+
+    # Live F455 cooling fan-coil frames (*#4*2*19*7*5## and *#4*2*19*7*0##) preserve cooling speed
+    # and transition cleanly to running_fan_speed == "off" & HVACAction.IDLE on 14..16 / 5!
+    cool_zone = _make_zone(hass, gw, "2")
+    cool_zone._attr_hvac_mode = HVACMode.COOL
+    cool_zone.handle_event(OWNHeatingEvent("*#4*2*19*7*5##"))
+    assert cool_zone.hvac_action == HVACAction.COOLING
+    assert cool_zone._fan is True
+    assert cool_zone.extra_state_attributes["running_fan_speed"] == "medium"
+
+    cool_zone.handle_event(OWNHeatingEvent("*#4*2*19*14*5##"))
+    assert cool_zone.hvac_action == HVACAction.IDLE
+    assert cool_zone.extra_state_attributes["running_fan_speed"] == "off"
+
+    cool_only_fan = _make_zone(hass, gw, "3")
+    cool_only_fan._attr_hvac_mode = HVACMode.COOL
+    cool_only_fan.handle_event(OWNHeatingEvent("*#4*3*19*7*0##"))
+    assert cool_only_fan.hvac_action == HVACAction.COOLING
+    assert cool_only_fan._fan is True
+    assert cool_only_fan.extra_state_attributes["running_fan_speed"] == "medium"
+
+    cool_only_fan.handle_event(OWNHeatingEvent("*#4*3*19*14*0##"))
+    assert cool_only_fan.hvac_action == HVACAction.IDLE
+    assert cool_only_fan.extra_state_attributes["running_fan_speed"] == "off"
