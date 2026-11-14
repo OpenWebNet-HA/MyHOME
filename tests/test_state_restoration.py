@@ -18,6 +18,7 @@ from custom_components.myhome.sensor import (
     MyHOMEEnergySensor,
     MyHOMEIlluminanceSensor,
     MyHOMEPowerSensor,
+    MyHOMESensorEntity,
     MyHOMETemperatureSensor,
 )
 from custom_components.myhome.switch import MyHOMESwitch
@@ -274,7 +275,8 @@ async def test_sensors_state_restoration(hass, mock_gateway):
     await lux.async_added_to_hass()
     assert lux.native_value == 350.0
 
-    # 5. Non-numeric sensor state fallback
+    # 5. Non-numeric state: rejected on numeric measurement sensors (avoiding HA ValueError),
+    #    preserved on unitless non-numeric MyHOMESensorEntity subclasses.
     str_sensor = MyHOMEIlluminanceSensor(
         hass=hass,
         name="Sensor Status",
@@ -290,4 +292,23 @@ async def test_sensors_state_restoration(hass, mock_gateway):
         return_value=State("sensor.sensor_status", "calibrating")
     )
     await str_sensor.async_added_to_hass()
-    assert str_sensor.native_value == "calibrating"
+    assert str_sensor.native_value is None
+    assert str_sensor.state is None
+
+    text_sensor = MyHOMESensorEntity(
+        hass=hass,
+        name="Sensor Mode",
+        platform="sensor",
+        device_id="1-17",
+        who="1",
+        where="17",
+        manufacturer="BTicino",
+        model="Status",
+        gateway=mock_gateway,
+    )
+    text_sensor.async_get_last_state = AsyncMock(
+        return_value=State("sensor.sensor_mode", "calibrating")
+    )
+    await text_sensor.async_added_to_hass()
+    assert text_sensor.native_value == "calibrating"
+    assert text_sensor.state == "calibrating"
