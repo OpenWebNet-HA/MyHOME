@@ -370,6 +370,58 @@ async def test_button_setup_prunes_orphans_on_followers_only(hass: HomeAssistant
         await platform.async_reset()
 
 
+@pytest.mark.parametrize("follower", [True, False])
+async def test_button_setup_does_not_recreate_yaml_buttons_of_a_pruned_duplicate(
+    hass: HomeAssistant, follower: bool
+) -> None:
+    """A follower's myhome.yaml actuator that lives on the primary gets no lock / unlock buttons.
+
+    The button platform pruned the orphaned buttons and then created them again from the
+    entry's YAML config, on a device with nothing else (live F455 standby next to an F461
+    on 2.0.0b18, 2026-11-14: 20 lock / unlock buttons on 10 otherwise empty devices).
+    """
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    if follower:
+        entry_p, entry_x = _follower(hass)
+    else:
+        entry_p, _ = _create_mock_gateway(hass, PRI)
+        entry_x, _ = _create_mock_gateway(hass, NEW)
+    _actuator(hass, entry_p, PRI, "21")
+    _, cover, orphans = _actuator(hass, entry_x, NEW, "21")
+    registry.async_remove(cover.entity_id)  # what restore() does to the follower's duplicate
+    _actuator(hass, entry_x, NEW, "85", buttons=False)  # the primary lacks it
+    entry_x.runtime_data.platforms["button"] = {
+        "dup": {"who": "2", "where": "21", "name": "Duplicate"},
+        "own": {"who": "2", "where": "85", "name": "Only here"},
+        "new": {"who": "1", "where": "33", "name": "Not in any registry yet"},
+    }
+
+    platform = EntityPlatform(
+        hass=hass, logger=logging.getLogger(__name__), domain="button", platform_name=DOMAIN,
+        platform=button, scan_interval=timedelta(seconds=30), entity_namespace=None,
+    )
+    assert await platform.async_setup_entry(entry_x)
+    await hass.async_block_till_done()
+    try:
+        lock_buttons = {
+            e.unique_id
+            for e in er.async_entries_for_config_entry(registry, entry_x.entry_id)
+            if e.domain == "button" and e.unique_id.endswith(("-disable", "-enable"))
+        }
+        kept = {f"{NEW}-{who}-{where}-{suffix}" for who, where in (("2", "85"), ("1", "33")) for suffix in ("disable", "enable")}
+        duplicate = {f"{NEW}-2-21-disable", f"{NEW}-2-21-enable"}
+        assert lock_buttons == (kept if follower else kept | duplicate)
+        shells = [
+            d for d in dr.async_entries_for_config_entry(devices, entry_x.entry_id)
+            if (DOMAIN, f"{NEW}-2-21") in d.identifiers
+        ]
+        assert bool(shells) is not follower  # no empty "Duplicate" device left on the follower
+        if follower:
+            assert all(registry.async_get(b) is None for b in orphans)
+    finally:
+        await platform.async_reset()
+
+
 async def test_calibrate_all_button_reactive_availability_and_no_covers(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:

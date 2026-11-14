@@ -39,7 +39,7 @@ from .const import (
     SERVICE_CALIBRATE_COVER,
 )
 from .data import MyHOMEConfigEntry, get_runtime_data
-from .discovery import Address, parse_unique_id, prune_orphaned_companions
+from .discovery import Address, actuator_only_on_primary, parse_unique_id, prune_orphaned_companions
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 from .sound_source import source_address, tuner_source, uses_who22_commands
@@ -169,7 +169,27 @@ async def async_setup_entry(
         )
         return [DisableCommandButtonEntity(**common), EnableCommandButtonEntity(**common)]
 
+    def _pruned_in_favour_of_primary(dev_id: str | int, cfg: dict[str, Any]) -> bool:
+        """A follower's ``myhome.yaml`` actuator that lives on the primary gateway only.
+
+        ``PlatformDiscovery`` does not create such an actuator again (#453), and
+        ``prune_orphaned_companions`` has just removed its buttons: creating them here
+        would bring them back at every start, on a device that has nothing else
+        (live F455 standby next to an F461, 2026-11-14: 20 lock / unlock buttons on
+        10 otherwise empty devices).
+        """
+        primary_mac = runtime.primary_gateway_mac
+        if not runtime.is_follower or not primary_mac:
+            return False
+        who = str(cfg.get(CONF_WHO, "1"))
+        address = Address.from_config(str(dev_id), cfg)
+        return actuator_only_on_primary(
+            er.async_get(hass), f"{gateway.mac}-{who}-{address.clean_key}", mac, primary_mac
+        )
+
     for _button in list(_configured_buttons.keys()):
+        if _pruned_in_favour_of_primary(_button, _configured_buttons[_button]):
+            continue
         _buttons.extend(_create_buttons_for_device(_button, _configured_buttons[_button]))
 
     # Discovered actuators are restored by their platforms from the registry.
