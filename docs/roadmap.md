@@ -5,14 +5,13 @@ Welcome to the development roadmap and architectural status overview for the **M
 Our overarching mission is to provide the most reliable, complete, and high-performance integration between Home Assistant and the BTicino / Legrand SCS OpenWebNet ecosystem. We adhere to strict standards: **zero-latency asynchronous architecture**, **hardware-level protocol fidelity**, **100% automated test coverage**, and **full Home Assistant Core 2025/2026 compatibility**.
 
 > [!TIP]
-> For release-by-release changelogs, capability matrices, and direct GitHub compare links across all releases, see the companion document:  
-> 🔗 [**Beta Evolution, Architectural Milestones & Delta Explorer**](roadmap/beta-differences.md)
+> For release-by-release changelogs, download assets, and direct GitHub compare links across published versions, see [**GitHub Releases**](https://github.com/OpenWebNet-HA/MyHOME/releases).
 
 ---
 
-## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b18 Released)
+## 🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b18** releases. **v2.0.0b17** was published on 2026-11-04; **v2.0.0b18** follows with the 38 pull requests merged since, on OWNd 2.0.0b14. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across **v2.0.0b1 through v2.0.0b18** on OWNd 2.0.0b14. The remaining work is final **v2.0.0** release stabilization: see *Final Stabilization* below.
 
 ```mermaid
 gantt
@@ -70,7 +69,7 @@ gantt
 
 ## 📦 What is Shipped & Operational in the v2.0.0 Series
 
-The following table summarizes the completed architectural features and protocol subsystems verified across the current beta series:
+The following table summarizes the completed architectural features and protocol subsystems verified for the v2.0.0 release:
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
@@ -202,7 +201,7 @@ graph TD
         SUB_ENERGY["🟢 Energy Management (WHO 18)<br/>(W, V, mA & F520 sweeps #494)"]
         SUB_DRY["🟢 Dry Contacts (WHO 25)<br/>(Technical alarms & AUX)"]
         SUB_CEN["🟢 CEN / CEN+ (WHO 15/25)<br/>(Triggers & long-press debounce)"]
-        SUB_AUDIO["🟢 Multi-Room Audio (WHO 16)<br/>(Matrix routing & F500 tuner)"]
+        SUB_AUDIO["🟢 Multi-Room Audio (WHO 16/22)<br/>(Matrix routing & F500 tuner)"]
         SUB_ALARM["🟢 Burglar Alarm (WHO 5)<br/>(Partitions & central unit)"]
         SUB_ROUTER["🟢 F422 Bus Router<br/>(Cross-bus #4#02 routing covered)"]
     end
@@ -307,6 +306,6 @@ Ideal for installers, bench testers, and developers testing isolated gateways wi
 
 Please share your feedback, real-world bus captures, and questions in our community channels:
 
-👉 **[Beta Evolution & Differences Matrix](roadmap/beta-differences.md)** — Side-by-side capabilities across all releases  
+👉 **[GitHub Releases & Changelogs](https://github.com/OpenWebNet-HA/MyHOME/releases)** — Release notes and download archives  
 👉 **[Join the Community Discussion on RFC #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)**  
-👉 **[Report Beta Issues or Submit Bus Traces](https://github.com/OpenWebNet-HA/MyHOME/issues)**
+👉 **[Report Issues or Submit Bus Traces](https://github.com/OpenWebNet-HA/MyHOME/issues)**

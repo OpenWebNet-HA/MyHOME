@@ -414,3 +414,226 @@ def test_check_all_documentation_follows_ownd_142_rows_at_the_pin_bump(tmp_path,
     ok_prof, msgs_prof = syncdoc.sync_gateway_profiles(update=False)
     assert ok_prof is False
     assert any("Gateway profile oracle mismatch" in m for m in msgs_prof)
+
+
+def test_sync_mkdocs_nav_detects_duplicates_and_missing_targets(tmp_path, monkeypatch):
+    """Verify sync_mkdocs_nav catches duplicate nav entries, missing nav files, and Material python tags."""
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (docs_dir / "index.md").write_text("# Home\n", encoding="utf-8")
+    (docs_dir / "guide.md").write_text("# Guide\n", encoding="utf-8")
+
+    mkdocs_yml = tmp_path / "mkdocs.yml"
+    mkdocs_yml.write_text(
+        "site_name: Test\n"
+        "markdown_extensions:\n"
+        "  - pymdownx.emoji:\n"
+        "      emoji_index: !!python/name:material.extensions.emoji.twemoji\n"
+        "nav:\n"
+        "  - Home: index.md\n"
+        "  - Guide: guide.md\n"
+        "  - Duplicate Guide: guide.md\n"
+        "  - Ghost: missing_page.md\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(syncdoc, "DOCS_DIR", docs_dir)
+    monkeypatch.setattr(syncdoc, "MKDOCS_YML", mkdocs_yml)
+
+    ok, messages = syncdoc.sync_mkdocs_nav(update=False)
+    assert ok is False
+    assert any("Duplicate markdown pages" in m and "guide.md" in m for m in messages)
+    assert any("missing markdown files" in m and "missing_page.md" in m for m in messages)
+
+
+def test_check_readme_and_site_standards_real_tree():
+    """Verify starting README, license metadata, and versioned docs workflow pass on real tree."""
+    ok, messages = syncdoc.check_readme_and_site_standards()
+    assert ok is True, f"Standards check failed on real tree: {messages}"
+
+
+def test_check_readme_and_site_standards_rejects_agpl_beta_and_legacy_comparisons(tmp_path, monkeypatch):
+    """Verify check_readme_and_site_standards flags AGPL, /MyHOME/beta, and legacy 0.9.4 comparisons."""
+    (tmp_path / "LICENSE").write_text("Apache License 2.0\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# MyHOME\n\n"
+        "Manual: https://openwebnet-ha.github.io/MyHOME/beta/\n"
+        "Wiki: https://github.com/OpenWebNet-HA/MyHOME/wiki\n"
+        "Safe Rollback to 0.9.4 if needed. Older cores stay on 2.0.0b12.\n"
+        "Licensed under AGPL-3.0 — see [LICENSE](LICENSE).\n",
+        encoding="utf-8",
+    )
+    mkdocs_yml = tmp_path / "mkdocs.yml"
+    mkdocs_yml.write_text(
+        'copyright: "Licensed under AGPL-3.0"\n'
+        "nav:\n"
+        "  - Beta: roadmap/beta-differences.md\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        '{"documentation": "https://openwebnet-ha.github.io/MyHOME/beta/"}',
+        encoding="utf-8",
+    )
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        'license = "AGPL-3.0"\n'
+        'Documentation = "https://openwebnet-ha.github.io/MyHOME/beta/"\n'
+        'Wiki = "https://github.com/anotherjulien/MyHOME/wiki"\n',
+        encoding="utf-8",
+    )
+    issue_cfg = tmp_path / "config.yml"
+    issue_cfg.write_text(
+        "url: https://openwebnet-ha.github.io/MyHOME/beta/\n"
+        "wiki: https://github.com/OpenWebNet-HA/MyHOME/wiki\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(syncdoc, "README_MD", readme)
+    monkeypatch.setattr(syncdoc, "MKDOCS_YML", mkdocs_yml)
+    monkeypatch.setattr(syncdoc, "MANIFEST_JSON", manifest)
+    monkeypatch.setattr(syncdoc, "PYPROJECT_TOML", pyproject)
+    monkeypatch.setattr(syncdoc, "ISSUE_TEMPLATE_CONFIG", issue_cfg)
+
+    ok, messages = syncdoc.check_readme_and_site_standards()
+    assert ok is False
+    assert any("README.md still links to '/MyHOME/beta'" in m for m in messages)
+    assert any("README.md still links to deprecated GitHub '/wiki'" in m for m in messages)
+    assert any("README.md contains outdated AGPL" in m for m in messages)
+    assert any("legacy v0.9.4" in m for m in messages)
+    assert any("Safe Rollback" in m for m in messages)
+    assert any("Older cores stay on" in m for m in messages)
+    assert any("mkdocs.yml contains outdated AGPL" in m for m in messages)
+    assert any("beta-differences.md" in m for m in messages)
+    assert any("manifest.json 'documentation'" in m for m in messages)
+    assert any("pyproject.toml still points Documentation URL to '/MyHOME/beta'" in m for m in messages)
+    assert any("pyproject.toml still points URL to deprecated GitHub '/wiki'" in m for m in messages)
+    assert any("ISSUE_TEMPLATE/config.yml still points User Manual URL to '/MyHOME/beta'" in m for m in messages)
+    assert any("ISSUE_TEMPLATE/config.yml still points URL to deprecated GitHub '/wiki'" in m for m in messages)
+
+
+def test_check_readme_and_site_standards_detects_broken_readme_links_and_anchors(tmp_path, monkeypatch):
+    """Verify README.md link/anchor/image validation catches broken targets while ignoring code fences."""
+    (tmp_path / "LICENSE").write_text("Apache License 2.0\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text(
+        "# MyHOME\n\n"
+        "[Manual](https://openwebnet-ha.github.io/MyHOME/) • "
+        "[Valid Section](#quick-start) • "
+        "[Bad Emoji](#\ufe0f-supported-hardware) • "
+        "[Missing Anchor](#does-not-exist) • "
+        "[Missing File](SECURITY.md) • "
+        "[Empty]()\n\n"
+        '<img src="docs/images/missing.jpg" alt="missing">\n\n'
+        "```markdown\n"
+        "# Heading Inside Code Fence Should Be Ignored\n"
+        "[Ignored Broken Link](NONEXISTENT_IN_FENCE.md)\n"
+        "```\n\n"
+        "## Quick Start\n\n"
+        "Licensed under [Apache License 2.0](LICENSE).\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(syncdoc, "README_MD", readme)
+    ok, messages = syncdoc.check_readme_and_site_standards()
+    assert ok is False
+    assert any("Malformed heading anchor" in m for m in messages)
+    assert any("Unresolved internal heading anchor" in m and "#does-not-exist" in m for m in messages)
+    assert any("Broken relative file link" in m and "SECURITY.md" in m for m in messages)
+    assert any("Empty link target" in m for m in messages)
+    assert any("Broken HTML image src" in m and "docs/images/missing.jpg" in m for m in messages)
+    assert not any("NONEXISTENT_IN_FENCE.md" in m for m in messages)
+
+
+def test_check_readme_and_site_standards_detects_docs_workflow_regressions(tmp_path, monkeypatch):
+    """Verify check_readme_and_site_standards catches v0.9.4 -> latest alias hijack, missing beta pruning, or missing master refresh."""
+    bad_wf = tmp_path / "docs.yml"
+    bad_wf.write_text(
+        "mike deploy --push --update-aliases -F mkdocs-v0.9.yml 0.9.4 latest -t 'v0.9.4 (latest)'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(syncdoc, "DOCS_WORKFLOW", bad_wf)
+
+    ok, messages = syncdoc.check_readme_and_site_standards()
+    assert ok is False
+    assert any("aliases legacy mkdocs-v0.9.yml (0.9.4) to 'latest'" in m for m in messages)
+    assert any("must prune pre-release" in m for m in messages)
+    assert any("strip stale non-legacy aliases" in m for m in messages)
+    assert any("keep '/latest/' updated on pushes to master" in m for m in messages)
+    assert any("guard older-minor patch releases" in m for m in messages)
+
+
+def test_check_readme_and_site_standards_rejects_beta_and_wiki_urls_in_component_and_docs(
+    tmp_path, monkeypatch
+):
+    """Verify /MyHOME/beta and legacy /wiki URLs in custom_components/myhome/ or docs/ fail checks."""
+    comp_dir = tmp_path / "custom_components" / "myhome"
+    comp_dir.mkdir(parents=True)
+    (comp_dir / "repairs.py").write_text(
+        'URL1 = "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/"\n'
+        'URL2 = "https://github.com/OpenWebNet-HA/MyHOME/wiki/Configuration#timezone"\n',
+        encoding="utf-8",
+    )
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "guide.md").write_text(
+        "See [beta](https://openwebnet-ha.github.io/MyHOME/beta/) and "
+        "[wiki](https://github.com/OpenWebNet-HA/MyHOME/wiki/Gateway-Timezone-Configuration).\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(syncdoc, "CUSTOM_COMPONENTS_DIR", comp_dir)
+    monkeypatch.setattr(syncdoc, "DOCS_DIR", docs_dir)
+
+    ok, messages = syncdoc.check_readme_and_site_standards()
+    assert ok is False
+    assert any("repairs.py still points documentation URL to '/MyHOME/beta'" in m for m in messages)
+    assert any("repairs.py still points documentation URL to legacy GitHub '/wiki'" in m for m in messages)
+    assert any("guide.md still links to '/MyHOME/beta'" in m for m in messages)
+    assert any("guide.md still links to legacy GitHub '/wiki'" in m for m in messages)
+
+
+def test_canonical_site_url_and_cross_version_relative_link_validation(tmp_path, monkeypatch):
+    """Verify broken /MyHOME/latest/, /MyHOME/0.9.4/, #anchors, and ../../0.9.4 relative links fail."""
+    docs_dir = tmp_path / "docs"
+    (docs_dir / "configuration").mkdir(parents=True)
+    (docs_dir / "index.md").write_text("# Home\n", encoding="utf-8")
+    (docs_dir / "configuration" / "use_cases.md").write_text(
+        "# Use Cases\n\n## 5. Audio { #music-assistant }\n",
+        encoding="utf-8",
+    )
+    (docs_dir / "configuration" / "alarm.md").write_text(
+        "# Alarm\n\nBroken relative escape: [Legacy](../../0.9.4/configuration/alarm/)\n",
+        encoding="utf-8",
+    )
+
+    docs_v09_dir = tmp_path / "docs-v0.9"
+    (docs_v09_dir / "getting-started").mkdir(parents=True)
+    (docs_v09_dir / "index.md").write_text("# Legacy Home\n", encoding="utf-8")
+    (docs_v09_dir / "getting-started" / "installation.md").write_text(
+        "# Legacy Install\n\n"
+        "Broken relative escape: [v2](../../latest/getting-started/installation/)\n"
+        "Valid canonical: [Use Cases](https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/#music-assistant)\n"
+        "Missing page: [Ghost](https://openwebnet-ha.github.io/MyHOME/latest/configuration/does_not_exist/)\n"
+        "Missing anchor: [Bad Anchor](https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/#wrong-anchor)\n"
+        "Unversioned URL: [No Version](https://openwebnet-ha.github.io/MyHOME/configuration/alarm/)\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(syncdoc, "DOCS_DIR", docs_dir)
+    monkeypatch.setattr(syncdoc, "DOCS_V09_DIR", docs_v09_dir)
+
+    ok_rel, rel_msgs = syncdoc.check_markdown_link_health()
+    assert ok_rel is False
+    assert any("alarm.md" in m and "../../0.9.4/configuration/alarm/" in m for m in rel_msgs)
+    assert any("installation.md" in m and "../../latest/getting-started/installation/" in m for m in rel_msgs)
+
+    site_errs = syncdoc._validate_canonical_site_urls(
+        (docs_v09_dir / "getting-started" / "installation.md").read_text(encoding="utf-8"),
+        "docs-v0.9/getting-started/installation.md",
+    )
+    assert any("missing manual page" in m and "does_not_exist" in m for m in site_errs)
+    assert any("missing anchor '#wrong-anchor'" in m for m in site_errs)
+    assert any("unversioned or unsupported manual URL" in m for m in site_errs)
+    assert not any("#music-assistant" in m for m in site_errs)

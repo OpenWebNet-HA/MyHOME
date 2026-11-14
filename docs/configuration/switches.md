@@ -95,4 +95,4 @@ switch:
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `switch:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Switch Documentation](../../0.9.4/configuration/switches/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all switches are managed dynamically via Home Assistant's native registry.
+> If you are upgrading from legacy v0.9 installations and still have manual `switch:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Switch Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/switches/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all switches are managed dynamically via Home Assistant's native registry.

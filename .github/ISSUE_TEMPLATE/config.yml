@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 📖 MyHOME v2 Documentation & Guides
-    url: https://openwebnet-ha.github.io/MyHOME/beta/
+  - name: 📖 MyHOME User Manual & Guides
+    url: https://openwebnet-ha.github.io/MyHOME/
     about: Read the official configuration guides, Bus Monitor instructions, and troubleshooting documentation.
   - name: 💬 Community Discussions & Questions
     url: https://github.com/OpenWebNet-HA/MyHOME/discussions

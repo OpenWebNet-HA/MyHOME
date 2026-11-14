@@ -69,7 +69,7 @@ Explore dedicated guides for each MyHOME subsystem:
 | **Lighting & Dimmers** | `WHO = 1` | [Lights & Dimmers Guide](lights.md) |
 | **Motorized Covers & Shutters** | `WHO = 2` | [Covers & Shutters Guide](covers.md) |
 | **Heating & Climate Control** | `WHO = 4` | [Climate & Heating Guide](climate.md) |
-| **Diffusione Sonora (Sound System)** | `WHO = 16` | [Sound System / Media Player Guide](media_player.md) |
+| **Diffusione Sonora (Sound System)** | `WHO = 16`, `WHO = 22` | [Sound System / Media Player Guide](media_player.md) |
 | **Scenario Pushbuttons & Rotary Dials** | `WHO = 15`, `WHO = 25` | [CEN & CEN+ Device Triggers Guide](cen_cenplus.md) |
 | **Switches, Relays & Sockets** | `WHO = 1` | [Switches & Relays Guide](switches.md) |
 | **Electrical Energy & Power Meters** | `WHO = 18` | [Sensors & Energy Guide](sensors.md) |

@@ -9,7 +9,7 @@ Historically, these technical specifications were distributed through the *MyOpe
 - 🏛️ **Official Legrand Developer Portal**: [Legrand Local Interoperability — PDF Documentation](https://developer.legrand.com/local-interoperability/#PDF%20documentation)
 - 📦 **Master Document Archive**: [OWN DOC.zip (GitHub PR #232 Attachment)](https://github.com/user-attachments/files/32008617/OWN.DOC.zip) — Complete 15-document bundle preserved and contributed by **@GianlucaCh**.
 - 🪄 **Home Assistant Community Blueprint**: [MyHome CEN+ Commands Blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345) — Connect physical MyHOME CEN / CEN+ scenario pushbuttons to toggle non-BTicino entities and dim lights.
-- 📖 **Interactive GitHub Wiki**: [OpenWebNet Protocol & WHO Specifications](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications)
+- 📖 **OpenWebNet Encyclopedia (Machine-Readable KB & Reference)**: [OpenWebNet-HA/OpenWebNet-Encyclopedia](https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia) — Epistemic protocol reference cross-checked against official specifications and hardware traces.
 
 ---
 
@@ -62,10 +62,10 @@ The table below catalogs every known OpenWebNet function family (`WHO`), its off
 | **13** | **Gateway Management** | `OpenWebNet_Community_2_device_v1_0_0_EN` / `WHO_13.pdf` | **v1.0.0 (2006-06-13)** | 🟢 | Core diagnostics | Date/time synchronization (`*#13**0*...`), firmware version query, IP configuration, MAC address, uptime, reboot command. Contributed by GianlucaCh. |
 | **14** | **Actuators Lock (Light & Shutters)** | `Light & Shutter Actuators Lock` *(No Public PDF)* | v1.0.0 (2008) | 🟢 | Core diagnostics, `button`, `lock` | Physical endpoint lock/unlock. Lock (`*14*0*<WHERE>##`), Unlock (`*14*1*<WHERE>##`), Status query (`*#14*<WHERE>##`). Inverts/locks physical wall button input. Legrand never distributed a public standalone PDF (internal diagnostic spec). |
 | **15** | **CEN Scenario Control (Scheduler)** | `CEN Frames for Scenario Scheduler` / `WHO_15-25.pdf` | **v1.0.0 (2010-10-01)** | 🟢 | `event`, device triggers | Pushbutton scenario events for Scenario Scheduler (MH200, MH200N, Legrand 03565): Virtual/physical pressure, short release, extended pressure, release after extended pressure. Contributed by GianlucaCh. |
-| **16** | **Sound Distribution (Zone/Amp Control)** | `OpenWebNet_Community_4_soundsystem` / `WHO_16.pdf` | **v1.0.1 (2011-11-24)** | 🟢 | `media_player` | Multi-room audio matrix & zone control: Amplifier ON/OFF, volume control (step & %), audio input source selection (RDS tuner, RCA/aux, USB, Bluetooth), equalizer (bass, treble, balance), station presets (F441, F441M, F450, 3487). |
+| **16** | **Sound Distribution (Zone/Amp Control)** | `OpenWebNet_Community_4_soundsystem` / `WHO_16.pdf` | **v1.0.1 (2011-11-24)** | 🟢 | `media_player`, `number`, `button` | Multi-room audio matrix & zone control: Amplifier ON/OFF, volume control (step & %), audio input source selection (RDS tuner, RCA/aux, USB, Bluetooth), equalizer (bass, treble, balance), station presets (F441, F441M, F500, F500N, F450, 3487). |
 | **17** | **Scenario Programmer (Scenes)** | `Who = 17 SCENES` / `WHO_17.pdf` | **v1.0.0 (2015-04-09)** | 🟢 | `switch`, `event` | MH200 / MH200N / MH202 scenario programmer integration, enable/disable automated schedules, trigger macro executions. Contributed by GianlucaCh. |
 | **18** | **Energy Management Functions** | `Energy Management Functions` / `WHO_18 1.pdf` | **v1.0.0 (2011-07-15)** | 🟢 | `sensor` | Electricity, water, and gas pulse meters. Instantaneous power (W), cumulative active energy (kWh), current (mA), voltage (V), power factor, tariff periods (F80/x, F520, F521, F522, F523, 3522). Contributed by GianlucaCh. |
-| **22** | **Sound Diffusion (Source & Speaker)** | `Who = 22 Sound Diffusion` / `WHO_22.pdf` | **v1.1.0 (2014-06-12)** | 🟢 | `media_player` | Sound source navigation & speaker control: Radio FM frequency step up/down, station navigation, track skipping (next/previous track), RDS text display control (`*22*31...`), station presets, and speaker volume. Contributed by GianlucaCh. |
+| **22** | **Sound Diffusion (Source & Speaker)** | `Who = 22 Sound Diffusion` / `WHO_22.pdf` | **v1.1.0 (2014-06-12)** | 🟢 | `media_player`, `number`, `button` | Sound source navigation & speaker control: Radio FM frequency step up/down, station navigation, track skipping (next/previous track), RDS text display control (`*22*31...`), station presets, active-source area notifications (`4#<area>`), and speaker volume (F500, F500N). Contributed by GianlucaCh. |
 | **24** | **Lighting Management (Gestione Luci)** | `Who_24_eng_PUBBLIC.doc` / `WHO_24.pdf` | **v1.0.0 (2012-04-06)** | 🟢 | `light`, `sensor` | Legrand / BTicino Lighting Management System (BMNE500 / 002645 room controller, BMview, Lighting Console). Zone addressing (`1000+zone`), dimensions 1–12 (switch-on level %, max lux, maintained level lux, auto switch on/off, switch on/off delay, delay timer, standby timer/value, off value, slave offset GAP), dimension 17 (state: Auto/Manual/Stop), dimension 18 (centralised lux sensor reporting). Profile frames (`*24*1#Profile_ID*WHERE##`) and slave offset (`*24*2#[0-1]*WHERE##`). Contributed by GianlucaCh. |
 | **25** *(CEN+)* | **CEN+ Scenario Control (Scheduler)** | `CEN Frames for Scenario Scheduler` / `WHO_15-25.pdf` | **v1.0.0 (2010-10-01)** | 🟢 | `event`, device triggers | Extended CEN protocol with up to 256 buttons/scenarios for MH200/MH200N/03565: Short pressure (<0.5s), start of extended pressure (>=0.5s), extended pressure holding, release after extended pressure. Contributed by GianlucaCh. |
 | **25** *(Contacts)* | **Dry Contact & IR State Functions** | `DRY CONTACT AND IR STATE FUNCTIONS` / `WHO_25.pdf` | **v1.0.0 (2010-11-04)** | 🟢 | `binary_sensor` | Dry contact interfaces & IR sensor state: State ON / IR detection (`WHAT=31`), State OFF / IR not detected (`WHAT=32`), event-driven (`PARAM=1`) or poll request (`PARAM=0`). BTicino 3477, F428, 3480, F482, IR 4610/4611/4640; Legrand 573996, 03553, 067513, etc. Contributed by GianlucaCh. |
@@ -106,24 +106,21 @@ A common source of confusion in the OpenWebNet ecosystem stems from the shared `
 
 ---
 
-### 2. Multi-Room Sound Distribution (`WHO = 16`) vs Sound Diffusion (`WHO = 22`)
+### 2. Multi-Room Sound System (`WHO = 16`) vs Sound Diffusion (`WHO = 22`)
 
-The sound subsystem is split across two dedicated OpenWebNet WHO families:
+`WHO = 16` and `WHO = 22` are two distinct OpenWebNet audio dialects encoding overlapping concepts with different commands, addresses, and dimensions:
 
-1. **WHO = 16 (Sound Distribution — Zone & Matrix Management)**:
-    - Controls physical audio amplifiers and source matrix units (F441, F441M, F450, 3487).
-    - Functions include: Zone power (ON/OFF), volume attenuation (0–31 scale / percentages), audio input channel routing (IN 1 to IN 4), tone equalizers (bass, treble, balance), and master room follow-me.
-    - Mapped to Home Assistant `media_player` entities.
+1. **WHO = 16 (Sound System — Amplifiers, Matrix Routing & Sources)**:
+    - Original BTicino sound-system dialect (`WHO_16.pdf` v1.0.1, `bt_difson` gateway daemon) covering **both** room amplifiers (`01`–`99`), F441/F441M environment matrix routing (`1ES`), **and** audio source / F500 / F500N FM tuner devices (`101`–`109`).
+    - Functions include: Zone power (`WHAT = 0/3/10/13`), volume (`0–31` scale), environment-to-source routing (`*16*3*1ES##`), tone equalizers, FM tuner frequency (`*#16*10S*#6*0*<KHZ>##`), presets (`*#16*10S*#7/<station>##`, `*#16*10S*#10*<slot>##`), seek, and RDS (`*#16*10S*8*...##`).
+    - Mapped in Home Assistant to zone `media_player` entities (plus dynamic streaming proxy) and tuner `media_player` / `number` / `button` entities.
 
-2. **WHO = 22 (Sound Diffusion — Source & Speaker Navigation)**:
-    - Controls the audio source devices themselves (FM tuner, CD player, multimedia source) and individual speaker units.
+2. **WHO = 22 (Sound Diffusion / Multimedia — Structured Later Dialect)**:
+    - Later multimedia dialect (`WHO_22.pdf` v1.1.0, `bt_multi` gateway daemon) using tagged addresses for sources (`2#<S>` / `5#2#<S>`), speakers (`3#<A>#<P>`), and speaker areas (`4#<A>`). Dual-stack gateways (`MH200N`, `MH202`, `H4890`, `H/L4684` FW ≥ `6.0.0`) emit both dialects; newer gateways (`MyHomeServer1`, `F459`, `F460`, `F461`) ship `bt_multi` (`WHO = 22`) only.
     - Functions include:
-        - FM tuner frequency step up/down (`WHAT = 5` / `WHAT = 6`).
-        - Station preset navigation (`WHAT = 9` next / `WHAT = 10` previous).
-        - Track navigation (`WHAT = 11` next track / `WHAT = 12` previous track).
-        - RDS text string display streaming (`WHAT = 31` start / `WHAT = 32` stop).
-        - Direct frequency tuning and preset memorization (`WHAT = 33`).
-        - Speaker volume adjustment (`WHAT = 3` increase / `WHAT = 4` decrease).
+        - FM tuner frequency search/tune (`WHAT = 5` / `WHAT = 6`), station preset navigation (`WHAT = 9` / `WHAT = 10`), preset storage (`WHAT = 33`), frequency/station telemetry (`Dimension 5 / 6 / 11`), and RDS text (`WHAT = 31` / `32`, `Dimension 10`).
+        - Active-source area notifications (`WHAT = 1/2/21/23#4#<area>`) and speaker volume/tone controls (`WHAT = 3` / `4`, `Dimension 1–4`).
+    - In Home Assistant, declared F500 / F500N FM tuners (`media_player`, `number`, `button`) are controlled and decoded across **both** `WHO = 16` and `WHO = 22` (including `WHO = 22`-only gateways), and dual-stack gateways also track `WHO = 22` active-source area routing (`4#<area>`) alongside `WHO = 16` room amplifier zones.
 
 ---
 

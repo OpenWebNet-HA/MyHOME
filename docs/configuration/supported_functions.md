@@ -21,7 +21,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | 15 | CEN scenario pushbuttons | device triggers | ✅ | Short / long press and release, rotary dials. |
 | 16 | Sound system | `media_player`, `number`, `button` | ✅ | F441 / F441M matrices, F500 / F500N FM radio tuners, streaming proxy for network decoders. |
 | 18 | Energy management | `sensor` | ✅ | Instantaneous power, total / daily / monthly energy. |
-| 22 | Sound diffusion (audio matrix & FM tuner) | `media_player`, `number`, `button` | ✅ | F500 / F500N FM tuner control and telemetry (`5#2#S` / `2#S`) on dual-stack and `WHO 22`-only gateways (`MyHomeServer1`, `F459`, `F460`, `F461`, `H/L4684` FW ≥ 6.0). |
+| 22 | Sound diffusion (audio matrix & FM tuner) | `media_player`, `number`, `button` | ✅ | F500 / F500N FM tuner control and telemetry (`5#2#S` / `2#S`) on dual-stack gateways (including `H/L4684` FW ≥ `6.0.0`) and `WHO 22`-only gateways (`MyHomeServer1`, `F459`, `F460`, `F461`), plus active-source area routing (`4#<area>`) on dual-stack plants (room amplifier discovery and zone commands require `WHO 16`). |
 | 24 | Lighting management (commercial) | — | ❌ | BMNE500 / BMview controllers; out of residential scope. |
 | 25 | CEN+ pushbuttons and dry contacts | device triggers, `binary_sensor` | ✅ | Short / long press, release; F482 / 3477 dry contacts. |
 

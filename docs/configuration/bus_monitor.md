@@ -71,7 +71,7 @@ The card interface provides a live telemetry stream and controls:
     - `🌡️ WHO=4` Thermoregulation
     - `🚨 WHO=5` Burglar Alarm
     - `🔘 WHO=15 / WHO=25` CEN & CEN+ Scenario Controls
-    - `🎵 WHO=16` Sound System / Audio Matrix
+    - `🎵 WHO=16 / WHO=22` Sound System / Sound Diffusion
     - `⚙️ WHO=13` Gateway Diagnostics
 - **Direction Filter**: Switch between `All`, `RX Only` (bus events), or `TX Only` (commands sent from Home Assistant).
 - **Free-Text & Regex Search**: Search for specific addresses (e.g. `*1*1*12##` or `12#1`).

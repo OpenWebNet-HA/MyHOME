@@ -126,10 +126,10 @@ You can adjust integration runtime parameters at any time without re-adding the 
 - Boolean switch (Default: `True`).
 - When enabled, detecting general (`WHERE = 0`) or room-wide broadcast commands automatically triggers targeted queries to keep individual entity states synchronized.
 
-### 5. Multi-Room Audio Routing & Dynamic Proxy Decoders (`WHO = 16`)
-- **Audio Source Names & Tuner Flags (`source_name_1`..`4`, `source_tuner_1`..`4`)**: Assign friendly names for the physical inputs on the F441/F441M audio matrix (e.g. "Living Room HiFi", "FM Tuner"). Flag tuner inputs so frequency and RDS commands are enabled.
-- **Default Source per Environment (`source_default_<env>`)**: Declares which source input is selected when an amplifier in that environment is switched on.
-- **Dynamic Proxy Decoders (`decoder_entity_1`..`4`, `decoder_source_1`..`4`, `decoder_pre_gain_1`..`4`)**: Map external software streaming players (e.g., Music Assistant, Squeezelite) to physical matrix inputs, with pre-gain calibration (-20 dB to +20 dB).
+### 5. Multi-Room Audio Routing, Tuners & Dynamic Proxy Decoders (`WHO = 16` / `WHO = 22`)
+- **Audio Source Names & Tuner Flags (`source_name_1`..`4`, `source_tuner_1`..`4`)**: Assign friendly names for the physical inputs on the F441/F441M audio matrix (e.g. "Living Room HiFi", "FM Tuner"). Flag F500/F500N tuner inputs so FM frequency, preset, and RDS controls are enabled across `WHO = 16` and `WHO = 22` (including `WHO = 22`-only gateways).
+- **Default Source per Environment (`source_default_<env>`)**: Declares which source input is selected when a `WHO = 16` amplifier in that environment is switched on.
+- **Dynamic Proxy Decoders (`decoder_entity_1`..`4`, `decoder_source_1`..`4`, `decoder_pre_gain_1`..`4`)**: Map external software streaming players (e.g., Music Assistant, Squeezelite) to physical matrix inputs (`WHO = 16`), with pre-gain calibration (-20 dB to +20 dB).
 
 ### 6. In-Place Gateway Reconfiguration
 - You can update the gateway IP address (`address`), password (`own_password`), or hardware model (`name`) directly within the Options Flow without removing and re-adding devices or breaking entity IDs.
@@ -156,7 +156,7 @@ See [Runtime Behaviour Notes](runtime_behaviour.md) for the reasoning behind eac
 
 OpenWebNet gateways manage an internal real-time clock (RTC) queried via WHO=13 dimension 0 (`*#13**0##`) or dimension 22 (`*#13**22##`). When the timezone has not been configured in the gateway's management interface, the gateway emits a placeholder sentinel value `999` in the timezone field (e.g. `*#13**0*<HH>*<MM>*<SS>*999##` or `*#13**22*...*999*...##`).
 
-This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See also the [Wiki guide on Gateway Timezone Configuration](https://github.com/OpenWebNet-HA/MyHOME/wiki/Gateway-Timezone-Configuration)).
+This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See [Unconfigured Timezone](../diagnostics/repair-issues.md#unconfigured-timezone) in the Repair Issues Guide).
 
 > [!NOTE]
 > The **F461** gateway is configured exclusively via the Home + Project app and maintains its clock via NTP. Its firmware always reports `999` over OpenWebNet even when configured; the integration recognizes this and automatically exempts the F461 from this warning.

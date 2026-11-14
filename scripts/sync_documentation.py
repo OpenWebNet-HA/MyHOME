@@ -32,18 +32,31 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CUSTOM_COMPONENTS_DIR = REPO_ROOT / "custom_components" / "myhome"
 CONST_PY = CUSTOM_COMPONENTS_DIR / "const.py"
+MANIFEST_JSON = CUSTOM_COMPONENTS_DIR / "manifest.json"
 SERVICES_YAML = CUSTOM_COMPONENTS_DIR / "services.yaml"
 STRINGS_JSON = CUSTOM_COMPONENTS_DIR / "strings.json"
 REPAIRS_PY = CUSTOM_COMPONENTS_DIR / "repairs.py"
 MKDOCS_YML = REPO_ROOT / "mkdocs.yml"
+MKDOCS_V09_YML = REPO_ROOT / "mkdocs-v0.9.yml"
 README_MD = REPO_ROOT / "README.md"
+PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
+ISSUE_TEMPLATE_CONFIG = REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml"
+DOCS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "docs.yml"
 DOCS_DIR = REPO_ROOT / "docs"
+DOCS_V09_DIR = REPO_ROOT / "docs-v0.9"
+
+CANONICAL_DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/"
+_LEGACY_WIKI_RE = re.compile(
+    r"github\.com/(?:OpenWebNet-HA|anotherjulien)/MyHOME/wiki",
+    re.IGNORECASE,
+)
 
 # Documentation target files for Gateway Profiles table
 GATEWAY_DOC_TARGETS = [
     README_MD,
     DOCS_DIR / "configuration" / "gateways.md",
     DOCS_DIR / "getting-started" / "hardware-compatibility.md",
+    DOCS_DIR / "index.md",
 ]
 
 # Markers
@@ -592,8 +605,38 @@ def sync_repair_issues(update: bool = False) -> tuple[bool, list[str]]:
 # 6. MkDocs Navigation & Markdown Link Health
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _load_mkdocs_yaml(mkdocs_path: Path) -> dict[str, Any]:
+    """Safely parse mkdocs.yml without importing Material !!python/name: tags."""
+    import yaml
+
+    class _MkDocsSafeLoader(yaml.SafeLoader):
+        pass
+
+    _MkDocsSafeLoader.add_multi_constructor(
+        "tag:yaml.org,2002:python/",
+        lambda loader, suffix, node: None,
+    )
+    loaded = yaml.load(mkdocs_path.read_text(encoding="utf-8"), Loader=_MkDocsSafeLoader)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _collect_nav_paths(node: Any) -> list[str]:
+    """Recursively collect markdown file paths listed under mkdocs.yml 'nav'."""
+    paths: list[str] = []
+    if isinstance(node, str):
+        if node.endswith(".md"):
+            paths.append(node)
+    elif isinstance(node, list):
+        for item in node:
+            paths.extend(_collect_nav_paths(item))
+    elif isinstance(node, dict):
+        for val in node.values():
+            paths.extend(_collect_nav_paths(val))
+    return paths
+
+
 def sync_mkdocs_nav(update: bool = False) -> tuple[bool, list[str]]:
-    """Verify mkdocs.yml navigation includes all markdown documentation pages."""
+    """Verify mkdocs.yml navigation includes all markdown documentation pages without duplicates or missing targets."""
     if not MKDOCS_YML.exists():
         return False, [f"{MKDOCS_YML} not found"]
 
@@ -601,24 +644,58 @@ def sync_mkdocs_nav(update: bool = False) -> tuple[bool, list[str]]:
     all_ok = True
     mkdocs_text = MKDOCS_YML.read_text(encoding="utf-8")
 
-    # Excluded files not meant for top-level navigation
+    nav_paths: list[str] = []
+    try:
+        mkdocs_data = _load_mkdocs_yaml(MKDOCS_YML)
+        nav_paths = _collect_nav_paths(mkdocs_data.get("nav", []))
+    except Exception as exc:
+        messages.append(f"Failed to parse {rel_path(MKDOCS_YML)}: {exc}")
+        all_ok = False
+
+    if nav_paths:
+        seen_nav: set[str] = set()
+        duplicate_nav: list[str] = []
+        for p in nav_paths:
+            if p in seen_nav and p not in duplicate_nav:
+                duplicate_nav.append(p)
+            seen_nav.add(p)
+        if duplicate_nav:
+            messages.append(
+                f"Duplicate markdown pages in mkdocs.yml navigation: {duplicate_nav}"
+            )
+            all_ok = False
+
+        missing_nav_targets = [
+            p for p in dict.fromkeys(nav_paths) if not (DOCS_DIR / p).is_file()
+        ]
+        if missing_nav_targets:
+            messages.append(
+                f"mkdocs.yml navigation references missing markdown files: {missing_nav_targets}"
+            )
+            all_ok = False
+
+    # Excluded files not meant for non-root navigation checks
     EXCLUDED_DOCS = {
         "index.md",
     }
 
+    nav_path_set = set(nav_paths)
     unlisted_pages: list[str] = []
-    for md_file in DOCS_DIR.rglob("*.md"):
-        rel_path = md_file.relative_to(DOCS_DIR).as_posix()
-        if rel_path in EXCLUDED_DOCS:
+    for md_file in sorted(DOCS_DIR.rglob("*.md")):
+        md_rel = md_file.relative_to(DOCS_DIR).as_posix()
+        if md_rel in EXCLUDED_DOCS:
             continue
-        if rel_path not in mkdocs_text:
-            unlisted_pages.append(rel_path)
+        if nav_path_set:
+            if md_rel not in nav_path_set:
+                unlisted_pages.append(md_rel)
+        elif md_rel not in mkdocs_text:
+            unlisted_pages.append(md_rel)
 
     if unlisted_pages:
         messages.append(f"Markdown pages missing from mkdocs.yml navigation: {unlisted_pages}")
         all_ok = False
-    else:
-        messages.append("All documentation pages are referenced in mkdocs.yml navigation")
+    elif all_ok:
+        messages.append("All documentation pages are referenced once in mkdocs.yml navigation")
 
     return all_ok, messages
 
@@ -736,7 +813,7 @@ def sync_version_references(update: bool = False) -> tuple[bool, list[str]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def check_markdown_link_health() -> tuple[bool, list[str]]:
-    """Check for malformed anchor links, empty targets, and broken relative links across docs/."""
+    """Check for malformed anchor links, empty targets, and broken relative links across docs/ and docs-v0.9/."""
     messages: list[str] = []
     all_ok = True
 
@@ -745,47 +822,366 @@ def check_markdown_link_health() -> tuple[bool, list[str]]:
     # Pattern for markdown links
     link_pattern = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 
-    for md_file in sorted(DOCS_DIR.rglob("*.md")):
-        content = md_file.read_text(encoding="utf-8")
+    doc_roots = [d for d in (DOCS_DIR, DOCS_V09_DIR) if d.is_dir()]
+    for root_dir in doc_roots:
+        for md_file in sorted(root_dir.rglob("*.md")):
+            raw_content = md_file.read_text(encoding="utf-8")
+            content = re.sub(r"```.*?```", "", raw_content, flags=re.DOTALL)
 
-        # 1. Emoji-stripped leading hyphen
-        matches = bad_anchor_pattern.findall(content)
-        if matches:
-            for text, link in matches:
-                messages.append(
-                    f"Malformed anchor '{link}' (stripped emoji leading hyphen) in {rel_path(md_file)}"
-                )
-                all_ok = False
-
-        # 2. Empty links and broken local file links
-        for text, url in link_pattern.findall(content):
-            url_clean = url.strip()
-            if not url_clean or url_clean == "#":
-                messages.append(f"Empty link target in {rel_path(md_file)}: [{text}]({url})")
-                all_ok = False
-                continue
-
-            # Ignore external URLs and Mike multi-version paths
-            if (
-                url_clean.startswith("http://")
-                or url_clean.startswith("https://")
-                or url_clean.startswith("mailto:")
-                or "0.9.4" in url_clean
-            ):
-                continue
-
-            # Check local file existence if link has a path component
-            target_path_str = url_clean.split("#")[0].strip()
-            if target_path_str:
-                resolved = (md_file.parent / target_path_str).resolve()
-                if not resolved.exists():
+            # 1. Emoji-stripped leading hyphen
+            matches = bad_anchor_pattern.findall(content)
+            if matches:
+                for _text, link in matches:
                     messages.append(
-                        f"Broken relative file link in {rel_path(md_file)}: [{text}]({url_clean})"
+                        f"Malformed anchor '{link}' (stripped emoji leading hyphen) in {rel_path(md_file)}"
                     )
                     all_ok = False
 
+            # 2. Empty links and broken local file links
+            for text, url in link_pattern.findall(content):
+                url_clean = url.strip()
+                if not url_clean or url_clean == "#":
+                    messages.append(f"Empty link target in {rel_path(md_file)}: [{text}]({url})")
+                    all_ok = False
+                    continue
+
+                if (
+                    url_clean.startswith("http://")
+                    or url_clean.startswith("https://")
+                    or url_clean.startswith("mailto:")
+                ):
+                    continue
+
+                # Check local file existence if link has a path component
+                target_path_str = url_clean.split("#")[0].strip()
+                if target_path_str:
+                    resolved = (md_file.parent / target_path_str).resolve()
+                    if not resolved.exists():
+                        messages.append(
+                            f"Broken relative file link in {rel_path(md_file)}: [{text}]({url_clean})"
+                        )
+                        all_ok = False
+
     if all_ok:
         messages.append("All markdown links and anchors validated cleanly (0 broken links).")
+
+    return all_ok, messages
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Starting README, License & Versioned Site Standards
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _github_heading_slugs(markdown_text: str) -> set[str]:
+    """Compute GitHub-flavored Markdown anchor slugs for all headings outside code fences."""
+    stripped = re.sub(r"```.*?```", "", markdown_text, flags=re.DOTALL)
+    slug_counts: dict[str, int] = {}
+    slugs: set[str] = set()
+    for line in stripped.splitlines():
+        match = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
+        if not match:
+            continue
+        raw_heading = match.group(1)
+        # Unwrap inline markdown links [text](url) -> text and strip formatting characters
+        raw_heading = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", raw_heading)
+        raw_heading = raw_heading.replace("`", "")
+        slug_base = re.sub(r"[^\w\s-]", "", raw_heading.lower()).strip()
+        slug_base = slug_base.replace(" ", "-")
+        if not slug_base:
+            continue
+        count = slug_counts.get(slug_base, 0)
+        slug_counts[slug_base] = count + 1
+        slug = slug_base if count == 0 else f"{slug_base}-{count}"
+        slugs.add(slug)
+    return slugs
+
+
+def _validate_canonical_site_urls(text: str, source_label: str) -> list[str]:
+    """Validate all canonical MyHOME GitHub Pages URLs against docs/ and docs-v0.9/ targets and anchors."""
+    errs: list[str] = []
+    no_fences = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    for match in re.finditer(r"https://openwebnet-ha\.github\.io/MyHOME/([^\s)\"'\]>]*)", no_fences):
+        full_url = match.group(0).rstrip(".,;:")
+        sub = full_url[len(CANONICAL_DOCS_URL) :]
+        if not sub or sub.startswith("beta"):
+            continue
+        if sub.startswith("latest/"):
+            target_root = DOCS_DIR
+            rel_url = sub[len("latest/") :]
+        elif sub.startswith("0.9.4/") or sub.startswith("legacy/"):
+            target_root = DOCS_V09_DIR
+            rel_url = sub.split("/", 1)[1]
+        else:
+            errs.append(f"{source_label} uses unversioned or unsupported manual URL '{full_url}'")
+            continue
+
+        if not target_root.is_dir():
+            continue
+
+        path_part, _, frag = rel_url.partition("#")
+        path_part = path_part.strip("/")
+        candidates = (
+            [target_root / "index.md"]
+            if not path_part
+            else [
+                target_root / f"{path_part}.md",
+                target_root / path_part / "index.md",
+                target_root / path_part / "README.md",
+            ]
+        )
+        md_target = next((c for c in candidates if c.is_file()), None)
+        if md_target is None:
+            errs.append(f"{source_label} links to missing manual page '{full_url}'")
+            continue
+
+        if frag:
+            target_text = md_target.read_text(encoding="utf-8")
+            gh_slugs = _github_heading_slugs(target_text)
+            mkdocs_slugs = {re.sub(r"-+", "-", s) for s in gh_slugs}
+            explicit_ids = set(re.findall(r"\{\s*#([\w-]+)\s*\}", target_text))
+            if frag not in (gh_slugs | mkdocs_slugs | explicit_ids):
+                errs.append(
+                    f"{source_label} links to missing anchor '#{frag}' in {rel_path(md_target)} ('{full_url}')"
+                )
+    return errs
+
+
+def check_readme_and_site_standards() -> tuple[bool, list[str]]:
+    """Verify starting README, Apache-2.0 license consistency, manual URLs, and non-beta Pages config."""
+    messages: list[str] = []
+    all_ok = True
+
+    # 1. Starting README.md standards
+    if not README_MD.exists():
+        messages.append(f"Starting README not found: {rel_path(README_MD)}")
+        all_ok = False
+    else:
+        readme_text = README_MD.read_text(encoding="utf-8")
+
+        if CANONICAL_DOCS_URL not in readme_text:
+            messages.append(
+                f"README.md must link to the canonical manual URL '{CANONICAL_DOCS_URL}'"
+            )
+            all_ok = False
+
+        if "openwebnet-ha.github.io/MyHOME/beta" in readme_text:
+            messages.append(
+                "README.md still links to '/MyHOME/beta' instead of the canonical manual URL"
+            )
+            all_ok = False
+
+        if _LEGACY_WIKI_RE.search(readme_text):
+            messages.append(
+                "README.md still links to deprecated GitHub '/wiki' instead of the canonical manual URL"
+            )
+            all_ok = False
+
+        if "AGPL" in readme_text:
+            messages.append("README.md contains outdated AGPL license reference (expected Apache-2.0)")
+            all_ok = False
+
+        if not (
+            ("Apache-2.0" in readme_text or "Apache License 2.0" in readme_text)
+            and "(LICENSE)" in readme_text
+        ):
+            messages.append(
+                "README.md must reference Apache-2.0 / Apache License 2.0 and link to (LICENSE)"
+            )
+            all_ok = False
+
+        legacy_patterns = [
+            (r"\b0\.9\.4\b", "legacy v0.9.4 version comparison/rollback"),
+            (r"\bv0\.9\b", "legacy v0.9 version comparison"),
+            (r"\b0\.8\.\d+\b", "legacy v0.8.x version comparison"),
+            (r"Safe Rollback", "legacy rollback section"),
+            (r"Older cores stay on", "legacy beta core pinning comparison"),
+        ]
+        for pat, desc in legacy_patterns:
+            if re.search(pat, readme_text, flags=re.IGNORECASE):
+                messages.append(f"README.md contains prohibited {desc} ('{pat}')")
+                all_ok = False
+
+        # Validate README.md internal anchors, markdown links, and HTML image paths
+        slugs = _github_heading_slugs(readme_text)
+        readme_no_fences = re.sub(r"```.*?```", "", readme_text, flags=re.DOTALL)
+
+        for text, url in re.findall(r"\[([^\]]*)\]\(([^)]*)\)", readme_no_fences):
+            url_clean = url.strip()
+            if not url_clean or url_clean == "#":
+                messages.append(f"Empty link target in README.md: [{text}]({url})")
+                all_ok = False
+                continue
+            if "\ufe0f" in url_clean or re.search(r"#-[\w-]+$", url_clean):
+                messages.append(f"Malformed heading anchor in README.md: [{text}]({url_clean})")
+                all_ok = False
+                continue
+            if url_clean.startswith("#"):
+                anchor = url_clean[1:]
+                if anchor not in slugs:
+                    messages.append(
+                        f"Unresolved internal heading anchor in README.md: [{text}]({url_clean})"
+                    )
+                    all_ok = False
+                continue
+            if url_clean.startswith(("http://", "https://", "mailto:")):
+                continue
+            path_part = url_clean.split("#")[0].strip()
+            if path_part and not (README_MD.parent / path_part).resolve().exists():
+                messages.append(
+                    f"Broken relative file link in README.md: [{text}]({url_clean})"
+                )
+                all_ok = False
+
+        for img_src in re.findall(r'<img\s+[^>]*src=["\']([^"\']+)["\']', readme_no_fences):
+            src_clean = img_src.strip()
+            if src_clean.startswith(("http://", "https://", "data:")):
+                continue
+            if not (README_MD.parent / src_clean).resolve().exists():
+                messages.append(f"Broken HTML image src in README.md: {src_clean}")
+                all_ok = False
+
+        readme_site_errs = _validate_canonical_site_urls(readme_text, "README.md")
+        if readme_site_errs:
+            messages.extend(readme_site_errs)
+            all_ok = False
+
+    # 2. MkDocs configuration license & beta-page checks
+    for mkdocs_file, check_beta_diff in ((MKDOCS_YML, True), (MKDOCS_V09_YML, False)):
+        if not mkdocs_file.exists():
+            continue
+        mkdocs_label = mkdocs_file.name
+        mkdocs_raw = mkdocs_file.read_text(encoding="utf-8")
+        if "AGPL" in mkdocs_raw:
+            messages.append(
+                f"{mkdocs_label} contains outdated AGPL license reference (expected Apache-2.0)"
+            )
+            all_ok = False
+        if check_beta_diff and "beta-differences.md" in mkdocs_raw:
+            messages.append(f"{mkdocs_label} still references removed beta-differences.md page")
+            all_ok = False
+        try:
+            mkdocs_cfg = _load_mkdocs_yaml(mkdocs_file)
+            copyright_str = str(mkdocs_cfg.get("copyright", ""))
+            if "Apache-2.0" not in copyright_str and "Apache License 2.0" not in copyright_str:
+                messages.append(f"{mkdocs_label} copyright notice must specify Apache-2.0")
+                all_ok = False
+        except Exception as exc:
+            messages.append(f"Failed to parse {mkdocs_label} in license check: {exc}")
+            all_ok = False
+
+    # 3. Manifest & repository metadata documentation URLs
+    if MANIFEST_JSON.exists():
+        try:
+            manifest_data = json.loads(MANIFEST_JSON.read_text(encoding="utf-8"))
+            doc_url = manifest_data.get("documentation", "")
+            if doc_url != CANONICAL_DOCS_URL:
+                messages.append(
+                    f"manifest.json 'documentation' must be '{CANONICAL_DOCS_URL}' (got '{doc_url}')"
+                )
+                all_ok = False
+        except Exception as exc:
+            messages.append(f"Failed to parse manifest.json: {exc}")
+            all_ok = False
+
+    if PYPROJECT_TOML.exists():
+        pyproject_text = PYPROJECT_TOML.read_text(encoding="utf-8")
+        if "openwebnet-ha.github.io/MyHOME/beta" in pyproject_text:
+            messages.append("pyproject.toml still points Documentation URL to '/MyHOME/beta'")
+            all_ok = False
+        if _LEGACY_WIKI_RE.search(pyproject_text):
+            messages.append("pyproject.toml still points URL to deprecated GitHub '/wiki'")
+            all_ok = False
+        if "AGPL" in pyproject_text:
+            messages.append("pyproject.toml contains outdated AGPL license reference")
+            all_ok = False
+
+    if ISSUE_TEMPLATE_CONFIG.exists():
+        issue_cfg_text = ISSUE_TEMPLATE_CONFIG.read_text(encoding="utf-8")
+        if "openwebnet-ha.github.io/MyHOME/beta" in issue_cfg_text:
+            messages.append(
+                ".github/ISSUE_TEMPLATE/config.yml still points User Manual URL to '/MyHOME/beta'"
+            )
+            all_ok = False
+        if _LEGACY_WIKI_RE.search(issue_cfg_text):
+            messages.append(
+                ".github/ISSUE_TEMPLATE/config.yml still points URL to deprecated GitHub '/wiki'"
+            )
+            all_ok = False
+
+    # 3b. Integration modules & docs must not link to '/MyHOME/beta' or legacy GitHub Wiki,
+    #     and all canonical '/MyHOME/latest/...' & '/MyHOME/0.9.4/...' URLs must resolve.
+    if CUSTOM_COMPONENTS_DIR.is_dir():
+        for code_file in sorted(CUSTOM_COMPONENTS_DIR.rglob("*")):
+            if not code_file.is_file() or code_file.suffix not in {".py", ".json", ".yaml", ".yml"}:
+                continue
+            code_text = code_file.read_text(encoding="utf-8")
+            code_label = rel_path(code_file)
+            if "openwebnet-ha.github.io/MyHOME/beta" in code_text:
+                messages.append(f"{code_label} still points documentation URL to '/MyHOME/beta'")
+                all_ok = False
+            if _LEGACY_WIKI_RE.search(code_text):
+                messages.append(
+                    f"{code_label} still points documentation URL to legacy GitHub '/wiki'"
+                )
+                all_ok = False
+            site_errs = _validate_canonical_site_urls(code_text, code_label)
+            if site_errs:
+                messages.extend(site_errs)
+                all_ok = False
+
+    for doc_tree in (DOCS_DIR, DOCS_V09_DIR):
+        if not doc_tree.is_dir():
+            continue
+        for md_file in sorted(doc_tree.rglob("*.md")):
+            md_text = md_file.read_text(encoding="utf-8")
+            md_label = rel_path(md_file)
+            if "openwebnet-ha.github.io/MyHOME/beta" in md_text:
+                messages.append(f"{md_label} still links to '/MyHOME/beta'")
+                all_ok = False
+            if _LEGACY_WIKI_RE.search(md_text):
+                messages.append(
+                    f"{md_label} still links to legacy GitHub '/wiki' instead of manual pages"
+                )
+                all_ok = False
+            site_errs = _validate_canonical_site_urls(md_text, md_label)
+            if site_errs:
+                messages.extend(site_errs)
+                all_ok = False
+
+    # 4. Docs workflow invariants (no v0.9.4 -> latest hijack, pre-release pruning, master /latest/ freshness)
+    if DOCS_WORKFLOW.exists():
+        wf_text = DOCS_WORKFLOW.read_text(encoding="utf-8")
+        for line in wf_text.splitlines():
+            if "mkdocs-v0.9.yml" in line and "latest" in line and not line.lstrip().startswith("#"):
+                messages.append(
+                    ".github/workflows/docs.yml aliases legacy mkdocs-v0.9.yml (0.9.4) to 'latest'"
+                )
+                all_ok = False
+        if "mike delete" not in wf_text or "(a|b|rc" not in wf_text:
+            messages.append(
+                ".github/workflows/docs.yml must prune pre-release (a/b/rc) snapshots from GitHub Pages"
+            )
+            all_ok = False
+        if "STALE_LEGACY_ALIASES" not in wf_text:
+            messages.append(
+                ".github/workflows/docs.yml must strip stale non-legacy aliases (such as 'latest') from 0.9.4 before redeploying"
+            )
+            all_ok = False
+        if '"${REF_NAME}" = "master"' not in wf_text or "MANIFEST_STABLE_MINOR" not in wf_text:
+            messages.append(
+                ".github/workflows/docs.yml must keep '/latest/' updated on pushes to master when manifest is on a stable 2.x line"
+            )
+            all_ok = False
+        if "IS_LATEST_MINOR" not in wf_text:
+            messages.append(
+                ".github/workflows/docs.yml must guard older-minor patch releases from overwriting 'latest'"
+            )
+            all_ok = False
+
+    if all_ok:
+        messages.append(
+            "Starting README, Apache-2.0 license metadata, and versioned manual URLs verified cleanly."
+        )
 
     return all_ok, messages
 
@@ -851,6 +1247,11 @@ def check_all_documentation(update: bool = False) -> tuple[bool, list[str]]:
     ok_anchors, msgs_anchors = check_markdown_link_health()
     overall_ok = overall_ok and ok_anchors
     all_messages.extend(msgs_anchors)
+
+    # 9. Starting README, license & site standards
+    ok_std, msgs_std = check_readme_and_site_standards()
+    overall_ok = overall_ok and ok_std
+    all_messages.extend(msgs_std)
 
     return overall_ok, all_messages
 

@@ -118,7 +118,7 @@ automation:
 
 The same service accepts `switch` entities (a socket, a fan).
 
-## 5. Whole-house multiroom audio with Music Assistant
+## 5. Whole-house multiroom audio with Music Assistant { #music-assistant }
 
 The F441 / F441M analog matrix plays whatever is on its inputs. Map one or more network decoders (a Squeezelite, WiiM, or Cambridge Audio DLNA DMR player per input) in the options flow (**Configure**, one row per decoder: entity, source input, pre-gain), and name the sources wired to the matrix. Every audio zone advertises `GROUPING` and (with decoders configured) `PLAY_MEDIA`:
 

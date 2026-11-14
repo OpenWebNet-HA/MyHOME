@@ -66,4 +66,4 @@ Light intensity sensors (e.g. Legrand `048822` ceiling detectors configured in s
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `sensor:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Sensor Documentation](../../0.9.4/configuration/sensors/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all sensors are discovered dynamically.
+> If you are upgrading from legacy v0.9 installations and still have manual `sensor:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Sensor Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/sensors/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all sensors are discovered dynamically.

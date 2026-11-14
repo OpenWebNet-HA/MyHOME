@@ -1,15 +1,15 @@
-# Upgrading from v0.9.4 to v2.0 (Beta)
+# Upgrading from v0.9.4 to v2.0
 
-This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0.9.4** production plant to the modern **v2.0 architecture** (`v2-phase1-architecture`).
+This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0.9.4** plant to the modern **MyHOME v2.0** architecture.
 
 ---
 
 ## 🧭 What Changes in v2.0?
 
-| Aspect | Legacy v0.9.4 | Next-Gen v2.0 (Beta) |
+| Aspect | Legacy v0.9.4 | MyHOME v2.0 |
 | :--- | :--- | :--- |
 | **Setup Model** | Manual YAML (`/config/myhome.yaml`) | **100% UI-First** (Config Flow & Auto-Discovery) |
-| **Entity Discovery** | Strict YAML parsing at startup | Dynamic on-wire SCS bus discovery (`WHO = 1, 2, 4, 13, 15, 18, 25`) |
+| **Entity Discovery** | Strict YAML parsing at startup | Dynamic on-wire SCS bus discovery (`WHO = 1, 2, 4, 5, 9, 13, 15, 16, 18, 22, 25`) |
 | **Cover Calibration** | Manual `travel_time` integers in YAML | Automated on-bus calibration (button & service action), direction-aware up/down times |
 | **Light Capabilities** | Manual `dimmable: true` YAML flags | Dynamically learned from bus telemetry (dimming, HSV, color temp, DALI DT8) |
 | **Entity Naming** | Configured exclusively in `myhome.yaml` | Managed natively in Home Assistant Device & Entity Registry |
@@ -32,18 +32,22 @@ This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0
 
 ---
 
-## 📦 Step 2: Installing the v2.0 Beta Release
+## 📦 Step 2: Installing MyHOME v2.0
 
-### Why Manual ZIP / SSH is Recommended for Beta
-While stable releases (such as v0.9.4, and upcoming stable v2.0.0 once merged to `master`) are distributed through the **Home Assistant Marketplace** (Home Assistant 2026.11+) and **HACS** (`< 2026.11`) on `master`, v2.0 beta builds are currently published from the `v2-phase1-architecture` development branch. Marketplace and HACS track the default branch by default and often hide or reject pre-release beta builds on non-default branches.
+### Option A: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.3 – 2026.10`)
 
-### Installation via ZIP Archive
+- **Home Assistant 2026.11+ (Marketplace)**: Open **Settings → Marketplace**, open **MyHOME** *(or add `https://github.com/OpenWebNet-HA/MyHOME` via **Add from link** → **Integration**)*, install or update to **v2.0+**, and restart Home Assistant.
+- **Home Assistant 2026.3 – 2026.10 (HACS)**: Open **HACS → Integrations → MyHOME**, update/download **v2.0+**, and restart Home Assistant.
+
+*(Note: To install a `2.0.0bX` pre-release tag published ahead of stable `v2.0.0` on `master`, use Option B below.)*
+
+### Option B: Terminal & SSH or Manual ZIP Archive
 
 #### ⚡ 1-Click Terminal Command (Home Assistant Terminal & SSH)
 If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste this command directly into your terminal:
 
 ```bash
-# Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
+# Set target release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
 TAG="2.0.0b18"
 
 # Download, extract cleanly, verify, and restart Home Assistant
@@ -67,10 +71,10 @@ ha core restart
 > 6. `grep '"version"' myhome/manifest.json`: Prints the installed version to the terminal for immediate confirmation.
 > 7. `ha core restart`: Issues a core restart command via the Home Assistant supervisor CLI.
 
-#### 📁 Alternative: Manual Download via Samba / Studio Code Server
+#### 📁 Manual Download via Samba / Studio Code Server
 If you prefer not using the command line:
 
-1. Download `myhome.zip` from the latest [v2.0 Beta GitHub Release](https://github.com/OpenWebNet-HA/MyHOME/releases).
+1. Download `myhome.zip` from [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases).
 2. Connect to your Home Assistant host via **Samba Share** or the **Studio Code Server** add-on.
 3. Navigate to `/config/custom_components/myhome/` (create the folders if they don't exist).
 4. Extract the contents of `myhome.zip` directly into `/config/custom_components/myhome/`.
@@ -120,7 +124,7 @@ Before upgrading, review these key architectural changes:
 
 ## ⏪ Rollback Procedure
 
-If you encounter an unexpected issue during beta testing and wish to revert to v0.9.4:
+If you encounter an unexpected issue after upgrading and wish to revert to v0.9.4:
 
 1. Restore your pre-upgrade Home Assistant backup via **Settings → System → Backups**.
 2. Alternatively, re-download the [v0.9.4 Release Archive](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/0.9.4), extract it into `/config/custom_components/myhome/`, and restart Home Assistant.

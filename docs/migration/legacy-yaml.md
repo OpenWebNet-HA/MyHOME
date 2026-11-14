@@ -1,11 +1,11 @@
 # Legacy Configuration History (< v0.9 & v0.9.x)
 
 > [!WARNING]
-> **You are viewing the v2 (Beta) Documentation.**
+> **You are viewing the MyHOME v2.0+ Documentation.**
 > In v2.0+, setup and device onboarding are **100% UI-first** via Config Flow and Auto-Discovery. Manual YAML files are **not used** for device creation.
 >
 > * To upgrade an existing v0.9.4 installation, see the [**Upgrade from 0.9.4 Guide**](upgrade-from-094.md).
-> * For the complete, dedicated manual for `/config/myhome.yaml`, visit the [**v0.9.4 Legacy Documentation**](../../0.9.4/).
+> * For the complete, dedicated manual for `/config/myhome.yaml`, visit the [**v0.9.4 Legacy Documentation**](https://openwebnet-ha.github.io/MyHOME/0.9.4/).
 
 This page is preserved for historical reference and documentation of the deprecated pre-v0.9 and v0.9.x YAML schemas.
 
