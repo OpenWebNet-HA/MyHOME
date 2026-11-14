@@ -223,4 +223,69 @@
   mcp_notes: "Energy Management: Request cumulative energy totalizer from actuator channel 71#0 (MH200 live test verification, issue #494)"
   roundtrip: true
 
+# Live MyHomeServer1 (2.87.13) meter 51 cumulative, monthly, and daily Wh totalizers (MyHOME#907)
+# Sanitized capture slice: tests/fixtures/traces/issue_907/myhome_trace_MyHomeServer1_who18_meter51_2026-11-14.json
+- id: energy.capture.cumulative_totalizer.meter51.8151646
+  frame: "*#18*51*51*8151646##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 51
+  dimension_values: ["8151646"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 8151646 Wh cumulative energy totalizer (8151.646 kWh display unit; MyHomeServer1 2.87.13 capture, MyHOME#907)"
+  roundtrip: true
+
+- id: energy.capture.req.monthly_totalizer.meter51
+  frame: "*#18*51*53##"
+  direction: dimension_request
+  who: 18
+  what: null
+  where: "51"
+  dimension: 53
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Request current-month partial energy totalizer (Dimension 53) from meter 51 (MyHomeServer1 2.87.13 5-min poll, MyHOME#907)"
+  roundtrip: true
+
+- id: energy.capture.resp.monthly_totalizer.meter51.88973
+  frame: "*#18*51*53*88973##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 53
+  dimension_values: ["88973"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 88973 Wh current-month partial energy totalizer (Dimension 53, MyHomeServer1 2.87.13 capture, MyHOME#907)"
+  roundtrip: true
+
+- id: energy.capture.req.daily_totalizer.meter51
+  frame: "*#18*51*54##"
+  direction: dimension_request
+  who: 18
+  what: null
+  where: "51"
+  dimension: 54
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Request current-day partial energy totalizer (Dimension 54) from meter 51 (MyHomeServer1 2.87.13 5-min poll, MyHOME#907)"
+  roundtrip: true
+
+- id: energy.capture.resp.daily_totalizer.meter51.3017
+  frame: "*#18*51*54*3017##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 54
+  dimension_values: ["3017"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 3017 Wh current-day partial energy totalizer (Dimension 54, MyHomeServer1 2.87.13 capture, MyHOME#907)"
+  roundtrip: true
+
 

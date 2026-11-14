@@ -62,6 +62,7 @@ H4684_TRACE_PATH = (
     TRACES_DIR / "myhome_trace_oracle_h4684_who18_poll_refused_unsolicited_only.json"
 )
 ORACLE_JSON_PATH = Path(__file__).resolve().parent / "golden" / "firmware_oracle.json"
+CORPUS_JSON_PATH = Path(__file__).resolve().parent / "golden" / "corpus.json"
 MAC = "00:03:50:90:70:01"
 
 
@@ -1074,3 +1075,44 @@ async def test_live_myhomeserver1_meter51_trace_replay_wh_and_kwh_preserves_int_
             unsub()
             await hass.config_entries.async_unload(entry.entry_id)
             await hass.async_block_till_done()
+
+
+def test_issue_907_golden_corpus_conformance_entries() -> None:
+    """Verify Issue #907 MyHomeServer1 meter 51 Wh frames are registered in Golden Corpus CI."""
+    corpus_by_id = {
+        rec["id"]: rec
+        for rec in json.loads(CORPUS_JSON_PATH.read_text(encoding="utf-8"))
+    }
+    live_raw_frames = {
+        f["raw"]
+        for f in json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))["frames"]
+    }
+
+    expected_capture_ids = {
+        "energy.req.cumulative_totalizer.meter51": "*#18*51*51##",
+        "energy.capture.cumulative_totalizer.meter51.8151646": "*#18*51*51*8151646##",
+        "energy.capture.req.monthly_totalizer.meter51": "*#18*51*53##",
+        "energy.capture.resp.monthly_totalizer.meter51.88973": "*#18*51*53*88973##",
+        "energy.capture.req.daily_totalizer.meter51": "*#18*51*54##",
+        "energy.capture.resp.daily_totalizer.meter51.3017": "*#18*51*54*3017##",
+    }
+    for rec_id, raw_frame in expected_capture_ids.items():
+        assert rec_id in corpus_by_id
+        rec = corpus_by_id[rec_id]
+        assert rec["frame"] == raw_frame
+        assert rec["source"] == "community-plant-capture"
+        assert raw_frame in live_raw_frames
+
+    m_total = OWNMessage.parse("*#18*51*51*8151646##")
+    m_month = OWNMessage.parse("*#18*51*53*88973##")
+    m_day = OWNMessage.parse("*#18*51*54*3017##")
+    assert isinstance(m_total, OWNEnergyEvent) and m_total.total_consumption == 8151646
+    assert (
+        isinstance(m_month, OWNEnergyEvent)
+        and m_month.current_month_partial_consumption == 88973
+    )
+    assert (
+        isinstance(m_day, OWNEnergyEvent)
+        and m_day.current_day_partial_consumption == 3017
+    )
+
