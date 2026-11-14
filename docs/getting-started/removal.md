@@ -53,15 +53,16 @@ If you installed the custom Lovelace Bus Monitor card (`myhome-bus-card`):
 To completely remove the integration code from Home Assistant:
 
 1. **If installed via Home Assistant Marketplace (2026.11+) or HACS (`< 2026.11`):**
-   - Open **Settings → Marketplace** (or **HACS** on `< 2026.11`), locate **MyHOME**, open the three dots (`⋮`) menu, and select **Remove**.
+    - In **Settings → Marketplace** (`2026.11+`), open **MyHOME**, open the three dots (`⋮`) menu in the upper-right corner, and select **Uninstall**.
+    - In **HACS** (`< 2026.11`), open **MyHOME**, open the three dots (`⋮`) menu, and select **Remove**.
 2. **If installed manually or via SSH one-liner:** delete the custom component folder using your terminal or file manager:
-   ```bash
-   rm -rf /config/custom_components/myhome
-   ```
+    ```bash
+    rm -rf /config/custom_components/myhome
+    ```
 3. If you maintain a legacy `/config/myhome.yaml` file, you can safely archive or delete it:
-   ```bash
-   rm -f /config/myhome.yaml
-   ```
+    ```bash
+    rm -f /config/myhome.yaml
+    ```
 
 ---
 

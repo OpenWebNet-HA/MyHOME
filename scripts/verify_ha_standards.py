@@ -471,6 +471,7 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
     base_root = root_dir or ROOT_DIR
     hacs_file = base_root / "hacs.json"
     manifest_file = base_root / "custom_components" / "myhome" / "manifest.json"
+    package_script = base_root / "scripts" / "package_release.py"
     validate_workflow = base_root / ".github" / "workflows" / "validate.yml"
     errors_before = len(checker.errors)
 
@@ -504,26 +505,88 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
     elif manifest_file.exists():
         try:
             manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
-            manifest_name = manifest_data.get("name")
-            if isinstance(manifest_name, str) and manifest_name and hacs_name != manifest_name:
-                checker.log_error(
-                    "RULE_MARKETPLACE_MANIFEST",
-                    hacs_file,
-                    1,
-                    f"hacs.json name ({hacs_name!r}) must match manifest.json name ({manifest_name!r})",
-                )
+            if not isinstance(manifest_data, dict):
+                checker.log_error("RULE_MARKETPLACE_MANIFEST", manifest_file, 1, "manifest.json root must be a JSON object")
+            else:
+                manifest_name = manifest_data.get("name")
+                if isinstance(manifest_name, str) and manifest_name and hacs_name != manifest_name:
+                    checker.log_error(
+                        "RULE_MARKETPLACE_MANIFEST",
+                        hacs_file,
+                        1,
+                        f"hacs.json name ({hacs_name!r}) must match manifest.json name ({manifest_name!r})",
+                    )
         except Exception as err:
             checker.log_error("RULE_MARKETPLACE_MANIFEST", manifest_file, 1, f"Failed to parse manifest.json: {err}")
 
-    if "zip_release" in hacs_data and not isinstance(hacs_data["zip_release"], bool):
-        checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, "hacs.json 'zip_release' must be a boolean")
-    elif hacs_data.get("zip_release") is True:
+    for bool_key in ("content_in_root", "hide_default_branch", "zip_release"):
+        if bool_key in hacs_data and not isinstance(hacs_data[bool_key], bool):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                f"hacs.json {bool_key!r} must be a boolean (got {hacs_data[bool_key]!r})",
+            )
+
+    if (
+        hacs_data.get("content_in_root") is True
+        and manifest_file.exists()
+        and not (base_root / "manifest.json").exists()
+    ):
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            hacs_file,
+            1,
+            "hacs.json 'content_in_root' must not be true when integration lives under custom_components/myhome/",
+        )
+
+    if "hacs" in hacs_data:
+        hacs_min = hacs_data["hacs"]
+        if not isinstance(hacs_min, str) or not re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", hacs_min):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                f"hacs.json 'hacs' must be a valid version string (got {hacs_min!r})",
+            )
+
+    if "persistent_directory" in hacs_data:
+        pdir = hacs_data["persistent_directory"]
+        if (
+            not isinstance(pdir, str)
+            or not pdir.strip()
+            or "\\" in pdir
+            or pdir.startswith("/")
+            or pdir.endswith("/")
+            or any(seg in ("", ".", "..") for seg in pdir.split("/"))
+        ):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                f"hacs.json 'persistent_directory' must be a safe relative subdirectory path (got {pdir!r})",
+            )
+
+    expected_zip_name = "myhome.zip"
+    if package_script.exists():
+        pkg_text = package_script.read_text(encoding="utf-8")
+        zip_match = re.search(r'OUTPUT_ZIP\s*=\s*os\.path\.join\([^,]+,\s*["\']([^"\']+)["\']\)', pkg_text)
+        if zip_match:
+            expected_zip_name = zip_match.group(1)
+        if hacs_data.get("zip_release") is not True:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                "hacs.json must set 'zip_release': true to match scripts/package_release.py",
+            )
+
+    if hacs_data.get("zip_release") is True:
         filename = hacs_data.get("filename")
         if (
             not isinstance(filename, str)
-            or not filename.endswith(".zip")
-            or "/" in filename
-            or "\\" in filename
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.zip", filename)
+            or ".." in filename
         ):
             checker.log_error(
                 "RULE_MARKETPLACE_MANIFEST",
@@ -531,6 +594,20 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
                 1,
                 f"hacs.json with zip_release=true must specify a valid .zip filename (got {filename!r})",
             )
+        elif package_script.exists() and filename != expected_zip_name:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                f"hacs.json filename ({filename!r}) must be {expected_zip_name!r} to match scripts/package_release.py",
+            )
+    elif "filename" in hacs_data:
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            hacs_file,
+            1,
+            f"hacs.json must not set 'filename' ({hacs_data['filename']!r}) unless zip_release=true",
+        )
 
     ha_min = hacs_data.get("homeassistant")
     if not isinstance(ha_min, str) or not re.fullmatch(r"\d{4}\.\d+\.\d+(?:(?:a|b|rc)\d+)?", ha_min):
@@ -541,28 +618,60 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
             f"hacs.json 'homeassistant' must be a valid Home Assistant version string (got {ha_min!r})",
         )
 
-    if validate_workflow.exists():
+    if not validate_workflow.exists():
+        checker.log_error(
+            "RULE_MARKETPLACE_VALIDATE",
+            validate_workflow,
+            1,
+            "validate.yml not found under .github/workflows/",
+        )
+    else:
         try:
             import yaml
 
             wf_data = yaml.safe_load(validate_workflow.read_text(encoding="utf-8")) or {}
-            jobs = wf_data.get("jobs", {}) if isinstance(wf_data, dict) else {}
-            for job_data in jobs.values():
-                if not isinstance(job_data, dict):
-                    continue
-                for step in job_data.get("steps", []):
+            raw_jobs = wf_data.get("jobs") if isinstance(wf_data, dict) else None
+            jobs = raw_jobs if isinstance(raw_jobs, dict) else {}
+            validate_job = jobs.get("validate")
+            if not isinstance(validate_job, dict):
+                checker.log_error(
+                    "RULE_MARKETPLACE_VALIDATE",
+                    validate_workflow,
+                    1,
+                    "validate.yml must preserve the required 'validate' job ID",
+                )
+            else:
+                raw_steps = validate_job.get("steps")
+                steps = raw_steps if isinstance(raw_steps, list) else []
+                found_hacs_action = False
+                for step in steps:
                     if not isinstance(step, dict):
                         continue
                     uses = str(step.get("uses", ""))
-                    if uses.startswith("hacs/action"):
-                        with_args = step.get("with", {})
-                        if isinstance(with_args, dict) and with_args.get("ignore"):
+                    if uses == "hacs/action" or uses.startswith("hacs/action@"):
+                        found_hacs_action = True
+                        with_args = step.get("with")
+                        if not isinstance(with_args, dict) or with_args.get("category") != "integration":
+                            checker.log_error(
+                                "RULE_MARKETPLACE_VALIDATE",
+                                validate_workflow,
+                                1,
+                                "validate.yml hacs/action step must set with.category to 'integration'",
+                            )
+                        if isinstance(with_args, dict) and "ignore" in with_args:
                             checker.log_error(
                                 "RULE_MARKETPLACE_VALIDATE",
                                 validate_workflow,
                                 1,
                                 f"validate.yml must not bypass default-catalog checks via ignore: {with_args.get('ignore')!r}",
                             )
+                if not found_hacs_action:
+                    checker.log_error(
+                        "RULE_MARKETPLACE_VALIDATE",
+                        validate_workflow,
+                        1,
+                        "validate.yml must define a hacs/action validation step",
+                    )
         except Exception as err:
             checker.log_error(
                 "RULE_MARKETPLACE_VALIDATE",

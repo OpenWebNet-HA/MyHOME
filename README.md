@@ -8,7 +8,7 @@
 [![Quality scale tier](quality_scale.svg)](custom_components/myhome/quality_scale.yaml)
 [![Codecov](https://codecov.io/gh/OpenWebNet-HA/MyHOME/branch/v2-phase1-architecture/graph/badge.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase1-architecture)
 [![PyPI Standards & Packaging](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml/badge.svg?branch=v2-phase1-architecture)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/pypi_standards.yml?query=branch%3Av2-phase1-architecture)
-[![Home Assistant Marketplace](https://img.shields.io/badge/HA%20Marketplace%20%2F%20HACS-Custom-orange.svg)](https://www.home-assistant.io/)
+[![Home Assistant Marketplace](https://img.shields.io/badge/HA%20Marketplace%20%2F%20HACS-Custom-orange.svg)](https://www.home-assistant.io/integrations/marketplace/)
 [![Latest Release](https://img.shields.io/github/v/release/OpenWebNet-HA/MyHOME?include_prereleases&label=release&logo=github)](https://github.com/OpenWebNet-HA/MyHOME/releases)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
 [![mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/)
@@ -217,28 +217,27 @@ From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplac
 #### Step 1: Add the Organization Repository
 
 - **Home Assistant 2026.11+ (Marketplace):**
-    1. Open **Settings → Marketplace** in Home Assistant *(linking a GitHub account is required if you have not already configured GitHub access for custom repositories)*.
-    2. Click the **three dots (`⋮`)** in the top-right corner and select **Custom repositories**.
-    3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, then click **Add**.
+    1. Open **Settings → Marketplace** in Home Assistant.
+    2. Select **Add from link** in the upper-right corner *(connect your GitHub account if prompted)*.
+    3. Under **GitHub link**, enter `https://github.com/OpenWebNet-HA/MyHOME` and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
 - **Home Assistant 2026.3 – 2026.10 (HACS):**
     1. Open **HACS** in your Home Assistant UI.
     2. Click the **three dots (`⋮`)** in the top-right corner and select **Custom repositories**.
-    3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with type/category **Integration**, then click **Add**.
+    3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, then click **Add**.
 
 > [!CAUTION]
 > **Migrating from a personal fork? DO NOT delete the MyHOME integration from Home Assistant Settings!**
 > Deleting the integration from *Settings → Devices & Services* will wipe all configured gateways and devices.
 > If you previously tracked a personal fork (such as `GreenGrassBlueOcean/MyHOME` or `anotherjulien/MyHOME`):
 >
-> 1. Open **Settings → Marketplace → ⋮ → Custom repositories** (or **HACS → ⋮ → Custom repositories** on `< 2026.11`).
-> 2. Remove the old fork URL to unlink it.
-> 3. Verify `OpenWebNet-HA/MyHOME` is present in the list.
-> 4. All your configured devices, gateways, and automations remain 100% intact.
+> 1. In **Settings → Marketplace**, select **Add from link** and remove the old fork under **Added from links** (or on `< 2026.11`, open **HACS → ⋮ → Custom repositories** and click the trash can icon next to the old fork URL).
+> 2. Ensure `OpenWebNet-HA/MyHOME` is added.
+> 3. All your configured devices, gateways, and automations remain 100% intact.
 
 #### Step 2: Install / Download & Restart
 
-1. In **Settings → Marketplace** (or **HACS → Integrations** on `< 2026.11`), search for **MyHOME** and open it.
-2. Click **Install** / **Download** (or `⋮` → **Redownload**).
+1. In **Settings → Marketplace** (or **HACS → Integrations** on `< 2026.11`), search for **MyHOME** and open its page.
+2. Select **Install** in Marketplace, or **Download** in HACS *(to pick a specific release, open `⋮` → **Install another version** in Marketplace, or `⋮` → **Redownload** in HACS)*.
 3. Restart Home Assistant when prompted (**Settings → System → Restart**).
 
 ---
@@ -263,7 +262,7 @@ ha core restart
 
 If you ever need to revert to the legacy codebase (`0.9.4`):
 
-- **Via Marketplace / HACS:** Open **MyHOME** in **Settings → Marketplace** (or **HACS** on `< 2026.11`) → click `⋮` → **Redownload** → select **`0.9.4`** → **Download** → Restart Home Assistant.
+- **Via Marketplace / HACS:** Open **MyHOME** in **Settings → Marketplace** → click `⋮` → **Install another version** → select **`0.9.4`** → **Install** (or in **HACS** on `< 2026.11` → click `⋮` → **Redownload** → select **`0.9.4`** → **Download**) → Restart Home Assistant.
 - **Via Terminal & SSH** *(use `Ctrl + Shift + V` to paste)*:
     ```bash
     cd /config/custom_components
@@ -278,7 +277,7 @@ If you ever need to revert to the legacy codebase (`0.9.4`):
 
 1. Go to **Settings → Devices & services → MyHOME**, open the gateway entry's `⋮` menu and choose **Delete**. Repeat for every configured gateway. This closes the bus sessions, unloads all platforms and removes the gateway's devices and entities from the registries.
 2. Restart Home Assistant if you also want to remove the code:
-    - **Marketplace / HACS:** open **MyHOME** in **Settings → Marketplace** (or **HACS** on `< 2026.11`) → `⋮` → **Remove**.
+    - **Marketplace / HACS:** open **MyHOME** in **Settings → Marketplace** → `⋮` → **Uninstall** (or in **HACS** on `< 2026.11` → `⋮` → **Remove**).
     - **Manual / one-liner installs:** delete the folder:
         ```bash
         rm -rf /config/custom_components/myhome

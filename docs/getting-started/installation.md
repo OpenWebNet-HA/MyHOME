@@ -66,16 +66,18 @@ From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assist
 
 Once stable `v2.0.0` merges into `master` ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) and enters the default catalog, you will be able to search for **MyHOME** directly in **Settings → Marketplace**. Until then, add `OpenWebNet-HA/MyHOME` as a custom repository:
 
-1. Open **Settings → Marketplace** in Home Assistant *(2026.11+; link a GitHub account if prompted)*, or open **HACS** (`2026.3 – 2026.10`).
-2. Click the three dots (`⋮`) in the top right and choose **Custom repositories**.
-3. Enter the repository URL:
-   ```text
-   https://github.com/OpenWebNet-HA/MyHOME
-   ```
-4. Select category: **Integration**.
-5. Click **Add**.
-6. Search for **MyHOME** and open it. Select the desired release version and click **Install** / **Download** *(note: for `2.0.0bX` pre-releases on `v2-phase1-architecture`, Option 1 above is strongly recommended)*.
-7. Restart Home Assistant when prompted.
+- **Home Assistant 2026.11+ (Marketplace):**
+    1. Open **Settings → Marketplace** in Home Assistant.
+    2. Select **Add from link** in the upper-right corner *(connect your GitHub account if prompted)*.
+    3. Under **GitHub link**, enter `https://github.com/OpenWebNet-HA/MyHOME` and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
+    4. Select **MyHOME** from the list to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**; note that for `2.0.0bX` pre-releases on `v2-phase1-architecture`, Option 1 above is strongly recommended)*.
+    5. Restart Home Assistant when prompted.
+- **Home Assistant 2026.3 – 2026.10 (HACS):**
+    1. Open **HACS** in Home Assistant.
+    2. Click the three dots (`⋮`) in the top right and choose **Custom repositories**.
+    3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, then click **Add**.
+    4. Search for **MyHOME**, open it, select the desired release version, and click **Download** *(for `2.0.0bX` pre-releases on `v2-phase1-architecture`, Option 1 above is strongly recommended)*.
+    5. Restart Home Assistant when prompted.
 
 ---
 

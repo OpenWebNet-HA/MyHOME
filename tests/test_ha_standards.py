@@ -179,3 +179,143 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     assert any("zip_release=true must specify a valid .zip filename" in err for err in checker_bad.errors)
     assert any("must be a valid Home Assistant version string" in err for err in checker_bad.errors)
     assert any("validate.yml must not bypass default-catalog checks" in err for err in checker_bad.errors)
+
+    # 5. Optional key type/semantic checks, empty-stem .zip, package_release.py drift, and missing/misconfigured validate.yml
+    (wf_dir / "validate.yml").unlink()
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / "package_release.py").write_text("# package_release stub\n", encoding="utf-8")
+    hacs_path.write_text(
+        json.dumps(
+            {
+                "name": "MyHOME",
+                "content_in_root": True,
+                "hide_default_branch": "false",
+                "hacs": 205,
+                "persistent_directory": "../escape",
+                "zip_release": False,
+                "filename": "myhome.zip",
+                "homeassistant": "2026.3.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checker_opt = StandardsChecker()
+    check_marketplace_manifest_rule(checker_opt, root_dir=tmp_path)
+    assert any("'hide_default_branch' must be a boolean" in err for err in checker_opt.errors)
+    assert any("'content_in_root' must not be true" in err for err in checker_opt.errors)
+    assert any("'hacs' must be a valid version string" in err for err in checker_opt.errors)
+    assert any("'persistent_directory' must be a safe relative subdirectory" in err for err in checker_opt.errors)
+    assert any("must set 'zip_release': true to match scripts/package_release.py" in err for err in checker_opt.errors)
+    assert any("must not set 'filename'" in err for err in checker_opt.errors)
+    assert any("validate.yml not found" in err for err in checker_opt.errors)
+
+    # 6. Empty-stem ".zip" filename, filename mismatch against package_release.py, and validate.yml missing category / hacs/action
+    (wf_dir / "validate.yml").write_text(
+        "jobs:\n  validate:\n    steps:\n      - run: echo noop\n",
+        encoding="utf-8",
+    )
+    hacs_path.write_text(
+        json.dumps(
+            {
+                "name": "MyHOME",
+                "zip_release": True,
+                "filename": ".zip",
+                "homeassistant": "2026.3.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checker_empty_zip = StandardsChecker()
+    check_marketplace_manifest_rule(checker_empty_zip, root_dir=tmp_path)
+    assert any("zip_release=true must specify a valid .zip filename" in err for err in checker_empty_zip.errors)
+    assert any("validate.yml must define a hacs/action validation step" in err for err in checker_empty_zip.errors)
+
+    (wf_dir / "validate.yml").write_text(
+        "jobs:\n"
+        "  validate:\n"
+        "    steps:\n"
+        "      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a\n"
+        "        with:\n"
+        "          category: plugin\n",
+        encoding="utf-8",
+    )
+    hacs_path.write_text(
+        json.dumps(
+            {
+                "name": "MyHOME",
+                "zip_release": True,
+                "filename": "other.zip",
+                "homeassistant": "2026.3.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checker_drift = StandardsChecker()
+    check_marketplace_manifest_rule(checker_drift, root_dir=tmp_path)
+    assert any("must be 'myhome.zip' to match scripts/package_release.py" in err for err in checker_drift.errors)
+    assert any("must set with.category to 'integration'" in err for err in checker_drift.errors)
+
+    # 7. Edge cases: filename=null without zip_release, renamed validate job ID, steps: null, spoofed action prefix, empty ignore, non-dict manifest.json, and custom OUTPUT_ZIP
+    (manifest_dir / "manifest.json").write_text("[]", encoding="utf-8")
+    (scripts_dir / "package_release.py").write_text(
+        'OUTPUT_ZIP = os.path.join(REPO_ROOT, "custom_pkg.zip")\n',
+        encoding="utf-8",
+    )
+    (wf_dir / "validate.yml").write_text(
+        "jobs:\n"
+        "  renamed_job:\n"
+        "    steps:\n"
+        "      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a\n"
+        "        with:\n"
+        "          category: integration\n",
+        encoding="utf-8",
+    )
+    hacs_path.write_text(
+        json.dumps(
+            {
+                "name": "MyHOME",
+                "filename": None,
+                "homeassistant": "2026.3.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checker_edge = StandardsChecker()
+    check_marketplace_manifest_rule(checker_edge, root_dir=tmp_path)
+    assert any("manifest.json root must be a JSON object" in err for err in checker_edge.errors)
+    assert any("must not set 'filename' (None)" in err for err in checker_edge.errors)
+    assert any("must preserve the required 'validate' job ID" in err for err in checker_edge.errors)
+
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps({"domain": "myhome", "name": "MyHOME"}),
+        encoding="utf-8",
+    )
+    (wf_dir / "validate.yml").write_text(
+        "jobs:\n"
+        "  validate:\n"
+        "    steps:\n"
+        "      - uses: hacs/action-fork@d556e736723344f83838d08488c983a15381059a\n"
+        "        with:\n"
+        "          category: integration\n"
+        "      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a\n"
+        "        with:\n"
+        "          category: integration\n"
+        "          ignore: \"\"\n",
+        encoding="utf-8",
+    )
+    hacs_path.write_text(
+        json.dumps(
+            {
+                "name": "MyHOME",
+                "zip_release": True,
+                "filename": "myhome.zip",
+                "homeassistant": "2026.3.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checker_edge2 = StandardsChecker()
+    check_marketplace_manifest_rule(checker_edge2, root_dir=tmp_path)
+    assert any("must be 'custom_pkg.zip' to match scripts/package_release.py" in err for err in checker_edge2.errors)
+    assert any("validate.yml must not bypass default-catalog checks via ignore: ''" in err for err in checker_edge2.errors)
