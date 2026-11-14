@@ -10,9 +10,9 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b17 Released)
+## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b18 Released)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b17** releases. **v2.0.0b16** was published on 2026-10-21; **v2.0.0b17** follows with the 61 pull requests merged since, on OWNd 2.0.0b13. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b18** releases. **v2.0.0b17** was published on 2026-11-04; **v2.0.0b18** follows with the 38 pull requests merged since, on OWNd 2.0.0b14. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
 
 ```mermaid
 gantt
@@ -57,8 +57,13 @@ gantt
     OWNd 2.0.0b13 Pin & Legrand 067292 Alias (#848, #854) :done, 2026-10-26, 2026-11-04
     F500 FM Tuner Controls & Station Range Bounds (#839, #844) :done, 2026-10-28, 2026-11-04
     Dimmer Preset Echo & Coarse Curve Alignment (#828, #852) :done, 2026-10-28, 2026-11-04
+    section Released in v2.0.0b18
+    Live Cover Animation (~1 s) & Venetian Dim 10 Tilt (#870, #900) :done, 2026-11-05, 2026-11-14
+    WHO 4 Startup Pacing, Offset Reads & 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
+    Expose Virtual Dimmer Hold-Up & Firmware Gates (#883, #904) :done, 2026-11-09, 2026-11-14
+    OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909) :done, 2026-11-13, 2026-11-14
     section Final Stabilization
-    v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-15
+    v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-30
 ```
 
 ---

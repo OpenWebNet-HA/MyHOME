@@ -6,9 +6,9 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (Unified Beta v2.0.0b17 & Platinum IQS)
+## 🗺️ Current Delivery Status (Unified Beta v2.0.0b18 & Platinum IQS)
 
-Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b17 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
+Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b18 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
 
 ```mermaid
 gantt
@@ -41,25 +41,30 @@ gantt
     OWNd 2.0.0b13 Pin & Legrand 067292 Alias (#848, #854)           :done, 2026-10-26, 2026-11-04
     F500 FM Tuner Controls & Station Range Bounds (#839, #844)       :done, 2026-10-28, 2026-11-04
     Dimmer Preset Echo & Coarse Curve Alignment (#828, #852)         :done, 2026-10-28, 2026-11-04
+    section Delivered in v2.0.0b18
+    Live Cover Animation (~1 s) & Venetian Dim 10 Tilt (#870, #900)  :done, 2026-11-05, 2026-11-14
+    WHO 4 Startup Pacing, Offset Reads & 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
+    Expose Virtual Dimmer Hold-Up & Firmware Gates (#883, #904)      :done, 2026-11-09, 2026-11-14
+    OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909)           :done, 2026-11-13, 2026-11-14
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
     RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
     section Release Milestones
-    Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-15
+    Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-30
 ```
 
 ---
 
-## 📦 What is Shipped & Operational in v2.0.0b17
+## 📦 What is Shipped & Operational in v2.0.0b18
 
 The following table summarizes the completed architectural features and protocol subsystems verified in the current release:
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Cover End-Stop Settle & Min Delta** | WHO=2 | ✅ **Shipped** (#778, #834, #843, #847) | Timed covers full run settle on `travel_time + 2s`, 0.5 s early cutoff tolerance, configurable `min_position_delta` (1–5%), and configurator limit refusal in calibration. |
-| **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators a wall control can drive (HA state mirrored back to its LEDs), WHO 4 virtual temperature probes, WHO 18 virtual energy meters and the WHO 13 bus clock; custom actions run as Home Assistant scripts. |
+| **Cover Live Animation, End-Stop Settle & Min Delta** | WHO=2 | ✅ **Shipped** (#778, #834, #847, #870, #900) | ~1 s interpolated live position during timed runs, full-run settle on `travel_time + 2s`, 0.5 s early cutoff tolerance, `min_position_delta` (1–5%), and intermediate `Dimension 10` Venetian slat tilt tracking. |
+| **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators (with `H4652/2` hold-up step-up, retry dedup, and UI action selectors), firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Venetian Blinds, Impulse Gates & Cover Start-Up Floor** | WHO=2 / WHO=1 | ✅ **Shipped** (#508, #667, #702, #707, #708) | Slat tilt as timed slat pulses (`slat_tilt`, `slat_time`); impulse garage / gate covers on WHO 1 relays with optional safety approval; per-cover `min_motor_pulse`, full runs at 0 % / 100 %, and timed runs ended at the actuator's stop status. |
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b13`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake (`O(N)` string generation), shared with CLI tools and MCP servers. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b14`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, idle command-socket recovery (`OWNd#165`), WHO 4 profile flags (`OWNd#168`), and `*4*3100*#0##` central `auto` builder (`OWNd#169`). |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
 | **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
@@ -221,7 +226,7 @@ graph LR
 #### 5. 🌐 Release Status: Stable v2.0.0
 
 * **Branding Assets (`brands`)**: Already in place. The MyHOME icon and logo were merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
-* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b17`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
+* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b18`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
 
 ---
 
