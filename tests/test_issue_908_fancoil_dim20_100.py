@@ -46,6 +46,9 @@ from custom_components.myhome.where_grammar import (
 )
 
 TRACES_DIR = Path(__file__).resolve().parent / "fixtures" / "traces" / "issue_908"
+MHS1_LIVE_TRACE_PATH = (
+    TRACES_DIR / "myhome_trace_MyHomeServer1_fancoil_dim20_100_2026-11-14.json"
+)
 F459_TRACE_PATH = TRACES_DIR / "myhome_trace_oracle_f459_sabiana_fancoil_dim20_100.json"
 MH200N_TRACE_PATH = (
     TRACES_DIR / "myhome_trace_oracle_mh200n_dim20_poll_dropped_periodic_100.json"
@@ -122,6 +125,8 @@ def _make_zone(
 
 def test_issue_908_oracle_gateway_divergence_on_who4_dim20() -> None:
     """Verify the firmware oracle contract backing the three Issue #908 gateway traces."""
+    assert MHS1_LIVE_TRACE_PATH.is_file()
+    assert json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))["synthetic"] is False
     assert F459_TRACE_PATH.is_file()
     assert MH200N_TRACE_PATH.is_file()
     assert MHS1_TRACE_PATH.is_file()
@@ -558,3 +563,133 @@ async def test_climate_dim19_and_dim20_unrecognized_and_modulating_cooling(
     cool_only_fan.handle_event(OWNHeatingEvent("*#4*3*19*14*0##"))
     assert cool_only_fan.hvac_action == HVACAction.IDLE
     assert cool_only_fan.extra_state_attributes["running_fan_speed"] == "off"
+
+
+@pytest.mark.asyncio
+async def test_live_myhomeserver1_gist_trace_replay_zones_1_and_2_stay_idle(
+    hass: HomeAssistant,
+) -> None:
+    """Replay @xmavgithub's live MyHomeServer1 (2.87.13) WHO=4 capture end-to-end.
+
+    Verifies that across all 130 captured frames (including paired ``#20*100`` + ``20*100``
+    0-10 V 0% Sabiana broadcasts, pump release ``*4*4002#2*0#1##`` / ``*4*4002*2##``, and
+    ``#20*0`` + ``20*0`` valve closure), Zones 1 and 2 are discovered cleanly without ghost
+    entities and remain ``HVACAction.IDLE`` with ``actuators`` all ``"off"``.
+    """
+    trace = json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))
+    gw = _make_gateway(
+        model=trace["gateway"]["model"],
+        firmware=trace["gateway"]["firmware"],
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: gw.mac, "host": trace["gateway"]["host"], "port": 20000},
+        unique_id=gw.mac,
+    )
+    entry.add_to_hass(hass)
+    plat_dict: dict[str, dict[str, dict[str, str]]] = {p: {} for p in PLATFORMS}
+    entry.runtime_data = MyHOMERuntimeData(
+        gateway=gw,
+        platforms=plat_dict,
+        entities={p: {} for p in PLATFORMS},
+    )
+
+    added_climates: list[MyHOMEClimate] = []
+
+    def _collect_climates(entities: list[MyHOMEClimate]) -> None:
+        for ent in entities:
+            ent.hass = hass
+            ent.entity_id = f"climate.zone_{ent._where}"
+            ent.async_write_ha_state = MagicMock()
+            ent.async_schedule_update_ha_state = MagicMock()
+        added_climates.extend(entities)
+
+    await climate_setup_entry(hass, entry, _collect_climates)  # type: ignore[arg-type]
+
+    for frame in trace["frames"]:
+        if frame["direction"] != "rx":
+            continue
+        parsed = OWNMessage.parse(frame["raw"])
+        assert parsed is not None
+        if isinstance(parsed, OWNHeatingEvent):
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", parsed)
+            async_dispatcher_send(hass, f"myhome_event_{MAC}_4", parsed)
+            for ent in added_climates:
+                if ent.hvac_mode == HVACMode.HEAT:
+                    assert ent.hvac_action in (None, HVACAction.IDLE)
+
+    clim_by_where = {c._where: c for c in added_climates}
+    assert set(clim_by_where) == {"1", "2"}
+
+    z1 = clim_by_where["1"]
+    assert z1.hvac_mode == HVACMode.HEAT
+    assert z1.hvac_action == HVACAction.IDLE
+    assert z1.current_temperature == pytest.approx(20.1)
+    assert z1.target_temperature == pytest.approx(19.0)
+    assert z1.current_humidity == 60
+    assert z1.extra_state_attributes["actuators"] == {"3": "off"}
+
+    z2 = clim_by_where["2"]
+    assert z2.hvac_mode == HVACMode.HEAT
+    assert z2.hvac_action == HVACAction.IDLE
+    assert z2.current_temperature == pytest.approx(19.5)
+    assert z2.target_temperature == pytest.approx(18.0)
+    assert z2.current_humidity == 63
+    assert z2.extra_state_attributes["actuators"] == {"1": "off", "3": "off"}
+
+
+@pytest.mark.asyncio
+async def test_running_fan_speed_clears_to_off_when_all_actuators_become_inactive(
+    hass: HomeAssistant,
+) -> None:
+    """When a fan-coil zone had running_fan_speed in ('low','medium','high') and all actuators
+    become inactive via non-fan-code frames (20*100, 20*0, 19*0*0, 19*100*100) or mode OFF,
+    running_fan_speed transitions to 'off' instead of sticking on the previous speed.
+    """
+    gw = _make_gateway(model="MyHomeServer1", firmware="2.87.13")
+    zone = _make_zone(hass, gw, "1", fan=True)
+    zone._attr_hvac_mode = HVACMode.HEAT
+
+    # 1. Speed 2 ('medium') -> 0-10 V 0% OFF (*#4*1#3*20*100##) clears running_fan_speed to 'off'
+    zone.handle_event(OWNHeatingEvent("*#4*1#3*20*7##"))
+    assert zone.hvac_action == HVACAction.HEATING
+    assert zone.extra_state_attributes["running_fan_speed"] == "medium"
+
+    zone.handle_event(OWNHeatingEvent("*#4*1#3*20*100##"))
+    assert zone.hvac_action == HVACAction.IDLE
+    assert zone.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 2. Multi-actuator zone: #1 valve ON + #3 fan coil 'low' -> #1 turns OFF while #3 stays ON
+    #    keeps running_fan_speed == 'low'; then #3 turns OFF (*20*0) -> running_fan_speed == 'off'!
+    zone.handle_event(OWNHeatingEvent("*#4*1#1*20*1##"))
+    zone.handle_event(OWNHeatingEvent("*#4*1#3*20*6##"))
+    assert zone.hvac_action == HVACAction.HEATING
+    assert zone.extra_state_attributes["running_fan_speed"] == "low"
+
+    zone.handle_event(OWNHeatingEvent("*#4*1#1*20*0##"))
+    assert zone.hvac_action == HVACAction.HEATING
+    assert zone.extra_state_attributes["running_fan_speed"] == "low"
+
+    zone.handle_event(OWNHeatingEvent("*#4*1#3*20*0##"))
+    assert zone.hvac_action == HVACAction.IDLE
+    assert zone.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 3. Zone-wide Dimension 19 inactive frames (0*0 and 100*100) clear 'high' -> 'off'
+    for inactive_dim19 in ("*#4*1*19*0*0##", "*#4*1*19*100*100##"):
+        zone.handle_event(OWNHeatingEvent("*#4*1#3*20*8##"))
+        assert zone.hvac_action == HVACAction.HEATING
+        assert zone.extra_state_attributes["running_fan_speed"] == "high"
+
+        zone.handle_event(OWNHeatingEvent(inactive_dim19))
+        assert zone.hvac_action == HVACAction.IDLE
+        assert zone.extra_state_attributes["running_fan_speed"] == "off"
+
+    # 4. Switching zone OFF (*4*303*1## -> _mark_actuators_off) clears 'medium' -> 'off'
+    zone.handle_event(OWNHeatingEvent("*#4*1#3*20*7##"))
+    assert zone.extra_state_attributes["running_fan_speed"] == "medium"
+
+    zone.handle_event(OWNHeatingEvent("*4*303*1##"))
+    assert zone.hvac_mode == HVACMode.OFF
+    assert zone.hvac_action == HVACAction.OFF
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "3": "off"}
+    assert zone.extra_state_attributes["running_fan_speed"] == "off"

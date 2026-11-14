@@ -1382,6 +1382,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._actuator_states = dict.fromkeys(self._actuator_states, False)
         if self._zone_active is not None:
             self._zone_active = False
+        if self._running_fan_speed in ("low", "medium", "high"):
+            self._running_fan_speed = "off"
 
     @property
     def _standalone(self) -> bool:
@@ -2611,6 +2613,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     # Neither side is active: every actuator of the zone is off.
                     self._actuator_states = dict.fromkeys(self._actuator_states, False)
             any_active = self._any_actuator_active()
+            if not any_active and self._running_fan_speed in ("low", "medium", "high"):
+                self._running_fan_speed = "off"
 
             if any_active:
                 if self._heating and self._cooling:
