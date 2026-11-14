@@ -327,11 +327,11 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
 
     await cu.async_set_hvac_mode(HVACMode.AUTO)
     sent_cmd = gateway.send.call_args[0][0]
-    # The frame is OWNd's: *4*311*#0## up to 2.0.0b13, the published program restore
-    # *4*3100*#0## (WHO 4 PDF 1.6.8) afterwards; a live 3550 ignored the first and answered
-    # the second within 0.15 s (2026-11-12). OFF / AUTO are shown at once (2026-11-08 replay).
+    # Published program restore *4*3100*#0## (WHO 4 PDF 1.6.8, OWNd#169 in 2.0.0b14):
+    # a live 3550 ignored *4*311*#0## and answered *4*3100*#0## within 0.15 s (2026-11-12).
+    # OFF / AUTO are shown at once (2026-11-08 replay).
     assert str(sent_cmd) == str(OWNHeatingCommand.set_central_mode("#0", "auto"))
-    assert str(sent_cmd) in {"*4*311*#0##", "*4*3100*#0##"}
+    assert str(sent_cmd) == "*4*3100*#0##"
     assert cu.hvac_mode == HVACMode.AUTO
     assert central_mode_events[-1] == HVACMode.AUTO
     # The 3550's answer to the program restore: weekly program 1 in conditioning

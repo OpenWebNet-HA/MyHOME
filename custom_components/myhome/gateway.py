@@ -264,8 +264,9 @@ SILENT_ZONE_GRACE = 120.0
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
 # (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
-# Read from the OWNd profile first (``supports_heating_actuator_status``); this table is the
-# fallback until the flag exists there.
+# Read from the OWNd profile first (``supports_heating_actuator_status``, OWNd#168 in 2.0.0b14);
+# this table is the fallback for ``GenericGatewayProfile`` / brand-prefixed model strings and
+# ``None`` (unverified) profile flags.
 ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
 # Gateways that refuse the zone form of that request at once but answer the actuator form
 # (``*#4*Z#N*20##``): a physical F455 1.0.76 NACKed *#4*2*20##, *#4*4*20##, *#4*3*20## and
@@ -294,7 +295,8 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 # (findings/thermo-zone-requests.md on main, ``firmware_observed``, emulated firmware); F459,
 # F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
 # Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
-# wins, ``None`` = unverified); this table is the fallback until the flag exists there.
+# wins, ``None`` = unverified, OWNd#168 in 2.0.0b14); this table is the fallback for
+# ``GenericGatewayProfile`` / brand-prefixed model strings and ``None`` (such as F455).
 HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", "H4684", "MH200", "MH200N", "MH202"})
 # The F455 is not in the oracle: a physical F455 1.0.76 NACKed *#4*2*60## in 19 ms with nothing on
 # the bus (issue_466/F455_direct_requests_2026-11-06.jsonl, t=68.6).

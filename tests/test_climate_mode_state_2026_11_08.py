@@ -226,7 +226,7 @@ async def test_central_off_and_auto_stay_immediate() -> None:
     assert central.hvac_mode == HVACMode.AUTO
     sent = _sent(gateway)
     assert sent == ["*4*303*#0##", str(OWNHeatingCommand.set_central_mode("#0", "auto"))]
-    assert sent[1] in {"*4*311*#0##", "*4*3100*#0##"}  # 2.0.0b13 / the 3100 builder, both traced live
+    assert sent[1] == "*4*3100*#0##"  # published last-weekly-program builder (OWNd#169), traced live
 
 
 # F6: the F455's echo of Home Assistant's own #0 command is not a 3550 report.

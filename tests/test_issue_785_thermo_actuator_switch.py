@@ -241,25 +241,17 @@ def test_thermo_event_helpers() -> None:
     assert thermo_event_zone(routed_zone_evt) == "7"
     assert thermo_event_actuator(routed_zone_evt) == "1"
 
-    # Explicit interface attribute and non-digit interface fallback
-    fake_if = MagicMock(interface="3", _where_param=[], where_param=[])
+    # Explicit interface attribute and non-digit interface normalization
+    fake_if = MagicMock(interface="3")
     assert thermo_event_interface(fake_if) == "03"
-    fake_alpha_if = MagicMock(interface="busA", _where_param=[], where_param=[])
+    fake_alpha_if = MagicMock(interface="busA")
     assert thermo_event_interface(fake_alpha_if) == "busA"
-    # Pre-b14 OWNd fallback when .interface is None and routing lives in where_param
-    pre_b14_zone_if = SimpleNamespace(where="7", zone=7, interface=None, where_param=["4", "2"])
-    assert thermo_event_interface(pre_b14_zone_if) == "02"
-    assert _calling_zones(pre_b14_zone_if) == (["7"], "02")
-    pre_b14_act_if = SimpleNamespace(where="7", zone=7, interface=None, where_param=["1", "4", "1"])
-    assert thermo_event_interface(pre_b14_act_if) == "01"
-    assert _calling_zones(pre_b14_act_if) == (["7"], "01")
+    assert thermo_event_interface(SimpleNamespace(where="7", zone=7, interface=None)) is None
 
-    # Explicit .actuator attribute and fallback tail actuator when .actuator is absent
+    # Explicit .actuator attribute and default "1" when .actuator is absent or non-digit
     assert thermo_event_actuator(MagicMock(actuator=2)) == "2"
-    fake_tail_act = MagicMock(actuator=None, where_param=["4_no"], _where_param=[])
-    assert thermo_event_actuator(fake_tail_act) == "1"
-    fake_tail_digit = MagicMock(actuator=None, where_param=["5"], _where_param=[])
-    assert thermo_event_actuator(fake_tail_digit) == "5"
+    assert thermo_event_actuator(MagicMock(actuator="non_digit")) == "1"
+    assert thermo_event_actuator(MagicMock(actuator=None)) == "1"
 
     # Pumps, probes, and central unit return None for thermo_event_zone
     assert thermo_event_zone(OWNHeatingEvent("*#4*0#1*20*1##")) is None

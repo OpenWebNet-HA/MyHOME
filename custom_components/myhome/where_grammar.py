@@ -422,12 +422,6 @@ def thermo_event_interface(message: Any) -> str | None:
     """Return normalized 2-digit F422 interface from a WHO=4 event, or ``None``."""
     raw_if = getattr(message, "interface", None)
     if not raw_if:
-        tail = where_param(message)
-        if len(tail) == 2 and tail[0] == "4":
-            raw_if = str(tail[1])
-        elif len(tail) > 2 and tail[1] == "4":
-            raw_if = str(tail[2])
-    if not raw_if:
         return None
     if_str = str(raw_if)
     return if_str.zfill(2) if if_str.isdigit() else if_str
@@ -456,9 +450,6 @@ def thermo_event_actuator(message: Any) -> str:
     act = getattr(message, "actuator", None)
     if act is not None and str(act).isdigit():
         return str(int(str(act)))
-    tail = where_param(message)
-    if tail and not (len(tail) == 2 and tail[0] == "4") and str(tail[0]).isdigit():
-        return str(int(str(tail[0])))
     return "1"
 
 
