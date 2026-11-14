@@ -263,6 +263,11 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 dim = int(raw_dim)
 
         allowed_actions = _action_keys_for_who(who)
+        if any(
+            k not in allowed_actions and user_input.get(k) not in (None, "", [], {})
+            for k in _WHO1_ACTION_KEYS
+        ):
+            errors["base"] = "action_not_supported_for_who"
         has_actions = any(
             user_input.get(k) not in (None, "", [], {})
             for k in allowed_actions

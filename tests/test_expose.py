@@ -3750,7 +3750,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     )
     assert bad_act["errors"]["base"] == "invalid_expose"
 
-    # 4. WHO=4/13/18 never accept or store custom actions, and omit them from reconfigure/error forms
+    # 4. WHO=4/13/18 reject non-empty custom actions with an explicit form error (instead of silently
+    #    dropping them), omit action fields on the re-rendered WHO=4 form, and accept empty [] payloads
     who4_no_entity = await flow.async_step_user(
         {
             CONF_WHO: "4",
@@ -3758,7 +3759,10 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
             CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
         }
     )
-    assert who4_no_entity["errors"]["entity_id"] == "entity_required"
+    assert who4_no_entity["errors"] == {
+        "base": "action_not_supported_for_who",
+        "entity_id": "entity_required",
+    }
     who4_form_keys = {
         getattr(k, "schema", k) for k in who4_no_entity["data_schema"].schema
     }
@@ -3770,19 +3774,30 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     ):
         assert action_key not in who4_form_keys
 
+    who4_with_action = await flow.async_step_user(
+        {
+            CONF_WHO: "4",
+            "where": "51",
+            "entity_id": "sensor.temp",
+            CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
+        }
+    )
+    assert who4_with_action["type"] == FlowResultType.FORM
+    assert who4_with_action["errors"] == {"base": "action_not_supported_for_who"}
+
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        who4_with_stale_action = await flow.async_step_user(
+        who4_empty_action = await flow.async_step_user(
             {
                 CONF_WHO: "4",
                 "where": "51",
                 "entity_id": "sensor.temp",
-                CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
+                CONF_TURN_ON_ACTION: [],
             }
         )
-    assert who4_with_stale_action["type"] == FlowResultType.CREATE_ENTRY
-    assert CONF_TURN_ON_ACTION not in who4_with_stale_action["data"]
+    assert who4_empty_action["type"] == FlowResultType.CREATE_ENTRY
+    assert CONF_TURN_ON_ACTION not in who4_empty_action["data"]
 
-    # WHO=2 shows and stores only turn_on_action / turn_off_action (not step_up_action / step_down_action)
+    # WHO=2 accepts turn_on_action / turn_off_action, but rejects step_up_action / step_down_action
     who2_step_only = await flow.async_step_user(
         {
             CONF_WHO: "2",
@@ -3790,7 +3805,34 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
             CONF_STEP_UP_ACTION: [{"action": "cover.open_cover"}],
         }
     )
-    assert who2_step_only["errors"]["entity_id"] == "entity_required"
+    assert who2_step_only["errors"] == {
+        "base": "action_not_supported_for_who",
+        "entity_id": "entity_required",
+    }
+
+    who2_entity_with_step = await flow.async_step_user(
+        {
+            CONF_WHO: "2",
+            "where": "32",
+            "entity_id": "cover.blind",
+            CONF_STEP_UP_ACTION: [{"action": "cover.open_cover"}],
+        }
+    )
+    assert who2_entity_with_step["type"] == FlowResultType.FORM
+    assert who2_entity_with_step["errors"] == {"base": "action_not_supported_for_who"}
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        who2_turn_on = await flow.async_step_user(
+            {
+                CONF_WHO: "2",
+                "where": "32",
+                CONF_TURN_ON_ACTION: [{"action": "cover.open_cover"}],
+                CONF_STEP_UP_ACTION: [],
+            }
+        )
+    assert who2_turn_on["type"] == FlowResultType.CREATE_ENTRY
+    assert CONF_TURN_ON_ACTION in who2_turn_on["data"]
+    assert CONF_STEP_UP_ACTION not in who2_turn_on["data"]
 
     # 5. Custom actions with delay / time values remain JSON-serializable for Store (prepare_save_json)
     #    in both list and single-dict forms, and compile cleanly when loaded by ExposeManager
