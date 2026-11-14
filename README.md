@@ -217,7 +217,7 @@ From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplac
 #### Step 1: Add the Organization Repository
 
 - **Home Assistant 2026.11+ (Marketplace):**
-    1. Open **Settings → Marketplace** in Home Assistant.
+    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
     2. Select **Add from link** in the upper-right corner *(connect your GitHub account if prompted)*.
     3. Under **GitHub link**, enter `https://github.com/OpenWebNet-HA/MyHOME` and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
 - **Home Assistant 2026.3 – 2026.10 (HACS):**
@@ -226,13 +226,14 @@ From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplac
     3. Enter `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, then click **Add**.
 
 > [!CAUTION]
-> **Migrating from a personal fork? DO NOT delete the MyHOME integration from Home Assistant Settings!**
-> Deleting the integration from *Settings → Devices & Services* will wipe all configured gateways and devices.
+> **Migrating from a personal fork? DO NOT delete the MyHOME integration from Home Assistant Settings (and NEVER click "Delete and uninstall" in Marketplace)!**
+> Deleting the integration entry under *Settings → Devices & services* — or choosing **Delete and uninstall** in Marketplace's "integration in use" dialog — will wipe all configured gateways, devices, and entities.
 > If you previously tracked a personal fork (such as `GreenGrassBlueOcean/MyHOME` or `anotherjulien/MyHOME`):
 >
-> 1. In **Settings → Marketplace**, select **Add from link** and remove the old fork under **Added from links** (or on `< 2026.11`, open **HACS → ⋮ → Custom repositories** and click the trash can icon next to the old fork URL).
-> 2. Ensure `OpenWebNet-HA/MyHOME` is added.
-> 3. All your configured devices, gateways, and automations remain 100% intact.
+> - **If the fork is marked Installed in Home Assistant 2026.11+ (Marketplace):** Marketplace locks `custom_components/myhome` to that fork (`Uninstall it first`) and blocks uninstalling while gateway entries exist. Update `/config/custom_components/myhome/` in place using **Method 1 (Terminal & SSH)** or **Method 2 (Manual)** above — **do not** choose **Delete and uninstall**.
+> - **If the fork was only added as a link (not installed) in Marketplace (`2026.11+`):** open **Settings → Marketplace → `⋮` → Custom repositories**, click **Remove** (trash can icon) next to the old fork, and add `OpenWebNet-HA/MyHOME` via **Add from link**.
+> - **On Home Assistant `< 2026.11` (HACS):** open **HACS → `⋮` → Custom repositories**, click the trash can icon next to the old fork URL, and ensure `OpenWebNet-HA/MyHOME` is added.
+> - All your configured devices, gateways, and automations remain 100% intact.
 
 #### Step 2: Install / Download & Restart
 

@@ -465,9 +465,229 @@ MARKETPLACE_MANIFEST_ALLOWED_KEYS = frozenset(
     }
 )
 
+KNOWN_INTEGRATION_CATEGORIES = frozenset(
+    {
+        "ai_voice",
+        "ai_voice.ai_models",
+        "ai_voice.image_recognition",
+        "ai_voice.speech",
+        "ai_voice.voice_assistants",
+        "appliances_cleaning",
+        "appliances_cleaning.cleaning",
+        "appliances_cleaning.cooking",
+        "appliances_cleaning.laundry",
+        "blinds_curtains",
+        "buttons_remotes",
+        "climate",
+        "climate.air_purifiers_humidifiers",
+        "climate.fans_ventilation",
+        "climate.heat_pumps_air_conditioning",
+        "climate.thermostats_heating",
+        "climate.water_heaters",
+        "computers_network",
+        "computers_network.cloud_developer_tools",
+        "computers_network.monitoring",
+        "computers_network.nas_servers",
+        "computers_network.printers",
+        "computers_network.routers_network",
+        "diy_makers",
+        "diy_makers.boards_hardware",
+        "diy_makers.web_data_connectors",
+        "energy",
+        "energy.backup_power",
+        "energy.energy_prices",
+        "energy.ev_charging",
+        "energy.meters_monitoring",
+        "energy.solar_batteries",
+        "finance",
+        "garden_plants",
+        "health_wellbeing",
+        "helpers",
+        "helpers.calculate_value",
+        "helpers.store_value",
+        "hubs_protocols",
+        "hubs_protocols.building_automation",
+        "hubs_protocols.smart_home_hubs",
+        "hubs_protocols.wireless_protocols",
+        "lighting",
+        "lighting.bulbs_lamps",
+        "lighting.led_strips_controllers",
+        "lighting.lighting_systems",
+        "local_services",
+        "media_entertainment",
+        "media_entertainment.gaming",
+        "media_entertainment.music_radio_services",
+        "media_entertainment.speakers_audio",
+        "media_entertainment.tv_streaming",
+        "messaging_notifications",
+        "messaging_notifications.chat_apps",
+        "messaging_notifications.email_sms_calls",
+        "messaging_notifications.push_notifications",
+        "news_social_media",
+        "other_ecosystems",
+        "pets",
+        "plugs_switches",
+        "presence_location",
+        "presence_location.network_presence",
+        "presence_location.phones_companion_apps",
+        "presence_location.trackers",
+        "productivity_information",
+        "productivity_information.calendars_todos",
+        "productivity_information.documents_photos",
+        "productivity_information.shopping_groceries",
+        "security_safety",
+        "security_safety.alarm_systems",
+        "security_safety.cameras",
+        "security_safety.doorbells_intercoms",
+        "security_safety.locks_access",
+        "security_safety.smoke_co_alarms",
+        "sensors",
+        "sensors.air_quality",
+        "sensors.door_window",
+        "sensors.motion_presence",
+        "sensors.temperature_humidity",
+        "vehicles_transport",
+        "vehicles_transport.bikes_scooters",
+        "vehicles_transport.cars_evs",
+        "vehicles_transport.flights",
+        "vehicles_transport.public_transport",
+        "water",
+        "water.meters_leak_detection",
+        "water.pools_spas",
+        "water.water_treatment",
+        "weather_alerts",
+        "weather_alerts.air_quality_pollen",
+        "weather_alerts.forecasts",
+        "weather_alerts.public_warnings",
+    }
+)
+
+PNG_MAGIC_BYTES = b"\x89PNG\r\n\x1a\n"
+MIN_SUPPORTED_HA_VERSION = (2026, 3, 0)
+HA_CALVER_RE = re.compile(
+    r"^(?P<year>[1-9]\d{3})\.(?P<month>[1-9]|1[0-2])\.(?P<patch>0|[1-9]\d*)(?:(?:a|b|rc)(?:0|[1-9]\d*))?$"
+)
+
+
+def _extract_path_leaf(expr: ast.AST) -> str | None:
+    """Extract a static trailing filename from a string, Path/os.path.join call, or `/` expression."""
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+        leaf = Path(expr.value.replace("\\", "/")).name
+        return leaf or None
+    if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Div):
+        return _extract_path_leaf(expr.right)
+    if isinstance(expr, ast.Call) and expr.args:
+        func = expr.func
+        func_name = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr
+            if isinstance(func, ast.Attribute)
+            else None
+        )
+        if func_name in ("join", "Path", "PurePath", "PurePosixPath"):
+            return _extract_path_leaf(expr.args[-1])
+    return None
+
+
+def _extract_output_zip_name(package_script: Path) -> str | None:
+    """Extract OUTPUT_ZIP basename from scripts/package_release.py via AST (None if unparseable)."""
+    try:
+        tree = ast.parse(package_script.read_text(encoding="utf-8"), filename=str(package_script))
+    except SyntaxError:
+        return None
+
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            for target in stmt.targets:
+                if isinstance(target, ast.Name) and target.id == "OUTPUT_ZIP":
+                    return _extract_path_leaf(stmt.value)
+        elif (
+            isinstance(stmt, ast.AnnAssign)
+            and isinstance(stmt.target, ast.Name)
+            and stmt.target.id == "OUTPUT_ZIP"
+            and stmt.value is not None
+        ):
+            return _extract_path_leaf(stmt.value)
+
+    return "myhome.zip"
+
+
+def _validate_manifest_categories_and_branding(
+    checker: StandardsChecker,
+    manifest_file: Path,
+    manifest_data: dict,
+    *,
+    require_brand_dir: bool,
+) -> None:
+    """Validate Marketplace categories in manifest.json and local brand/ PNG assets."""
+    categories = manifest_data.get("categories")
+    if (
+        not isinstance(categories, list)
+        or not (1 <= len(categories) <= 3)
+        or not all(isinstance(c, str) for c in categories)
+    ):
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            manifest_file,
+            1,
+            f"manifest.json 'categories' must be a list of 1..3 category strings for Marketplace catalog indexing (got {categories!r})",
+        )
+    else:
+        if len(set(categories)) != len(categories):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                manifest_file,
+                1,
+                f"manifest.json 'categories' must not contain duplicates: {categories!r}",
+            )
+        unknown_cats = [c for c in categories if c not in KNOWN_INTEGRATION_CATEGORIES]
+        if unknown_cats:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                manifest_file,
+                1,
+                f"manifest.json 'categories' contains unknown Home Assistant categories: {unknown_cats!r}",
+            )
+        for cat in categories:
+            parent, _, sub = cat.partition(".")
+            if sub and parent in categories:
+                checker.log_error(
+                    "RULE_MARKETPLACE_MANIFEST",
+                    manifest_file,
+                    1,
+                    f"manifest.json category {parent!r} is implied by subcategory {cat!r}; remove {parent!r}",
+                )
+
+    brand_dir = manifest_file.parent / "brand"
+    if require_brand_dir and not brand_dir.is_dir():
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            brand_dir,
+            1,
+            "Local brand/ directory not found under custom_components/myhome/",
+        )
+    elif brand_dir.is_dir():
+        for asset_name in ("icon.png", "logo.png"):
+            asset_path = brand_dir / asset_name
+            if not asset_path.is_file():
+                checker.log_error(
+                    "RULE_MARKETPLACE_MANIFEST",
+                    asset_path,
+                    1,
+                    f"Required local brand asset {asset_name!r} missing from brand/",
+                )
+            elif not asset_path.read_bytes().startswith(PNG_MAGIC_BYTES):
+                checker.log_error(
+                    "RULE_MARKETPLACE_MANIFEST",
+                    asset_path,
+                    1,
+                    f"Local brand asset {asset_name!r} is not a valid PNG file",
+                )
+
 
 def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | None = None):
-    """Enforce Home Assistant 2026.11 Marketplace & HACS hacs.json and validate.yml compliance."""
+    """Enforce Home Assistant 2026.11 Marketplace & HACS hacs.json, manifest.json, brand/, and validate.yml compliance."""
     base_root = root_dir or ROOT_DIR
     hacs_file = base_root / "hacs.json"
     manifest_file = base_root / "custom_components" / "myhome" / "manifest.json"
@@ -500,22 +720,30 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
         )
 
     hacs_name = hacs_data.get("name")
-    if not isinstance(hacs_name, str) or not hacs_name.strip():
+    valid_hacs_name = isinstance(hacs_name, str) and bool(hacs_name.strip())
+    if not valid_hacs_name:
         checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, "hacs.json must define a non-empty string 'name'")
-    elif manifest_file.exists():
+
+    if manifest_file.exists():
         try:
             manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
             if not isinstance(manifest_data, dict):
                 checker.log_error("RULE_MARKETPLACE_MANIFEST", manifest_file, 1, "manifest.json root must be a JSON object")
             else:
                 manifest_name = manifest_data.get("name")
-                if isinstance(manifest_name, str) and manifest_name and hacs_name != manifest_name:
+                if valid_hacs_name and isinstance(manifest_name, str) and manifest_name and hacs_name != manifest_name:
                     checker.log_error(
                         "RULE_MARKETPLACE_MANIFEST",
                         hacs_file,
                         1,
                         f"hacs.json name ({hacs_name!r}) must match manifest.json name ({manifest_name!r})",
                     )
+                _validate_manifest_categories_and_branding(
+                    checker,
+                    manifest_file,
+                    manifest_data,
+                    require_brand_dir=(root_dir is None),
+                )
         except Exception as err:
             checker.log_error("RULE_MARKETPLACE_MANIFEST", manifest_file, 1, f"Failed to parse manifest.json: {err}")
 
@@ -567,12 +795,16 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
                 f"hacs.json 'persistent_directory' must be a safe relative subdirectory path (got {pdir!r})",
             )
 
-    expected_zip_name = "myhome.zip"
+    expected_zip_name: str | None = "myhome.zip"
     if package_script.exists():
-        pkg_text = package_script.read_text(encoding="utf-8")
-        zip_match = re.search(r'OUTPUT_ZIP\s*=\s*os\.path\.join\([^,]+,\s*["\']([^"\']+)["\']\)', pkg_text)
-        if zip_match:
-            expected_zip_name = zip_match.group(1)
+        expected_zip_name = _extract_output_zip_name(package_script)
+        if expected_zip_name is None:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                package_script,
+                1,
+                "Could not statically resolve OUTPUT_ZIP filename from scripts/package_release.py",
+            )
         if hacs_data.get("zip_release") is not True:
             checker.log_error(
                 "RULE_MARKETPLACE_MANIFEST",
@@ -594,7 +826,7 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
                 1,
                 f"hacs.json with zip_release=true must specify a valid .zip filename (got {filename!r})",
             )
-        elif package_script.exists() and filename != expected_zip_name:
+        elif package_script.exists() and expected_zip_name is not None and filename != expected_zip_name:
             checker.log_error(
                 "RULE_MARKETPLACE_MANIFEST",
                 hacs_file,
@@ -610,13 +842,27 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
         )
 
     ha_min = hacs_data.get("homeassistant")
-    if not isinstance(ha_min, str) or not re.fullmatch(r"\d{4}\.\d+\.\d+(?:(?:a|b|rc)\d+)?", ha_min):
+    ha_match = HA_CALVER_RE.fullmatch(ha_min) if isinstance(ha_min, str) else None
+    if ha_match is None:
         checker.log_error(
             "RULE_MARKETPLACE_MANIFEST",
             hacs_file,
             1,
-            f"hacs.json 'homeassistant' must be a valid Home Assistant version string (got {ha_min!r})",
+            f"hacs.json 'homeassistant' must be a valid Home Assistant CalVer string YYYY.M.P (got {ha_min!r})",
         )
+    else:
+        ha_tuple = (
+            int(ha_match.group("year")),
+            int(ha_match.group("month")),
+            int(ha_match.group("patch")),
+        )
+        if ha_tuple < MIN_SUPPORTED_HA_VERSION:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                f"hacs.json 'homeassistant' ({ha_min!r}) must be >= '2026.3.0'",
+            )
 
     if not validate_workflow.exists():
         checker.log_error(
@@ -641,6 +887,13 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
                     "validate.yml must preserve the required 'validate' job ID",
                 )
             else:
+                if "if" in validate_job or validate_job.get("continue-on-error"):
+                    checker.log_error(
+                        "RULE_MARKETPLACE_VALIDATE",
+                        validate_workflow,
+                        1,
+                        "validate.yml 'validate' job must not set 'if' or 'continue-on-error'",
+                    )
                 raw_steps = validate_job.get("steps")
                 steps = raw_steps if isinstance(raw_steps, list) else []
                 found_hacs_action = False
@@ -650,6 +903,20 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
                     uses = str(step.get("uses", ""))
                     if uses == "hacs/action" or uses.startswith("hacs/action@"):
                         found_hacs_action = True
+                        if not re.fullmatch(r"hacs/action@[0-9a-f]{40}", uses):
+                            checker.log_error(
+                                "RULE_MARKETPLACE_VALIDATE",
+                                validate_workflow,
+                                1,
+                                f"validate.yml hacs/action step must pin a 40-character commit SHA (got {uses!r})",
+                            )
+                        if "if" in step or step.get("continue-on-error"):
+                            checker.log_error(
+                                "RULE_MARKETPLACE_VALIDATE",
+                                validate_workflow,
+                                1,
+                                "validate.yml hacs/action step must not set 'if' or 'continue-on-error'",
+                            )
                         with_args = step.get("with")
                         if not isinstance(with_args, dict) or with_args.get("category") != "integration":
                             checker.log_error(

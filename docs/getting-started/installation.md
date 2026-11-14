@@ -67,7 +67,7 @@ From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assist
 Once stable `v2.0.0` merges into `master` ([PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)) and enters the default catalog, you will be able to search for **MyHOME** directly in **Settings → Marketplace**. Until then, add `OpenWebNet-HA/MyHOME` as a custom repository:
 
 - **Home Assistant 2026.11+ (Marketplace):**
-    1. Open **Settings → Marketplace** in Home Assistant.
+    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
     2. Select **Add from link** in the upper-right corner *(connect your GitHub account if prompted)*.
     3. Under **GitHub link**, enter `https://github.com/OpenWebNet-HA/MyHOME` and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
     4. Select **MyHOME** from the list to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**; note that for `2.0.0bX` pre-releases on `v2-phase1-architecture`, Option 1 above is strongly recommended)*.

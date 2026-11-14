@@ -140,7 +140,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     check_marketplace_manifest_rule(checker_non_dict, root_dir=tmp_path)
     assert any("hacs.json root must be a JSON object" in err for err in checker_non_dict.errors)
 
-    # 4. Unsupported keys, name mismatch, missing .zip filename, invalid HA version, and validate.yml ignore
+    # 4. Unsupported keys, name mismatch, missing categories, missing .zip filename, invalid HA version, and validate.yml ignore
     manifest_dir = tmp_path / "custom_components" / "myhome"
     manifest_dir.mkdir(parents=True)
     (manifest_dir / "manifest.json").write_text(
@@ -176,11 +176,22 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     check_marketplace_manifest_rule(checker_bad, root_dir=tmp_path)
     assert any("unsupported by Home Assistant 2026.11 Marketplace" in err for err in checker_bad.errors)
     assert any("must match manifest.json name" in err for err in checker_bad.errors)
+    assert any("'categories' must be a list of 1..3 category strings" in err for err in checker_bad.errors)
     assert any("zip_release=true must specify a valid .zip filename" in err for err in checker_bad.errors)
-    assert any("must be a valid Home Assistant version string" in err for err in checker_bad.errors)
+    assert any("must be a valid Home Assistant CalVer string" in err for err in checker_bad.errors)
     assert any("validate.yml must not bypass default-catalog checks" in err for err in checker_bad.errors)
 
     # 5. Optional key type/semantic checks, empty-stem .zip, package_release.py drift, and missing/misconfigured validate.yml
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "domain": "myhome",
+                "name": "MyHOME",
+                "categories": ["hubs_protocols.building_automation"],
+            }
+        ),
+        encoding="utf-8",
+    )
     (wf_dir / "validate.yml").unlink()
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir(parents=True)
@@ -256,10 +267,10 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     assert any("must be 'myhome.zip' to match scripts/package_release.py" in err for err in checker_drift.errors)
     assert any("must set with.category to 'integration'" in err for err in checker_drift.errors)
 
-    # 7. Edge cases: filename=null without zip_release, renamed validate job ID, steps: null, spoofed action prefix, empty ignore, non-dict manifest.json, and custom OUTPUT_ZIP
+    # 7. Edge cases: filename=null without zip_release, renamed validate job ID, non-dict manifest.json, and pathlib OUTPUT_ZIP
     (manifest_dir / "manifest.json").write_text("[]", encoding="utf-8")
     (scripts_dir / "package_release.py").write_text(
-        'OUTPUT_ZIP = os.path.join(REPO_ROOT, "custom_pkg.zip")\n',
+        'OUTPUT_ZIP = Path(REPO_ROOT) / "custom_pkg.zip"\n',
         encoding="utf-8",
     )
     (wf_dir / "validate.yml").write_text(
@@ -276,7 +287,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
             {
                 "name": "MyHOME",
                 "filename": None,
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.13.0",
             }
         ),
         encoding="utf-8",
@@ -285,20 +296,37 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     check_marketplace_manifest_rule(checker_edge, root_dir=tmp_path)
     assert any("manifest.json root must be a JSON object" in err for err in checker_edge.errors)
     assert any("must not set 'filename' (None)" in err for err in checker_edge.errors)
+    assert any("must be a valid Home Assistant CalVer string" in err for err in checker_edge.errors)
     assert any("must preserve the required 'validate' job ID" in err for err in checker_edge.errors)
 
+    # 8. Unpinned hacs/action, if/continue-on-error bypasses, HA version < 2026.3.0, category duplicates/unknowns/overlaps, brand PNG checks, and unparseable OUTPUT_ZIP
+    brand_dir = manifest_dir / "brand"
+    brand_dir.mkdir()
+    (brand_dir / "icon.png").write_bytes(b"not-a-png")
     (manifest_dir / "manifest.json").write_text(
-        json.dumps({"domain": "myhome", "name": "MyHOME"}),
+        json.dumps(
+            {
+                "domain": "myhome",
+                "name": "MyHOME",
+                "categories": [
+                    "hubs_protocols",
+                    "hubs_protocols.building_automation",
+                    "nonexistent_cat",
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     (wf_dir / "validate.yml").write_text(
         "jobs:\n"
         "  validate:\n"
+        "    continue-on-error: true\n"
         "    steps:\n"
         "      - uses: hacs/action-fork@d556e736723344f83838d08488c983a15381059a\n"
         "        with:\n"
         "          category: integration\n"
-        "      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a\n"
+        "      - uses: hacs/action@main\n"
+        "        if: false\n"
         "        with:\n"
         "          category: integration\n"
         "          ignore: \"\"\n",
@@ -310,7 +338,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": "myhome.zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.2.0",
             }
         ),
         encoding="utf-8",
@@ -318,4 +346,35 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     checker_edge2 = StandardsChecker()
     check_marketplace_manifest_rule(checker_edge2, root_dir=tmp_path)
     assert any("must be 'custom_pkg.zip' to match scripts/package_release.py" in err for err in checker_edge2.errors)
+    assert any("must be >= '2026.3.0'" in err for err in checker_edge2.errors)
+    assert any("unknown Home Assistant categories: ['nonexistent_cat']" in err for err in checker_edge2.errors)
+    assert any("is implied by subcategory 'hubs_protocols.building_automation'" in err for err in checker_edge2.errors)
+    assert any("Local brand asset 'icon.png' is not a valid PNG file" in err for err in checker_edge2.errors)
+    assert any("Required local brand asset 'logo.png' missing from brand/" in err for err in checker_edge2.errors)
+    assert any("'validate' job must not set 'if' or 'continue-on-error'" in err for err in checker_edge2.errors)
+    assert any("must pin a 40-character commit SHA" in err for err in checker_edge2.errors)
+    assert any("hacs/action step must not set 'if' or 'continue-on-error'" in err for err in checker_edge2.errors)
     assert any("validate.yml must not bypass default-catalog checks via ignore: ''" in err for err in checker_edge2.errors)
+
+    # 9. Duplicate categories and dynamic/unresolvable OUTPUT_ZIP in package_release.py
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "domain": "myhome",
+                "name": "MyHOME",
+                "categories": [
+                    "hubs_protocols.building_automation",
+                    "hubs_protocols.building_automation",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (scripts_dir / "package_release.py").write_text(
+        "OUTPUT_ZIP: str = dynamic_zip_path()\n",
+        encoding="utf-8",
+    )
+    checker_edge3 = StandardsChecker()
+    check_marketplace_manifest_rule(checker_edge3, root_dir=tmp_path)
+    assert any("must not contain duplicates" in err for err in checker_edge3.errors)
+    assert any("Could not statically resolve OUTPUT_ZIP" in err for err in checker_edge3.errors)
