@@ -1616,6 +1616,11 @@ class CommandWorkerPool:
                                     parsed=resp if isinstance(resp, OWNMessage) else None,
                                 )
                                 if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                    if task["is_status_request"]:
+                                        # The answer to a status request, read on the command session: the
+                                        # state when the actuator answered, never a new event of its own (its
+                                        # copy on the monitor session comes as usual).
+                                        setattr(resp, "myhome_status_reply", True)
                                     if isinstance(resp, OWNGatewayEvent):
                                         self.handler._handle_gateway_diagnostics(resp)
                                     elif (

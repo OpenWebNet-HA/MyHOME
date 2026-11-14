@@ -453,6 +453,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._recent_ptp: collections.deque[tuple[float, str, str | None]] = self._resync_manager.recent_ptp
         self._sender_stop: asyncio.Event = self._command_pool.sender_stop
         self._initial_discovery_done: asyncio.Event = asyncio.Event()
+        # Told of every automation (WHO 2) status request sent through this handler, once queued, so that a
+        # calibration run can tell the actuator's reply to a request from the motor stopping.
+        self.automation_status_listeners: set[Callable[[OWNCommand], None]] = set()
         # Paced sweeps in flight; close_listener() bumps the epoch so a sweep that was
         # running at the time cannot end one started after the reconnect.
         self._active_sweeps: int = 0
@@ -1251,6 +1254,13 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
         """Queue a status request; the returned future resolves to the monotonic write time."""
+        written = await self._send_status_request(message)
+        if getattr(message, "who", None) == 2:
+            for listener in tuple(self.automation_status_listeners):
+                listener(message)
+        return written
+
+    async def _send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
         delegated = self._delegated_target(message)
         if delegated is not None:
             return await delegated.send_status_request(message)

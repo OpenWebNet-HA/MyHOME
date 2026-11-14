@@ -36,7 +36,10 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
         if event.current_position is not None and self.active:
             self.interrupt("unexpected_movement")
             return
-        if self.phase in {"opening", "closing"} and event.state == 0:
+        # The answer to a status request read on the command session (the gateway marks it) is not the run's stop:
+        # the guided session ignores it.
+        if self.phase in {"opening", "closing"} and event.state == 0 and getattr(
+                event, "myhome_status_reply", False) is not True:
             elapsed = guided.monotonic() - cast(float, self.started_at)
             if elapsed < 0.15:  # Trailing relay echo, as in #349; keep the deadline.
                 return
