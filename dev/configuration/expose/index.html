@@ -1121,6 +1121,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💡 Virtual Dimmers &amp; MyHOME_Suite Wall Control Modes (WHO = 1 vs CEN+)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="💡 Virtual Dimmers &amp; MyHOME_Suite Wall Control Modes (WHO = 1 vs CEN+)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-recommended-myhome_suite-modes-for-who-1-expose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Recommended MyHOME_Suite Modes for WHO = 1 Expose
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#advanced-custom-script-actions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2151,6 +2179,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💡 Virtual Dimmers &amp; MyHOME_Suite Wall Control Modes (WHO = 1 vs CEN+)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="💡 Virtual Dimmers &amp; MyHOME_Suite Wall Control Modes (WHO = 1 vs CEN+)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-recommended-myhome_suite-modes-for-who-1-expose" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Recommended MyHOME_Suite Modes for WHO = 1 Expose
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#advanced-custom-script-actions" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2294,21 +2350,21 @@
 <tr>
 <td style="text-align: left;"><strong>WHERE Address</strong></td>
 <td style="text-align: left;">Unused SCS address assigned to the button/tile in <strong>MyHOME_Suite</strong>. <em>(Omit for WHO 13)</em></td>
-<td style="text-align: left;"><code>25</code> or <code>50</code></td>
+<td style="text-align: left;"><code>25</code> or <code>83</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Source Entity</strong></td>
+<td style="text-align: left;"><strong>Source Entity</strong> <em>(Optional on WHO 1/2 if custom actions are set)</em></td>
 <td style="text-align: left;">The Home Assistant entity providing state and commands.</td>
 <td style="text-align: left;"><code>light.hue_living_room</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>State Attribute</strong> <em>(Optional)</em></td>
-<td style="text-align: left;">Entity attribute providing the value (e.g. <code>brightness</code>, <code>current_position</code>).</td>
+<td style="text-align: left;">Entity attribute providing the value (<code>brightness</code> for <code>WHO = 1</code> dimmers; <code>current_position</code> for <code>WHO = 2</code> covers).</td>
 <td style="text-align: left;"><code>brightness</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>OpenWebNet Dimension</strong> <em>(Optional)</em></td>
-<td style="text-align: left;">Dimension selector (<code>0</code> for temperature; <code>113</code> for power; <code>22</code> for clock).</td>
+<td style="text-align: left;">Dimension selector (<code>0</code> for temperature; <code>51..54</code> / <code>113</code> for energy/power; <code>0</code>, <code>1</code>, <code>22</code> for clock). <em>(Not used for WHO 1 or WHO 2)</em></td>
 <td style="text-align: left;"><code>0</code></td>
 </tr>
 <tr>
@@ -2327,6 +2383,21 @@
 <td style="text-align: left;"><code>60</code></td>
 </tr>
 <tr>
+<td style="text-align: left;"><strong>Respond to Bus Queries</strong></td>
+<td style="text-align: left;">Reply to incoming <code>*#WHO*WHERE...##</code> status and dimension read requests (default: <code>true</code>).</td>
+<td style="text-align: left;"><code>true</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Bidirectional</strong></td>
+<td style="text-align: left;">Act on incoming <code>WHO = 1</code> / <code>WHO = 2</code> bus commands and wall-switch presses (default: <code>true</code>).</td>
+<td style="text-align: left;"><code>true</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Brightness Step (%)</strong></td>
+<td style="text-align: left;">Relative step size (<code>1..100%</code>) applied per <code>WHO = 1</code> dimmer step-up / step-down command (default: <code>10%</code>).</td>
+<td style="text-align: left;"><code>25</code></td>
+</tr>
+<tr>
 <td style="text-align: left;"><strong>Custom 'On' States</strong> <em>(Optional)</em></td>
 <td style="text-align: left;">Comma-separated list of states considered ON (e.g. <code>on, playing, open</code>).</td>
 <td style="text-align: left;"><code>on, playing</code></td>
@@ -2334,7 +2405,12 @@
 <tr>
 <td style="text-align: left;"><strong>Value Template</strong> <em>(Optional)</em></td>
 <td style="text-align: left;">Jinja2 template to extract or transform values before publishing.</td>
-<td style="text-align: left;"><code>{{ value | round(1) }}</code></td>
+<td style="text-align: left;"><code>{{ value \| round(1) }}</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Turn-on / Turn-off / Step-up / Step-down Actions</strong> <em>(Optional)</em></td>
+<td style="text-align: left;">Visual Home Assistant action sequences overriding default entity service calls (<code>turn_on</code> / <code>turn_off</code> for <code>WHO = 1</code> &amp; <code>WHO = 2</code>; <code>step_up</code> / <code>step_down</code> for <code>WHO = 1</code>; hidden for <code>WHO = 4</code>, <code>13</code>, and <code>18</code>).</td>
+<td style="text-align: left;"><code>media_player.volume_up</code></td>
 </tr>
 </tbody>
 </table>
@@ -2346,76 +2422,99 @@
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span><span class="w">   </span><span class="c1"># Your Gateway MAC address</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">expose</span><span class="p">:</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="c1"># 1. Virtual Light / Switch (WHO = 1)</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="c1"># Tapping button at WHERE "25" toggles the Hue light.</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="c1"># Changes in Home Assistant update the button status on the bus.</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.hue_living_room</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">        </span><span class="nt">bidirectional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">      </span><span class="c1"># 2. Virtual Cover / Shutter (WHO = 2)</span>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">      </span><span class="c1"># Tapping up/down/stop on wall screen at WHERE "31" controls pergola curtain.</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="c1"># 1. Virtual Light / Dimmer (WHO = 1)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">      </span><span class="c1"># Short press on WHERE "83" turns the smart bulb ON/OFF; holding up/down</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">      </span><span class="c1"># steps brightness by 25%. Setting 'attribute: brightness' also mirrors</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">      </span><span class="c1"># brightness level changes back onto the bus.</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"83"</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.smart_bedroom</span>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">        </span><span class="nt">attribute</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">brightness</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">        </span><span class="nt">bidirectional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">        </span><span class="nt">brightness_step_pct</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>
 </span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"31"</span>
-</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.pergola_curtain</span>
-</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">        </span><span class="nt">bidirectional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>
-</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">      </span><span class="c1"># 3. Virtual Temperature Probe (WHO = 4, Dimension 0)</span>
-</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">      </span><span class="c1"># Publishes outdoor temperature onto unused zone master address 50</span>
-</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">      </span><span class="c1"># (1..99 required on F461 / bt_termo; 100..900 only on reply-injection gateways).</span>
-</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
-</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"50"</span>
-</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
-</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.outdoor_temperature</span>
-</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
-</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
-</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
-</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>
-</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">      </span><span class="c1"># 4. Virtual Active Power Meter (WHO = 18, Dimension 113)</span>
-</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a><span class="w">      </span><span class="c1"># Publishes grid active power (W) onto meter address 51.</span>
-</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">      </span><span class="c1"># Auto-converts kW -&gt; W if the sensor unit of measurement is kW.</span>
-</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
-</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
-</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">113</span>
-</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_active_power</span>
-</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
-</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span>
-</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a>
-</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">      </span><span class="c1"># 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)</span>
-</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a><span class="w">      </span><span class="c1"># Publishes cumulative grid energy totalizer (Wh) onto meter address 51.</span>
-</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">      </span><span class="c1"># Auto-converts kWh -&gt; Wh if the sensor unit of measurement is kWh.</span>
-</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
-</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
-</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">51</span>
-</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_energy_consumed</span>
-</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
-</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100.0</span><span class="w">   </span><span class="c1"># Broadcast on 100 Wh increments</span>
-</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a>
-</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">      </span><span class="c1"># 6. Bus Clock &amp; DST Sync (WHO = 13, Dimension 22)</span>
-</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a><span class="w">      </span><span class="c1"># Broadcasts atomic time, date, and calendar once every hour.</span>
-</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="c1"># Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads</span>
-</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">      </span><span class="c1"># without proactive pushes, ideal for NTP-synchronized gateways).</span>
-</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
-</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">13</span>
-</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22</span>
-</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
-</span><span id="__span-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">        </span><span class="nt">respond_to_read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">      </span><span class="c1"># 2. Virtual Cover / Shutter (WHO = 2)</span>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="c1"># Tapping up/down/stop on wall screen at WHERE "31" controls pergola curtain.</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+</span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"31"</span>
+</span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cover.pergola_curtain</span>
+</span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a><span class="w">        </span><span class="nt">bidirectional</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>
+</span><span id="__span-0-27"><a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-28"><a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">      </span><span class="c1"># 3. Virtual Temperature Probe (WHO = 4, Dimension 0)</span>
+</span><span id="__span-0-29"><a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a><span class="w">      </span><span class="c1"># Publishes outdoor temperature onto unused zone master address 50</span>
+</span><span id="__span-0-30"><a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="w">      </span><span class="c1"># (1..99 required on F461 / bt_termo; 100..900 only on reply-injection gateways).</span>
+</span><span id="__span-0-31"><a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span>
+</span><span id="__span-0-33"><a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"50"</span>
+</span><span id="__span-0-34"><a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+</span><span id="__span-0-35"><a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.outdoor_temperature</span>
+</span><span id="__span-0-36"><a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
+</span><span id="__span-0-37"><a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.2</span>
+</span><span id="__span-0-38"><a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+</span><span id="__span-0-39"><a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>
+</span><span id="__span-0-40"><a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-41"><a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a><span class="w">      </span><span class="c1"># 4. Virtual Active Power Meter (WHO = 18, Dimension 113)</span>
+</span><span id="__span-0-42"><a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a><span class="w">      </span><span class="c1"># Publishes grid active power (W) onto meter address 51.</span>
+</span><span id="__span-0-43"><a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a><span class="w">      </span><span class="c1"># Auto-converts kW -&gt; W if the sensor unit of measurement is kW.</span>
+</span><span id="__span-0-44"><a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-45"><a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+</span><span id="__span-0-46"><a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
+</span><span id="__span-0-47"><a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">113</span>
+</span><span id="__span-0-48"><a id="__codelineno-0-48" name="__codelineno-0-48" href="#__codelineno-0-48"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_active_power</span>
+</span><span id="__span-0-49"><a id="__codelineno-0-49" name="__codelineno-0-49" href="#__codelineno-0-49"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.0</span>
+</span><span id="__span-0-50"><a id="__codelineno-0-50" name="__codelineno-0-50" href="#__codelineno-0-50"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10.0</span>
+</span><span id="__span-0-51"><a id="__codelineno-0-51" name="__codelineno-0-51" href="#__codelineno-0-51"></a>
+</span><span id="__span-0-52"><a id="__codelineno-0-52" name="__codelineno-0-52" href="#__codelineno-0-52"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-53"><a id="__codelineno-0-53" name="__codelineno-0-53" href="#__codelineno-0-53"></a><span class="w">      </span><span class="c1"># 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)</span>
+</span><span id="__span-0-54"><a id="__codelineno-0-54" name="__codelineno-0-54" href="#__codelineno-0-54"></a><span class="w">      </span><span class="c1"># Publishes cumulative grid energy totalizer (Wh) onto meter address 51.</span>
+</span><span id="__span-0-55"><a id="__codelineno-0-55" name="__codelineno-0-55" href="#__codelineno-0-55"></a><span class="w">      </span><span class="c1"># Auto-converts kWh -&gt; Wh if the sensor unit of measurement is kWh.</span>
+</span><span id="__span-0-56"><a id="__codelineno-0-56" name="__codelineno-0-56" href="#__codelineno-0-56"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-57"><a id="__codelineno-0-57" name="__codelineno-0-57" href="#__codelineno-0-57"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18</span>
+</span><span id="__span-0-58"><a id="__codelineno-0-58" name="__codelineno-0-58" href="#__codelineno-0-58"></a><span class="w">        </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"51"</span>
+</span><span id="__span-0-59"><a id="__codelineno-0-59" name="__codelineno-0-59" href="#__codelineno-0-59"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">51</span>
+</span><span id="__span-0-60"><a id="__codelineno-0-60" name="__codelineno-0-60" href="#__codelineno-0-60"></a><span class="w">        </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.grid_energy_consumed</span>
+</span><span id="__span-0-61"><a id="__codelineno-0-61" name="__codelineno-0-61" href="#__codelineno-0-61"></a><span class="w">        </span><span class="nt">cooldown</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span>
+</span><span id="__span-0-62"><a id="__codelineno-0-62" name="__codelineno-0-62" href="#__codelineno-0-62"></a><span class="w">        </span><span class="nt">min_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100.0</span><span class="w">   </span><span class="c1"># Broadcast on 100 Wh increments</span>
+</span><span id="__span-0-63"><a id="__codelineno-0-63" name="__codelineno-0-63" href="#__codelineno-0-63"></a>
+</span><span id="__span-0-64"><a id="__codelineno-0-64" name="__codelineno-0-64" href="#__codelineno-0-64"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-65"><a id="__codelineno-0-65" name="__codelineno-0-65" href="#__codelineno-0-65"></a><span class="w">      </span><span class="c1"># 6. Bus Clock &amp; DST Sync (WHO = 13, Dimension 22)</span>
+</span><span id="__span-0-66"><a id="__codelineno-0-66" name="__codelineno-0-66" href="#__codelineno-0-66"></a><span class="w">      </span><span class="c1"># Broadcasts atomic time, date, and calendar once every hour.</span>
+</span><span id="__span-0-67"><a id="__codelineno-0-67" name="__codelineno-0-67" href="#__codelineno-0-67"></a><span class="w">      </span><span class="c1"># Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads</span>
+</span><span id="__span-0-68"><a id="__codelineno-0-68" name="__codelineno-0-68" href="#__codelineno-0-68"></a><span class="w">      </span><span class="c1"># without proactive pushes, ideal for NTP-synchronized gateways).</span>
+</span><span id="__span-0-69"><a id="__codelineno-0-69" name="__codelineno-0-69" href="#__codelineno-0-69"></a><span class="w">      </span><span class="c1"># -----------------------------------------------------------------</span>
+</span><span id="__span-0-70"><a id="__codelineno-0-70" name="__codelineno-0-70" href="#__codelineno-0-70"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">13</span>
+</span><span id="__span-0-71"><a id="__codelineno-0-71" name="__codelineno-0-71" href="#__codelineno-0-71"></a><span class="w">        </span><span class="nt">dimension</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">22</span>
+</span><span id="__span-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">        </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
+</span><span id="__span-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">        </span><span class="nt">respond_to_read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <hr />
+<h2 id="virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen">💡 Virtual Dimmers &amp; <code>MyHOME_Suite</code> Wall Control Modes (<code>WHO = 1</code> vs <code>CEN+</code>)<a class="headerlink" href="#virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen" title="Permanent link">&para;</a></h2>
+<p>When using a physical 2-wire SCS wall control (such as BTicino <code>H4652/2</code>, <code>L4652/2</code>, <code>AM5832/2</code>, <code>K4652M2</code>, or Legrand <code>067552</code>) to dim a Home Assistant light on an <strong>unpopulated</strong> SCS address (an address with no physical BTicino actuator wired on the 2-wire bus):</p>
+<h3 id="1-recommended-myhome_suite-modes-for-who-1-expose">1. Recommended <code>MyHOME_Suite</code> Modes for <code>WHO = 1</code> Expose<a class="headerlink" href="#1-recommended-myhome_suite-modes-for-who-1-expose" title="Permanent link">&para;</a></h3>
+<p>In <strong>MyHOME_Suite</strong>, configure the wall control channel as <strong>Light control</strong> (<code>Object 400</code>, <em>Beleuchtung/schalten</em>) with <strong>Point-to-point</strong> addressing (<code>A</code> / <code>PL</code>, e.g. <code>A = 8, PL = 3</code> → <code>WHERE = 83</code>) and either of the two standard two-button (<code>O/I</code>) dimmer modalities:</p>
+<ul>
+<li><strong><code>ON/OFF and point to point dimming</code></strong> (<code>M = 9</code> — German: <em>"ON/OFF und Regelung nur Punkt-Punkt"</em>; identical to physical configurator <code>M = O/I</code>)</li>
+<li><strong><code>ON/OFF and dimming</code></strong> (<code>M = 3</code> — German: <em>"EIN/AUS und Dimmerregelung"</em>)</li>
+</ul>
+<p>Both modalities work identically for a point-to-point virtual dimmer:</p>
+<ul>
+<li><strong>Short press UP / DOWN</strong>: Sends <code>*1*1000#1*WHERE##</code> / <code>*1*1000#0*WHERE##</code> to turn the Home Assistant entity ON or OFF and updates the wall control's status LED.</li>
+<li><strong>Hold DOWN</strong>: Sends <code>*1*1000#31*WHERE##</code> and steps brightness down by <code>brightness_step_pct</code> (or runs <code>step_down_action</code>).</li>
+<li><strong>Hold UP</strong>: Because no physical SCS dimmer hardware-ACKs the unpopulated address on the 2-wire bus, <code>H4652/2</code> repeats <code>*1*1000#1*WHERE##</code> every <strong>~2 seconds</strong> (with a ~200 ms SCS link-layer retry per step) instead of switching to <code>*1*1000#30*WHERE##</code>. <code>ExposeManager</code> automatically deduplicates the ~200 ms SCS retries and treats consecutive held <code>*1*1000#1*WHERE##</code> frames (<code>1.6–3.0 s</code> apart while the bound entity is already on) as <code>step_up</code> (<code>+brightness_step_pct</code> or <code>step_up_action</code>), while keeping single taps, quick double-presses, and turn-on from off idempotent.</li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p><strong>Want faster (~0.5 s) smooth dimming without the ~2 s unacknowledged SCS timeout?</strong>
+On <code>H4652/2</code> / <code>L4652/2</code> / <code>067552</code> / <code>K4652M2</code>, you can alternatively configure the module in <strong>MyHOME_Suite</strong> as <strong>Scheduled scenario PLUS (<code>CEN+</code>, <code>WHO = 25</code>, <code>Object 406</code>)</strong> instead of <code>WHO = 1</code> Expose. <code>CEN+</code> frames are broadcast events (<code>*25*21#&lt;btn&gt;*2&lt;addr&gt;##</code> short press, <code>22</code> hold start, <code>23</code> ~0.5 s hold repeat, <code>24</code> hold release) that require no physical actuator ACK on the 2-wire bus and appear directly as Home Assistant device triggers — at the trade-off that <code>CEN+</code> buttons do not track <code>WHO = 1</code> load-state LEDs or Area/General light commands.</p>
+</div>
+<hr />
 <h2 id="advanced-custom-script-actions">🎛️ Advanced: Custom Script Actions<a class="headerlink" href="#advanced-custom-script-actions" title="Permanent link">&para;</a></h2>
-<p>For complex integrations (such as cycling media playlists, executing sequences, or calling third-party services with conditions), you can configure custom actions in YAML using Home Assistant's native <code>Script</code> syntax:</p>
+<p>For complex integrations (such as cycling media playlists, executing sequences, or calling third-party services with conditions), you can configure <code>turn_on_action</code>, <code>turn_off_action</code>, <code>step_up_action</code>, and <code>step_down_action</code> either directly in the <strong>UI Config Subentry</strong> action pickers or in <code>myhome.yaml</code> using Home Assistant's native <code>Script</code> syntax:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">myhome</span><span class="p">:</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">expose</span><span class="p">:</span>
