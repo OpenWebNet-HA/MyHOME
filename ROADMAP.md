@@ -48,7 +48,7 @@ gantt
     OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909)           :done, 2026-11-13, 2026-11-14
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
-    RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
+    RFC - Scope Resolution for WHO 14, WHO 24 & WHO 22              :done, 2026-09-11, 2026-11-04
     section Release Milestones
     Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-30
 ```
@@ -64,9 +64,9 @@ The following table summarizes the completed architectural features and protocol
 | **Cover Live Animation, End-Stop Settle & Min Delta** | WHO=2 | ✅ **Shipped** (#778, #834, #847, #870, #900) | ~1 s interpolated live position during timed runs, full-run settle on `travel_time + 2s`, 0.5 s early cutoff tolerance, `min_position_delta` (1–5%), and intermediate `Dimension 10` Venetian slat tilt tracking. |
 | **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators (with `H4652/2` hold-up step-up, retry dedup, and UI action selectors), firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Venetian Blinds, Impulse Gates & Cover Start-Up Floor** | WHO=2 / WHO=1 | ✅ **Shipped** (#508, #667, #702, #707, #708) | Slat tilt as timed slat pulses (`slat_tilt`, `slat_time`); impulse garage / gate covers on WHO 1 relays with optional safety approval; per-cover `min_motor_pulse`, full runs at 0 % / 100 %, and timed runs ended at the actuator's stop status. |
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b14`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, idle command-socket recovery (`OWNd#165`), WHO 4 profile flags (`OWNd#168`), and `*4*3100*#0##` central `auto` builder (`OWNd#169`). |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.0b14`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, idle command-socket recovery (`OWNd#165`), WHO 4 profile flags (`OWNd#168`), and `*4*3100*#0##` central `auto` builder (`OWNd#169`). |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
-| **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
+| **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
 | **Native Hardware Bus Timers** | WHO=1 | ✅ **Shipped** | Offloaded countdown timers on Legrand DIN actuators (F411) via `myhome.turn_on_timed` or `timer`/`duration` parameters in `light.turn_on` / `switch.turn_on`. |
 | **Central Unit Coordination (P4)** | WHO=4 | ✅ **Shipped** | Dedicated master coordination for 99-zone Central Unit (`#0`, model 3550) and 4-zone Central Unit (`#0#1`, model 4695). Master Seasonal switches propagate to subordinate zones. |
@@ -75,7 +75,8 @@ The following table summarizes the completed architectural features and protocol
 | **DALI Tunable White & Dimmers** | WHO=1 | ✅ **Shipped** | DALI DT8 tunable white (Kelvin 2000K–6535K / mireds, Dimension 14), HSV color auto-promotion (Dimension 12), and dimming speed curves. |
 | **Fancoil Thermoregulation & Antifreeze Target** | WHO=4 | ✅ **Shipped** (#383) | 3-speed fancoil control (`auto`, `low`, `medium`, `high`) using dimension 11, temperature offset tracking, startup sweeps, and active antifreeze target preservation across sweeps. |
 | **Cover Virtual Positioning & Delivery Protection** | WHO=2 | ✅ **Shipped** (#302, #319, #380) | Virtual travel-time positioning, 60s hardware cutoff safety guard, live bus calibration service (`myhome.calibrate_cover`), and delivery failure motion abort preventing phantom position advances. |
-| **Sound System 2.0 & Streaming Proxy**| WHO=16 | ✅ **Shipped** | Multi-room matrix amplifier control (F441/F441M), volume normalization (0–31 scale), software mute, and Dynamic Streaming Proxy for Music Assistant / Spotify. |
+| **Sound System 2.0, WHO 22 RDS Tuners & Streaming Proxy** | WHO=16 / 22 | ✅ **Shipped** (#695, #839, #844) | Multi-room matrix amplifier control (`F441`/`F441M`), `F500`/`F500N` FM RDS tuner controls (`media_player`, `number`, `button`), `4#<area>` active-source sync across `WHO = 22`-only (`MyHomeServer1`, `F459`, `F461`) and dual-stack gateways, and Dynamic Streaming Proxy (`DecoderPool`) for Music Assistant / Spotify. |
+| **Door Entry Locks & Intercom Events** | WHO=6 / 8 | ✅ **Shipped** (#667) | Door lock release entities (`lock.py`, configurable hold pulse and optional PIN confirmation) and video intercom call event triggers. |
 | **Energy Management & Metering** | WHO=18 | ✅ **Shipped** | Instantaneous power (W), line voltage (V), current (mA), and energy counters wired into Home Assistant energy sensors. |
 | **Burglar Alarm** | WHO=5 | ✅ **Shipped** | Partitions, arm away/home, disarm, panic trigger, and zone 0 synchronization for central units (3485/3486). |
 | **Dry Contacts & Technical Alarms** | WHO=25 | ✅ **Shipped** | Dynamic discovery, inverted contact states, and event dispatching for Legrand 3477 binary sensors. |
@@ -86,7 +87,7 @@ The following table summarizes the completed architectural features and protocol
 
 ## 🗳️ Community RFC: How Should We Deal With the Last Remaining Items?
 
-With the foundational architecture and primary subsystems delivered, only a small set of specialized protocol capabilities remains from the original RFC #248 gap analysis. 
+With the foundational architecture and primary subsystems delivered, only a small set of specialized protocol capabilities remains from the original RFC #248 gap analysis.
 
 We invite community members, certified installers, and power users to review the options below and share their input in [**RFC Discussion #248**](https://github.com/orgs/OpenWebNet-HA/discussions/248):
 
@@ -95,7 +96,7 @@ We invite community members, certified installers, and power users to review the
 ### 1. 💡 P7: Lighting Groups & General Sync (`WHO = 1`) — ✅ Resolved & Shipped
 
 #### The Technical Context:
-In OpenWebNet, lighting actuators can be triggered individually (`WHERE=10`), by group (`WHERE=#1` through `#255`), by environment/room (`WHERE=room`), or generally across the whole plant (`WHERE=0`). 
+In OpenWebNet, lighting actuators can be triggered individually (`WHERE=10`), by group (`WHERE=#1` through `#255`), by environment/room (`WHERE=room`), or generally across the whole plant (`WHERE=0`).
 In ideal installations, actuators broadcast individual status frames (`*1*0*10##`, `*1*0*11##`) after executing a group or general command. However, on older gateways or specific actuator configurations, actuators do **not** emit individual status messages, leaving Home Assistant entities out of sync with the physical lights.
 
 #### Delivered Architecture (PRs #367, #376, #377, #391):
@@ -111,8 +112,8 @@ Community consensus and engineering converged on a robust two-tier hybrid approa
 ### 2. 🪟 P3: Cover Calibration & Dedicated Administration Panel (`WHO = 2`)
 
 #### The Technical Context:
-Home Assistant provides **virtual travel-time positioning** for all covers (calculating percentage open/closed based on configured travel duration).
-Legrand advanced shutter actuators (such as the 67557, LN4672M2, and F401) support native hardware positioning via Dimension 10 (`*#2*WHERE*10*Position*...##`) and an automatic travel calibration routine (`shutterRun=AUTO`).
+Home Assistant provides **virtual travel-time positioning** for standard `WHO = 2` covers (calculating percentage open/closed from calibrated opening and closing durations).
+Legrand advanced shutter actuators (such as the `067557`, `LN4672M2`, and `F401`) also support native hardware positioning via `Dimension 10` (`*#2*WHERE*10*BS*LEVEL*...##`), reporting `LEVEL = 255` before physical *Push&Learn* end-stop learning has been completed on the actuator.
 
 #### Shipped Foundation:
 
@@ -132,7 +133,7 @@ Work is actively underway in **PR #374** (by @xtimmy86x, following [Discussion #
 ### 3. 🔒 WHO 14: Actuator Maintenance Locks & Relay Cycle Counters — ✅ Community Consensus
 
 #### The Technical Context:
-OpenWebNet WHO 14 handles actuator diagnostics, relay cycle counters, and hardware maintenance locks (preventing physical buttons from toggling a relay during maintenance or security states). 
+OpenWebNet WHO 14 handles actuator diagnostics, relay cycle counters, and hardware maintenance locks (preventing physical buttons from toggling a relay during maintenance or security states).
 
 #### Community Resolution:
 
@@ -152,14 +153,16 @@ WHO 24 is designed for commercial Legrand Lighting Management controllers (**BMN
 
 ---
 
-### 5. 🎵 WHO 22: Legacy Multi-Room FM Tuner & RDS Navigation — ✅ Formally Deprecated
+### 5. 🎵 WHO 22: Sound Diffusion (`bt_multi`), FM RDS Tuners & Active-Source Tracking — ✅ Resolved & Shipped
 
 #### The Technical Context:
-WHO 22 defines protocol frames for obsolete Legrand analog FM radio tuner modules (frequency stepping, station presets, and RDS text streaming). 
+In OpenWebNet (`WHO_22.pdf` v1.1.0), `WHO = 22` (*Diffusione Sonora Avanzata*, implemented by `bt_multi` in gateway firmware) is the modern multi-room sound diffusion protocol — **not** an obsolete legacy dialect. Modern gateways (`MyHomeServer1`, `F459`, `F460`, `F461`) implement **only `WHO = 22`** and drop `WHO = 16` frames on the command session, whereas dual-stack gateways (`MH200N`, `MH202`, `F454`, `H4684`, `H4890`) bridge both `WHO = 16` and `WHO = 22`.
 
-#### Community Resolution:
+#### Delivered Architecture (PRs #695, #839, #844):
 
-* **Formally Deprecated**: Obsolete analog FM radio controls are formally deprecated in favor of the **Dynamic Streaming Proxy** on the F441 matrix, enabling high-fidelity digital streaming from **Music Assistant**, **Spotify Connect**, and AirPlay directly into wired SCS zones.
+* **First-Class FM RDS Tuner Entities (`WHO = 16` & `WHO = 22`)**: Full hardware support for `F500` / `F500N` / `F500COAX` RDS stereo tuners across `media_player` (live RDS station name, radio text, MHz readout, preset selection, seek up/down), `number` (87.50–108.00 MHz manual tuning and station preset slot `1–8` / `1–15`), and `button` (50 kHz fine-step up/down and preset save), plus dedicated `myhome.tuner_seek_up`, `myhome.tuner_seek_down`, `myhome.tuner_set_frequency`, and `myhome.tuner_store_station` actions.
+* **`WHO = 22`-Only & Dual-Stack Gateway Parity**: Automatic protocol selection per gateway profile so sound zones (`H4562` / `L4561N` / `F441M`) and tuners operate seamlessly on `MyHomeServer1`, `F459`, and `F461` (`WHO = 22`) as well as `MH200`, `MH200N`, `MH202`, `F454`, `H4684`, and `H4890`.
+* **Active-Source Area Tracking & Streaming Proxy Coexistence**: Tracks `4#<area>` active-source broadcasts (`*22*...*4#<area>##` / `*#22*4#<area>*...##`) alongside the `DecoderPool` **Dynamic Streaming Proxy**, allowing digital streams from **Music Assistant**, **Spotify Connect**, and **AirPlay** to coexist cleanly with physical `F500` tuners and wall amplifiers.
 
 ---
 
@@ -176,8 +179,8 @@ graph LR
     subgraph DeliveredTiers["🏆 Delivered Quality Tiers (100% Verified in CI)"]
         B["🥉 Bronze Tier (20/20)<br/>has_entity_name, runtime_data,<br/>async_setup services, config_flow"]
         S["🥈 Silver Tier (10/10)<br/>100% Test Coverage, Translated Exceptions,<br/>PARALLEL_UPDATES=0, Reauth"]
-        G["🥇 Gold Tier (21/21)<br/>async_step_reconfigure, strings/icons.json,<br/>Repairs Framework, All 10 Docs"]
-        P["🏆 Platinum Tier (3/3)<br/>100% Async OWNd, Strict Typing<br/>(0 mypy errors across 30 modules)"]
+        G["🥇 Gold Tier (21/21)<br/>async_step_reconfigure, strings/icons.json,<br/>Repairs Framework, Complete Docs"]
+        P["🏆 Platinum Tier (3/3)<br/>100% Async OWNd, Strict Typing<br/>(0 mypy errors across all modules)"]
         B --> S --> G --> P
     end
 
@@ -202,9 +205,9 @@ graph LR
 
 #### 2. 🥈 Silver Robustness & Quality Hardening — ✅ 100% Complete (10/10)
 
-* **`test-coverage` (100.0% Strict Statement & Branch Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 3,000 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
+* **`test-coverage` (100.0% Strict Statement & Branch Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 5,700 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
 * **`action-exceptions`**: Service actions validate all inputs and raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` mapped directly to localized translation keys under `exceptions` in `strings.json`.
-* **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `alarm_control_panel.py`) for non-blocking local push stream processing.
+* **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all 11 platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `number.py`, `alarm_control_panel.py`, `lock.py`) for non-blocking local push stream processing.
 
 #### 3. 🥇 Gold User Experience & Framework Features — ✅ 100% Complete (21/21)
 
@@ -213,15 +216,15 @@ graph LR
 * **`repair-issues`**: Active integration of Home Assistant's Repairs framework (`async_create_issue`):
     - `gateway_identity_mismatch` & `gateway_identity_corrected`: Proactively informs users if configured model conflicts with WHO=13 hardware telemetry.
     - `unconfigured_timezone` (PR #387): Automatically flags legacy gateway timezone sentinel `999` with remediation guidance.
-    - `unknown_model` (PR #388): Captures unmapped WHO=13 hardware codes (`999`) and directs users to diagnostic trace submission.
-* **Complete Core Documentation Suite**: Authored all 10 Gold standard documentation chapters under `docs/configuration/` (Architecture, Supported Functions, Gateways, Services, Runtime Behaviour, CEN/CEN+, Sound System, Troubleshooting, Lovelace Recipes, and Known Limitations).
+    - `unknown_gateway_model` (PR #388): Captures unmapped WHO=13 hardware codes (`999`) and directs users to diagnostic trace submission.
+* **Complete Core Documentation Suite**: Comprehensive Gold standard documentation across `docs/configuration/`, `docs/getting-started/`, `docs/diagnostics/`, and `docs/architecture/`.
 * **`quality_scale.yaml`**: Official compliance manifest actively tracked at `custom_components/myhome/quality_scale.yaml` and verified by `scripts/quality_scale_report.py`.
 
 #### 4. 🏆 Platinum Engineering Tier — ✅ 100% Complete (3/3)
 
-* **`async-dependency`**: The underlying `OWNd` protocol engine (v2.0.0b9, pinned in `manifest.json`) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
+* **`async-dependency`**: The underlying `OWNd` protocol engine (`OWNd==2.0.0b14`, pinned in `manifest.json`) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
 * **`inject-websession`**: Formally exempt (all communication operates over raw OpenWebNet binary/text TCP streams; no HTTP websession required).
-* **`strict-typing`**: Enforces `mypy --strict` with **0 errors across all 30 integration modules**. Cascading type errors were eliminated alongside `OWNd 2.0.0b7`'s PEP 561 `py.typed` marker (PR #393), guarded in CI by `scripts/typing_ratchet.py`.
+* **`strict-typing`**: Enforces `mypy --strict` with **0 errors across all integration modules**. Cascading type errors were eliminated alongside `OWNd`'s PEP 561 `py.typed` marker (PR #393), guarded in CI by `scripts/typing_ratchet.py`.
 
 #### 5. 🌐 Release Status: Stable v2.0.0
 
@@ -232,109 +235,152 @@ graph LR
 
 ## 📊 Real-World Trace Coverage Schematic (What We Have vs. What We Need)
 
-To eliminate regression risks and verify complex timing constraints, our **Trace Replay Engine** (`tests/test_trace_replay.py`) replays authentic on-wire captures against the Home Assistant integration. 
+To eliminate regression risks and verify complex timing constraints, our **Trace Replay Engine** (`tests/test_trace_replay.py`) replays authentic on-wire captures against the Home Assistant integration.
 
 Below is the definitive schematic of which gateways and subsystems are **already covered by real-world captures in CI**, and where we **still need community recordings**.
 
 ### 🗺️ System Coverage Overview
 
+<!-- ROADMAP_COVERAGE_MERMAID_START -->
 ```mermaid
 graph TD
     subgraph Gateways["🏛️ Gateways & Transports"]
-        GW_MHS1["🟢 MyHomeServer1<br/>(Full 70+ dev plant)"]
-        GW_F454["🟢 F454<br/>(High-speed IP)"]
-        GW_MH200["🟢 MH200 / MH200N<br/>(107 Frames / Physical Plant)"]
-        GW_F461["🟢 F461<br/>(DIN Web Server)"]
+        GW_MHS1["🟢 MyHomeServer1<br/>(49 captures · 6,991 rx)"]
+        GW_F454["🟢 F454<br/>(23 captures · 4,447 rx)"]
+        GW_F455["🟢 F455<br/>(8 captures · 559 rx)"]
+        GW_F459["🟢 F459<br/>(1 capture · 898 rx)"]
+        GW_F461["🟢 F461<br/>(16 captures · 2,805 rx)"]
+        GW_MH202["🟢 MH202<br/>(9 captures · 672 rx)"]
+        GW_MH201["🟢 MH201<br/>(9 captures · 970 rx)"]
+        GW_MH200N["🟢 MH200N<br/>(16 captures · 1,664 rx)"]
+        GW_MH200["🟢 MH200<br/>(11 captures · 1,289 rx)"]
+        GW_F453["🟢 F452 / F453 / F453AV<br/>(9 captures · 869 rx)"]
+        GW_H4890["🟢 H4890 / AM4890 / 067292<br/>(5 captures · 983 rx)"]
+        GW_H4684["🟢 H4684 / H/L4684<br/>(11 captures · 1,179 rx)"]
         GW_3578["🔴 Legrand 3578<br/>(Deferred to v2.1+ · #879)"]
-        GW_MH201["🟢 MH201<br/>(100 Frames / Physical Plant)"]
-        GW_MH202["🟡 MH202<br/>(WHO 13 diagnostics only)"]
-        GW_F455["🟢 F455<br/>(80 Frames / Physical Plant)"]
     end
 
-    subgraph Subsystems["⚙️ Protocol Subsystems & Scenarios"]
-        SUB_LIGHT["🟢 Lighting / Relays (WHO 1)<br/>(4-digit & on/off covered)"]
-        SUB_DALI["🟢 DALI DT8 / RGB (WHO 1)<br/>(Dim 14 Tunable White)"]
-        SUB_TIMER["🟡 DIN Bus Timers (WHO 1)<br/>(Synthetic test covered)"]
-        SUB_GRP["🟢 Lighting Groups (P7)<br/>(declared groups + debounced resync, #376/#377)"]
-        SUB_COV_V["🟢 Covers Virtual (WHO 2)<br/>(Travel-time positioning & #380 delivery abort)"]
-        SUB_COV_H["🟢 Covers Hardware (WHO 2)<br/>(Dim 10 status covered)"]
-        SUB_COV_CAL["🔴 Cover Calibration (P3)<br/>(shutterRun=AUTO traces)"]
-        SUB_CU3550["🟢 Central Unit 3550 (WHO 4)<br/>(99-zone master mode & #383 antifreeze target)"]
-        SUB_CU4695["🔴 Central Unit 4695 (WHO 4)<br/>(4-zone master mode)"]
-        SUB_ENERGY["🟢 Energy Management (WHO 18)<br/>(W, V, mA live frames)"]
-        SUB_DRY["🟢 Dry Contacts (WHO 25)<br/>(Technical alarms & AUX)"]
-        SUB_CEN["🟡 Physical Pushbuttons (WHO 15/25)<br/>(Rapid multi-click / held)"]
-        SUB_ALARM["🟡 Burglar Alarm (WHO 5)<br/>(Partitions & central unit)"]
-        SUB_ROUTER["🟢 F422 Bus Router<br/>(Cross-bus #4#02 routing covered)"]
+    subgraph Subsystems["⚙️ Protocol Subsystems & Edge Scenarios"]
+        SUB_LIGHT["🟢 Lighting & Dimmers (WHO 1)<br/>(5,140 rx · 87 captures)"]
+        SUB_DALI["🟢 DALI DT8 & HSV (WHO 1)<br/>(18 rx · 2 captures)"]
+        SUB_TIMER["🟢 DIN Bus Timers (WHO 1)<br/>(12 rx · 6 captures)"]
+        SUB_GRP["🟢 Lighting Groups (WHO 1)<br/>(27 rx · 10 captures)"]
+        SUB_COV_V["🟢 Covers Timed & Calibrated (WHO 2)<br/>(1,409 rx · 56 captures)"]
+        SUB_COV_H["🟢 Covers Dim 10 / Tilt (WHO 2)<br/>(415 rx · 23 captures)"]
+        SUB_COV_255["🟡 Uncalibrated Dim 10=255 (WHO 2)<br/>(Unit tests only)"]
+        SUB_CU3550["🟢 Central Unit 3550 (WHO 4)<br/>(194 rx · 17 captures)"]
+        SUB_CU4695["🔴 Central Unit 4695 (WHO 4)<br/>(Physical capture needed)"]
+        SUB_FANCOIL["🟢 Fancoils Dim 11/20 (WHO 4)<br/>(1,476 rx · 60 captures)"]
+        SUB_ALARM["🟢 Burglar Alarm (WHO 5)<br/>(273 rx · 12 captures)"]
+        SUB_DOOR["🟢 Door Entry (WHO 6/8)<br/>(42 rx · 5 captures)"]
+        SUB_DRY["🟢 AUX & Dry Contacts (WHO 9/25)<br/>(206 rx · 14 captures)"]
+        SUB_CEN["🟢 CEN / CEN+ Triggers (WHO 15/25)<br/>(95 rx · 20 captures)"]
+        SUB_LOCK14["🟢 Actuator Locks (WHO 14)<br/>(24 rx · 6 captures)"]
+        SUB_WHO16["🟢 Audio Matrix (WHO 16)<br/>(386 rx · 21 captures)"]
+        SUB_WHO22["🟢 Sound Diffusion & RDS (WHO 22)<br/>(404 rx · 18 captures)"]
+        SUB_ENERGY["🟢 Energy Metering (WHO 18)<br/>(1,425 rx · 27 captures)"]
+        SUB_DIAG["🟢 Gateway Identity (WHO 13/1013)<br/>(1,200 rx · 81 captures)"]
+        SUB_ROUTER["🟢 F422 Cross-Bus (#4#bus)<br/>(583 rx · 28 captures)"]
     end
 
-    subgraph Engine["🧪 CI Test Suite"]
-        HARNESS["tests/test_trace_replay.py<br/>(100% Deterministic Replay)"]
+    subgraph Engine["🧪 CI Replay & Regression Suite"]
+        HARNESS["tests/test_trace_replay.py & fixture tests<br/>(Deterministic On-Wire Replay)"]
     end
 
     GW_MHS1 --> HARNESS
     GW_F454 --> HARNESS
-    GW_MH200 --> HARNESS
-    GW_MH201 --> HARNESS
-    GW_F461 --> HARNESS
     GW_F455 --> HARNESS
+    GW_F459 --> HARNESS
+    GW_F461 --> HARNESS
+    GW_MH202 --> HARNESS
+    GW_MH201 --> HARNESS
+    GW_MH200N --> HARNESS
+    GW_MH200 --> HARNESS
+    GW_F453 --> HARNESS
+    GW_H4890 --> HARNESS
+    GW_H4684 --> HARNESS
     SUB_LIGHT --> HARNESS
     SUB_DALI --> HARNESS
+    SUB_TIMER --> HARNESS
     SUB_GRP --> HARNESS
     SUB_COV_V --> HARNESS
     SUB_COV_H --> HARNESS
     SUB_CU3550 --> HARNESS
-    SUB_ENERGY --> HARNESS
+    SUB_FANCOIL --> HARNESS
+    SUB_ALARM --> HARNESS
+    SUB_DOOR --> HARNESS
     SUB_DRY --> HARNESS
+    SUB_CEN --> HARNESS
+    SUB_LOCK14 --> HARNESS
+    SUB_WHO16 --> HARNESS
+    SUB_WHO22 --> HARNESS
+    SUB_ENERGY --> HARNESS
+    SUB_DIAG --> HARNESS
     SUB_ROUTER --> HARNESS
 
     classDef covered fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
     classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
     classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
-
-    class GW_MHS1,GW_F454,GW_MH200,GW_MH201,GW_F461,GW_F455,SUB_LIGHT,SUB_DALI,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_ENERGY,SUB_DRY,SUB_ROUTER covered;
-    class GW_MH202,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
-    class GW_3578,SUB_COV_CAL,SUB_CU4695 needed;
+    class GW_MHS1,GW_F454,GW_F455,GW_F459,GW_F461,GW_MH202,GW_MH201,GW_MH200N,GW_MH200,GW_F453,GW_H4890,GW_H4684,SUB_LIGHT,SUB_DALI,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_FANCOIL,SUB_ALARM,SUB_DOOR,SUB_DRY,SUB_CEN,SUB_LOCK14,SUB_WHO16,SUB_WHO22,SUB_ENERGY,SUB_DIAG,SUB_ROUTER covered;
+    class SUB_COV_255 partial;
+    class GW_3578,SUB_CU4695 needed;
 ```
+<!-- ROADMAP_COVERAGE_MERMAID_END -->
 
 ---
 
 ### 🏛️ Table 1: Gateway Models & Hardware Transports
 
+<!-- ROADMAP_GATEWAY_TABLE_START -->
 | Gateway Model | Status | Current Evidence / Fixture | Community Trace Needed / Target Scenario |
-|---|---|---|---|
-| **MyHomeServer1 (MHS1)** | 🟢 **Covered** | `tests/fixtures/plants/issue_247_myhomeserver1/` (100 on-wire frames, issue #247; anonymized) | *None needed — full production plant active in CI.* |
-| **F454** | 🟢 **Covered** | `tests/fixtures/plants/issue_297_f454/` (127 on-wire frames, issue #297; anonymized) | *None needed — full high-speed IP session active in CI.* |
-| **MH200 / MH200N** | 🟢 **Covered** | `tests/fixtures/plants/mh200_physical_plant/` (107 on-wire frames from physical MH200) | *None needed — full physical plant active in CI (62 lights, 7 switches, 11 covers across F422 interfaces).* |
-| **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
-| **Legrand 3578 USB/Serial** | 🔴 **Deferred (v2.1+)** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)) | **Hardware tester & raw serial stream**: Active tester + raw byte capture (`#466`) from physical OpenZigBee installation (`WHERE=<id>#9`). |
-| **MH201** | 🟢 **Covered** | `tests/fixtures/plants/mh201_physical_plant/` (100 on-wire frames from physical MH201, issue #378 / PR #390; anonymized) | *None needed — physical plant active in CI (23 lights, 1 outlet, 7 advanced covers, CEN+ presses, WHO=13 device type / firmware / datetime replies).* |
-| **MH202** | 🟡 **Partial** | `tests/fixtures/plants/pr_420_mh202/` (real WHO 13 / 1013 diagnostic exchanges from a physical MH202) plus synthetic profile tests | **Production plant trace**: General residential traffic through an MH202 scenario programmer. |
-| **F455** | 🟢 **Covered** | `tests/fixtures/plants/issue_466_f455/` (80 on-wire frames, issue #466 @lionelser; anonymized) | *None needed — F455 Basic Gateway active in CI (lighting, dimmers, pushbuttons, gateway diagnostics).* |
-| **F452 / F453AV / AM4890** | 🟡 **Synthetic** | Factory golden frames from `openwebnet4j` | **General trace**: Normal residential bus captures welcomed to expand gateway diversity. |
+| :--- | :--- | :--- | :--- |
+| **MyHomeServer1 (MHS1)** | 🟢 **Covered** | 49 physical captures (6,991 `rx` frames; `WHO = 1, 2, 4, 7, 8, 9, 13, 14, 15, 18, 22, 25, 1000, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/myhomeserver1_live_2026-10-25/` | *None needed — cloud/local hybrid gateway plant active in CI.* |
+| **F454** | 🟢 **Covered** | 23 physical captures (4,447 `rx` frames; `WHO = 0, 1, 2, 4, 5, 9, 13, 14, 18, 25, 1013`) — e.g. `tests/fixtures/traces/issue_429/`, `tests/fixtures/traces/issue_466/` | *None needed — high-speed multi-session IP webserver active in CI.* |
+| **F455** | 🟢 **Covered** | 8 physical captures (559 `rx` frames; `WHO = 1, 2, 4, 13, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/central_restore_3100_live_2026-11-12/` | *None needed — single-bus DIN IP gateway active in CI.* |
+| **F459** | 🟢 **Covered** | 1 physical capture (898 `rx` frames; `WHO = 1, 2, 4, 13, 1013`) — e.g. `tests/fixtures/traces/issue_466/` | *None needed — WHO 1013 code 65 & WHO 4 / 22 profile active in CI.* |
+| **F461 Web Server** | 🟢 **Covered** | 16 physical captures (2,805 `rx` frames; `WHO = 1, 2, 4, 13, 14, 1001, 1013`) — e.g. `tests/fixtures/traces/f461_live_2026-10-24/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — DIN Ethernet Web Server (DALI DT8 & fancoils) active in CI.* |
+| **MH202** | 🟢 **Covered** | 9 physical captures (672 `rx` frames; `WHO = 1, 2, 4, 5, 6, 8, 9, 13, 14, 16, 18, 22, 25, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *None needed — modern scenario programmer plant active in CI.* |
+| **MH201** | 🟢 **Covered** | 9 physical captures (970 `rx` frames; `WHO = 0, 1, 2, 4, 13, 15, 18, 25`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh201-fresh-discovery-20260930.log` | *None needed — single-worker scenario programmer plant active in CI.* |
+| **MH200N** | 🟢 **Covered** | 16 physical captures (1,664 `rx` frames; `WHO = 0, 1, 2, 4, 5, 9, 13, 15, 16, 17, 18, 22, 25, 1001, 1013, 1022`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f500_tuner/` | *None needed — second-generation scenario programmer active in CI.* |
+| **MH200** *(Legacy)* | 🟢 **Covered** | 11 physical captures (1,289 `rx` frames; `WHO = 1, 2, 5, 6, 8, 9, 13, 16, 17, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh200_sound_f441m/` | *None needed — legacy single-session plant & F441M audio active in CI.* |
+| **F452 / F453 / F453AV** | 🟢 **Covered** | Traced `F453AV, F453`: 9 physical captures (869 `rx` frames; `WHO = 1, 2, 4, 5, 13, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_619/`, `tests/fixtures/traces/discussion_856/` | *Family covered by physical `F453AV` & `F453` captures; optional legacy `F452 / F452V` captures welcomed.* |
+| **H4890 / AM4890 / 067292** | 🟢 **Covered** | Traced `H4890, 067292`: 5 physical captures (983 `rx` frames; `WHO = 1, 2, 4, 5, 9, 13, 16, 18, 22, 25`) — e.g. `tests/fixtures/traces/issue_832/`, `tests/fixtures/traces/issue_466/` | *None needed — 3.5" touchscreen IP gateways (BTicino & Legrand) active in CI.* |
+| **H4684 / H/L4684** | 🟢 **Covered** | Traced `H/L4684`: 11 physical captures (1,179 `rx` frames; `WHO = 1, 2, 3, 4, 5, 6, 9, 13, 16, 22, 1001, 1004`) — e.g. `tests/fixtures/traces/issue_466/` | *None needed — colour touchscreen IP gateway (FW 2.x & 6.x) active in CI.* |
+| **Legrand 3578 USB/Serial** | 🔴 **Deferred (v2.1+)** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)) | **Hardware tester & raw serial stream**: Active tester + raw byte capture ([Issue #466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)) from a physical OpenZigBee installation (`WHERE=<id>#9`). |
+
+*Table 1 is automatically generated and verified from physical bus captures in `tests/fixtures/` and supported models in `custom_components/myhome/const.py` by `scripts/sync_documentation.py`.*
+<!-- ROADMAP_GATEWAY_TABLE_END -->
 
 ---
 
 ### ⚙️ Table 2: Subsystems, Dimensions & Edge Scenarios
 
+<!-- ROADMAP_SUBSYSTEM_TABLE_START -->
 | Subsystem & Domain | Status | Current Evidence / Fixture | Community Trace Needed / Target Scenario |
-|---|---|---|---|
-| **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | issue #247 capture (F411U2, F418, 4-digit addressing `1000`, `0910`) + MH200 plant (62 lights) | *Baseline covered.* |
-| **Lighting (WHO = 1) — DALI Tunable White** | 🟢 **Covered** | Lyubomir Traykov capture (Dimension 14, Kelvin 2000K–6535K / mireds) | *Baseline covered.* |
-| **Lighting (WHO = 1) — Native DIN Timers** | 🟡 **Synthetic** | Unit tests in `tests/test_timed_lighting.py` | **Actuator countdown trace**: Capture of physical F411 relay executing Dim 2 (`*#1*WHERE*#2*H*M*S##`) or preset temporization. |
-| **Lighting (WHO = 1) — Groups & General (P7)** | 🟢 **Covered** | F461/F429G/F454 traces + physical MH200 golden sample burst fixture (`tests/test_issue_368_resync.py`); declared groups (#376), debounced sweep (#377), and FrameRouter (#391) | *None needed — full group and general broadcast resync engine active in CI.* |
-| **Covers (WHO = 2) — Travel-Time Positioning** | 🟢 **Covered** | issue #247 capture (`*2*0*42##`, LN4661M2) + 60s hardware cutoff guard (#319) + motion abort on delivery failure (#380) | *Baseline covered.* |
-| **Covers (WHO = 2) — Hardware Feedback** | 🟢 **Covered** | issue #247 capture (`*#2*73*10*10*0*001*0##`) | *Baseline covered.* |
-| **Covers (WHO = 2) — Calibration (P3)** | 🔴 **Needed** | Synthetic dimension 10 tests only (on-bus travel-time calibration live in v2; PR #374 admin panel in review) | **Hardware calibration trace**: Bus recording during physical calibration (`shutterRun=AUTO`) on Legrand 67557, LN4672M2, or F401. |
-| **Thermoregulation (WHO = 4) — 99-Zone CU 3550** | 🟢 **Covered** | issue #247 capture (`#0` central unit + zone thermostats) + antifreeze target preservation across sweeps (#383) | *Baseline covered.* |
-| **Thermoregulation (WHO = 4) — 4-Zone CU 4695** | 🔴 **Needed** | Synthetic unit tests in `tests/test_climate.py` | **4-zone central unit trace**: Physical capture from a plant running a 4-zone 4695 / HD4695 (`#0#1`) central unit. |
-| **Thermoregulation (WHO = 4) — 4-Pipe Fancoil** | 🟡 **Synthetic** | Unit tests with dimension 11 | **4-pipe heating/cooling trace**: Physical speed toggles on 4-pipe fancoil systems. |
-| **Burglar Alarm (WHO = 5)** | 🟡 **Synthetic** | Golden frames from `openwebnet4j` | **Central unit alarm trace**: Arm/disarm/alarm frames from physical 3485 / 3486 central units. |
-| **CEN / CEN+ (WHO = 15 / 25) — Dry Contacts** | 🟢 **Covered** | issue #247 capture (F482V12 / 3477 binary sensors) | *Baseline covered.* |
-| **CEN / CEN+ (WHO = 15 / 25) — Pushbuttons** | 🟡 **Synthetic** | Unit tests in `tests/test_device_trigger.py` | **Physical wall switch bursts**: Rapid multi-click, held, and release events from physical pushbuttons under normal usage. |
-| **Sound System (WHO = 16) — Matrix & Proxy** | 🟢 **Covered** | issue #247 capture + mock F441 tests | *Baseline covered.* |
-| **Energy Management (WHO = 18)** | 🟢 **Covered** | issue #247 capture (30 frames of active power, 602 W) | *Baseline covered.* |
-| **F422 Cross-Bus Router** | 🟢 **Covered** | Physical MH200 plant trace (`tests/fixtures/plants/mh200_physical_plant/`, 11 covers routed via `#4#02`) | *None needed — physical F422 cross-bus addressing active in CI.* |
+| :--- | :--- | :--- | :--- |
+| **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | 5,140 physical `rx` frames across 87 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_629/` | *Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.* |
+| **Lighting (WHO = 1) — DALI Tunable White & HSV Color** | 🟢 **Covered** | 18 physical `rx` frames across 2 captures on 1 gateway model — e.g. `tests/fixtures/plants/issue_288_f461_dali_dt8/`, `tests/fixtures/traces/issue_466/` | *Baseline covered (`Dimension 12` HSV & `Dimension 14` Kelvin/mireds).* |
+| **Lighting (WHO = 1) — Native DIN Timers** | 🟢 **Covered** | 12 physical `rx` frames across 6 captures on 3 gateway models — e.g. `tests/fixtures/traces/f461_live_2026-10-15/`, `tests/fixtures/traces/issue_649/` | *Preset temporization & `Dimension 2` replies covered; optional mid-countdown `*#1*WHERE*2*H*M*S##` (`H/M/S > 0`) trace welcomed.* |
+| **Lighting (WHO = 1) — Groups & General Broadcasts (P7)** | 🟢 **Covered** | 27 physical `rx` frames across 10 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — group (`#G`) and general (`WHERE=0`) resync engine active in CI.* |
+| **Covers (WHO = 2) — Travel-Time Positioning & On-Bus Calibration** | 🟢 **Covered** | 1,409 physical `rx` frames across 56 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/discussion_856/`; plus 23 calibrated `cover_travel_times` profiles in `tests/fixtures/traces/discussion_856/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (stopwatch `myhome.calibrate_cover` runs, `cover_travel_times` profiles, and timed slat pulses active in CI).* |
+| **Covers (WHO = 2) — Advanced Position & Venetian Tilt (`Dim 10 / 11`)** | 🟢 **Covered** | 415 physical `rx` frames across 23 captures on 5 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/discussion_770_f454_f401/` | *Baseline covered (`F401` / `LN4661M2` percentage position & Venetian tilt).* |
+| **Covers (WHO = 2) — Uncalibrated Hardware Sentinel (`Dim 10` `LEVEL=255`)** | 🟡 **Synthetic** | Unit tests for `*#2*WHERE*10*BS*255*...##` in `tests/test_cover.py` (0 physical `LEVEL=255` `rx` frames in `tests/fixtures/`) | **Uncalibrated actuator trace**: Bus capture of an uncalibrated `F401`, `LN4672M2`, or `067557` reporting `*#2*WHERE*10*BS*255*...##` prior to *Push&Learn* end-stop learning. |
+| **Thermoregulation (WHO = 4) — 99-Zone Central Unit 3550 (`#0`)** | 🟢 **Covered** | 194 physical `rx` frames across 17 captures on 7 gateway models — e.g. `tests/fixtures/traces/central_restore_3100_live_2026-11-12/`, `tests/fixtures/traces/issue_466/` | *Baseline covered (`#0` master modes, `*4*3100*#0##` auto restore, & zone sync).* |
+| **Thermoregulation (WHO = 4) — 4-Zone Central Unit 4695 (`#0#1`)** | 🔴 **Needed** | Synthetic unit tests in `tests/test_climate.py` only (0 inbound `#0#1` `rx` frames in `tests/fixtures/`) | **4-zone central unit trace**: Physical capture from a plant running a 4-zone `4695` / `HD4695` (`#0#1`) central unit. |
+| **Thermoregulation (WHO = 4) — Fancoils & 4-Pipe Actuators (`Dim 11 / 20`)** | 🟢 **Covered** | 1,476 physical `rx` frames across 60 captures on 10 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_429/` | *Baseline covered (`Dimension 11` 3-speed fancoils & `Dimension 20` actuator states).* |
+| **Burglar Alarm (WHO = 5)** | 🟢 **Covered** | 273 physical `rx` frames across 12 captures on 7 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/plants/issue_311_f454/` | *Baseline covered (physical `3486` / `MH202` partition & zone captures active in CI).* |
+| **Door Entry & Intercom Locks (WHO = 6 / 8)** | 🟢 **Covered** | 42 physical `rx` frames across 5 captures on 4 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *Baseline covered (door lock release & video intercom call events active in CI).* |
+| **AUX & Dry Contacts (WHO = 9 / 25)** | 🟢 **Covered** | 206 physical `rx` frames across 14 captures on 8 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *Baseline covered (`WHO = 9` auxiliary channels & `3477` / `F428` contact sensors).* |
+| **CEN / CEN+ Pushbuttons & Rotary Triggers (WHO = 15 / 25)** | 🟢 **Covered** | 95 physical `rx` frames across 20 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_434/` | *Baseline covered (short, long-press, repeat, release & rotary bursts active in CI).* |
+| **Actuator Maintenance Locks (WHO = 14)** | 🟢 **Covered** | 24 physical `rx` frames across 6 captures on 4 gateway models — e.g. `tests/fixtures/plants/issue_247_myhomeserver1/`, `tests/fixtures/traces/f461_who14_live_2026-10-18/` | *Baseline covered (hardware pushbutton lock/unlock status frames active in CI).* |
+| **Sound System (WHO = 16) — Matrix & Streaming Proxy** | 🟢 **Covered** | 386 physical `rx` frames across 21 captures on 5 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f500_tuner/` | *Baseline covered (`F441` / `F441M` matrix routing, group takeover & ducking).* |
+| **Sound Diffusion (WHO = 22) — FM RDS Tuners & Active-Source Sync** | 🟢 **Covered** | 404 physical `rx` frames across 18 captures on 5 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f500_tuner/` | *Baseline covered (`F500` / `F500N` FM RDS tuners, `H4562` zones, and `4#<area>` active-source tracking across `MyHomeServer1` & dual-stack gateways).* |
+| **Energy Management & Metering (WHO = 18)** | 🟢 **Covered** | 1,425 physical `rx` frames across 27 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_907/` | *Baseline covered (`F520` / `F521` / `3522` active power, totalizers & voltage/current).* |
+| **Gateway Clock, Identity & Diagnostics (WHO = 13 / 1001–1022)** | 🟢 **Covered** | 1,200 physical `rx` frames across 81 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (`WHO = 13` device type/firmware/clock & `WHO = 1013` `OBJECT_MODEL`).* |
+| **F422 Cross-Bus Router (`#4#<bus>`)** | 🟢 **Covered** | 583 physical `rx` frames across 28 captures on 9 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *None needed — physical F422 local-bus routing (`#4#01`, `#4#02`, ...) active in CI.* |
+
+*Table 2 is automatically generated and verified from inbound (`rx`) OpenWebNet frames and calibration bundles in `tests/fixtures/` by `scripts/sync_documentation.py`.*
+<!-- ROADMAP_SUBSYSTEM_TABLE_END -->
 
 ---
 
@@ -355,7 +401,7 @@ Ideal for installers, bench testers, and developers testing isolated gateways wi
 
 1. **Run the Trace Recorder**:
     ```bash
-    python scripts/record_gateway_trace.py --host 192.168.1.35 --password 12345 --model MH202
+    python scripts/record_gateway_trace.py --host 192.0.2.35 --password 12345 --model MH202
     ```
 2. **Active Sweep & Listen**: The script automatically executes the diagnostic status sweep, listens for ambient button presses or scenario bursts, and scrubs sensitive credentials.
 3. **Drop & Commit**: The tool writes a complete ready-to-test fixture folder in `tests/fixtures/plants/<model>_plant/`.
@@ -367,6 +413,6 @@ Ideal for installers, bench testers, and developers testing isolated gateways wi
 
 Please share your feedback, real-world bus captures, and advice in our GitHub discussions:
 
+👉 **[User Manual & Documentation](https://openwebnet-ha.github.io/MyHOME/)**  
 👉 **[Join the Community Discussion on RFC #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)**  
 👉 **[Report Issues or Submit Bus Traces](https://github.com/OpenWebNet-HA/MyHOME/issues)**
-

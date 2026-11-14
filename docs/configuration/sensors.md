@@ -14,11 +14,11 @@ The integration natively interfaces with Legrand / BTicino DIN power management 
 * **BTicino F522 / F523**: Multi-circuit energy and power management modules (`WHERE = 71` through `7255`).
 
 ### Auto-Discovered Entities
-When an energy meter is detected on the SCS bus, the integration creates:
+When an energy meter is detected on the SCS bus, the integration creates entities only for the measurements the meter actually reports:
 
 1. **Instantaneous Power Sensor** (`device_class: power`): Real-time active power consumption in Watts (**W**).
 2. **Total Energy Counter** (`device_class: energy`, `state_class: total_increasing`): Cumulative electrical energy consumption in Watt-hours (**Wh**) or kilowatt-hours (**kWh**).
-3. **Periodic Energy Counters**: Daily and monthly energy sub-counters.
+3. **Periodic Energy Counters**: Daily and monthly energy sub-counters (created disabled by default in the entity registry; enable them in Home Assistant if needed).
 
 ### Home Assistant Energy Dashboard Integration
 Because energy entities implement standard `state_class: total_increasing` and `device_class: energy`:

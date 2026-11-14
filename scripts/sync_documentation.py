@@ -39,11 +39,17 @@ REPAIRS_PY = CUSTOM_COMPONENTS_DIR / "repairs.py"
 MKDOCS_YML = REPO_ROOT / "mkdocs.yml"
 MKDOCS_V09_YML = REPO_ROOT / "mkdocs-v0.9.yml"
 README_MD = REPO_ROOT / "README.md"
+ROADMAP_MD = REPO_ROOT / "ROADMAP.md"
 PYPROJECT_TOML = REPO_ROOT / "pyproject.toml"
 ISSUE_TEMPLATE_CONFIG = REPO_ROOT / ".github" / "ISSUE_TEMPLATE" / "config.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "docs.yml"
 DOCS_DIR = REPO_ROOT / "docs"
 DOCS_V09_DIR = REPO_ROOT / "docs-v0.9"
+
+ROADMAP_DOC_TARGETS = [
+    ROADMAP_MD,
+    DOCS_DIR / "roadmap.md",
+]
 
 CANONICAL_DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/"
 _LEGACY_WIKI_RE = re.compile(
@@ -77,6 +83,13 @@ TRACE_END_MARKER = "<!-- TRACE_MATRIX_END -->"
 
 SERVICES_START_MARKER = "<!-- SERVICES_TABLE_START -->"
 SERVICES_END_MARKER = "<!-- SERVICES_TABLE_END -->"
+
+ROADMAP_MERMAID_START_MARKER = "<!-- ROADMAP_COVERAGE_MERMAID_START -->"
+ROADMAP_MERMAID_END_MARKER = "<!-- ROADMAP_COVERAGE_MERMAID_END -->"
+ROADMAP_GATEWAY_START_MARKER = "<!-- ROADMAP_GATEWAY_TABLE_START -->"
+ROADMAP_GATEWAY_END_MARKER = "<!-- ROADMAP_GATEWAY_TABLE_END -->"
+ROADMAP_SUBSYSTEM_START_MARKER = "<!-- ROADMAP_SUBSYSTEM_TABLE_START -->"
+ROADMAP_SUBSYSTEM_END_MARKER = "<!-- ROADMAP_SUBSYSTEM_TABLE_END -->"
 
 
 def rel_path(p: Path) -> str:
@@ -394,6 +407,34 @@ def sync_trace_matrix(update: bool = False) -> tuple[bool, list[str]]:
             messages.append("Triggered GitHub issue #466 trace matrix sync")
         except Exception as e:
             messages.append(f"GitHub issue sync skipped/failed: {e}")
+
+    return all_ok, messages
+
+
+def get_roadmap_blocks() -> tuple[str, str, str]:
+    """Build the canonical (mermaid, gateway_table, subsystem_table) blocks for ROADMAP.md."""
+    try:
+        from scripts.update_roadmap_tables import build_all_roadmap_blocks
+    except ImportError:
+        from update_roadmap_tables import build_all_roadmap_blocks
+    return build_all_roadmap_blocks()
+
+
+def sync_roadmap_tables(update: bool = False) -> tuple[bool, list[str]]:
+    """Check or update dynamic Gateway (Table 1), Subsystem (Table 2), and Mermaid blocks in roadmap docs."""
+    try:
+        from scripts.update_roadmap_tables import sync_roadmap_file
+    except ImportError:
+        from update_roadmap_tables import sync_roadmap_file
+
+    blocks = get_roadmap_blocks()
+    messages: list[str] = []
+    all_ok = True
+
+    for target in ROADMAP_DOC_TARGETS:
+        ok_t, msgs_t = sync_roadmap_file(target, blocks, update=update)
+        all_ok = all_ok and ok_t
+        messages.extend(msgs_t)
 
     return all_ok, messages
 
@@ -803,7 +844,28 @@ def sync_version_references(update: bool = False) -> tuple[bool, list[str]]:
         else:
             messages.append(f"Release tag in sync: {rel_path(upgrade_doc)}")
 
-
+    # 4. Check OWNd== pins in ROADMAP.md and docs/roadmap.md
+    if ownd_req:
+        for roadmap_doc in (ROADMAP_MD, DOCS_DIR / "roadmap.md"):
+            if not roadmap_doc.exists():
+                continue
+            rm_content = roadmap_doc.read_text(encoding="utf-8")
+            found_pins = set(re.findall(r"OWNd==[0-9a-zA-Z\.\-_+]+", rm_content))
+            if not found_pins:
+                continue
+            if found_pins != {ownd_req}:
+                if update:
+                    new_rm = re.sub(r"OWNd==[0-9a-zA-Z\.\-_+]+", ownd_req, rm_content)
+                    roadmap_doc.write_text(new_rm, encoding="utf-8")
+                    messages.append(f"Updated OWNd pin to '{ownd_req}' in {rel_path(roadmap_doc)}")
+                else:
+                    messages.append(
+                        f"Outdated OWNd reference in {rel_path(roadmap_doc)} "
+                        f"(got {sorted(found_pins)}, expected '{ownd_req}')"
+                    )
+                    all_ok = False
+            else:
+                messages.append(f"OWNd requirement '{ownd_req}' in sync: {rel_path(roadmap_doc)}")
 
     return all_ok, messages
 
@@ -1056,9 +1118,11 @@ def check_readme_and_site_standards() -> tuple[bool, list[str]]:
                 f"{mkdocs_label} contains outdated AGPL license reference (expected Apache-2.0)"
             )
             all_ok = False
-        if check_beta_diff and "beta-differences.md" in mkdocs_raw:
-            messages.append(f"{mkdocs_label} still references removed beta-differences.md page")
-            all_ok = False
+        if check_beta_diff:
+            for removed_page in ("beta-differences.md", "f454-regression-checks.md"):
+                if removed_page in mkdocs_raw:
+                    messages.append(f"{mkdocs_label} still references removed {removed_page} page")
+                    all_ok = False
         try:
             mkdocs_cfg = _load_mkdocs_yaml(mkdocs_file)
             copyright_str = str(mkdocs_cfg.get("copyright", ""))
@@ -1148,6 +1212,56 @@ def check_readme_and_site_standards() -> tuple[bool, list[str]]:
                 messages.extend(site_errs)
                 all_ok = False
 
+    # 3c. Roadmap standards (no deprecated WHO 22 / shutterRun=AUTO claims, no broken links/beta/wiki URLs)
+    stale_roadmap_phrases = (
+        ("Formally Deprecated", "false WHO 22 deprecation status"),
+        ("obsolete Legrand analog FM", "false WHO 22 obsolete analog FM claim"),
+        ("shutterRun=AUTO", "non-OpenWebNet openHAB shutterRun=AUTO claim"),
+    )
+    for rm_path in (ROADMAP_MD, DOCS_DIR / "roadmap.md"):
+        if not rm_path.exists():
+            continue
+        rm_text = rm_path.read_text(encoding="utf-8")
+        rm_label = rel_path(rm_path)
+        for phrase, desc in stale_roadmap_phrases:
+            if phrase in rm_text:
+                messages.append(f"{rm_label} contains prohibited {desc} ('{phrase}')")
+                all_ok = False
+        if rm_path == ROADMAP_MD:
+            if "openwebnet-ha.github.io/MyHOME/beta" in rm_text:
+                messages.append("ROADMAP.md still links to '/MyHOME/beta'")
+                all_ok = False
+            if _LEGACY_WIKI_RE.search(rm_text):
+                messages.append("ROADMAP.md still links to deprecated GitHub '/wiki'")
+                all_ok = False
+            rm_slugs = _github_heading_slugs(rm_text)
+            rm_no_fences = re.sub(r"```.*?```", "", rm_text, flags=re.DOTALL)
+            for text, url in re.findall(r"\[([^\]]*)\]\(([^)]*)\)", rm_no_fences):
+                url_clean = url.strip()
+                if not url_clean or url_clean == "#":
+                    messages.append(f"Empty link target in ROADMAP.md: [{text}]({url})")
+                    all_ok = False
+                    continue
+                if url_clean.startswith("#"):
+                    if url_clean[1:] not in rm_slugs:
+                        messages.append(
+                            f"Unresolved internal heading anchor in ROADMAP.md: [{text}]({url_clean})"
+                        )
+                        all_ok = False
+                    continue
+                if url_clean.startswith(("http://", "https://", "mailto:")):
+                    continue
+                path_part = url_clean.split("#")[0].strip()
+                if path_part and not (ROADMAP_MD.parent / path_part).resolve().exists():
+                    messages.append(
+                        f"Broken relative file link in ROADMAP.md: [{text}]({url_clean})"
+                    )
+                    all_ok = False
+            rm_site_errs = _validate_canonical_site_urls(rm_text, "ROADMAP.md")
+            if rm_site_errs:
+                messages.extend(rm_site_errs)
+                all_ok = False
+
     # 4. Docs workflow invariants (no v0.9.4 -> latest hijack, pre-release pruning, master /latest/ freshness)
     if DOCS_WORKFLOW.exists():
         wf_text = DOCS_WORKFLOW.read_text(encoding="utf-8")
@@ -1222,6 +1336,11 @@ def check_all_documentation(update: bool = False) -> tuple[bool, list[str]]:
     ok_trace, msgs_trace = sync_trace_matrix(update=update)
     overall_ok = overall_ok and ok_trace
     all_messages.extend(msgs_trace)
+
+    # 3b. Dynamic roadmap gateway & subsystem tables
+    ok_rm, msgs_rm = sync_roadmap_tables(update=update)
+    overall_ok = overall_ok and ok_rm
+    all_messages.extend(msgs_rm)
 
     # 4. Services
     ok_srv, msgs_srv = sync_services(update=update)

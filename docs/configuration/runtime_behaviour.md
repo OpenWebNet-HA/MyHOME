@@ -219,7 +219,7 @@ A DALI DT8 driver behind an F461 reports both `12` and `14`; the entity ends up 
 
 ## 🧭 Device links
 
-CEN / CEN+ scenario units are linked to their gateway with `via_device_id` on Home Assistant cores that support it (2026.x+), with `via_device` as the fallback on older cores. Identifiers are unchanged, so existing devices are matched in place. *(#310)*
+Entity devices and CEN / CEN+ scenario units are linked to their parent gateway device via `via_device_id` (`MyHOME` v2 requires Home Assistant 2026.3+, and legacy `via_device` tuples are no longer used). Identifiers are unchanged, so existing devices are matched in place. *(#310)*
 
 ---
 

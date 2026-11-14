@@ -113,7 +113,6 @@ nav:
       - OpenWebNet Protocol & WHO Archive: openwebnet-who-specifications.md
       - Protocol Conformance Matrix: protocol_conformance_matrix.md
       - Hardware Trace Availability: trace-availability.md
-      - F454 Regression Checks: f454-regression-checks.md
       - Quality Scale Roadmap: quality_scale_plan.md
   - Migration & Legacy:
       - Upgrade from v0.9.4 to v2.0: migration/upgrade-from-094.md

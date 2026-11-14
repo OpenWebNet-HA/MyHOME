@@ -468,7 +468,8 @@ def test_check_readme_and_site_standards_rejects_agpl_beta_and_legacy_comparison
     mkdocs_yml.write_text(
         'copyright: "Licensed under AGPL-3.0"\n'
         "nav:\n"
-        "  - Beta: roadmap/beta-differences.md\n",
+        "  - Beta: roadmap/beta-differences.md\n"
+        "  - F454: f454-regression-checks.md\n",
         encoding="utf-8",
     )
     manifest = tmp_path / "manifest.json"
@@ -506,6 +507,7 @@ def test_check_readme_and_site_standards_rejects_agpl_beta_and_legacy_comparison
     assert any("Older cores stay on" in m for m in messages)
     assert any("mkdocs.yml contains outdated AGPL" in m for m in messages)
     assert any("beta-differences.md" in m for m in messages)
+    assert any("f454-regression-checks.md" in m for m in messages)
     assert any("manifest.json 'documentation'" in m for m in messages)
     assert any("pyproject.toml still points Documentation URL to '/MyHOME/beta'" in m for m in messages)
     assert any("pyproject.toml still points URL to deprecated GitHub '/wiki'" in m for m in messages)
@@ -637,3 +639,254 @@ def test_canonical_site_url_and_cross_version_relative_link_validation(tmp_path,
     assert any("missing anchor '#wrong-anchor'" in m for m in site_errs)
     assert any("unversioned or unsupported manual URL" in m for m in site_errs)
     assert not any("#music-assistant" in m for m in site_errs)
+
+
+def _load_update_roadmap_tables():
+    urt_script = REPO_ROOT / "scripts" / "update_roadmap_tables.py"
+    urt_spec = importlib.util.spec_from_file_location("update_roadmap_tables_test", urt_script)
+    urt_mod = importlib.util.module_from_spec(urt_spec)
+    sys.modules["update_roadmap_tables_test"] = urt_mod
+    urt_spec.loader.exec_module(urt_mod)
+    return urt_mod
+
+
+def test_roadmap_tables_empty_tx_oracle_partial_and_covered_states(tmp_path):
+    """Verify dynamic status transitions across empty, tx-only, oracle, diagnostic-only, and covered fixtures."""
+    import json
+
+    urt = _load_update_roadmap_tables()
+    fix_dir = tmp_path / "fixtures"
+    fix_dir.mkdir()
+
+    # 1. Empty corpus: normal gateways are Needed, 3578 is Deferred, Dim 10=255 is Synthetic, CU 4695 is Needed
+    empty_summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    gw_empty = {r.mermaid_id: r for r in urt.evaluate_gateway_rows(empty_summary)}
+    sub_empty = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(empty_summary)}
+    assert gw_empty["GW_F454"].status_cell == "🔴 **Needed**"
+    assert gw_empty["GW_F453"].status_cell == "🔴 **Needed**"
+    assert gw_empty["GW_3578"].status_cell == "🔴 **Deferred (v2.1+)**"
+    assert sub_empty["SUB_COV_255"].status_cell == "🟡 **Synthetic**"
+    assert sub_empty["SUB_CU4695"].status_cell == "🔴 **Needed**"
+    assert sub_empty["SUB_WHO22"].status_cell == "🔴 **Needed**"
+
+    # 2. Outbound TX-only frames must NEVER falsely count as physical RX coverage
+    tx_dir = fix_dir / "traces" / "tx_only"
+    tx_dir.mkdir(parents=True)
+    (tx_dir / "tx_probe.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "F454"},
+                "frames": [
+                    {"direction": "tx", "raw": "*#4*#0#1##"},
+                    {"direction": "tx", "raw": "*1*1*11##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    tx_summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    gw_tx = {r.mermaid_id: r for r in urt.evaluate_gateway_rows(tx_summary)}
+    sub_tx = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(tx_summary)}
+    assert gw_tx["GW_F454"].status_cell == "🔴 **Needed**"
+    assert sub_tx["SUB_CU4695"].status_cell == "🔴 **Needed**"
+
+    # 3. Oracle / synthetic fixtures yield Synthetic, not Covered
+    oracle_dir = fix_dir / "traces" / "oracle_f459"
+    oracle_dir.mkdir(parents=True)
+    (oracle_dir / "oracle.json").write_text(
+        json.dumps(
+            {
+                "synthetic": True,
+                "gateway": {"model": "F459"},
+                "frames": [{"direction": "rx", "raw": "*22*1#4#1*3#7#5##"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    oracle_summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    gw_oracle = {r.mermaid_id: r for r in urt.evaluate_gateway_rows(oracle_summary)}
+    sub_oracle = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(oracle_summary)}
+    assert gw_oracle["GW_F459"].status_cell == "🟡 **Synthetic**"
+    assert sub_oracle["SUB_WHO22"].status_cell == "🟡 **Synthetic**"
+
+    # 4. Diagnostic-only physical RX frames (WHO 13 / 1013) yield Partial on gateway
+    diag_dir = fix_dir / "plants" / "mh202_diag"
+    diag_dir.mkdir(parents=True)
+    (diag_dir / "diag.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "MH202"},
+                "frames": [
+                    {"direction": "rx", "raw": "*#13**15*200##"},
+                    {"direction": "rx", "raw": "*#1013**1*5*15*5*0##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    diag_summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    gw_diag = {r.mermaid_id: r for r in urt.evaluate_gateway_rows(diag_summary)}
+    sub_diag = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(diag_summary)}
+    assert gw_diag["GW_MH202"].status_cell == "🟡 **Partial**"
+    assert sub_diag["SUB_DIAG"].status_cell == "🟢 **Covered**"
+
+    # 5. Functional physical RX frames + cover_travel_times + log/jsonl parsing yield Covered
+    f453_dir = fix_dir / "traces" / "disc_856"
+    f453_dir.mkdir(parents=True)
+    (f453_dir / "f453_diag.json").write_text(
+        json.dumps(
+            {
+                "data": {
+                    "gateway": {"model_name": "F453"},
+                    "config_entry": {
+                        "options": {
+                            "cover_travel_times": {
+                                "11": {"up": 16.0, "down": 14.0},
+                                "12": {"up": 25.0, "down": 24.0},
+                            }
+                        }
+                    },
+                    "bus_monitor": {
+                        "recent_frames": [
+                            {"direction": "rx", "raw": "*2*1*11##"},
+                            {"direction": "rx", "raw": "*2*0*11##"},
+                        ]
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (f453_dir / "F455_direct.jsonl").write_text(
+        '{"kind": "event", "raw": "*#4*1*0*0215##"}\n'
+        '{"kind": "sent", "frame": "*#4*1*12##", "replies": ["*#4*1*12*0210*3##"]}\n',
+        encoding="utf-8",
+    )
+    (f453_dir / "bundle.txt").write_text(
+        "- **Model:** MyHomeServer1\n"
+        "[00:01:00.000] [TX] *#4*5*#14*0200*1##\n"
+        "[00:01:00.100] [RX] *#4*5*#5*0##\n"
+        "[00:01:00.200] [RX] *22*1#4#1*3#7#5##\n",
+        encoding="utf-8",
+    )
+
+    cov_summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    gw_cov = {r.mermaid_id: r for r in urt.evaluate_gateway_rows(cov_summary)}
+    sub_cov = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(cov_summary)}
+
+    assert gw_cov["GW_F453"].status_cell == "🟢 **Covered**"
+    assert "optional legacy `F452 / F452V` captures welcomed" in gw_cov["GW_F453"].target_cell
+    assert gw_cov["GW_F455"].status_cell == "🟢 **Covered**"
+    assert gw_cov["GW_MHS1"].status_cell == "🟢 **Covered**"
+    # Ensure '*#4*5*#5*0##' was parsed as WHO 4, NOT mis-tokenized at '*5*0##' as WHO 5!
+    assert sub_cov["SUB_ALARM"].status_cell == "🔴 **Needed**"
+    assert sub_cov["SUB_COV_V"].status_cell == "🟢 **Covered**"
+    assert "2 calibrated `cover_travel_times` profiles" in sub_cov["SUB_COV_V"].evidence_cell
+    assert sub_cov["SUB_WHO22"].status_cell == "🟢 **Covered**"
+
+
+def test_roadmap_tables_unmapped_model_raises(tmp_path):
+    """Verify unmapped gateway models in const.py or fixtures raise ValueError."""
+    import json
+
+    urt = _load_update_roadmap_tables()
+    fix_dir = tmp_path / "fixtures"
+    fix_dir.mkdir()
+    bad_const = tmp_path / "const.py"
+    bad_const.write_text('SUPPORTED_GATEWAY_MODELS = ["F454", "BrandNewF999"]\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="BrandNewF999"):
+        urt.scan_fixture_corpus(fixtures_dir=fix_dir, const_py=bad_const)
+
+    (fix_dir / "mystery.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "MysteryGW9000"},
+                "frames": [{"direction": "rx", "raw": "*1*1*11##"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="MysteryGW9000"):
+        urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+
+
+def test_sync_roadmap_tables_detects_drift_missing_markers_and_updates(tmp_path, monkeypatch):
+    """Verify sync_roadmap_tables catches missing files, missing markers, and out-of-sync blocks."""
+    missing_rm = tmp_path / "missing_roadmap.md"
+    no_markers_rm = tmp_path / "no_markers.md"
+    no_markers_rm.write_text("# Roadmap without markers\n", encoding="utf-8")
+
+    monkeypatch.setattr(syncdoc, "ROADMAP_DOC_TARGETS", [missing_rm, no_markers_rm])
+    monkeypatch.setattr(
+        syncdoc,
+        "get_roadmap_blocks",
+        lambda: (
+            f"{syncdoc.ROADMAP_MERMAID_START_MARKER}\nM\n{syncdoc.ROADMAP_MERMAID_END_MARKER}",
+            f"{syncdoc.ROADMAP_GATEWAY_START_MARKER}\nG\n{syncdoc.ROADMAP_GATEWAY_END_MARKER}",
+            f"{syncdoc.ROADMAP_SUBSYSTEM_START_MARKER}\nS\n{syncdoc.ROADMAP_SUBSYSTEM_END_MARKER}",
+        ),
+    )
+
+    ok_bad, msgs_bad = syncdoc.sync_roadmap_tables(update=False)
+    assert ok_bad is False
+    assert any("not found" in m for m in msgs_bad)
+    assert any("Missing markers" in m for m in msgs_bad)
+
+    drifted_rm = tmp_path / "ROADMAP.md"
+    drifted_rm.write_text(
+        f"# Roadmap\n"
+        f"{syncdoc.ROADMAP_MERMAID_START_MARKER}\nOLD_M\n{syncdoc.ROADMAP_MERMAID_END_MARKER}\n"
+        f"{syncdoc.ROADMAP_GATEWAY_START_MARKER}\nOLD_G\n{syncdoc.ROADMAP_GATEWAY_END_MARKER}\n"
+        f"{syncdoc.ROADMAP_SUBSYSTEM_START_MARKER}\nOLD_S\n{syncdoc.ROADMAP_SUBSYSTEM_END_MARKER}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(syncdoc, "ROADMAP_DOC_TARGETS", [drifted_rm])
+
+    ok_drift, msgs_drift = syncdoc.sync_roadmap_tables(update=False)
+    assert ok_drift is False
+    assert sum("out of sync" in m for m in msgs_drift) == 3
+
+    ok_upd, msgs_upd = syncdoc.sync_roadmap_tables(update=True)
+    assert ok_upd is True
+    assert sum("Updated Roadmap" in m for m in msgs_upd) == 3
+
+    ok_clean, _ = syncdoc.sync_roadmap_tables(update=False)
+    assert ok_clean is True
+
+
+def test_check_readme_and_site_standards_rejects_roadmap_regressions(tmp_path, monkeypatch):
+    """Verify false WHO 22 deprecation, shutterRun=AUTO, beta/wiki URLs, and outdated OWNd pins in ROADMAP fail."""
+    bad_roadmap = tmp_path / "ROADMAP.md"
+    bad_roadmap.write_text(
+        "# Roadmap\n\n"
+        "### 5. WHO 22 — Formally Deprecated\n"
+        "WHO 22 defines protocol frames for obsolete Legrand analog FM radio tuner modules.\n"
+        "Calibration uses shutterRun=AUTO.\n"
+        "Pinned to `OWNd==1.0.0`.\n"
+        "Manual: [Beta](https://openwebnet-ha.github.io/MyHOME/beta/)\n"
+        "Wiki: [Wiki](https://github.com/OpenWebNet-HA/MyHOME/wiki)\n"
+        "Broken: [Missing](#nonexistent-heading) and [NoFile](DOES_NOT_EXIST.md)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(syncdoc, "ROADMAP_MD", bad_roadmap)
+
+    ok_std, msgs_std = syncdoc.check_readme_and_site_standards()
+    assert ok_std is False
+    assert any("Formally Deprecated" in m for m in msgs_std)
+    assert any("obsolete Legrand analog FM" in m for m in msgs_std)
+    assert any("shutterRun=AUTO" in m for m in msgs_std)
+    assert any("ROADMAP.md still links to '/MyHOME/beta'" in m for m in msgs_std)
+    assert any("ROADMAP.md still links to deprecated GitHub '/wiki'" in m for m in msgs_std)
+    assert any("Unresolved internal heading anchor in ROADMAP.md" in m for m in msgs_std)
+    assert any("Broken relative file link in ROADMAP.md" in m for m in msgs_std)
+
+    ok_ver, msgs_ver = syncdoc.sync_version_references(update=False)
+    assert ok_ver is False
+    assert any("Outdated OWNd reference" in m and "ROADMAP.md" in m for m in msgs_ver)
+
+    ok_ver_up, _ = syncdoc.sync_version_references(update=True)
+    assert ok_ver_up is True
+    _, expected_ownd = syncdoc.extract_manifest_version_info()
+    assert expected_ownd in bad_roadmap.read_text(encoding="utf-8")
+
