@@ -16,7 +16,7 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/OpenWebNet-HA/MyHOME/issues",
   "requirements": [
-    "OWNd==2.0.0b13"
+    "OWNd==2.0.0b14"
   ],
   "ssdp": [
     {
@@ -87,6 +87,11 @@
     {
       "st": "upnp:rootdevice",
       "manufacturer": "BTicino S.p.A.",
+      "modelName": "F453"
+    },
+    {
+      "st": "upnp:rootdevice",
+      "manufacturer": "BTicino S.p.A.",
       "modelName": "F452"
     },
     {
@@ -110,5 +115,5 @@
       "modelName": "MH201"
     }
   ],
-  "version": "2.0.0b17"
+  "version": "2.0.0b18"
 }

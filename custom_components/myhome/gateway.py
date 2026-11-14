@@ -49,6 +49,7 @@ from .gateway_sessions import (
     EVENT_RESTART_BACKOFF_MAX,
     EVENT_RESTART_BACKOFF_MIN,
     EVENT_STALL_TIMEOUT,
+    STATUS_TIMEOUT_BACKOFF,
     CommandPriorityQueue,
     CommandWorkerPool,
     EventSessionRunner,
@@ -108,6 +109,8 @@ __all__ = [
     "OWNEventSession",
     "OWNGateway",
     "OWNSession",
+    "STATUS_TIMEOUT_BACKOFF",
+    "WHO4_RECOVERY_QUIET_WINDOWS",
     "_cancel_written",
     "_resolve_written",
     "_session_is_open",
@@ -183,6 +186,17 @@ AVAILABILITY_GRACE = 60
 BUS_QUIET_PERIOD = 0.75
 BUS_QUIET_CAP = 15.0
 PACED_WRITE_TIMEOUT = 60.0
+# Extra BUS_QUIET_CAP windows waited by _wait_for_who4_recovery() when a WHO 4 status read
+# times out or desyncs while event frames are still actively streaming on the bus (#886).
+# On MyHomeServer1 (028206), /home/bticino/cfg/openserver routes WHO 4 to a single-threaded
+# bt_termo daemon (127.0.0.1:30004, 9 s timeout) while bt_thermo_manager periodically walks
+# its internal thermo.conf zone list (5-15 min DIMENSION 7 + DIMENSION 0 or 5-frame *#4*Z##
+# sweeps taking 6 s on fast buses up to 65-115 s across multi-riser plants; zones omitted
+# from thermo.conf such as Zone 59 in #886 never appear in those sweeps). Intentionally
+# bounded at 4 extra windows (up to (1 + 4) * 15 s = 75 s total) so a typical 65-75 s
+# internal sweep can finish and drain the buffered query without stalling forever on a
+# permanently chattering bus.
+WHO4_RECOVERY_QUIET_WINDOWS = 4
 # How long a zone request waits for others once the startup sweep is over: zones discovered
 # from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
 # sweep (*#4*#0*20##) on an F461.
@@ -211,15 +225,33 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 )  # *#16*0*5## (sound-who16-source.tsv)
 # Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
 # for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
-# models refusing *#4*0## whose *#4*Z## is expanded into four bus queries ($0499ZZ3000 / 12 /
-# 0E / 0D in trace-corpus.tsv, ~1.3 s per zone when a central unit answers them all, a NACK
-# after 1.5-2 s when a standalone thermostat answers only some), and the MH201, whose
-# standalone thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the
-# issue_466 sweep trace, the MH201 is not in the oracle). F460, F461 and MyHomeServer1 refuse
-# *#4*0## too but answer *#4*Z## themselves (F460 and F461 expand it into one request,
-# $00499013000 in trace-corpus.tsv; MyHomeServer1 replies from its cache, #649), so their zones
-# keep the zone status poll and are not listed here.
-ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH201", "MH202"})
+# single-session or uncaptured models refusing *#4*0## whose *#4*Z## is expanded into four bus
+# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), and the MH201, whose standalone
+# thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466
+# sweep trace, the MH201 is not in the oracle). F454, MH202, F460, F461 and MyHomeServer1 refuse
+# *#4*0## too but answer *#4*Z## themselves (F454 supports up to 4 command sessions and answers
+# all five frames in ~1.3 s on both central-unit #629 and standalone #866 plants; MH202 answers
+# all five frames in ~160-250 ms, #866; F460, F461 and MyHomeServer1 expand it into $0499013000 in
+# trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
+# so their zones keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
+# Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
+# one after another), but where a zone that has not reported its temperature, setpoint, mode and
+# an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
+# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its setpoint
+# (*#4*Z*14##), its setpoint in force (*#4*Z*12##, followed by the zone's season frame) and
+# actuator 1 (*#4*Z#1*20##). A value Home Assistant restored from before the restart is not a
+# report. A physical F455 1.0.76 answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
+# standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
+# four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a probe
+# the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
+# (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the poll
+# holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
+# The gate is read when the poll runs (the in-band identity may correct the model after the
+# entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
+SILENT_ZONE_POLL = frozenset({"F455"})
+SILENT_ZONE_GRACE = 120.0
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -232,25 +264,42 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F454", "F459", "H4684", "MH200", "MH
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
 # (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
-# Read from the OWNd profile first (``supports_heating_actuator_status``); this table is the
-# fallback until the flag exists there.
+# Read from the OWNd profile first (``supports_heating_actuator_status``, OWNd#168 in 2.0.0b14);
+# this table is the fallback for ``GenericGatewayProfile`` / brand-prefixed model strings and
+# ``None`` (unverified) profile flags.
 ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+# Gateways that refuse the zone form of that request at once but answer the actuator form
+# (``*#4*Z#N*20##``): a physical F455 1.0.76 NACKed *#4*2*20##, *#4*4*20##, *#4*3*20## and
+# *#4*0*20## in 2-18 ms and answered *#4*2#1*20## / *#4*4#1*20## / *#4*3#1*20## in ~0.09 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl, F455_direct_requests_zone3_2026-11-06.jsonl).
+# A zone's watch is not sent there; a thermo actuator switch (``Z#N``) still asks.
+ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
 # One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
 # the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
 # The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
 # answered it in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone
 # through the paced sender takes about 32 s; the emulated 028206 forwards it ("out").
+# For humidity (dimension 60), all four humidity-forwarding gateways in own-firmware-oracle
+# (thermo-zone-requests: F459, F460, F461, MyHomeServer1) translate ``*#4*0*60##`` into the
+# broadcast SCS query ``$06D200030308000000`` ("out"); the live MyHomeServer1 3.87.13 ACKed it
+# in 0.50 s with all 17 humidity-probe zones answering (myhomeserver1_live_2026-10-24, #886),
+# and the live F461 2.0.11 answered it in 2.13 s (f461_live_2026-10-23).
 ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
-    "F461": {20: "*#4*#0*20##"},
-    "MYHOMESERVER1": {20: "*#4*#0*20##"},
+    "F459": {60: "*#4*0*60##"},
+    "F460": {60: "*#4*0*60##"},
+    "F461": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
+    "MYHOMESERVER1": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
 }
 # Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
 # nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests suite
 # (findings/thermo-zone-requests.md on main, ``firmware_observed``, emulated firmware); F459,
 # F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
 # Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
-# wins, ``None`` = unverified); this table is the fallback until the flag exists there.
-HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "H4684", "MH200", "MH200N", "MH202"})
+# wins, ``None`` = unverified, OWNd#168 in 2.0.0b14); this table is the fallback for
+# ``GenericGatewayProfile`` / brand-prefixed model strings and ``None`` (such as F455).
+HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", "H4684", "MH200", "MH200N", "MH202"})
+# The F455 is not in the oracle: a physical F455 1.0.76 NACKed *#4*2*60## in 19 ms with nothing on
+# the bus (issue_466/F455_direct_requests_2026-11-06.jsonl, t=68.6).
 # Every gateway model the request tables can be keyed on: the twelve images the oracle emulates
 # (results/<P>/<V>, refusing and forwarding alike) and the other models OWNd profiles, so a
 # forwarding model named with a brand prefix ("BTicino F461") is keyed as itself (``F461``)
@@ -264,7 +313,8 @@ KNOWN_GATEWAY_MODELS = frozenset(
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
-    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL,
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL | SILENT_ZONE_POLL
+    | ZONE_ACTUATOR_REQUEST_REFUSED,
     key=len,
     reverse=True,
 )
@@ -326,6 +376,11 @@ def _zone_request_frame(where: str, dimension: int) -> str:
     return f"*#4*{_validate_zone_where(where)}*{dimension}##"
 
 
+def _is_zone_level_where(where: str) -> bool:
+    """A zone as a whole (``Z``, ``#Z``, ``Z#4#II``), not one of its actuators (``Z#N``, ``Z#N#4#II``)."""
+    return "#" not in where.partition(BUS_ROUTING)[0].lstrip("#")
+
+
 class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     """Manages a single MyHOME Gateway."""
 
@@ -375,6 +430,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,
             "firmware": None, "kernel": None, "distribution": None,
+            "pending_code": False, "pending_firmware": False,
         }
         self._who1013: dict[str, Any] = {
             "code": None, "model": None, "names": (), "pending": False,
@@ -409,6 +465,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._actuator_zones: dict[str, int] = {}
         self._zone_requests: set[tuple[str, int]] = set()
         self._zone_request_task: asyncio.Task[None] | None = None
+        self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -507,6 +564,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @property
     def supports_zone_status(self) -> bool:
         """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
+        profile = getattr(getattr(self, "gateway", None), "profile", None)
+        supported = getattr(profile, "supports_heating_zone_status", None)
+        if isinstance(supported, bool):
+            return supported
         # Check the configured model string, its alphanumeric form (so "BTicino H/L4684" matches
         # "HL4684"), and the profile model _profile_for_model resolves it to (L4684, NT4684,
         # H/L4684, HL4684, HC4684, and MyHOME_Suite catalogue codes such as 003598).
@@ -522,10 +583,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 "F450",
                 "F455",
                 "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
-                "F454",
                 "MH200",
                 "MH201",
-                "MH202",
                 "F452",
                 "F453",
                 "F458",
@@ -659,6 +718,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
                     )
                     continue
+                if dimension == 60 and target.humidity_request_refused:
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the humidity request; not asking", self.log_id, wheres, target.model
+                    )
+                    continue
+                if dimension == 20 and target.zone_actuator_request_refused:
+                    zones = [where for where in wheres if _is_zone_level_where(where)]
+                    if zones:
+                        LOGGER.debug(
+                            "%s Zones %s: %s refuses the zone form of the actuator request; asking only actuators",
+                            self.log_id,
+                            zones,
+                            target.model,
+                        )
+                        wheres = [where for where in wheres if not _is_zone_level_where(where)]
+                        if not wheres:
+                            continue
                 all_zones = target.all_zone_request(dimension)
                 if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
                     frames.append(all_zones)
@@ -672,9 +748,34 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             if not frames:
                 continue  # every item skipped (refusing gateway): no empty sweep
             try:
+                if self._last_event_frame_at > 0:
+                    await self._wait_for_bus_quiet(self._last_event_frame_at)
                 await self.send_paced(frames)
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    async def wait_for_zone_requests(self) -> None:
+        """Let same-turn zone dimension requests coalesce and wait for their paced run."""
+        await asyncio.sleep(0)
+        while self._zone_request_task is not None and not self._zone_request_task.done():
+            await asyncio.gather(self._zone_request_task, return_exceptions=True)
+
+    def _has_status_consumer(self, message: OWNCommand) -> bool:
+        """Whether ``send_status_request(message)`` has an active worker, target, or test double."""
+        if self.sending_workers:
+            return True
+        if self._delegated_target(message) is not None or self._failover_target(message) is not None:
+            return True
+        bound = getattr(self.send_status_request, "__func__", None)
+        return bound is not MyHOMEGatewayHandler.send_status_request
+
+    async def pace_startup_status_write(self, written: Any, message: OWNCommand) -> None:
+        """Wait for a startup WHO 4 status query and bus quiet when a consumer is active."""
+        if not self._has_status_consumer(message):
+            return
+        await self._wait_for_write(written, message)
+        await self._wait_for_bus_quiet(time.monotonic())
+        await self._wait_for_who4_recovery(written)
 
     @property
     def humidity_request_refused(self) -> bool:
@@ -707,6 +808,30 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if not self._profile_supports_who(16):
             return True
         return self._model_key in SOUND_STATUS_REQUEST_REFUSED
+
+    @property
+    def zone_actuator_request_refused(self) -> bool:
+        """Whether this gateway refuses the zone form of the actuator request (``*#4*Z*20##``) only.
+
+        Decided by the gateway the request goes through, like ``humidity_request_refused``.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.zone_actuator_request_refused
+        return self._model_key in ZONE_ACTUATOR_REQUEST_REFUSED
+
+    @property
+    def silent_zone_poll_needed(self) -> bool:
+        """Whether a zone silent after the startup sweep asks its own state once (``SILENT_ZONE_POLL``).
+
+        Decided by the gateway the reads go through (``_who4_target``: a secondary WHO 4 is
+        delegated to, or the warm standby while this primary is down), like
+        ``humidity_request_refused``. A passive follower (a standby, or a secondary without
+        WHO 4) has no zones of its own to ask.
+        """
+        if self.is_follower and 4 not in self.delegated_whos:
+            return False
+        return self._who4_target()._model_key in SILENT_ZONE_POLL
 
     @property
     def zone_temperature_poll_needed(self) -> bool:
@@ -778,6 +903,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 )
             self._event_session_ready.set()
             self._who1013["pending"] = False
+            self._who13["pending_code"] = False
+            self._who13["pending_firmware"] = False
             if self._unavailable_timer is not None:
                 self._unavailable_timer()
                 self._unavailable_timer = None
@@ -948,6 +1075,28 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 PACED_WRITE_TIMEOUT,
             )
 
+    async def _wait_for_who4_recovery(self, written: Any) -> None:
+        """Wait for an active bus sweep to finish when a WHO 4 status read timed out or desynced (#886).
+
+        Bounded to ``WHO4_RECOVERY_QUIET_WINDOWS`` extra bus-quiet waits so an external
+        ``bt_thermo_manager`` sweep can drain ``bt_termo``'s single-threaded SCS queue
+        without blocking indefinitely when autonomous bus traffic never goes quiet.
+        """
+        if not isinstance(written, asyncio.Future):
+            return
+        if not (
+            getattr(written, "_gateway_desync", False)
+            or getattr(written, "_command_timeout", False)
+        ):
+            return
+        for _ in range(WHO4_RECOVERY_QUIET_WINDOWS):
+            if (
+                self._last_event_frame_at <= 0
+                or (time.monotonic() - self._last_event_frame_at) >= BUS_QUIET_PERIOD
+            ):
+                return
+            await self._wait_for_bus_quiet(self._last_event_frame_at)
+
     async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
         """Send general requests one at a time, each once the bus finished answering the last."""
         epoch = self._begin_sweep()
@@ -959,6 +1108,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
                 await self._wait_for_write(written, cmd)
                 await self._wait_for_bus_quiet(time.monotonic())
+                if getattr(cmd, "who", None) == 4:
+                    await self._wait_for_who4_recovery(written)
         finally:
             self._end_sweep(epoch)
 

@@ -68,6 +68,7 @@ class ZoneBase(MyHOMEEntity, MediaPlayerEntity):
         # ── Base hardware state ────────────────────────────────────────────
         self._attr_state: MediaPlayerState | None = MediaPlayerState.OFF
         self._attr_source: str | None = None
+        self._selected_source_while_off: int | None = None
         self._warned_sources: set[int] = set()
         self._attr_volume_level: float | None = None
         self._attr_is_volume_muted: bool = False

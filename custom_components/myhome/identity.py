@@ -1,8 +1,8 @@
 """Gateway identity: evidence in, one verdict out.
 
 The protocol handlers only record what they observed - the model picked in the
-config flow, the model the gateway announced over SSDP or that the serial
-transport fixes, the WHO=13 dimension-15 device type, the WHO=1013 dimension-1
+config flow, the model the gateway announced over SSDP, the WHO=13 dimension-15
+device type, the WHO=1013 dimension-1
 OBJECT_MODEL. ``resolve_gateway_identity`` turns that evidence into the model the
 integration should believe, plus the corroboration or conflict state that goes
 with it. It is a pure function of its input, so applying it twice changes nothing,
@@ -10,20 +10,22 @@ and the periodic re-broadcast of a WHO=13 reply cannot flap a repair issue.
 
 Precedence, unchanged from the handler-side rules it replaces:
 
-- an SSDP or serial identity is never overruled (the device said so itself); a
+- an SSDP identity is never overruled (the device said so itself); a
   certain contradiction raises a *mismatch* that asks the owner to confirm;
 - a manual choice is kept unless a certain code contradicts it, and is then
   *corrected*;
 - with no trustworthy model (none configured, or a label an earlier resolution
   wrote), the in-band evidence labels the gateway;
-- WHO=1013 outranks WHO=13 when both are present: its catalogue is one code per
-  model, while a WHO=13 code may be shared by several modern gateways, and the
-  two do not necessarily agree for the same product;
+- certain readings outrank uncertain ones, and within the same certainty tier
+  WHO=1013 outranks WHO=13: its catalogue is one code per model, while a WHO=13
+  code may be shared by several modern gateways, and the two do not necessarily
+  agree for the same product;
 - a shared WHO=13 code is not evidence of any model; it is the cue to ask WHO=1013.
 
 "Certain" means the 2006 specification (official WHO=13 codes) or the WHO=1013
-catalogue. A WHO=13 code known from field evidence only can corroborate a model,
-never contradict it.
+catalogue. A WHO=13 or WHO=1013 code known from field evidence only can label an
+unconfigured gateway and corroborate a model, never contradict it or mask a
+certain contradiction.
 """
 from __future__ import annotations
 
@@ -40,7 +42,6 @@ from .const import (
     CONF_SSDP_LOCATION,
     CONF_UDN,
     IDENTIFICATION_MANUAL,
-    IDENTIFICATION_SERIAL,
     IDENTIFICATION_SSDP,
     IDENTIFICATION_UNKNOWN,
     IDENTIFICATION_WHO13,
@@ -51,6 +52,7 @@ from .const import (
     WHO1013_BRANDS,
     WHO1013_LINES,
     WHO1013_OBJECT_MODELS,
+    WHO1013_OBSERVED_OBJECT_MODELS,
     gateway_model_family,
 )
 
@@ -77,6 +79,7 @@ def _same_product_names() -> dict[str, frozenset[str]]:
     ]
     entries += list(WHO13_THIRD_PARTY_DEVICE_TYPES.values())
     entries += list(WHO1013_OBJECT_MODELS.values())
+    entries += list(WHO1013_OBSERVED_OBJECT_MODELS.values())
     names: dict[str, frozenset[str]] = {}
     for models in entries:
         product = frozenset(_normalized(m) for m in models)
@@ -175,14 +178,28 @@ def read_who13(code: str) -> CodeReading:
 
 
 def read_who1013(code: str) -> CodeReading:
-    """Interpret a WHO=1013 dimension-1 OBJECT_MODEL."""
+    """Interpret a WHO=1013 dimension-1 OBJECT_MODEL.
+
+    Two sources, in descending order of authority: the diagnostic catalogue
+    (MHCatalogue.db, certain) and values observed on real hardware outside that
+    catalogue (field evidence: can label an unconfigured gateway and corroborate
+    one that has a model, never contradict it).
+    """
+    if code in WHO1013_OBJECT_MODELS:
+        models: tuple[str, ...] = WHO1013_OBJECT_MODELS[code]
+        basis = "diagnostic catalogue"
+        certain = True
+    else:
+        models = WHO1013_OBSERVED_OBJECT_MODELS.get(code, ())
+        basis = "field evidence"
+        certain = False
     return CodeReading(
         label="WHO=1013 OBJECT_MODEL",
         code=code,
         raw=f"1013-1-{code}",
-        models=tuple(WHO1013_OBJECT_MODELS.get(code, ())),
-        basis="diagnostic catalogue",
-        certain=True,
+        models=models,
+        basis=basis,
+        certain=certain,
         shared=False,
     )
 
@@ -192,8 +209,8 @@ class GatewayIdentityEvidence:
     """Everything observed about the gateway's model, each source kept apart."""
 
     manual: str | None = None  # picked in the config or options flow
-    technical: str | None = None  # announced over SSDP, or fixed by the serial transport
-    technical_source: str | None = None  # IDENTIFICATION_SSDP / IDENTIFICATION_SERIAL
+    technical: str | None = None  # announced over SSDP
+    technical_source: str | None = None  # IDENTIFICATION_SSDP
     prior_label: str | None = None  # written to the entry by an earlier in-band resolution
     who13_code: str | None = None  # WHO=13 dimension 15
     who1013_code: str | None = None  # WHO=1013 dimension 1
@@ -205,7 +222,7 @@ class GatewayIdentityResolution:
 
     model: str | None  # effective model; None when nothing is known
     source: str  # the evidence `model` rests on (IDENTIFICATION_*)
-    conflict: str | None = None  # a certain contradiction of an SSDP / serial identity
+    conflict: str | None = None  # a certain contradiction of an SSDP identity
     conflict_reading: CodeReading | None = None  # the code that contradicts
     corrected_from: str | None = None  # the manual model `model` replaces
     corrected_reading: CodeReading | None = None  # the code that corrects it
@@ -217,6 +234,25 @@ class GatewayIdentityResolution:
     def unknown_code(self) -> str | None:
         """The code an unknown-model repair issue should name (the latest question asked)."""
         return self.unknown_readings[-1].raw if self.unknown_readings else None
+
+
+def select_inband_reading(
+    who13: CodeReading | None, who1013: CodeReading | None
+) -> CodeReading | None:
+    """Pick the strongest discriminating in-band reading.
+
+    Certain readings (2006 WHO=13 specification or WHO=1013 diagnostic catalogue)
+    outrank field-evidence / third-party readings so an unverified WHO=1013 code
+    cannot mask an authoritative WHO=13 contradiction; within the same certainty
+    tier, WHO=1013 outranks WHO=13. A shared WHO=13 code alone says nothing.
+    """
+    who13_disc = who13 if who13 is not None and who13.known and not who13.shared else None
+    who1013_disc = who1013 if who1013 is not None and who1013.known else None
+    if who1013_disc is not None and who1013_disc.certain:
+        return who1013_disc
+    if who13_disc is not None and who13_disc.certain:
+        return who13_disc
+    return who1013_disc or who13_disc
 
 
 def resolve_gateway_identity(evidence: GatewayIdentityEvidence) -> GatewayIdentityResolution:
@@ -240,14 +276,7 @@ def resolve_gateway_identity(evidence: GatewayIdentityEvidence) -> GatewayIdenti
         source = IDENTIFICATION_WHO13 if configured else IDENTIFICATION_UNKNOWN
         authoritative, trusted = False, False
 
-    # The in-band evidence that can discriminate: WHO=1013 first, else a WHO=13
-    # code that is known and not shared. A shared code alone says nothing.
-    if who1013 is not None and who1013.known:
-        inband: CodeReading | None = who1013
-    elif who13 is not None and who13.known and not who13.shared:
-        inband = who13
-    else:
-        inband = None
+    inband = select_inband_reading(who13, who1013)
 
     def verdict(
         model: str | None,
@@ -318,10 +347,8 @@ class GatewayIdentityMixin:
 
     @property
     def identification_source(self) -> str:
-        """How the configured model was established (SSDP > manual > serial > WHO=13)."""
+        """How the configured model was established (SSDP > manual > WHO=13)."""
         data = getattr(self.config_entry, "data", None) or {}
-        if data.get("transport_type") == "serial":
-            return IDENTIFICATION_SERIAL
         if data.get(CONF_SSDP_LOCATION) or data.get(CONF_UDN):
             return IDENTIFICATION_SSDP
         model_source = data.get("model_source")
@@ -389,10 +416,12 @@ class GatewayIdentityMixin:
                     _gw.async_delete_unconfigured_timezone_issue(self.hass, self.config_entry.entry_id)
 
         if dim == 15 and dim_val:
+            self._who13["pending_code"] = False
             self._handle_device_type(str(dim_val[0]))
         elif dim in (23, 24) and dim_val:
             self._who13["kernel" if dim == 23 else "distribution"] = ".".join(str(v) for v in dim_val)
         elif dim == 16:
+            self._who13["pending_firmware"] = False
             fw = getattr(message, "firmware_version", None)
             if fw:
                 self._who13["firmware"] = fw
@@ -444,8 +473,8 @@ class GatewayIdentityMixin:
         configured = str(self.gateway.model_name or "") or None
         return GatewayIdentityEvidence(
             manual=configured if source == IDENTIFICATION_MANUAL else None,
-            technical=configured if source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL) else None,
-            technical_source=source if source in (IDENTIFICATION_SSDP, IDENTIFICATION_SERIAL) else None,
+            technical=configured if source == IDENTIFICATION_SSDP else None,
+            technical_source=source if source == IDENTIFICATION_SSDP else None,
             prior_label=configured if source == IDENTIFICATION_WHO13 else None,
             who13_code=self._who13["code"],
             who1013_code=self._who1013["code"],
@@ -593,6 +622,40 @@ class GatewayIdentityMixin:
         for worker in self.sending_workers[limit:]:
             worker.cancel()
         del self.sending_workers[limit:]
+
+    def _request_gateway_identity(self) -> None:
+        """Queue ``*#13**15##`` (device type) and ``*#13**16##`` (firmware) once when unknown.
+
+        SSDP/UPnP gateways such as the BTicino H/L4684 often omit ``modelNumber`` in their
+        UPnP XML description, leaving ``firmware`` unset until a ``WHO=13`` Dimension 16
+        reply is seen. Querying ``*#13**15##`` and ``*#13**16##`` on session startup settles
+        both the hardware model code and the firmware-gated ``GatewayProfile`` (e.g. WHO 22
+        on H/L4684 >= 6.0.0 vs < 6.0.0) without emitting any SCS bus frames.
+        """
+        from . import gateway as _gw
+
+        if not self.sending_workers:
+            return
+        own_command = getattr(_gw, "OWNCommand")
+        log = getattr(_gw, "LOGGER")
+        probes: list[tuple[str, str, str]] = []
+        if self._who13.get("code") is None and not self._who13.get("pending_code", False):
+            probes.append(("*#13**15##", "pending_code", "WHO=13 dimension 15 (device type)"))
+        if self._who13.get("firmware") is None and not self._who13.get("pending_firmware", False):
+            probes.append(("*#13**16##", "pending_firmware", "WHO=13 dimension 16 (firmware version)"))
+        for raw, pending_key, label in probes:
+            cmd = own_command.parse(raw)
+            if cmd is None:
+                continue
+            log.debug("%s Requesting %s on startup.", self.log_id, label)
+            try:
+                self.send_buffer.put_nowait(
+                    {"message": cmd, "written": self.hass.loop.create_future(), "is_status_request": True}
+                )
+            except asyncio.QueueFull:
+                log.warning("%s Cannot queue %s request: send buffer full.", self.log_id, label)
+                return
+            self._who13[pending_key] = True
 
     def _request_object_model(self) -> None:
         """Queue ``*#1013**1##`` (Gateway Diagnostic, dimension 1 OBJECT_MODEL) once."""

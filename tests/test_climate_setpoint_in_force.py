@@ -26,7 +26,7 @@ F461_POLL_REPLY = (
 )
 
 
-def _zone(hass, where="2", gateway=None, **kwargs):
+def _zone(hass, where="2", gateway=None, standalone=True, **kwargs):
     if gateway is None:
         gateway = MagicMock()
         gateway.mac = "00:03:50:00:04:97"
@@ -35,7 +35,7 @@ def _zone(hass, where="2", gateway=None, **kwargs):
         gateway.has_central_unit = False
     zone = MyHOMEClimate(
         hass=hass, name=f"Zone {where}", device_id=f"4-{where}", who="4", where=where,
-        heating=True, cooling=True, fan=False, standalone=True, central=False,
+        heating=True, cooling=True, fan=False, standalone=standalone, central=False,
         manufacturer="BTicino", model="Heating Zone", gateway=gateway, **kwargs,
     )
     zone.hass = hass
@@ -65,6 +65,7 @@ async def test_dimension_14_before_dimension_12_shows_the_setpoint_in_force(hass
     zone = _zone(hass)
     _feed(zone, "*#4*2*0*0239##", "*#4*2*14*0210*3##", "*#4*2*12*0235*3##", "*4*1*2##", "*#4*2*13*00##")
     assert zone.target_temperature == 23.5
+    assert zone._target_temperature == 21.0
 
 
 @pytest.mark.parametrize(
@@ -249,3 +250,288 @@ async def test_unreadable_restored_setpoint_is_ignored(hass):
     await restored.async_restore_last_state(State("climate.zone_2", "heat", {"temperature": "warm", "local_offset": 2}))
     assert restored.target_temperature is None
     assert restored._local_offset == 0
+
+
+# ------------------------------------------------------------------ H/L4684 derived local offset when dimension 13 is absent (#466)
+
+async def test_hl4684_zone_88_setpoint_sequence_derives_offset_and_compensates_writes(hass):
+    """Replay H/L4684 (FW 6.0.11) + 3550 Zone 88 frames from #466 (09-11-53.json).
+
+    On H/L4684, ``*#4*Z##`` is NACKed and the 3550's quarter-hour sweep only surfaces
+    Dimension 0, Dimension 14, and Dimension 20 on the event session (no Dimension 13 in
+    the 7 November sweep or write bursts; the 13 November follow-up trace 06-59-18.json
+    confirmed H/L4684 answers direct ``*#4*Z*13##`` reads and forwards live knob turns).
+    When Dimension 13 has not been reported yet, each ``*#4*#88*#14*TTTT*3##`` write burst
+    emits Dimension 0, Dimension 12 (effective setpoint = nominal + knob offset),
+    ``*4*1*88##``, optionally Dimension 14 (present on frames 97-102, 118-123, 126-131;
+    omitted on frames 104-108, 113-117, 132-136), and ``*4*110*#88##``, deriving the
+    knob offset as a fallback.
+    """
+    zone = _zone(hass, where="88", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    # 1. Quarter-hour 3550 sweep on H/L4684 (09-11-53.json frames 36-37, 45): Dimension 0, 14, 20
+    _feed(zone, "*#4*88*0*0210##", "*#4*88*14*0170*3##", "*#4*88#1*20*5##")
+    assert zone._target_temperature == 17.0
+    assert zone._local_offset == 0
+    assert zone.extra_state_attributes["knob_pos"] == "UNKNOWN"
+
+    # 2. First write (09-11-53.json frames 97-102): includes Dimension 12 (0075) and Dimension 14 (0105)
+    await zone.async_set_temperature(temperature=10.5)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == "*#4*#88*#14*0105*3##"
+    _feed(
+        zone,
+        "*#4*88*0*0210##",
+        "*#4*88*12*0075*3##",
+        "*4*1*88##",
+        "*#4*88*14*0105*3##",
+        "*4*110*#88##",
+    )
+    assert zone.hvac_mode == HVACMode.HEAT
+    assert zone.target_temperature == 7.5
+    assert zone._target_temperature == 10.5
+    assert zone.extra_state_attributes["local_offset"] == -3
+    assert zone.extra_state_attributes["knob_pos"] == "-3"
+
+    # 3. Second write (09-11-53.json frames 104-108, Dimension 14 omitted):
+    #    user sets 24.0 °C -> compensated with -3 offset writes 27.0 °C (0270)
+    zone._gateway_handler.send.reset_mock()
+    await zone.async_set_temperature(temperature=24.0)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == "*#4*#88*#14*0270*3##"
+    _feed(
+        zone,
+        "*#4*88*0*0210##",
+        "*#4*88*12*0240*3##",
+        "*4*1*88##",
+        "*4*110*#88##",
+    )
+    assert zone.target_temperature == 24.0
+    assert zone._target_temperature == 27.0
+    assert zone.extra_state_attributes["local_offset"] == -3
+    assert zone.extra_state_attributes["knob_pos"] == "-3"
+
+    # 4. Third write (09-11-53.json frames 113-117, Dimension 14 omitted):
+    #    user sets 23.0 °C -> writes 26.0 °C (0260)
+    zone._gateway_handler.send.reset_mock()
+    await zone.async_set_temperature(temperature=23.0)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == "*#4*#88*#14*0260*3##"
+    _feed(
+        zone,
+        "*#4*88*0*0210##",
+        "*#4*88*12*0230*3##",
+        "*4*1*88##",
+        "*4*110*#88##",
+    )
+    assert zone.target_temperature == 23.0
+    assert zone._target_temperature == 26.0
+    assert zone.extra_state_attributes["local_offset"] == -3
+
+    # 5. Fifth write (09-11-53.json frames 126-131, Dimension 14 included):
+    #    user sets 23.5 °C -> writes 26.5 °C (0265)
+    zone._gateway_handler.send.reset_mock()
+    await zone.async_set_temperature(temperature=23.5)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == "*#4*#88*#14*0265*3##"
+    _feed(
+        zone,
+        "*#4*88*0*0210##",
+        "*#4*88*12*0235*3##",
+        "*4*1*88##",
+        "*#4*88*14*0265*3##",
+        "*4*110*#88##",
+    )
+    assert zone.target_temperature == 23.5
+    assert zone._target_temperature == 26.5
+    assert zone.extra_state_attributes["local_offset"] == -3
+
+    # 6. Sixth write (09-11-53.json frames 132-136, Dimension 14 omitted):
+    #    user sets 27.0 °C -> writes 30.0 °C (0300)
+    zone._gateway_handler.send.reset_mock()
+    await zone.async_set_temperature(temperature=27.0)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == "*#4*#88*#14*0300*3##"
+    _feed(
+        zone,
+        "*#4*88*0*0210##",
+        "*#4*88*12*0270*3##",
+        "*4*1*88##",
+        "*4*110*#88##",
+    )
+    assert zone.target_temperature == 27.0
+    assert zone._target_temperature == 30.0
+    assert zone.extra_state_attributes["local_offset"] == -3
+
+
+async def test_hl4684_write_omitting_dimension_14_derives_offset_from_written_nominal(hass):
+    """When H/L4684 omits Dimension 14 on the first write (09-13-19.json frames 136-141), the written nominal derives the offset."""
+    zone = _zone(hass, where="55", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    await zone.async_set_temperature(temperature=24.0)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == "*#4*#55*#14*0240*3##"
+    _feed(
+        zone,
+        "*#4*55*0*0221##",
+        "*#4*55*12*0210*3##",
+        "*4*1*55##",
+        "*#4*55#1*20*5##",
+        "*4*110*#55##",
+    )
+    assert zone.hvac_mode == HVACMode.HEAT
+    assert zone.target_temperature == 21.0
+    assert zone._target_temperature == 24.0
+    assert zone.extra_state_attributes["local_offset"] == -3
+    assert zone.extra_state_attributes["knob_pos"] == "-3"
+
+
+@pytest.mark.parametrize(
+    ("where", "burst", "expected_local", "expected_nominal", "expected_offset", "expected_knob", "next_set", "expected_tx"),
+    [
+        (
+            "33",
+            ("*#4*33*0*0218##", "*#4*33*12*0260*3##", "*4*1*33##", "*#4*33*14*0270*3##", "*4*110*#33##"),
+            26.0,
+            27.0,
+            -1,
+            "-1",
+            24.0,
+            "*#4*#33*#14*0250*3##",
+        ),
+        (
+            "22",
+            ("*#4*22*0*0223##", "*#4*22*12*0240*3##", "*4*1*22##", "*#4*22*14*0260*3##", "*4*110*#22##"),
+            24.0,
+            26.0,
+            -2,
+            "-2",
+            22.0,
+            "*#4*#22*#14*0240*3##",
+        ),
+        (
+            "44",
+            ("*#4*44*0*0238##", "*#4*44*12*0210*3##", "*4*1*44##", "*#4*44*14*0240*3##", "*4*110*#44##"),
+            21.0,
+            24.0,
+            -3,
+            "-3",
+            21.0,
+            "*#4*#44*#14*0240*3##",
+        ),
+        (
+            "55",
+            ("*#4*55*0*0221##", "*#4*55*12*0200*3##", "*4*1*55##", "*#4*55*14*0230*3##", "*4*110*#55##"),
+            20.0,
+            23.0,
+            -3,
+            "-3",
+            24.0,
+            "*#4*#55*#14*0270*3##",
+        ),
+    ],
+    ids=["zone-33-offset-minus-1", "zone-22-offset-minus-2", "zone-44-offset-minus-3", "zone-55-offset-minus-3"],
+)
+async def test_hl4684_captured_zone_bursts_derive_knob_offsets(
+    hass, where, burst, expected_local, expected_nominal, expected_offset, expected_knob, next_set, expected_tx
+):
+    """Captured H/L4684 bursts for zones 33, 22, 44, and 55 (09-13-19.json) derive each zone's integer knob offset."""
+    zone = _zone(hass, where=where, standalone=False)
+    zone._gateway_handler.has_central_unit = True
+    _feed(zone, *burst)
+    assert zone.target_temperature == expected_local
+    assert zone._target_temperature == expected_nominal
+    assert zone.extra_state_attributes["local_offset"] == expected_offset
+    assert zone.extra_state_attributes["knob_pos"] == expected_knob
+
+    await zone.async_set_temperature(temperature=next_set)
+    assert str(zone._gateway_handler.send.await_args.args[0]) == expected_tx
+
+
+@pytest.mark.parametrize(
+    ("frames", "expected_offset", "expected_knob", "expected_target", "expected_nominal"),
+    [
+        (
+            ("*4*1*2##", "*#4*2*14*0240*3##", "*#4*2*12*0210*3##"),
+            -3,
+            "-3",
+            21.0,
+            24.0,
+        ),
+        (
+            ("*#4*2*14*0240*3##", "*4*1*2##", "*#4*2*12*0210*3##"),
+            -3,
+            "-3",
+            21.0,
+            24.0,
+        ),
+        (
+            ("*4*1*2##", "*#4*2*12*0230*3##", "*#4*2*14*0210*3##"),
+            2,
+            "+2",
+            23.0,
+            21.0,
+        ),
+        (
+            ("*4*1*2##", "*#4*2*14*0210*3##", "*#4*2*12*0210*3##"),
+            0,
+            "UNKNOWN",
+            21.0,
+            21.0,
+        ),
+    ],
+    ids=[
+        "dim14-then-dim12-negative",
+        "dim14-before-mode-then-dim12-negative",
+        "dim12-then-dim14-positive",
+        "dim14-then-dim12-zero-leaves-knob-unknown",
+    ],
+)
+async def test_derived_offset_handles_both_frame_orders_and_signs(
+    hass, frames, expected_offset, expected_knob, expected_target, expected_nominal
+):
+    """Paired Dimension 12 and 14 frames derive -3..+3 integer offsets in either arrival order."""
+    zone = _zone(hass)
+    _feed(zone, *frames)
+    assert zone.target_temperature == expected_target
+    assert zone._target_temperature == expected_nominal
+    assert zone.extra_state_attributes["local_offset"] == expected_offset
+    assert zone.extra_state_attributes["knob_pos"] == expected_knob
+
+
+async def test_derived_nonzero_offset_resets_to_zero_when_knob_returned_to_center(hass):
+    """Once a nonzero knob offset was derived, a later 12 == 14 pair resets local_offset to 0 and knob_pos to '0'."""
+    zone = _zone(hass)
+    _feed(zone, "*4*1*2##", "*#4*2*12*0210*3##", "*#4*2*14*0240*3##")
+    assert zone.extra_state_attributes["local_offset"] == -3
+    assert zone.extra_state_attributes["knob_pos"] == "-3"
+
+    _feed(zone, "*#4*2*0*0215##", "*#4*2*12*0240*3##", "*#4*2*14*0240*3##")
+    assert zone.extra_state_attributes["local_offset"] == 0
+    assert zone.extra_state_attributes["knob_pos"] == "0"
+    assert zone.target_temperature == 24.0
+    assert zone._target_temperature == 24.0
+
+
+async def test_explicit_dimension_13_prevents_derived_offset_override(hass):
+    """Once Dimension 13 is reported, a later integer difference between 12 and 14 does not override it."""
+    zone = _zone(hass)
+    _feed(zone, "*4*1*2##", "*#4*2*13*00##", "*#4*2*12*0230*3##", "*#4*2*14*0210*3##")
+    assert zone.extra_state_attributes["local_offset"] == 0
+    assert zone.extra_state_attributes["knob_pos"] == "0"
+    assert zone.target_temperature == 23.0
+
+
+async def test_out_of_range_or_stale_dimension_pairs_do_not_derive_offset(hass, monkeypatch):
+    """Differences outside -3..+3 °C or separated beyond the burst window do not derive a knob offset."""
+    clock = [1000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass)
+    # 1. Difference of -14 °C (e.g. protection 7.0 vs comfort 21.0) is outside -3..+3
+    _feed(zone, "*4*1*2##", "*#4*2*12*0070*3##", "*#4*2*14*0210*3##")
+    assert zone.extra_state_attributes["local_offset"] == 0
+    assert zone.extra_state_attributes["knob_pos"] == "UNKNOWN"
+
+    # 2. Separated beyond _PROTECTION_FRAME_WINDOW (2.0s)
+    _feed(zone, "*#4*2*12*0200*3##")
+    clock[0] += 5.0
+    _feed(zone, "*#4*2*14*0220*3##")
+    assert zone.extra_state_attributes["local_offset"] == 0
+    assert zone.extra_state_attributes["knob_pos"] == "UNKNOWN"
+

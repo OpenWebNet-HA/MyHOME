@@ -12,7 +12,7 @@ After the event session is up, the integration sends a small set of general stat
 | :--- | :--- | :--- |
 | `*#1*0##` | Lighting | All gateways |
 | `*#2*0##` | Automation / covers | All gateways |
-| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, `tests/fixtures/traces/issue_466`); F460, F461 and MyHomeServer1 poll `*#4*<WHERE>##` per zone instead, and the zones of the SCS-only models (F450, F454, F459, H4684, MH200, MH201, MH202) ask `*#4*<WHERE>*0##` |
+| `*#4*0##` | Thermoregulation | All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, `tests/fixtures/traces/issue_466`); F454, MH202, F460, F461 and MyHomeServer1 poll `*#4*<WHERE>##` per zone instead (#629, #649, #714, #866), and the zones of the remaining SCS-only models (F450, F459, H4684, MH200, MH201) ask `*#4*<WHERE>*0##` |
 | `*#5*0##` | Burglar alarm | MH202, H4890 |
 | `*#16*0*5##` | Sound system (dimension 5; lists every amplifier) | Gateways whose profile advertises WHO 16, except F450, F459, F460, F461, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle) |
 | `*#18*51*51##` | Energy management (meter 51 total energy) | F454, F455, MH201, MH202, MyHomeServer1, H4890 |
@@ -55,25 +55,25 @@ Instead, the integration debounces across a bidirectional window:
 
 1. A group/area/general frame checks for **leading echoes** received in the preceding 1.5 s
    (`RESYNC_LEADING_WINDOW_S`). If members already reported their status, no sweep is scheduled.
-
 2. Otherwise, a 0.5 s timer (`RESYNC_DEBOUNCE_S`) is armed for that target.
 3. If member point-to-point status frames arrive before the timer fires (**trailing echoes**),
    the sweep is cancelled:
 
-   - For an **area**, point-to-point echoes in that matching area only skip or cancel its
-     timer once *all* known `light`/`switch` entities registered in that area have echoed
-     with matching polarity (preventing partial CEN/Scenario bursts such as `MH200N`
-     scenarios from starving non-echoing actuators in the same area); unrelated areas stay
-     armed.
-   - For a **group**, receiving multiple member echoes ($\ge 2$) in the window cancels its
-     timer, protecting against unrelated bus frames.
+    - For an **area**, point-to-point echoes in that matching area only skip or cancel its
+      timer once *all* known `light`/`switch` entities registered in that area have echoed
+      with matching polarity (preventing partial CEN/Scenario bursts such as `MH200N`
+      scenarios from starving non-echoing actuators in the same area); unrelated areas stay
+      armed.
+    - For a **group**, receiving multiple member echoes (`≥ 2`) in the window cancels its
+      timer, protecting against unrelated bus frames.
 4. Otherwise, one status request is sent:
-   - **Group** `#G`: `*#1*#G##` (the group's own status).
-   - **Area** `A`: `*#1*A##`, using the frame's own `WHERE` (`"00"`, `"1"`.."9", `"100"`)
-     - never a value re-derived from an integer, which would risk emitting the banned
-     `*#1*0##`.
-   - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
-     (`light` or `switch` in the entity registry), never `*#1*0##`.
+
+    - **Group** `#G`: `*#1*#G##` (the group's own status).
+    - **Area** `A`: `*#1*A##`, using the frame's own `WHERE` (`"00"`, `"1"`.."9", `"100"`)
+      - never a value re-derived from an integer, which would risk emitting the banned
+      `*#1*0##`.
+    - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
+      (`light` or `switch` in the entity registry), never `*#1*0##`.
 
 Disable this with **Sweep group/area/general light addresses for status** in the
 Options Flow if your gateway lags on repeated status requests.
@@ -111,6 +111,19 @@ If the gateway rejects the OpenWebNet password during setup, the integration rai
 
 ---
 
+## 🌡️ F455 zones ask once, 120 s after the sweep
+
+The F455 Basic Gateway returns nothing to `*#4*0##`, ACKs `*#4*<WHERE>##` only after about 9 s (sixteen of them timing out one after another was #674) and refuses `*#4*<WHERE>*20##` at once, so its climate zones ask nothing when they are added. A standalone thermostat on it can then stay `unknown` for hours (#466).
+
+Behaviour (live F455 1.0.76, `tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl`):
+
+- 120 s after the startup sweep, a zone that has not reported its temperature, setpoint, mode and an actuator by itself asks for what is missing, one read at a time: `*#4*<zone>*0##`, `*#4*<zone>*14##`, `*#4*<zone>*12##` (followed by the zone's season frame) and `*#4*<zone>#1*20##`. Each is answered in about 0.1 s. A value restored from before the restart does not count as reported.
+- Each read waits for the previous answer. A zone without a probe (an actuator-only channel) refuses the first read after about 9 s and is asked nothing else, so it costs one read and one command session held for those 9 s, once per zone added or reloaded (`F455_direct_requests_zone3_2026-11-06.jsonl`).
+- Whether the gateway wants this is decided when the poll runs, not when the zone is added, so a model corrected in band (WHO 13 / WHO 1013) after start is honoured; on a shared bus the gateway that serves WHO 4 decides, and a passive standby or secondary asks nothing.
+- The zone's actuator watch (`*#4*<WHERE>*20##`) is not sent to an F455; thermo actuator switches (`*#4*<WHERE>#<N>*20##`) still ask, and the F455 answers them.
+
+---
+
 ## 🌡️ Temperature probes (`WHERE ≥ 100`) are push-driven
 
 Slave / external probes use the `ZPP` address form (zone `Z`, probe `PP`, e.g. `101`). Devices such as a **3455** behind an **L4577** radio interface push `*#4*ZPP*0*T*3##` unsolicited every few seconds and **NACK** the explicit `*#4*ZPP*15##` poll.
@@ -130,23 +143,27 @@ Behaviour:
 Central thermoregulation units (such as the BTicino **3550** at address `#0` and the **4695** 4-zone unit at `#0#1`) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).
 
 Central units handle status updates differently from subordinate zones (`1..99`):
+
 - **Dimension 14 queries rejected**: Gateways reject Dimension 14 status queries (`*#4*#0*14##`) with fast NACK, as Dimension 14 status queries are only defined for zone thermostats `1..99` (#629).
 - **Plain status requests supported**: Authentic physical gateway traces (#629) confirm that 99-zone central units (`#0`) reliably answer the plain status request `*#4*#0##` within ~0.17 s, returning their operating mode (`*4*202*#0##` for conditional OFF) and status flags (`*4*21*#0##`, `*4*22*#0##`, `*4*24*#0##`).
 - **Startup Polling**: On startup and poll intervals, the integration queries central unit `#0` with `*#4*#0##`. Answering populates the seasonal mode and coordinates subordinate zones. This poll is informational: an unanswered `*#4*#0##` never raises an `unresponsive_zone` repair (only an F454 has been captured so far). 4-zone central units (`#0#1`) remain exempt to prevent gateway timeouts.
 
 Central units coordinate with the plant as follows:
+
 1. **Startup Hydration & Polling**: On restart, the central unit entity is restored from its previous state (`async_restore_last_state()`) and sends canonical status request `*#4*#0##`, updating its mode and subordinate zones upon answer.
 2. **Outbound Mode Commands**: When commanded from Home Assistant, the central unit receives seasonal mode commands:
-   - `*4*100*#0##` (Conditioning OFF command)
-   - `*4*101*#0##` (Manual Heating command)
-   - `*4*102*#0##` (Manual Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 102 denotes Antifreeze protection)
-   - `*4*103*#0##` (Auto Heating/Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 103 denotes Heating OFF)
-   - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
+
+    - `*4*100*#0##` (Conditioning OFF command)
+    - `*4*101*#0##` (Manual Heating command)
+    - `*4*102*#0##` (Manual Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 102 denotes Antifreeze protection)
+    - `*4*103*#0##` (Auto Heating/Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 103 denotes Heating OFF)
+    - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
 3. **Inbound Operating Mode & Status Broadcasts**: The physical central unit broadcasts events across the bus whenever its state changes:
-   - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` (Generic OFF status), `*4*202*#0##` (Conditional OFF status).
-   - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
-   - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
-   - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).
+
+    - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` (Generic OFF status), `*4*202*#0##` (Conditional OFF status).
+    - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
+    - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
+    - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).
 4. **Canonical Status Polling**: Central unit `#0` is queried with plain status request `*#4*#0##`, avoiding the rejected Dimension 14 query (`*#4*#0*14##`) while ensuring the central unit's initial state is populated at startup.
 5. **Subordinate Coordination**: When the central unit changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (`myhome_central_mode_<mac>`) so non-standalone subordinate zones synchronize their operating mode immediately.
 6. **Bus Discovery Isolation**: All broadcast frames emitted by a 3550 central unit carry address `#0`. They never resolve to or invent phantom zone `99` (commercial name *"Centrale termoregolazione 99 zone"*). If an installation physically includes a Zone 99 thermostat, on-wire frames directed to zone 99 (`*4*...*99##`) will discover and manage it normally.

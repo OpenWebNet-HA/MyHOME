@@ -6,16 +6,16 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (Unified Beta v2.0.0b17 & Platinum IQS)
+## 🗺️ Current Delivery Status (Unified Beta v2.0.0b18 & Platinum IQS)
 
-Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b17 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
+Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0b18 Unified Beta**. Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
 
 ```mermaid
 gantt
     title MyHOME Integration Status & Roadmap
     dateFormat  YYYY-MM-DD
     section Delivered in v2.0.0b13
-    Phase 1 - Dual Async Transports, Core Features & Bus Monitor    :done, 2026-08-01, 2026-09-01
+    Phase 1 - Async TCP Transport, Core Features & Bus Monitor      :done, 2026-08-01, 2026-09-01
     Phase 2 - Standalone OWNd Library (P1) & CEN Triggers (P2)      :done, 2026-09-01, 2026-09-11
     Phase 2 - Native DIN Bus Timers (WHO 1)                         :done, 2026-09-01, 2026-09-11
     Phase 3 - Central Unit 3550/4695 (P4) & Multi-Gateway (P6)      :done, 2026-09-01, 2026-09-11
@@ -41,25 +41,30 @@ gantt
     OWNd 2.0.0b13 Pin & Legrand 067292 Alias (#848, #854)           :done, 2026-10-26, 2026-11-04
     F500 FM Tuner Controls & Station Range Bounds (#839, #844)       :done, 2026-10-28, 2026-11-04
     Dimmer Preset Echo & Coarse Curve Alignment (#828, #852)         :done, 2026-10-28, 2026-11-04
+    section Delivered in v2.0.0b18
+    Live Cover Animation (~1 s) & Venetian Dim 10 Tilt (#870, #900)  :done, 2026-11-05, 2026-11-14
+    WHO 4 Startup Pacing, Offset Reads & 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
+    Expose Virtual Dimmer Hold-Up & Firmware Gates (#883, #904)      :done, 2026-11-09, 2026-11-14
+    OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909)           :done, 2026-11-13, 2026-11-14
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
     RFC - Scope Resolution for WHO 14, WHO 24, WHO 22               :active, 2026-09-11, 2026-10-15
     section Release Milestones
-    Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-15
+    Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-30
 ```
 
 ---
 
-## 📦 What is Shipped & Operational in v2.0.0b17
+## 📦 What is Shipped & Operational in v2.0.0b18
 
 The following table summarizes the completed architectural features and protocol subsystems verified in the current release:
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Cover End-Stop Settle & Min Delta** | WHO=2 | ✅ **Shipped** (#778, #834, #843, #847) | Timed covers full run settle on `travel_time + 2s`, 0.5 s early cutoff tolerance, configurable `min_position_delta` (1–5%), and configurator limit refusal in calibration. |
-| **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators a wall control can drive (HA state mirrored back to its LEDs), WHO 4 virtual temperature probes, WHO 18 virtual energy meters and the WHO 13 bus clock; custom actions run as Home Assistant scripts. |
+| **Cover Live Animation, End-Stop Settle & Min Delta** | WHO=2 | ✅ **Shipped** (#778, #834, #847, #870, #900) | ~1 s interpolated live position during timed runs, full-run settle on `travel_time + 2s`, 0.5 s early cutoff tolerance, `min_position_delta` (1–5%), and intermediate `Dimension 10` Venetian slat tilt tracking. |
+| **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators (with `H4652/2` hold-up step-up, retry dedup, and UI action selectors), firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Venetian Blinds, Impulse Gates & Cover Start-Up Floor** | WHO=2 / WHO=1 | ✅ **Shipped** (#508, #667, #702, #707, #708) | Slat tilt as timed slat pulses (`slat_tilt`, `slat_time`); impulse garage / gate covers on WHO 1 relays with optional safety approval; per-cover `min_motor_pulse`, full runs at 0 % / 100 %, and timed runs ended at the actuator's stop status. |
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b13`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, optimized HMAC-SHA256 handshake ($O(N)$ string generation), shared with CLI tools and MCP servers. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd 2.0.0b14`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, idle command-socket recovery (`OWNd#165`), WHO 4 profile flags (`OWNd#168`), and `*4*3100*#0##` central `auto` builder (`OWNd#169`). |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 250 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
 | **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all 30 integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
@@ -110,11 +115,13 @@ Home Assistant provides **virtual travel-time positioning** for all covers (calc
 Legrand advanced shutter actuators (such as the 67557, LN4672M2, and F401) support native hardware positioning via Dimension 10 (`*#2*WHERE*10*Position*...##`) and an automatic travel calibration routine (`shutterRun=AUTO`).
 
 #### Shipped Foundation:
+
 * **Interactive Live Bus Calibration Engine (#302, #319)**: Built-in `myhome.calibrate_cover` service with automatic stopwatch timing directly from on-wire frames, `Calibrate Up` and `Calibrate Down` configuration buttons (`EntityCategory.CONFIG`), `copied_from` timing sharing across identical shutters, and a 60-second hardware cutoff safety guard.
 * **Delivery Failure Motion Abort (#380)**: Immediately stops virtual movement and prevents phantom position advance when a cover frame is rejected or unconfirmed by the gateway.
 
 #### Active Community Collaboration: Dedicated Administration Panel (#374):
 Work is actively underway in **PR #374** (by @xtimmy86x, following [Discussion #270](https://github.com/orgs/OpenWebNet-HA/discussions/270)) introducing an experimental administration panel:
+
 * **Asymmetric Travel Profiles**: Configurable independent opening and closing durations per cover.
 * **Guided & Batch Calibration**: Guided, automatic, and selected-cover batch calibration workflows with explicit preview and atomic persistence.
 * **Integrated Diagnostics & Bus Monitor**: Embedded live trace capture, frame filtering, transmission, and diagnostic export directly inside the administration panel.
@@ -128,6 +135,7 @@ Work is actively underway in **PR #374** (by @xtimmy86x, following [Discussion #
 OpenWebNet WHO 14 handles actuator diagnostics, relay cycle counters, and hardware maintenance locks (preventing physical buttons from toggling a relay during maintenance or security states). 
 
 #### Community Resolution:
+
 * **Diagnostic Buttons Preserved (#353)**: Actuator lock and unlock controls are exposed as configuration buttons (`button.py`) under `EntityCategory.CONFIG`, allowing maintenance commands without creating cluttering lock entities.
 * **Bus Monitor Visibility**: WHO 14 frames remain fully visible, parsed, and color-coded in the Lovelace Bus Monitor card for diagnostic troubleshooting.
 
@@ -139,6 +147,7 @@ OpenWebNet WHO 14 handles actuator diagnostics, relay cycle counters, and hardwa
 WHO 24 is designed for commercial Legrand Lighting Management controllers (**BMNE500**, **BMview**, **002645**) used in office buildings and schools. Residential MyHOME plants almost universally use standard WHO=1 lighting and DALI gateways (F429).
 
 #### Community Resolution:
+
 * **Scope Deferred**: WHO 24 is deferred as an optional standalone extension, keeping core integration scope focused on residential and commercial SCS bus systems.
 
 ---
@@ -149,6 +158,7 @@ WHO 24 is designed for commercial Legrand Lighting Management controllers (**BMN
 WHO 22 defines protocol frames for obsolete Legrand analog FM radio tuner modules (frequency stepping, station presets, and RDS text streaming). 
 
 #### Community Resolution:
+
 * **Formally Deprecated**: Obsolete analog FM radio controls are formally deprecated in favor of the **Dynamic Streaming Proxy** on the F441 matrix, enabling high-fidelity digital streaming from **Music Assistant**, **Spotify Connect**, and AirPlay directly into wired SCS zones.
 
 ---
@@ -185,33 +195,38 @@ graph LR
 ### 📋 Detailed Quality Scale Audit Summary
 
 #### 1. 🥉 Bronze Architectural Alignments — ✅ 100% Complete (20/20)
+
 * **`has-entity-name = True`**: Fully implemented across all entity platforms (`MyHOMEEntity` in `custom_components/myhome/myhome_device.py`). Primary entities inherit device naming (`_attr_name = None`), and manual `entity_id` assignment has been eliminated in favor of core registry naming (`tests/test_entity_naming.py`).
 * **`runtime-data`**: Replaced all legacy `hass.data[DOMAIN]` global state with typed `ConfigEntry.runtime_data` (`MyHOMERuntimeData` in `data.py`), enforced statically by `scripts/verify_ha_standards.py`.
 * **`action-setup`**: Service action registrations (`sync_time`, `send_message`, `sweep_bus`, `turn_on_timed`, etc.) are centralized in `services.py` and registered once in `async_setup`, preventing listener teardown during entry reloads.
 
 #### 2. 🥈 Silver Robustness & Quality Hardening — ✅ 100% Complete (10/10)
+
 * **`test-coverage` (100.0% Strict Statement & Branch Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 3,000 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
 * **`action-exceptions`**: Service actions validate all inputs and raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` mapped directly to localized translation keys under `exceptions` in `strings.json`.
 * **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `alarm_control_panel.py`) for non-blocking local push stream processing.
 
 #### 3. 🥇 Gold User Experience & Framework Features — ✅ 100% Complete (21/21)
+
 * **`reconfiguration-flow`**: Fully supports `async_step_reconfigure` in `config_flow.py` allowing users to update IP address, port, password, or connection mode directly from the Home Assistant UI.
 * **`strings.json` & `icon-translations`**: `custom_components/myhome/strings.json` and `icons.json` serve as the canonical source of truth for all entity states, configuration forms, device classes, and service actions.
 * **`repair-issues`**: Active integration of Home Assistant's Repairs framework (`async_create_issue`):
-  - `gateway_identity_mismatch` & `gateway_identity_corrected`: Proactively informs users if configured model conflicts with WHO=13 hardware telemetry.
-  - `unconfigured_timezone` (PR #387): Automatically flags legacy gateway timezone sentinel `999` with remediation guidance.
-  - `unknown_model` (PR #388): Captures unmapped WHO=13 hardware codes (`999`) and directs users to diagnostic trace submission.
+    - `gateway_identity_mismatch` & `gateway_identity_corrected`: Proactively informs users if configured model conflicts with WHO=13 hardware telemetry.
+    - `unconfigured_timezone` (PR #387): Automatically flags legacy gateway timezone sentinel `999` with remediation guidance.
+    - `unknown_model` (PR #388): Captures unmapped WHO=13 hardware codes (`999`) and directs users to diagnostic trace submission.
 * **Complete Core Documentation Suite**: Authored all 10 Gold standard documentation chapters under `docs/configuration/` (Architecture, Supported Functions, Gateways, Services, Runtime Behaviour, CEN/CEN+, Sound System, Troubleshooting, Lovelace Recipes, and Known Limitations).
 * **`quality_scale.yaml`**: Official compliance manifest actively tracked at `custom_components/myhome/quality_scale.yaml` and verified by `scripts/quality_scale_report.py`.
 
 #### 4. 🏆 Platinum Engineering Tier — ✅ 100% Complete (3/3)
+
 * **`async-dependency`**: The underlying `OWNd` protocol engine (v2.0.0b9, pinned in `manifest.json`) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
 * **`inject-websession`**: Formally exempt (all communication operates over raw OpenWebNet binary/text TCP streams; no HTTP websession required).
 * **`strict-typing`**: Enforces `mypy --strict` with **0 errors across all 30 integration modules**. Cascading type errors were eliminated alongside `OWNd 2.0.0b7`'s PEP 561 `py.typed` marker (PR #393), guarded in CI by `scripts/typing_ratchet.py`.
 
 #### 5. 🌐 Release Status: Stable v2.0.0
+
 * **Branding Assets (`brands`)**: Already in place. The MyHOME icon and logo were merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
-* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b17`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
+* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that HACS users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b18`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
 
 ---
 
@@ -230,7 +245,7 @@ graph TD
         GW_F454["🟢 F454<br/>(High-speed IP)"]
         GW_MH200["🟢 MH200 / MH200N<br/>(107 Frames / Physical Plant)"]
         GW_F461["🟢 F461<br/>(DIN Web Server)"]
-        GW_3578["🟡 Legrand 3578<br/>(Serial/ZigBee Loopback)"]
+        GW_3578["🔴 Legrand 3578<br/>(Deferred to v2.1+ · #879)"]
         GW_MH201["🟢 MH201<br/>(100 Frames / Physical Plant)"]
         GW_MH202["🟡 MH202<br/>(WHO 13 diagnostics only)"]
         GW_F455["🟢 F455<br/>(80 Frames / Physical Plant)"]
@@ -278,8 +293,8 @@ graph TD
     classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
     class GW_MHS1,GW_F454,GW_MH200,GW_MH201,GW_F461,GW_F455,SUB_LIGHT,SUB_DALI,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_ENERGY,SUB_DRY,SUB_ROUTER covered;
-    class GW_3578,GW_MH202,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
-    class SUB_COV_CAL,SUB_CU4695 needed;
+    class GW_MH202,SUB_TIMER,SUB_CEN,SUB_ALARM partial;
+    class GW_3578,SUB_COV_CAL,SUB_CU4695 needed;
 ```
 
 ---
@@ -292,7 +307,7 @@ graph TD
 | **F454** | 🟢 **Covered** | `tests/fixtures/plants/issue_297_f454/` (127 on-wire frames, issue #297; anonymized) | *None needed — full high-speed IP session active in CI.* |
 | **MH200 / MH200N** | 🟢 **Covered** | `tests/fixtures/plants/mh200_physical_plant/` (107 on-wire frames from physical MH200) | *None needed — full physical plant active in CI (62 lights, 7 switches, 11 covers across F422 interfaces).* |
 | **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
-| **Legrand 3578 USB/Serial** | 🟡 **Partial** | Unit test loopback in `tests/test_gateway.py` | **Real-world USB serial stream**: Raw byte capture from physical OpenZigBee installation (`WHERE=<id>#9`). |
+| **Legrand 3578 USB/Serial** | 🔴 **Deferred (v2.1+)** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)) | **Hardware tester & raw serial stream**: Active tester + raw byte capture (`#466`) from physical OpenZigBee installation (`WHERE=<id>#9`). |
 | **MH201** | 🟢 **Covered** | `tests/fixtures/plants/mh201_physical_plant/` (100 on-wire frames from physical MH201, issue #378 / PR #390; anonymized) | *None needed — physical plant active in CI (23 lights, 1 outlet, 7 advanced covers, CEN+ presses, WHO=13 device type / firmware / datetime replies).* |
 | **MH202** | 🟡 **Partial** | `tests/fixtures/plants/pr_420_mh202/` (real WHO 13 / 1013 diagnostic exchanges from a physical MH202) plus synthetic profile tests | **Production plant trace**: General residential traffic through an MH202 scenario programmer. |
 | **F455** | 🟢 **Covered** | `tests/fixtures/plants/issue_466_f455/` (80 on-wire frames, issue #466 @lionelser; anonymized) | *None needed — F455 Basic Gateway active in CI (lighting, dimmers, pushbuttons, gateway diagnostics).* |
@@ -329,6 +344,7 @@ We offer **two simple ways** to contribute real-world bus traces, tailored to yo
 
 #### 🏷️ Track A: Zero-CLI via Home Assistant UI (Fastest & Easiest)
 Ideal for standard users running Home Assistant with the MyHOME integration:
+
 1. **Sweep the Bus**: In Home Assistant, go to **Developer Tools** > **Services** and call `myhome.sweep_bus` (or trigger it from the Lovelace Bus Monitor Card). This actively queries all lighting, cover, HVAC, and gateway diagnostic states in under 3 seconds.
 2. **Download Diagnostics**: Navigate to **Settings** > **Devices & Services** > **MyHOME** > click the three dots (`⋮`) > **Download diagnostics** (or click **`📋 Export Trace`** on the `<myhome-bus-card>`).
 3. **Submit**: Attach the downloaded `.json` file to [**RFC Discussion #248**](https://github.com/orgs/OpenWebNet-HA/discussions/248) or open a GitHub Issue.
@@ -336,10 +352,11 @@ Ideal for standard users running Home Assistant with the MyHOME integration:
 
 #### 💻 Track B: Standalone Python Tool (Test Benches & Integrators)
 Ideal for installers, bench testers, and developers testing isolated gateways without Home Assistant installed:
+
 1. **Run the Trace Recorder**:
-   ```bash
-   python scripts/record_gateway_trace.py --host 192.168.1.35 --password 12345 --model MH202
-   ```
+    ```bash
+    python scripts/record_gateway_trace.py --host 192.168.1.35 --password 12345 --model MH202
+    ```
 2. **Active Sweep & Listen**: The script automatically executes the diagnostic status sweep, listens for ambient button presses or scenario bursts, and scrubs sensitive credentials.
 3. **Drop & Commit**: The tool writes a complete ready-to-test fixture folder in `tests/fixtures/plants/<model>_plant/`.
 4. **Instant CI Verification**: Run `pytest tests/test_trace_replay.py` — our parameterized test runner automatically discovers and tests your plant with zero additional test code required! Submit a Pull Request.

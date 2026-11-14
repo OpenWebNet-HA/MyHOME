@@ -232,7 +232,11 @@ async def test_doorbell_fires_once_on_a_shared_bus(hass: HomeAssistant):
         primary_gw.mac = "00:03:50:aa:bb:cc"
         primary_gw.config_entry = MagicMock(entry_id="primary_entry_id")
         pri_dispatched: list[dict] = []
-        unsub_pri = async_dispatcher_connect(hass, f"myhome_doorbell_event_{primary_gw.mac}", pri_dispatched.append)
+        unsub_pri = async_dispatcher_connect(
+            hass,
+            f"myhome_doorbell_event_{primary_gw.mac}",
+            callback(lambda payload: pri_dispatched.append(payload)),
+        )
         try:
             with (
                 patch.object(MyHOMEGatewayHandler, "is_standby", new_callable=PropertyMock, return_value=True),

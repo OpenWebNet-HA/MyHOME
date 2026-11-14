@@ -6,6 +6,7 @@ injection for the administrator-only MyHOME panel and bus monitor card.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any, Optional
 
 import voluptuous as vol
@@ -122,7 +123,7 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
 
     config_entry = getattr(gw, "config_entry", None)
     config_data = getattr(config_entry, "data", {}) if config_entry else {}
-    if not isinstance(config_data, dict):
+    if not isinstance(config_data, Mapping):
         config_data = {}
 
     if not model and isinstance(config_data.get(CONF_NAME), str):
@@ -139,32 +140,6 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
     cfg_fw = config_data.get(CONF_FIRMWARE)
     if not firmware and isinstance(cfg_fw, str) and cfg_fw.strip().lower() not in ("", "none", "null", "unknown"):
         firmware = cfg_fw
-
-    transport_type = config_data.get("transport_type") or getattr(gw, "transport_type", None)
-    is_serial = isinstance(transport_type, str) and transport_type == "serial"
-
-    raw_serial = (
-        config_data.get("serial_port")
-        or config_data.get("device")
-        or getattr(raw_gw, "serial_port", None)
-        or getattr(gw, "serial_port", None)
-    )
-    serial_port: Optional[str] = raw_serial if isinstance(raw_serial, str) else None
-
-    # Check if host or port was used to store serial device path (e.g. /dev/ttyUSB0 or COM3)
-    raw_port = getattr(raw_gw, "port", None)
-    cfg_port = config_data.get(CONF_PORT)
-    if not serial_port:
-        if isinstance(cfg_port, str) and not cfg_port.isdigit():
-            serial_port = cfg_port
-        elif isinstance(raw_port, str) and not raw_port.isdigit():
-            serial_port = raw_port
-        elif is_serial and isinstance(host, str) and host:
-            serial_port = host
-
-    if is_serial or serial_port:
-        host = ""
-        port = None
 
     mac_val = getattr(gw, "mac", None)
     if not isinstance(mac_val, str):
@@ -216,7 +191,6 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         "firmware": firmware,
         "host": host,
         "port": port,
-        "serial_port": serial_port,
         "mac_prefix": mac_prefix,
         "queue_pacing": queue_pacing,
         "worker_count": worker_count,

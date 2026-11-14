@@ -99,7 +99,7 @@ from .const import (
     SUBENTRY_TYPE_EXPOSE,
     area_of_where,
 )
-from .where_grammar import expose_message_where, normalize_expose_where
+from .where_grammar import expose_message_where, is_probe, normalize_expose_where
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -116,12 +116,81 @@ DEFAULT_MEDIA_PLAYER_ON_STATES: tuple[str, ...] = (
     "buffering",
 )
 TX_ECHO_GUARD_WINDOW_S: float = 1.5
+CROSS_GATEWAY_RX_DEDUP_S: float = 0.5
+# Unpopulated virtual SCS addresses receive no hardware link-layer ACK, so wall controls
+# retransmit each unicast telegram once ~0.18..0.22 s later. Keep strictly below the
+# ~0.395..0.55 s cadence of legitimate dimmer hold steps (H4890/MH201/F454/MH200N traces;
+# on ACKed buses the actuator's status reply between steps also clears the tracker).
+SAME_GATEWAY_TRANSLATION_RETRY_S: float = 0.35
+# On an unacknowledged virtual WHO=1 address, holding UP on a two-button dimmer control
+# (e.g. BTicino H4652/2 M=3 / M=9) repeats *1*1000#1*WHERE## every ~2.0..2.1 s instead of
+# transitioning to WHAT 30. Treat consecutive point-to-point 1000#1 frames arriving within
+# 1.6..3.0 s while the bound target is already on as step_up, keeping quick double-presses idempotent.
+WHO1_TRANSLATION_HOLD_MIN_S: float = 1.6
+WHO1_TRANSLATION_HOLD_REPEAT_S: float = 3.0
 # OWNd profile flag gating each injected WHO, and the frames it covers. OWNd leaves a
 # flag unset (None) when no capture or oracle verdict exists for that gateway family.
 _INJECTION_FLAGS: dict[int, tuple[str, str]] = {
     4: ("supports_who4_command_injection", "WHO 4 #0 temperature writes"),
     18: ("supports_who18_response_injection", "WHO 18 dimension reports"),
 }
+
+
+def effective_expose_profile(gateway: Any, who: int) -> Any:
+    """Return the active GatewayProfile for ``who``, accounting for shared-bus delegation."""
+    target_gw: Any = gateway
+    delegated_away = getattr(target_gw, "delegated_away_whos", None)
+    if isinstance(delegated_away, (set, frozenset, list, tuple)) and who in delegated_away:
+        get_sec = getattr(target_gw, "_get_secondary_for_who", None)
+        sec = get_sec(who) if callable(get_sec) else None
+        if sec is not None and getattr(sec, "is_connected", False) is True:
+            target_gw = sec
+    profile = getattr(target_gw, "profile", None)
+    if profile is None:
+        return None
+    if isinstance(getattr(profile, "model_name", None), str) or any(
+        isinstance(getattr(profile, attr, None), bool)
+        for attr in (
+            "supports_dimension_response_injection",
+            "supports_who4_command_injection",
+            "supports_who18_response_injection",
+        )
+    ):
+        return profile
+    return None
+
+
+def injection_block_reason(
+    profile: Any, who: int, where: str | None = None
+) -> str | None:
+    """Return why ``profile`` cannot inject expose frames for ``who``/``where``, or None when it can.
+
+    Only WHO 4 and WHO 18 are gated. An unset (None) OWNd flag means the gateway
+    family is unverified, and is treated as unsupported. On ``bt_termo`` gateways
+    where ``supports_dimension_response_injection`` is not True, ``*#4*W*#0*TTTT##``
+    only translates master-probe addresses ``1..99`` onto the SCS bus and rejects
+    3-digit probe addresses ``>= 100``.
+    """
+    gate = _INJECTION_FLAGS.get(who)
+    if gate is None:
+        return None
+    flag_name, frames = gate
+    if profile is None:
+        return f"the gateway profile is not known yet, so {frames} are unverified"
+    if who == 4 and getattr(profile, "supports_dimension_response_injection", None) is True:
+        return None
+    flag = getattr(profile, flag_name, None)
+    model = getattr(profile, "model_name", None) or type(profile).__name__
+    if flag is True:
+        if who == 4 and where and is_probe(where):
+            return (
+                f"gateway {model} only translates WHO 4 #0 temperature writes on "
+                f"zone master probe addresses 1..99 (3-digit WHERE={where} is rejected by firmware)"
+            )
+        return None
+    if flag is False:
+        return f"gateway {model} does not accept {frames} ({flag_name}=False)"
+    return f"gateway {model} is unverified for {frames} ({flag_name} is unset in OWNd)"
 
 
 @dataclass
@@ -517,6 +586,12 @@ class ExposeManager:
         self._tx_echo_guard: dict[str, _EchoGuardEntry] = {}
         self._pre_move_stop_guard: dict[tuple[int, str], _EchoGuardEntry] = {}
         self._last_rx_by_frame: dict[str, tuple[str, float]] = {}
+        self._last_translation_rx_by_target: dict[
+            tuple[str, int, str], tuple[str, float]
+        ] = {}
+        self._last_who1_on_translation_at: dict[
+            tuple[int, str, int | None], float
+        ] = {}
         self._action_scripts: dict[
             tuple[tuple[int, str, int | None], str], Script
         ] = {}
@@ -777,6 +852,8 @@ class ExposeManager:
         self._tx_echo_guard.clear()
         self._pre_move_stop_guard.clear()
         self._last_rx_by_frame.clear()
+        self._last_translation_rx_by_target.clear()
+        self._last_who1_on_translation_at.clear()
         self._warned_blocked.clear()
 
     async def async_sync_all(self) -> None:
@@ -1042,43 +1119,19 @@ class ExposeManager:
 
     def _effective_profile(self, who: int) -> Any:
         """Return the active GatewayProfile for ``who``, accounting for shared-bus delegation."""
-        target_gw: Any = self.gateway
-        delegated_away = getattr(target_gw, "delegated_away_whos", None)
-        if isinstance(delegated_away, (set, frozenset, list, tuple)) and who in delegated_away:
-            get_sec = getattr(target_gw, "_get_secondary_for_who", None)
-            sec = get_sec(who) if callable(get_sec) else None
-            if sec is not None and getattr(sec, "is_connected", False) is True:
-                target_gw = sec
-        return getattr(target_gw, "profile", None)
+        return effective_expose_profile(self.gateway, who)
 
-    def _injection_block_reason(self, who: int) -> str | None:
-        """Return why the gateway carrying ``who`` cannot take expose frames, or None when it can.
-
-        Only WHO 4 and WHO 18 are gated. An unset (None) OWNd flag means the gateway
-        family is unverified, and is treated as unsupported.
-        """
-        gate = _INJECTION_FLAGS.get(who)
-        if gate is None:
-            return None
-        flag_name, frames = gate
-        profile = self._effective_profile(who)
-        if profile is None:
-            return f"the gateway profile is not known yet, so {frames} are unverified"
-        if who == 4 and getattr(profile, "supports_dimension_response_injection", None) is True:
-            return None
-        flag = getattr(profile, flag_name, None)
-        if flag is True:
-            return None
-        model = getattr(profile, "model_name", None) or type(profile).__name__
-        if flag is False:
-            return f"gateway {model} does not accept {frames} ({flag_name}=False)"
-        return f"gateway {model} is unverified for {frames} ({flag_name} is unset in OWNd)"
+    def _injection_block_reason(
+        self, who: int, where: str | None = None
+    ) -> str | None:
+        """Return why the gateway carrying ``who`` cannot take expose frames, or None when it can."""
+        return injection_block_reason(self._effective_profile(who), who, where)
 
     @callback
     def _warn_blocked_bindings(self) -> None:
         """Warn once per binding and reason when its gateway cannot take its frames."""
         for binding in self.bindings:
-            reason = self._injection_block_reason(binding.who)
+            reason = self._injection_block_reason(binding.who, binding.where)
             if reason is None or (binding.key, reason) in self._warned_blocked:
                 continue
             self._warned_blocked.add((binding.key, reason))
@@ -1299,7 +1352,7 @@ class ExposeManager:
             return frames, who2_val_key
 
         if binding.who == 4:
-            if self._injection_block_reason(4) is not None:
+            if self._injection_block_reason(4, binding.where) is not None:
                 return [], None
             supports_dim_resp = (
                 getattr(
@@ -1620,6 +1673,41 @@ class ExposeManager:
                 binding=binding,
             )
 
+    def _who1_binding_supports_step_up(self, binding: ExposeBinding) -> bool:
+        """Return True when a WHO=1 binding can step up on repeated 1000#1 hold frames."""
+        if binding.step_up_action:
+            return True
+        if not binding.entity_id:
+            return False
+        state = self.hass.states.get(binding.entity_id)
+        if state is None:
+            return False
+        domain = binding.entity_id.split(".", 1)[0]
+        if domain in ("media_player", "cover"):
+            return True
+        if domain == "light":
+            modes = state.attributes.get("supported_color_modes")
+            if (
+                isinstance(modes, (list, tuple, set, frozenset))
+                and modes
+                and set(modes) <= {"onoff"}
+            ):
+                return False
+            return True
+        return False
+
+    def _who1_binding_is_on_for_hold_step(self, binding: ExposeBinding) -> bool:
+        """Return True when the bound entity is already in an active/on state (or action-only)."""
+        if not binding.entity_id:
+            return bool(binding.step_up_action)
+        state = self.hass.states.get(binding.entity_id)
+        if state is None or state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            return False
+        norm_state = state.state.strip().lower()
+        if norm_state in binding.on_states:
+            return True
+        return binding.entity_id.startswith("cover.") and norm_state == "opening"
+
     async def _async_handle_secondary_bus_message(
         self, message: OWNMessage, *, source_mac: str | None = None
     ) -> None:
@@ -1640,19 +1728,46 @@ class ExposeManager:
         now = time.monotonic()
         raw_frame = str(message)
         prev_rx = self._last_rx_by_frame.get(raw_frame)
-        if prev_rx is not None and prev_rx[0] != src and (now - prev_rx[1]) < 0.5:
+        if (
+            prev_rx is not None
+            and prev_rx[0] != src
+            and (now - prev_rx[1]) < CROSS_GATEWAY_RX_DEDUP_S
+        ):
             return
+
+        who = getattr(message, "who", None)
+        is_translation = bool(getattr(message, "is_translation", False))
+        msg_where = (
+            expose_message_where(message) if who in EXPOSE_SUPPORTED_WHOS else ""
+        )
+        if who in EXPOSE_SUPPORTED_WHOS:
+            rx_target_key = (src, who, msg_where)
+            if is_translation:
+                prev_trans = self._last_translation_rx_by_target.get(rx_target_key)
+                if (
+                    prev_trans is not None
+                    and prev_trans[0] == raw_frame
+                    and (now - prev_trans[1]) < SAME_GATEWAY_TRANSLATION_RETRY_S
+                ):
+                    return
+                self._last_translation_rx_by_target[rx_target_key] = (raw_frame, now)
+                if len(self._last_translation_rx_by_target) > 64:
+                    self._last_translation_rx_by_target = {
+                        k: v
+                        for k, v in self._last_translation_rx_by_target.items()
+                        if (now - v[1]) < 5.0
+                    }
+            else:
+                self._last_translation_rx_by_target.pop(rx_target_key, None)
+
         self._last_rx_by_frame[raw_frame] = (src, now)
         if len(self._last_rx_by_frame) > 64:
             self._last_rx_by_frame = {
                 k: v for k, v in self._last_rx_by_frame.items() if (now - v[1]) < 2.0
             }
 
-        who = getattr(message, "who", None)
         if who not in EXPOSE_SUPPORTED_WHOS:
             return
-
-        msg_where = expose_message_where(message)
         is_status_req = bool(getattr(message, "is_status_request", False))
         is_dim_req = bool(getattr(message, "is_dimension_request", False))
         is_dim_write = bool(getattr(message, "is_dimension_writing", False))
@@ -1730,7 +1845,13 @@ class ExposeManager:
                         is_reply=True,
                         query_dimension=dim,
                     )
-                elif who == 18 and is_dim_req and dim == 1200 and binding.dimension == 113:
+                elif (
+                    who == 18
+                    and is_dim_req
+                    and dim == 1200
+                    and binding.dimension == 113
+                    and self._injection_block_reason(18) is None
+                ):
                     now_m = time.monotonic()
                     remaining = (
                         max(1, min(255, round((binding.stream_expires_at - now_m) / 60.0)))
@@ -1749,7 +1870,7 @@ class ExposeManager:
 
             # ── 3. WHO=18 Dimension 1200 Streaming Handshake ──────────────────
             if who == 18 and is_dim_write and dim == 1200:
-                if not binding.respond_to_read:
+                if not binding.respond_to_read or self._injection_block_reason(18) is not None:
                     continue
                 if binding.dimension == 113:
                     duration = getattr(message, "stream_duration", None)
@@ -1813,6 +1934,7 @@ class ExposeManager:
 
             if who == 1:
                 if is_dim_write and dim in (1, 4):
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     vals = getattr(message, "dimension_value", [])
                     if vals and str(vals[0]).isdigit() and 0 <= int(vals[0]) <= 200:
                         self._cancel_cooldown_timer(binding.key)
@@ -1865,6 +1987,28 @@ class ExposeManager:
                     continue
 
                 if eff_what == 1:
+                    is_p2p_hold_candidate = (
+                        is_translation
+                        and _where_matches_binding(
+                            1, binding.where, msg_where, allow_scope=False
+                        )
+                        and self._who1_binding_supports_step_up(binding)
+                    )
+                    if is_p2p_hold_candidate:
+                        prev_on_at = self._last_who1_on_translation_at.get(binding.key)
+                        self._last_who1_on_translation_at[binding.key] = now
+                        if (
+                            prev_on_at is not None
+                            and WHO1_TRANSLATION_HOLD_MIN_S
+                            <= (now - prev_on_at)
+                            <= WHO1_TRANSLATION_HOLD_REPEAT_S
+                            and self._who1_binding_is_on_for_hold_step(binding)
+                        ):
+                            await self._async_execute_who1_step(binding, up=True)
+                            continue
+                    else:
+                        self._last_who1_on_translation_at.pop(binding.key, None)
+
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNLightingCommand.switch_on(binding.where)
                     binding.last_sent_value = (True, None)
@@ -1875,6 +2019,7 @@ class ExposeManager:
                     )
                     await self._async_execute_who1_on(binding)
                 elif eff_what == 0:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     self._cancel_cooldown_timer(binding.key)
                     confirm = OWNLightingCommand.switch_off(binding.where)
                     binding.last_sent_value = (
@@ -1890,10 +2035,13 @@ class ExposeManager:
                     )
                     await self._async_execute_who1_off(binding)
                 elif eff_what == 30:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     await self._async_execute_who1_step(binding, up=True)
                 elif eff_what == 31:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     await self._async_execute_who1_step(binding, up=False)
                 elif isinstance(eff_what, int) and 2 <= eff_what <= 10:
+                    self._last_who1_on_translation_at.pop(binding.key, None)
                     self._cancel_cooldown_timer(binding.key)
                     pct = COARSE_PRESET_TO_PERCENT[eff_what]
                     confirm = OWNLightingCommand.switch_on(binding.where)

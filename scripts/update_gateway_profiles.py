@@ -144,9 +144,9 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "notes": '3.5" Touch screen display IP gateway (Axolute / Livinglight)',
     },
     {
-        "model": "**F452 / F453AV**",
+        "model": "**F452 / F453 / F453AV**",
         "const_models": ["F453AV", "F453", "F452", "F452V"],
-        "ssdp_models": ["F452", "F453AV"],
+        "ssdp_models": ["F452", "F453", "F453AV"],
         "profile_name": "F453AV",
         "protocol": "OpenWebNet",
         "max_workers": "1 worker",
@@ -164,17 +164,6 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "delay": "50 ms",
         "upnp": "✅ SSDP",
         "notes": "Colour touch screen IP gateway (Axolute / LivingLight)",
-    },
-    {
-        "model": "**Legrand 3578**",
-        "const_models": [],
-        "ssdp_models": [],
-        "profile_name": "Generic",
-        "protocol": "OpenWebNet (Serial)",
-        "max_workers": "1 worker",
-        "delay": "50 ms",
-        "upnp": "❌ Manual (Serial)",
-        "notes": "USB / Serial gateway & OpenZigBee interface",
     },
 ]
 
@@ -202,7 +191,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "MH202",
         "pinned_whos": [1, 2, 4, 5, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS, SOUND_STATUS],
-        "notes": "Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself.",
+        "notes": "Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out; climate zones are polled with `*#4*<WHERE>##` (#866).",
     },
     {
         "model": "**H4890 / AM4890**",
@@ -216,7 +205,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "F454",
         "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
+        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep leaves it out; zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
@@ -384,12 +373,11 @@ def calibrate_metadata_with_ownd(
                 workers = int(prof.max_command_sessions)
                 gw["max_workers"] = f"{workers} {'workers' if workers > 1 else 'worker'}"
                 gw["delay"] = f"{int(round(prof.command_queue_delay * 1000))} ms"
-                if "Serial" not in str(gw.get("protocol", "")):
-                    gw["protocol"] = (
-                        "OpenWebNet / HMAC"
-                        if getattr(prof, "supports_hmac", False)
-                        else "OpenWebNet"
-                    )
+                gw["protocol"] = (
+                    "OpenWebNet / HMAC"
+                    if getattr(prof, "supports_hmac", False)
+                    else "OpenWebNet"
+                )
 
         # Cross-reference UPnP / SSDP discovery
         explicit_ssdp = gw.get("ssdp_models", [])
@@ -398,9 +386,7 @@ def calibrate_metadata_with_ownd(
             m in ssdp_models for m in const_models
         )
 
-        if "Serial" in str(gw.get("protocol", "")):
-            gw["upnp"] = "❌ Manual (Serial)"
-        elif has_ssdp:
+        if has_ssdp:
             if "Port 49153" in str(gw.get("upnp", "")):
                 gw["upnp"] = "✅ Port 49153"
             else:

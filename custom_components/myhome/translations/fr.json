@@ -44,21 +44,12 @@
         "title": "Passerelle MyHOME découverte",
         "description": "Voulez-vous configurer la passerelle {name} ({host}) ?\n\nMyHOME garde ouverte une connexion permanente pour les événements, plus une connexion par worker de commande (1 par défaut). Une passerelle n'accepte qu'un petit nombre de connexions OpenWebNet simultanées (5 sur une F455, moins sur une MH200N), partagées avec tout ce qui s'y connecte : l'application Legrand/BTicino Home+Project, d'autres instances Home Assistant, d'autres intégrations. Si les connexions sont épuisées, MyHOME ou l'autre client est refusé ou déconnecté. Fermez les clients inutiles et gardez un nombre de workers de commande faible."
       },
-      "serial": {
-        "title": "Passerelle USB / Série",
-        "description": "Configurez votre passerelle USB ou série Legrand 3578 / OpenZigBee.",
-        "data": {
-          "port": "Port série",
-          "baudrate": "Vitesse en bauds",
-          "friendly_name": "Nom convivial"
-        }
-      },
       "reconfigure": {
         "title": "Reconfigurer la passerelle MyHome {name}",
         "description": "Mettez à jour les paramètres de connexion ou les identifiants de votre passerelle {name}.",
         "data": {
           "host": "Adresse IP",
-          "port": "Port / débit en bauds",
+          "port": "Port",
           "password": "Mot de passe"
         }
       },
@@ -131,12 +122,22 @@
             "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
             "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
             "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
-            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+            "value_template": "Modèle de valeur (Jinja2, optionnel)",
+            "turn_on_action": "Action d'allumage / montée (optionnel)",
+            "turn_off_action": "Action d'extinction / descente (optionnel)",
+            "step_up_action": "Action d'incrément variateur (optionnel)",
+            "step_down_action": "Action de décrément variateur (optionnel)"
+          },
+          "data_description": {
+            "turn_on_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
+            "turn_off_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
+            "step_up_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur).",
+            "step_down_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur)."
           }
         },
         "reconfigure": {
           "title": "Reconfigurer l'entité exposée",
-          "description": "Mettre à jour l'adresse OpenWebNet, l'entité source ou les paramètres de régulation de cette exposition.",
+          "description": "Mettre à jour l'adresse OpenWebNet, l'entité source, les paramètres de régulation ou les actions personnalisées de cette exposition.",
           "data": {
             "who": "Sous-système WHO",
             "where": "Adresse WHERE",
@@ -150,16 +151,29 @@
             "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
             "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
             "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
-            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+            "value_template": "Modèle de valeur (Jinja2, optionnel)",
+            "turn_on_action": "Action d'allumage / montée (optionnel)",
+            "turn_off_action": "Action d'extinction / descente (optionnel)",
+            "step_up_action": "Action d'incrément variateur (optionnel)",
+            "step_down_action": "Action de décrément variateur (optionnel)"
+          },
+          "data_description": {
+            "turn_on_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
+            "turn_off_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
+            "step_up_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur).",
+            "step_down_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur)."
           }
         }
       },
       "error": {
         "invalid_who": "Sous-système WHO non pris en charge (pris en charge : 1, 2, 4, 13, 18).",
         "where_required": "Une adresse WHERE est requise pour ce sous-système WHO.",
-        "entity_required": "Une entité Home Assistant source est requise pour ce sous-système WHO.",
+        "entity_required": "Une entité Home Assistant source (ou une action personnalisée pour WHO 1 / WHO 2) est requise.",
+        "action_not_supported_for_who": "Les actions personnalisées ne sont prises en charge que pour WHO 1 (allumage/extinction et pas +/-) et WHO 2 (allumage/extinction uniquement) ; effacez les actions non prises en charge ou modifiez le WHO.",
         "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
-        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante."
+        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante.",
+        "who_injection_unsupported": "Le firmware de cette passerelle ne permet pas d'injecter des trames pour le sous-système WHO sélectionné sur le bus SCS (pris en charge sur toutes les passerelles : WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "Cette passerelle ne traduit les écritures de température WHO 4 #0 que sur les adresses maîtres de zone inutilisées 1..99 (ex. 50) ; les adresses de sonde à 3 chiffres (100..900) sont rejetées par le firmware."
       },
       "abort": {
         "reconfigure_successful": "Liaison de l'entité exposée mise à jour avec succès."
@@ -550,6 +564,15 @@
     },
     "fan_speed_zone_only": {
       "message": "{name} n'a pas de vitesse de ventilation propre : seule une zone (1-99) peut en avoir une"
+    },
+    "auto_standalone_zone": {
+      "message": "{name} est un thermostat autonome : la centrale n'a pas de programme pour lui"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} suit la centrale, qui est en saison de climatisation : changez la saison sur la centrale"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} suit la centrale, qui est en saison de chauffage : changez la saison sur la centrale"
     },
     "command_delivery_cancelled": {
       "message": "{name} : l'envoi de la commande de direction a été annulé avant d'atteindre le bus"

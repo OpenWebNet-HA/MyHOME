@@ -22,10 +22,10 @@ rules:
     comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements); the per-gateway frame router in router.py that delivers bus frames to the entities owning their addresses.
   config-flow-test-coverage:
     status: done
-    comment: tests/test_config_flow.py and test_config_flow_serial.py cover user, SSDP, reauth, reconfigure and error recovery paths (100% statement coverage of config_flow.py).
+    comment: tests/test_config_flow.py covers user, SSDP, reauth, reconfigure and error recovery paths (100% statement coverage of config_flow.py).
   config-flow:
     status: done
-    comment: ConfigFlow with SSDP discovery, manual entry, serial transport, reauth and reconfigure.
+    comment: ConfigFlow with SSDP discovery, manual entry, reauth and reconfigure.
   dependency-transparency:
     status: done
     comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; Apache-2.0 licensed.
@@ -81,7 +81,7 @@ rules:
     comment: docs/configuration/gateways.md documents the options flow (worker count, transition mode, event broadcasting, decoders).
   docs-installation-parameters:
     status: done
-    comment: docs/configuration/gateways.md documents host, port, password and serial parameters.
+    comment: docs/configuration/gateways.md documents host, port, password and model parameters.
   entity-unavailable:
     status: done
     comment: MyHOMEEntity.available follows the gateway availability with a 60 s reconnect grace period.

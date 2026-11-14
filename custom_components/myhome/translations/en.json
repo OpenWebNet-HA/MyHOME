@@ -44,21 +44,12 @@
         "title": "Discovered MyHOME gateway",
         "description": "Do you want to set up the {name} gateway ({host})?\n\nMyHOME keeps one permanent event connection plus one connection per command worker (default 1) open to the gateway. A gateway only accepts a handful of simultaneous OpenWebNet connections (5 on an F455, fewer on an MH200N), shared with everything else that talks to it: the Legrand/BTicino Home+Project app, other Home Assistant instances, other integrations. If the connections run out, either MyHOME or the other client gets refused or dropped. Close other clients you do not need, and keep the command worker count low."
       },
-      "serial": {
-        "title": "USB / Serial Gateway",
-        "description": "Configure your Legrand 3578 / OpenZigBee USB or serial gateway.",
-        "data": {
-          "port": "Serial port",
-          "baudrate": "Baudrate",
-          "friendly_name": "Friendly name"
-        }
-      },
       "reconfigure": {
         "title": "Reconfigure MyHome {name} Gateway",
         "description": "Update connection settings or credentials for your {name} gateway.",
         "data": {
           "host": "IP address",
-          "port": "Port / Baudrate",
+          "port": "Port",
           "password": "Password"
         }
       },
@@ -134,12 +125,22 @@
             "bidirectional": "Bidirectional (act on incoming bus commands)",
             "brightness_step_pct": "Brightness step per dimmer press (%)",
             "on_states": "Custom 'on' states (comma-separated, optional)",
-            "value_template": "Value template (Jinja2, optional)"
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Turn-on / raise action (optional)",
+            "turn_off_action": "Turn-off / lower action (optional)",
+            "step_up_action": "Step-up action (optional)",
+            "step_down_action": "Step-down action (optional)"
+          },
+          "data_description": {
+            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
+            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
           }
         },
         "reconfigure": {
           "title": "Reconfigure exposed entity",
-          "description": "Update the OpenWebNet address, source entity, or throttling parameters for this exposed binding.",
+          "description": "Update the OpenWebNet address, source entity, throttling parameters, or custom actions for this exposed binding.",
           "data": {
             "who": "WHO subsystem",
             "where": "WHERE address",
@@ -153,16 +154,29 @@
             "bidirectional": "Bidirectional (act on incoming bus commands)",
             "brightness_step_pct": "Brightness step per dimmer press (%)",
             "on_states": "Custom 'on' states (comma-separated, optional)",
-            "value_template": "Value template (Jinja2, optional)"
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Turn-on / raise action (optional)",
+            "turn_off_action": "Turn-off / lower action (optional)",
+            "step_up_action": "Step-up action (optional)",
+            "step_down_action": "Step-down action (optional)"
+          },
+          "data_description": {
+            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
+            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
           }
         }
       },
       "error": {
         "invalid_who": "Unsupported WHO subsystem (supported: 1, 2, 4, 13, 18).",
         "where_required": "A WHERE address is required for this WHO subsystem.",
-        "entity_required": "A source Home Assistant entity is required for this WHO subsystem.",
+        "entity_required": "A source Home Assistant entity (or custom action for WHO 1 / WHO 2) is required.",
+        "action_not_supported_for_who": "Custom actions are supported only on WHO 1 (turn on/off and step up/down) and WHO 2 (turn on/off only); clear unsupported actions or change WHO.",
         "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
-        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding."
+        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding.",
+        "who_injection_unsupported": "This gateway firmware does not support injecting frames for the selected WHO subsystem onto the SCS bus (supported on all gateways: WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "This gateway only translates WHO 4 #0 temperature writes on unused zone master addresses 1..99 (e.g. 50); 3-digit probe addresses (100..900) are rejected by firmware."
       },
       "abort": {
         "reconfigure_successful": "Exposed entity binding updated successfully."
@@ -614,6 +628,15 @@
     },
     "fan_speed_zone_only": {
       "message": "{name} has no fan speed of its own: only a zone (1-99) takes one"
+    },
+    "auto_standalone_zone": {
+      "message": "{name} is a standalone thermostat: the central unit has no program for it"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} follows the central unit, which is in the conditioning season: change the season on the central unit"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} follows the central unit, which is in the heating season: change the season on the central unit"
     },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"

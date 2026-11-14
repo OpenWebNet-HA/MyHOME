@@ -94,7 +94,8 @@ def _sent(gateway) -> list[str]:
         ("F450", True), ("F453", True), ("F453AV", True), ("F454", True), ("H4684", True),
         ("MH200", True), ("MH200N", True), ("MH202", True),
         ("F459", False), ("F460", False), ("F461", False), ("MyHomeServer1", False),
-        ("F455", False), ("MH201", False), ("Generic", False),  # not in the oracle: still asked
+        ("F455", True),  # not in the oracle: a live F455 1.0.76 NACKed *#4*2*60## in 19 ms (issue_466)
+        ("MH201", False), ("Generic", False),  # not in the oracle: still asked
     ],
 )
 def test_humidity_request_refused_follows_the_oracle(hass, model, refused):
@@ -117,12 +118,12 @@ async def test_f461_zone_still_asks_for_its_humidity(hass):
     assert _sent(handler) == ["*#4*2##", "*#4*2*60##"]
 
 
-@pytest.mark.parametrize("model", ["F454", "MH202"])
-async def test_refusing_gateway_zone_does_not_ask(hass, model):
-    """No ``*60##``; the SCS-only zone's own temperature poll (``*#4*Z*0##``, #794) still goes out."""
+@pytest.mark.parametrize(("model", "expected"), [("F454", ["*#4*2##"]), ("MH202", ["*#4*2##"]), ("MH200", ["*#4*2*0##", "*#4*2*13##"])])
+async def test_refusing_gateway_zone_does_not_ask(hass, model, expected):
+    """No ``*60##``; the zone's own status (F454, #866) or temperature (MH202, #794) poll still goes out."""
     handler = _handler(hass, model)
     await _humidity_zone(hass, handler).async_update()
-    assert _sent(handler) == ["*#4*2*0##"]
+    assert _sent(handler) == expected
 
 
 async def test_gateway_without_the_property_is_still_asked(hass):
@@ -138,7 +139,7 @@ async def test_gateway_without_the_property_is_still_asked(hass):
 
 @pytest.mark.parametrize(
     ("model", "refused"),
-    [("MH202", True), ("F454", True), ("F461", False), ("F455", False), ("MH201", False)],
+    [("MH202", True), ("F454", True), ("F461", False), ("F455", True), ("MH201", False)],
 )
 def test_profile_flag_none_means_unverified_and_falls_back_to_the_table(hass, model, refused):
     """``None`` = unverified: a listed model is skipped by the table, an unlisted one is polled."""
@@ -147,7 +148,7 @@ def test_profile_flag_none_means_unverified_and_falls_back_to_the_table(hass, mo
     assert handler.humidity_request_refused is refused
 
 
-@pytest.mark.parametrize(("model", "refused"), [("MH202", True), ("F455", False)])
+@pytest.mark.parametrize(("model", "refused"), [("MH202", True), ("F455", True), ("MH201", False)])
 def test_legacy_profile_without_the_attribute_falls_back_to_the_table(hass, model, refused):
     """An OWNd release whose profiles have no such attribute at all (the pinned one) uses the table."""
     handler = _handler(hass, model)
@@ -157,8 +158,8 @@ def test_legacy_profile_without_the_attribute_falls_back_to_the_table(hass, mode
 
 
 async def test_unverified_flag_on_an_unlisted_model_still_polls(hass):
-    handler = _handler(hass, "F455")
-    handler.gateway.profile = SimpleNamespace(model_name="F455", supports_heating_humidity_request=None)
+    handler = _handler(hass, "MH201")
+    handler.gateway.profile = SimpleNamespace(model_name="MH201", supports_heating_humidity_request=None)
     await _humidity_zone(hass, handler).async_update()
     assert "*#4*2*60##" in _sent(handler)
 
@@ -223,7 +224,7 @@ def test_ssdp_model_string_hl4684_is_keyed_as_h4684(hass, ssdp_model):
         ("Legrand 003535", "MH202", True),
         ("BTicino MH200", "MH200", True),
         ("BTicino MH200N", "MH200N", True),
-        ("Legrand 003594", "F455", False),  # the F455 is not in the oracle: still asked
+        ("Legrand 003594", "F455", True),  # not in the oracle: the live F455 NACKs the request (issue_466)
         ("BTicino L4684 gateway", "H4684", True),
         ("BTicino-L4684", "H4684", True),  # hyphenated: the words are the alphanumeric runs
         ("F454 (003598)", "F454", True),  # parenthesised catalogue number
@@ -269,7 +270,8 @@ def test_a_generic_profile_reads_the_configured_model_not_its_own_name(hass):
 async def test_vendor_prefixed_refusing_gateway_zone_does_not_ask(hass):
     handler = _handler(hass, "Legrand MH200N")
     await _humidity_zone(hass, handler).async_update()
-    assert _sent(handler) == []
+    # #466: MH200N has no temperature poll, but a non-silent gateway still asks the knob once.
+    assert _sent(handler) == ["*#4*2*13##"]
 
 
 # ------------------------------------------------------------------ gateway: WHO 4 delegation and warm standby (review 5644219403, 1)
@@ -385,7 +387,8 @@ async def test_a_refusing_scs_gateway_s_humidity_zone_never_reaches_poll_health(
     zone._poll_health.should_skip = MagicMock(side_effect=AssertionError("should_skip must not run"))
     zone._raise_unresponsive_issue = MagicMock()
     await zone.async_update()
-    assert _sent(handler) == []
+    # #466: a non-silent SCS gateway asks the knob once; it is uncounted, so should_skip is not consulted.
+    assert _sent(handler) == ["*#4*2*13##"]
     zone._raise_unresponsive_issue.assert_not_called()
 
 
@@ -397,7 +400,7 @@ async def test_a_refusing_gateway_that_polls_its_zone_temperature_still_sends_th
     zone._poll_health.should_skip = MagicMock(return_value=False)
     await zone.async_update()
     zone._poll_health.should_skip.assert_called_once()
-    assert _sent(handler) == ["*#4*2*0##"]
+    assert _sent(handler) == ["*#4*2*0##", "*#4*2*13##"]
 
 
 async def test_a_forwarding_gateway_s_humidity_zone_goes_through_poll_health(hass):
@@ -425,7 +428,7 @@ async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity
     or a zone pre-enabled with ``humidity: true``) is taken as on any gateway, and the MH202 zone
     still does not ask ``*#4*2*60##``. No trace claims an MH202 emits such a frame.
     """
-    handler = _handler(hass, "MH202")
+    handler = _handler(hass, "MH200")
     zone = MyHOMEClimate(
         hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
         heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
@@ -439,12 +442,12 @@ async def test_a_humidity_event_delivered_on_a_refusing_gateway_enables_humidity
     assert zone._humidity is True
     assert zone.current_humidity == 45.0
     await zone.async_update()
-    assert _sent(handler) == ["*#4*2*0##"]  # humidity known, dimension 60 still not asked on the MH202; its temperature poll (#794) is
+    assert _sent(handler) == ["*#4*2*0##", "*#4*2*13##"]  # humidity known, dimension 60 still not asked on the MH200; its temperature poll (#794) is
 
 
 def test_humidity_enabled_later_still_polls_on_add_on_a_refusing_gateway(hass):
     """``_poll_on_add`` is untouched: the first update runs so the identity can settle before the gate decides."""
-    handler = _handler(hass, "MH202")
+    handler = _handler(hass, "MH200")
     zone = MyHOMEClimate(
         hass=hass, name="Zone 2", device_id="4-2", who="4", where="2",
         heating=True, cooling=True, fan=False, humidity=False, standalone=True, central=False,
@@ -606,11 +609,11 @@ async def test_replay_myhomeserver1_run3_zone_39_request_is_answered(hass, mhs1_
     assert _status_requests(gw) == ["*#4*39##", "*#4*39##", "*#4*39*60##"]  # the request the capture answered
 
 
-async def test_replay_f455_spontaneous_push_on_an_unlisted_gateway(hass, f455_frames):
+async def test_replay_f455_spontaneous_push_on_a_gateway_that_drops_the_request(hass, f455_frames):
     """F455 (#674, 2026-10-09): 67 event-session frames of a plant whose ``*#4*Z##`` polls time out;
-    zone 42 pushes ``*#4*42*60*52##`` on its own. The F455 is not in the table: the push enables
-    humidity on zone 42 alone, and the next poll asks ``*#4*42*60##`` (and no ``*#4*42##``, which
-    the F455 does not answer).
+    zone 42 pushes ``*#4*42*60*52##`` on its own. The push enables humidity on zone 42 alone. The
+    next poll asks nothing: a live F455 1.0.76 NACKs ``*#4*Z*60##`` in 19 ms without a bus frame
+    (issue_466/F455_direct_requests_2026-11-06.jsonl), and it does not answer ``*#4*42##`` either.
     """
     assert f455_frames.count("*#4*42*60*52##") == 1
     assert not any("*60*" in f and not f.startswith("*#4*42*") for f in f455_frames)
@@ -620,7 +623,7 @@ async def test_replay_f455_spontaneous_push_on_an_unlisted_gateway(hass, f455_fr
         "64", "65",  # actuator zones
     ]
     gw = _live_gateway(hass, "F455", "00:03:50:00:06:74")
-    assert gw.humidity_request_refused is False and gw.supports_zone_status is False
+    assert gw.humidity_request_refused is True and gw.supports_zone_status is False
     entities, added = await _trace_plant(hass, gw, zones)
     assert _status_requests(gw) == []  # no zone status, no fan, no humidity: nothing to poll on add
     _replay(hass, gw.mac, f455_frames)
@@ -631,4 +634,4 @@ async def test_replay_f455_spontaneous_push_on_an_unlisted_gateway(hass, f455_fr
     assert all(e._humidity is False and e.current_humidity is None for z, e in entities.items() if z != "42")
     assert entities["35"].current_temperature == 19.6
     await zone42.async_update()
-    assert _status_requests(gw) == ["*#4*42*60##"]
+    assert _status_requests(gw) == []  # the humidity keeps coming from the probe's own pushes

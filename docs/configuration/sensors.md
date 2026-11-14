@@ -37,6 +37,10 @@ data:
   interval: 10   # Push interval in seconds
 ```
 
+> [!TIP]
+> **Projecting Smart Meters or Solar Inverters onto the SCS Bus**:
+> To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdge, Enphase, or utility smart meters) onto SCS meter addresses for display on wall touchscreens, see the [Expose to Bus Guide](expose.md).
+
 ---
 
 ## 🌡️ Temperature Sensors (WHO = 4)

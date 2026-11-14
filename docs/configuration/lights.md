@@ -35,8 +35,8 @@ You can customize how dimming transitions are executed globally via the integrat
 1. Navigate to **Settings → Devices & Services → MyHOME**.
 2. Click **Configure**.
 3. Select your preferred **Dimmer Transition Mode**:
-   - **`software_stepped`** (*Default / Recommended*): Home Assistant manages incremental step fading, providing smooth transitions across all actuators.
-   - **`native`**: Lets the physical hardware dimmer module perform its internal hardware fade ramp.
+    - **`software_stepped`** (*Default / Recommended*): Home Assistant manages incremental step fading, providing smooth transitions across all actuators.
+    - **`native`**: Lets the physical hardware dimmer module perform its internal hardware fade ramp.
 
 ---
 

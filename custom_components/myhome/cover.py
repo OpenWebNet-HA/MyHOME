@@ -6,7 +6,7 @@ import dataclasses
 import inspect
 import time
 from collections.abc import Callable, Mapping
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import voluptuous as vol
@@ -38,7 +38,11 @@ from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoredExtraData
 from homeassistant.util import dt as dt_util
 from OWNd.message import (
@@ -158,6 +162,10 @@ if TYPE_CHECKING:
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
 
 PARALLEL_UPDATES = 0
+
+# Cadence of the cosmetic state-republish ticker while a timed curtain run is in
+# progress, so the UI slider animates instead of jumping from start to end value.
+LIVE_POSITION_REFRESH_INTERVAL = timedelta(seconds=1)
 
 # Delivery of the OFF that ends a software pulse (OWNd without the timed WHAT 18 builder).
 OFF_ATTEMPTS = 3
@@ -576,6 +584,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._is_closed_before_move: bool | None = None
         self._stop_task: asyncio.Task[None] | None = None
         self._wall_settle_unsub: CALLBACK_TYPE | None = None
+        self._live_refresh_unsub: CALLBACK_TYPE | None = None
+        self._live_refresh_last_published: int | None = None
         self._timer_settle_enabled: bool = True
         self._travel_recomputed: asyncio.Event = asyncio.Event()
         # True while a run HA commanded to an end stop from an unknown position
@@ -885,6 +895,73 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_stop_context = None
         self._stop_translation_seen = False
 
+    def _tracks_own_live_refresh(self) -> bool:
+        """Whether this entity runs its own 1 s position-refresh ticker during a timed run."""
+        return True
+
+    def _start_live_refresh(self) -> None:
+        """Start a cosmetic ~1 s state-republish ticker while a timed curtain run is active.
+
+        ``current_cover_position`` already computes an interpolated value on demand
+        (``TimedCurtainStrategy.current_position``); nothing previously asked Home
+        Assistant to re-read it while a run was active, so the UI slider stayed at
+        its pre-run value until the run settled or stopped. This ticker only
+        republishes entity state when the rounded percentage changes; it never
+        modifies the position estimate, settle timers, echo window, or calibration.
+
+        Skipped for: advanced (``Dimension 10``) covers, whose hardware reports level
+        only at motor start and motor stop with no local travel-time interpolation;
+        assumed-state (simple) covers, which expose no numeric position; scope covers
+        with known members, which repaint from their members' own state changes; a
+        run from an unknown start position, where ``current_cover_position`` stays
+        ``None`` until an end stop; slat-tilt pulses; and active calibration runs.
+        """
+        self._stop_live_refresh()
+        if (
+            self.hass is None
+            or not self._tracks_own_live_refresh()
+            or self._advanced
+            or self._strategy.assumed_state
+            or self._start_position is None
+            or self._is_tilting
+            or self._calibrating
+        ):
+            return
+        self._live_refresh_last_published = self.current_cover_position
+
+        @callback
+        def _tick(_now: datetime) -> None:
+            if (
+                not (self.is_opening or self.is_closing)
+                or not self._tracks_own_live_refresh()
+                or self._is_tilting
+                or self._calibrating
+            ):
+                self._stop_live_refresh()
+                return
+            if self.hass is None or self.platform is None or not self.entity_id:
+                return
+            current = self.current_cover_position
+            if current is None or current == self._live_refresh_last_published:
+                return
+            self._live_refresh_last_published = current
+            self._publish_state()
+
+        self._live_refresh_unsub = async_track_time_interval(
+            self.hass,
+            _tick,
+            LIVE_POSITION_REFRESH_INTERVAL,
+            name=f"myhome cover live refresh {self._full_where}",
+            cancel_on_shutdown=True,
+        )
+
+    def _stop_live_refresh(self) -> None:
+        """Cancel the ticker started by ``_start_live_refresh``, if any."""
+        if self._live_refresh_unsub is not None:
+            self._live_refresh_unsub()
+            self._live_refresh_unsub = None
+        self._live_refresh_last_published = None
+
     def _anchor_run(self, at: float) -> None:
         """Anchor the running estimate and the run measurement on the motor start."""
         if self._motion.model is not None:
@@ -905,6 +982,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_lead = self._move_lead = self._slat_lead_time(is_opening, is_closing)
         if is_opening or is_closing:
             self._strategy.on_run_started(self, "open" if is_opening else "close", self._run_start_position, at)
+            self._start_live_refresh()
         started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
         self._motion_started_at = started.isoformat(timespec="milliseconds")
         self._refresh_travel_attributes()
@@ -934,6 +1012,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         still the end stop (the actuator's own limit stop on a full run, see
         END_STOP_TOLERANCE); 0 for a stop HA or a keypad commanded.
         """
+        self._stop_live_refresh()
         is_opening = bool(self._attr_is_opening)
         is_closing = bool(self._attr_is_closing)
         run_started_at = self._run_started_at
@@ -1020,6 +1099,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _abort_motion(self) -> None:
         """Abort motion state when a command frame failed to reach the bus."""
+        self._stop_live_refresh()
         self._cancel_stop_task()
         self._end_echo_window()
         if self._run_started_at is not None:
@@ -1309,6 +1389,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity will be removed from hass."""
         self._run_generation += 1  # a run in flight must not act on a removed entity
+        self._stop_live_refresh()
         self._cancel_stop_task()
         self._pending_stop_context = None
         if self._calibration:
@@ -1442,6 +1523,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
                 hub.active_cover = self
                 self._calibrating = True
+                self._stop_live_refresh()
                 self._cancel_stop_task()
                 self._fire_calibration_event("start")
                 try:
@@ -1538,6 +1620,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         The built-in timed strategy becomes simple again; any other strategy keeps itself.
         """
+        self._stop_live_refresh()
         self._cancel_wall_settle()
         if not self._is_tilting:
             self._cancel_stop_task()
@@ -1869,6 +1952,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Open the run of a direction frame about to be queued: this cover's own, or a scope
         frame that moves it (the gateway relays that frame to every member, so it is the
         member's motor-start echo too)."""
+        self._stop_live_refresh()
         self._cancel_stop_task()
         self._end_run_from_unknown = False
         self._full_run_to_end = False
@@ -1965,6 +2049,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _finish_end_of_run_settle(self, opening: bool) -> None:
         """Publish the end position once ``travel_time + END_SETTLE_MARGIN`` has elapsed."""
+        self._stop_live_refresh()
         self._attr_current_cover_position = 100 if opening else 0
         self._start_position = self._attr_current_cover_position
         if self._slat_tilt:
@@ -2491,6 +2576,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         an ordinary curtain run and nudge its position estimate. The leader
         times the pulse (_pulse_started) and settles it (_apply_tilt_stop).
         """
+        self._stop_live_refresh()
         self._cancel_stop_task()
         self._end_pulse_for_takeover()
         # None: this blind's angle is unknown; the leader's pulse anchors it only at a slat stop.
@@ -2544,6 +2630,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             and (self._attr_is_opening or self._attr_is_closing)
             and self._run_started_at is not None
         ):
+            self._stop_live_refresh()
             self._start_position = self.current_cover_position if self.current_cover_position is not None else self._start_position
             self._attr_current_cover_position = self._start_position
             self._turn_slats_for_run(now, self._run_started_at, bool(self._attr_is_opening), bool(self._attr_is_closing))
@@ -2940,25 +3027,61 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._publish_state()
             return
         if position is not None:
-            if not self._is_tilting:
-                # A status report during a slat pulse (a poll reply, a DIM 10 level)
-                # must not cancel the auto-stop: the motor would run on.
-                self._cancel_stop_task()
-                self._end_echo_window()
+            previous_position = self._attr_current_cover_position
+            if self._is_tilting:
+                if position != previous_position and previous_position is not None:
+                    # External movement took over the motor during a slat pulse (#868).
+                    self._end_pulse_for_takeover()
+                else:
+                    # Routine status/poll reply during a slat pulse: update position
+                    # but preserve active pulse state and auto-stop task.
+                    self._attr_current_cover_position = position
+                    if not self._advanced:
+                        self._start_position = position
+                    if (is_closed := getattr(message, "is_closed", None)) is not None:
+                        self._attr_is_closed = bool(is_closed)
+                    else:
+                        self._attr_is_closed = (self._attr_current_cover_position == 0)
+                    self._publish_state()
+                    return
+
             if self._motion.model is not None:
                 self._motion.confirm(position)
-            previous_position = self._attr_current_cover_position
+            self._stop_live_refresh()
+            self._cancel_stop_task()
+            self._end_echo_window()
+            was_opening = bool(self._attr_is_opening)
+            was_closing = bool(self._attr_is_closing)
             self._attr_current_cover_position = position
             if not self._advanced:
                 self._start_position = position
             self._move_start_time = None
             self._attr_is_opening = False
             self._attr_is_closing = False
-            if self._slat_tilt and not self._is_tilting and position != previous_position and position in (0, 100):
-                # The curtain reached an end stop, so the slats turned all the way.
-                # A repeated report of the same level says nothing about the slats:
-                # they may have been tilted open on a lowered blind.
-                self._attr_current_cover_tilt_position = position
+            if self._slat_tilt and not self._is_tilting:
+                if was_opening or was_closing:
+                    self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                elif position != previous_position and previous_position is not None:
+                    # External position jump / level change without prior movement frames (#868).
+                    # Downward movement closes slats, upward movement opens slats.
+                    if position < previous_position:
+                        self._turn_slats_for_run(now, None, False, True)
+                    elif position > previous_position:
+                        self._turn_slats_for_run(now, None, True, False)
+                elif position != previous_position and position in (0, 100):
+                    self._attr_current_cover_tilt_position = position
+            if was_opening or was_closing:
+                self._last_stop_at = now
+                self._stopped_event.set()
+                if self._advanced and self._run_started_at is not None:
+                    self._last_run = {
+                        "seconds": round(max(0.0, now - self._run_started_at), 2),
+                        "direction": "open" if was_opening else "close",
+                        "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                    }
+                    self._motion_started_at = None
+                    self._refresh_travel_attributes()
+                self._run_started_at = None
             if (is_closed := getattr(message, "is_closed", None)) is not None:
                 self._attr_is_closed = bool(is_closed)
             else:
@@ -2984,17 +3107,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if was_closing:
                     self._turn_slats_for_run(now, self._run_started_at, False, True)
                     self._end_run_on_reversal(now)
+                    self._run_started_at = now
                 was_already_opening = bool(self._attr_is_opening)
                 self._attr_is_opening = True
                 self._attr_is_closing = False
                 self._attr_is_closed = False
-                if not self._advanced and not was_already_opening:
-                    self._motion.prepare(True)
-                    self._run_start_position = None
-                    self._run_start_tilt = None
-                    self._auto_stop_duration = None
-                    self._anchor_run(now)
-                    self._arm_wall_settle(True)
+                if not was_already_opening:
+                    if self._run_started_at is None:
+                        self._run_started_at = now
+                    if self._advanced:
+                        started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - now))
+                        self._motion_started_at = started.isoformat(timespec="milliseconds")
+                        self._refresh_travel_attributes()
+                    else:
+                        self._motion.prepare(True)
+                        self._run_start_position = None
+                        self._run_start_tilt = None
+                        self._auto_stop_duration = None
+                        self._anchor_run(now)
+                        self._arm_wall_settle(True)
         elif is_closing:
             if self._is_tilting and self._tilt_direction == "close":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
@@ -3016,17 +3147,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if was_opening:
                     self._turn_slats_for_run(now, self._run_started_at, True, False)
                     self._end_run_on_reversal(now)
+                    self._run_started_at = now
                 was_already_closing = bool(self._attr_is_closing)
                 self._attr_is_opening = False
                 self._attr_is_closing = True
                 self._attr_is_closed = False
-                if not self._advanced and not was_already_closing:
-                    self._motion.prepare(False)
-                    self._run_start_position = None
-                    self._run_start_tilt = None
-                    self._auto_stop_duration = None
-                    self._anchor_run(now)
-                    self._arm_wall_settle(False)
+                if not was_already_closing:
+                    if self._run_started_at is None:
+                        self._run_started_at = now
+                    if self._advanced:
+                        started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - now))
+                        self._motion_started_at = started.isoformat(timespec="milliseconds")
+                        self._refresh_travel_attributes()
+                    else:
+                        self._motion.prepare(False)
+                        self._run_start_position = None
+                        self._run_start_tilt = None
+                        self._auto_stop_duration = None
+                        self._anchor_run(now)
+                        self._arm_wall_settle(False)
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
             was_tilting = self._is_tilting
@@ -3049,6 +3188,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # timer (#702). A plain keypad stop without command translation is
                 # indistinguishable from the actuator's own and settles the same
                 # way (documented). The motor time is still measured for calibration.
+                self._stop_live_refresh()
                 self._last_stop_at = now
                 self._stopped_event.set()
                 self._last_run = {
@@ -3103,6 +3243,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._motor_started.set()
             else:
                 self._turn_slats_for_run(now, self._run_started_at, was_opening, was_closing)
+                if self._advanced and (was_opening or was_closing) and self._run_started_at is not None:
+                    self._last_run = {
+                        "seconds": round(max(0.0, now - self._run_started_at), 2),
+                        "direction": "open" if was_opening else "close",
+                        "ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                    }
+                    self._motion_started_at = None
+                    self._refresh_travel_attributes()
+                if self._advanced:
+                    self._run_started_at = None
                 if (was_opening or was_closing) and not self._dim10_seen and not self._warned_missing_dim10:
                     self._warned_missing_dim10 = True
                     LOGGER.warning(

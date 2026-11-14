@@ -44,7 +44,7 @@ If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste 
 
 ```bash
 # Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0b17"
+TAG="2.0.0b18"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \
@@ -84,9 +84,9 @@ If you prefer not using the command line:
 1. Once Home Assistant restarts, navigate to **Settings → Devices & Services**.
 2. If your gateway is discovered automatically via SSDP/mDNS, click **Configure**.
 3. Otherwise, click **Add Integration**, search for **MyHOME**, and enter:
-   - **Host**: IP address of your gateway.
-   - **Port**: `20000`.
-   - **Password**: OpenWebNet password (or HMAC password for MyHomeServer1).
+    - **Host**: IP address of your gateway.
+    - **Port**: `20000`.
+    - **Password**: OpenWebNet password (or HMAC password for MyHomeServer1).
 4. Home Assistant connects to the gateway, starts the command and event sessions, and automatically discovers your connected bus actuators and sensors.
 
 ### Are Existing Entity IDs Preserved?

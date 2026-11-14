@@ -44,21 +44,12 @@
         "title": "Ontdekte MyHOME gateway",
         "description": "Wilt u de {name} gateway ({host}) instellen?\n\nMyHOME houdt één permanente eventverbinding open, plus één verbinding per commandoworker (standaard 1). Een gateway accepteert maar een handvol gelijktijdige OpenWebNet-verbindingen (5 bij een F455, minder bij een MH200N), gedeeld met alles wat er verbinding mee maakt: de Legrand/BTicino Home+Project-app, andere Home Assistant-installaties, andere integraties. Als de verbindingen op zijn, wordt MyHOME of de andere client geweigerd of verbroken. Sluit clients die u niet nodig hebt en houd het aantal commandoworkers laag."
       },
-      "serial": {
-        "title": "USB / Seriële Gateway",
-        "description": "Configureer uw Legrand 3578 / OpenZigBee USB of seriële gateway.",
-        "data": {
-          "port": "Seriële poort",
-          "baudrate": "Baudsnelheid",
-          "friendly_name": "Vriendelijke naam"
-        }
-      },
       "reconfigure": {
         "title": "MyHome {name} gateway opnieuw configureren",
         "description": "Werk de verbindingsinstellingen of inloggegevens van uw {name} gateway bij.",
         "data": {
           "host": "IP-adres",
-          "port": "Poort / baudrate",
+          "port": "Poort",
           "password": "Wachtwoord"
         }
       },
@@ -131,12 +122,22 @@
             "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
             "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
             "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
-            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+            "value_template": "Waardesjabloon (Jinja2, optioneel)",
+            "turn_on_action": "Inschakel- / omhoog-actie (optioneel)",
+            "turn_off_action": "Uitschakel- / omlaag-actie (optioneel)",
+            "step_up_action": "Stap-omhoog-actie (optioneel)",
+            "step_down_action": "Stap-omlaag-actie (optioneel)"
+          },
+          "data_description": {
+            "turn_on_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "turn_off_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "step_up_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer).",
+            "step_down_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer)."
           }
         },
         "reconfigure": {
           "title": "Aangeboden entiteit herconfigureren",
-          "description": "Werk het OpenWebNet-adres, de bronentiteit of de verzendparameters voor deze koppeling bij.",
+          "description": "Werk het OpenWebNet-adres, de bronentiteit, de verzendparameters of de aangepaste acties voor deze koppeling bij.",
           "data": {
             "who": "WHO-subsysteem",
             "where": "WHERE-adres",
@@ -150,16 +151,29 @@
             "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
             "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
             "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
-            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+            "value_template": "Waardesjabloon (Jinja2, optioneel)",
+            "turn_on_action": "Inschakel- / omhoog-actie (optioneel)",
+            "turn_off_action": "Uitschakel- / omlaag-actie (optioneel)",
+            "step_up_action": "Stap-omhoog-actie (optioneel)",
+            "step_down_action": "Stap-omlaag-actie (optioneel)"
+          },
+          "data_description": {
+            "turn_on_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "turn_off_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
+            "step_up_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer).",
+            "step_down_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer)."
           }
         }
       },
       "error": {
         "invalid_who": "Niet-ondersteund WHO-subsysteem (ondersteund: 1, 2, 4, 13, 18).",
         "where_required": "Een WHERE-adres is vereist voor dit WHO-subsysteem.",
-        "entity_required": "Een Home Assistant-bronentiteit is vereist voor dit WHO-subsysteem.",
+        "entity_required": "Een Home Assistant-bronentiteit (of aangepaste actie voor WHO 1 / WHO 2) is vereist.",
+        "action_not_supported_for_who": "Aangepaste acties worden alleen ondersteund voor WHO 1 (in-/uitschakelen en stap omhoog/omlaag) en WHO 2 (alleen in-/uitschakelen); wis niet-ondersteunde acties of wijzig WHO.",
         "invalid_dimension": "Ongeldige dimensie voor het geselecteerde WHO-subsysteem.",
-        "invalid_expose": "Ongeldige configuratie of dubbele WHO/WHERE/dimensie-koppeling."
+        "invalid_expose": "Ongeldige configuratie of dubbele WHO/WHERE/dimensie-koppeling.",
+        "who_injection_unsupported": "De firmware van deze gateway ondersteunt het injecteren van frames voor het geselecteerde WHO-subsysteem op de SCS-bus niet (ondersteund op alle gateways: WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "Deze gateway vertaalt WHO 4 #0-temperatuurschrijfopdrachten alleen op ongebruikte zonemasteradressen 1..99 (bijv. 50); 3-cijferige sensoradressen (100..900) worden door de firmware geweigerd."
       },
       "abort": {
         "reconfigure_successful": "Koppeling van aangeboden entiteit succesvol bijgewerkt."
@@ -550,6 +564,15 @@
     },
     "fan_speed_zone_only": {
       "message": "{name} heeft geen eigen ventilatorsnelheid: alleen een zone (1-99) kan er een krijgen"
+    },
+    "auto_standalone_zone": {
+      "message": "{name} is een zelfstandige thermostaat: de centrale heeft er geen programma voor"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} volgt de centrale, die in het koelseizoen staat: wijzig het seizoen op de centrale"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} volgt de centrale, die in het stookseizoen staat: wijzig het seizoen op de centrale"
     },
     "command_delivery_cancelled": {
       "message": "{name}: de aflevering van het richtingscommando is geannuleerd voordat het de bus bereikte"

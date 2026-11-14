@@ -213,7 +213,6 @@ def gateway_delegatable_whos(model: str | None, firmware: str | None = None) -> 
         whos.add(6)
     elif (
         is_generic
-        and "3578" not in norm
         and model_name not in DOOR_ENTRY_UNSUPPORTED_MODELS | DOOR_ENTRY_WHO8_ONLY_MODELS
         and not any(k in norm for k in DOOR_ENTRY_UNSUPPORTED_MODELS)
     ):

@@ -38,9 +38,10 @@ f454:
 ```
 
 ### Parameters
+
 - `where` *(mandatory)*: OpenWebNet address of the partition or central unit:
-  - `'0'`: Central unit / global system broadcast
-  - `'1'` through `'8'`: Specific partition or zone
+    - `'0'`: Central unit / global system broadcast
+    - `'1'` through `'8'`: Specific partition or zone
 - `name` *(mandatory)*: Friendly name for the entity in Home Assistant.
 - `manufacturer` *(optional)*: Hardware manufacturer (e.g. `BTicino`).
 - `model` *(optional)*: Hardware model (e.g. `3486`, `3485`).
@@ -50,12 +51,12 @@ f454:
 ## Supported States and Features
 
 - **States**:
-  - `disarmed`: System deactivated / maintenance
-  - `armed_home`: Partial / perimeter armed
-  - `armed_away`: Total system armed
-  - `triggered`: Intrusion alarm, technical alarm, or panic event
+    - `disarmed`: System deactivated / maintenance
+    - `armed_home`: Partial / perimeter armed
+    - `armed_away`: Total system armed
+    - `triggered`: Intrusion alarm, technical alarm, or panic event
 - **Commands**:
-  - `ARM_AWAY` (`*5*1*<where>##`)
-  - `ARM_HOME` (`*5*1*<where>##`)
-  - `DISARM` (`*5*2*<where>##`)
-  - `TRIGGER` (`*5*17*<where>##` panic alarm)
+    - `ARM_AWAY` (`*5*1*<where>##`)
+    - `ARM_HOME` (`*5*1*<where>##`)
+    - `DISARM` (`*5*2*<where>##`)
+    - `TRIGGER` (`*5*17*<where>##` panic alarm)

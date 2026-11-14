@@ -429,8 +429,8 @@ async def test_who22_only_gateway_outbound_commands(hass):
 
     sent_cmds = [str(call.args[0]) for call in gw.send.call_args_list]
     assert sent_cmds == [
-        "*22*1*2#1##",
-        "*22*0*2#1##",
+        "*22*1#4#1*2#1##",
+        "*22*0#4#0*2#1##",
         "*22*9*2#1##",
         "*22*10*2#1##",
         "*22*5*2#1##",
@@ -440,5 +440,31 @@ async def test_who22_only_gateway_outbound_commands(hass):
         "*22*33#5*2#1##",
         "*22*33#15*2#1##",
     ]
+
+
+def test_hl4684_empty_where_who22_frequency_frame_routes_to_sole_or_active_tuner(hass, gateway):
+    """#466 (08-54-06 frame 124): H/L4684 emits *#22**5*1*9650## with empty WHERE below 100 MHz."""
+    # 1. Sole declared tuner receives the empty-WHERE frequency frame
+    tuner1 = _tuner(hass, gateway, 1)
+    listener_single = who22_tuner_listener([tuner1])
+    listener_single(OWNMessage.parse("*#22**5*1*9650##"))
+    assert tuner1.extra_state_attributes == {"frequency": 96.5}
+
+    # 2. Multiple declared tuners: routes to the single ON tuner
+    tuner_a = _tuner(hass, gateway, 1)
+    tuner_b = _tuner(hass, gateway, 2)
+    tuner_a._attr_state = MediaPlayerState.OFF
+    tuner_b._attr_state = MediaPlayerState.ON
+    listener_multi = who22_tuner_listener([tuner_a, tuner_b])
+    listener_multi(OWNMessage.parse("*#22**5*1*9650##"))
+    assert tuner_a.extra_state_attributes == {}
+    assert tuner_b.extra_state_attributes == {"frequency": 96.5}
+
+    # 3. Multiple declared tuners with neither ON (ambiguous): ignored
+    tuner_b._attr_state = MediaPlayerState.OFF
+    listener_multi(OWNMessage.parse("*#22**5*1*9030##"))
+    assert tuner_a.extra_state_attributes == {}
+    assert tuner_b.extra_state_attributes == {"frequency": 96.5}
+
 
 

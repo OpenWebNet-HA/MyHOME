@@ -5368,4 +5368,158 @@ async def test_parked_state_checks_streaming_companion_for_paused(hass, mock_gat
     assert zone.state == MediaPlayerState.PAUSED
 
 
+def test_parse_who22_routing_variants():
+    """Verify parse_who22_routing handles OWNd messages, fallback where_param, and rejects non-routing frames."""
+    from types import SimpleNamespace
+
+    from custom_components.myhome.media_player_routing import parse_who22_routing
+
+    # Canonical OWNMessage.parse frames from H/L4684 trace 08-54-06
+    assert parse_who22_routing(OWNMessage.parse("*22*21#4#2*5#2#1##")) == (1, "2")
+    assert parse_who22_routing(OWNMessage.parse("*22*23#4#2*5#2#2##")) == (2, "2")
+    assert parse_who22_routing(OWNMessage.parse("*22*1#4#3*2#4##")) == (4, "3")
+    assert parse_who22_routing(OWNMessage.parse("*22*2#4#1*2#3##")) == (3, "1")
+
+    # Fallback parsing when source_id is absent and what/where use # or _what_param/_where_param
+    assert parse_who22_routing(
+        SimpleNamespace(who="22", what="23#4#2", where="5#2#2")
+    ) == (2, "2")
+    assert parse_who22_routing(
+        SimpleNamespace(who="22", what="21", _what_param=["4", "3"], where="2", _where_param=["1"])
+    ) == (1, "3")
+    assert parse_who22_routing(
+        SimpleNamespace(who="22", what="1", what_param=["4", "2"], where="5", where_param=["2", "4"])
+    ) == (4, "2")
+
+    # Rejections: wrong WHO, missing what/where, inactive notification (22#4#0), point scope (3#2#1), area 0
+    assert parse_who22_routing(SimpleNamespace(who="16", what="21#4#2", where="5#2#1")) is None
+    assert parse_who22_routing(SimpleNamespace(who="22", what=None, where="5#2#1")) is None
+    assert parse_who22_routing(OWNMessage.parse("*22*22#4#0*5#2#1##")) is None
+    assert parse_who22_routing(OWNMessage.parse("*22*0#3#2#1*6##")) is None
+    assert parse_who22_routing(OWNMessage.parse("*#22*3#2#1*1*0##")) is None
+    assert parse_who22_routing(SimpleNamespace(who="22", what="21#4#2", where=None)) is None
+    assert parse_who22_routing(SimpleNamespace(who="22", what="21#4#2", where="6", where_param=[])) is None
+
+
+@pytest.mark.asyncio
+async def test_who22_routing_listener_updates_zone_source_on_hl4684_wake(hass, mock_gateway):
+    """#466 (08-54-06): H/L4684 emits *22*23#4#2*5#2#2## when Zone 21 wakes on stored Source 2 without *16*3*122##."""
+    from custom_components.myhome.discovery import KnownDevices
+    from custom_components.myhome.media_player_routing import who22_routing_listener
+
+    runtime = MyHOMERuntimeData(gateway=mock_gateway)
+    base_options = {
+        CONF_SOURCE_NAME.format(1): "Radio",
+        CONF_SOURCE_NAME.format(2): "TV",
+    }
+    mock_gateway.config_entry = MagicMock(options=dict(base_options))
+
+    zone21 = _create_test_zone(hass, mock_gateway, runtime, "21", "media_player.audio_zone_21")
+    zone21._options = lambda: dict(base_options)
+    zone21._gateway_handler.config_entry.options = dict(base_options)
+    zone21.async_on_remove(
+        runtime.router.subscribe("16", ["21#16"], zone21.handle_event)
+    )
+
+    known = KnownDevices()
+    known.add("21#16")
+    listener = who22_routing_listener(runtime.router, known)
+
+    # Non-routing or unmatched environment frames are ignored
+    listener(OWNMessage.parse("*22*22#4#0*5#2#1##"))
+    listener(OWNMessage.parse("*22*21#4#9*5#2#1##"))
+    assert zone21.source is None
+
+    # Replay frames[92..98] of myhome_trace_HL4684_all_2026-11-07T08-54-06.json:
+    # 92 rx *22*21#4#2*5#2#1## (gateway translation of *16*3*21##)
+    listener(OWNMessage.parse("*22*21#4#2*5#2#1##"))
+    assert zone21.source == "Radio"
+    assert zone21.state == MediaPlayerState.OFF
+
+    # 93 rx *22*23#4#2*5#2#2## (+118 ms: Amplifier 21 wakes on stored Source 2; bt_difson omits *16*3*122##!)
+    listener(OWNMessage.parse("*22*23#4#2*5#2#2##"))
+    assert zone21.source == "TV"
+    assert zone21.state == MediaPlayerState.OFF
+
+    # 97 rx *16*3*21##, 98 rx *#16*21*1*16##
+    zone21.handle_event(OWNSoundEvent.parse("*16*3*21##"))
+    zone21.handle_event(OWNSoundEvent.parse("*#16*21*1*16##"))
+    assert zone21.state == MediaPlayerState.ON
+    assert zone21.source == "TV"
+    assert zone21.volume_level == pytest.approx(16 / 31.0)
+
+    # Now selecting "Radio" in HA sends *16*3*101## and *16*3*121## and updates source to "Radio"
+    mock_gateway.send.reset_mock()
+    await zone21.async_select_source("Radio")
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*16*3*101##",
+        "*16*3*121##",
+    ]
+    assert zone21.source == "Radio"
+
+
+@pytest.mark.asyncio
+async def test_select_source_while_off_reapplies_after_turn_on_wake(hass, mock_gateway):
+    """#466: Selecting a source while a zone is OFF must re-apply that route after async_turn_on wakes the amplifier."""
+    runtime = MyHOMERuntimeData(gateway=mock_gateway)
+    base_options = {
+        CONF_SOURCE_NAME.format(1): "Radio",
+        CONF_SOURCE_NAME.format(2): "TV",
+    }
+    mock_gateway.config_entry = MagicMock(options=dict(base_options))
+
+    zone21 = _create_test_zone(hass, mock_gateway, runtime, "21", "media_player.audio_zone_21")
+    zone21._options = lambda: dict(base_options)
+    zone21._gateway_handler.config_entry.options = dict(base_options)
+    assert zone21.state == MediaPlayerState.OFF
+
+    # 1. User selects "Radio" (Source 1) while Zone 21 is OFF
+    await zone21.async_select_source("Radio")
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*16*3*101##",
+        "*16*3*121##",
+    ]
+    assert zone21._selected_source_while_off == 1
+
+    # Gateway echoes *16*3*121## and *22*21#4#2*5#2#1## on the bus while zone is still OFF:
+    # _selected_source_while_off must be preserved!
+    zone21.handle_event(OWNSoundEvent.parse("*16*3*121##"))
+    zone21.handle_event(OWNMessage.parse("*22*21#4#2*5#2#1##"))
+    assert zone21._selected_source_while_off == 1
+
+    # 2. User immediately turns Zone 21 ON (within _ROUTE_REPEAT_WINDOW = 8.0 s, and with no default_source configured).
+    # Even if the amplifier briefly reports its stored Source 2 (*22*23#4#2*5#2#2##) during wake,
+    # _apply_default_source re-sends *16*3*101## and *16*3*121## with coalesce=False!
+    mock_gateway.send.reset_mock()
+    with patch("asyncio.sleep", return_value=None):
+        await zone21.async_turn_on()
+
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*16*13*21##",
+        "*16*3*21##",
+        "*16*3*101##",
+        "*16*3*121##",
+    ]
+    assert zone21.state == MediaPlayerState.ON
+    assert zone21.source == "Radio"
+    assert zone21._selected_source_while_off is None
+
+    # 3. If a wall panel switches the environment to a different source while OFF,
+    # the pending off-selection is cleared so a later turn_on respects the wall panel.
+    await zone21.async_turn_off()
+    await zone21.async_select_source("Radio")
+    assert zone21._selected_source_while_off == 1
+    zone21.handle_event(OWNSoundEvent.parse("*16*3*122##"))
+    assert zone21.source == "TV"
+    assert zone21._selected_source_while_off is None
+    mock_gateway.send.reset_mock()
+    with patch("asyncio.sleep", return_value=None):
+        await zone21.async_turn_on()
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == [
+        "*16*13*21##",
+        "*16*3*21##",
+    ]
+
+
+
 

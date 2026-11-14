@@ -135,16 +135,12 @@ async def test_first_gateway_skips_the_topology_step(hass: HomeAssistant) -> Non
     assert CONF_BUS_TOPOLOGY not in result["options"]
 
 
-async def test_followers_and_serial_gateways_cannot_be_the_primary(hass: HomeAssistant) -> None:
-    """With only a follower and a USB gateway configured there is nothing to share a bus with."""
+async def test_followers_cannot_be_the_primary(hass: HomeAssistant) -> None:
+    """Follower entries are excluded from the primary-gateway picker."""
     _existing(hass, PRI, "F454", **{CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY})
     _existing(hass, SB, "F454", **{
         CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_STANDBY, CONF_PRIMARY_GATEWAY: PRI,
     })
-    serial = MockConfigEntry(
-        domain=DOMAIN, data={CONF_MAC: "35:78:00:00:00:01", "transport_type": "serial"}, unique_id="35:78:00:00:00:01"
-    )
-    serial.add_to_hass(hass)
     (result,) = await _add_mh202(hass)
     assert result["step_id"] == "bus_topology"
     options = result["data_schema"].schema[CONF_PRIMARY_GATEWAY].config["options"]
@@ -276,6 +272,40 @@ async def test_restore_prunes_the_duplicate_with_its_buttons_and_device(hass: Ho
     assert registry.async_get(kept_cover.entity_id) is not None
     assert all(registry.async_get(b) is not None for b in kept_buttons)
     assert devices.async_get(kept_device.id) is not None
+
+
+async def test_configure_does_not_recreate_a_pruned_yaml_duplicate(hass: HomeAssistant) -> None:
+    """A follower's myhome.yaml device the primary already has is pruned and not re-created.
+
+    restore() pruned the duplicate, then configure() created the same device again from the
+    entry's migrated YAML config; Home Assistant restored the registry row, so the duplicate
+    stayed live (live F455 standby next to an F461, 2026-11-12: 17 entities every start).
+    """
+    registry = er.async_get(hass)
+    entry_p, entry_x = _follower(hass)
+    _actuator(hass, entry_p, PRI, "21#4#02")
+    _device, cover, button_ids = _actuator(hass, entry_x, NEW, "21#4#02")
+    entry_x.runtime_data.platforms["cover"] = {
+        "dup": {"where": "21", "interface": "02", "name": "Duplicate"},
+        "own": {"where": "85", "name": "Only here"},
+    }
+    built: list[MagicMock] = []
+
+    def build(ctx):
+        entity = MagicMock()
+        entity.unique_id = f"{NEW}-2-{ctx.address.key}"
+        built.append(entity)
+        return [entity]
+
+    discovery = PlatformDiscovery(
+        hass, entry_x, MagicMock(), platform="cover", who="2", event_type=OWNAutomationEvent, build=build,
+    )
+    entities = discovery.restore() + discovery.configure()
+
+    assert registry.async_get(cover.entity_id) is None
+    assert all(registry.async_get(b) is None for b in button_ids)
+    assert [e.unique_id for e in entities] == [f"{NEW}-2-85"]
+    assert f"{NEW}-2-21#4#02" in {e.unique_id for e in built}  # built, then dropped as the primary's
 
 
 async def test_pruning_keeps_a_device_that_still_has_other_entities(hass: HomeAssistant) -> None:

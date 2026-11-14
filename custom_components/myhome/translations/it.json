@@ -44,21 +44,12 @@
         "title": "Gateway MyHOME rilevato",
         "description": "Vuoi configurare il gateway {name} ({host})?\n\nMyHOME mantiene aperta una connessione permanente per gli eventi, più una connessione per ogni worker di comando (1 di default). Un gateway accetta solo poche connessioni OpenWebNet contemporanee (5 su un F455, meno su un MH200N), condivise con tutto ciò che vi si collega: l'app Legrand/BTicino Home+Project, altre istanze di Home Assistant, altre integrazioni. Se le connessioni si esauriscono, MyHOME o l'altro client viene rifiutato o disconnesso. Chiudi i client non necessari e mantieni basso il numero di worker di comando."
       },
-      "serial": {
-        "title": "Gateway USB / Seriale",
-        "description": "Configura il tuo gateway USB o seriale Legrand 3578 / OpenZigBee.",
-        "data": {
-          "port": "Porta seriale",
-          "baudrate": "Baudrate",
-          "friendly_name": "Nome descrittivo"
-        }
-      },
       "reconfigure": {
         "title": "Riconfigura il gateway MyHome {name}",
         "description": "Aggiorna le impostazioni di connessione o le credenziali del tuo gateway {name}.",
         "data": {
           "host": "Indirizzo IP",
-          "port": "Porta / baudrate",
+          "port": "Porta",
           "password": "Password"
         }
       },
@@ -131,12 +122,22 @@
             "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
             "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
             "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
-            "value_template": "Template del valore (Jinja2, opzionale)"
+            "value_template": "Template del valore (Jinja2, opzionale)",
+            "turn_on_action": "Azione di accensione / salita (opzionale)",
+            "turn_off_action": "Azione di spegnimento / discesa (opzionale)",
+            "step_up_action": "Azione passo su dimmer (opzionale)",
+            "step_down_action": "Azione passo giù dimmer (opzionale)"
+          },
+          "data_description": {
+            "turn_on_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "turn_off_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "step_up_action": "Supportata solo per WHO 1 (illuminazione/dimmer).",
+            "step_down_action": "Supportata solo per WHO 1 (illuminazione/dimmer)."
           }
         },
         "reconfigure": {
           "title": "Riconfigura entità esposta",
-          "description": "Aggiorna l'indirizzo OpenWebNet, l'entità sorgente o i parametri di invio per questa associazione.",
+          "description": "Aggiorna l'indirizzo OpenWebNet, l'entità sorgente, i parametri di invio o le azioni personalizzate per questa associazione.",
           "data": {
             "who": "Sottosistema WHO",
             "where": "Indirizzo WHERE",
@@ -150,16 +151,29 @@
             "bidirectional": "Bidirezionale (esegui comandi ricevuti dal bus)",
             "brightness_step_pct": "Passo luminosità per pressione dimmer (%)",
             "on_states": "Stati 'on' personalizzati (separati da virgola, opzionale)",
-            "value_template": "Template del valore (Jinja2, opzionale)"
+            "value_template": "Template del valore (Jinja2, opzionale)",
+            "turn_on_action": "Azione di accensione / salita (opzionale)",
+            "turn_off_action": "Azione di spegnimento / discesa (opzionale)",
+            "step_up_action": "Azione passo su dimmer (opzionale)",
+            "step_down_action": "Azione passo giù dimmer (opzionale)"
+          },
+          "data_description": {
+            "turn_on_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "turn_off_action": "Supportata solo per WHO 1 (illuminazione/interruttore) e WHO 2 (tapparella/automazione).",
+            "step_up_action": "Supportata solo per WHO 1 (illuminazione/dimmer).",
+            "step_down_action": "Supportata solo per WHO 1 (illuminazione/dimmer)."
           }
         }
       },
       "error": {
         "invalid_who": "Sottosistema WHO non supportato (supportati: 1, 2, 4, 13, 18).",
         "where_required": "È richiesto un indirizzo WHERE per questo sottosistema WHO.",
-        "entity_required": "È richiesta un'entità Home Assistant sorgente per questo sottosistema WHO.",
+        "entity_required": "È richiesta un'entità Home Assistant sorgente (o un'azione personalizzata per WHO 1 / WHO 2).",
+        "action_not_supported_for_who": "Le azioni personalizzate sono supportate solo per WHO 1 (accensione/spegnimento e passo su/giù) e WHO 2 (solo accensione/spegnimento); rimuovi le azioni non supportate o cambia WHO.",
         "invalid_dimension": "Dimensione non valida per il sottosistema WHO selezionato.",
-        "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata."
+        "invalid_expose": "Configurazione non valida o associazione WHO/WHERE/dimensione duplicata.",
+        "who_injection_unsupported": "Il firmware di questo gateway non supporta l'iniezione di frame per il sottosistema WHO selezionato sul bus SCS (supportati su tutti i gateway: WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "Questo gateway traduce le scritture di temperatura WHO 4 #0 solo sugli indirizzi sonda master di zona non utilizzati 1..99 (es. 50); gli indirizzi sonda a 3 cifre (100..900) vengono rifiutati dal firmware."
       },
       "abort": {
         "reconfigure_successful": "Associazione dell'entità esposta aggiornata correttamente."
@@ -550,6 +564,15 @@
     },
     "fan_speed_zone_only": {
       "message": "{name} non ha una velocità del ventilatore propria: solo una zona (1-99) può averne una"
+    },
+    "auto_standalone_zone": {
+      "message": "{name} è un termostato autonomo: la centrale non ha un programma per esso"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} segue la centrale, che è nella stagione di condizionamento: cambia la stagione sulla centrale"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} segue la centrale, che è nella stagione di riscaldamento: cambia la stagione sulla centrale"
     },
     "command_delivery_cancelled": {
       "message": "{name}: l'invio del comando di direzione è stato annullato prima di raggiungere il bus"

@@ -27,7 +27,7 @@ HACS provides the easiest installation method for production v0.9.4:
 3. Search for **MyHome**.
 4. Click **Download** and select version **`0.9.4`**.
 5. Restart Home Assistant:
-   - Navigate to **Developer Tools** → **YAML** → **Restart**.
+    - Navigate to **Developer Tools** → **YAML** → **Restart**.
 
 ---
 

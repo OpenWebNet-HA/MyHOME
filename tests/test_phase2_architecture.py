@@ -216,14 +216,15 @@ async def test_p4_central_unit_3550_initialization_and_commands(hass: HomeAssist
     assert gateway.send.call_count == 1
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*4*1*#0##"
-    assert cu99._attr_hvac_mode == HVACMode.HEAT
+    # Only the season changes; the 3550's answer (*4*102*#0## etc.) sets the mode shown.
+    assert cu99._attr_hvac_mode is None
 
     # Set master cool mode -> *4*0*#0##
     gateway.send.reset_mock()
     await cu99.async_set_hvac_mode(HVACMode.COOL)
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*4*0*#0##"
-    assert cu99._attr_hvac_mode == HVACMode.COOL
+    assert cu99._attr_hvac_mode is None
 
     # Set master off mode -> *4*303*#0##
     gateway.send.reset_mock()
@@ -358,8 +359,11 @@ async def test_p4_master_seasonal_mode_propagation_to_subordinate_zones(hass: Ho
     zone1._attr_hvac_mode = HVACMode.HEAT
     zone2_standalone._attr_hvac_mode = HVACMode.HEAT
 
-    # Switch Central Unit to COOL
+    # Switch Central Unit to COOL; the 3550 answers with its conditioning mode
+    from OWNd.message import OWNHeatingEvent
+
     await cu.async_set_hvac_mode(HVACMode.COOL)
+    cu.handle_event(OWNHeatingEvent.parse("*4*202*#0##"))
 
     # Subordinate Zone 1 follows master mode switch to COOL
     assert zone1._attr_hvac_mode == HVACMode.COOL

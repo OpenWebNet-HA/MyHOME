@@ -143,12 +143,14 @@ async def test_climate_remembers_humidity_and_queries_on_startup(hass: HomeAssis
     )
     zone_no_hum.entity_id = "climate.zone_1"
     assert zone_no_hum._humidity is False
-    assert zone_no_hum._poll_on_add is False
+    # #466: a zone with nothing else to ask still polls once for its knob (*#4*Z*13##).
+    assert zone_no_hum._poll_on_add is True
 
     state_no_hum = State("climate.zone_1", "heat", {"temperature": 21.0})
     with patch.object(zone_no_hum, "async_get_last_state", return_value=state_no_hum):
         await zone_no_hum.async_added_to_hass()
-    gateway.send_status_request.assert_not_awaited()
+    assert [str(c.args[0]) for c in gateway.send_status_request.await_args_list] == ["*#4*1*13##"]
+    gateway.send_status_request.reset_mock()
 
     # Receiving a humidity frame dynamically enables humidity support
     hum_event = OWNEvent.parse("*#4*1*60*55##")
@@ -181,7 +183,7 @@ async def test_climate_remembers_humidity_and_queries_on_startup(hass: HomeAssis
     assert zone_restored._humidity is True
     assert zone_restored.current_humidity == 48.0
     sent = [str(call.args[0]) for call in gateway.send_status_request.await_args_list]
-    assert sent == ["*#4*2*60##"]
+    assert sent == ["*#4*2*60##", "*#4*2*13##"]
 
     # 3. Invalid current_humidity value still enables humidity polling without crashing
     gateway.send_status_request.reset_mock()
@@ -208,7 +210,7 @@ async def test_climate_remembers_humidity_and_queries_on_startup(hass: HomeAssis
     assert zone_bad_hum._humidity is True
     assert zone_bad_hum.current_humidity is None
     sent_bad = [str(call.args[0]) for call in gateway.send_status_request.await_args_list]
-    assert sent_bad == ["*#4*3*60##"]
+    assert sent_bad == ["*#4*3*60##", "*#4*3*13##"]
 
     # 4. Explicit humidity=True in configuration queries *#4*Z*60## on startup, and central unit ignores it
     gateway.send_status_request.reset_mock()
@@ -232,7 +234,7 @@ async def test_climate_remembers_humidity_and_queries_on_startup(hass: HomeAssis
     assert zone_cfg_hum._humidity is True
     assert zone_cfg_hum._poll_on_add is True
     await zone_cfg_hum.async_update()
-    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*4*60##"]
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*4*60##", "*#4*4*13##"]
 
     central = MyHOMEClimate(
         hass=hass,

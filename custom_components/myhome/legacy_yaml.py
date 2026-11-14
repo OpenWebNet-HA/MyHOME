@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import copy
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
 from homeassistant.config_entries import ConfigEntry
@@ -257,9 +257,16 @@ def _log_mac_mismatch(hass: HomeAssistant, entry: ConfigEntry, keys: list[Any]) 
     # Entries without a MAC are skipped rather than compared against "None".
     other_macs: list[str] = []
     for other in hass.config_entries.async_entries(DOMAIN):
-        if other is entry or not isinstance(getattr(other, "data", None), dict):
+        if other is entry or getattr(other, "entry_id", None) == entry.entry_id:
             continue
-        other_mac = other.data.get(CONF_MAC)
+        other_data = getattr(other, "data", None)
+        if not isinstance(other_data, Mapping):
+            continue
+        other_mac = other_data.get(CONF_MAC)
+        if other_mac is None:
+            uid = getattr(other, "unique_id", None)
+            if isinstance(uid, str) and uid:
+                other_mac = uid
         if other_mac is not None:
             other_macs.append(str(other_mac))
     orphans = [k for k in keys if not any(_same_mac(k, mac) for mac in other_macs)]

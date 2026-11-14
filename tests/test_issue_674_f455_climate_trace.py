@@ -5,8 +5,8 @@ Verifies that:
    gateway (issue #674) replay cleanly through the event dispatcher without exceptions.
 2. All thermoregulation entities (temperatures, setpoints, offsets, valve states, humidity)
    are accurately populated from the spontaneous WHO 4 bus sweep telemetry.
-3. Physical gateways (F455, F454, MH200N, MH202, etc.) correctly report
-   `supports_zone_status is False`, whereas MyHomeServer1 reports `True`.
+3. Gateways without verified multi-session *#4*Z## support (F455, MH200N, MH202, etc.)
+   report `supports_zone_status is False`, whereas F454 and MyHomeServer1 report `True`.
 4. Regular climate zones on physical gateways have `_poll_on_add is False` and skip
    sending bare status requests (*#4*Z##) in `async_update()`, completely eliminating
    the 10-second command session timeout loop experienced in issue #674.
@@ -198,25 +198,18 @@ def test_gateway_supports_zone_status_property(hass: HomeAssistant) -> None:
 
     handler = MyHOMEGatewayHandler(hass, config_entry)
 
-    # 1. F455
-    handler.gateway.model_name = "F455"
-    assert handler.supports_zone_status is False
+    from OWNd.profiles import get_gateway_profile
 
-    # 2. F454
-    handler.gateway.model_name = "F454"
-    assert handler.supports_zone_status is False
-
-    # 3. MH200N
-    handler.gateway.model_name = "MH200N"
-    assert handler.supports_zone_status is False
-
-    # 4. MH202
-    handler.gateway.model_name = "MH202"
-    assert handler.supports_zone_status is False
-
-    # 5. MyHomeServer1
-    handler.gateway.model_name = "MyHomeServer1"
-    assert handler.supports_zone_status is True
+    for model, expected in (
+        ("F455", False),
+        ("F454", True),
+        ("MH200N", False),
+        ("MH202", True),
+        ("MyHomeServer1", True),
+    ):
+        handler.gateway.model_name = model
+        handler.gateway.profile = get_gateway_profile(model)
+        assert handler.supports_zone_status is expected, model
 
 
 def test_issue_674_timeout_frames_analysis() -> None:

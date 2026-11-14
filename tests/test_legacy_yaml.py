@@ -522,3 +522,79 @@ async def test_legacy_yaml_mac_mismatch_skips_other_entry_without_mac(
     assert "00:03:50:81:22:33" in warnings[0]
     assert "00:03:50:00:00:00" in warnings[0]
     assert "None" not in warnings[0]
+
+
+async def test_legacy_yaml_mappingproxy_entries_and_unique_id_fallback_do_not_warn(
+    hass: HomeAssistant, tmp_path, caplog
+):
+    """Real ConfigEntry.data is a MappingProxyType, not a dict (#832)."""
+    from types import MappingProxyType
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        "'00:03:50:aa:11:22':\n  light:\n    hallway:\n      where: '21'\n      name: 'Hallway'\n",
+        encoding="utf-8",
+    )
+    primary = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: "00:03:50:aa:11:22"},
+        options={CONF_FILE_PATH: str(yaml_file)},
+        unique_id="00:03:50:aa:11:22",
+    )
+    secondary = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: "00:03:50:bb:33:44"},
+        options={CONF_FILE_PATH: str(yaml_file)},
+        unique_id="00:03:50:bb:33:44",
+    )
+    primary.add_to_hass(hass)
+    secondary.add_to_hass(hass)
+    assert isinstance(primary.data, MappingProxyType)
+    assert isinstance(secondary.data, MappingProxyType)
+
+    configured_platforms = _make_configured_platforms()
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await load_legacy_myhome_yaml(hass, secondary, configured_platforms)
+
+    assert _myhome_warnings(caplog) == []
+
+    # Also recognise another entry whose MAC lives only on unique_id, and skip non-Mapping data
+    uid_only_yaml = tmp_path / "uid_only.yaml"
+    uid_only_yaml.write_text(
+        "'00:03:50:cc:55:66':\n  light:\n    kitchen:\n      where: '22'\n      name: 'Kitchen'\n",
+        encoding="utf-8",
+    )
+    uid_only_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={},
+        unique_id="00:03:50:cc:55:66",
+    )
+    uid_only_entry.add_to_hass(hass)
+    broken_peer = MagicMock(spec=ConfigEntry)
+    broken_peer.entry_id = "broken_peer"
+    broken_peer.data = None
+    secondary_uid_check = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: "00:03:50:dd:77:88"},
+        options={CONF_FILE_PATH: str(uid_only_yaml)},
+        unique_id="00:03:50:dd:77:88",
+    )
+    secondary_uid_check.add_to_hass(hass)
+
+    with (
+        caplog.at_level("WARNING", logger="custom_components.myhome"),
+        patch.object(
+            hass.config_entries,
+            "async_entries",
+            return_value=[secondary_uid_check, broken_peer, uid_only_entry],
+        ),
+    ):
+        await load_legacy_myhome_yaml(
+            hass, secondary_uid_check, _make_configured_platforms()
+        )
+
+    assert _myhome_warnings(caplog) == []

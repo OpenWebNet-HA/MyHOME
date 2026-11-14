@@ -2,7 +2,7 @@
 
 Authentic on-wire bus traces contributed by **@wave68runner** on
 [#624 (comment 6002817949)](https://github.com/OpenWebNet-HA/MyHOME/issues/624#issuecomment-6002817949).
-Both gateways sit on the same SCS bus, each capturing physical button interactions with unit `0512` ($A=5, PL=12$).
+Both gateways sit on the same SCS bus, each capturing physical button interactions with unit `0512` (`A = 5, PL = 12`).
 
 ## Contributed Files
 
@@ -13,7 +13,7 @@ Both gateways sit on the same SCS bus, each capturing physical button interactio
 
 ## Empirical Protocol Discoveries
 
-- On physical SCS plants with $PL \ge 10$, OpenWebNet CEN (`WHO = 15`) uses 4-digit point-to-point addressing with a leading zero for Area (`0512` represents $A=5, PL=12$).
+- On physical SCS plants with `PL ≥ 10`, OpenWebNet CEN (`WHO = 15`) uses 4-digit point-to-point addressing with a leading zero for Area (`0512` represents `A = 5, PL = 12`).
 - Both MH200N and MyHomeServer1 emit identical wire WHERE addresses (`0512`).
 - A short press sequence on button 3 is `*15*03*0512##` (pressed) followed by `*15*03#1*0512##` (release after short press).
 - A long press sequence on button 3 is `*15*03*0512##` (pressed), `*15*03#3*0512##` (extended pressure), repeated `*15*03#3*0512##`, followed by `*15*03#2*0512##` (release after long press).

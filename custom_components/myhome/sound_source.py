@@ -263,6 +263,20 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         """Return the WHO=22 source address ``2#<S>`` for this tuner."""
         return f"2#{int(self._where) - 100}"
 
+    # Published WHO 22 source power form (WHO 22 PDF v1.1 1.1 / 3.1.1 / 3.1.2:
+    # *22*WHAT#<mmtype>#<area>*2#<sourceID>##). mmtype 4 = Stereo. In the committed
+    # captures the <area> of the source-on frame is the output area that asks for the
+    # source, and it varies (issue_466 H4890 and issue_746 MH200N carry areas 1..8 for
+    # source 2#1); the tuner entity has no room context of its own, so power-on uses
+    # area 1 (ack/out on the F461 020011 and MyHomeServer1 028206 oracle images,
+    # 2026-11-12). Power-off uses turn_off_atomic (*22*0#<mmtype>#0*2#<sourceID>##,
+    # area 0 = all/broadcast off): the only b13 builder for a WHAT 0 published-shape
+    # frame, ack/out on both those images; the area-matched *22*0#4#1*2#S## is also
+    # ack/out there but OWNd b13 has no off-with-area builder. Reusing a zone's
+    # selected area for the tuner's own power is a maintainer decision (see the PR).
+    _WHO22_POWER_MM_TYPE = 4
+    _WHO22_POWER_AREA = 1
+
     def _uses_who22_commands(self) -> bool:
         """Return True on WHO=22-only gateways (MyHomeServer1, F459, F460, F461)."""
         return uses_who22_commands(self._gateway_handler)
@@ -324,8 +338,15 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Switch the source device on."""
         if self._uses_who22_commands():
+            # Published power-on *22*1#<mmtype>#<area>*2#<sourceID>##; the bare
+            # *22*1*2#S## crashes the sound daemon on 9 of 13 emulated gateways
+            # (OWNd is_who22_bare_power_frame, oracle sound-who22-bare-power).
             await self._gateway_handler.send(
-                OWNSoundDiffusionCommand.turn_on(self._who22_addr())
+                OWNSoundDiffusionCommand.turn_on_with_source(
+                    self._who22_addr(),
+                    self._WHO22_POWER_AREA,
+                    self._WHO22_POWER_MM_TYPE,
+                )
             )
         else:
             await self._gateway_handler.send(OWNSoundCommand.turn_on(self._where))
@@ -337,8 +358,13 @@ class MyHOMESoundSource(MyHOMEEntity, MediaPlayerEntity):
         changed, so they stay pointed at it.
         """
         if self._uses_who22_commands():
+            # Published power-off *22*0#<mmtype>#0*2#<sourceID>## (turn_off_atomic);
+            # the bare *22*0*2#S## is refused by OWNd for the same crash reason.
             await self._gateway_handler.send(
-                OWNSoundDiffusionCommand.turn_off(self._who22_addr())
+                OWNSoundDiffusionCommand.turn_off_atomic(
+                    self._who22_addr(),
+                    self._WHO22_POWER_MM_TYPE,
+                )
             )
         else:
             await self._gateway_handler.send(OWNSoundCommand.turn_off(self._where))
@@ -742,15 +768,19 @@ def who22_source_id(message: Any) -> int | None:
     if str(getattr(message, "who", "")) != "22":
         return None
     known = getattr(message, "source_id", None)
-    if isinstance(known, int):
+    if isinstance(known, int) and not isinstance(known, bool):
         return known
     where = getattr(message, "where", None)
     if where is None:
         return None
-    param = getattr(message, "where_param", None)
-    if param is None:
-        param = getattr(message, "_where_param", None)
-    parts = [str(where), *(str(p) for p in (param or []))]
+    where_str = str(where)
+    if "#" in where_str:
+        parts = where_str.split("#")
+    else:
+        param = getattr(message, "where_param", None)
+        if param is None:
+            param = getattr(message, "_where_param", None)
+        parts = [where_str, *(str(p) for p in (param or []))]
     if len(parts) == 2 and parts[0] == "2" and parts[1].isdigit():
         return int(parts[1])
     if len(parts) == 3 and parts[0] == "5" and parts[1] == "2" and parts[2].isdigit():
@@ -769,9 +799,29 @@ def who22_tuner_listener(sources: list[MyHOMESoundSource]) -> Callable[[Any], No
     @callback
     def listener(message: Any) -> None:
         source_id = who22_source_id(message)
-        if source_id is None:
-            return
-        source = by_source.get(source_id)
+        if source_id is not None:
+            source = by_source.get(source_id)
+        elif (
+            str(getattr(message, "who", "")) == "22"
+            and getattr(message, "where", None) == ""
+            and not (
+                getattr(message, "where_param", None)
+                or getattr(message, "_where_param", None)
+            )
+            and str(getattr(message, "dimension", "")) in ("5", "10", "11")
+        ):
+            # H/L4684 bt_multi firmware bug: < 100.0 MHz frequency/RDS reports
+            # can be emitted with an empty WHERE (*#22**5*1*9650##). Route to
+            # the sole declared tuner, or the single ON tuner when several exist.
+            if len(sources) == 1:
+                source = sources[0]
+            else:
+                active = [
+                    s for s in sources if s._attr_state == MediaPlayerState.ON
+                ]
+                source = active[0] if len(active) == 1 else None
+        else:
+            source = None
         if source is not None:
             source.handle_who22_event(message)
 

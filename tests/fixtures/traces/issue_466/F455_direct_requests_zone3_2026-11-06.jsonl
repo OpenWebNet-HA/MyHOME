@@ -1,0 +1,18 @@
+{"t": 1.02, "utc": "20:55:01", "kind": "event", "raw": "*#13**16*1*0*76##", "cls": "OWNGatewayEvent", "log": "Gateway's firmware version is: 1.0.76."}
+{"t": 4.022, "utc": "20:55:04", "kind": "sent", "frame": "*#13**16##", "status": true, "ack": true, "dt": 0.004, "replies": ["*#13**16*1*0*76##"], "events": ["*#13**16*1*0*76##"]}
+{"t": 15.988, "utc": "20:55:16", "kind": "sent", "frame": "*#4*3*0##", "status": true, "ack": false, "dt": 8.964, "replies": null, "events": []}
+{"t": 27.987, "utc": "20:55:28", "kind": "sent", "frame": "*#4*3*14##", "status": true, "ack": false, "dt": 8.999, "replies": null, "events": []}
+{"t": 39.985, "utc": "20:55:40", "kind": "sent", "frame": "*#4*3*12##", "status": true, "ack": false, "dt": 8.997, "replies": null, "events": []}
+{"t": 40.073, "utc": "20:55:40", "kind": "event", "raw": "*#4*3#1*20*0##", "cls": "OWNHeatingEvent", "log": "Zone 3's actuator 1 is off."}
+{"t": 43.076, "utc": "20:55:43", "kind": "sent", "frame": "*#4*3#1*20##", "status": true, "ack": true, "dt": 0.089, "replies": ["*#4*3#1*20*0##"], "events": ["*#4*3#1*20*0##"]}
+{"t": 55.09, "utc": "20:55:55", "kind": "sent", "frame": "*#4*3*19##", "status": true, "ack": false, "dt": 9.014, "replies": null, "events": []}
+{"t": 58.098, "utc": "20:55:58", "kind": "sent", "frame": "*#4*3*20##", "status": true, "ack": false, "dt": 0.003, "replies": null, "events": []}
+{"t": 70.094, "utc": "20:56:10", "kind": "sent", "frame": "*#4*3##", "status": true, "ack": true, "dt": 8.993, "replies": true, "events": []}
+{"t": 70.191, "utc": "20:56:11", "kind": "event", "raw": "*#4*2*0*0233##", "cls": "OWNHeatingEvent", "log": "Zone 2's main sensor is reporting a temperature of 23.3°C."}
+{"t": 73.195, "utc": "20:56:14", "kind": "sent", "frame": "*#4*2*0##", "status": true, "ack": true, "dt": 0.098, "replies": ["*#4*2*0*0233##"], "events": ["*#4*2*0*0233##"]}
+{"t": 73.282, "utc": "20:56:14", "kind": "event", "raw": "*25*31#1*344##", "cls": "OWNDryContactEvent", "log": "Sensor 44 detected ON."}
+{"t": 73.322, "utc": "20:56:14", "kind": "event", "raw": "*#4*4*0*0250##", "cls": "OWNHeatingEvent", "log": "Zone 4's main sensor is reporting a temperature of 25.0°C."}
+{"t": 75.263, "utc": "20:56:16", "kind": "event", "raw": "*25*32#1*344##", "cls": "OWNDryContactEvent", "log": "Sensor 44 detected OFF."}
+{"t": 76.324, "utc": "20:56:17", "kind": "sent", "frame": "*#4*4*0##", "status": true, "ack": true, "dt": 0.128, "replies": ["*#4*4*0*0250##"], "events": ["*25*31#1*344##", "*#4*4*0*0250##", "*25*32#1*344##"]}
+{"t": 76.415, "utc": "20:56:17", "kind": "event", "raw": "*#4*2*19*5*5##", "cls": "OWNHeatingEvent", "log": "Zone 2's cooling fan is off; heating fan is off."}
+{"t": 79.417, "utc": "20:56:20", "kind": "sent", "frame": "*#4*2*19##", "status": true, "ack": true, "dt": 0.091, "replies": ["*#4*2*19*5*5##"], "events": ["*#4*2*19*5*5##"]}

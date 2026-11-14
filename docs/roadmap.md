@@ -10,16 +10,16 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b17 Released)
+## 🗺️ Current Delivery Status (v2.0.0 Beta Series, b18 Released)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b17** releases. **v2.0.0b16** was published on 2026-10-21; **v2.0.0b17** follows with the 61 pull requests merged since, on OWNd 2.0.0b13. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across the **v2.0.0b1 through v2.0.0b18** releases. **v2.0.0b17** was published on 2026-11-04; **v2.0.0b18** follows with the 38 pull requests merged since, on OWNd 2.0.0b14. The remaining work is v2.0.0 stabilization: see *Final Stabilization* below.
 
 ```mermaid
 gantt
     title MyHOME Integration Status & Roadmap
     dateFormat  YYYY-MM-DD
     section Delivered in Phase 1 & 2 (b1 – b8)
-    Dual Async Transports & Core Architecture (P1)   :done, 2026-08-01, 2026-09-01
+    Async TCP Transport & Core Architecture (P1)     :done, 2026-08-01, 2026-09-01
     Lovelace In-Band Bus Monitor Card (<myhome-bus-card>) :done, 2026-08-15, 2026-09-10
     Standalone OWNd Library & Master WHO Catalog     :done, 2026-09-01, 2026-09-10
     section Delivered in Phase 3 & 4 (b9 – b13)
@@ -57,8 +57,13 @@ gantt
     OWNd 2.0.0b13 Pin & Legrand 067292 Alias (#848, #854) :done, 2026-10-26, 2026-11-04
     F500 FM Tuner Controls & Station Range Bounds (#839, #844) :done, 2026-10-28, 2026-11-04
     Dimmer Preset Echo & Coarse Curve Alignment (#828, #852) :done, 2026-10-28, 2026-11-04
+    section Released in v2.0.0b18
+    Live Cover Animation (~1 s) & Venetian Dim 10 Tilt (#870, #900) :done, 2026-11-05, 2026-11-14
+    WHO 4 Startup Pacing, Offset Reads & 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
+    Expose Virtual Dimmer Hold-Up & Firmware Gates (#883, #904) :done, 2026-11-09, 2026-11-14
+    OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909) :done, 2026-11-13, 2026-11-14
     section Final Stabilization
-    v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-15
+    v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-30
 ```
 
 ---
@@ -96,11 +101,12 @@ MyHOME is engineered to achieve the **official Home Assistant 🥇 Platinum Qual
 > [!NOTE]
 > **Community Consultation on Upstream Core Inclusion vs. Independent Distribution**:  
 > While the integration strictly adheres to 100% of Home Assistant Core Platinum standards, the maintainers and community have **not decided** on upstream Core inclusion. As discussed in community channels (see [RFC Discussion #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)), there are important trade-offs:
+>
 > - **Benefits of Core inclusion**: Automatic out-of-the-box discovery for new Home Assistant users without requiring HACS; official documentation on `home-assistant.io`.
 > - **Drawbacks & Advantages of remaining an independent custom component**:
->   - **Release Agility**: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
->   - **Dedicated Diagnostic Frontend**: Continued bundling and rapid iteration of the in-band `<myhome-bus-card>` Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.
->   - **Community Traces & Plant Fixtures**: Fast, unencumbered additions of real-world captures and experimental protocol options.
+>     - **Release Agility**: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
+>     - **Dedicated Diagnostic Frontend**: Continued bundling and rapid iteration of the in-band `<myhome-bus-card>` Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.
+>     - **Community Traces & Plant Fixtures**: Fast, unencumbered additions of real-world captures and experimental protocol options.
 >
 > Feedback from installers and users is actively welcomed in our Discussions.
 
@@ -140,23 +146,24 @@ graph LR
 ```
 
 ### 📋 Quality Scale Audit Highlights
+
 1. **Bronze Tier**:
-   - `has-entity-name`: All entity implementations inherit device names cleanly without manual `self.entity_id` overrides.
-   - `runtime-data`: 100% single-source access via `entry.runtime_data` (`MyHomeData` dataclass); zero legacy `hass.data[DOMAIN]` global lookups.
-   - `action-setup`: Service actions registered once in `async_setup` and preserved across individual entry reloads.
+    - `has-entity-name`: All entity implementations inherit device names cleanly without manual `self.entity_id` overrides.
+    - `runtime-data`: 100% single-source access via `entry.runtime_data` (`MyHomeData` dataclass); zero legacy `hass.data[DOMAIN]` global lookups.
+    - `action-setup`: Service actions registered once in `async_setup` and preserved across individual entry reloads.
 
 2. **Silver Tier**:
-   - `test-coverage`: Enforced strict 100.0% statement and branch coverage across all integration modules (verified by `tests/test_coverage_enforcer.py`).
-   - `parallel-updates`: Explicit `PARALLEL_UPDATES = 0` declared across all 9 platform files to guarantee event-driven thread safety.
+    - `test-coverage`: Enforced strict 100.0% statement and branch coverage across all integration modules (verified by `tests/test_coverage_enforcer.py`).
+    - `parallel-updates`: Explicit `PARALLEL_UPDATES = 0` declared across all 9 platform files to guarantee event-driven thread safety.
 
 3. **Gold Tier**:
-   - `reconfiguration-flow`: In-place gateway IP address, port, password, and model corrections supported natively in the UI.
-   - `repair-issues`: Built-in repairs platform (`repairs.py`) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel `999`, duplicate address alerts, model conflicts).
-   - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
+    - `reconfiguration-flow`: In-place gateway IP address, port, password, and model corrections supported natively in the UI.
+    - `repair-issues`: Built-in repairs platform (`repairs.py`) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel `999`, duplicate address alerts, model conflicts).
+    - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
 
 4. **Platinum Tier**:
-   - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0b8`) on PyPI.
-   - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
+    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0b8`) on PyPI.
+    - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
 
 ---
 
@@ -178,7 +185,7 @@ graph TD
         GW_F461["🟢 F461<br/>(DALI DIN Web Server)"]
         GW_H4890["🟢 H4890 / AM4890<br/>(Touchscreen IP gateway #466)"]
         GW_F455["🟢 F455<br/>(Physical plant capture #466)"]
-        GW_3578["🟡 Legrand 3578<br/>(Serial/ZigBee Loopback)"]
+        GW_3578["🔴 Legrand 3578<br/>(Deferred to v2.1+ · #879)"]
     end
 
     subgraph Subsystems["⚙️ Protocol Subsystems & Scenarios"]
@@ -229,10 +236,10 @@ graph TD
     SUB_ROUTER --> HARNESS
 
     classDef covered fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
-    classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
+    classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
 
     class GW_MHS1,GW_F454,GW_MH200,GW_MH202,GW_F461,GW_H4890,GW_F455,SUB_LIGHT,SUB_DALI,SUB_F418,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_CU4695,SUB_FANCOIL,SUB_ENERGY,SUB_DRY,SUB_CEN,SUB_AUDIO,SUB_ALARM,SUB_ROUTER covered;
-    class GW_3578 partial;
+    class GW_3578 needed;
 ```
 
 ---
@@ -248,7 +255,7 @@ graph TD
 | **H4890 / AM4890** | 🟢 **Covered** | Livinglight / Axolute 3.5" touchscreen capture in #466 | *None needed — verified against physical display gateway.* |
 | **F461 Web Server** | 🟢 **Covered** | Issue #273 capture (@lyubomirtraykov) | *None needed — DALI DT8 ballasts verified.* |
 | **F455** | 🟢 **Covered** | Real-world plant capture in #466 (@lionelser) | *None needed — verified against physical F455 basic gateway.* |
-| **Legrand 3578 USB/Serial** | 🟡 **Profile Verified** | Loopback transport tests in `tests/test_gateway.py` | **Real-world USB serial stream**: Raw byte capture from physical OpenZigBee installation (`WHERE=<id>#9`). |
+| **Legrand 3578 USB/Serial** | 🔴 **Deferred (v2.1+)** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)) | **Hardware tester & raw serial stream**: Active tester + raw byte capture (`#466`) from physical OpenZigBee installation (`WHERE=<id>#9`). |
 
 ---
 

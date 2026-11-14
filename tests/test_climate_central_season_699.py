@@ -48,13 +48,18 @@ def _zone(where="#0", central=True):
 
 @_NEEDS_OWND_SEASON
 @pytest.mark.parametrize(
-    ("raw", "season"),
-    [("*4*202*#0##", "conditioning"), ("*4*102*#0##", "heating"), ("*4*103*#0##", "heating")],
+    ("raw", "season", "mode"),
+    [
+        # 102 / 202 are antifreeze / thermal protection: the central keeps the season's mode.
+        ("*4*202*#0##", "conditioning", HVACMode.COOL),
+        ("*4*102*#0##", "heating", HVACMode.HEAT),
+        ("*4*103*#0##", "heating", HVACMode.OFF),
+    ],
 )
-def test_central_off_frame_sets_the_season(raw, season):
+def test_central_off_frame_sets_the_season(raw, season, mode):
     central = _zone()
     central.handle_event(OWNEvent.parse(raw))
-    assert central.hvac_mode == HVACMode.OFF
+    assert central.hvac_mode == mode
     assert central.extra_state_attributes["season"] == season
 
 
@@ -65,7 +70,8 @@ def test_season_switch_sequence_from_the_f454_plant():
     assert central.extra_state_attributes["season"] == "conditioning"
     central.handle_event(OWNEvent.parse("*4*102*#0##"))
     assert central.extra_state_attributes["season"] == "heating"
-    assert central.hvac_mode == HVACMode.OFF
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.extra_state_attributes["central_operation"] == "antifreeze"
 
 
 @_NEEDS_OWND_SEASON

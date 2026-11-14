@@ -46,7 +46,7 @@ from .const import (
 )
 from .cover_translation import movement_translation
 from .topology import peer_handles_who
-from .where_grammar import is_central_thermo_where, is_probe, where_param
+from .where_grammar import is_central_unit_report, is_probe, where_param
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -266,6 +266,17 @@ class GatewayEventDispatcher:
             self._logger.debug("%s Data received is not a message: `None`", self.handler.log_id)
             return
 
+        if str(message) in ("*#*1##", "*#*0##"):
+            # Gateways such as MyHomeServer1 occasionally leak a stray session-level
+            # ACK/NACK (*#*1## / *#*0##) onto the *99*1## monitor stream under heavy
+            # WHO 4 bus load (#886); it carries no bus or entity state.
+            self._logger.debug(
+                "%s Ignored stray gateway ACK/NACK on event session: `%s`",
+                self.handler.log_id,
+                message,
+            )
+            return
+
         note_frame = getattr(self.handler, "note_event_frame", None)
         if callable(note_frame):
             note_frame()
@@ -307,7 +318,7 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and is_central_thermo_where(message):
+                if isinstance(message, OWNHeatingEvent) and is_central_unit_report(message):
                     self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
@@ -457,7 +468,9 @@ class GatewayEventDispatcher:
             iface = getattr(message, "interface", None)
             raw_tail = where_param(message)
             tail = raw_tail if isinstance(raw_tail, list) else []
-            has_interface = (isinstance(iface, str) and bool(iface)) or (len(tail) > 1 and tail[0] == "4")
+            has_interface = (isinstance(iface, str) and bool(iface)) or (
+                len(tail) == 2 and tail[0] == "4"
+            )
             if has_interface:
                 if getattr(self.handler, "interface_zone_request_refused", False):
                     return

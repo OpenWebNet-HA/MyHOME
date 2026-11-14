@@ -12,11 +12,11 @@ Three types of sensors are available in the MyHOME integration:
 
 - `who`: Optional, defaults to `18` for power/energy meters.
 - `where`:
-  - For `F520` meters: `'5'` followed by the sensor number (`'51'`, `'52'`, etc.).
-  - For `F522` meters: `'7'` followed by the sensor number (`'71'`, `'72'`, etc.).
+    - For `F520` meters: `'5'` followed by the sensor number (`'51'`, `'52'`, etc.).
+    - For `F522` meters: `'7'` followed by the sensor number (`'71'`, `'72'`, etc.).
 - `class`: Required, either `power` or `energy`.
-  - Setting `power`: Creates a live power entity (in Watts) plus 3 energy counter entities (total kWh, daily kWh, and monthly kWh).
-  - Setting `energy`: Creates energy counter entities without the live Watt display.
+    - Setting `power`: Creates a live power entity (in Watts) plus 3 energy counter entities (total kWh, daily kWh, and monthly kWh).
+    - Setting `energy`: Creates energy counter entities without the live Watt display.
 
 ```yaml
 f454:

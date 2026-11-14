@@ -36,6 +36,7 @@ REVIEWED: dict[str, str] = {
     "sensor.py::async_setup_entry.illuminance_bus_address": "WHO 1 light sensor: WHERE is the address",
     "media_player.py::_zone_address": "WHO 16: WHERE is the sound zone",
     "sound_source.py::who22_source_id": "WHO 22: WHERE (5#2#S or 2#S) names the tuner source a frame is about",
+    "sound_source.py::who22_tuner_listener.listener": "WHO 22: H/L4684 empty-WHERE (< 100 MHz) tuner report fallback",
     "media_player.py::MyHOMEMediaPlayer.handle_event": "WHO 16: WHERE is the sound zone",
     "cover.py::MyHOMECover.handle_event": "WHO 2 calibration: general frame test and the cover's own WHERE",
     "cover.py::MyHOMECover._handle_echo": "WHO 2 stop echo: general frame test (WHERE 0)",

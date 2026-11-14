@@ -8,7 +8,7 @@ This guide covers installing the **MyHOME** next-generation integration (`v2-pha
 
 - **Home Assistant**: Home Assistant Core 2026.3 or newer.
 - **Python Runtime**: Python 3.14+ (or official Home Assistant container).
-- **Physical Gateway**: An OpenWebNet IP gateway (F454, MyHomeServer1, MH200N/201/202, F453AV) connected via local Ethernet, or a 3578 USB/RS232 interface.
+- **Physical Gateway**: An OpenWebNet IP gateway (F454, F455, F461, MyHomeServer1, MH200N/201/202, F453AV) connected via local Ethernet.
 
 ---
 
@@ -24,7 +24,7 @@ If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste 
 
 ```bash
 # Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0b17"
+TAG="2.0.0b18"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \
@@ -56,7 +56,7 @@ ha core restart
 > Always ensure integration files reside in `/config/custom_components/myhome/`. Never extract files directly into `/config/custom_components/` root, and never retain backup directories inside `custom_components/` (e.g. `custom_components/myhome_old/`). In modern Home Assistant cores, extra Python packages or stray `__init__.py` files in `custom_components/` can prevent all custom integrations from loading.
 
 5. Restart Home Assistant:
-   - Go to **Developer Tools → YAML → Restart** (or **Settings → System → Restart**).
+    - Go to **Developer Tools → YAML → Restart** (or **Settings → System → Restart**).
 
 ---
 

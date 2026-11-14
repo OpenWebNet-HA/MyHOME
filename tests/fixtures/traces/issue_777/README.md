@@ -11,17 +11,18 @@ Contributed by **@eC0y0te** on [#777 (comment 6364859778)](https://github.com/Op
 ## What it shows
 
 ### 1. Point-to-point status `*#1*52##` is answered only by the `F411`
-- While empty and OFF (`13:54:54.780`): `tx *#1*52##` $\rightarrow$ single reply `rx *1*0*52##` (`+97 ms`) and `ACK` on the command session.
-- While occupied and ON (`13:58:58.519`): `tx *#1*52##` $\rightarrow$ single reply `rx *1*1*52##` (`+104 ms`).
+- While empty and OFF (`13:54:54.780`): `tx *#1*52##` → single reply `rx *1*0*52##` (`+97 ms`) and `ACK` on the command session.
+- While occupied and ON (`13:58:58.519`): `tx *#1*52##` → single reply `rx *1*1*52##` (`+104 ms`).
 - The `067226` detector never answers `*#1*52##`, so point-to-point lighting status polling does not collide on the shared address.
 
-### 2. Occupancy cycle: `WHAT 34` (movement) $\rightarrow$ `WHAT 39` (end of movement)
+### 2. Occupancy cycle: `WHAT 34` (movement) → `WHAT 39` (end of movement)
 Across every captured occupancy cycle:
+
 1. **Movement detected**: `*1*34*52##` (`WHAT 34`), followed `+40 ms` later by the detector's command translation `*1*1000#1*52##` and `+33 ms` later by the F411 state report `*1*1*52##`.
 2. **End of movement (~45 s after the last `*1*34*52##`)**:
-   - Cycle 1 (`13:57:56.599` $\rightarrow$ `13:58:42.547`, `45.948 s`): `*1*39*52##` $\rightarrow$ `*1*1000#0*52##` (`+71 ms`) $\rightarrow$ `*1*0*52##` (`+20 ms`).
-   - Cycle 2 (`14:02:55.459` $\rightarrow$ `14:03:42.028`, `46.569 s`): `*1*39*52##` $\rightarrow$ `*1*1000#0*52##` (`+50 ms`) $\rightarrow$ `*1*0*52##` (`+32 ms`).
-   - Cycle 3 (`14:16:52.782` $\rightarrow$ `14:17:38.588`, `45.806 s`): `*1*39*52##` $\rightarrow$ `*1*1000#0*52##` (`+68 ms`) $\rightarrow$ `*1*0*52##` (`+14 ms`).
+    - Cycle 1 (`13:57:56.599` → `13:58:42.547`, `45.948 s`): `*1*39*52##` → `*1*1000#0*52##` (`+71 ms`) → `*1*0*52##` (`+20 ms`).
+    - Cycle 2 (`14:02:55.459` → `14:03:42.028`, `46.569 s`): `*1*39*52##` → `*1*1000#0*52##` (`+50 ms`) → `*1*0*52##` (`+32 ms`).
+    - Cycle 3 (`14:16:52.782` → `14:17:38.588`, `45.806 s`): `*1*39*52##` → `*1*1000#0*52##` (`+68 ms`) → `*1*0*52##` (`+14 ms`).
 3. **Front-plate push button**: Pressing the physical push button on the `067226` emits `*1*1000#<0|1>*52##` followed by the F411's `*1*<0|1>*52##`, with no `WHAT 34` frame in between.
 
 ### 3. Anonymous `WHERE=0` dimension replies precede the command-session `*#*0##` NACK

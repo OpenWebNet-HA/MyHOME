@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import time
 from typing import Any, cast
 
@@ -21,6 +22,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import (
     CLIMATE_MODE_AUTO,
@@ -77,7 +79,8 @@ from .discovery import (
     default_known_keys,
     is_broadcast_where,
 )
-from .gateway import _ZONE_WHERE, MyHOMEGatewayHandler
+from .expose import is_exposed_on_bus
+from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, SILENT_ZONE_POLL, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
@@ -85,16 +88,19 @@ from .where_grammar import (
     canonical_thermo_zone,
     is_actuator_where,
     is_central_thermo_where,
+    is_central_unit_report,
     is_probe,
     is_pump,
     parse_thermo_actuator_where,
     thermo_event_actuator,
-    where_param,
+    thermo_event_interface,
     zone_number,
 )
 
 PLATFORM = Platform.CLIMATE
 PARALLEL_UPDATES = 0
+# How long one read of the silent-zone poll (#466) waits for its answer before giving up.
+PACED_READ_TIMEOUT = 60.0
 
 _FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
 # BTicino 3550 central unit (#0) diagnostic WHAT codes (OpenWebNet Thermoregulation v2.0.0 Table 5):
@@ -118,6 +124,32 @@ _PROTECTION_FRAME_WINDOW = 2.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
+# Central unit protection modes (WHO 4 p. 5 and p. 64): the plant keeps its season and
+# regulates to the protection setpoint; it is not switched off.
+_CENTRAL_PROTECTION = {"102": ("antifreeze", HVACMode.HEAT), "202": ("thermal_protection", HVACMode.COOL)}
+# 302 is generic protection (WHO 4 p. 5): the protection of the season the plant is in.
+_CENTRAL_GENERIC_PROTECTION = "302"
+# An F455 hands Home Assistant's own central command back on the event session 1 ms after
+# it was sent; the 3550's answers came 121 ms (*4*203*#0## to *4*303*#0##) or later on the
+# F461 and F455 (live, 2026-11-08). Only a frame inside this window can be the echo, so a
+# frame equal to the command that arrives later, from the central unit or another client,
+# is still taken as a report.
+_CENTRAL_ECHO_WINDOW = 0.1
+# While the command is still queued or in flight (its ``written`` future not done) the echo has
+# no deadline yet; past this time the gateway's command pool has given up on it
+# (gateway.PACED_WRITE_TIMEOUT), so the echo is no longer expected.
+_CENTRAL_ECHO_PENDING_LIMIT = 60.0
+# The 3550's status reply is its mode, then *4*20*#0## / *4*21*#0## (remote control), then
+# only the optional flags that are active (*4*22..24*#0##, *4*30*#0##, *4*31*#0##; WHO 4 p. 5,
+# p. 24-25). No frame says a flag is clear, so a flag that does not follow a 20 / 21 frame
+# within this time is clear. Live F461 and F455, 2026-11-08 / 11-09: 31 came 0-1 ms after 21.
+_CENTRAL_FLAGS_SETTLE = 1.0
+_CENTRAL_FLAG_WHATS = (22, 23, 24, 30, 31)
+# A generic *4*310/311*#Z## frame waits this long for the zone's seasonal status. An F455 put its
+# synthetic *4*311*#4## 59-61 ms before *4*210*#4## / *4*203*#4## / *4*202*#4## (18 of 18, live
+# 2026-11-08 / 11-09); a generic frame with no seasonal status after it is the zone's state (WHO 4 p. 9).
+_GENERIC_ZONE_FRAME_HOLD = 0.5
+_CONDITIONING_SEASONS = (SEASON_CONDITIONING, "cooling")
 
 # How long the fan speed poll waits for the one-shot dimension 19 answer (*#4*Z*19##,
 # 0.11 s on the live F461) before asking as it did before.
@@ -307,6 +339,25 @@ async def async_setup_entry(
             )
             return False
         if (
+            not ctx.cfg
+            and ctx.source == "bus"
+            and getattr(ctx.message, "dimension", None) == 0
+        ):
+            full_where = (
+                f"{ctx.address.where}#4#{ctx.address.interface}"
+                if ctx.address.interface
+                else ctx.address.where
+            )
+            if is_exposed_on_bus(hass, config_entry, 4, full_where):
+                zone_pair = thermo_zone_pair(ctx.address)
+                if zone_pair is not None:
+                    pending_actions.setdefault(zone_pair, {})["dim0"] = ctx.message
+                LOGGER.debug(
+                    "Deferring climate zone %s creation on exposed WHO=4 virtual probe Dimension 0 frame",
+                    ctx.address.key,
+                )
+                return False
+        if (
             ctx.source == "bus"
             and is_thermo_switch_actuator_zone(ctx.address)
             and getattr(ctx.message, "message_type", None) is None
@@ -448,16 +499,10 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     """Zones a heating frame concerns, and the F422 interface it came through."""
     raw_where = getattr(message, "where", None)
     zone = _bus_zone(message)
-    interface = getattr(message, "interface", None)
+    interface = thermo_event_interface(message)
     # OWNHeatingEvent keeps WHAT only as ``_what``; it has no ``what`` property.
     what = getattr(message, "what", None) or getattr(message, "_what", None)
     what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
-    tail = where_param(message)
-    if not interface and len(tail) > 1 and tail[0] == "4":
-        interface = str(tail[1])
-    elif not interface and len(tail) > 2 and tail[1] == "4":
-        interface = str(tail[2])
-    interface = _two_digit_interface(interface)
 
     zones: list[str] = []
     # WHERE ``<zone>#<n>`` names actuator <n> of the zone (``*#4*2#1*20*1##``
@@ -573,16 +618,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # HVACMode.OFF is always available, so climate.turn_off / turn_on must be
         # advertised explicitly (mandatory since core 2025.1).
         self._attr_supported_features = ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
-        self._attr_hvac_modes = [HVACMode.OFF]
         self._heating = heating
         self._cooling = cooling
         if heating or cooling:
             self._attr_supported_features |= ClimateEntityFeature.TARGET_TEMPERATURE
-            self._attr_hvac_modes.append(HVACMode.AUTO)
-            if heating:
-                self._attr_hvac_modes.append(HVACMode.HEAT)
-            if cooling:
-                self._attr_hvac_modes.append(HVACMode.COOL)
+        self._attr_hvac_modes = self._advertised_hvac_modes()
 
         # Fan mode support (fancoil 3-speed + auto)
         self._fan: bool = False
@@ -616,18 +656,37 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
         self._attr_native_current_temperature: float | None = None
         self._season: str | None = None
+        # Whether the season came from a frame since start-up, not from the restored state.
+        self._season_reported = False
+        # Central unit: the protection mode last reported (102 antifreeze, 202 thermal protection).
+        self._central_operation: str | None = None
+        # Central unit: Home Assistant's last command and when its local echo stops being expected,
+        # and the echo frame once seen (the same frame object can be delivered more than once).
+        self._central_echo: tuple[str, float | None, float] | None = None
+        self._central_echo_seen: object | None = None
         self._program: int | None = None
         self._holiday_days: int | None = None
         self._scenario: int | None = None
         self._attr_current_humidity: float | None = None
         self._target_temperature: float | None = None
         self._local_offset: float = 0
+        self._local_offset_reported = False
+        self._local_offset_read_sent = False
         self._knob_pos: str = "UNKNOWN"
         self._local_target_temperature: float | None = None
         # True while _local_target_temperature is the zone's own dimension 12 report (the
         # setpoint in force, offset included): dimension 14 and 13 frames then leave it alone.
         self._local_target_reported = False
+        self._dim12_at: float | None = None
+        self._dim14_at: float | None = None
+        self._written_target_temperature: tuple[float, float] | None = None
         self._current_temperature_restored = False
+        # True while the setpoint / the mode are what Home Assistant saved, not what the zone
+        # said since the restart: the silent-zone poll (#466) does not take them for a report.
+        self._target_temperature_restored = False
+        self._hvac_mode_restored = False
+        self._humidity_reported = False
+        self._fan_mode_reported = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
         # BTicino 3550 central unit (#0) diagnostic status flags (WHAT 20..24, 30, 31)
@@ -637,6 +696,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._at_least_one_probe_manual: bool = False
         self._failure_detected: bool = False
         self._battery_fault: bool = False
+        # The optional flags seen since the last 20 / 21 frame, and the timer that clears the others.
+        self._central_flags_seen: set[int] = set()
+        self._central_flags_unsub: Any = None
+        # A generic *4*310/311*#Z## frame held back until the zone's seasonal status shows whether
+        # it was only a prelude, the timer that applies it otherwise, and the frame being applied.
+        self._generic_zone_frame_unsub: Any = None
+        self._generic_zone_frame_release: object | None = None
 
         self._attr_hvac_mode: HVACMode | None = None
         self._attr_hvac_action: HVACAction | None = None
@@ -650,6 +716,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and not self._polls_temperature
                 and not self._fan
                 and not self._humidity
+                and not self._asks_local_offset
             )
         ):
             self._poll_on_add = False
@@ -695,6 +762,51 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._interface_poll_refused
             and not is_actuator_where(self._where)
         )
+
+    @property
+    def _local_offset_read_pending(self) -> bool:
+        """Whether a point-to-point local knob offset (Dimension 13) read is still owed (#466).
+
+        The gateway answers ``*#4*Z*13##`` with ``*#4*Z*13*OO##`` (``OO``: ``00`` centre,
+        ``01``..``03`` +1..+3, ``11``..``13`` -1..-3, ``4`` local OFF, ``5`` local protection; WHO
+        4 spec pages 16-17, Encyclopedia ``who-4-temperature-control/dimensions.md``). Knowing the
+        knob lets a setpoint write compensate it on the first write after a restart, instead of
+        waiting for the Dimension 12/14 echo of a write to derive it (#890). Not for the central
+        unit, a zone whose knob already reported, an actuator or probe address, or a zone behind
+        an interface the gateway does not route. A silent-zone gateway (``F455``,
+        ``SILENT_ZONE_POLL``) is excluded: a single-dimension read on a probe-less channel holds
+        its command session ~9 s before NACKing (#674), so there the knob read is folded into the
+        serial silent-zone poll (``_silent_zone_reads``) instead of a point-to-point request.
+
+        This deliberately ignores the one-shot send guard (``_local_offset_read_sent``): a zone
+        that has sent the read but not yet heard the answer still owes its knob, so
+        ``message_has_state`` must keep treating its state as incomplete until the knob arrives.
+        """
+        gateway = getattr(self, "_gateway_handler", None)
+        silent = (
+            getattr(gateway, "silent_zone_poll_needed", False) is True
+            or getattr(gateway, "model", None) in SILENT_ZONE_POLL
+        )
+        return (
+            not self._central
+            and not self._local_offset_reported
+            and not is_actuator_where(self._where)
+            and not is_probe(self._where)
+            and not self._interface_poll_refused
+            and not silent
+        )
+
+    @property
+    def _asks_local_offset(self) -> bool:
+        """Whether this zone sends ``*#4*Z*13##`` point-to-point now.
+
+        Every emulated gateway forwards the per-zone Dimension 13 request to the bus and none
+        crashes (own-firmware-oracle ``6341ba3``, 13 images; central/general forms are dropped on
+        10 of 13 and are not used). This is the send-path gate: a pending read (see
+        ``_local_offset_read_pending``) that has not already gone out. The model can be corrected
+        in band after ``__init__``, so this is re-evaluated at send time.
+        """
+        return self._local_offset_read_pending and not self._local_offset_read_sent
 
     def _enable_fan_mode(self) -> None:
         """Dynamically enable fan mode support if not already enabled."""
@@ -760,6 +872,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._interface is not None:
             attrs["Int"] = self._interface
         if self._central:
+            if self._central_operation is not None:
+                attrs["central_operation"] = self._central_operation
             if self._remote_control is not None:
                 attrs["remote_control"] = self._remote_control
             attrs["at_least_one_probe_off"] = self._at_least_one_probe_off
@@ -781,6 +895,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 restored_rc = last_state.attributes.get("remote_control")
                 if restored_rc in ("enabled", "disabled"):
                     self._remote_control = str(restored_rc)
+                restored_operation = last_state.attributes.get("central_operation")
+                if restored_operation in ("antifreeze", "thermal_protection"):
+                    self._central_operation = str(restored_operation)
                 self._at_least_one_probe_off = bool(
                     last_state.attributes.get("at_least_one_probe_off", False)
                 )
@@ -795,12 +912,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if last_state is not None and last_state.state is not None:
             try:
                 restored_mode = HVACMode(last_state.state)
-                if restored_mode in self._attr_hvac_modes:
+                # Any configured mode is restored (the plant's next frames replace it); the
+                # advertised list is recomputed around it.
+                if restored_mode in self._configured_hvac_modes():
                     self._attr_hvac_mode = restored_mode
                 else:
                     self._attr_hvac_mode = HVACMode.OFF
+                self._refresh_hvac_modes()
             except (ValueError, TypeError):
                 self._attr_hvac_mode = HVACMode.OFF
+            self._hvac_mode_restored = True
             target_temp = last_state.attributes.get("temperature")
             if target_temp is not None:
                 try:
@@ -819,6 +940,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         pass
                     self._target_temperature = shown - self._local_offset
                     self._local_target_temperature = shown
+                    self._target_temperature_restored = True
             if "program" in last_state.attributes:
                 try:
                     self._program = int(last_state.attributes["program"])
@@ -922,36 +1044,98 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._polls_temperature
             and not self._fan
             and not wants_humidity
+            and not self._asks_local_offset
         ):
-            # SCS-only gateways (F450, F453, F453AV, F454, F459, H4684, MH200, MH200N, MH202 in the
-            # firmware oracle; F455 and MH201 by field reports) expand the dimensionless zone status
-            # request *#4*Z## into four bus queries, dimension 0, 12, 14 and 13 ($0499ZZ3000 / 12 /
-            # 0E / 0D in trace-corpus.tsv). Against a 99-zone central unit every query is answered
-            # (F454 + #0, issue_629 log: *#4*1##..*#4*15## complete in ~1.3 s each with all five
-            # frames); a standalone thermostat answers only some of them, and the command session
-            # then ends with a NACK after 1.5-2 s (MH202 ACKs). The 10 s socket hang of #674 was an
-            # F455, not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing
-            # answered. MyHomeServer1 replies to *#4*Z## from its cache (#649); F460 and F461 expand
-            # it into one request ($00499013000) and answer it (#714): those three keep the poll.
-            # Where the SCS-only gateway also drops the general request *#4*0##, the zone asks for
-            # its temperature below (_polls_temperature); everywhere else it waits for the sweep
-            # replies or for the thermostat's own reports.
+            # SCS-only gateways without multi-session *#4*Z## verification (F450, F453, F453AV, F459,
+            # H4684, MH200, MH200N in the firmware oracle; F455 and MH201 by field reports) expand
+            # the dimensionless zone status request *#4*Z## into four bus queries, dimension 0, 12, 14 and
+            # 13 ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv). The 10 s socket hang of #674 was an F455,
+            # not in the oracle, on actuator-only channels (*#4*Z*19*0*0##) where nothing answered. F454
+            # (up to 4 command sessions) answers *#4*Z## in ~1.3 s and MH202 in ~160-250 ms with all five
+            # frames on both central units (#629) and standalone thermostats (#866); F460, F461 and
+            # MyHomeServer1 expand it onto the SCS bus ($0499013000) and answer all five frames in
+            # ~1.3-1.9 s (#649, #714, #886): those five keep the poll. Where an SCS-only gateway also drops
+            # the general request *#4*0##, the zone asks for its temperature below (_polls_temperature);
+            # everywhere else it waits for the sweep replies or for the thermostat's own reports.
             return
-        if self._poll_health.should_skip(time.time()):
-            LOGGER.debug("%s %s did not answer its last polls; not asking again yet", self._gateway_handler.log_id, self._display_name)
+        await self._async_send_zone_polls()
+
+    async def _send_zone_poll_frame(
+        self,
+        request: OWNCommand,
+        *,
+        pace: bool = False,
+        track_health: bool = False,
+    ) -> None:
+        """Send one WHO 4 status frame, register poll health if needed, and optionally pace."""
+        frames_before = self._poll_health.frames
+        written = await self._gateway_handler.send_status_request(request)
+        if track_health and isinstance(written, asyncio.Future):
+            written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
+        if pace:
+            pace_write = getattr(self._gateway_handler, "pace_startup_status_write", None)
+            if callable(pace_write):
+                await pace_write(written, request)
+
+    async def _async_send_zone_polls(
+        self,
+        *,
+        skip_reported: bool = False,
+        humidity_coalesced: bool = False,
+        pace: bool = False,
+    ) -> None:
+        """Dispatch point-to-point WHO 4 status queries needed by this entity."""
+        wants_humidity = (
+            self._humidity
+            and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
+        )
+        ask_status = self._central or (
+            self._gateway_supports_zone_status
+            and (not skip_reported or not self._core_zone_state_reported())
+        )
+        ask_temp = (
+            not self._central
+            and not self._gateway_supports_zone_status
+            and self._polls_temperature
+            and (not skip_reported or not self._temperature_reported())
+        )
+        ask_fan = (
+            self._fan
+            and self._season_has_fan_coil()
+            and (not skip_reported or not self._fan_mode_reported)
+        )
+        ask_humidity = (
+            wants_humidity
+            and not humidity_coalesced
+            and (not skip_reported or not self._humidity_reported)
+        )
+        ask_offset = self._asks_local_offset and not ask_status
+        if skip_reported and not (ask_status or ask_temp or ask_fan or ask_humidity or ask_offset):
+            self._bus_state_complete = True
+            LOGGER.debug(
+                "%s: state already reported on the bus, skipping post-discovery poll",
+                self.entity_id,
+            )
+            return
+        if (ask_status or ask_temp or ask_fan or ask_humidity) and self._poll_health.should_skip(time.time()):
+            LOGGER.debug(
+                "%s %s did not answer its last polls; not asking again yet",
+                self._gateway_handler.log_id,
+                self._display_name,
+            )
             self._raise_unresponsive_issue()
             return
-        if self._central or self._gateway_supports_zone_status:
+        if ask_status:
             # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
             # reporting its mode via *4*202*#0## (conditional OFF) and operational flags (#629). Dimension 14
             # (*#4*#0*14##) is NACKed. Only an F454 has been captured so far, so the poll is informational:
             # an unanswered one never counts towards the "unresponsive zone" repair.
-            request = OWNHeatingCommand.status(self._full_where)
-            frames_before = self._poll_health.frames
-            written = await self._gateway_handler.send_status_request(request)
-            if isinstance(written, asyncio.Future) and not self._central:
-                written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
-        elif self._polls_temperature:
+            await self._send_zone_poll_frame(
+                OWNHeatingCommand.status(self._full_where),
+                pace=pace,
+                track_health=not self._central,
+            )
+        elif ask_temp:
             # One bus query instead of the four that *#4*Z## expands into: *#4*Z*0## is forwarded on
             # all twelve oracle gateways (thermo-ts10.tsv) and a populated zone answers it in ~120 ms
             # (F461 2.0.11, f461_live_2026-10-23 rows 521-525: *#4*2*0## -> *#4*2*0*0239## + ACK in
@@ -963,31 +1147,53 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # is the bus TX timeout of an unpopulated zone (the QEMU images have no thermostat
             # wired; the live F461 NACKs the unpopulated zone 1 the same way after 2.07 s, rows
             # 374-376), not a verdict on a populated one. Until a command-session capture of
-            # *#4*Z*0## on an SCS-only gateway (F454 / MH200) exists, the result is left uncounted
-            # rather than risk marking a healthy zone unresponsive on a NACK.
-            await self._gateway_handler.send_status_request(OWNHeatingCommand.get_temperature(self._full_where))
-        if self._fan and self._season_has_fan_coil():
-            await self._gateway_handler.send_status_request(
-                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##"))
+            # *#4*Z*0## on a single-session SCS-only gateway (MH200 / H4684) exists, the result is
+            # left uncounted rather than risk marking a healthy zone unresponsive on a NACK.
+            await self._send_zone_poll_frame(
+                OWNHeatingCommand.get_temperature(self._full_where),
+                pace=pace,
             )
-        if wants_humidity:
-            await self._gateway_handler.send_status_request(
-                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*60##"))
+        if ask_fan:
+            await self._send_zone_poll_frame(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*11##")),
+                pace=pace,
             )
-        elif self._humidity:
+        if ask_humidity:
+            await self._send_zone_poll_frame(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{self._full_where}*60##")),
+                pace=pace,
+            )
+        elif self._humidity and not wants_humidity:
             LOGGER.debug(
                 "%s Zone %s: this gateway refuses humidity requests; not asked (a *#4*%s*60*HH## event still updates it)",
                 self._gateway_handler.log_id,
                 self._full_where,
                 self._full_where,
             )
+        if ask_offset:
+            # *#4*Z*13## carries the knob directly, so the first setpoint write after a
+            # restart is compensated without waiting for a write echo (#890 stays the fallback).
+            # Built from the zone number so a `#Z` / `4-Z` myhome.yaml entry does not send the
+            # central-unit form *#4*#Z*13## (dropped on 10 of 13 oracle images). Sent last,
+            # paced, not counted for poll health: an unpopulated zone NACKs it like *#4*Z*0##.
+            self._local_offset_read_sent = True  # once per entity lifetime; a never-answering zone is not re-asked
+            zone = zone_number(self._where)
+            routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
+            await self._send_zone_poll_frame(
+                cast(OWNCommand, OWNHeatingCommand.parse(f"*#4*{zone}{routing}*13##")),
+                pace=pace,
+            )
 
     @callback
     def _poll_answered(self, written: asyncio.Future[float], frames_before: int) -> None:
         """Count a status request the gateway refused or never answered (see ``poll_health``)."""
         if written.cancelled():
-            if not getattr(self._gateway_handler, "is_connected", False) or self._poll_health.frames != frames_before:
-                return  # the gateway was away, or the zone did answer
+            if (
+                getattr(written, "_gateway_desync", False)
+                or not getattr(self._gateway_handler, "is_connected", False)
+                or self._poll_health.frames != frames_before
+            ):
+                return  # gateway FIFO desync (#886), gateway was away, or the zone did answer
             if self._poll_health.failed(time.time()):
                 LOGGER.info("%s %s did not answer its status request twice in a row", self._gateway_handler.log_id, self._display_name)
                 self._raise_unresponsive_issue()
@@ -995,6 +1201,76 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif self._poll_health.answered():
             self._clear_unresponsive_issue()
             self._publish_state()
+
+    def _temperature_reported(self) -> bool:
+        """Whether this zone's ambient temperature arrived from the bus since startup."""
+        return (
+            self._attr_native_current_temperature is not None
+            and not self._current_temperature_restored
+        )
+
+    def _core_zone_state_reported(self) -> bool:
+        """Whether live temperature, operating mode, and setpoint (when running) arrived on the bus."""
+        if not self._temperature_reported():
+            return False
+        if self._attr_hvac_mode is None or self._hvac_mode_restored:
+            return False
+        if self._attr_hvac_mode == HVACMode.OFF:
+            return True
+        return self.native_target_temperature is not None and not self._target_temperature_restored
+
+    def _refresh_bus_state_complete(self) -> None:
+        """Mark ``_bus_state_complete`` once every field the startup poll asks has arrived live."""
+        if self._central or is_actuator_where(self._where):
+            return
+        if self._gateway_supports_zone_status:
+            core_ok = self._core_zone_state_reported()
+        elif self._polls_temperature:
+            core_ok = self._temperature_reported()
+        else:
+            core_ok = True
+        fan_ok = not (self._fan and self._season_has_fan_coil()) or self._fan_mode_reported
+        wants_humidity = (
+            self._humidity
+            and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
+        )
+        hum_ok = not wants_humidity or self._humidity_reported
+        self._bus_state_complete = bool(core_ok and fan_ok and hum_ok)
+
+    async def _async_poll_after_discovery(self) -> None:
+        """Poll WHO 4 zone state after discovery, coalescing humidity and pacing per-zone reads (#886)."""
+        handler = self._gateway_handler
+        startup_lock = getattr(handler, "_who4_startup_poll_lock", None)
+        if (
+            self._central
+            or is_actuator_where(self._where)
+            or self._interface_poll_refused
+            or not isinstance(startup_lock, asyncio.Lock)
+        ):
+            await super()._async_poll_after_discovery()
+            return
+
+        await handler.wait_for_initial_discovery()
+
+        wants_humidity = (
+            self._humidity
+            and getattr(handler, "humidity_request_refused", False) is not True
+        )
+        humidity_coalesced = False
+        if wants_humidity and not self._humidity_reported and _ZONE_WHERE.match(self._full_where):
+            humidity_coalesced = self._request_zone_dimension(60)
+
+        wait_zone_reqs = getattr(handler, "wait_for_zone_requests", None)
+        if callable(wait_zone_reqs):
+            await wait_zone_reqs()
+
+        async with startup_lock:
+            self._refresh_bus_state_complete()
+            await self._async_send_zone_polls(
+                skip_reported=True,
+                humidity_coalesced=humidity_coalesced,
+                pace=True,
+            )
 
     def _season_has_fan_coil(self) -> bool:
         """Whether the fan speed request makes sense right now.
@@ -1118,6 +1394,60 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return self._standalone_config
         return getattr(self._gateway_handler, "has_central_unit", False) is not True
 
+    def _configured_hvac_modes(self) -> list[HVACMode]:
+        """Every mode the zone's configuration allows, before the plant's topology is applied."""
+        modes = [HVACMode.OFF]
+        if self._heating or self._cooling:
+            modes.append(HVACMode.AUTO)
+            if self._heating:
+                modes.append(HVACMode.HEAT)
+            if self._cooling:
+                modes.append(HVACMode.COOL)
+        return modes
+
+    def _advertised_hvac_modes(self) -> list[HVACMode]:
+        """The modes ``async_set_hvac_mode`` can honour for this zone's place in the plant.
+
+        ``auto`` is the central unit's program: a standalone thermostat on a plant with a
+        central unit has none (``*4*311*#2##`` is ACKed by the live F461 and nothing answers;
+        ``auto`` on zone 2 answered HTTP 400 on both gateway entries, 2026-11-12 14:37 UTC),
+        so it is not offered once the central unit is known. A zone of the central unit runs
+        in the central's season: the off-season mode (``heat`` in conditioning, 2026-11-12
+        15:13 UTC on zone 4, HTTP 400) is not offered while that season is reported. The
+        central unit itself and a standalone thermostat without a central unit keep every
+        mode. The mode shown is never dropped (Home Assistant lists it).
+        """
+        modes = [HVACMode.OFF]
+        if self._heating or self._cooling:
+            has_central = getattr(self._gateway_handler, "has_central_unit", False) is True
+            if self._central or not (self._standalone and has_central):
+                modes.append(HVACMode.AUTO)
+            # Called from the constructor before the season fields exist.
+            season = getattr(self, "_season", None)
+            under_central = (
+                not self._central
+                and not self._standalone
+                and has_central
+                and getattr(self, "_season_reported", False)
+                and season is not None
+            )
+            if self._heating and not (under_central and season in _CONDITIONING_SEASONS):
+                modes.append(HVACMode.HEAT)
+            if self._cooling and not (under_central and season == SEASON_HEATING):
+                modes.append(HVACMode.COOL)
+        current = getattr(self, "_attr_hvac_mode", None)
+        if current is not None and current not in modes:
+            modes.append(current)
+        return modes
+
+    def _refresh_hvac_modes(self) -> bool:
+        """Recompute the advertised modes; True when the list changed."""
+        modes = self._advertised_hvac_modes()
+        if modes == self._attr_hvac_modes:
+            return False
+        self._attr_hvac_modes = modes
+        return True
+
     def _remember_season(self, message: Any) -> None:
         """Keep the season a mode frame carries (``*4*102*#0##`` heating, ``*4*202*#0##`` conditioning).
 
@@ -1127,6 +1457,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         season = getattr(message, "season", None)
         if isinstance(season, str):
             self._season = season
+            self._season_reported = True
 
     def _raise_unresponsive_issue(self) -> None:
         self._report_fault(FaultKind.UNRESPONSIVE)
@@ -1140,7 +1471,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if target_hass is not None:
             if self._central:
                 self._clear_unresponsive_issue()
-            elif self._standalone_config is not True:
+                self.async_on_remove(self._cancel_central_flag_cycle)
+            else:
+                self.async_on_remove(self._cancel_generic_zone_frame)
+            if not self._central and self._standalone_config is not True:
                 self.async_on_remove(
                     async_dispatcher_connect(
                         target_hass,
@@ -1162,6 +1496,101 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
+            # Whether the gateway wants the silent-zone poll (#466) is decided inside the task,
+            # once the startup sweep and the grace period are over: the in-band identity (WHO 13 /
+            # WHO 1013) can still correct the model after the entities were added, as the
+            # actuator request already allows for (``watch_zone_actuators``). So the task is
+            # scheduled when the gateway wants the poll now, or while the sweep is still to run
+            # and the model may still change.
+            if (
+                not self._interface_poll_refused
+                and not is_actuator_where(self._where)
+                and target_hass is not None
+                and (
+                    getattr(self._gateway_handler, "silent_zone_poll_needed", False) is True
+                    or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+                )
+            ):
+                task = target_hass.async_create_background_task(
+                    self._poll_if_silent(), name=f"myhome_{self.entity_id}_silent_zone_poll"
+                )
+
+                def _cancel_silent_zone_poll() -> None:
+                    task.cancel()
+
+                self.async_on_remove(_cancel_silent_zone_poll)
+
+    def _silent_zone_reads(self) -> list[str]:
+        """The reads of the silent-zone poll (#466) this zone still needs, in the order they go out.
+
+        What the zone said since the restart is not asked again; a value Home Assistant restored
+        is. The temperature (``*0``) comes first because a zone without a probe refuses it, and
+        that refusal ends the poll. The setpoint (``*14``), then the setpoint in force (``*12``,
+        the F455 follows its reply with the zone's season frame, which gives the mode), then
+        actuator 1 (``#1*20``) last: ``hvac_action`` is derived when an actuator report finds the
+        mode known. The zone is named by its number: a ``#Z`` entry of ``myhome.yaml`` would
+        otherwise ask through the central unit, and an actuator behind an interface is
+        ``Z#N#4#II``, not ``Z#4#II#N``.
+        """
+        zone = zone_number(self._where)
+        routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
+        temperature_known = self._attr_native_current_temperature is not None and not self._current_temperature_restored
+        setpoint_known = self.native_target_temperature is not None and not self._target_temperature_restored
+        mode_known = self._attr_hvac_mode is not None and not self._hvac_mode_restored
+        reads: list[str] = []
+        if not temperature_known:
+            reads.append(f"*#4*{zone}{routing}*0##")
+        if not self._local_offset_reported and not is_probe(self._where):
+            # The knob read (#466) goes after *0## (a probe-less zone refuses *0## and the
+            # serial poll ends there) and before *14## / *12## so a reported knob keeps the
+            # #890 derivation from running on the setpoint echo. A zone that reported its
+            # temperature itself skips *0## and asks only *13## here: it has a probe (the
+            # temperature proves it), so this is safe. F455 1.0.76 answered *#4*2*13## ->
+            # *#4*2*13*00## in 0.108 s (F455_direct_requests_2026-11-06.jsonl line 70).
+            reads.append(f"*#4*{zone}{routing}*13##")
+        if not setpoint_known:
+            reads.append(f"*#4*{zone}{routing}*14##")
+        if not setpoint_known or not mode_known:
+            reads.append(f"*#4*{zone}{routing}*12##")
+        if not self._actuator_states and self._zone_active is None:
+            reads.append(f"*#4*{zone}#1{routing}*20##")
+        return reads
+
+    async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
+        """Ask a zone that has not reported by itself since the startup sweep, read by read (#466).
+
+        Only on a gateway in ``SILENT_ZONE_POLL`` (the one that serves WHO 4, read once the
+        in-band identity has had the sweep and the grace period to settle). Nothing goes out for
+        what the zone reported itself (``_silent_zone_reads``). Each read waits for the previous
+        one to be answered, so a refused or unanswered read (a zone without a probe) ends it
+        after one request.
+        """
+        wait = getattr(self._gateway_handler, "wait_for_initial_discovery", None)
+        if callable(wait):
+            waiting = wait()
+            if inspect.isawaitable(waiting):
+                await waiting
+        await asyncio.sleep(grace)
+        if getattr(self._gateway_handler, "silent_zone_poll_needed", False) is not True:
+            return  # not an F455 after all, or its zones are another gateway's to ask
+        reads = self._silent_zone_reads()
+        if not reads:
+            return  # the zone reported its temperature, setpoint, mode and an actuator on its own
+        LOGGER.debug(
+            "%s %s has not reported since the startup sweep; asking %s", self._gateway_handler.log_id, self._display_name, reads
+        )
+        for frame in reads:
+            try:
+                written: object = await self._gateway_handler.send_status_request(
+                    cast(OWNCommand, OWNHeatingCommand.parse(frame))
+                )
+            except Exception:  # a transport error must not end the task silently (#593)
+                LOGGER.exception("%s %s: `%s` could not be sent", self._gateway_handler.log_id, self._display_name, frame)
+                return
+            if isinstance(written, asyncio.Future):
+                await asyncio.wait([written], timeout=PACED_READ_TIMEOUT)
+                if not written.done() or written.cancelled():
+                    return
 
     def _refuse_interface_write(self) -> bool:
         """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
@@ -1194,6 +1623,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._attr_hvac_mode != HVACMode.OFF and HVACMode.AUTO in self._attr_hvac_modes:
                 self._attr_hvac_mode = HVACMode.AUTO
         self._hydrate_nominal_from_local(prev_mode)
+        self._refresh_hvac_modes()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1264,12 +1694,60 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return self._local_target_temperature - self._local_offset
         return None
 
+    def _derive_local_offset(self, local_target: float | None, nominal_target: float | None) -> bool:
+        """Derive the knob offset from a paired Dimension 12 and Dimension 14 when Dimension 13 is absent (#466)."""
+        if (
+            self._local_offset_reported
+            or self._attr_hvac_mode in (None, HVACMode.OFF)
+            or local_target is None
+            or nominal_target is None
+        ):
+            return False
+        diff = round(local_target - nominal_target, 1)
+        if not (-3.0 <= diff <= 3.0 and float(diff).is_integer()):
+            return False
+        offset = int(diff)
+        if offset == 0 and self._local_offset == 0:
+            return False
+        self._local_offset = offset
+        self._knob_pos = "0" if offset == 0 else f"{offset:+d}"
+        return True
+
+    def _reconcile_local_target(self) -> None:
+        """Update nominal setpoint and derived knob offset from a Dimension 12 report (#466)."""
+        now = time.monotonic()
+        written = self._written_target_temperature
+        self._written_target_temperature = None
+        if written is not None and now - written[1] <= _PROTECTION_FRAME_WINDOW:
+            self._derive_local_offset(self._local_target_temperature, written[0])
+            self._dim12_at = None
+            self._dim14_at = None
+        elif self._dim14_at is not None and now - self._dim14_at <= _PROTECTION_FRAME_WINDOW:
+            self._derive_local_offset(self._local_target_temperature, self._target_temperature)
+            self._dim12_at = None
+            self._dim14_at = None
+        self._target_temperature = (
+            self._local_target_temperature - self._local_offset
+            if self._local_target_temperature is not None
+            else None
+        )
+
     def _hydrate_nominal_from_local(self, prev_mode: HVACMode | None) -> None:
         """Promote an initial Dimension 12/14 reading once the zone is known to be active (#819)."""
         if self._central or prev_mode is not None or self._attr_hvac_mode in (None, HVACMode.OFF):
             return
-        if self._target_temperature is None and self._local_target_temperature is not None:
-            self._target_temperature = self._local_target_temperature - self._local_offset
+        if self._local_target_temperature is not None and self._local_target_reported:
+            if (
+                self._written_target_temperature is None
+                and self._target_temperature is not None
+                and self._dim14_at is not None
+                and time.monotonic() - self._dim14_at <= _PROTECTION_FRAME_WINDOW
+            ):
+                self._derive_local_offset(self._local_target_temperature, self._target_temperature)
+                self._dim12_at = None
+                self._dim14_at = None
+            else:
+                self._reconcile_local_target()
         elif (
             self._local_target_temperature is None
             and self._target_temperature is not None
@@ -1277,21 +1755,58 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         ):
             self._local_target_temperature = self._target_temperature + self._local_offset
 
-    def _reset_central_status_flags(self) -> None:
-        """Reset optional central unit (#0) flags at the start of a new mode/status burst (#819).
+    def _begin_central_flag_cycle(self) -> None:
+        """Start collecting the 3550's optional flags after its remote-control frame (#819).
 
-        On ``*#4*#0##`` (and unsolicited ``#0`` status bursts), the BTicino 3550 emits its
-        operating mode frame first (``*4*1101*#0##``, ``*4*102*#0##``, etc.), followed by
-        ``WHAT 20``/``21`` and whichever optional fault/probe flags (``WHAT 22, 23, 24, 30, 31``)
-        are currently active. Optional flags have no separate all-clear code and are simply
-        omitted once resolved.
+        On ``*#4*#0##`` (and unsolicited ``#0`` bursts) the 3550 sends its operating mode,
+        ``WHAT 20``/``21``, then whichever optional flags (``WHAT 22, 23, 24, 30, 31``) are
+        active (WHO 4 p. 24-25). A flag has no all-clear code; it is omitted once resolved.
+        The flags are not cleared here: clearing them at the start of the burst wrote
+        ``battery_fault`` False and, 2 ms later, True on every reply of a 3550 without a
+        battery (live F461 + F455, 2026-11-09). A flag still missing when the burst has
+        settled is cleared by ``_settle_central_flags``. A second copy of the same frame
+        (climate and sensor platform routing) does not restart an open cycle.
         """
-        self._at_least_one_probe_off = False
-        self._at_least_one_probe_antifreeze = False
-        self._at_least_one_probe_manual = False
-        self._failure_detected = False
-        self._battery_fault = False
-        self._clear_fault(FaultKind.CENTRAL_BATTERY_FAULT)
+        if self._central_flags_unsub is not None:
+            return
+        self._central_flags_seen = set()
+        if self.hass is None or self.platform is None or not self.entity_id:
+            # Not live yet (discovery seed, restore): nothing is written in between, so there is
+            # no flip to avoid; the flags of this burst follow directly.
+            self._settle_central_flags(None)
+            return
+        self._central_flags_unsub = async_call_later(self.hass, _CENTRAL_FLAGS_SETTLE, self._settle_central_flags)
+
+    @callback
+    def _settle_central_flags(self, _now: Any) -> None:
+        """Clear the optional central flags the last burst did not report."""
+        self._central_flags_unsub = None
+        seen = self._central_flags_seen
+        before = self._central_flag_values()
+        self._at_least_one_probe_off = 22 in seen
+        self._at_least_one_probe_antifreeze = 23 in seen
+        self._at_least_one_probe_manual = 24 in seen
+        self._failure_detected = 30 in seen
+        self._battery_fault = 31 in seen
+        if not self._battery_fault:
+            self._clear_fault(FaultKind.CENTRAL_BATTERY_FAULT)
+        if self._central_flag_values() != before:
+            self._publish_state()
+
+    def _central_flag_values(self) -> tuple[bool, ...]:
+        return (
+            self._at_least_one_probe_off,
+            self._at_least_one_probe_antifreeze,
+            self._at_least_one_probe_manual,
+            self._failure_detected,
+            self._battery_fault,
+        )
+
+    @callback
+    def _cancel_central_flag_cycle(self) -> None:
+        if self._central_flags_unsub is not None:
+            self._central_flags_unsub()
+            self._central_flags_unsub = None
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         """Set new target hvac mode."""
@@ -1306,12 +1821,41 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             }
             cmd_mode = mode_map.get(hvac_mode)
             if cmd_mode:
-                await self._gateway_handler.send(
-                    OWNHeatingCommand.set_central_mode(
-                        where=self._where,
-                        mode=cmd_mode,
-                    )
+                command = OWNHeatingCommand.set_central_mode(
+                    where=self._where,
+                    mode=cmd_mode,
                 )
+                # Armed before sending, without a deadline: the echo can arrive while the frame
+                # waits in the command pool or while send() is still awaited. The window starts
+                # when the frame is written (the ``written`` future's result), not now, so a busy
+                # CommandWorkerPool does not push the echo out of it.
+                frame = str(command)
+                armed_at = time.monotonic()
+                self._central_echo = (frame, None, armed_at)
+                try:
+                    written: Any = await self._gateway_handler.send(command)
+                except BaseException:
+                    self._central_echo = None
+                    raise
+                if isinstance(written, asyncio.Future):
+
+                    def _on_written(future: "asyncio.Future[float]", armed_at: float = armed_at) -> None:
+                        self._anchor_central_echo(armed_at, future)
+
+                    written.add_done_callback(_on_written)
+                else:
+                    self._anchor_central_echo(armed_at, None)
+                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
+                    # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
+                    # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
+                    # or nothing when the season does not change (live F461 and F455,
+                    # 2026-11-08), so the mode shown comes from that answer. A 4-zone
+                    # central (#0#1..#0#4) is not polled and its reports are routed to the
+                    # zone, so it keeps the mode it was set to.
+                    return
+                self._central_operation = None
+                if hvac_mode == HVACMode.OFF:
+                    self._attr_hvac_action = HVACAction.OFF
                 self._attr_hvac_mode = hvac_mode
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -1359,6 +1903,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     )
                 )
                 return
+            if self._standalone:
+                # *4*311*#Z## asks the central unit to put zone Z on its program (WHO 4
+                # p. 9). A standalone thermostat is not one of its zones: the live F461
+                # (3550 on the bus, zone 2 standalone) ACKs the frame and nothing answers.
+                raise ServiceValidationError(
+                    f"{self._display_name} is a standalone thermostat: the central unit has no program for it",
+                    translation_domain=DOMAIN,
+                    translation_key="auto_standalone_zone",
+                    translation_placeholders={"name": self._display_name},
+                )
             cmd = OWNHeatingCommand.set_mode(
                 where=self._where,
                 mode=CLIMATE_MODE_AUTO,
@@ -1366,25 +1920,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             if cmd is not None:
                 await self._gateway_handler.send(cmd)
-        elif hvac_mode == HVACMode.HEAT:
-            nominal = self._effective_nominal_temperature()
-            if nominal is not None:
-                await self._gateway_handler.send(
-                    OWNHeatingCommand.set_temperature(
-                        where=self._where,
-                        temperature=nominal,
-                        mode=CLIMATE_MODE_HEAT,
-                        standalone=self._standalone,
-                    )
+        elif hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
+            heat = hvac_mode == HVACMode.HEAT
+            under_central = not self._standalone and getattr(self._gateway_handler, "has_central_unit", False) is True
+            if under_central and self._season_reported and self._season is not None and (
+                self._season in _CONDITIONING_SEASONS if heat else self._season == SEASON_HEATING
+            ):
+                # A zone of a central unit runs in the central's season. The live 3550
+                # (2026-11-08, plant in conditioning) answers nothing to a heating setpoint
+                # for its zone 4; the season is changed on the central unit.
+                raise ServiceValidationError(
+                    f"{self._display_name} follows the central unit, which is in the {self._season} season",
+                    translation_domain=DOMAIN,
+                    translation_key="zone_heat_in_conditioning_season" if heat else "zone_cool_in_heating_season",
+                    translation_placeholders={"name": self._display_name},
                 )
-        elif hvac_mode == HVACMode.COOL:
             nominal = self._effective_nominal_temperature()
             if nominal is not None:
                 await self._gateway_handler.send(
                     OWNHeatingCommand.set_temperature(
                         where=self._where,
                         temperature=nominal,
-                        mode=CLIMATE_MODE_COOL,
+                        mode=CLIMATE_MODE_HEAT if heat else CLIMATE_MODE_COOL,
                         standalone=self._standalone,
                     )
                 )
@@ -1420,6 +1977,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # The write's echo decides what is shown next: dimension 12 where the gateway reports
         # the setpoint in force (F461, MyHomeServer1), else the commanded dimension 14.
         self._local_target_reported = False
+        self._written_target_temperature = (target_temperature, time.monotonic())
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
@@ -1445,6 +2003,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         previous nominal back (#383).
         """
         remembered, self._nominal_before_dim12 = self._nominal_before_dim12, None
+        self._dim12_at = None
+        self._dim14_at = None
         if remembered is not None and time.monotonic() - remembered[1] <= _PROTECTION_FRAME_WINDOW:
             self._target_temperature = remembered[0]
 
@@ -1458,6 +2018,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         self._local_target_temperature = self._target_temperature + self._local_offset
         self._local_target_reported = False
+        self._dim12_at = None
+        self._dim14_at = None
 
     def _apply_zone_state(self, message: OWNHeatingEvent) -> None:
         """Dimension 7: the zone's operating state, and its setpoint in state 'setpoint'.
@@ -1469,6 +2031,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if state in _ZONE_STATES_OFF:
             self._restore_nominal_before_protection()
             self._attr_hvac_mode = HVACMode.OFF
+            self._hvac_mode_restored = False
             self._attr_hvac_action = HVACAction.OFF
             self._mark_actuators_off()
             self._holiday_days = None
@@ -1481,11 +2044,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         mode = _ZONE_CONTEXT_MODES.get(getattr(message, "zone_context", None) or "")
         if mode is not None and mode in self._attr_hvac_modes:
             self._attr_hvac_mode = mode
+            self._hvac_mode_restored = False  # the zone reported the mode it runs in
             if self._attr_hvac_action == HVACAction.OFF:
                 self._attr_hvac_action = HVACAction.IDLE
         temperature = message.set_temperature if state == "setpoint" else None
         if temperature is not None:
             self._target_temperature = temperature
+            self._target_temperature_restored = False
         else:
             self._hydrate_nominal_from_local(prev_mode)
         if self._attr_hvac_mode != HVACMode.OFF and self._target_temperature is not None and (
@@ -1494,12 +2059,155 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._show_nominal()
 
     @callback
+    def _anchor_central_echo(self, armed_at: float, written: "asyncio.Future[float] | None") -> None:
+        """Start the echo window at the time the command was written (MyHOMEGatewayHandler.send).
+
+        The future resolves to the monotonic time taken just before the frame went on the
+        socket; it is cancelled when the frame is never written, and then no echo comes.
+        Without a future (a gateway double, a delegated send) the window starts now. Only the
+        command armed at ``armed_at`` is anchored: a later command, even the same frame, keeps
+        waiting for its own write.
+        """
+        echo = self._central_echo
+        if echo is None or echo[2] != armed_at:
+            return
+        frame = echo[0]
+        if written is None:
+            self._central_echo = (frame, time.monotonic() + _CENTRAL_ECHO_WINDOW, echo[2])
+            return
+        if written.cancelled() or written.exception() is not None:
+            self._central_echo = None
+            return
+        self._central_echo = (frame, float(written.result()) + _CENTRAL_ECHO_WINDOW, echo[2])
+
+    @callback
+    def _is_own_central_echo(self, message: OWNHeatingEvent) -> bool:
+        """Whether ``message`` is the gateway handing back Home Assistant's own central command.
+
+        An F455 returns ``*4*0*#0##`` on the event session 1 ms after Home Assistant sent it,
+        whether or not the 3550 answers (live, 2026-11-08); an F461 does not. The echo is not
+        the central unit's state: taken as a season frame it cleared the battery flag the 3550
+        had just reported and turned the action from OFF to IDLE.
+
+        The climate and sensor platforms both route WHO 4 frames to the zone, so the one
+        echo frame can reach this entity twice, as the same object (live) or as another copy:
+        every frame equal to the command inside the window is the echo, and the same object
+        stays recognised after it.
+        """
+        if message is self._central_echo_seen:
+            return True
+        echo = self._central_echo
+        if echo is None:
+            return False
+        frame, deadline, armed_at = echo
+        now = time.monotonic()
+        if (deadline is None and now - armed_at > _CENTRAL_ECHO_PENDING_LIMIT) or (
+            deadline is not None and now > deadline
+        ):
+            self._central_echo = None
+            return False
+        if str(message) != frame:
+            return False
+        self._central_echo_seen = message
+        return True
+
+    def _is_central_addressed_mode_frame(self, message: OWNHeatingEvent) -> bool:
+        """Whether a mode / season frame for a standalone zone is in the ``#Z`` (via central unit) form.
+
+        ``*4*what*#Z##`` is a zone of the central unit (WHO 4 p. 6, p. 9, p. 65). A standalone
+        thermostat answers in the plain ``Z`` form. An F455 emits ``*4*311*#2##`` after every
+        status report of the standalone zone 2 (live, 2026-11-08: 8 of 8, none on the F461
+        monitoring the same bus), which OWNd decodes as zone 2 in automatic.
+        """
+        if self._central or not self._standalone:
+            return False
+        if message.message_type not in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+            return False
+        return is_central_thermo_where(message)
+
+    def _is_generic_central_zone_frame(self, message: OWNHeatingEvent) -> bool:
+        """Whether a ``*4*310*#Z##`` / ``*4*311*#Z##`` frame reaches a zone of the central unit.
+
+        WHO 4 p. 9 lists 310 / 311 (manual / automatic generic) both as the command that sets a
+        zone of the central and as a monitor frame. The 3550 reports its zones' state with the
+        season in the code: ``*4*111*#1##`` for a zone in automatic heating, also as its answer to
+        ``*4*311*#1##`` (MH200N, #466), ``*4*110*#3##`` (F454, #697), ``*4*210*#4##`` (F461, 0 generic
+        frames in 525, 2026-11-08 / 11-09). An F455 and an MH201 put a generic ``*4*311*#Z##`` on
+        their event session right before the zone's real status (``*4*210*#4##`` 59 ms later on the
+        F455, ``*4*110*#4##`` on the MH201): live F455, 2026-11-09 07:45:02, at every quarter-hour
+        push of the 3550, where the F461 shows ``*#4*#4*14*0240*2##`` instead. Taken as the zone's
+        state it turned the zone AUTO and back every 15 minutes. So the generic frame is held
+        (``_GENERIC_ZONE_FRAME_HOLD``): a seasonal status of the zone that follows replaces it, and
+        only a generic frame with none after it is taken as the zone's state.
+        """
+        if self._central or message.message_type != MESSAGE_TYPE_MODE:
+            return False
+        if not is_central_thermo_where(message):
+            return False
+        raw = str(message)  # a MESSAGE_TYPE_MODE frame is *4*WHAT*WHERE##
+        where = raw.split("*")[3] if raw.count("*") >= 3 else ""
+        if where.removeprefix("#").split("#", 1)[0] == "0":
+            return False
+        return raw.split("*")[2] in ("310", "311")
+
+    def _hold_generic_zone_frame(self, message: OWNHeatingEvent) -> bool:
+        """Hold a generic ``#Z`` frame until the zone's seasonal status shows it was a prelude.
+
+        Returns False when the entity is not live yet (nothing to hold it on); the frame is
+        then handled at once, as before.
+        """
+        if self.hass is None or self.platform is None or not self.entity_id:
+            return False
+        self._cancel_generic_zone_frame()
+        LOGGER.debug(
+            "%s %s: generic mode frame for %s via the central unit; waiting for its seasonal status",
+            self._gateway_handler.log_id,
+            message,
+            self._display_name,
+        )
+
+        @callback
+        def _apply(_now: Any) -> None:
+            self._generic_zone_frame_unsub = None
+            self._generic_zone_frame_release = message
+            self.handle_event(message)
+
+        self._generic_zone_frame_unsub = async_call_later(self.hass, _GENERIC_ZONE_FRAME_HOLD, _apply)
+        return True
+
+    @callback
+    def _cancel_generic_zone_frame(self) -> None:
+        """Drop a held generic frame: the zone's own status came, or the entity goes away."""
+        if self._generic_zone_frame_unsub is not None:
+            self._generic_zone_frame_unsub()
+            self._generic_zone_frame_unsub = None
+
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
-        if is_central_thermo_where(message):
+        if self._central and self._is_own_central_echo(message):
+            LOGGER.debug("%s %s: own command echoed by the gateway, not a central unit report", self._gateway_handler.log_id, message)
+            return
+        # A central unit's own report first: on a zero-config plant its *4*111*#1## makes zone 1
+        # a zone of the central before the standalone check below looks at it.
+        if is_central_unit_report(message):
             self._gateway_handler.has_central_unit = True
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
+        if self._is_central_addressed_mode_frame(message):
+            LOGGER.debug(
+                "%s %s: %s is a standalone thermostat, a frame for it via the central unit is not its state",
+                self._gateway_handler.log_id,
+                message,
+                self._display_name,
+            )
+            return
+        if message is self._generic_zone_frame_release:
+            self._generic_zone_frame_release = None
+        elif self._is_generic_central_zone_frame(message):
+            if self._hold_generic_zone_frame(message):
+                return
+        elif message.message_type in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+            self._cancel_generic_zone_frame()
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
             LOGGER.debug(
                 "%s %s",
@@ -1508,6 +2216,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._attr_native_current_temperature = message.main_temperature
             self._current_temperature_restored = False
+            self._dim12_at = None
+            self._dim14_at = None
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
             LOGGER.debug(
                 "%s %s",
@@ -1516,6 +2226,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._enable_humidity()
             self._attr_current_humidity = message.main_humidity
+            self._humidity_reported = True
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
             LOGGER.debug(
                 "%s %s",
@@ -1523,7 +2234,24 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._target_temperature = message.set_temperature
+            self._target_temperature_restored = False
+            self._written_target_temperature = None
+            now = time.monotonic()
             is_protection_or_off = self._dimension_3_is_protection(message)
+            if (
+                not is_protection_or_off
+                and self._dim12_at is not None
+                and now - self._dim12_at <= _PROTECTION_FRAME_WINDOW
+            ):
+                self._derive_local_offset(self._local_target_temperature, self._target_temperature)
+                self._dim12_at = None
+                self._dim14_at = None
+            else:
+                self._dim14_at = (
+                    now
+                    if self._target_temperature is not None and self._attr_hvac_mode != HVACMode.OFF
+                    else None
+                )
             # Dimension 14 is the commanded setpoint. The thermostat can regulate to another one
             # (F461: 14 = 21.0 while 12 = 23.5), so a dimension 12 report stays what is shown.
             if not is_protection_or_off and not self._local_target_reported:
@@ -1539,6 +2267,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._local_offset = message.local_offset if message.local_offset is not None else 0
+            self._local_offset_reported = True
+            self._dim12_at = None
+            self._dim14_at = None
             if message.local_control_state in (LOCAL_CONTROL_UNKNOWN, None):
                 self._knob_pos = "UNKNOWN"
             elif message.local_control_state == LOCAL_CONTROL_OFFSET:
@@ -1567,14 +2298,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             self._local_target_temperature = message.local_set_temperature
             self._local_target_reported = self._local_target_temperature is not None
+            self._dim12_at = (
+                time.monotonic()
+                if self._local_target_reported and self._attr_hvac_mode != HVACMode.OFF
+                else None
+            )
+            self._target_temperature_restored = False
             is_protection_or_off = self._dimension_3_is_protection(message)
             if not is_protection_or_off:
                 self._remember_nominal()
-                self._target_temperature = (
-                    self._local_target_temperature - self._local_offset
-                    if self._local_target_temperature is not None
-                    else None
-                )
+                self._reconcile_local_target()
         elif message.message_type == MESSAGE_TYPE_SEASON:
             # *4*1*Z## / *4*0*Z## is the zone operation mode frame: the zone
             # (or the central unit) runs in the heating / conditioning season
@@ -1585,16 +2318,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # zone that was OFF or not yet known is running again, so it takes
             # the season's mode. For a central unit the season is the plant
             # mode Home Assistant shows.
-            if self._central:
-                self._reset_central_status_flags()
+            # A standalone thermostat has no program: in the plain Z form it reports its mode
+            # only as this frame, protection (102 / 202) or off (303) (WHO 4 p. 63), never as
+            # automatic or manual. So for it this frame is the mode it runs in, whoever changed
+            # it: Home Assistant (*#4*2*#14*0265*2## -> *4*0*2##), another gateway on the bus,
+            # a touch screen or the thermostat itself. Two gateways on one bus then show the
+            # same mode (live F455 + F461, 2026-11-08), and a stale restored AUTO is replaced.
+            # An AUTO the zone itself reported (a MyHomeServer1 schedule, Dimension 7 context
+            # automatic) is not cancelled: the season frame that follows it is its season.
+            standalone_mode = self._standalone and not (
+                self._attr_hvac_mode == HVACMode.AUTO and not self._hvac_mode_restored
+            )
             previous_season = self._season
             self._season = message.season
+            self._season_reported = True
+            self._refresh_hvac_modes()
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
-            if self._central or self._attr_hvac_mode in (None, HVACMode.OFF):
+            if self._central or standalone_mode or self._attr_hvac_mode in (None, HVACMode.OFF):
                 if season_mode in self._attr_hvac_modes:
                     LOGGER.debug("%s %s", self._gateway_handler.log_id, message.human_readable_log)
                     self._attr_hvac_mode = season_mode
+                    self._hvac_mode_restored = False
                     if self._attr_hvac_action == HVACAction.OFF:
                         self._attr_hvac_action = HVACAction.IDLE
             else:
@@ -1619,8 +2364,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
-            if self._central:
-                self._reset_central_status_flags()
+            self._hvac_mode_restored = False  # the zone itself says what it runs in
             prev_mode = self._attr_hvac_mode
             previous_season = self._season
             self._remember_season(message)
@@ -1630,11 +2374,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             raw_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
             if raw_what in ("0", "1") and not self._central:
                 self._season = SEASON_HEATING if raw_what == "1" else "cooling"
+                self._season_reported = True
+                self._refresh_hvac_modes()
                 self._follow_season_change(previous_season)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
-            if message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
+            protection = _CENTRAL_PROTECTION.get(raw_what) if self._central else None
+            if self._central and raw_what == _CENTRAL_GENERIC_PROTECTION and self._season is not None:
+                protection = _CENTRAL_PROTECTION["102" if self._season == SEASON_HEATING else "202"]
+            if self._central:
+                self._central_operation = protection[0] if protection is not None else None
+            if protection is not None:
+                # *4*102*#0## / *4*202*#0## is the central unit in antifreeze / thermal
+                # protection (WHO 4 p. 5, p. 64): the plant keeps its season and holds the
+                # protection setpoint (live 3550: zone 4 at 7.0 / 35.0 °C), it is not off.
+                # BTicino's client shows it as a status of the season (libqtdevices
+                # thermal_device.cpp WIN_PROTECTION / SUM_PROTECTION).
+                LOGGER.debug("%s %s (%s)", self._gateway_handler.log_id, message.human_readable_log, protection[0])
+                if protection[1] in self._attr_hvac_modes:
+                    self._attr_hvac_mode = protection[1]
+                if self._attr_hvac_action == HVACAction.OFF:
+                    self._attr_hvac_action = HVACAction.IDLE
+            elif message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
                 LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
@@ -1686,7 +2448,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
             if self._central:
-                self._reset_central_status_flags()
+                self._central_operation = None
+            self._hvac_mode_restored = False
             prev_mode = self._attr_hvac_mode
             self._remember_season(message)
             self._program = getattr(message, "program", None)
@@ -1731,6 +2494,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._mark_actuators_off()
             if message.set_temperature is not None and message.set_temperature >= 0:
                 self._target_temperature = message.set_temperature
+                self._target_temperature_restored = False
                 self._show_nominal()
             else:
                 self._hydrate_nominal_from_local(prev_mode)
@@ -1808,11 +2572,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             is_active = bool(message.is_active())
             dimension = getattr(message, "dimension", None)
             if dimension == 20:
-                actuator_id = str(
-                    getattr(message, "actuator", None)
-                    or getattr(message, "_actuator", None)
-                    or (message._where_param[0] if getattr(message, "_where_param", None) else "1")
-                )
+                actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
             else:
@@ -1874,6 +2634,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 message.human_readable_log,
             )
             self._enable_fan_mode()
+            self._fan_mode_reported = True
             speed = getattr(message, "fan_speed", None)
             if speed == 0:
                 self._attr_fan_mode = "auto"
@@ -1891,6 +2652,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.log_id,
                 getattr(message, "human_readable_log", str(message)),
             )
+            if diag_what in (20, 21):
+                self._begin_central_flag_cycle()
+            elif diag_what in _CENTRAL_FLAG_WHATS:
+                self._central_flags_seen.add(diag_what)
             if diag_what == 20:
                 self._remote_control = "disabled"
                 self._report_fault(FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, code="20")
@@ -1909,4 +2674,5 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._battery_fault = True
                 self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
 
+        self._refresh_bus_state_complete()
         self._publish_state()

@@ -1,6 +1,6 @@
 # Hardware Compatibility Matrix
 
-The MyHOME integration supports all official BTicino and Legrand OpenWebNet gateways communicating via TCP/IP sockets or USB/Serial interfaces.
+The MyHOME integration supports official BTicino and Legrand OpenWebNet gateways communicating via TCP/IP sockets.
 
 ---
 
@@ -18,9 +18,8 @@ The MyHOME integration supports all official BTicino and Legrand OpenWebNet gate
 | **MH200N** | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Second-generation scenario programmer |
 | **MH200** *(Legacy)* | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Strict single-session pacing; watchdog hardened |
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
-| **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
+| **F452 / F453 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
-| **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
 <!-- GATEWAY_PROFILES_END -->
 
 > [!NOTE]
@@ -59,9 +58,9 @@ During startup initial discovery, status queries are gated by the gateway profil
 <!-- GATEWAY_DISCOVERY_START -->
 | Gateway Model | Profile Subsystems (advertised) | Startup Sweep Requests (sent) | Profile Support Notes |
 | :--- | :--- | :--- | :--- |
-| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) | Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out and each climate zone asks `*#4*<WHERE>*0##` itself. |
+| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) | Burglar Alarm (`*#5*0##`) and Energy (`*#18*51*...`) queries. WHO 4 and WHO 16 are advertised, but the `010024` firmware drops `*#4*0##` and `*#16*0*5##` (own-firmware-oracle), so the sweep leaves both out; climate zones are polled with `*#4*<WHERE>##` (#866). |
 | **H4890 / AM4890** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 4, 5, 16, 18 | Supports Burglar Alarm, Sound (`*#16*0*5##`), and Energy meter 51 queries. |
-| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) | Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted. |
+| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) | Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep leaves it out; zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted. |
 | **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 | Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted. |
 | **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted. |
 | **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 4, 18 | Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual. |
