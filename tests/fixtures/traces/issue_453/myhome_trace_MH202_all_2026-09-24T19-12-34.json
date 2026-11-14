@@ -1,0 +1,347 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-09-24T19:10:45.487Z",
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-09-24T19:10:56.852Z",
+      "last": "2026-09-24T19:12:10.112Z",
+      "frames": 24,
+      "buffer_frames": 24,
+      "buffer_depth": 1000,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.3",
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "exported_at": "2026-09-24T19:12:34.629Z"
+  },
+  "gateway": {
+    "model": "MH202",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "1.0.21",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.1,
+    "is_connected": true,
+    "identification": {
+      "model": "MH202",
+      "source": "ssdp",
+      "configured_model": "MH202",
+      "ssdp_model": "MH202",
+      "who13_code": "200",
+      "who13_model": "F454 / MyHomeServer1",
+      "who13_model_official": null,
+      "who13_model_observed": "F454 / MyHomeServer1",
+      "who13_firmware": "1.0.21",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MH202Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 23,
+    "total_tx": 2,
+    "captured_in_buffer": 24,
+    "buffer_depth": 1000,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1790277056.852411,
+      "iso_time": "2026-09-24T19:10:56.852411+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*16##",
+      "who": "1",
+      "what": "1000",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277056.867811,
+      "iso_time": "2026-09-24T19:10:56.867811+00:00",
+      "direction": "rx",
+      "raw": "*1*1*16##",
+      "who": "1",
+      "what": "1",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277061.909501,
+      "iso_time": "2026-09-24T19:11:01.909501+00:00",
+      "direction": "rx",
+      "raw": "*#13**22*21*11*02*002*04*24*09*2026##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "22",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277062.323237,
+      "iso_time": "2026-09-24T19:11:02.323237+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*16##",
+      "who": "1",
+      "what": "1000",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277062.337875,
+      "iso_time": "2026-09-24T19:11:02.337875+00:00",
+      "direction": "rx",
+      "raw": "*1*0*16##",
+      "who": "1",
+      "what": "0",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.083049,
+      "iso_time": "2026-09-24T19:11:08.083049+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*14##",
+      "who": "1",
+      "what": "1000",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.107902,
+      "iso_time": "2026-09-24T19:11:08.107902+00:00",
+      "direction": "rx",
+      "raw": "*1*5*14##",
+      "who": "1",
+      "what": "5",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.288167,
+      "iso_time": "2026-09-24T19:11:08.288167+00:00",
+      "direction": "rx",
+      "raw": "*#1*14*1*130*5##",
+      "who": "1",
+      "what": null,
+      "where": "14",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.289843,
+      "iso_time": "2026-09-24T19:11:08.289843+00:00",
+      "direction": "rx",
+      "raw": "*#1*14*13*2*130*5*0##",
+      "who": "1",
+      "what": null,
+      "where": "14",
+      "dimension": "13",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277071.322759,
+      "iso_time": "2026-09-24T19:11:11.322759+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*14##",
+      "who": "1",
+      "what": "1000",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277071.348273,
+      "iso_time": "2026-09-24T19:11:11.348273+00:00",
+      "direction": "rx",
+      "raw": "*1*0*14##",
+      "who": "1",
+      "what": "0",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277076.288242,
+      "iso_time": "2026-09-24T19:11:16.288242+00:00",
+      "direction": "rx",
+      "raw": "*25*21#1*21##",
+      "who": "25",
+      "what": "21",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277091.322486,
+      "iso_time": "2026-09-24T19:11:31.322486+00:00",
+      "direction": "rx",
+      "raw": "*#13**22*21*11*31*002*04*24*09*2026##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "22",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277099.842998,
+      "iso_time": "2026-09-24T19:11:39.842998+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*33##",
+      "who": "1",
+      "what": "1000",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277099.868425,
+      "iso_time": "2026-09-24T19:11:39.868425+00:00",
+      "direction": "rx",
+      "raw": "*1*1*33##",
+      "who": "1",
+      "what": "1",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277103.702696,
+      "iso_time": "2026-09-24T19:11:43.702696+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*33##",
+      "who": "1",
+      "what": "1000",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277103.718289,
+      "iso_time": "2026-09-24T19:11:43.718289+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "who": "1",
+      "what": "0",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277123.765364,
+      "iso_time": "2026-09-24T19:12:03.765364+00:00",
+      "direction": "rx",
+      "raw": "*#13**22*21*12*03*002*04*24*09*2026##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "22",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277127.878249,
+      "iso_time": "2026-09-24T19:12:07.878249+00:00",
+      "direction": "tx",
+      "raw": "*1*1*33##",
+      "who": "1",
+      "what": "1",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277127.936921,
+      "iso_time": "2026-09-24T19:12:07.936921+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*33##",
+      "who": "1",
+      "what": "1000",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277127.962825,
+      "iso_time": "2026-09-24T19:12:07.962825+00:00",
+      "direction": "rx",
+      "raw": "*1*1*33##",
+      "who": "1",
+      "what": "1",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277130.037644,
+      "iso_time": "2026-09-24T19:12:10.037644+00:00",
+      "direction": "tx",
+      "raw": "*1*0*33##",
+      "who": "1",
+      "what": "0",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277130.086636,
+      "iso_time": "2026-09-24T19:12:10.086636+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*33##",
+      "who": "1",
+      "what": "1000",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277130.112618,
+      "iso_time": "2026-09-24T19:12:10.112618+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "who": "1",
+      "what": "0",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}
+

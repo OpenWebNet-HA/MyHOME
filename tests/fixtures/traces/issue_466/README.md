@@ -1,0 +1,1033 @@
+# #466 MH200N Gateway Traces (Bus Sweep & Thermoregulation Interactions)
+
+Verbatim bus traces contributed by **@caiosweet** on [#466 (comment 5834435606)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5834435606). They are facts: never edit a frame.
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH200N (2nd Generation Scenario Programmer)
+- **Firmware**: 1.1.8
+- **WHO 13 Device Type Code**: `44`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH200N_all_2026-09-25T14-40-10.json` | Bus Card Export (200 frames) | Full on-wire trace captured via `<myhome-bus-card>` during `myhome.sweep_bus` and climate interactions. |
+| `config_entry-myhome-80a1577fb7ae6f68f05e0cc5a1ead27d.json` | HA Diagnostic Download | Home Assistant config entry diagnostic summary from the reporter's plant. |
+
+## Sequence of Actions Recorded
+
+1. **Bus Sweep (`myhome.sweep_bus`)**:
+   - Firmware query `*#13**16##` -> reports `*#13**16*1*1*8##` (firmware 1.1.8).
+   - Automation scan `*#2*0##` -> reports stopped covers (`19`, `29`, `69`, `78`, `79`, `0715`).
+   - Lighting status queries across multiple points (`12`, `13`, `22`, `23`, `24`, `25`, `32`, `41`, `42`, `47`, `52`, `53`, `54`, `61`, `62`, `63`, `71`, `81`, `91`, `0315`, `0614`).
+   - Climate status scan `*#4*0##` -> reports zones 1–4 temperatures and heating valve actuator states (`*#4*Z#1*20*0##`), plus external probe `105` at 29.6 °C (`*#4*105*0*0296##`).
+   - Energy totalizer sweep across meters 51–57 (`*#18*51*51##` -> `*#18*51*51*23791364##`, up to meter 57).
+
+2. **Thermoregulation Setpoint Change**:
+   - Reporter set the plant temperature to 18.0 °C:
+     - `*4*110#0180*#0##`, `*4*21*#0##`
+     - Zones 1–3 confirm manual heating setpoint 18.0 °C (`*#4*Z*14*0180*3##`).
+
+3. **Thermostat Knob Local Offset Adjustment**:
+   - Reporter manually turned the probe adjustment wheel on Zone 4 through its complete local offset range (-3 °C to +3 °C):
+     - `*#4*4*13*00##` (0 °C offset)
+     - `*#4*4*13*01##` (+1 °C)
+     - `*#4*4*13*02##` (+2 °C)
+     - `*#4*4*13*03##` (+3 °C)
+     - `*#4*4*13*02##` (+2 °C)
+     - `*#4*4*13*01##` (+1 °C)
+     - `*#4*4*13*00##` (0 °C)
+     - `*#4*4*13*11##` (-1 °C)
+     - `*#4*4*13*12##` (-2 °C)
+     - `*#4*4*13*13##` (-3 °C)
+     - `*#4*4*13*12##` (-2 °C)
+     - `*#4*4*13*11##` (-1 °C)
+
+## Subsystems Verified (MH200N)
+
+- **WHO 1 (Lighting)**: 21 lighting endpoints reporting OFF / ON status during sweep.
+- **WHO 2 (Automation)**: 6 shutter/blind endpoints reporting stopped state (`*2*0*WHERE##`).
+- **WHO 4 (Thermoregulation)**: 4 climate zones, external temperature probe 105, heating actuator valves, manual setpoints, and local knob offsets (Dimension 13).
+- **WHO 13 (Gateway Management)**: Firmware version query/response (`1.1.8`) and internal date/time broadcasts.
+- **WHO 18 (Energy Management)**: Cumulative energy meter totalizers on addresses 51 through 57.
+
+---
+
+# #466 H4890 Touch Screen Gateway Traces (Bus Sweep, Burglar Alarm, Audio Diffusion)
+
+Verbatim bus traces contributed by **@nicolacavallo84** on [#466 (comment 5846053726)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5846053726).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H4890 (Axolute 3.5" Color Touch Screen with integrated LAN OpenWebNet server; shares board architecture with `AM4890`, `LN4890`, and `LN4890A`)
+- **Firmware**: 4.0.15
+- **WHO 13 Device Type Code**: `200`
+- **WHO 1013 Object Model**: `30`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_H4890_all_2026-09-26T11-48-10.json` | Bus Card Export (200 frames) | Full bus sweep capture via `<myhome-bus-card>` covering lights, covers, power, audio, sound diffusion, energy, and CEN+. |
+| `myhome_trace_H4890_all_2026-09-26T11-51-26.json` | Bus Monitor Trace (51 frames) | Real-world WHO 5 Burglar Alarm events (`*5*9*0##` disarm, `*5*1*0##` arm away, zone statuses), power, energy, and CEN+. |
+| `myhome_trace_H4890_all_2026-09-26T11-52-48.json` | Bus Monitor Trace (32 frames) | Sound diffusion (WHO 16 / WHO 22) and power control traffic. |
+
+## Subsystems Verified (H4890)
+
+- **WHO 1 (Lighting)**: Points reporting on/off status.
+- **WHO 2 (Automation)**: Cover/shutter states.
+- **WHO 5 (Burglar Alarm)**: System arm/disarm transitions and zone status reporting (`*5*11*#1##` through `#6##`, `*5*18*#7##`, `#8##`).
+- **WHO 9 (Power / Auxiliary)**: Auxiliary load control events.
+- **WHO 16 & 22 (Sound & Audio Diffusion)**: Multi-source audio control and diffusion events.
+- **WHO 18 (Energy Management)**: Cumulative energy meter reports.
+- **WHO 25 (CEN+ / Dry Contact)**: CEN+ pushbutton / scenario status events.
+
+---
+
+# #466 MH200N Gateway Traces (Burglar Alarm Discovery, WHO 1013 Diagnostic, CEN+ Dry Contact, Timed Turn-On)
+
+Verbatim bus traces contributed by **@manfredgittmaier-afk** on [#466 (comment 5848807742)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5848807742).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH200N (2nd Generation Scenario Programmer)
+- **Firmware**: 1.0 (WHO 1013: N_CONF 15, BRAND 0, LINE 0)
+- **WHO 1013 Object Model**: `44`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH200N_all_2026-09-26T18-32-34.json` | Bus Monitor Trace (37 frames) | Targeted diagnostic capture covering WHO 5 burglar alarm query behavior, WHO 1013 gateway diagnostic identification, F428 dry contact events, auxiliary query, timed light turn-on, and scenario module notifications. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Burglar Alarm (WHO 5)**:
+   - Query `*#5*0##` on a bus **without an alarm central unit**: the MH200N answers anyway after ~2.5s with `*5*0*##`, `*5*9*##`, `*5*5*##`, `*5*7*##` (empty-where frames) followed by partition statuses `*5*11*#1##` through `*5*11*#8##` (reporting full 8-zone alarm status).
+   - Partition status query `*#5*#1##` -> reports `*5*11*#1##`.
+   - Confirms that MH200N gateways answer WHO 5 queries even without alarm hardware, creating phantom alarm partitions if discovery relies solely on query response.
+
+2. **Gateway Diagnostic (WHO 1013)**:
+   - Query `*#1013*0*1##` -> reports `*#1013**1*44*15*0*0##`.
+   - Confirms OBJECT_MODEL `44` (MH200N), `N_CONF` 15, `BRAND` 0, and `LINE` 0.
+
+3. **CEN+ Dry Contact (WHO 25) & Auxiliary (WHO 9)**:
+   - F428 contact interface in "contact status" mode emits dry contact frame `*25*32#1*31##` (motion detector with normally-closed output configured with inverted logic).
+   - Auxiliary channel query `*#9*0##` -> reports no auxiliary channels `*9*0*0##`.
+
+4. **Hardware Timer & Scenario Module (WHO 1 / WHO 17)**:
+   - Timed turn-on command `*#1*65*#2*2*0*0##` (2 hours) confirmed by `*1*1*65##`.
+   - Scenario module reports reactions `*17*1*4##` and `*17*2*4##` to the light event.
+
+5. **Audio & Other Subsystems (WHO 16, WHO 22, WHO 13, WHO 4)**:
+   - Audio diffusion frames `*#16*101*8*...##` and `*#22*5#2#1*10*...##`.
+   - Real-time clock broadcast `*#13**22*...##`.
+   - Climate valve actuator status `*#4*4#1*20*0##`.
+
+---
+
+# #466 F454 & MH202 Gateway Traces (Bus Sweep, Dimmer Progression, Advanced Covers, CEN+, F520 Energy & Actuator Lock)
+
+Verbatim bus traces contributed by **@anotherjulien** on [#466 (comment 5849027587)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5849027587).
+
+## Hardware Profile
+
+- **Gateway 1**: BTicino F454
+  - Firmware: 2.0.51
+  - WHO 13 Device Type Code: `200`
+  - Connection: TCP OpenWebNet (Port 20000)
+- **Gateway 2**: BTicino MH202 (Scenario Programmer)
+  - Firmware: 1.0.21
+  - WHO 13 Device Type Code: `200`
+  - Connection: TCP OpenWebNet (Port 20000)
+
+---
+
+# #466 MH200 Gateway Traces (Live Bus Monitor & Subsystem Sweep)
+
+Authentic on-wire bus trace captured from a physical BTicino MH200 scenario programmer via the `myhome-gateway` live session.
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH200 (1st Generation Scenario Programmer)
+- **Firmware**: 2.0.0
+- **WHO 13 Device Type Code**: `4` (`*#13**15*4##`)
+- **WHO 1013 Object Model**: `4` (`*#1013**1*4##`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_F454_all_2026-09-26T16-59-13.json` | Bus Card Export (238 frames) | Full bus sweep initiated on F454 and captured via `<myhome-bus-card>` covering lights, dimmers, covers, auxiliary, actuator lock, F520 energy totalizers, and CEN+. |
+| `myhome_trace_MH202_all_2026-09-26T16-59-17.json` | Bus Monitor Trace (314 frames) | Live bus traffic captured concurrently on MH202 observing the sweep, physical switch dimmer interactions, advanced cover positioning, actuator lock/unlock, and dry contacts. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Lighting & Physical Switch Dimmer Progression (WHO 1 - Resolves Issue #434)**:
+   - Physical wall switch dimming up and down: `*1*1000#30*14##` (dim up) and `*1*1000#31*14##` (dim down).
+   - Physical switch direct turn-on: `*1*1000#1*14##` (turn on to 100%) and `*1*1000#0*14##` (turn off).
+   - Dimmers emit Dimension 1 level reports (`*#1*14*1*130*5##` through `*#1*14*1*200*5##`) confirming physical 100-level dimmers emit Dimension 1 status with speed parameter rather than Dimension 4.
+
+2. **Advanced Automation & Shutter Positioning (WHO 2)**:
+   - Shutter movement: UP (`*2*1*31##`), DOWN (`*2*2*31##`), and STOP (`*2*0*31##`).
+   - Preset height commands (`*#2*31*#11#001*40##` and `*#2*31*#11#001#1*40##`).
+   - Dimension 10 multi-parameter position and status feedback (`*#2*31*10*10*40*001*0##`, `*#2*31*10*11*40*001*0##`, `*#2*31*10*12*66*001*0##`, `*#2*31*10*10*57*001*0##`, `*#2*31*10*10*30*001*0##`).
+
+3. **Actuator Lock / Unlock (WHO 14)**:
+   - Actuator lock engagement: `*14*1*32##`.
+   - Actuator lock release: `*14*0*32##`.
+   - Closes critical hardware matrix blind spot for both F454 and MH202.
+
+4. **Energy Management (WHO 18 - F520 Energy Meter)**:
+   - Totalizer telemetry on meter 52: `*#18*52*51##` -> `*#18*52*51*14159553##`.
+   - Dimension 113 daily/monthly totalizer requests and responses (`*#18*52*113*1##`, `*#18*53*113*0##`, `*#18*52*53*1##`).
+
+5. **CEN+ Pushbuttons & Dry Contact Interfaces (WHO 25)**:
+   - Pushbutton short press: `*25*21#1*21##`.
+   - Pushbutton release after long press: `*25*21#2*21##`.
+   - Pushbutton long press progression: `*25*21#8*233##`, `*25*22#8*233##`, `*25*23#8*233##`, `*25*24#8*233##`.
+   - Dry contact transitions: `*25*32#1*33##` (active) and `*25*31#1*33##` (inactive).
+
+6. **Auxiliary Subsystem (WHO 9)**:
+   - Periodic AUX relay events: `*9*1*4##` (relay ON) and `*9*0*4##` (relay OFF).
+
+## Subsystems Verified Summary
+
+- **F454**: WHO 1 (Lights & Dimmers), WHO 2 (Covers), WHO 4 (Climate), WHO 9 (Power/Aux), WHO 13 (Gateway), WHO 14 (Lock), WHO 18 (Energy), WHO 25 (CEN+ / Diag).
+- **MH202**: WHO 1 (Lights & Dimmers), WHO 2 (Covers), WHO 4 (Climate), WHO 9 (Power/Aux), WHO 13 (Gateway), WHO 14 (Lock), WHO 18 (Energy), WHO 25 (CEN+ / Diag).
+
+---
+
+| `myhome_trace_MH200_all_2026-09-26T21-00-00.json` | Bus Monitor Trace (144 frames) | Authentic physical capture across WHO 1, 2, 5, 9, 13, 16, 17, 1001, and 1013, closing key hardware gaps in the test matrix. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identification & Diagnostics (WHO 13 & WHO 1013)**:
+   - Device model query `*#13**15##` -> `*#13**15*4##` (MH200).
+   - Clock broadcasts `*#13**22*...##`.
+   - Gateway object model diagnostic `*#1013*0*1##` -> `*#1013**1*4##`.
+
+2. **Auxiliary Subsystem Verification (WHO 9)**:
+   - Status requests for auxiliary channels 0, 1, and 2 (`*#9*0##`, `*#9*1##`, `*#9*2##`).
+   - Hardware responses confirming channel states: `*9*0*0##`, `*9*0*1##`, `*9*0*2##`.
+
+3. **Advanced Scenario Module (WHO 17)**:
+   - Querying programmed scenarios (`*#17*0##`, `*#17*30##`, `*#17*137##`).
+   - Hardware replies confirming resident scenarios 30 and 137 (`*17*2*30##`, `*17*3*30##`, `*17*2*137##`, `*17*3*137##`).
+
+4. **Burglar Alarm Interaction (WHO 5)**:
+   - Status poll `*#5*0##` -> returns empty-WHERE status frames (`*5*0*##`, `*5*9*##`, `*5*5*##`, `*5*7*##`) and active zones 1 through 8 (`*5*11*#1##` to `*5*11*#8##`).
+
+5. **Audio System (WHO 16)**:
+   - Status polls and zone event broadcasts across amplifiers and sources: `*16*13*21##`, `*16*3*101##`, `*16*3*102##`, `*16*3*122##`, and zone 23 volume reports (`*#16*23*1*28##`, `*#16*23*1*10##`).
+
+6. **Physical Layer Lighting Diagnostic (WHO 1001)**:
+   - Bus diagnostic emission from lighting node 74: `*#1001*74*11*111110111111111111110111##`.
+
+7. **Automation & Lighting (WHO 1 & WHO 2)**:
+   - Interface 02 shutter status frames (`*2*0*WHERE#4#02##`).
+   - Comprehensive lighting sweeps across standard and dimmable loads.
+
+## Subsystems Verified (MH200)
+
+- **WHO 1 (Lighting)**: Multi-point on/off and dimmer level events.
+- **WHO 2 (Automation)**: Covers on interface 02 and local actuators.
+- **WHO 5 (Burglar Alarm)**: System status flags and zones 1–8.
+- **WHO 9 (Power / Auxiliary)**: Auxiliary channels 0, 1, and 2.
+- **WHO 13 (Gateway Management)**: Device type `4` and datetime broadcasts.
+- **WHO 16 (Sound System / Audio)**: Zones 14, 17, 18, 21, 22, 23, 35, 36, 122 and volume feedback.
+- **WHO 17 (Advanced Scenarios)**: Resident scenario states for 30 and 137.
+- **WHO 1001 (Lighting Diagnostic)**: Node 74 diagnostic bitmask.
+- **WHO 1013 (Gateway Diagnostics)**: Object model `4`.
+
+---
+
+# #466 BTicino F414 Classic Dimmer Verification (MH200 Live Bus Trace)
+
+Empirical bus trace recorded on an authentic **BTicino MH200** (firmware 2.1.0) testing a physical **BTicino F414** classic 10-level dimmer on WHERE=`99` (Woonkamer plafond).
+
+Settles the question raised by **@anotherjulien** in [#466 (comment 5849245960)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5849245960) regarding whether older/classic dimmers behave differently from modern universal dimmers (F418U2):
+- Proves that the classic F414 also uses OpenWebNet **Dimension 1** (`*#1*99*1*LEVEL*SPEED##`).
+- Proves that the F414 accepts **Dimension 1 writes** (`*#1*99*#1*150*0##`), immediately setting 50% brightness and broadcasting a Dimension 1 report (`*#1*99*1*150*5##`) with active transition speed.
+- Discloses the non-linear transformer/logarithmic mapping of discrete WHAT levels on the F414 (`10`=100%, `9`=74%, `8`=63%, `7`=50%).
+- Confirms that the F414 **rejects Dimension 4** (`*#1*99*4##`), returning NACK after a 2s timeout without bus emission.
+
+## Hardware Profile
+
+- **Gateway**: BTicino MH200 (1st Generation Scenario Programmer)
+- **Gateway Firmware**: 2.1.0
+- **Actuator Model**: BTicino F414 (Classic 10-level incandescent/ferromagnetic modular dimmer, 60–1000 VA)
+- **Actuator Address**: WHERE `99` (`light.woonkamer_plafond`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH200_f414_dimmer_2026-09-26T21-59-00.json` | Bus Monitor Trace (18 frames) | Complete sequential trace of initial status query, discrete WHAT commands, fine Dimension 1 writes, coarse status mapping, and final 100% restoration on the F414. |
+
+---
+
+# #466 / #501 BTicino F418U2 Modern Dimmer Verification (F454 Live Bus Trace)
+
+Empirical bus trace recorded on an authentic **BTicino F454** (firmware 2.0.51) testing a physical **BTicino F418U2** modern modular dimmer on WHERE=`32`, contributed by **@anotherjulien** in [#466 (comment 5854469497)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5854469497) and tracked in [#501](https://github.com/OpenWebNet-HA/MyHOME/issues/501).
+
+Complements the classic F414 findings by revealing the modern dimmer Dimension 4 fallback and write mechanics:
+- **Dimension 4 Fallback When OFF**: When the dimmer is OFF, sending a status query for Dimension 1 (`*#1*32*1##`) or Dimension 4 (`*#1*32*4##`) causes the F418U2 to reply with **Dimension 4** (`*#1*32*4*100*2##`), where level `100` represents 0% brightness at transition speed 2.
+- **Dimension Queries When ON**: When the dimmer is ON (e.g. at 30%), querying Dimension 1 (`*#1*32*1##`) replies with Dimension 1 (`*#1*32*1*130*5##`), and querying Dimension 4 (`*#1*32*4##`) replies with Dimension 4 (`*#1*32*4*130*2##`).
+- **Dimension 4 Writes are Ignored**: Writing to Dimension 4 (`*#1*32*#4*130*0##`) is completely ignored by the dimmer and produces no bus emission.
+- **Dimension 1 Writes are Supported**: Writing to Dimension 1 (`*#1*32*#1*130*0##`) succeeds and is acknowledged with a Dimension 1 report (`*#1*32*1*130*5##`).
+- **Switching OFF**: Writing level 0 via Dimension 1 or Dimension 4 does not turn off the channel; switching off strictly requires discrete WHAT `0` (`*1*0*32##`).
+
+## Hardware Profile
+
+- **Gateway**: BTicino F454
+- **Gateway Firmware**: 2.0.51
+- **Actuator Model**: BTicino F418U2 (Modern 2-channel universal modular dimmer)
+- **Actuator Address**: WHERE `32`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_F454_f418u2_dimmer_2026-09-27T08-58-54.json` | Bus Monitor Trace (20 frames) | Complete sequential trace of Dimension 1 / Dimension 4 queries while OFF, level 5 (30%) switch ON, Dimension 1 / Dimension 4 queries while ON, Dimension 4 write attempt (ignored), Dimension 1 write, and discrete WHAT 0 switch OFF. |
+
+---
+
+# #466 / #501 BTicino F418U2 Modern Dimmer Verification (MH200 Live Bus Trace)
+
+Empirical bus trace recorded on an authentic physical **BTicino MH200** (firmware 2.1.0) testing a physical **BTicino F418U2** modern modular dimmer on WHERE=`62` (`light.hal_inkom_plafond_bureau`).
+
+Verifies modern F418U2 dimmer behavior when routed through older 1st-generation gateway firmware (MH200 FW 2.1.0) compared against 2nd-generation Linux gateways (F454 FW 2.0.51):
+- **Dimension 1 Query When OFF**: Unlike the F454 which surfaces Dimension 4 (`*#1*32*4*100*2##`) when queried with Dimension 1 while OFF, the MH200 responds with **Dimension 1** (`*#1*62*1*100*2##`), confirming 0% brightness at speed 2.
+- **Dimension 4 Handling**: The MH200 does not emit/forward Dimension 4 status queries (`*#1*62*4##`), returning no event emission.
+- **Dimension 4 Writes are Ignored**: Writing to Dimension 4 (`*#1*62*#4*130*0##`) is ignored, exactly as observed on the F454.
+- **Dimension 1 Writes are Fully Functional**: Sending fine Dimension 1 writes (`*#1*62*#1*150*0##` for 50%, `*#1*62*#1*200*0##` for 100%) immediately triggers hardware transition and broadcasts Dimension 1 status with active transition speed 5 (`*#1*62*1*LEVEL*5##`).
+- **Dimming Curve Concordance**: Both gateways confirm identical non-linear WHAT-to-percentage internal dimming curves on the F418U2 hardware:
+  - Discrete Level 3 (`*1*3*WHERE##`) -> 10% brightness (`110`)
+  - Discrete Level 5 (`*1*5*WHERE##`) -> 30% brightness (`130`)
+  - Discrete Level 7 (`*1*7*WHERE##`) -> 50% brightness (`150`)
+  - Discrete Level 10 (`*1*10*WHERE##`) -> 100% brightness (`200`)
+
+## Hardware Profile
+
+- **Gateway**: BTicino MH200 (1st Generation Scenario Programmer)
+- **Gateway Firmware**: 2.1.0
+- **Actuator Model**: BTicino F418U2 (Universal 2-channel modular dimmer, 300 VA)
+- **Actuator Address**: WHERE `62` (`light.hal_inkom_plafond_bureau`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH200_f418u2_dimmer_2026-09-27T12-15-00.json` | Bus Monitor Trace (30 frames) | Full empirical trace testing Dimension 1 write (50%), discrete WHAT status mapping (WHAT 7), Dimension 4 write rejection, discrete Level 3 / Level 5 dimming curves, turn OFF, Dimension 1 query when OFF (level 100), Dimension 1 restoration (100%), and standard status confirmation (WHAT 10). |
+
+---
+
+# #466 / #501 BTicino F418U2 Modern Dimmer Verification (MH202 Live Bus Trace)
+
+Empirical bus trace recorded on an authentic **BTicino MH202** (firmware 1.0.21) testing a physical **BTicino F418U2** modern modular dimmer on WHERE=`32`, contributed by **@anotherjulien** in [#466 (comment 5854805415)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5854805415) and analyzed in [#466 (comment 5854854969)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5854854969).
+
+Settles crucial cross-gateway architectural differences between the MH202, F454, and MH200:
+- **Positive Dimension 4 Writes Function on MH202**: Unlike the F454 and MH200 where Dimension 4 write commands (`*#1*32*#4*130*0##`) are ignored by the gateway/actuator, sending a Dimension 4 write on the MH202 **successfully turns on the channel and sets the requested level**:
+  ```text
+  TX  *#1*32*#4*130*0##
+  RX  *#1*32*#4*130*0##          (echo)
+  RX  *#1*32*#13*1*130*0*0##     (Dimension 13 write echo)
+  RX  *#1*32*4*130*2##           (Dimension 4 response at speed 2)
+  RX  *#1*32*13*1*130*2*0##      (Dimension 13 response)
+  ```
+- **Dimension 1 Reads When OFF**: On MH202, querying Dimension 1 while OFF (`*#1*32*1##`) returns **Dimension 1** (`*#1*32*1*100*0##`), with transition speed 0 (no Dimension 4 substitution like on F454).
+- **Dimension 4 Reads When OFF**: Querying Dimension 4 while OFF (`*#1*32*4##`) returns **Dimension 4** (`*#1*32*4*100*0##`).
+- **Extended Command Translation Events**: The MH202 emits command translation frames with speed prefix 1000 (`*1*1000#5*32##`, `*1*1000#0*32##`) and speed parameter events (`*1*1#0*32##`).
+- **Multi-Parameter Dimension 13 Feedback**: Emits comprehensive Dimension 13 reports (`*#1*32*13*2*130*5*0##`) carrying actuator mode, percentage level, and active speed.
+- **Switching OFF**: Writing level 100 (0% brightness) via Dimension 1 or Dimension 4 does not switch off the channel; switching OFF strictly requires discrete WHAT 0 (`*1*0*32##`).
+
+## Hardware Profile
+
+- **Gateway**: BTicino MH202 (Scenario Programmer)
+- **Gateway Firmware**: 1.0.21
+- **Actuator Model**: BTicino F418U2 (Modern 2-channel universal modular dimmer)
+- **Actuator Address**: WHERE `32`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH202_f418u2_dimmer_2026-09-27T09-43-45.json` | Bus Monitor Trace (41 frames) | Full empirical trace testing Dimension 1 and Dimension 4 reads when OFF, discrete level 5 ON, Dimension 1 / Dimension 4 reads when ON, discrete WHAT 0 OFF, positive Dimension 4 write (successful turn ON), Dimension 1 write, Dimension 4 write to 0% (remains ON), and discrete WHAT 0 OFF. |
+
+---
+
+# #466 MyHomeServer1 Gateway Traces (CEN+ Pushbuttons, Bistable Covers, Group Lighting & Physical Layer Diagnostics)
+
+Verbatim bus traces contributed by **@TheDarkWizard** on [#466 (comment 5855690408)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5855690408).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MyHomeServer1
+- **Firmware**: 2.87.13
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MyHomeServer1_cen_scenario_2026-09-27T13-28-10.json` | Bus Monitor Trace (8 frames) | CEN+ scenario activation via KW8011 button (`*25*21#1*21##`) triggering multi-light cascade on fixtures 16, 18, 19. |
+| `myhome_trace_MyHomeServer1_group_lights_2026-09-27T13-32-12.json` | Bus Monitor Trace (16 frames) | Group lighting control on `#1` (`*1*0*#1##`, `*1*1*#1##`) interleaved with fixture status updates. |
+| `myhome_trace_MyHomeServer1_cen_cover_scenarios_2026-09-27T13-47-33.json` | Bus Monitor Trace (8 frames) | Multi-scenario activation across CEN+ addresses 21, 22, 23, shutter target positioning to 85% (`*#2*03*#11#001#1*85##`), and active power telemetry on meters 51 and 52. |
+| `myhome_trace_MyHomeServer1_scenarios_cover_diagnostic_2026-09-27T13-47-33.json` | Bus Monitor Trace (73 frames) | Full multi-subsystem sequence covering CEN+, shutter positioning to 0% and 100%, active power (Dimension 113) and power threshold alarms (Dimension 1200), zone 2 temperature (27.1 °C), and WHO 1001 diagnostics. |
+| `myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json` | Bus Monitor Trace (114 frames) | Physical layer device diagnostics (WHO 1001) memory dump: session start/stop (`*1000*5*0##` / `*1000*6*0##`), slot objects, and indexed configuration parameters (Dimension 35 across 84 registers). |
+| `myhome_trace_MyHomeServer1_bistable_cover_2026-09-27T13-54-05.json` | Bus Monitor Trace (11 frames) | Complete bistable cover cycle on point 03: advanced DOWN command (`*2*1000#12#100#001#1*03##`), Dimension 10 transit status, mid-travel STOP (`*2*1000#10#001#1*03##`), stopped status at 83% (`*#2*03*10*10*83*001*0##`), advanced UP command (`*2*1000#11#100#001#1*03##`), moving status, and final limit switch STOP at 100%. |
+| `myhome_trace_MyHomeServer1_who25_2026-09-27T20-56-45.json` | Bus Monitor Trace (9 frames) | CEN+ button press, extended press (long press start `*25*22#1*21##`), and release (`*25*24#1*21##`) across 0s, 3s, and 6s durations with KW8011 on MyHomeServer1 (comment 5859798807), confirming no hold repeat (`23#`) is generated by the switch. |
+
+## Subsystems Verified (MyHomeServer1)
+
+- **WHO 1 (Lighting)**: Fixture points 16, 18, 19 and group lighting address `#1`.
+- **WHO 2 (Automation / Covers)**: Monostable & bistable cover movement, advanced translation commands (`*2*1000#...`), Dimension 10 position feedback (stops at 83% and 100%), and direct target position writes (`*#2*03*#11#001#1*85##`).
+- **WHO 4 (Thermoregulation)**: Zone 2 ambient temperature report (`*#4*2*0*0271##` -> 27.1 °C).
+- **WHO 18 (Energy Management)**: Instantaneous active power telemetry (Dimension 113) on meters 51 and 52, and power threshold notifications (Dimension 1200).
+- **WHO 25 (CEN+ / Pushbutton Scenarios)**: KW8011 3-position device short-press events on addresses 21, 22, and 23 (`*25*21#1*21##`, `*25*21#1*22##`, `*25*21#1*23##`), plus extended press lifecycle: short press (`*25*21#1*21##`), long press start (`*25*22#1*21##`), and long release (`*25*24#1*21##`) across multiple hold durations without intermediate hold repeats.
+- **WHO 1001 (Physical Layer Diagnostics)**: Diagnostic announcements (`*1001*9#...`), identity object model 119, firmware 1.3.8, slot objects, and indexed configuration registers (Dimension 35).
+
+---
+
+# #466 MyHomeServer1 Mixed Bus Capture (Lighting, Dimmer Level Reads, Thermoregulation)
+
+Verbatim bus trace contributed by **@gdluck** on [#466 (comment 5895736715)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5895736715), exported from the bus card (HA 2026.9.4, integration 2.0.0b13, OWNd 2.0.0b8, gateway firmware 3.87.13).
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MyHomeServer1_all_2026-09-29T17-57-37.json` | Bus Card Export (200 frames, buffer truncated) | Startup light-state sweep (`*1*0*WHERE##` on 10-15), grouped on/off of points 24, 27, 28, 33, 36, dimmer level reads on point 66 (`*#1*66*#1*WHERE*0##` answered by `*#1*66*1*WHERE*2##`), WHO 1 command `*1*1000#0*0415##` and thermoregulation actuator/valve traffic (`*4*4002#NN*0#Z##`, `*#4*60/61*...`) with the gateway's `*#13` clock frames.
+
+The file is in the tree because its 200 frames include the probe reading `*#4*169*0*...##` (probe 1 of zone 69) beside zones 35-70; the replay in `tests/test_probe_frames_not_zones.py` checks that no such frame names a heating zone (#549).
+
+---
+
+# #466 MyHomeServer1 Guided Cover Calibration Runs (WHERE 91 & Interleaved Energy Telemetry)
+
+Verbatim bus trace contributed by **@Interstellar0verdrive** on [#466 (comment 5927373969)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5927373969), exported from the bus monitor (HA 2026.9.2, integration 2.0.0b13, OWNd 2.0.0b8, gateway firmware 2.87.13).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MyHomeServer1
+- **Firmware**: 2.87.13
+- **Actuator Model**: BTicino F411 (as reported by contributor; on-wire frame identifies WHERE `91`)
+- **Actuator Address**: WHERE `91`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MyHomeServer1_all_2026-10-01T07-59-11.json` | Bus Monitor Trace (159 frames) | Guided cover calibration runs: eight timed movements on cover WHERE `91` started and stopped by the calibration wizard, with gateway translation frames (`*2*1000#x*`) and basic status replies, interleaved with WHO 18 Dimension 113 and Dimension 1200 telemetry on meters 51, 52, and 53. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Cover Calibration Runs (WHO 2 - Eight Timed Movements)**:
+   - Eight start/stop runs on WHERE `91`, four down and four up:
+
+| Run | Start | Stop | Direction | Duration |
+|---|---|---|---|---|
+| 1 | 07:49:47 | 07:50:03 | down | ~16.0 s |
+| 2 | 07:50:05 | 07:50:08 | up | ~3.5 s |
+| 3 | 07:50:15 | 07:50:20 | down | ~5.4 s |
+| 4 | 07:50:22 | 07:50:37 | up | ~15.2 s |
+| 5 | 07:50:41 | 07:50:56 | down | ~15.0 s |
+| 6 | 07:50:58 | 07:51:08 | up | ~9.4 s |
+| 7 | 07:51:13 | 07:51:20 | up | ~6.5 s |
+| 8 | 07:51:21 | 07:51:27 | down | ~6.4 s |
+
+   - **Start Movement Sequence (Leading Idle Echo)**:
+     Every directional TX command (`*2*1*91##` for UP, `*2*2*91##` for DOWN) triggers a distinctive 4-frame response pattern:
+     1. TX `*2*dir*91##` (command write)
+     2. RX `*2*1000#0*91##` then RX `*2*0*91##` ~50 ms later — a **leading idle/stopped status report** emitted before the motor begins moving. A naive cover state machine could mishandle this by staying stopped.
+     3. RX `*2*1000#dir*91##` (moving translation frame)
+     4. RX `*2*dir*91##` (basic moving status frame, ~450 ms after the leading idle)
+   - **Stop Movement Sequence**:
+     Every stop TX command (`*2*0*91##`) is answered strictly by `*2*1000#0*91##` and `*2*0*91##`.
+
+2. **Energy Management (WHO 18)**:
+   - **Dimension 113 (Active Power)**: 86 frames recording instantaneous active power on meters 51, 52, and 53 (`*#18*51*113*WATT##`). Meter 51 climbs from ~367 W to 526 W during cover motion; meters 52 and 53 remain steady at ~6 W and ~1 W.
+   - **Dimension 1200 (Power Threshold)**: 9 frames total:
+     - 3 threshold telemetry responses: `*#18*51*1200#1*125##`, `*#18*52*1200#1*125##`, `*#18*53*1200#1*125##` at 07:50:34.
+     - 6 poll requests across 2 periodic rounds (5-minute interval): meters 51, 52, 53 queried at 07:52:39 and 07:57:39 (`*#18*METER*1200##`).
+
+## Subsystems Verified (MyHomeServer1)
+
+- **WHO 2 (Automation / Covers)**: WHERE `91` cover movement, eight start/stop cycles, leading idle frame transition handling (`*2*1000#0*` + `*2*0*` followed by `*2*1000#dir*` + `*2*dir*`), and clean stop transitions.
+- **WHO 18 (Energy Management)**: Real-time Dimension 113 power readings on meters 51, 52, and 53, and Dimension 1200 periodic threshold polling and reports.
+
+---
+
+# #466 F455 Basic Gateway Traces (Bus Sweep, Dimmer Telemetry & Pushbuttons)
+
+Verbatim bus trace contributed by **@lionelser** on [#466 (comment 5938596974)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5938596974), exported from Home Assistant diagnostics (HA 2026.9.4, integration 2.0.0b14, OWNd 2.0.0b9, gateway firmware 1.0.86).
+
+## Hardware Profile
+
+- **Gateway Model**: Legrand F455 ("Basic gateway", single SCS bus)
+- **Firmware**: 1.0.86
+- **WHO 13 Device Type Code**: `200`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_F455.json` | HA Diagnostic Download (80 frames: 42 rx / 38 tx) | Full diagnostic export with bus monitor capture during `myhome.sweep_bus`, physical dimmer queries (WHERE 11–17), physical pushbutton presses, and gateway identity replies. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identity & Diagnostics (WHO 13)**:
+   - Device type `*#13**15##` -> `*#13**15*200##` (corroborating modern gateway family alongside F454, MH202, F461, H4890, MyHomeServer1).
+   - Firmware version `*#13**16##` -> `*#13**16*1*0*86##` (firmware 1.0.86).
+   - Gateway clock `*#13**0##` -> `*#13**0*20*40*21*##`.
+
+2. **Lighting & Physical Dimmer Telemetry (WHO 1)**:
+   - **Dimension 4 (Physical Dimmer Level Reports)**: WHERE `13` and WHERE `15` report Dimension 4 status (`*#1*13*4*100*2##` and `*#1*15*4*100*2##`), confirming physical modular dimmer telemetry on F455.
+   - **Dimension 1 (Standard Level Reports)**: WHERE `11`, `12`, `14`, `16`, and `17` report Dimension 1 status (`*#1*12*1*134*5##`, `*#1*17*1*175*1##`, `*#1*16*1*200*5##`, `*#1*14*1*175*5##`, `*#1*11*1*200*5##`).
+   - **Command Translation Pushbuttons**: Pushbutton press (`*1*1000#1*<where>##`) and release (`*1*1000#0*<where>##`) captured across WHERE `12`, `13`, and `17`.
+
+3. **Subsystem Scans**:
+   - Outbound queries for automation (`*#2*0##`), thermoregulation (`*#4*0##`), sound (`*#16*0*5##`), burglar alarm (`*#5*0##`), energy (`*#18*51*51##`...`*#18*59*51##`), and diagnostic identity (`*#1013*0*1##`).
+
+---
+
+# #466 F454 Relative Step Cover Positioning & Motor Deadband Telemetry (WHERE 31)
+
+Verbatim bus trace contributed by **@anotherjulien** on [#466 (comment 6038376669)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6038376669), exported from Home Assistant diagnostics (HA 2026.9.4, integration 2.0.0b14, OWNd 2.0.0b9, gateway firmware 2.0).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino F454
+- **Firmware**: 2.0
+- **Actuator Model / Motors**: Advanced cover actuator with Somfy Ilmo 50 WT tubular motors
+- **Actuator Address**: WHERE `31`
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_F454_step_commands.json` | HA Diagnostic Download (500 frames: 130 tx / 370 rx) | Autonomous relative step positioning runs on WHERE `31` (10%, 2%, and 1% steps Up/Down), command echos (`*2*1000#...`), in-flight Dimension 10 status reports, autonomous stop frames without HA stop command, and periodic WHO 18 energy telemetry on meters 51-53. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Autonomous Relative Step Positioning (WHO 2)**:
+   - **10% Step Runs**:
+     - Down 10%: `*2*12#10#001*31##` -> echoed as `*2*1000#12#10#001#1*31##` -> in-flight Dimension 10 report `*#2*31*10*12*40*001*0##` (Moving Down from level 40) -> running event `*2*2*31##` -> stopped Dimension 10 report `*#2*31*10*10*30*001*0##` (level 30) -> autonomous stop frame `*2*0*31##` after ~2.04 s motor time.
+     - Up 10%: `*2*11#10#001*31##` -> in-flight Dimension 10 report `*#2*31*10*11*30*001*0##` (Moving Up from level 30) -> stopped Dimension 10 report `*#2*31*10*10*40*001*0##` (level 40) -> autonomous stop frame `*2*0*31##` after ~2.17 s motor time.
+   - **2% Step Runs**:
+     - Down 2%: `*2*12#2#001*31##` -> level 40 to 38 in ~370 ms runtime -> autonomous stop.
+     - Up 2%: `*2*11#2#001*31##` -> level 38 to 40 in ~355 ms runtime -> autonomous stop.
+   - **1% Step Runs & Motor Deadband Discovery**:
+     - Repeated 1% steps (`*2*12#1#001*31##` Down x3, then `*2*11#1#001*31##` Up x3) ran for ~130–210 ms each.
+     - Actuator relay clicked, but duration was too brief to overcome the mechanical deadband/inertia of the Somfy Ilmo 50 WT motors, causing 0 physical curtain movement despite the actuator's internal register updating its Dimension 10 level by 1% per pulse.
+
+---
+
+# #466 BTicino MH200 F422 Secondary Bus Timed Covers & Plant Verification
+
+Authentic on-wire bus trace recorded on a physical **BTicino MH200** (firmware 2.1.0) testing 10 motorized covers on secondary private bus `02` connected via an **F422 bus interface** (`WHERE = XX#4#02`), local bus cover 85, 35 physical lighting points, 8 burglar alarm zones, and 8 sound diffusion zones.
+
+## Hardware Profile
+
+- **Gateway**: BTicino MH200 (1st Generation Scenario Programmer)
+- **Firmware**: 2.1.0
+- **WHO 13 Device Type Code**: `4` (MH200)
+- **WHO 1013 Object Model**: `4`
+- **Bus Interface**: BTicino F422 (Bus 02)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH200_f422_timed_covers.json` | Bus Monitor Trace (425 frames: 412 rx / 13 tx) | Complete plant trace recording F422 secondary bus 02 cover status query (`*#2*0#4#02##`), 10 stopped cover endpoints (`*2*0*XX#4#02##`), local bus cover 85, point-to-point queries, Dimension 10 query confirming standard timed relay actuator profile (no reply), 35 lighting points with discrete brightness levels (WHAT 7, 9, 10), 8 burglar alarm zones (`*5*11*#1##` .. `#8##`), and 8 sound diffusion zones with 2 sources. |
+
+## Subsystems Verified (MH200 F422)
+
+1. **WHO 2 (Automation / Covers)**:
+   - **F422 Secondary Bus Addressing (`XX#4#02`)**: Bus scan `*#2*0#4#02##` discovers all 10 cover endpoints on private bus `02`: `11#4#02`, `21#4#02`, `12#4#02`, `22#4#02`, `13#4#02`, `14#4#02`, `15#4#02`, `16#4#02`, `18#4#02`, `19#4#02`.
+   - **Local Bus Cover**: WHERE `85` reports stopped state on main bus (`*2*0*85##`).
+   - **Standard Timed Relay Profile**: Point-to-point query `*#2*11#4#02##` returns `*2*0*11#4#02##`, while Dimension 10 position query `*#2*11#4#02*10##` returns no reply, confirming standard relay actuator operation (F411U2).
+
+2. **WHO 1 (Lighting)**:
+   - Status sweep covering 35 lighting endpoints with discrete brightness levels (WHAT 7, 9, 10) and live toggling events (`*1*1*51##`, `*1*0*51##`).
+
+3. **WHO 5 (Burglar Alarm)**:
+   - Multi-partition query `*#5*0##` returning empty-where partition states and all 8 zone statuses (`*5*11*#1##` through `*5*11*#8##`).
+
+4. **WHO 16 (Sound Diffusion)**:
+   - Sound system scan `*#16*0*5##` returning 8 audio zones (`21`, `22`, `23`, `14`, `35`, `36`, `17`, `18`) and 2 sound sources (`101`, `102`).
+
+5. **WHO 13 & WHO 1013 (Gateway Identity)**:
+   - Model code 4 (MH200), Firmware 2.1.0 (`*#13**16*2*1*0##`), and Object Model 4 (`*#1013**1*4##`).
+
+---
+
+# #466 BTicino F454 & F520 WHO 18 Dimension 1200 Energy Stream Lifecycle
+
+Authentic on-wire bus trace captured and contributed by **@xtimmy86x** on [PR #661 (comment 6067730589, 6067865874)](https://github.com/OpenWebNet-HA/MyHOME/pull/661#issuecomment-6067730589) from a physical BTicino F454 gateway (firmware 2.0) and physical BTicino F520 energy meters. This verifies the complete lifecycle of WHO 18 Dimension 1200 automatic instant power updates from physical hardware on a live plant, including the start command, meter interval confirmation, periodic active power telemetry, and the zero-duration interval notification emitted upon 2-minute stream expiry.
+
+## Hardware Profile
+
+- **Gateway**: BTicino F454
+- **Firmware**: 2.0
+- **Energy Meter**: BTicino F520 (multi-circuit single-phase electricity meter / load controller)
+- **Tested Energy Meter Addresses**: WHERE `56` (streamed address), plus background meters `51`, `53`, `54`, `55`, `57`, `58`, `59`, `510`, `511`
+- **Connection**: TCP OpenWebNet (Port 20000)
+- **Client Environment**: Home Assistant 2026.10.0.dev0, MyHOME 2.0.0b14, OWNd 2.0.0b9
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_F454_who18_2026-10-08T19-30-16.json` | Bus Monitor Trace (66 frames: 1 tx / 65 rx) | Authentic, untouched on-wire trace capturing start stream command (`*#18*56*#1200#1*2##`), meter interval confirmation (`*#18*56*1200#1*2##`, delay ~235 ms), periodic active power telemetry across meters 51-511, zero-duration stream lease expiry notification (`*#18*56*1200#1*0##`, delay ~126.2 s), subsequent interval frame (`*#18*56*1200#1*255##`), and totalizer consumption reports (dimensions 51 and 54). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Auto-Update Stream Start Command (WHO 18 Dimension 1200 Write)**:
+   - Client sends 2-minute instantaneous active power stream request to meter 56:
+     - `19:27:55.541903 TX *#18*56*#1200#1*2##`
+   - Frame structure: `*#18*WHERE*#1200#Type*Time##` (`Type 1` = active power, `Time 2` = 2 minutes).
+
+2. **Meter Auto-Update Interval Confirmation**:
+   - Energy meter 56 confirms active stream lease ~235 ms after start command:
+     - `19:27:55.776619 RX *#18*56*1200#1*2##`
+   - Proves on physical hardware that meters answer Dimension 1200 writes with `*#18*WHERE*1200#Type*Time##`.
+
+3. **Autonomous Active Power Telemetry (WHO 18 Dimension 113)**:
+   - Periodic active power telemetry is received without polling queries:
+     - Meter 56: `*#18*56*113*9##` (9 W, arriving at ~30s cadence across the capture window)
+     - Meter 51: `*#18*51*113*572##`, `570##`, `569##`, `568##`, `571##`
+     - Meter 53: `*#18*53*113*365##`, `366##`, `364##`
+     - Meter 54: `*#18*54*113*0##`
+     - Meter 55: `*#18*55*113*89##`, `88##`
+     - Meter 57: `*#18*57*113*0##`
+     - Meter 58: `*#18*58*113*0##`
+     - Meter 59: `*#18*59*113*20##`
+     - Meter 510: `*#18*510*113*144##`, `145##`
+     - Meter 511: `*#18*511*113*67##`, `68##`
+
+4. **Stream Expiry / Lease End Notification (Interval 0)**:
+   - Exactly 126.18 seconds (~2 minutes plus bus roundtrip/scheduling) after the start command, meter 56 autonomously emits an interval 0 notification:
+     - `19:30:01.726662 RX *#18*56*1200#1*0##`
+   - This provides definitive physical proof that BTicino F520 energy meters broadcast `*#18*WHERE*1200#Type*0##` when the auto-update stream expires, allowing Home Assistant / MyHOME to seamlessly transition stream status and restart or deactivate streaming without polling.
+
+5. **Subsequent Interval Frame**:
+   - `19:30:01.870024 RX *#18*56*1200#1*255##` arrives ~143 ms after the expiry frame. Meter 54 also broadcasts `*#18*54*1200#1*255##` at `19:28:59.553859`.
+
+6. **Cumulative Energy Totalizer & Partial Consumption Telemetry**:
+   - Periodic totalizer reports:
+     - Dimension 51 (Totalizer): `*#18*51*51*35098267##` (35,098,267 Wh), `*#18*53*51*18915332##`, `*#18*54*51*2186911##`, `*#18*55*51*3033954##`
+     - Dimension 54 (Current day partial consumption): `*#18*51*54*13165##` (13,165 Wh), `*#18*53*54*7919##`, `*#18*54*54*1179##`, `*#18*55*54*1916##`
+
+---
+
+# #466 BTicino MyHomeServer1 WHO 25 Scenario Plus Trace & Bus Echo (`*25*11#0*11##`)
+
+Verbatim bus trace contributed by **@TheDarkWizard** on [#466 (comment 6085724930)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6085724930) in response to the community call for real-world WHO 25 scenario plus traces ([#466 (comment 6085158753)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6085158753)), exported from Home Assistant diagnostics (HA 2026.9.4, integration 2.0.0b14, OWNd 2.0.0b9, gateway firmware 2.87.13).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MyHomeServer1
+- **Firmware**: 2.87.13
+- **Connection**: TCP OpenWebNet (Port 20000)
+- **Profile**: `MyHomeServer1Profile`
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_MyHomeServer1_who25_scenario_plus.json` | HA Diagnostic Download (500 frames: 6 tx / 494 rx) | Authentic physical plant capture confirming gateway acceptance, SCS bus transmission, and OpenWebNet monitor echo of WHO 25 Scheduled Scenario PLUS command `*25*11#0*11##`, interleaved with WHO 18 Dimension 113 power readings on meters 51 and 52, WHO 4 climate reports, and WHO 1 lighting status. Originally uploaded as `Cen&Cen+CallToAction.json`. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Scheduled Scenario PLUS (WHO 25)**:
+   - Command transmitted from Home Assistant: `[tx] *25*11#0*11##` (`2026-10-09T17:14:12.215385+00:00`).
+   - Gateway acknowledges and puts `B1 01 93 00` onto the physical SCS bus, echoing back on the monitor session: `[rx] *25*11#0*11##` (`2026-10-09T17:14:12.298174+00:00`) exactly 82.8 ms later.
+   - Immediate status inquiry: `[tx] *#25*11##` (`2026-10-09T17:14:12.300230+00:00`).
+   - OFF command attempt with parameter `#0`: `[tx] *25*12#0*11##` (`2026-10-09T17:14:39.916800+00:00`). Note that in the OpenWebNet protocol and `bt_luci` firmware, OFF takes no `#0` parameter (`*25*12*WHERE##`), explaining the absence of a monitor echo for this variant.
+
+2. **Energy Management (WHO 18)**:
+   - 424 frames of active power measurements (`*#18*51*113*<watts>##` on meter 51 and `*#18*52*113*<watts>##` on meter 52).
+
+3. **Thermoregulation (WHO 4)**:
+   - 63 frames reporting thermoregulation dimension 60 setpoints and status across zones (`*#4*1*60*49##`, `*#4*2*60*49##`, `*#4*5*60*49##`, etc.).
+
+4. **Lighting (WHO 1)**:
+   - 9 frames reporting actuator lighting status (`*1*0*0014##`, `*1*0*0016##`, etc.).
+
+---
+
+# #466 BTicino H/L4684 Colour Touchscreen Gateway Trace (FW 6.0.11 — WHO 1, 2, 3, 4, 13, 16, 18, 22)
+
+Verbatim Home Assistant diagnostics download contributed by **@andrea-mag** on [#466 (comment 6398442412)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6398442412) (`HA 2026.10.2`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (Colour Touch Screen IP Gateway, Axolute / LivingLight; UPnP `modelName`: `H/L4684`, `deviceType`: `urn:schemas-bticino-it:device:touchscreen:1`)
+- **Firmware**: `6.0.11` (`*#13**16*6*0*11##`)
+- **Kernel**: `2.6.2` (`*#13**23*2*6*2##`)
+- **Distribution**: `6.0.0` (`*#13**24*6*0*0##`)
+- **WHO 13 Device Type Code**: `23` (`*#13**15*23##`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `config_entry-myhome_HL4684_fw6_0_11.json` | HA Diagnostic Download (257 frames: 212 rx / 45 tx) | First physical on-wire capture from a BTicino H/L4684 touchscreen gateway, spanning `myhome.sweep_bus` across lighting & covers (`WHO 1` / `WHO 2`), autonomous load-control priority broadcasts (`WHO 3`), 8-zone thermoregulation (`WHO 4`), gateway identification (`WHO 13`), dual-dialect `WHO 16` + `WHO 22` sound system inventory, and `WHO 18` energy sweep queries. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identity & Software Stack (WHO 13 — 5 tx / 5 rx)**:
+   - Clock `*#13**0##` -> `*#13**0*14*41*00*##`.
+   - Device type `*#13**15##` -> `*#13**15*23##` (empirically confirming Nmap's code `23` on physical `H/L4684` FW `6.0.11`, distinct from 2006 spec code `13` on FW `2.0.54`).
+   - Firmware `*#13**16##` -> `*#13**16*6*0*11##` (`6.0.11`), kernel `*#13**23##` -> `*#13**23*2*6*2##` (`2.6.2`), distribution `*#13**24##` -> `*#13**24*6*0*0##` (`6.0.0`).
+
+2. **Load Control Priority Cycle (WHO 3 — 29 rx)**:
+   - Autonomous periodic load-priority status broadcasts (`*3*1*#1##` through `*3*1*#8##`, *Load priority 1–8 enabled*), cycling one priority every `~25.8 s` (`~3 min 26 s` per full `#1 -> #8` round-robin loop).
+
+3. **Thermoregulation & Actuator Telemetry (WHO 4 — 1 tx / 64 rx)**:
+   - General status query `[tx] *#4*0##` returns `0` `WHO 4` frames on the event session before the next sweep query `1.33 s` later (`*#16*0*5##`), corroborating the `020054` firmware-oracle `silent` verdict on live `6.0.11` hardware.
+   - Autonomous bus traffic covers 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`; `Zone 33` configured with `fan: true`, the other 7 with `fan: false`) plus central pump/boiler actuators `0#1`, `0#3`, `0#4` (`*#4*0#<N>*20*0##`, `26` frames):
+     - Ambient temperatures (`*#4*Z*0*0TTT##`), generic effective setpoints (`*#4*Z*14*0TTT*3##`), and Zone `66` mode/setpoint frames (`*4*1*66##`, `*4*303*66##`, `*#4*66*12*0170*3##`).
+     - Zone actuator channels (`11#1`, `22#1`, `33#1`, `33#2`, `44#1`, `55#1`, `66#2`, `66#3`, `77#1`, `77#2`, `88#1`) emit `*#4*<Z>#<N>*20*5##` (`18` frames).
+
+4. **Dual-Dialect Sound System Inventory (WHO 16 & WHO 22 — 1 tx / 28 rx)**:
+   - Single `[tx] *#16*0*5##` triggers `14` paired `WHO 16` (`bt_difson`) + `WHO 22` (`bt_multi`) replies (`4–14 ms` apart) on `H/L4684` FW `6.0.11`, covering `2` active stereo sources (`*16*3*101##` / `*#22*2#1*12*1*4##`, `*16*3*102##` / `*#22*2#2*12*1*4##`) and `12` amplifier zones (`11, 12, 13, 21, 22, 31, 32, 33, 41, 42, 51, 61` via `*16*13*<A><Z>##` / `*#22*3#<A>#<Z>*12*0*10##`; on zone `61`, `*#22*3#6#1*12*0*10##` arrives `13.6 ms` before `*16*13*61##`).
+
+5. **Lighting, Automation & Energy Sweep Queries (WHO 1, WHO 2 & WHO 18 — 38 tx / 86 rx)**:
+   - `[tx] *#1*0##` and `[tx] *#2*0##` each trigger the same `43`-frame A/PL status burst (`42` `WHO 1` light/relay status frames + `1` `WHO 2` shutter status frame `*2*0*99##`, `86` `rx` frames total).
+   - `36` `WHO 18` `tx` queries (`*#18*51..59*51##` / `*1200##` and `*#18*71#0..79#0*51##` / `*1200##`): Dimension `51` queries wait `~943 ms` (SCS bus timeout with no meter answering), whereas unsupported Dimension `1200` queries return immediately (`~57 ms` including `50 ms` queue pacing).
+
+---
+
+# #466 BTicino MH201 (FW 3.6.43) Bus Sweep, WHO 1013 Identity & Command-Session Timeout Trace
+
+Verbatim bus sweep trace contributed by **@emil-d** on [#466 (comment 6436427163)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6436427163), exported from `<myhome-bus-card>` (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, gateway firmware `3.6.43`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH201 (1-DIN Hotel Room Scenario Manager / OpenWebNet IP Gateway)
+- **Firmware**: `3.6.43` (`*#13**16*3*6*43##`)
+- **WHO 13 Device Type Code**: `200` (`*#13**15*200##`)
+- **WHO 1013 Object Model**: `10` (`N_CONF=15`, `BRAND=0`, `LINE=5` recorded in `gateway.identification` from startup `*#1013**1*10*15*0*5##`)
+- **Reported Plant Topology**:
+  - `IN` bus (powered by `E46ADCN`): MH201 (`3.6.43`), lighting/dimmer actuators (5 online in this morning capture: `31`, `32`, `71`, `72`, `73`, including `F414` dimmer; 27 lighting endpoints + at least one `WHO 2` cover at `WHERE = 33` when the full plant bus is powered, see comments `6453327840` & `6481616497` below), `F425` scenario memory module (no climate, alarm, or energy meters on the automation bus).
+  - Bus Coupling: `F422` SCS/SCS interface in galvanic separation mode (`MOD` empty, `I1..I3` empty, `I4 = 2`).
+  - `OUT` bus (powered separately by `346000`): `F441M` multi-channel audio matrix (`S1` = `F500 COAX` radio tuner, `S2`/`S3` = jack nodes, outputs `1, 3, 4, 5, 6`), and physical sound controls/amplifiers.
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH201_all_2026-10-27T07-28-09.json` | Bus Card Export (22 frames: 13 tx / 9 rx, buffer not truncated, `SHA-256: 54717d7ef7b207d04a475d9c379d1b043f8e50a533cbfec400e248c315f5e2bb`) | Verbatim `<myhome-bus-card>` `myhome.sweep_bus` export on physical `MH201` firmware `3.6.43`, carrying the first committed physical `WHO 1013` `OBJECT_MODEL = 10` (`15*0*5`) identification metadata alongside `WHO 1` lighting discovery and exact on-wire timing of silent command-session timeouts (`*#2*0##`, `*#4*0##`) and single-slot TCP reconnect lockouts. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway Identification & Embedded MCU Profile (WHO 13 & WHO 1013)**:
+   - **Startup Identity Metadata (`gateway.identification`)**: First committed physical fixture carrying `who1013_code: "10"` (`who1013_model: "MH201"`, `who1013_n_conf: "15"`, `who1013_brand: "0"`, `who1013_line: "5"`, `profile: "MH201Profile"`, `conflict: null`). Unlike Linux-based gateways (`F454`, `MH202`, `MyHomeServer1`, `F461`) which emit trailing `15*5*0` (`BRAND=5`, `LINE=0`), physical `MH201` firmware emits `15*0*5` (`BRAND=0`, `LINE=5`).
+   - **Sweep Gateway Queries (`frames[0..7]`)**:
+     - `*#13**0##` -> `*#13**0*09*26*26*##` in `253.9 ms` (local clock with empty timezone field).
+     - `*#13**15##` -> `*#13**15*200##` in `18.6 ms` (shared modern device code `200`).
+     - `*#13**16##` -> `*#13**16*3*6*43##` in `18.8 ms` (first committed capture of `MH201` firmware `3.6.43`).
+     - `*#13**23##` and `*#13**24##` -> zero `rx` data frames on the event session, answered on the command session by a fast `*#*0##` `NACK` in `~9.8–9.9 ms` + `100 ms` `MH201Profile.command_queue_delay` (`+109.9 ms` and `+109.8 ms` to the next `tx`, confirming unsupported Linux kernel/distribution dimensions are immediately NACKed rather than silently hung).
+
+2. **Lighting General Scan (WHO 1, `frames[8..14]`)**:
+   - `[tx] *#1*0##` (`07:26:31.757Z`) is echoed on the event session in `66.9 ms` (`[rx] *#1*0##`) and answered by 5 `OFF` lighting endpoints within `283.8 ms`: `*1*0*31##`, `*1*0*71##`, `*1*0*72##`, `*1*0*73##`, and `*1*0*32##`, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+0.751 s` to `frames[15]`).
+
+3. **Silent Command-Session Hangs & Single-Slot TCP Lockout (`frames[15..21]`)**:
+   - **`frames[15]` (`07:26:32.792Z`, `[tx] *#2*0##`)**: On this partial morning bus where no `WHO 2` cover actuators answered, the MH201 emits neither an event-session echo nor a command-session `ACK`/`NACK`. `OWNCommandSession.send_command` hits `COMMAND_TIMEOUT = 10.0 s` and closes the client socket, followed by `BUS_QUIET_PERIOD = 0.750 s` (`+10.753 s` to `frames[16]`).
+   - **`frames[16]` (`07:26:43.545Z`, `[tx] *#4*0##`)**: Sent on `2.0.0b16` (prior to #794 adding `MH201` to `GENERAL_ZONE_REQUEST_REFUSED`); `CommandWorkerPool.sending_loop` logs `tx` to `bus_monitor` before `connect()`. Because the MH201's single TCP command slot remains occupied server-side by the unacknowledged `*#2*0##` session, `connect()` backs off (`1 + 2 + 4 + 6 = 13.0 s`, `~13.74 s`), opens the slot once freed, writes `*#4*0##`, and again receives neither `ACK` nor `NACK` for `COMMAND_TIMEOUT = 10.0 s` + `0.750 s` = **`+24.494 s`** to `frames[17]`.
+   - **`frames[17..21]` (`*#16*0*5##` at `+14.477 s`, then `*#18*51*51##`, `*#18*51*1200##`, `*#18*52*51##`, `*#18*52*1200##` at `+13.682 s`, `+13.701 s`, `+13.685 s`)**: Each `tx` is recorded in `bus_monitor` prior to `connect()`, which exhausts all `MAX_CONNECT_ATTEMPTS = 5` (`1 + 2 + 4 + 6 = 13.0 s` sleep + 5 refused TCP `*99*0##` handshakes at `~136–145 ms` each = `13.682–13.727 s`). On `*#16*0*5##`, `send_paced` then waits `BUS_QUIET_PERIOD = 0.750 s` (`13.727 + 0.750 = +14.477 s`) before `handle_sweep_bus` enqueues all `36` `WHO 18` point queries into `FrameScheduler` (`capture.started_at = 07:27:23.987Z` when the service call returns); on `frames[18..21]`, the worker hits `continue` on failed `connect()` (bypassing `command_queue_delay`) and immediately pops the next buffered `WHO 18` query with zero extra sleep until export at `07:28:09.554Z`.
+   - **Independent Idle-Session Sound Probe**: Contributor separately sent `*#16*0*5##` on a fresh command session (`*99*0##`) when the command slot was free: the MH201 returned neither `ACK` nor `NACK` on the command session, echoed `*#16*0*5##` once on the event session (`*99*1##`) with zero amplifier/matrix replies, and never forwarded `WHO 16` bus traffic when physical sound controls were operated across the `F422` (`I4 = 2`) galvanic interface.
+
+---
+
+# #466 BTicino MH201 (FW 3.6.43) + F414 Classic Dimmer Traces (27-Light Sweep, Wall Pushbutton Step Dimming & HA Control)
+
+Follow-up verbatim `<myhome-bus-card>` captures contributed by **@emil-d** on [#466 (comment 6453327840)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6453327840) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino MH201** firmware `3.6.43`, testing a physical **BTicino F414** 10-level modular dimmer at `WHERE = 42`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH201 (`3.6.43`, `WHO 13` code `200`, `WHO 1013` `OBJECT_MODEL = 10` with `N_CONF = 15`, `BRAND = 0`, `LINE = 5`)
+- **Actuator Tested**: BTicino F414 (Classic 10-level incandescent/ferromagnetic modular dimmer, `60–1000 VA`, `WHERE = 42`), alongside relay actuator `WHERE = 32` and 25 additional lighting endpoints on the plant bus
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH201_who1-rx_2026-10-27T20-35-11.json` | Bus Card Sweep Export (85 `WHO 1` `rx` frames exported with `who="1", direction="rx"` out of 136 buffered frames = `45 tx / 91 rx`, `truncated: false`, `SHA-256: e82d019d9420a9bec4c277c5e6af06497b8b03dbd6d1ac240b1acc1074e6325b`) | Full 27-endpoint `WHO 1` plant sweep (dual 28-frame A/PL status bursts on `*#1*0##` and `*#2*0##`, completing all `45 tx` sweep queries with zero command-slot lockout), followed by physical wall-button switching on relay `32` and wall-button switching + continuous step dimming down/up (`1000#31` / `1000#30`) on `F414` dimmer `42`. |
+| `myhome_trace_MH201_all_2026-10-27T20-38-12.json` | Bus Card Trace Export (6 frames: `3 tx / 3 rx`, unfiltered, `truncated: false`, `SHA-256: e6dd65e65f943aaff4d5693da7b317c6426775fcde6a889b2ffdf756b419d983`) | Unfiltered Home Assistant `light.turn_on` / `light.turn_off` round-trip on `F414` dimmer `42`, capturing coarse status reply `*1*7*42##`, automatic Dimension 1 brightness poll `*#1*42*1##` -> `*#1*42*1*148*5##` (`48 %` at speed `5`), and discrete `*1*0*42##` turn-off. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Full 27-Endpoint `WHO 1` Bus Sweep & Non-Blocking `*#2*0##` Completion (`myhome_sweep_MH201_who1-rx_...`, `frames[0..56]`)**:
+   - **`*#1*0##` Burst (`frames[0..28]`, `20:34:08.912Z -> 20:34:11.009Z`, `2.097 s`)**: Event echo `*#1*0##` followed by **28 `WHO 1` status replies** across **27 distinct `WHERE` addresses** (`13, 26..29, 31, 32, 35..39, 42, 45..48, 51..53, 55..58, 71..73`, with `13`, `37`, `55` `ON`, `24` `OFF` including `42`, and `38` emitting `*1*0*38##` twice).
+   - **`*#2*0##` Burst (`frames[29..56]`, `20:34:11.859Z -> 20:34:13.909Z`, `2.050 s`)**: Starting `+0.850 s` after `frames[28]` (`BUS_QUIET_PERIOD = 0.750 s` + `MH201Profile.command_queue_delay = 0.100 s`), `[tx] *#2*0##` elicits the **same 28-frame `WHO 1` A/PL status burst** (differing only in adjacent `45`/`56` bus arbitration order) alongside non-`WHO 1` replies (`91 - 85 = 6` `rx` frames hidden by the `who="1", direction="rx"` export filter — including the `WHO 2` cover at `WHERE = 33` confirmed unfiltered via `*2*0*33##` in `myhome_trace_MH201_all_2026-10-28T19-16-51.json` below). Because the full plant bus answered `*#2*0##` (unlike the morning capture where only 5 lighting endpoints were online), the MH201 command session did not hit `COMMAND_TIMEOUT = 10.0 s`, `handle_sweep_bus` returned at `capture.started_at = 20:34:17.995Z`, and all `45 tx` sweep queries (`5 WHO 13 + 4 general + 36 WHO 18`) drained cleanly (`queue_depth: 0`).
+
+2. **Physical Wall Pushbutton Command Translation (`WHAT 1000`) & `F414` Hold-to-Dim Cadence (`frames[57..84]`)**:
+   - **Relay `32` (`frames[57..60]`)**: Wall button short press ON emits `*1*1000#1*32##` -> `*1*1*32##` (`+34.9 ms`); short press OFF emits `*1*1000#0*32##` -> `*1*0*32##` (`+47.4 ms`).
+   - **Classic `F414` Dimmer `42` (`frames[61..84]`, 12 exact `(1000#X, status)` pairs)**:
+     - **Short Press ON / OFF & Level Memory**: `*1*1000#1*42##` never produces `*1*1*42##`; the `F414` answers in `34.7–35.2 ms` with its stored coarse `WHAT` level (`*1*7*42##` at `frames[62]` & `frames[66]`, and `*1*4*42##` at `frames[76]` after dimming down and cycling OFF/ON — confirming hardware level memory). Short press OFF (`*1*1000#0*42##`) answers `*1*0*42##` in `34.7–35.2 ms`.
+     - **Hold-to-Dim DOWN (`frames[67..72]`)**: Holding the wall button emits `*1*1000#31*42##` at a steady **`519.5–520.5 ms` repeat period** (`+0.4975 s` / `+0.4979 s` after the `F414` reply), stepping coarse levels `*1*6*42##` (`+22.0 ms`) -> `*1*5*42##` (`+22.6 ms`) -> `*1*4*42##` (`+21.8 ms`).
+     - **Hold-to-Dim UP (`frames[77..82]`)**: Holding the wall button emits `*1*1000#30*42##` at the identical **`519.9–520.0 ms` repeat period**, stepping `*1*5*42##` (`+21.9 ms`) -> `*1*6*42##` (`+22.0 ms`) -> `*1*7*42##` (`+22.2 ms`), with zero spontaneous Dimension 1 frames during physical button operation.
+
+3. **Home Assistant Turn-On, Dimension 1 Brightness Poll & Turn-Off (`myhome_trace_MH201_all_...`, `frames[0..5]`)**:
+   - `[0] tx *1*1*42##` (`20:38:02.525Z`) -> `[1] rx *1*7*42##` (`+326.5 ms`): `F414` turns ON to stored coarse level `WHAT 7`.
+   - `[2] tx *#1*42*1##` (`+63.6 ms` after `rx *1*7*42##`, queued by `MyHOMELight.async_turn_on()` -> `async_update()`) -> `[3] rx *#1*42*1*148*5##` (`+128.5 ms`): `F414` answers Dimension 1 on `MH201` (`3.6.43`) with **`LEVEL100 = 148` (`48 %` brightness)** at active transition speed `5` (corroborating `MH200` + `F414` where `150` (`50 %`) mapped to coarse `WHAT 7`).
+   - `[4] tx *1*0*42##` (`20:38:06.762Z`) -> `[5] rx *1*0*42##` (`+79.6 ms`): clean discrete `WHAT 0` turn-off.
+
+---
+
+# #466 BTicino MH201 (FW 3.6.43) + F414 Classic Dimmer PR #828 Live Verification Trace (Full `WHAT 2..10` Ladder, Fine Slider, `78 % -> WHAT 9` Recall & Zero-Bounce `1 %` Turn-On)
+
+Live PR #828 hardware verification trace contributed by **@emil-d** on [#466 (comment 6481616497)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6481616497) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16` with PR #828 applied, `OWNd 2.0.0b11`, physical **BTicino MH201** firmware `3.6.43` + **BTicino F414** dimmer at `WHERE = 42`).
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_MH201_all_2026-10-28T19-16-51.json` | Bus Card Trace Export (200 frames in ring buffer: `19 tx / 181 rx`, unfiltered, `truncated: true`, lifetime `total_tx: 36 / total_rx: 354`, `SHA-256: 76d9793e60cb6a7b96a86088d003ef8628e0731ada7f31fa9b11e49da029496a`) | Unfiltered PR #828 verification trace covering the entire `WHAT 2..10` wall-button dimmer ladder (`1, 10, 20, 30, 40, 50, 60, 75, 100 %`), ceiling (`WHAT 10 -> 10`) and floor (`WHAT 2 -> 2 -> 2`) hold clamping, `15` HA fine `Dimension 1` slider writes (`103..199..178` -> `speed = 5`), `178 (78 %) -> *1*9*42## (75 %)` wall-button ON recall, zero-bounce HA `turn_on` at minimum `1 %` (`*1*2*42##` -> `*#1*42*1*101*5##`), periodic `~5.0 s` `*#13**15*200##` and 27-light background beacons, and `WHO 2` cover `*2*0*33##`. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Full `WHAT 2..10` Wall-Button Ladder, Ceiling Clamp & Floor Clamp (`WHERE = 42`)**:
+   - **Excursion 1 (`frames[1..35]`)**: Wall ON (`*1*1000#1*42##` -> `*1*5*42##` = `30 %`), hold UP 6 steps (`6 -> 7 -> 8 -> 9 -> 10 -> 10`, clamping at ceiling `WHAT 10 = 100 %`), hold DOWN 7 steps (`9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3`), and wall OFF (`*1*1000#0*42##` -> `*1*0*42##`).
+   - **Excursion 2 (`frames[80..166]`)**: Wall ON (`*1*9*42##`), hold DOWN (`8 -> 7`), hold UP (`8 -> 9 -> 10 -> 10` ceiling clamp), full hold DOWN across all 9 levels (`9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3 -> 2` = `1 %`), full hold UP (`3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10 -> 10` = `100 %`), and full hold DOWN (`9 -> 8 -> 7 -> 6 -> 5 -> 4 -> 3 -> 2 -> 2 -> 2`, confirming physical `F414` floor clamping repeats `*1*2*42##` on continued `1000#31` holds without turning OFF), followed by OFF, ON recall at `*1*2*42##`, and OFF.
+
+2. **Home Assistant Fine `Dimension 1` Slider & `78 % -> WHAT 9` Wall-Button Recall (`frames[38..81]`)**:
+   - `14` fine HA slider adjustments (`103` `3 %`, `115` `15 %`, `135` `35 %`, `147` `47 %`, `158` `58 %`, `171` `71 %`, `187` `87 %`, `195` `95 %`, `199` `99 %`, `193` `93 %` x2, `189` `89 %`, `184` `84 %`, `178` `78 %`) each emit `tx *#1*42*#1*<100+pct>*0##` and receive `rx *#1*42*1*<100+pct>*5##`, followed by HA OFF (`tx *1*0*42##` -> `rx *1*0*42##`).
+   - Pressing the physical wall button ON (`frames[80..81]`: `*1*1000#1*42##` -> `*1*9*42##`) recalls coarse **`WHAT 9`** (`75 %` on `COARSE_PRESET_TO_PERCENT`, within `3 pp` of `78 %` and matching BTicino's `68..85 % -> WHAT 9` quantization bucket, whereas `preset * 10` previously jumped to `90 %`).
+
+3. **Zero-Bounce HA `turn_on` at Minimum `1 %` Brightness (`frames[168..177]`)**:
+   - `[168] tx *1*1*42##` (`19:15:52.574Z`) -> `[169] rx *1*2*42##` (`+313.8 ms`, mapped via `COARSE_PRESET_TO_PERCENT[2] = 1 %` / `brightness = 3`, vs `20 %` / `51` pre-#828) -> `[170] tx *#1*42*1##` (`+63.7 ms`) -> `[171] rx *#1*42*1*101*5##` (`+128.2 ms`, **`LEVEL100 = 101` = `1 %`**, `brightness = 3` — **0 pp / 0-unit slider bounce**), followed by slider set to `58 %` (`158*5`) and HA OFF (`*1*0*42##`).
+
+4. **`WHO 2` Cover Presence (`WHERE = 33`) & Periodic `~5.0 s` Plant Beacons**:
+   - `frames[36]` (`19:14:45.087Z`) captures `[rx] *2*0*33##`, proving the full plant has a `WHO 2` cover/automation actuator at `WHERE = 33` (explaining why `#827`'s full-plant `*#2*0##` sweep answered cleanly without the `10.0 s` empty-subsystem timeout seen on the partial morning capture in `#824`).
+   - `29` autonomous `[rx] *#13**15*200##` frames arrive at an exact `4.99–5.02 s` period alongside background `WHO 1` status frames covering all `27` plant light `WHERE` addresses.
+
+---
+
+# #466 BTicino H/L4684 (FW 6.0.11) Follow-Up Traces: Zone `66#1` `F430/4` Recovery, `WHO 1004` / `WHO 1001` Diagnostics & Physical `F500` FM Tuner (`WHO 16` + `WHO 22`)
+
+Follow-up verbatim `<myhome-bus-card>` trace exports contributed by **@andrea-mag** on [#466 (comment 6559432736)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6559432736) (`Home Assistant 2026.10.2`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino H/L4684** firmware `6.0.11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (`FW 6.0.11`, kernel `2.6.2`, distro `6.0.0`, `WHO 13` device type `23`)
+- **Subsystems Captured**:
+  - Thermoregulation (`WHO 4` + `WHO 1004` thermoregulation diagnostics): 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`), central unit `3550` (`#0`), and Zone `66` `F430/4` actuator channel `66#1` brought back online mid-capture alongside `66#2` & `66#3`
+  - Sound Diffusion (`WHO 16` + `WHO 22` dual-stack): `F441M` audio matrix (`Source 1` = physical **BTicino F500** FM radio tuner at `101` / `2#1` / `5#2#1`, `Source 2` = `102` / `2#2`, `Source 3` = `103` / `2#3`) + Zone `42` (`3#4#2`, Environment `4`, Amplifier `2`)
+  - Lighting Diagnostics (`WHO 1001`) + Lighting (`WHO 1`) + Load Control (`WHO 3`)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_HL4684_all_2026-11-01T11-30-19.json` | Bus Card Trace Export (150 `rx` frames, `0 tx`, `truncated: true`, `SHA-256: ca615a981f99d7d0e6f754f2f55b20b82f6afa043a069278232abca12bb6ae83`) | Live capture of Zone `66` `F430/4` channel `66#1` returning online at `11:25:21Z`, terminating the central unit's `~20 s` `*4*303*66##` retry loop and emitting the repository's first physical `WHO 1004` thermoregulation diagnostic fault-mask frames (`Dimension 11` & `Dimension 22`). |
+| `myhome_trace_HL4684_all_2026-11-01T11-48-15.json` | Bus Card Trace Export (150 frames: `141 rx / 9 tx`, `truncated: true`, `SHA-256: ac5c96c9029668eeab1586a0a70c7ebd74304cff85b783ab8bc26e1348d70e18`) | First physical `H/L4684` `WHO 1001` lighting diagnostic frame (`*#1001*91*11*111111111111111111111111##`) plus the repository's first physical `WHO 22` + `WHO 16` dual-stack `F500` FM radio tuner & `F441M` source-routing capture (`105.30 MHz`, `Station 5`, RDS `"MY HOME "` -> `"DIM*SOFT"`, standby transition). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Zone `66#1` `F430/4` Recovery & First Physical `WHO 1004` Diagnostic Frames (`11-30-19.json`)**:
+   - **Pre-recovery (`11:15:02–11:25:01Z`)**: Zone `66` reports only `66#2` and `66#3` (`*#4*66#2*20*5##`, `*#4*66#3*20*5##`), while missing channel `66#1` causes the `3550` central unit to re-issue `*4*303*66##` (*Thermal Protection*) every `~20 s` (`11:15:22.467Z`, `11:15:42.846Z`).
+   - **Recovery (`11:25:21.747Z` onwards)**: Once the contributor resolved the `F430/4` actuator fault on `66#1`, `*#4*66#1*20*5##` begins reporting alongside `66#2` and `66#3`, `*4*303*66##` retries cease completely, and the bus emits three `WHO 1004` all-clear (`1` = healthy bit) diagnostic bitmasks:
+     - `*#1004*66*11*111111111111111111111111##` (24-bit probe `66` diagnostic mask)
+     - `*#1004*#66*22*1111111111111111##` (16-bit zone `#66` actuator diagnostic mask)
+     - `*#1004*#0*11*111111111111111111111111##` (24-bit central unit `#0` diagnostic mask)
+
+2. **First `WHO 1001` Diagnostic Frame on `H/L4684` (`11-48-15.json`)**:
+   - Captures `[rx] *#1001*91*11*111111111111111111111111##` on lighting actuator `WHERE = 91` (all 24 diagnostic bits `'1'` = healthy).
+
+3. **First Physical Dual-Stack `WHO 16` + `WHO 22` `F500` FM Tuner & `F441M` Routing Lifecycle (`11-48-15.json`)**:
+   - **Environment `4` (`Zone 42` / `3#4#2`) routed to `Source 1` (`F500` FM Tuner, `101` / `2#1` / `5#2#1`)**:
+     - Zone `42` wakes and switches from `Source 3` (`143` / `Source 3`) to `Source 1` (`141` / `Source 1`).
+     - `F500` powers ON: `*16*3*101##` paired with `*#22*2#1*12*1*4##`, followed by RDS enable `*22*31*2#1##` and frequency query `*#22*2#1*5##`.
+     - **Boot RDS banner (`"MY HOME "`)**: `*#16*101*8*77*89*32*72*79*77*69*32##` paired with `*#22*5#2#1*10*77*89*32*72*79*77*69*32##`.
+     - **Frequency `105.30 MHz` + Stored Preset `Station 5`**: `*#16*101*6*0*105300##` / `*#22*5#2#1*5*1*10530##` and `*#16*101*7*0*5##` / `*#22*5#2#1*11*1*10530*5##`.
+     - **Live broadcast RDS (`"DIM*SOFT"`, Dimensione Suono Soft `105.30 MHz`)**: `*#16*101*8*68*73*77*42*83*79*70*84##` paired with `*#22*5#2#1*10*68*73*77*42*83*79*70*84##`.
+     - **Tuner Standby on Source Switch**: When Zone `42` switches back to `Source 2` (`102` / `142`) and turns OFF (`*16*13*42##` / `*22*0*3#4#2##`), the `F500` enters standby via `*16*13*101##` paired with `*#22*2#1*12*0*10##`.
+
+
+---
+
+# #466 BTicino F454 (FW 2.0.51) + 3486 Burglar Alarm Bus Sweep, Transponder Arm/Disarm & Broadcast Resync Trace
+
+Verbatim `<myhome-bus-card>` sweep + live burglar-alarm capture contributed by **@gimprota76** on [#466 (comment 6562473665)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6562473665) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino F454** firmware `2.0.51` + **BTicino 3486** central burglar alarm unit).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino F454 (`FW 2.0.51`, Linux kernel `2.6.32`, distribution `2.16.11`, `WHO 13` device type `200`, `WHO 1013` `OBJECT_MODEL = 51` / `003598` with `N_CONF = 15`, `BRAND = 5 (Legrand BTicino)`, `LINE = 0 (Undefined)`)
+- **Alarm Hardware**: BTicino 3486 central burglar alarm unit (`WHERE = 0`, 8 zones `#1..#8` with zones `#1..#4` active and `#5..#8` non-active) armed and disarmed via physical transponder key
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_F454_all_2026-11-01T18-58-06.json` | Bus Card Sweep Export (156 frames: `54 tx / 102 rx`, unfiltered, `truncated: false`, `SHA-256: bfbda13c13f76fc203f23348cedcd0ef22b4e182af54729a93ad919852f7c70d`) | Unfiltered `myhome.sweep_bus` capture on `F454` (`FW 2.0.51`: `16` `WHO 1` lights, `5` `WHO 2` covers, silent drop on `*#4*0##`, `WHO 18` energy sweep) interleaved with live `3486` transponder Away arming (`*5*1*0## -> *5*8*0##`), scenario cover/light broadcasts (`*2*2*0##`, `*1*0*0##`), empty-`WHERE` battery status (`*5*5*##`), transponder disarming (`*5*2*0## -> *5*1*0## -> *5*9*0##`), Area `3` timed courtesy light (`*1*17*3##`), and automatic area lighting broadcast resync (`*#1*2..9##`, `*#1*3##`). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway `WHO 13` Identification, Dual `21`-Endpoint Sweep & Dropped `*#4*0##` (`frames[0..56]`)**:
+   - **`WHO 13` Metadata (`frames[0..9]`, `18:57:15.584Z -> 18:57:16.004Z`)**: `*#13**0## -> *#13**0*19*57*17*001##` (`UTC+1`), `*#13**15## -> *#13**15*200##`, `*#13**16## -> *#13**16*2*0*51##`, `*#13**23## -> *#13**23*2*6*32##`, and `*#13**24## -> *#13**24*2*16*11##`, plus autonomous `*#13**15*200##` beacons every `~25.0 s` (`frames[56]` at `18:57:25.861Z` and `frames[132]` at `18:57:50.874Z`).
+   - **Dual `WHO 1` / `WHO 2` General Bursts (`frames[10..53]`)**: Both `*#1*0##` (`frames[10..31]`) and `*#2*0##` (`frames[32..53]`) return the identical **21 A/PL status frames** (`16` `WHO 1` lights `21, 22, 25, 31, 41, 51, 53, 54, 61, 62, 71, 73, 74, 81, 84, 99` all `OFF`, and `5` `WHO 2` covers `23, 42, 52, 64, 72` stopped `*2*0*<WHERE>##`).
+   - **`*#4*0##` Silent Drop & `*#16*0*5##` (`frames[54..55]`)**: `*#4*0##` produces zero `WHO 4` bus frames (corroborating `own-firmware-oracle` `F454 020051` and `GENERAL_ZONE_REQUEST_REFUSED`); `*#16*0*5##` produces zero `WHO 16` replies on this audio-less plant, followed by `36` `WHO 18` energy probes (`51..59`, `71#0..79#0` x dimensions `51` and `1200`).
+
+2. **Physical `3486` Away Arming via Transponder (`frames[76..99]`, `18:57:36.435Z -> 18:57:41.987Z`)**:
+   - **Approach Light `31` (`frames[76..77]`)**: `*1*1000#1*31## -> *1*1*31##` (`+11.0 ms`) turns Area `3` light `31` `ON`.
+   - **Arming Burst (`frames[84..99]`)**: Scenario general covers DOWN (`*2*2*0##`) -> central activation (`*5*1*0##`) -> **central engaged (`*5*8*0##` at `18:57:40.023Z`, transitioning `alarm_control_panel.alarm_0` to `armed_away`)** -> partition telemetry `*5*18*#5..#8##` (non-active) and `*5*11*#1..#4##` (active, ignored as non-panel zone telemetry) -> scenario general lights OFF (`*1*0*0##`) -> empty-`WHERE` system battery OK (`*5*5*##`, routed to central unit `"0"` without altering `armed_away`) -> general covers STOP (`*2*0*0##`).
+
+3. **Physical `3486` Disarming via Transponder & Courtesy Light Broadcast Resync (`frames[106..155]`, `18:57:44.444Z -> 18:57:58.208Z`)**:
+   - **Disarming Burst (`frames[106..120]`)**: `*5*2*0##` (*deactivation*) -> `*5*1*0##` (*activation* — operational status, **not** armed) -> **`*5*9*0##` (*disengage* -> `disarmed`)** -> `*5*18*#5..#8##` -> repeated `*5*1*0## -> *5*9*0##` -> **`*1*17*3##` (Area `3` 15-minute timed courtesy light `ON`)** -> `*5*11*#1..#4##` -> `*5*5*##`.
+   - **Queued Broadcast Resync (`frames[124..155]`)**: Once the `36` `WHO 18` sweep queries finish draining at `frames[123]`, MyHOME drains the `8` populated-area polls `*#1*2## .. *#1*9##` queued by `*1*0*0##` (skipping unpopulated Area `1`) plus the targeted `*#1*3##` poll queued by `*1*17*3##` (`5 + 4 + 36 + 8 + 1 = 54 tx` frames total), reconciling `light.light_31` to `ON` (`*1*1*31##` at `frames[130]` & `frames[155]`) while all other `15` lights confirm `OFF`.
+
+---
+
+# #819 BTicino MH200N (FW 1.1.8) + 3550 Central Unit Bus Sweep & WHO 4 Diagnostic Trace (`*#4*#0##`, `*4*20*#0##` Remote Control Disabled, `*4*31*#0##` Battery KO & Rejected Override)
+
+Verbatim `<myhome-bus-card>` sweep + targeted `WHO 4` diagnostic capture contributed by **@wave68runner** on [Discussion #819 (comment 19348637)](https://github.com/orgs/OpenWebNet-HA/discussions/819#discussioncomment-19348637) (`Home Assistant 2026.9.4`, `MyHOME 2.0.0b16`, `OWNd 2.0.0b11`, physical **BTicino MH200N** firmware `1.1.8` + **BTicino 3550** 99-zone thermoregulation central unit).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino MH200N (`FW 1.1.8`, Linux kernel `2.3.8`, distribution `3.0.1`, `WHO 13` device type `44`, `MH200NProfile`, `queue_pacing = 0.15 s`)
+- **Thermoregulation Hardware**: BTicino 3550 99-zone central unit (`WHERE = #0`), `F430/4` heating actuator (`Zone 0` boiler + `Zone 1` living room connected; `Zones 1..5` configured on the `3550` with `+3/-3 °C` local adjustment-knob probes)
+- **Additional Subsystems**: 39 `WHO 1` lighting/dimmer endpoints (`11, 14, 41` dimmers + `52` relay `ON`; `35` endpoints `OFF`, including 4-digit SCS/ZigBee addresses `0011, 0510, 0512, 0513, 0514` and `WHO 1001` autodiagnostic mask on `72`) + dual-dialect `WHO 16` / `WHO 22` multi-room audio (`3` stereo sources `101..103`, `5` amplifier zones `11, 12, 21, 31, 41`)
+- **Connection**: TCP OpenWebNet (Port 20000)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_sweep_MH200N_all_2026-11-02T12-53-15.json` | Bus Card Sweep Export (148 frames in buffer: `14 tx / 134 rx`, unfiltered, `truncated: false`, lifetime `total_tx: 14 / total_rx: 135`, `SHA-256: f68477c7fc90627fd63f5ce01f6435f76469dd2fe5324bac89ee5ff3ce3a9661`) | Unfiltered `myhome.sweep_bus` capture on `MH200N` (`FW 1.1.8`: `WHO 13`, dual `39`-light + `WHO 1001` bursts on `*#1*0##` and `*#2*0##`, `0` replies on `*#4*0##`, `16` `WHO 16`/`WHO 22` audio frames on `*#16*0*5##`) followed by the 5-step `3550` diagnostic sequence (`*#4*#0##`, `*#4*1##`, `*#4*1*13##`, `*#4*#1*#14*0210*1##`, `*4*311*#1##`). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Gateway `WHO 13` Identification, Dual `39`-Light + `WHO 1001` Bursts, Silent `*#4*0##` & Dual-Dialect Audio (`frames[0..111]`)**:
+   - **`WHO 13` Metadata (`frames[0..9]`, `12:51:27.358Z -> 12:51:28.015Z`)**: `*#13**0## -> *#13**0*13*51*26*001##` (`UTC+1`), `*#13**15## -> *#13**15*44##` (`MH200N`), `*#13**16## -> *#13**16*1*1*8##` (`1.1.8`), `*#13**23## -> *#13**23*2*3*8##` (`2.3.8`), and `*#13**24## -> *#13**24*3*0*1##` (`3.0.1`), plus `4` periodic `~30.0 s` `*#13**22*...##` full date/time broadcasts (`frames[73, 111, 137, 145]`).
+   - **Dual `WHO 1` + `WHO 1001` Bursts (`frames[10..50]` & `frames[51..92]`)**: Both `*#1*0##` and `*#2*0##` return the identical **39 `WHO 1` lighting endpoints** (`11` at `WHAT 9`, `14` at `WHAT 8`, `41` at `WHAT 7`, `52` at `WHAT 1`, and `35` `OFF` endpoints including `0011, 0510, 0512, 0513, 0514`) plus `WHO 1001` autodiagnostic mask `*#1001*72*11*111011111111111101101101##` (`frames[33]` and `frames[75]`).
+   - **Unanswered `*#4*0##` on `3550` Plant (`frames[93]`, `12:51:35.853Z`)**: Although `MH200N` forwards `*#4*0##` onto the SCS bus (`$0499003000 / 12 / 0E / 0D` in `own-firmware-oracle`), zero `WHO 4` frames arrive during the `1.334 s` window before `*#16*0*5##`, proving that `*#4*0##` does not elicit `#0` central-unit status on a `3550` plant.
+   - **Dual-Dialect Sound System Inventory (`frames[94..110]`, `12:51:37.187Z -> 12:51:38.902Z`)**: `[tx] *#16*0*5##` elicits `16` paired `WHO 16` + `WHO 22` frames (`8` pairs: amplifier zones `31, 12, 11, 21, 41` `OFF`, active source `101` `*16*3*101##` / `*#22*2#1*12*1*4##`, and inactive sources `103` & `102`).
+
+2. **Central Unit `#0` Status & Diagnostic Flags (`frames[112..127]`, `12:52:05.676Z -> 12:52:12.130Z`)**:
+   - Querying `[tx] *#4*#0##` (`frames[112]`) is answered by the `3550` in `113.8 ms` with its 5-frame `#0` status header (`frames[113..117]`):
+     - `*4*1101*#0##`: Heating Weekly Program `1` (`mode = heat`, `season = heating`, `program = 1`).
+     - **`*4*20*#0##` (`WHAT 20`, `ownkb:claim:c003320`)**: **Remote Control Disabled (*Telegestione* = OFF)** on the `3550`.
+     - **`*4*30*#0##` (`WHAT 30`, `ownkb:claim:c003325`)**: **Failure Discovered** on the thermoregulation plant.
+     - **`*4*31*#0##` (`WHAT 31`, `ownkb:claim:c003326`)**: **Central-Unit Battery Fault (`KO`)** on the `3550`.
+     - **`*4*22*#0##` (`WHAT 22`, `ownkb:claim:c003322`)**: **At least one probe OFF**.
+   - Immediately after `#0` status (`+485.7 ms`), the `3550` broadcasts `10` automatic-heating zone mode frames across all 5 programmed zones (`#1..#5`: `*4*111*#4##`, `*4*111*#1##`, `*4*111*#4##`, `*4*111*#2##`, `*4*111*#1##`, `*4*111*#2##`, `*4*111*#5##`, `*4*111*#3##`, `*4*111*#4##`, `*4*111*#5##`).
+
+3. **Zone `1` Status Expansion (`*#4*1##` & `*#4*1*13##`) and Rejected Remote Setpoint Override (`frames[128..147]`)**:
+   - **`[tx] *#4*1##` (`frames[128..136]`, `12:52:19.059Z -> 12:52:20.736Z`)**: Returns `*#4*1*0*0199##` (`19.9 °C` ambient), `*#4*1*12*0170*3##` (`17.0 °C` effective setpoint after knob offset), `*4*1*1##` (heating season), `*#4*1*14*0160*3##` (`16.0 °C` nominal program setpoint), `*#4*1*13*01##` (`+1 °C` local knob offset), and `*4*111*#1##` (`Automatic Heating`).
+   - **`[tx] *#4*1*13##` (`frames[138..142]`, `12:52:33.056Z -> 12:52:33.810Z`)**: Answers `*#4*1*13*01##` in `85.5 ms`, followed by `*4*111*#1##`, `*#4*1*12*0170*3##`, and `*4*1*1##`.
+   - **`[tx] *#4*#1*#14*0210*1##` (`frames[143..144]`, `12:52:47.109Z -> 12:52:47.222Z`)**: Manual heating override to `21.0 °C` on `#1` is **immediately rejected** (`+113.2 ms`) by the `3550` with `[rx] *4*111*#1##` (remaining in `Automatic Heating` at `16.0 °C` / `17.0 °C` effective) because `*4*20*#0##` (*Remote Control Disabled*) is active on the `3550`.
+   - **`[tx] *4*311*#1##` (`frames[146..147]`, `12:53:03.795Z -> 12:53:03.921Z`)**: Returns `[rx] *4*111*#1##` (`+126.0 ms`).
+
+---
+
+# #466 BTicino H/L4684 (FW 6.0.11) Burglar Alarm (WHO 5), Auxiliary Motion (WHO 9) & Door Entry Lock Release (WHO 6) Traces
+
+Verbatim `<myhome-bus-card>` subsystem-filtered trace exports contributed by **@nachogarcia** on [#466 (comment 6682636224)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6682636224), [#466 (comment 6682939809)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6682939809), and [#466 (comment 6718123941)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6718123941) (`Home Assistant 2026.10.4`, `MyHOME 2.0.0b17`, `OWNd 2.0.0b13`).
+
+## Hardware Profile & Firmware Boundary Caveat
+
+- **Gateway Model**: BTicino H/L4684 (`art. H/L4684` 3.5" Living/Light Color Touch Screen with integrated LAN OpenWebNet server, `TS.n. 1`)
+- **Physical System Info (confirmed on screen)**: `FIRMWARE: 6.0.11`, `PIC REL: 12.40.5`, `HARDWARE: 3.0.3`
+- **Discovery & In-Band Identity**: SSDP `modelName = "HL4684"` (`firmware = "Unknown"` in UPnP XML description -> `H4684Profile`), `WHO 13` device type code `23`
+- **Firmware Boundary (`6.0.x` vs `2.0.x` + `MH200`)**:
+  - `H/L4684` units flashed to **`6.0.x`** (`6.0.8` / `6.0.11`) natively bridge dual-dialect `WHO 22` Sound System v2 alongside legacy `WHO 16` (`F441M` matrix + `F500` RDS FM tuner verified on this plant) and route `WHO 6` Door Entry lock-release commands (`*6*10*400X##`).
+  - Lower-firmware **`H4684 2.0.x`** (`2.0.54`, often deployed alongside an **`MH200 2.1.2`** scenario programmer) **does NOT support `WHO 22`** (`H4684Profile.supports_who(22)` is `False` whenever `firmware` is unknown or `< 6.0.0`) and **crashes its daemon if probed with `*#13**12##` (MAC request)**. Automatic startup probing MUST therefore query only `*#13**15##` (device type) and `*#13**16##` (firmware version), never `*#13**12##` and never `*#1013**1##` on non-`200` `WHO 13` codes.
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_HL4684_who5_2026-11-06T10-37-42.json` | Bus Monitor Trace (`46 rx` frames, `filter_who: 5`, `truncated: false`, `SHA-256: e739549ce06037e7058d9dab167ac7acbbd469f96b1a0bb90688529c46f66d4b`) | Complete burglar alarm arming (`*5*8*0##`), empty-`WHERE` battery/mains telemetry (`*5*4*##`, `*5*7*##`), **Zone `#1` technical alarm trigger (`*5*12*#1##`)**, disarming (`*5*2*0## -> *5*9*0##`), and periodic disarmed status dump across zones `#1..#8`. |
+| `myhome_trace_HL4684_who6_2026-11-06T10-37-42.json` | Bus Monitor Trace (`4` frames: `2 tx / 2 rx`, `filter_who: 6`, `truncated: false`, `SHA-256: 574b0bec4749d2748abbb4253691b56206db8c7eb38673117c2dd1bb9b499b62`) | **First committed physical `WHO 6` Door Entry trace in the repository**: `tx -> rx` door lock release commands `*6*10*4004##` (`+5.87 ms` monitor echo, `PE5`) and `*6*10*4003##` (`+8.56 ms` monitor echo, `PE4`). |
+| `myhome_trace_HL4684_who9_2026-11-06T10-37-42.json` | Bus Monitor Trace (`39 rx` frames, `filters.who: "9"`, `truncated: false`, `SHA-256: dfdeb462760e9861edabf257ecdec1b08c869e66f64bedd2a27798947c943e78`) | Auxiliary (`WHO 9`) motion-sensor pulse traffic on `WHERE = 2` (`24` frames: `12` `*9*1*2## -> *9*0*2##` pairs, `~173–502 ms` pulse width) and `WHERE = 4` (`15` frames: `7` `*9*1*4##` ON + `8` `*9*0*4##` OFF). |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Burglar Alarm Arm -> Zone `#1` Technical Alarm Trigger -> Disarm (`who5`, `frames[0..45]`, `10:35:58.754Z -> 10:36:37.924Z`)**:
+   - **Away Arming Burst (`frames[0..10]`, `10:35:58.754Z -> 10:35:59.797Z`)**: `*5*8*0##` (*Engage* -> `armed_away`), `*5*1*0##` (*Activation*), active zones `#1, #2, #4` (`*5*11*#1##`, `*5*11*#2##`, `*5*11*#4##`), non-active zones `#3, #5..#8` (`*5*18*#3##`, `*5*18*#5..#8##`), followed by empty-`WHERE` system battery fault `*5*4*##`.
+   - **Alarm Trigger Burst (`frames[11..23]`, `10:36:04.440Z -> 10:36:04.462Z`)**: Empty-`WHERE` status header (`*5*1*##`, `*5*8*##`, `*5*4*##`, `*5*7*##`), zone partition snapshot (`#1..#8`), culminating in **`[rx] *5*12*#1##` (`WHAT 12` = Technical alarm on Zone `#1`)**, which routes to central unit `"0"` (`STATE_TRIGGERED`) without creating a phantom `#1` panel entity.
+   - **Disarming & Follow-Up Dump (`frames[24..45]`, `10:36:07.169Z -> 10:36:37.924Z`)**: `*5*2*0##` (*Deactivation*) -> `*5*9*0##` (*Disengage* -> `disarmed`) -> `*5*1*0##` -> zones `#1..#8` -> `*5*4*##`, repeated in a clean periodic disarmed dump 30.5 s later (`frames[36..45]`).
+
+2. **Door Entry Lock Release (`who6`, `frames[0..3]`, `10:36:44.294Z -> 10:36:54.312Z`)**:
+   - `[0] tx *6*10*4004##` (`10:36:44.294583Z`) -> `[1] rx *6*10*4004##` (`10:36:44.300450Z`, `+5.87 ms` monitor echo on `*99*1##`): Entrance Panel `PE5` door lock release.
+   - `[2] tx *6*10*4003##` (`10:36:54.303791Z`) -> `[3] rx *6*10*4003##` (`10:36:54.312352Z`, `+8.56 ms` monitor echo on `*99*1##`): Entrance Panel `PE4` door lock release.
+
+3. **Auxiliary Motion Sensor Pulses (`who9`, `frames[0..38]`, `10:36:10.968Z -> 10:37:11.650Z`)**:
+   - `WHERE = 2`: `12` clean `*9*1*2##` (`ON`) -> `*9*0*2##` (`OFF`) motion pulses (`24` frames, `~173–502 ms` active duration).
+   - `WHERE = 4`: `7` `*9*1*4##` (`ON`) and `8` `*9*0*4##` (`OFF`) frames (`15` frames, including a back-to-back duplicate `*9*0*4##` at `10:36:27.699Z`).
+   - Confirms `WHO 9` AUX traffic never triggers phantom bus auto-discovery while cleanly driving configured `binary_sensor` motion entities on channels `"2"` and `"4"`.
+
+---
+
+# #466 BTicino H/L4684 (FW 6.0.11) Follow-Up Traces: `11#1` Valve Pulse Cycles, Zone `21` Audio Routing + `F500` Tuner Seek (`101.90 MHz` `"DIM*ROMA"`), and Multi-Zone Setpoint Offset Writes (`Dimension 12` vs `Dimension 14`)
+
+Follow-up verbatim `<myhome-bus-card>` trace exports contributed by **@andrea-mag** on [#466 (comment 6704994284)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6704994284) (`Home Assistant 2026.10.2`, `MyHOME 2.0.0b17`, `OWNd 2.0.0b12`, physical **BTicino H/L4684** firmware `6.0.11`).
+
+## Hardware Profile
+
+- **Gateway Model**: BTicino H/L4684 (`FW 6.0.11`, kernel `2.6.2`, distro `6.0.0`, `WHO 13` device type `23`)
+- **Subsystems Captured**:
+  - Thermoregulation (`WHO 4`): 8 zones (`11, 22, 33, 44, 55, 66, 77, 88`), central unit `3550` (`#0`), `F430/4` pure-valve actuators (`11#1`, `22#1`, `33#1`, `33#2`, `44#1`, `55#1`, `66#1..#3`, `77#1..#2`, `88#1`), and zone probes with non-zero local adjustment-wheel offsets (`-1.0 °C` on Zone `33`, `-2.0 °C` on Zone `22`, `-3.0 °C` on Zones `44`, `55`, `88`)
+  - Sound Diffusion (`WHO 16` + `WHO 22` dual-stack): `F441M` audio matrix (`Source 1` = physical **BTicino F500** FM radio tuner at `101` / `2#1` / `5#2#1`, `Source 2` = `102` / `2#2` / `5#2#2`) + Zone `21` (`3#2#1`, Environment `2`, Amplifier `1`)
+  - Lighting (`WHO 1`) + Automation (`WHO 2`) + Load Control (`WHO 3`) + Gateway Management (`WHO 13`)
+
+## Contributed Files
+
+| File | Type | Description |
+|---|---|---|
+| `myhome_trace_HL4684_all_2026-11-05T22-15-31.json` | Bus Card Trace Export (`150 rx` frames, `0 tx`, `truncated: true`, `SHA-256: 073b38d435329e5f0e8948a2d8207904c103624005974178c4b98eecf4ad8b8d`) | Autonomous evening capture showing a `5.69 s` heating valve pulse on Zone `11` (`*#4*11#1*20*1##` -> `*#4*11#1*20*5##`) triggered when ambient temperature (`20.4 °C`) sits near the effective setpoint (`20.5 °C`), plus periodic 15-minute `WHO 4` bursts (`#0` + Zones `11..88`). |
+| `myhome_trace_HL4684_all_2026-11-07T08-54-06.json` | Bus Card Trace Export (`150` frames: `134 rx / 16 tx`, `truncated: true`, `SHA-256: 566179f3fda3e6bfb552c23a74f2bbbab7a326e6ecbd5270888ef2c4fccfc5ad`) | Dual-stack `WHO 16` + `WHO 22` Zone `21` wake (`*16*13*21##` -> `*16*3*21##`), Area `2` -> `Source 2` matrix routing (`*22*23#4#2*5#2#2##` paired with `*16*3*142##`), switch to `Source 1` (`F500` radio tuner `*16*3*101##` + `*16*3*121##` -> `*22*2#4#2*5#2#1##`, RDS `"DIM*SOFT"`), direct frequency write to `96.50 MHz` (`*#16*101*#6*0*96500##` -> `*#16*101*6*0*96500##` + `*#22**5*1*9650##`), auto-seek UP (`*16*5000*101##`) locking onto `101.90 MHz` (`"DIM*ROMA"`, Dimensione Suono Roma), direct volume write (`*#16*21*#1*16##` -> `*#16*21*1*16##` + `*#22*3#2#1*1*16##`), and standby turn-off (`*16*13*21##` -> `*16*13*101##`). |
+| `myhome_trace_HL4684_all_2026-11-07T09-11-53.json` | Bus Card Trace Export (`150` frames: `143 rx / 7 tx`, `truncated: true`, `SHA-256: a31fd777b57cf73b1a7f6a6c28990fd0cdae2b7bd0ed50a89d66698d5bab2c88`) | Initial Home Assistant `WHO 4` manual setpoint writes (`*#4*#Z*#14*TTTT*3##`) across Zones `88`, `33`, `22`, `44`, and `55`, capturing paired `Dimension 12` (`*#4*Z*12*<T_eff>*3##`) and `Dimension 14` (`*#4*Z*14*<T_nom>*3##`) echoes (plus `Dimension 12`-only echoes) that reveal the per-zone physical knob offsets (`-3.0 °C` on `88`/`44`/`55`, `-2.0 °C` on `22`, `-1.0 °C` on `33`) without any `Dimension 13` broadcast. |
+| `myhome_trace_HL4684_all_2026-11-07T09-13-19.json` | Bus Card Trace Export (`150` frames: `137 rx / 13 tx`, `truncated: true`, `SHA-256: e680374eb03d71adceb34e0ac5456407f29a1034afdb4f9e5100be61bdf1aae3`) | Continuation of `09-11-53.json`, capturing 13 manual setpoint writes across Zones `88`, `33`, `22`, `44`, and `55` alongside the `09:11:36 -> 09:12:34` 15-minute `WHO 4` periodic burst (`*#4*55*14*0250*3##` at `09:12:12.660+01:00`) and a `4.77 s` valve pulse (`*#4*11#1*20*1##` -> `*#4*11#1*20*5##`) on Zone `11`. |
+
+## Sequence of Actions Recorded & Subsystems Verified
+
+1. **Autonomous Zone `11` (`11#1`) Short Heating Valve Pulses (`22-15-31.json` & `09-13-19.json`)**:
+   - In `22-15-31.json`, Zone `11` reports ambient temperature `20.4 °C` (`*#4*11*0*0204##`) and nominal setpoint `20.5 °C` (`*#4*11*14*0205*3##`, `0.0 °C` local offset). At `22:01:28.918+01:00`, `11#1` turns ON (`*#4*11#1*20*1##`) accompanied by `*4*1*11##` (*Heating mode*) and `*4*102*11##` (*Protection Heating*), then turns OFF `5.69 s` later (`22:01:34.609+01:00`) with `*#4*11#1*20*5##` + `*4*1*11##` + `*4*102*11##`.
+   - In `09-13-19.json`, Zone `11` (`19.9 °C` ambient vs `19.5 °C` nominal setpoint) executes the identical proportional-band pulse pattern at `09:12:18.308+01:00` (`*#4*11#1*20*1##` -> `*#4*11#1*20*5##` at `09:12:23.081+01:00`, `4.77 s` duration).
+
+2. **Zone `21` Audio Routing (`WHO 16` + `WHO 22`) & `F500` Tuner Manual Tuning + Auto-Seek (`08-54-06.json`)**:
+   - **Zone `21` Wake & Initial `Source 2` Assertion (`frames[90..101]`)**:
+     - HA sends `tx *16*13*21##` -> `tx *16*3*21##`. On `H/L4684`, `bt_difson` translates `*16*3*21##` into SCS environment-2 source-1 routing (`$04 90 01 8F 23`) + amplifier-21 turn-on (`$04 90 01 82 23`), while the physical amplifier wakes on its stored `Source 2` (`*22*23#4#2*5#2#2##`), causing `Source 1` (`F500`) to enter standby (`*16*13*101##`) and `bt_difson` to emit `*16*3*142##` (Environment `4` on `Source 2`) + `*22*2#4#4*5#2#2##` rather than `*16*3*122##`.
+   - **Switch Zone `21` to `Source 1` (`F500` Radio Tuner) (`frames[102..118]`)**:
+     - `tx *16*3*101##` -> `tx *16*3*121##` powers on `Source 1` (`*16*3*101##` + `*#22*2#1*12*1*4##`), routes Area `2` to `Source 1` (`*22*21#4#2*5#2#1##`, `*16*3*121##`, `*22*2#4#2*5#2#1##`), and emits the `F500` RDS broadcast (`"DIM*SOFT"`).
+   - **Direct Frequency Write (`96.50 MHz`) & Auto-Seek UP (`101.90 MHz` `"DIM*ROMA"`) (`frames[122..133]`)**:
+     - `tx *#16*101*#6*0*96500##` tunes the `F500` to `96.50 MHz` (`*#16*101*6*0*96500##` / `*#22**5*1*9650##`, clearing RDS to `"        "`).
+     - `tx *16*5000*101##` (`WHAT 5000` = hardware seek UP) sweeps upward and locks onto **`101.90 MHz`** (`*#16*101*6*0*101900##` / `*#22*5#2#1*5*1*10190##`), decoding live RDS **`"DIM*ROMA"`** (`*#16*101*8*68*73*77*42*82*79*77*65##` / `*#22*5#2#1*10*68*73*77*42*82*79*77*65##`).
+   - **Direct Volume `16` Write & Standby (`frames[135..148]`)**:
+     - `tx *#16*21*#1*16##` is answered with `rx *#16*21*1*16##` paired with `rx *#22*3#2#1*1*16##`.
+     - `tx *16*13*21##` -> `tx *16*13*101##` turns off Zone `21` (`*16*13*21##` / `*#22*3#2#1*12*0*10##`) and `Source 1` (`*16*13*101##` / `*#22*2#1*12*0*10##`).
+
+3. **Multi-Zone `WHO 4` Manual Setpoint Writes & Implicit Local Knob Offsets (`09-11-53.json` & `09-13-19.json`)**:
+   - Because `H/L4684` disables `*#4*Z##` point-to-point zone polling (`supports_zone_status = False`) and the `3550` central unit's 15-minute periodic bursts emit only `Dimension 0` (ambient temperature) and `Dimension 14` (nominal setpoint), `Dimension 13` (`*#4*Z*13*OO##`) is never broadcast autonomously.
+   - Across the `13` setpoint writes (`tx *#4*#Z*#14*TTTT*3##`) in `09-11-53.json` (and the `14th` write in `09-13-19.json`), the zone probe immediately responds (`~370–660 ms`) with `Dimension 12` (`*#4*Z*12*<T_eff>*3##`, effective setpoint in force = `T_nom + offset`), followed `~200 ms` later on `9` of `13` writes by `Dimension 14` (`*#4*Z*14*<T_nom>*3##`, while `4` of `13` writes emit `Dimension 12` alone):
+     - **Zone `88`** (`offset = -3.0 °C`): `tx 21.0 °C` -> `Dim 12 = 18.0 °C`, `Dim 14 = 21.0 °C`; `tx 24.0 °C` -> `Dim 12 = 21.0 °C` (no `Dim 14`).
+     - **Zone `33`** (`offset = -1.0 °C`): `tx 20.0 °C` -> `Dim 12 = 19.0 °C` (no `Dim 14`).
+     - **Zone `22`** (`offset = -2.0 °C`): `tx 19.5 °C` -> `Dim 12 = 17.5 °C`, `Dim 14 = 19.5 °C`.
+     - **Zone `44`** (`offset = -3.0 °C`): `tx 23.0 °C` -> `Dim 12 = 20.0 °C`, `Dim 14 = 23.0 °C`; `tx 20.0 °C` -> `Dim 12 = 17.0 °C`, `Dim 14 = 20.0 °C`; `tx 19.5 °C` -> `Dim 12 = 16.5 °C`, `Dim 14 = 19.5 °C`; `tx 18.5 °C` -> `Dim 12 = 15.5 °C` (no `Dim 14`).
+     - **Zone `55`** (`offset = -3.0 °C`): `tx 24.5 °C` -> `Dim 12 = 21.5 °C`, `Dim 14 = 24.5 °C`; `tx 21.5 °C` -> `Dim 12 = 18.5 °C`, `Dim 14 = 21.5 °C`; `tx 24.5 °C` -> `Dim 12 = 21.5 °C` (no `Dim 14`); `tx 21.5 °C` -> `Dim 12 = 18.5 °C`, `Dim 14 = 21.5 °C`; `tx 25.0 °C` -> `Dim 12 = 22.0 °C`, `Dim 14 = 25.0 °C`; and in `09-13-19.json`, `tx 24.0 °C` -> `Dim 12 = 21.0 °C`, `Dim 14 = 24.0 °C`.
+
+4. **One-shot `Dimension 13` reads answered by the `H/L4684` (`myhome_trace_HL4684_all_2026-11-13T06-59-18.json`)**:
+   - Verbatim bus trace contributed by **@andrea-mag** on [#466 (comment 6846511850)](https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-6846511850), answering the quick test for `WHO 4` `Dimension 13`. Gateway **BTicino H/L4684**, Home Assistant `2026.11.0`, MyHOME `2.0.0b17`, OWNd `2.0.0b13`. `30` frames (`26 rx / 4 tx`), window `06:57:34`–`06:59:08 UTC`. `SHA-256: 7f8e2bfd5f1baedca5d6c9638f8d2f0fccd5c5cfe6d86c03a7ea1f2d8c4a0245`. They are facts: never edit a frame.
+   - It settles that the `H/L4684` **answers direct per-zone `Dimension 13` reads** (not only via the dimensionless `*#4*Z##`, which this gateway refuses): `tx *#4*88*13##` -> `rx *#4*88*13*13##` (knob `-3`) in `92 ms`; zone `33` `-> *11##` (`-1`) `83 ms`; zone `22` `-> *12##` (`-2`) `84 ms`; zone `11` `-> *12##` (`-2`) `92 ms`.
+   - Zone `33` also emits four **unrequested** `Dimension 13` frames while its knob is turned (`*#4*33*13*12##`, `*13##`, `*12##`, `*11##`), confirming the gateway forwards knob changes on its own too. The trace carries no setpoint write and no `Dimension 12 / 14` frame.

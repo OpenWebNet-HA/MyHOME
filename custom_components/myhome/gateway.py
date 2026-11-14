@@ -1,420 +1,1267 @@
 """Code to handle a MyHome Gateway."""
+from __future__ import annotations
+
 import asyncio
-from typing import Dict, List
+import collections
+import inspect
+import re
+import time
+from collections.abc import Iterable
+from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONF_ENTITIES,
-    CONF_HOST,
-    CONF_PORT,
-    CONF_PASSWORD,
-    CONF_NAME,
-    CONF_MAC,
     CONF_FRIENDLY_NAME,
+    CONF_HOST,
+    CONF_MAC,
+    CONF_NAME,
+    CONF_PASSWORD,
+    CONF_PORT,
 )
-from homeassistant.components.light import DOMAIN as LIGHT
-from homeassistant.components.switch import (
-    SwitchDeviceClass,
-    DOMAIN as SWITCH,
-)
-from homeassistant.components.button import DOMAIN as BUTTON
-from homeassistant.components.cover import DOMAIN as COVER
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    DOMAIN as BINARY_SENSOR,
-)
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    DOMAIN as SENSOR,
-)
-from homeassistant.components.climate import DOMAIN as CLIMATE
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later
+from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway, OWNSession
+from OWNd.message import OWNCommand
+from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
-from OWNd.connection import OWNSession, OWNEventSession, OWNCommandSession, OWNGateway
-from OWNd.message import (
-    OWNMessage,
-    OWNLightingEvent,
-    OWNLightingCommand,
-    OWNEnergyEvent,
-    OWNAutomationEvent,
-    OWNDryContactEvent,
-    OWNAuxEvent,
-    OWNHeatingEvent,
-    OWNHeatingCommand,
-    OWNCENPlusEvent,
-    OWNCENEvent,
-    OWNGatewayEvent,
-    OWNGatewayCommand,
-    OWNCommand,
-)
-
+from .bus_monitor import BusMonitor
 from .const import (
-    CONF_PLATFORMS,
-    CONF_FIRMWARE,
-    CONF_SSDP_LOCATION,
-    CONF_SSDP_ST,
+    BUS_ROUTING,
     CONF_DEVICE_TYPE,
+    CONF_FIRMWARE,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
+    CONF_SSDP_LOCATION,
+    CONF_SSDP_ST,
     CONF_UDN,
-    CONF_SHORT_PRESS,
-    CONF_SHORT_RELEASE,
-    CONF_LONG_PRESS,
-    CONF_LONG_RELEASE,
-    DOMAIN,
     LOGGER,
 )
-from .myhome_device import MyHOMEEntity
-from .button import (
-    DisableCommandButtonEntity,
-    EnableCommandButtonEntity,
+from .device_health import DeviceHealth
+from .gateway_events import GatewayEventDispatcher
+from .gateway_resync import LightingResyncManager
+from .gateway_sessions import (
+    COMMAND_SESSION_IDLE_TIMEOUT,
+    EVENT_INACTIVITY_TIMEOUT,
+    EVENT_READY_TIMEOUT,
+    EVENT_RESTART_BACKOFF_MAX,
+    EVENT_RESTART_BACKOFF_MIN,
+    EVENT_STALL_TIMEOUT,
+    STATUS_TIMEOUT_BACKOFF,
+    CommandPriorityQueue,
+    CommandWorkerPool,
+    EventSessionRunner,
+    FrameScheduler,
+    _cancel_written,
+    _resolve_written,
+    _session_is_open,
+)
+from .identity import (
+    GatewayIdentityEvidence,
+    GatewayIdentityMixin,
+    GatewayIdentityResolution,
+    read_who13,
+    read_who1013,
+    resolve_gateway_identity,
+)
+from .repairs import (
+    async_create_identity_corrected_issue,
+    async_create_identity_issue,
+    async_create_unconfigured_timezone_issue,
+    async_create_unknown_model_issue,
+    async_delete_identity_issue,
+    async_delete_unconfigured_timezone_issue,
+    async_delete_unknown_model_issue,
+)
+from .topology import (
+    DOOR_ENTRY_AV_MODELS,
+    DOOR_ENTRY_MH_BRIDGE_AV_MODELS,
+    DOOR_ENTRY_UNSUPPORTED_MODELS,
+    DOOR_ENTRY_WHO6_ONLY_MODELS,
+    DOOR_ENTRY_WHO8_ONLY_MODELS,
+    GatewayTopologyMixin,
+    peer_handles_who,
 )
 
+__all__ = [
+    "AVAILABILITY_GRACE",
+    "COMMAND_SESSION_IDLE_TIMEOUT",
+    "CommandPriorityQueue",
+    "CommandWorkerPool",
+    "EVENT_INACTIVITY_TIMEOUT",
+    "EVENT_READY_TIMEOUT",
+    "EVENT_RESTART_BACKOFF_MAX",
+    "EVENT_RESTART_BACKOFF_MIN",
+    "EVENT_STALL_TIMEOUT",
+    "EventSessionRunner",
+    "FrameScheduler",
+    "GatewayEventDispatcher",
+    "GatewayIdentityEvidence",
+    "GatewayIdentityMixin",
+    "GatewayIdentityResolution",
+    "GatewayTopologyMixin",
+    "GenericGatewayProfile",
+    "LightingResyncManager",
+    "MyHOMEGatewayHandler",
+    "OWNCommandSession",
+    "OWNEventSession",
+    "OWNGateway",
+    "OWNSession",
+    "STATUS_TIMEOUT_BACKOFF",
+    "WHO4_RECOVERY_QUIET_WINDOWS",
+    "_cancel_written",
+    "_resolve_written",
+    "_session_is_open",
+    "async_call_later",
+    "async_create_identity_corrected_issue",
+    "async_create_identity_issue",
+    "async_create_unconfigured_timezone_issue",
+    "async_create_unknown_model_issue",
+    "async_delete_identity_issue",
+    "async_delete_unconfigured_timezone_issue",
+    "async_delete_unknown_model_issue",
+    "async_dispatcher_send",
+    "command_session_default",
+    "command_session_limit",
+    "dr",
+    "er",
+    "get_gateway_profile",
+    "read_who13",
+    "read_who1013",
+    "resolve_gateway_identity",
+    "time",
+]
 
-class MyHOMEGatewayHandler:
+
+def _call_get_gateway_profile(
+    model: str | None, firmware: str | None = None, *, lookup: Any = None
+) -> Any:
+    """Call ``get_gateway_profile`` with optional firmware, tolerating 1-arg mocks."""
+    fn = lookup if lookup is not None else get_gateway_profile
+    if firmware:
+        try:
+            return fn(model, firmware)
+        except TypeError:  # pragma: no cover - fallback for 1-arg mocks or older OWNd
+            return fn(model)
+    return fn(model)
+
+
+def _profile_for_model(
+    model: str | None, firmware: str | None = None, *, lookup: Any = None
+) -> Any:
+    """Resolve ``model`` to an OWNd profile (firmware-aware, e.g. the H4684's WHO 22 from 6.0.0).
+
+    SSDP spellings such as ``H/L4684`` / ``HL4684`` / ``HC4684`` are aliased by the pinned OWNd
+    itself (OWNd#147, in OWNd 2.0.0b13). Touch screen family spellings (067292, etc.) are mapped
+    via ``_MODEL_SPELLINGS`` (#832).
+    """
+    profile = _call_get_gateway_profile(model, firmware, lookup=lookup)
+    if isinstance(profile, GenericGatewayProfile) and model:
+        mapped = _MODEL_SPELLINGS.get(_alnum(model))
+        if mapped is not None:
+            return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
+    return profile
+
+
+def command_session_limit(model: str | None) -> int | None:
+    """Return how many command sessions a known gateway model accepts at once."""
+    profile = _profile_for_model(model)
+    max_sessions = getattr(profile, "max_command_sessions", None)
+    if isinstance(profile, GenericGatewayProfile) or max_sessions is None:
+        return None
+    return int(max_sessions)
+
+
+def command_session_default(model: str | None) -> int:
+    """Return how many command sessions a new entry should start with."""
+    profile = _profile_for_model(model)
+    default = int(getattr(profile, "default_command_sessions", 1))
+    limit = command_session_limit(model)
+    return max(1, min(default, limit) if limit is not None else 1)
+
+
+AVAILABILITY_GRACE = 60
+BUS_QUIET_PERIOD = 0.75
+BUS_QUIET_CAP = 15.0
+PACED_WRITE_TIMEOUT = 60.0
+# Extra BUS_QUIET_CAP windows waited by _wait_for_who4_recovery() when a WHO 4 status read
+# times out or desyncs while event frames are still actively streaming on the bus (#886).
+# On MyHomeServer1 (028206), /home/bticino/cfg/openserver routes WHO 4 to a single-threaded
+# bt_termo daemon (127.0.0.1:30004, 9 s timeout) while bt_thermo_manager periodically walks
+# its internal thermo.conf zone list (5-15 min DIMENSION 7 + DIMENSION 0 or 5-frame *#4*Z##
+# sweeps taking 6 s on fast buses up to 65-115 s across multi-riser plants; zones omitted
+# from thermo.conf such as Zone 59 in #886 never appear in those sweeps). Intentionally
+# bounded at 4 extra windows (up to (1 + 4) * 15 s = 75 s total) so a typical 65-75 s
+# internal sweep can finish and drain the buffered query without stalling forever on a
+# permanently chattering bus.
+WHO4_RECOVERY_QUIET_WINDOWS = 4
+# How long a zone request waits for others once the startup sweep is over: zones discovered
+# from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
+# sweep (*#4*#0*20##) on an F461.
+ZONE_REQUEST_COALESCE = 0.1
+DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
+    (1, "*#1*0##"),
+    (2, "*#2*0##"),
+    (4, "*#4*0##"),
+    (5, "*#5*0##"),
+    (16, "*#16*0*5##"),
+    (18, "*#18*51*51##"),
+    (18, "*#18*51*113##"),
+)
+# Startup requests the firmware drops instead of forwarding them to the bus (own-firmware-oracle,
+# results/mcp_index.json at 53f9514; "silent" verdicts). Read from the OWNd profile first
+# (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
+# until the flags exist there. Gateways not listed keep sending the request.
+GENERAL_ZONE_REQUEST_REFUSED = frozenset(
+    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
+)  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
+# oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
+# and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
+# trace 19-05-42 frames 0-10).
+SOUND_STATUS_REQUEST_REFUSED = frozenset(
+    {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
+)  # *#16*0*5## (sound-who16-source.tsv)
+# Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
+# for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
+# single-session or uncaptured models refusing *#4*0## whose *#4*Z## is expanded into four bus
+# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), and the MH201, whose standalone
+# thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466
+# sweep trace, the MH201 is not in the oracle). F454, MH202, F460, F461 and MyHomeServer1 refuse
+# *#4*0## too but answer *#4*Z## themselves (F454 supports up to 4 command sessions and answers
+# all five frames in ~1.3 s on both central-unit #629 and standalone #866 plants; MH202 answers
+# all five frames in ~160-250 ms, #866; F460, F461 and MyHomeServer1 expand it into $0499013000 in
+# trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
+# so their zones keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
+# Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
+# one after another), but where a zone that has not reported its temperature, setpoint, mode and
+# an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
+# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its setpoint
+# (*#4*Z*14##), its setpoint in force (*#4*Z*12##, followed by the zone's season frame) and
+# actuator 1 (*#4*Z#1*20##). A value Home Assistant restored from before the restart is not a
+# report. A physical F455 1.0.76 answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
+# standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
+# four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a probe
+# the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
+# (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the poll
+# holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
+# The gate is read when the poll runs (the in-band identity may correct the model after the
+# entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
+SILENT_ZONE_POLL = frozenset({"F455"})
+SILENT_ZONE_GRACE = 120.0
+# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
+# own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
+# frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
+# local main-bus zone Z (F450, F454, F459, F460, F461, H4684, MH200, MyHomeServer1), or on MH202
+# 010024 misparse trailing #4#01 as local zone 4 actuator 1 and crash coso with SIGSEGV on
+# *#4*Z#4#01## (including while the profile is still Generic). ``interface_zone_request_refused``
+# therefore defaults to True across all models unless ``profile.supports_interface_zone_requests``
+# is explicitly True.
+
+# Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
+# forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
+# (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
+# Read from the OWNd profile first (``supports_heating_actuator_status``, OWNd#168 in 2.0.0b14);
+# this table is the fallback for ``GenericGatewayProfile`` / brand-prefixed model strings and
+# ``None`` (unverified) profile flags.
+ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+# Gateways that refuse the zone form of that request at once but answer the actuator form
+# (``*#4*Z#N*20##``): a physical F455 1.0.76 NACKed *#4*2*20##, *#4*4*20##, *#4*3*20## and
+# *#4*0*20## in 2-18 ms and answered *#4*2#1*20## / *#4*4#1*20## / *#4*3#1*20## in ~0.09 s
+# (issue_466/F455_direct_requests_2026-11-06.jsonl, F455_direct_requests_zone3_2026-11-06.jsonl).
+# A zone's watch is not sent there; a thermo actuator switch (``Z#N``) still asks.
+ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
+# One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
+# the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
+# The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
+# answered it in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone
+# through the paced sender takes about 32 s; the emulated 028206 forwards it ("out").
+# For humidity (dimension 60), all four humidity-forwarding gateways in own-firmware-oracle
+# (thermo-zone-requests: F459, F460, F461, MyHomeServer1) translate ``*#4*0*60##`` into the
+# broadcast SCS query ``$06D200030308000000`` ("out"); the live MyHomeServer1 3.87.13 ACKed it
+# in 0.50 s with all 17 humidity-probe zones answering (myhomeserver1_live_2026-10-24, #886),
+# and the live F461 2.0.11 answered it in 2.13 s (f461_live_2026-10-23).
+ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
+    "F459": {60: "*#4*0*60##"},
+    "F460": {60: "*#4*0*60##"},
+    "F461": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
+    "MYHOMESERVER1": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
+}
+# Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
+# nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests suite
+# (findings/thermo-zone-requests.md on main, ``firmware_observed``, emulated firmware); F459,
+# F460, F461 and MyHomeServer1 forwarded it, and the live F461 / MyHomeServer1 answer it.
+# Read from the OWNd profile first (``supports_heating_humidity_request``: ``True`` / ``False``
+# wins, ``None`` = unverified, OWNd#168 in 2.0.0b14); this table is the fallback for
+# ``GenericGatewayProfile`` / brand-prefixed model strings and ``None`` (such as F455).
+HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", "H4684", "MH200", "MH200N", "MH202"})
+# The F455 is not in the oracle: a physical F455 1.0.76 NACKed *#4*2*60## in 19 ms with nothing on
+# the bus (issue_466/F455_direct_requests_2026-11-06.jsonl, t=68.6).
+# Every gateway model the request tables can be keyed on: the twelve images the oracle emulates
+# (results/<P>/<V>, refusing and forwarding alike) and the other models OWNd profiles, so a
+# forwarding model named with a brand prefix ("BTicino F461") is keyed as itself (``F461``)
+# and not left as the whole string. The same key on every table of #792 / #793 / #794.
+KNOWN_GATEWAY_MODELS = frozenset(
+    {
+        "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
+        "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
+    }
+)
+# The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
+_ZONE_REQUEST_MODELS = sorted(
+    KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL | SILENT_ZONE_POLL
+    | ZONE_ACTUATOR_REQUEST_REFUSED,
+    key=len,
+    reverse=True,
+)
+# Legrand 067292 Céliane 3.5" touch screen family (issue #832) SSDP model names mapped
+# to the H4890 profile until OWNd aliases them upstream.
+_MODEL_SPELLINGS = {
+    "067292": "H4890",
+    "67292": "H4890",
+    "573958": "H4890",
+    "078479": "H4890",
+    "78479": "H4890",
+}
+
+
+def _alnum(name: object) -> str:
+    """A model string reduced to its upper-case letters and digits (``"BTicino F461"`` -> ``BTICINOF461``)."""
+    return "".join(character for character in str(name).upper() if character.isalnum())
+
+
+def _resolved_model(word: str) -> str | None:
+    """The model OWNd resolves one word of a model string to, or ``None`` for a word it does not know.
+
+    ``L4684`` -> ``H4684``, ``HL4684`` / ``HC4684`` -> ``H4684`` (OWNd#147), ``003598`` -> ``F454``,
+    ``03565`` -> ``MH200N`` (OWNd's aliases and catalogue item numbers); spellings OWNd has no
+    alias for are mapped first via ``_MODEL_SPELLINGS``.
+    """
+    key = _MODEL_SPELLINGS.get(_alnum(word), word)
+    profile = get_gateway_profile(key)
+    if isinstance(profile, GenericGatewayProfile):
+        return None
+    return _alnum(profile.model_name)
+
+
+# A WHO 4 zone address: ``Z`` (0..99), ``#Z``, ``Z#N`` (actuator 0..9), each optionally behind
+# an interface of exactly two digits (``Z#4#01``): the grammar of OWNd#140's builder
+# (``OWNHeatingCommand.actuators_status``).
+_ZONE_WHERE = re.compile(rf"^#?[0-9]{{1,2}}(?:#[0-9])?(?:{re.escape(BUS_ROUTING)}[0-9]{{2}})?$")
+
+
+def _validate_zone_where(where: str) -> str:
+    """The WHO 4 zone address as it goes into ``*#4*WHERE*DIM##``, or ``ValueError``.
+
+    A one-digit interface is written with two (``3#4#1`` -> ``3#4#01``), as the frames on
+    the wire and the configuration validator spell it. Anything else would change the
+    frame's grammar: ``2*22`` would turn a dimension 20 request into ``*#4*2*22*20##``, a
+    dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
+    (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
+    """
+    zone, routing, interface = (where or "").rpartition(BUS_ROUTING)
+    if routing and len(interface) == 1 and interface.isdigit():
+        where = f"{zone}{routing}{interface.zfill(2)}"
+    if not _ZONE_WHERE.match(where or ""):
+        raise ValueError(f"Invalid zone address: {where!r}")
+    return where
+
+
+def _zone_request_frame(where: str, dimension: int) -> str:
+    """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder."""
+    return f"*#4*{_validate_zone_where(where)}*{dimension}##"
+
+
+def _is_zone_level_where(where: str) -> bool:
+    """A zone as a whole (``Z``, ``#Z``, ``Z#4#II``), not one of its actuators (``Z#N``, ``Z#N#4#II``)."""
+    return "#" not in where.partition(BUS_ROUTING)[0].lstrip("#")
+
+
+class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     """Manages a single MyHOME Gateway."""
 
-    def __init__(self, hass, config_entry, generate_events=False):
+    device_registry_id: str | None = None
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        config_entry: ConfigEntry,
+        generate_events: bool = False,
+        broadcast_resync: bool = True,
+    ) -> None:
+        """Initialize the MyHOME Gateway handler."""
         build_info = {
-            "address": config_entry.data[CONF_HOST],
-            "port": config_entry.data[CONF_PORT],
-            "password": config_entry.data[CONF_PASSWORD],
-            "ssdp_location": config_entry.data[CONF_SSDP_LOCATION],
-            "ssdp_st": config_entry.data[CONF_SSDP_ST],
-            "deviceType": config_entry.data[CONF_DEVICE_TYPE],
-            "friendlyName": config_entry.data[CONF_FRIENDLY_NAME],
-            "manufacturer": config_entry.data[CONF_MANUFACTURER],
-            "manufacturerURL": config_entry.data[CONF_MANUFACTURER_URL],
-            "modelName": config_entry.data[CONF_NAME],
-            "modelNumber": config_entry.data[CONF_FIRMWARE],
-            "serialNumber": config_entry.data[CONF_MAC],
-            "UDN": config_entry.data[CONF_UDN],
+            "address": config_entry.data.get(CONF_HOST),
+            "port": config_entry.data.get(CONF_PORT, 20000),
+            "password": config_entry.data.get(CONF_PASSWORD),
+            "ssdp_location": config_entry.data.get(CONF_SSDP_LOCATION, ""),
+            "ssdp_st": config_entry.data.get(CONF_SSDP_ST, ""),
+            "deviceType": config_entry.data.get(CONF_DEVICE_TYPE, ""),
+            "friendlyName": config_entry.data.get(CONF_FRIENDLY_NAME, ""),
+            "manufacturer": config_entry.data.get(CONF_MANUFACTURER, ""),
+            "manufacturerURL": config_entry.data.get(CONF_MANUFACTURER_URL, ""),
+            "modelName": config_entry.data.get(CONF_NAME, "Generic"),
+            "modelNumber": config_entry.data.get(CONF_FIRMWARE, ""),
+            "serialNumber": config_entry.data.get(CONF_MAC, ""),
+            "UDN": config_entry.data.get(CONF_UDN, ""),
         }
         self.hass = hass
         self.config_entry = config_entry
         self.generate_events = generate_events
         self.gateway = OWNGateway(build_info)
-        self._terminate_listener = False
-        self._terminate_sender = False
+        if isinstance(self.gateway.profile, GenericGatewayProfile):
+            self.gateway.profile = _profile_for_model(self.gateway.model_name, self.gateway.firmware)
         self.is_connected = False
-        self.listening_worker: asyncio.tasks.Task = None
-        self.sending_workers: List[asyncio.tasks.Task] = []
-        self.send_buffer = asyncio.Queue()
+        self._available = False
+        self._failover_active = False
+        self._setup_at = time.monotonic()
+        self._unavailable_timer: CALLBACK_TYPE | None = None
+        self.listening_worker: asyncio.Task[None] | None = None
+        self.bus_monitor = BusMonitor()
+        self.device_health = DeviceHealth(self)
+        self.device_registry_id = None
+        self.broadcast_resync = broadcast_resync
+        self.has_central_unit = False
+
+        self._who13: dict[str, Any] = {
+            "code": None, "model": None, "model_official": None, "model_observed": None,
+            "firmware": None, "kernel": None, "distribution": None,
+            "pending_code": False, "pending_firmware": False,
+        }
+        self._who1013: dict[str, Any] = {
+            "code": None, "model": None, "names": (), "pending": False,
+            "n_conf": None, "brand": None, "line": None,
+        }
+        self._identity_conflict: str | None = None
+        self._identity_resolution: GatewayIdentityResolution | None = None
+
+        self._event_dispatcher = GatewayEventDispatcher(self)
+        self._resync_manager = LightingResyncManager(self)
+        self._event_runner = EventSessionRunner(self)
+        self._command_pool = CommandWorkerPool(
+            self,
+            event_session_ready=self._event_runner.event_session_ready,
+        )
+
+        self._cen_devices: set[tuple[int, Any]] = self._event_dispatcher.cen_devices
+        self._resync_timers: dict[str, CALLBACK_TYPE] = self._resync_manager.resync_timers
+        self._resync_group_echoes: dict[str, int] = self._resync_manager.resync_group_echoes
+        self._recent_ptp: collections.deque[tuple[float, str, str | None]] = self._resync_manager.recent_ptp
+        self._sender_stop: asyncio.Event = self._command_pool.sender_stop
+        self._initial_discovery_done: asyncio.Event = asyncio.Event()
+        # Paced sweeps in flight; close_listener() bumps the epoch so a sweep that was
+        # running at the time cannot end one started after the reconnect.
+        self._active_sweeps: int = 0
+        self._sweep_epoch: int = 0
+        self._sweep_idle: asyncio.Event = asyncio.Event()
+        self._sweep_idle.set()
+        self._last_event_frame_at: float = 0.0
+        # Heating zones whose actuators are asked after the startup sweep and every reconnect,
+        # and the (zone, dimension) requests waiting for the next paced run.
+        self._actuator_zones: dict[str, int] = {}
+        self._zone_requests: set[tuple[str, int]] = set()
+        self._zone_request_task: asyncio.Task[None] | None = None
+        self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
+
+    @property
+    def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
+        """Return the send queue."""
+        return self._command_pool.send_buffer
+
+    @send_buffer.setter
+    def send_buffer(self, value: FrameScheduler | asyncio.Queue[Any]) -> None:
+        self._command_pool.send_buffer = value
+
+    @property
+    def sending_workers(self) -> list[asyncio.Task[None]]:
+        """Return the sending workers list."""
+        return self._command_pool.sending_workers
+
+    @sending_workers.setter
+    def sending_workers(self, value: list[asyncio.Task[None]]) -> None:
+        self._command_pool.sending_workers = value
+
+    @property
+    def _terminate_listener(self) -> bool:
+        """Whether the listener task is terminating."""
+        return self._event_runner._terminate_listener
+
+    @_terminate_listener.setter
+    def _terminate_listener(self, value: bool) -> None:
+        self._event_runner._terminate_listener = value
+
+    @property
+    def _terminate_sender(self) -> bool:
+        """Whether the sender task is terminating."""
+        return self._command_pool._terminate_sender
+
+    @_terminate_sender.setter
+    def _terminate_sender(self, value: bool) -> None:
+        self._command_pool._terminate_sender = value
+
+    @property
+    def _event_session_ready(self) -> asyncio.Event:
+        """Event set when the event session is established."""
+        return self._event_runner._event_session_ready
+
+    def _ensure_cen_device(self, who: int, object_id: int | str, model: str | None = None) -> None:
+        """Ensure CEN/CEN+ scenario unit is registered in device registry."""
+        self._event_dispatcher.ensure_cen_device(who, object_id, model=model)
 
     @property
     def mac(self) -> str:
-        return self.gateway.serial
+        """Return normalized MAC address."""
+        serial = self.gateway.serial
+        if serial:
+            formatted = dr.format_mac(serial)
+            if formatted:
+                return formatted
+        return serial or ""
 
     @property
     def unique_id(self) -> str:
+        """Return gateway unique ID."""
+        return self.mac
+
+    @property
+    def id(self) -> str | None:
+        """Return gateway ID."""
         return self.mac
 
     @property
     def log_id(self) -> str:
-        return self.gateway.log_id
+        """Return logging prefix."""
+        return str(self.gateway.log_id)
 
     @property
     def manufacturer(self) -> str:
-        return self.gateway.manufacturer
+        """Return manufacturer name."""
+        mfg = self.gateway.manufacturer
+        if isinstance(mfg, (list, tuple)):
+            return str(mfg[0]) if mfg else "BTicino S.p.A."
+        return str(mfg) if mfg else "BTicino S.p.A."
 
     @property
     def name(self) -> str:
+        """Return gateway name."""
         return f"{self.gateway.model_name} Gateway"
 
     @property
     def model(self) -> str:
-        return self.gateway.model_name
+        """Return gateway model name."""
+        return str(self.gateway.model_name)
 
     @property
-    def firmware(self) -> str:
-        return self.gateway.firmware
+    def firmware(self) -> str | None:
+        """Return gateway firmware version."""
+        firmware: str | None = self.gateway.firmware
+        return firmware
 
-    async def test(self) -> Dict:
-        return await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
-
-    async def listening_loop(self):
-        self._terminate_listener = False
-
-        LOGGER.debug("%s Creating listening worker.", self.log_id)
-
-        _event_session = OWNEventSession(gateway=self.gateway, logger=LOGGER)
-        await _event_session.connect()
-        self.is_connected = True
-
-        while not self._terminate_listener:
-            message = await _event_session.get_next()
-            LOGGER.debug("%s Message received: `%s`", self.log_id, message)
-
-            if self.generate_events:
-                if isinstance(message, OWNMessage):
-                    _event_content = {"gateway": str(self.gateway.host)}
-                    _event_content.update(message.event_content)
-                    self.hass.bus.async_fire("myhome_message_event", _event_content)
-                else:
-                    self.hass.bus.async_fire("myhome_message_event", {"gateway": str(self.gateway.host), "message": str(message)})
-
-            if not isinstance(message, OWNMessage):
-                LOGGER.warning(
-                    "%s Data received is not a message: `%s`",
-                    self.log_id,
-                    message,
-                )
-            elif isinstance(message, OWNEnergyEvent):
-                if SENSOR in self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS] and message.entity in self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][SENSOR]:
-                    for _entity in self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][SENSOR][message.entity][CONF_ENTITIES]:
-                        if isinstance(
-                            self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][SENSOR][message.entity][CONF_ENTITIES][_entity],
-                            MyHOMEEntity,
-                        ):
-                            self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][SENSOR][message.entity][CONF_ENTITIES][_entity].handle_event(message)
-                else:
-                    continue
-            elif (
-                isinstance(message, OWNLightingEvent)
-                or isinstance(message, OWNAutomationEvent)
-                or isinstance(message, OWNDryContactEvent)
-                or isinstance(message, OWNAuxEvent)
-                or isinstance(message, OWNHeatingEvent)
-            ):
-                if not message.is_translation:
-                    is_event = False
-                    if isinstance(message, OWNLightingEvent):
-                        if message.is_general:
-                            is_event = True
-                            event = "on" if message.is_on else "off"
-                            self.hass.bus.async_fire(
-                                "myhome_general_light_event",
-                                {"message": str(message), "event": event},
-                            )
-                            await asyncio.sleep(0.1)
-                            await self.send_status_request(OWNLightingCommand.status("0"))
-                        elif message.is_area:
-                            is_event = True
-                            event = "on" if message.is_on else "off"
-                            self.hass.bus.async_fire(
-                                "myhome_area_light_event",
-                                {
-                                    "message": str(message),
-                                    "area": message.area,
-                                    "event": event,
-                                },
-                            )
-                            await asyncio.sleep(0.1)
-                            await self.send_status_request(OWNLightingCommand.status(message.area))
-                        elif message.is_group:
-                            is_event = True
-                            event = "on" if message.is_on else "off"
-                            self.hass.bus.async_fire(
-                                "myhome_group_light_event",
-                                {
-                                    "message": str(message),
-                                    "group": message.group,
-                                    "event": event,
-                                },
-                            )
-                    elif isinstance(message, OWNAutomationEvent):
-                        if message.is_general:
-                            is_event = True
-                            if message.is_opening and not message.is_closing:
-                                event = "open"
-                            elif message.is_closing and not message.is_opening:
-                                event = "close"
-                            else:
-                                event = "stop"
-                            self.hass.bus.async_fire(
-                                "myhome_general_automation_event",
-                                {"message": str(message), "event": event},
-                            )
-                        elif message.is_area:
-                            is_event = True
-                            if message.is_opening and not message.is_closing:
-                                event = "open"
-                            elif message.is_closing and not message.is_opening:
-                                event = "close"
-                            else:
-                                event = "stop"
-                            self.hass.bus.async_fire(
-                                "myhome_area_automation_event",
-                                {
-                                    "message": str(message),
-                                    "area": message.area,
-                                    "event": event,
-                                },
-                            )
-                        elif message.is_group:
-                            is_event = True
-                            if message.is_opening and not message.is_closing:
-                                event = "open"
-                            elif message.is_closing and not message.is_opening:
-                                event = "close"
-                            else:
-                                event = "stop"
-                            self.hass.bus.async_fire(
-                                "myhome_group_automation_event",
-                                {
-                                    "message": str(message),
-                                    "group": message.group,
-                                    "event": event,
-                                },
-                            )
-                    if not is_event:
-                        if isinstance(message, OWNLightingEvent) and message.brightness_preset:
-                            if isinstance(
-                                self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][LIGHT][message.entity][CONF_ENTITIES][LIGHT],
-                                MyHOMEEntity,
-                            ):
-                                await self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][LIGHT][message.entity][CONF_ENTITIES][LIGHT].async_update()
-                        else:
-                            for _platform in self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS]:
-                                if _platform != BUTTON and message.entity in self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][_platform]:
-                                    for _entity in self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][_platform][message.entity][CONF_ENTITIES]:
-                                        if (
-                                            isinstance(
-                                                self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][_platform][message.entity][CONF_ENTITIES][_entity],
-                                                MyHOMEEntity,
-                                            )
-                                            and not isinstance(
-                                                self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][_platform][message.entity][CONF_ENTITIES][_entity],
-                                                DisableCommandButtonEntity,
-                                            )
-                                            and not isinstance(
-                                                self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][_platform][message.entity][CONF_ENTITIES][_entity],
-                                                EnableCommandButtonEntity,
-                                            )
-                                        ):
-                                            self.hass.data[DOMAIN][self.mac][CONF_PLATFORMS][_platform][message.entity][CONF_ENTITIES][_entity].handle_event(message)
-
-                else:
-                    LOGGER.debug(
-                        "%s Ignoring translation message `%s`",
-                        self.log_id,
-                        message,
-                    )
-            elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14:
-                where = message.where[1:] if message.where.startswith("#") else message.where
-                LOGGER.debug(
-                    "%s Received heating command, sending query to zone %s",
-                    self.log_id,
-                    where,
-                )
-                await self.send_status_request(OWNHeatingCommand.status(where))
-            elif isinstance(message, OWNCENPlusEvent):
-                event = None
-                if message.is_short_pressed:
-                    event = CONF_SHORT_PRESS
-                elif message.is_held or message.is_still_held:
-                    event = CONF_LONG_PRESS
-                elif message.is_released:
-                    event = CONF_LONG_RELEASE
-                else:
-                    event = None
-                self.hass.bus.async_fire(
-                    "myhome_cenplus_event",
-                    {
-                        "object": int(message.object),
-                        "pushbutton": int(message.push_button),
-                        "event": event,
-                    },
-                )
-                LOGGER.info(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            elif isinstance(message, OWNCENEvent):
-                event = None
-                if message.is_pressed:
-                    event = CONF_SHORT_PRESS
-                elif message.is_released_after_short_press:
-                    event = CONF_SHORT_RELEASE
-                elif message.is_held:
-                    event = CONF_LONG_PRESS
-                elif message.is_released_after_long_press:
-                    event = CONF_LONG_RELEASE
-                else:
-                    event = None
-                self.hass.bus.async_fire(
-                    "myhome_cen_event",
-                    {
-                        "object": int(message.object),
-                        "pushbutton": int(message.push_button),
-                        "event": event,
-                    },
-                )
-                LOGGER.info(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            elif isinstance(message, OWNGatewayEvent) or isinstance(message, OWNGatewayCommand):
-                LOGGER.info(
-                    "%s %s",
-                    self.log_id,
-                    message.human_readable_log,
-                )
-            else:
-                LOGGER.info(
-                    "%s Unsupported message type: `%s`",
-                    self.log_id,
-                    message,
-                )
-
-        await _event_session.close()
-        self.is_connected = False
-
-        LOGGER.debug("%s Destroying listening worker.", self.log_id)
-        self.listening_worker.cancel()
-
-    async def sending_loop(self, worker_id: int):
-        self._terminate_sender = False
-
-        LOGGER.debug(
-            "%s Creating sending worker %s",
-            self.log_id,
-            worker_id,
+    @property
+    def supports_zone_status(self) -> bool:
+        """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
+        profile = getattr(getattr(self, "gateway", None), "profile", None)
+        supported = getattr(profile, "supports_heating_zone_status", None)
+        if isinstance(supported, bool):
+            return supported
+        # Check the configured model string, its alphanumeric form (so "BTicino H/L4684" matches
+        # "HL4684"), and the profile model _profile_for_model resolves it to (L4684, NT4684,
+        # H/L4684, HL4684, HC4684, and MyHOME_Suite catalogue codes such as 003598).
+        names = (
+            self.model.upper(),
+            _alnum(self.model),
+            str(_profile_for_model(self.model).model_name).upper(),
         )
-
-        _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
-        await _command_session.connect()
-
-        while not self._terminate_sender:
-            task = await self.send_buffer.get()
-            LOGGER.debug(
-                "%s Message `%s` was successfully unqueued by worker %s.",
-                self.name,
-                self.gateway.host,
-                task["message"],
-                worker_id,
+        return not any(
+            k in norm
+            for norm in names
+            for k in (
+                "F450",
+                "F455",
+                "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
+                "MH200",
+                "MH201",
+                "F452",
+                "F453",
+                "F458",
+                "F459",
+                "H4684",
             )
-            await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
-            self.send_buffer.task_done()
-
-        await _command_session.close()
-
-        LOGGER.debug(
-            "%s Destroying sending worker %s",
-            self.log_id,
-            worker_id,
         )
-        self.sending_workers[worker_id].cancel()
 
-    async def close_listener(self) -> bool:
-        LOGGER.info("%s Closing event listener", self.log_id)
-        self._terminate_sender = True
-        self._terminate_listener = True
+    @property
+    def _model_key(self) -> str:
+        """The gateway model the request tables are keyed on (``F461``, ``MYHOMESERVER1``).
 
+        A known OWNd profile names the model; a ``GenericGatewayProfile`` (also what
+        ``get_gateway_profile("BTicino F461")`` returns) falls back to the configured name.
+        There a brand-prefixed alias or catalogue number is resolved word by word through
+        OWNd (``"BTicino L4684"`` -> ``H4684``, ``"Legrand 003598"`` -> ``F454``, the SSDP
+        spelling ``HL4684`` -> ``H4684``), and otherwise a known model is looked up as
+        a substring, longest first (``supports_zone_status`` style), so ``MH200N`` stays
+        distinct from ``MH200``. The words are the alphanumeric runs of the string, so
+        ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
+        """
+        profile = getattr(self.gateway, "profile", None)
+        if profile is not None and not isinstance(profile, GenericGatewayProfile):
+            name = getattr(profile, "model_name", None) or self.model
+        else:
+            name = self.model
+        for word in re.findall(r"[A-Za-z0-9]+", str(name)):
+            resolved = _resolved_model(word)
+            if resolved is not None:
+                return resolved
+        normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
+        return next((model for model in _ZONE_REQUEST_MODELS if model in normalized), normalized)
+
+    def _who4_target(self) -> MyHOMEGatewayHandler:
+        """The gateway a WHO 4 status request goes through, the way ``send_status_request`` routes it.
+
+        On a shared bus WHO 4 may be delegated to a secondary gateway, or served by the warm
+        standby while this primary is down: that gateway's refusal and all-zone tables apply.
+        """
+        probe = OWNCommand.parse("*#4*#0*20##")
+        if probe is None:  # pragma: no cover - a fixed, well-formed frame
+            return self
+        return self._delegated_target(probe) or self._failover_target(probe) or self
+
+    @property
+    def actuator_request_refused(self) -> bool:
+        """Whether this gateway drops the zone actuator request (``*#4*Z*20##``).
+
+        The OWNd profile flag wins when it exists; otherwise the oracle-derived table.
+        """
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_actuator_status", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in ACTUATOR_REQUEST_REFUSED
+
+    def all_zone_request(self, dimension: int) -> str | None:
+        """The single request this gateway answers with every zone's ``dimension``, if any."""
+        return ALL_ZONE_REQUESTS.get(self._model_key, {}).get(dimension)
+
+    @callback
+    def watch_zone_actuators(self, where: str) -> CALLBACK_TYPE:
+        """Ask for a heating zone's actuators (dimension 20) now and after every reconnect.
+
+        Returns the callback that stops it. The zone is always recorded: whether the gateway
+        refuses the request is decided when it is sent, once the in-band identity (WHO 13 /
+        WHO 1013) has settled, so a model corrected after the entities were added is honoured.
+        """
+        where = _validate_zone_where(where)  # before the zone is counted: no phantom watch
+        self._actuator_zones[where] = self._actuator_zones.get(where, 0) + 1
+        self.request_zone_dimension(where, 20)
+
+        @callback
+        def _unwatch() -> None:
+            count = self._actuator_zones.get(where, 0) - 1
+            if count > 0:
+                self._actuator_zones[where] = count
+            else:
+                self._actuator_zones.pop(where, None)
+
+        return _unwatch
+
+    @callback
+    def request_zone_dimension(self, where: str, dimension: int) -> None:
+        """Ask a heating zone for one dimension once the startup sweep is over.
+
+        Zones asking together share one paced run; where the gateway answers one request
+        for every zone (``all_zone_request``), that frame replaces the local zones' own.
+        """
+        if dimension == 22:
+            # A zone WHERE has no actuator token, so *#4*Z*22## is the crash form:
+            # it kills the thermostat daemon (bt_termo) and a live F461 rebooted.
+            # The published split form *#4*3#Z#N*22## goes through send_message once
+            # the installed OWNd (>= 2.0.0b12) can tell the forms apart.
+            raise ValueError("WHO 4 dimension 22 is never requested for a zone")
+        self._zone_requests.add((_validate_zone_where(where), dimension))
+        if self._zone_request_task is None or self._zone_request_task.done():
+            self._zone_request_task = self.hass.async_create_background_task(
+                self._send_zone_requests(), name=f"myhome_{self.mac}_zone_requests"
+            )
+
+    async def _send_zone_requests(self) -> None:
+        """Send the waiting zone requests through the paced sender, until none is left."""
+        coalesce = self._initial_discovery_done.is_set()
+        await self.wait_for_initial_discovery()
+        while self._zone_requests:
+            # Zones added in the same pass join this run; after the sweep, zones discovered
+            # from the bus over the next tenth of a second do too instead of each sweeping on
+            # its own, and so do zones that arrived while the previous batch was being sent.
+            await asyncio.sleep(ZONE_REQUEST_COALESCE if coalesce else 0)
+            coalesce = True
+            pending, self._zone_requests = self._zone_requests, set()
+            frames: list[str] = []
+            target = self._who4_target()
+            for dimension in sorted({dim for _where, dim in pending}):
+                wheres = sorted(where for where, dim in pending if dim == dimension)
+                if target.interface_zone_request_refused:
+                    routed = [where for where in wheres if BUS_ROUTING in where]
+                    if routed:
+                        LOGGER.debug(
+                            "%s Zones %s: %s does not route WHO 4 dimension %s behind an interface; not asking",
+                            self.log_id,
+                            routed,
+                            target.model,
+                            dimension,
+                        )
+                        wheres = [where for where in wheres if BUS_ROUTING not in where]
+                        if not wheres:
+                            continue
+                if dimension == 20 and target.actuator_request_refused:
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
+                    )
+                    continue
+                if dimension == 60 and target.humidity_request_refused:
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the humidity request; not asking", self.log_id, wheres, target.model
+                    )
+                    continue
+                if dimension == 20 and target.zone_actuator_request_refused:
+                    zones = [where for where in wheres if _is_zone_level_where(where)]
+                    if zones:
+                        LOGGER.debug(
+                            "%s Zones %s: %s refuses the zone form of the actuator request; asking only actuators",
+                            self.log_id,
+                            zones,
+                            target.model,
+                        )
+                        wheres = [where for where in wheres if not _is_zone_level_where(where)]
+                        if not wheres:
+                            continue
+                all_zones = target.all_zone_request(dimension)
+                if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
+                    frames.append(all_zones)
+                    wheres = [where for where in wheres if BUS_ROUTING in where]  # behind an interface
+                for where in wheres:
+                    # One zone the builder rejects must not drop the others of the batch.
+                    try:
+                        frames.append(_zone_request_frame(where, dimension))
+                    except ValueError as err:
+                        LOGGER.warning("%s Zone %s: dimension %s not requested: %s", self.log_id, where, dimension, err)
+            if not frames:
+                continue  # every item skipped (refusing gateway): no empty sweep
+            try:
+                if self._last_event_frame_at > 0:
+                    await self._wait_for_bus_quiet(self._last_event_frame_at)
+                await self.send_paced(frames)
+            except Exception:  # a transport error must not end the task silently (#593)
+                LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    async def wait_for_zone_requests(self) -> None:
+        """Let same-turn zone dimension requests coalesce and wait for their paced run."""
+        await asyncio.sleep(0)
+        while self._zone_request_task is not None and not self._zone_request_task.done():
+            await asyncio.gather(self._zone_request_task, return_exceptions=True)
+
+    def _has_status_consumer(self, message: OWNCommand) -> bool:
+        """Whether ``send_status_request(message)`` has an active worker, target, or test double."""
+        if self.sending_workers:
+            return True
+        if self._delegated_target(message) is not None or self._failover_target(message) is not None:
+            return True
+        bound = getattr(self.send_status_request, "__func__", None)
+        return bound is not MyHOMEGatewayHandler.send_status_request
+
+    async def pace_startup_status_write(self, written: Any, message: OWNCommand) -> None:
+        """Wait for a startup WHO 4 status query and bus quiet when a consumer is active."""
+        if not self._has_status_consumer(message):
+            return
+        await self._wait_for_write(written, message)
+        await self._wait_for_bus_quiet(time.monotonic())
+        await self._wait_for_who4_recovery(written)
+
+    @property
+    def humidity_request_refused(self) -> bool:
+        """Whether this gateway drops humidity requests (``*#4*Z*60##``) instead of forwarding them.
+
+        The request goes where ``send_status_request`` sends it: a secondary gateway WHO 4 is
+        delegated to, or the warm standby while this primary is down, decides with its own
+        profile and table. The OWNd profile flag wins when it exists; otherwise the
+        oracle-derived table.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.humidity_request_refused
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_heating_humidity_request", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in HUMIDITY_REQUEST_REFUSED
+
+    @property
+    def general_zone_request_refused(self) -> bool:
+        """Whether this gateway drops the general heating status request (``*#4*0##``)."""
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
+        if isinstance(supported, bool):
+            return not supported
+        return self._model_key in GENERAL_ZONE_REQUEST_REFUSED
+
+    @property
+    def sound_status_request_refused(self) -> bool:
+        """Whether this gateway drops the sound status request (``*#16*0*5##``)."""
+        if not self._profile_supports_who(16):
+            return True
+        return self._model_key in SOUND_STATUS_REQUEST_REFUSED
+
+    @property
+    def zone_actuator_request_refused(self) -> bool:
+        """Whether this gateway refuses the zone form of the actuator request (``*#4*Z*20##``) only.
+
+        Decided by the gateway the request goes through, like ``humidity_request_refused``.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.zone_actuator_request_refused
+        return self._model_key in ZONE_ACTUATOR_REQUEST_REFUSED
+
+    @property
+    def silent_zone_poll_needed(self) -> bool:
+        """Whether a zone silent after the startup sweep asks its own state once (``SILENT_ZONE_POLL``).
+
+        Decided by the gateway the reads go through (``_who4_target``: a secondary WHO 4 is
+        delegated to, or the warm standby while this primary is down), like
+        ``humidity_request_refused``. A passive follower (a standby, or a secondary without
+        WHO 4) has no zones of its own to ask.
+        """
+        if self.is_follower and 4 not in self.delegated_whos:
+            return False
+        return self._who4_target()._model_key in SILENT_ZONE_POLL
+
+    @property
+    def zone_temperature_poll_needed(self) -> bool:
+        """Whether each zone must ask for its temperature (``*#4*Z*0##``) itself.
+
+        Only on SCS-only gateways (no ``*#4*Z##``) whose startup sweep brings no zone
+        temperature; elsewhere the zone status poll or the sweep reports it.
+        """
+        if self.supports_zone_status:
+            return False
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
+        if isinstance(supported, bool):
+            # The OWNd profile wins when it states the flag: a sweep the gateway answers makes
+            # the per-zone poll pointless, whatever the fallback table says.
+            return not supported
+        return self._model_key in ZONE_TEMPERATURE_POLL
+
+    @property
+    def interface_zone_request_refused(self) -> bool:
+        """Whether WHO 4 requests behind an ``#4#II`` interface are dropped, misrouted, or crash the gateway.
+
+        Zero of the twelve emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
+        emit ``$06EC`` / ``$06E4`` interface-routed SCS frames for WHO 4: gateways either NACK/drop them,
+        truncate ``Z#4#II`` at ``#`` and cross-poll local zone ``Z`` on the main bus, or on MH202 ``010024``
+        misparse trailing ``#4#01`` as local zone 4 actuator 1 and crash ``coso`` with ``SIGSEGV`` on
+        ``*#4*Z#4#01##`` (including before WHO 13 settles while the profile is still ``Generic``).
+        Delegates through ``_who4_target()``; an explicit bool ``supports_interface_zone_requests`` on the
+        OWNd profile overrides this default.
+        """
+        target = self._who4_target()
+        if target is not self:
+            return target.interface_zone_request_refused
+        supported = getattr(getattr(self.gateway, "profile", None), "supports_interface_zone_requests", None)
+        if isinstance(supported, bool):
+            return not supported
         return True
 
-    async def send(self, message: OWNCommand):
-        await self.send_buffer.put({"message": message, "is_status_request": False})
-        LOGGER.debug(
-            "%s Message `%s` was successfully queued.",
-            self.log_id,
-            message,
-        )
+    @property
+    def profile(self) -> Any:
+        """Return gateway profile."""
+        return self.gateway.profile
 
-    async def send_status_request(self, message: OWNCommand):
-        await self.send_buffer.put({"message": message, "is_status_request": True})
-        LOGGER.debug(
-            "%s Message `%s` was successfully queued.",
+    @property
+    def command_session_idle_timeout(self) -> float:
+        """Idle timeout before releasing the command session socket."""
+        profile = getattr(self.gateway, "profile", None)
+        profile_timeout = getattr(profile, "command_session_idle_timeout", None) if profile else None
+        idle_timeout_default = float(COMMAND_SESSION_IDLE_TIMEOUT)
+        return float(profile_timeout) if profile_timeout is not None else idle_timeout_default
+
+    async def test(self) -> dict[str, Any]:
+        """Test gateway connection."""
+        result: dict[str, Any] = await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
+        return result
+
+    @callback
+    def _on_event_connection_state_change(self, connected: bool) -> None:
+        """Gate commands and publish sustained event-session availability."""
+        was_connected = self.is_connected
+        self.is_connected = connected
+        self._event_runner.is_connected = connected
+        self._update_event_watchdog(progress=False)
+        if connected:
+            if self._failover_active:
+                self._clear_failover()
+                LOGGER.info(
+                    "%s Primary gateway reconnected; warm standby failover deactivated, returning to primary gateway.",
+                    self.log_id,
+                )
+            self._event_session_ready.set()
+            self._who1013["pending"] = False
+            self._who13["pending_code"] = False
+            self._who13["pending_firmware"] = False
+            if self._unavailable_timer is not None:
+                self._unavailable_timer()
+                self._unavailable_timer = None
+            if not self._available:
+                self._available = True
+                LOGGER.info("%s Gateway available again.", self.log_id)
+                self._notify_availability()
+            if not was_connected and self._initial_discovery_done.is_set():
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                expose_mgr = getattr(runtime, "expose_manager", None)
+                sync_fn = getattr(expose_mgr, "async_sync_all", None)
+                if inspect.iscoroutinefunction(sync_fn):
+                    self.hass.async_create_task(sync_fn())
+                # Actuators that switched while the session was down sent their frame to nobody.
+                for where in list(self._actuator_zones):
+                    self.request_zone_dimension(where, 20)
+            return
+
+        self._event_session_ready.clear()
+        if self._terminate_listener:
+            return
+        if self._available and self._unavailable_timer is None:
+            LOGGER.warning(
+                "%s Gateway connection lost; marking unavailable in %ss if not recovered.",
+                self.log_id,
+                AVAILABILITY_GRACE,
+            )
+            self._unavailable_timer = async_call_later(
+                self.hass,
+                AVAILABILITY_GRACE,
+                self._mark_unavailable,
+            )
+
+    @callback
+    def _mark_unavailable(self, _now: Any) -> None:
+        """Mark the gateway unavailable after the reconnect grace period."""
+        if self._unavailable_timer is not None:
+            self._unavailable_timer()
+            self._unavailable_timer = None
+        if self.is_connected or not self._available:
+            return
+        self._available = False
+        self._evaluate_failover()
+        if self.available:  # carried by the warm standby; refresh entities whose standby coverage differs
+            async_dispatcher_send(self.hass, self.availability_signal)
+            return
+        LOGGER.warning(
+            "%s Gateway unavailable (outage exceeded %ss).",
             self.log_id,
-            message,
+            AVAILABILITY_GRACE,
         )
+        self._notify_availability()
+
+    @callback
+    def _update_event_watchdog(self, *, progress: bool) -> None:
+        """Arm the stall deadline while disconnected, disarm it while connected."""
+        self._event_runner._update_event_watchdog(progress=progress)
+
+    async def listening_loop(self) -> None:
+        """Run the event session, recreating it whenever it dies or stalls."""
+        await self._event_runner.listening_loop()
+
+    def profile_supports_who(self, who: int) -> bool:
+        """Return whether the startup sweep asks this gateway's profile about a WHO."""
+        return self._profile_supports_who(who)
+
+    def _profile_supports_who(self, who: int) -> bool:
+        """Return whether the gateway profile advertises a WHO subsystem (True when unknown).
+
+        The H4684's WHO 22 from firmware 6.0.0 comes from the firmware-aware OWNd profile
+        (``_profile_for_model(model, firmware)``, refreshed on ``*#13**16*V*R*B##``).
+        """
+        profile = getattr(self.gateway, "profile", None)
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS or self._model_key in DOOR_ENTRY_MH_BRIDGE_AV_MODELS:
+                return True
+            if self._model_key in DOOR_ENTRY_WHO6_ONLY_MODELS:
+                return who == 6
+            if self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS:
+                return who == 8
+            if self._model_key in DOOR_ENTRY_UNSUPPORTED_MODELS:
+                return False
+            if isinstance(profile, GenericGatewayProfile):
+                return True
+        supports = getattr(profile, "supports_who", None)
+        if not callable(supports):
+            return True
+        try:
+            return bool(supports(who))
+        except Exception:  # pragma: no cover - defensive against foreign profile objects
+            return True
+
+    def _natively_hears_who(self, who: int) -> bool:
+        """Return whether this gateway hears ``who`` on its local bus without an external F422 bridge."""
+        if who in (6, 8):
+            if self._model_key in DOOR_ENTRY_AV_MODELS:
+                return True
+            return who == 8 and self._model_key in DOOR_ENTRY_WHO8_ONLY_MODELS
+        return self._profile_supports_who(who)
+
+    async def _process_message(self, message: Any) -> None:
+        """Process a received message and dispatch to Home Assistant."""
+        await self._event_dispatcher.process_message(message)
+
+    async def sending_loop(self, worker_id: int) -> None:
+        """Run sending loop for worker."""
+        await self._command_pool.sending_loop(worker_id)
+
+    @property
+    def initial_discovery_pending(self) -> bool:
+        """Whether the startup sweep is still running."""
+        return not self._initial_discovery_done.is_set()
+
+    @property
+    def sweep_active(self) -> bool:
+        """Whether a paced bus sweep is currently running."""
+        return self._active_sweeps > 0
+
+    def _begin_sweep(self) -> int:
+        """Mark a paced sweep as active so newly discovered entities defer polls.
+
+        Returns the epoch to hand back to ``_end_sweep``.
+        """
+        self._active_sweeps += 1
+        self._sweep_idle.clear()
+        return self._sweep_epoch
+
+    def _end_sweep(self, epoch: int | None = None) -> None:
+        """Mark a paced sweep as completed and unblock deferred polls when idle.
+
+        A sweep begun before close_listener() reset the count (an older ``epoch``)
+        no longer counts.
+        """
+        if epoch is not None and epoch != self._sweep_epoch:
+            return
+        self._active_sweeps = max(0, self._active_sweeps - 1)
+        if self._active_sweeps == 0:
+            self._sweep_idle.set()
+
+    def note_event_frame(self) -> None:
+        """Record that a frame just arrived on the event session."""
+        self._last_event_frame_at = time.monotonic()
+
+    async def _wait_for_bus_quiet(self, since: float) -> None:
+        """Wait until no event frame arrived for BUS_QUIET_PERIOD since ``since``, at most BUS_QUIET_CAP."""
+        deadline = time.monotonic() + BUS_QUIET_CAP
+        while True:
+            now = time.monotonic()
+            if now >= deadline:
+                LOGGER.debug("%s Bus still busy after %.0fs; sending the next request", self.log_id, BUS_QUIET_CAP)
+                return
+            quiet_since = max(since, self._last_event_frame_at)
+            remaining = quiet_since + BUS_QUIET_PERIOD - now
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(remaining, deadline - now))
+
+    async def _wait_for_write(self, written: Any, message: OWNCommand) -> None:
+        """Wait, at most PACED_WRITE_TIMEOUT, until a queued frame was written or dropped."""
+        if not isinstance(written, asyncio.Future):
+            return
+        await asyncio.wait({written}, timeout=PACED_WRITE_TIMEOUT)
+        if not written.done():
+            LOGGER.warning(
+                "%s `%s` not written after %.0fs; sending the next request anyway",
+                self.log_id,
+                message,
+                PACED_WRITE_TIMEOUT,
+            )
+
+    async def _wait_for_who4_recovery(self, written: Any) -> None:
+        """Wait for an active bus sweep to finish when a WHO 4 status read timed out or desynced (#886).
+
+        Bounded to ``WHO4_RECOVERY_QUIET_WINDOWS`` extra bus-quiet waits so an external
+        ``bt_thermo_manager`` sweep can drain ``bt_termo``'s single-threaded SCS queue
+        without blocking indefinitely when autonomous bus traffic never goes quiet.
+        """
+        if not isinstance(written, asyncio.Future):
+            return
+        if not (
+            getattr(written, "_gateway_desync", False)
+            or getattr(written, "_command_timeout", False)
+        ):
+            return
+        for _ in range(WHO4_RECOVERY_QUIET_WINDOWS):
+            if (
+                self._last_event_frame_at <= 0
+                or (time.monotonic() - self._last_event_frame_at) >= BUS_QUIET_PERIOD
+            ):
+                return
+            await self._wait_for_bus_quiet(self._last_event_frame_at)
+
+    async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
+        """Send general requests one at a time, each once the bus finished answering the last."""
+        epoch = self._begin_sweep()
+        try:
+            for frame in frames:
+                cmd = OWNCommand.parse(frame)
+                if cmd is None:
+                    continue
+                written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
+                await self._wait_for_write(written, cmd)
+                await self._wait_for_bus_quiet(time.monotonic())
+                if getattr(cmd, "who", None) == 4:
+                    await self._wait_for_who4_recovery(written)
+        finally:
+            self._end_sweep(epoch)
+
+    def _refused_by_gateway(self, frame: str) -> bool:
+        """Whether this gateway's firmware drops the startup request instead of forwarding it."""
+        if frame == "*#4*0##":
+            return self.general_zone_request_refused
+        if frame == "*#16*0*5##":
+            return self.sound_status_request_refused
+        return False
+
+    def _discovery_frames(self) -> list[str]:
+        """The startup general requests this gateway sends, after topology and profile gates."""
+        frames: list[str] = []
+        for who, frame in DISCOVERY_REQUESTS:
+            if getattr(self, "is_follower", False) is True and who not in getattr(self, "delegated_whos", set()):
+                LOGGER.debug("%s Skipping WHO=%s discovery: follower gateway on shared bus.", self.log_id, who)
+                continue
+            if who in getattr(self, "delegated_away_whos", set()):
+                LOGGER.debug("%s Skipping WHO=%s discovery: delegated to a secondary gateway.", self.log_id, who)
+                continue
+            if not self._profile_supports_who(who):
+                LOGGER.debug(
+                    "%s Skipping WHO=%s discovery: not supported by %s profile.",
+                    self.log_id,
+                    who,
+                    self.gateway.model_name,
+                )
+                continue
+            if self._refused_by_gateway(frame):
+                LOGGER.debug("%s Skipping `%s`: %s firmware refuses it.", self.log_id, frame, self.gateway.model_name)
+                continue
+            frames.append(frame)
+        return frames
+
+    async def initial_discovery(self) -> None:
+        """Send the startup sweep that discovers devices missing from the config."""
+        try:
+            await self.send_paced(self._discovery_frames())
+        finally:
+            self._initial_discovery_done.set()
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        expose_mgr = getattr(runtime, "expose_manager", None)
+        sync_fn = getattr(expose_mgr, "async_sync_all", None)
+        if inspect.iscoroutinefunction(sync_fn):
+            await sync_fn()
+
+    async def wait_for_initial_discovery(self, timeout: float | None = None) -> None:
+        """Wait until startup initial discovery and any active paced sweep finish."""
+        if self._initial_discovery_done.is_set() and self._sweep_idle.is_set():
+            return
+        if timeout is None:
+            timeout = len(DISCOVERY_REQUESTS) * (PACED_WRITE_TIMEOUT + BUS_QUIET_CAP)
+        try:
+            async with asyncio.timeout(timeout):
+                if not self._initial_discovery_done.is_set():
+                    await self._initial_discovery_done.wait()
+                if not self._sweep_idle.is_set():
+                    await self._sweep_idle.wait()
+        except TimeoutError:
+            LOGGER.debug("%s Timed out waiting for initial discovery", self.log_id)
+
+    async def close_listener(self) -> bool:
+        """Close event listener and cancel pending actions."""
+        LOGGER.info("%s Closing event listener", self.log_id)
+        if self._unavailable_timer is not None:
+            self._unavailable_timer()
+        self._resync_manager.cancel_all()
+        if self._zone_request_task is not None:
+            self._zone_request_task.cancel()
+            self._zone_request_task = None
+        self._zone_requests.clear()
+        self._unavailable_timer = None
+        self.is_connected = False
+        self._available = False
+        self._clear_failover()
+        self._active_sweeps = 0
+        self._sweep_epoch += 1
+        self._sweep_idle.set()
+        self._initial_discovery_done.set()
+        if self.is_standby:
+            primary = self._get_primary_gateway()
+            if primary is not None and not primary._available:
+                primary._evaluate_failover()
+                async_dispatcher_send(self.hass, primary.availability_signal)
+        elif self.is_secondary and self.delegated_whos:
+            primary = self._get_primary_gateway()
+            if primary is not None:
+                async_dispatcher_send(self.hass, primary.availability_signal)
+
+        self._event_runner.close()
+        self._command_pool.close()
+        return True
+
+    async def send(self, message: OWNCommand, *, is_cancel: bool = False) -> asyncio.Future[float]:
+        """Queue a command; the returned future resolves to the monotonic write time."""
+        delegated = self._delegated_target(message)
+        if delegated is not None:
+            if is_cancel:
+                return await delegated.send(message, is_cancel=True)
+            return await delegated.send(message)
+        standby = self._failover_target(message)
+        if standby is not None:
+            if is_cancel:
+                return await standby.send(message, is_cancel=True)
+            return await standby.send(message)
+        if is_cancel:
+            return await self._command_pool.send(message, is_cancel=True)
+        return await self._command_pool.send(message)
+
+    async def send_fade_step(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue an intermediate software fade step; superseded by newer steps or commands."""
+        delegated = self._delegated_target(message)
+        if delegated is not None:
+            return await delegated.send_fade_step(message)
+        standby = self._failover_target(message)
+        if standby is not None:
+            return await standby.send_fade_step(message)
+        return await self._command_pool.send_fade_step(message)
+
+    async def send_status_request(self, message: OWNCommand) -> asyncio.Future[float]:
+        """Queue a status request; the returned future resolves to the monotonic write time."""
+        delegated = self._delegated_target(message)
+        if delegated is not None:
+            return await delegated.send_status_request(message)
+        standby = self._failover_target(message)
+        if standby is not None:
+            return await standby.send_status_request(message)
+        return await self._command_pool.send_status_request(message)
+
+    def claim_in_flight_dimension_where(self, who: int, dimension: int) -> str | None:
+        """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""
+        if who not in (13, 1013) and who in self.delegated_away_whos:
+            sec = self._get_secondary_for_who(who)
+            if sec is not None and sec.is_connected and peer_handles_who(sec, int(who)):
+                return sec._command_pool.claim_in_flight_dimension_where(who, dimension)
+        if who not in (13, 1013) and not self.is_connected:
+            standby = self._get_standby_gateway()
+            if standby is not None and standby.is_connected and standby._profile_supports_who(int(who)):
+                return standby._command_pool.claim_in_flight_dimension_where(who, dimension)
+        return self._command_pool.claim_in_flight_dimension_where(who, dimension)
+
+    def _known_light_areas(self) -> list[str]:
+        """Return list of known light areas."""
+        return self._resync_manager.known_light_areas()
+
+    def _schedule_resync(self, message: Any) -> None:
+        """Schedule a debounced resync."""
+        self._resync_manager.schedule_resync(message)
+
+    async def _resync_broadcast(self, where: str) -> None:
+        """Execute a resync broadcast."""
+        await self._resync_manager.execute_resync(where)
+
+    _execute_resync = _resync_broadcast

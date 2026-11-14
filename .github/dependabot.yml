@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    cooldown:
+      # Let a release age a week before proposing it: most compromised
+      # releases are caught and yanked within days.
+      default-days: 7
     commit-message:
       prefix: "ci"
       include: "scope"

@@ -1,0 +1,72 @@
+{
+ "meta": {
+  "captured": "2026-09-29",
+  "gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix",
+  "build": "perf/faster-group-wake @ ffa5b23a (2.0.0b13.dev202609291903), debug log",
+  "how": "frames reported 'successfully sent' (t = seconds after the first)",
+  "play": "after an HA restart the leader badkamer (36), Keuken (22) and slaapkamer (35) are parked with the group kept; in Music Assistant slaapkamer is unchecked, Bureau (21) and Eetkamer (23) are added, then play"
+ },
+ "tx": [
+  {
+   "t": 0.0,
+   "frame": "*16*13*21##"
+  },
+  {
+   "t": 0.781,
+   "frame": "*16*3*21##"
+  },
+  {
+   "t": 1.64,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 2.419,
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 2.63,
+   "frame": "*16*13*23##"
+  },
+  {
+   "t": 3.441,
+   "frame": "*16*3*23##"
+  },
+  {
+   "t": 3.66,
+   "frame": "*16*13*35##"
+  },
+  {
+   "t": 4.89,
+   "frame": "*16*13*36##"
+  },
+  {
+   "t": 5.699,
+   "frame": "*16*3*36##"
+  },
+  {
+   "t": 6.57,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 7.35,
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 8.13,
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 8.34,
+   "frame": "*16*13*22##"
+  },
+  {
+   "t": 9.141,
+   "frame": "*16*3*22##"
+  }
+ ],
+ "findings": [
+  "102 and 122 are sent once by the joins and once more by the play (2 and 2, was 6 and 5): the leaving room's OFF cleared the recent-frames memory, fixed by clearing it only when a leader or its group stops",
+  "the leader is on the bus 0.9 s after the play command; the parked member (22) is woken last, 4 s later",
+  "after the restart the zone found on at startup with the decoder idle is switched off and the group is parked, the amplifiers of the members that were on follow"
+ ]
+}

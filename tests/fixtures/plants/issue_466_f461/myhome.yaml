@@ -1,0 +1,13 @@
+# Synthetic plant for the issue #466 F461 identity exchange (firmware 2.0.11):
+# the fixture is about gateway identification (WHO=13 dimension 15 = 200,
+# WHO=1013 dimension 1 = 134), captured frames carry no lighting/automation
+# activity, so a single placeholder light is declared to satisfy the config
+# entry schema.
+
+f461:
+  mac: "00:03:50:00:04:61"
+
+  light:
+    light_0012:
+      where: "0012"
+      name: "Light 0012"

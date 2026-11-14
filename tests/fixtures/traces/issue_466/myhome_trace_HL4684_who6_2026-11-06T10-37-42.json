@@ -1,0 +1,112 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-11-06T10:31:43.858Z",
+    "filters": {
+      "who": "6",
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-11-06T10:36:44.294Z",
+      "last": "2026-11-06T10:36:54.312Z",
+      "frames": 4,
+      "buffer_frames": 305,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.10.4",
+    "integration_version": "2.0.0b17",
+    "ownd_version": "2.0.0b13",
+    "exported_at": "2026-11-06T10:37:42.080Z"
+  },
+  "gateway": {
+    "model": "HL4684",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "Unknown",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "HL4684",
+      "source": "ssdp",
+      "configured_model": "HL4684",
+      "ssdp_model": "HL4684",
+      "who13_code": "23",
+      "who13_model": "H4684",
+      "who13_model_official": null,
+      "who13_model_observed": "H4684 / H/L4684 / L4684",
+      "who13_firmware": null,
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "who1013_code": null,
+      "who1013_model": null,
+      "who1013_other_names": [],
+      "who1013_n_conf": null,
+      "who1013_brand": null,
+      "who1013_line": null,
+      "profile": "H4684Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 303,
+    "total_tx": 2,
+    "captured_in_buffer": 305,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1793961404.294583,
+      "iso_time": "2026-11-06T10:36:44.294583+00:00",
+      "direction": "tx",
+      "raw": "*6*10*4004##",
+      "who": "6",
+      "what": "10",
+      "where": "4004",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793961404.300454,
+      "iso_time": "2026-11-06T10:36:44.300454+00:00",
+      "direction": "rx",
+      "raw": "*6*10*4004##",
+      "who": "6",
+      "what": "10",
+      "where": "4004",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793961414.303791,
+      "iso_time": "2026-11-06T10:36:54.303791+00:00",
+      "direction": "tx",
+      "raw": "*6*10*4003##",
+      "who": "6",
+      "what": "10",
+      "where": "4003",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793961414.312355,
+      "iso_time": "2026-11-06T10:36:54.312355+00:00",
+      "direction": "rx",
+      "raw": "*6*10*4003##",
+      "who": "6",
+      "what": "10",
+      "where": "4003",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "capture": {
+    "kind": "hand-transcribed debug-log excerpt",
+    "title": "Kitchen 3#7#6: power ON into source 2, physical H4562 keypress, matrix cycling",
+    "reporter": "bboykaos",
+    "source": "https://github.com/OpenWebNet-HA/OWNd/pull/103#issuecomment-6113362654",
+    "captured_at": "2026-10-11",
+    "abbreviated": true,
+    "abbreviation_note": "The reporter elided repeated frames with '...'; only frames literally present in the comment are listed, in bus order."
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "firmware": "2.x",
+    "connection_type": "tcp"
+  },
+  "frames": [
+    {
+      "raw": "*22*1#4#1*3#7#6##",
+      "note": "Power ON zone"
+    },
+    {
+      "raw": "*#22*3#7#6*12*1*2##",
+      "note": "Status: ON, audio channel 2 (AUX 2)"
+    },
+    {
+      "raw": "*22*9*5#3#7#6##",
+      "note": "Physical keypress from the H4562 keypad"
+    },
+    {
+      "raw": "*22*35#4#1#1*3#7#6##",
+      "note": "Matrix routes zone back to source 1 (tuner)"
+    },
+    {
+      "raw": "*#22*3#7#6*12*1*1##",
+      "note": "Status: ON, audio channel 1"
+    },
+    {
+      "raw": "*#22*5#2#1*11*1*911*2##",
+      "note": "Tuner: preset 2, 91.1 MHz"
+    },
+    {
+      "raw": "*22*9*2#1##",
+      "note": "Next preset"
+    },
+    {
+      "raw": "*#22*5#2#1*11*1*995*3##",
+      "note": "Tuner: preset 3, 99.5 MHz"
+    },
+    {
+      "raw": "*22*35#4#1#2*3#7#6##",
+      "note": "Matrix switched back to source 2"
+    },
+    {
+      "raw": "*#22*3#7#6*12*1*2##",
+      "note": "Status: ON, audio channel 2"
+    },
+    {
+      "raw": "*22*0#4#0*3#7#6##",
+      "note": "Atomic turn OFF"
+    },
+    {
+      "raw": "*#22*3#7#6*12*0*10##",
+      "note": "Status: standby"
+    }
+  ]
+}

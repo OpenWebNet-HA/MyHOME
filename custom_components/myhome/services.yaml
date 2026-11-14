@@ -6,6 +6,8 @@ sync_time:
       name: Gateway
       description: The gateway's MAC address, as present in the config.
       example: 00:03:50:00:00:00
+      selector:
+        text:
 
 send_message:
   name: Send message
@@ -15,10 +17,15 @@ send_message:
       name: Gateway
       description: The gateway's MAC address, as present in the config.
       example: 00:03:50:00:00:00
+      selector:
+        text:
     message:
       name: Message
       description: Valid OpenWebNet message.
+      required: true
       example: "*1*0*0##"
+      selector:
+        text:
 
 start_sending_instant_power:
   name: Start sending instant power
@@ -30,5 +37,317 @@ start_sending_instant_power:
       example: "sensor.general_power"
     duration:
       name: Duration
-      description: For how long the instant power information will be sent.
+      description: For how long the instant power information will be sent in minutes (0 to stop).
       example: "60"
+
+stop_sending_instant_power:
+  name: Stop sending instant power
+  description: Stop automatic instant power draw updates for a sensor.
+  fields:
+    entity_id:
+      name: Entity
+      description: Name(s) of entities that will stop sending instant power information.
+      example: "sensor.general_power"
+
+
+turn_on_timed:
+  name: Turn on timed
+  description: Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts.
+  target:
+    entity:
+      domain:
+        - light
+        - switch
+  fields:
+    duration:
+      name: Duration
+      description: Duration in seconds before the device turns off automatically.
+      example: 120
+      selector:
+        number:
+          min: 0.5
+          max: 918000
+          step: 0.5
+          unit_of_measurement: seconds
+          mode: box
+    hours:
+      name: Hours
+      description: Optional hours component for custom timer duration (0-255).
+      example: 0
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    minutes:
+      name: Minutes
+      description: Optional minutes component for custom timer duration (0-59).
+      example: 2
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    seconds:
+      name: Seconds
+      description: Optional seconds component for custom timer duration (0-59).
+      example: 30
+      selector:
+        number:
+          min: 0
+          max: 59
+          step: 0.5
+          mode: box
+    brightness:
+      name: Brightness
+      description: Optional brightness level (1-255) for lights.
+      example: 255
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
+    brightness_pct:
+      name: Brightness percentage
+      description: Optional brightness percentage (1-100%) for lights.
+      example: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          mode: slider
+
+sweep_bus:
+  name: Sweep bus status
+  description: Triggers an active read-only status query across all bus subsystems (lighting, covers, thermoregulation, clock, and gateway diagnostics) to populate the diagnostic bus monitor ring buffer.
+  fields:
+    gateway:
+      name: Gateway
+      description: The gateway's MAC address (optional; defaults to all active gateways).
+      example: "00:03:50:00:00:01"
+      selector:
+        text:
+    force:
+      name: Force probe
+      description: Force sweep across all subsystems (including Alarm and Energy) regardless of gateway profile restrictions, including the general requests the gateway firmware normally drops.
+      default: false
+      selector:
+        boolean:
+
+calibrate_cover:
+  name: Calibrate cover travel time
+  description: >-
+    Measures a timed cover's up and down travel times on the SCS bus and stores them.
+    The cover is driven fully up, then fully down (timed), then fully up again (timed).
+    Covers are calibrated one at a time per gateway. Do not run while the shutter must stay put.
+  target:
+    entity:
+      domain: cover
+      integration: myhome
+
+stop_cover_calibration:
+  name: Stop cover calibration
+  description: >-
+    Stops the running travel-time calibration and cancels the queued ones. The moving
+    cover is stopped; nothing is stored. Without a gateway every gateway is stopped.
+  fields:
+    gateway:
+      name: Gateway
+      description: The gateway's MAC address (optional; defaults to all gateways).
+      example: "00:03:50:20:00:01"
+      selector:
+        text:
+
+set_cover_travel_time:
+  name: Set cover travel time
+  description: >-
+    Stores the physical travel times of a timed cover by hand (measured with a stopwatch)
+    instead of calibrating on the bus. Values are kept in the config entry, survive
+    restarts and apply to discovered covers without YAML.
+  target:
+    entity:
+      domain: cover
+      integration: myhome
+  fields:
+    travel_time:
+      name: Travel time
+      description: Seconds for a full travel in both directions (1-300). Used for whichever direction has no explicit value.
+      example: 24.5
+      selector:
+        number:
+          min: 1
+          max: 300
+          step: 0.1
+          unit_of_measurement: s
+          mode: box
+    travel_time_down:
+      name: Travel time down
+      description: Seconds for a full closing run (1-300).
+      example: 24.5
+      selector:
+        number:
+          min: 1
+          max: 300
+          step: 0.1
+          unit_of_measurement: s
+          mode: box
+    travel_time_up:
+      name: Travel time up
+      description: Seconds for a full opening run (1-300).
+      example: 26.0
+      selector:
+        number:
+          min: 1
+          max: 300
+          step: 0.1
+          unit_of_measurement: s
+          mode: box
+    slat_time:
+      name: Slat time
+      description: Seconds the slats of a Venetian blind need for a full rotation (0.5-10). Only used by covers with slat_tilt enabled.
+      example: 2.0
+      selector:
+        number:
+          min: 0.5
+          max: 10
+          step: 0.1
+          unit_of_measurement: s
+          mode: box
+    copied_from:
+      name: Copied from
+      description: The cover these times were taken from; the source is then reported as "copied" instead of "manual".
+      example: cover.living_room_west
+      selector:
+        entity:
+          domain: cover
+          integration: myhome
+    min_motor_pulse:
+      name: Motor start-up floor
+      description: Minimum duration in seconds (0.0-5.0) of a motor pulse to overcome mechanical deadband and brake inertia. Defaults to 0.4 s (0.0 disables).
+      example: 0.4
+      selector:
+        number:
+          min: 0.0
+          max: 5.0
+          step: 0.05
+          unit_of_measurement: s
+          mode: box
+
+reset_cover_travel_time:
+  name: Reset cover travel time
+  description: >-
+    Forgets the measured or manually set travel times of a timed cover and returns to the
+    myhome.yaml travel_time or the 25 s default.
+  target:
+    entity:
+      domain: cover
+      integration: myhome
+
+tuner_seek_up:
+  name: Tuner seek up
+  description: Seek forward to the next receivable FM radio frequency on an F500 tuner source.
+  target:
+    entity:
+      domain: media_player
+      integration: myhome
+
+tuner_seek_down:
+  name: Tuner seek down
+  description: Seek backward to the previous receivable FM radio frequency on an F500 tuner source.
+  target:
+    entity:
+      domain: media_player
+      integration: myhome
+
+tuner_set_frequency:
+  name: Tuner set frequency
+  description: Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source.
+  target:
+    entity:
+      domain: media_player
+      integration: myhome
+  fields:
+    frequency:
+      name: Frequency
+      description: Target FM radio frequency in MHz (87.50–108.00 MHz, 0.05 MHz steps).
+      required: true
+      example: 105.3
+      selector:
+        number:
+          min: 87.5
+          max: 108.0
+          step: 0.05
+          unit_of_measurement: MHz
+          mode: box
+
+tuner_store_station:
+  name: Tuner store station
+  description: Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source.
+  target:
+    entity:
+      domain: media_player
+      integration: myhome
+  fields:
+    station:
+      name: Station
+      description: Preset memory slot number (1–5 on F500, up to 1–15 on F500N).
+      required: true
+      example: 5
+      selector:
+        number:
+          min: 1
+          max: 15
+          step: 1
+          mode: box
+
+send_scenario_plus_command:
+  name: Send scenario plus command
+  description: Send a WHO 25 scenario plus command (on, off, increase, decrease, stop) to an addressed scenario plus object.
+  fields:
+    gateway:
+      name: Gateway
+      description: The gateway's MAC address (optional; defaults to primary gateway).
+      example: "00:03:50:00:00:01"
+      selector:
+        text:
+    where:
+      name: Where
+      description: The scenario plus object address on the bus.
+      required: true
+      example: "11"
+      selector:
+        text:
+    action:
+      name: Action
+      description: The scenario plus action to execute (on, off, increase, decrease, or stop; step/speed for increase/decrease is fixed per protocol).
+      required: true
+      example: "on"
+      selector:
+        select:
+          options:
+            - "on"
+            - "off"
+            - "increase"
+            - "decrease"
+            - "stop"
+
+cancel_cover_request:
+  name: Cancel gate or garage door request
+  description: >-
+    Cancels a pending approval request or a running pre-warning of an impulse gate or
+    garage door. Cancelling is always safe; nothing moves.
+  target:
+    entity:
+      domain: cover
+      integration: myhome
+
+acknowledge_cover_fault:
+  name: Acknowledge gate or garage door fault
+  description: >-
+    Clears the fault latched when a gate or garage door did not reach the expected state
+    after a pulse (possible obstacle or reversal). Only an allowed user who is at home
+    may acknowledge it; until then closing from Home Assistant stays blocked.
+  target:
+    entity:
+      domain: cover
+      integration: myhome

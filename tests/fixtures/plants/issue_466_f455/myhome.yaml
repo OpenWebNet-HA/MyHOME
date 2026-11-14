@@ -1,0 +1,31 @@
+# Authentic plant for the issue #466 F455 Basic Gateway (firmware 1.0.86):
+# 7 lighting actuators on WHERE 11-17 with dimmers and pushbuttons.
+
+f455:
+  mac: "00:03:50:00:04:55"
+
+  light:
+    light_11:
+      where: "11"
+      name: "Light 11"
+    light_12:
+      where: "12"
+      name: "Light 12"
+      dimmable: true
+    light_13:
+      where: "13"
+      name: "Light 13"
+      dimmable: true
+    light_14:
+      where: "14"
+      name: "Light 14"
+    light_15:
+      where: "15"
+      name: "Light 15"
+      dimmable: true
+    light_16:
+      where: "16"
+      name: "Light 16"
+    light_17:
+      where: "17"
+      name: "Light 17"

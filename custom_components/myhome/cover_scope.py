@@ -1,0 +1,496 @@
+"""Support for MyHome scope covers (general, area, group WHEREs)."""
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Iterable
+
+from homeassistant.components.cover import ATTR_POSITION, ATTR_TILT_POSITION
+from homeassistant.core import CALLBACK_TYPE, Event, EventStateChangedData, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from OWNd.message import OWNMessage
+
+from .const import BUS_ROUTING, DOMAIN, PACED_FANOUT_DELAY, area_of_where
+
+if TYPE_CHECKING:
+    from .cover import MyHOMECover
+
+_AREA_WHERES = frozenset({"00", "100", *"123456789"})
+
+
+@dataclass(frozen=True)
+class CoverScope:
+    """The point-to-point covers a general, area or group WHERE moves.
+
+    WHO_2.pdf §3.0.1: an Up or Down to ``GEN``, ``A`` or ``GR`` ends with a stop
+    from every Automation Object it moved ("as many frames as automation
+    objects"), never with one for the scope WHERE itself.
+    """
+
+    kind: str  # "general", "area" or "group"
+    where: str
+    interface: str | None = None
+    #: Group only: the address keys ``myhome.yaml`` declares as members; a
+    #: group's membership is programmed in the actuators, never seen on the bus.
+    members: frozenset[str] = frozenset()
+
+    @classmethod
+    def of(cls, where: str, interface: str | None = None, members: Iterable[str] = ()) -> CoverScope | None:
+        """The scope a WHERE addresses, or ``None`` for a point-to-point address."""
+        where = str(where)
+        if where == "0":
+            return cls("general", where, interface)
+        if where in _AREA_WHERES:
+            return cls("area", where, interface)
+        if where.startswith("#"):
+            keys = frozenset(f"{m}{BUS_ROUTING}{interface}" if interface else str(m) for m in members)
+            return cls("group", where, interface, keys)
+        return None
+
+    def contains(self, cover: MyHOMECover) -> bool:
+        """Whether this scope moves ``cover`` (point-to-point covers only)."""
+        if cover.scope is not None:
+            return False
+        if self.kind == "general":
+            # as relay_general delivers it; behind an interface, that interface's covers
+            return self.interface is None or cover._interface == self.interface
+        if self.kind == "area":
+            return cover._interface == self.interface and area_of_where(cover._where) == self.where
+        key = f"{cover._where}{BUS_ROUTING}{cover._interface}" if cover._interface else cover._where
+        return key in self.members
+
+
+class CoverFamily:
+    """The covers of one gateway, so a scope cover can find and follow its members."""
+
+    def __init__(self) -> None:
+        self._covers: list[MyHOMECover] = []
+
+    def add(self, cover: MyHOMECover) -> None:
+        self._covers.append(cover)
+        cover._family = self
+
+        @callback
+        def _removed() -> None:
+            if cover in self._covers:
+                self._covers.remove(cover)
+            self.membership_changed()
+
+        cover.async_on_remove(_removed)
+
+    def members(self, scope: CoverScope) -> list[MyHOMECover]:
+        return [c for c in self._covers if scope.contains(c)]
+
+    def keys_moved_by(self, where: str, interface: str | None) -> list[str]:
+        """Router keys of the covers a scope frame moves: an area's by address, a group's as declared."""
+        scopes = [c.scope for c in self._covers if c.scope is not None and (c.scope.where, c.scope.interface) == (where, interface)]
+        if (own := CoverScope.of(where, interface)) is not None:
+            scopes.append(own)
+        return [c._device_id for c in self._covers if any(s.contains(c) for s in scopes)]
+
+    @callback
+    def membership_changed(self) -> None:
+        """A cover joined or left Home Assistant: every scope cover re-resolves whom it follows."""
+        for cover in self._covers:
+            if isinstance(cover, MyHOMEScopeCover):
+                cover._follow_members()
+
+
+from .cover import MyHOMECover  # noqa: E402
+
+
+class MyHOMEScopeCover(MyHOMECover):
+    """A cover on a general, area or group WHERE: one command, many actuators.
+
+    Only the actuators report back. At the end of travel each sends its own
+    stop and none arrives for the scope WHERE (WHO_2.pdf §3.0.1), so a scope
+    cover that waited for one stayed "opening" for good (issue #433). Its state
+    follows its members instead, the way core's cover group does: opening or
+    closing while any member is, closed when all are, at their mean position.
+    A scope with no known members ends a run after its travel time.
+    """
+
+    # No position of its own to settle: timed members settle on their own travel
+    # timer, armed by _async_run_members_to_end for a scope frame the gateway relays.
+    _settles_open_close = False
+
+    def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
+        self._run_timeout: CALLBACK_TYPE | None = None
+        self._run_timeout_direction: str | None = None
+        super().__init__(*args, **kwargs)
+        self.scope = scope
+        self._attr_extra_state_attributes["scope"] = scope.kind
+        self._unsub_members: CALLBACK_TYPE | None = None
+        self._pulse_followers: list[MyHOMECover] = []
+        # A member can join before this cover is in Home Assistant (no hass yet).
+        self._added = False
+
+    def _members(self) -> list[MyHOMECover]:
+        return self._family.members(self.scope) if self._family is not None and self.scope is not None else []
+
+    def _tracks_own_live_refresh(self) -> bool:
+        """With members, each timed member's ticker triggers ``_member_changed``; only a memberless scope runs its own."""
+        return not self._members()
+
+    async def async_added_to_hass(self) -> None:
+        self._added = True
+        await super().async_added_to_hass()  # ends with membership_changed(): follows the members
+
+    @callback
+    def _follow_members(self) -> None:
+        """Repaint on every state change of the current members, as core's cover group does."""
+        if self._unsub_members is not None:
+            self._unsub_members()
+            self._unsub_members = None
+        if self._members():
+            self._stop_live_refresh()
+        if not self._added:
+            return
+        if entity_ids := [m.entity_id for m in self._members() if m.entity_id]:
+            self._cancel_run_timeout()
+            self._unsub_members = async_track_state_change_event(self.hass, entity_ids, self._member_changed)
+        self._publish_state()
+
+    @callback
+    def _member_changed(self, _event: Event[EventStateChangedData]) -> None:
+        self._publish_state()
+
+    @property
+    def current_cover_position(self) -> int | None:
+        if not (members := self._members()):
+            return super().current_cover_position
+        positions = [p for m in members if (p := m.current_cover_position) is not None]
+        return round(sum(positions) / len(positions)) if positions else None
+
+    @property
+    def is_opening(self) -> bool:
+        if not (members := self._members()):
+            return super().is_opening
+        return any(m.is_opening for m in members)
+
+    @property
+    def is_closing(self) -> bool:
+        if not (members := self._members()):
+            return super().is_closing
+        return any(m.is_closing for m in members)
+
+    @property
+    def is_closed(self) -> bool | None:
+        """Closed when every member with a known state is; unknown when none has one.
+
+        As HA Core's CoverGroup: a member whose state is unknown (a timed cover
+        before its first full run) does not count, so the scope is not reported
+        ``open`` on the strength of members that have no state at all.
+        """
+        if not (members := self._members()):
+            return super().is_closed
+        known = [closed for m in members if (closed := m.is_closed) is not None]
+        if not known:
+            return None
+        return all(known)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = dict(super().extra_state_attributes or {})
+        attrs["members"] = [m.entity_id for m in self._members() if m.entity_id]
+        return attrs
+
+    def _fan_out(self) -> list[MyHOMECover]:
+        """The members to command one by one when a scope command cannot cross an F422.
+
+        General commands (WHERE=0) cross F422 interfaces natively (*2*WHAT*0#4#<bus>##),
+        proven on physical MH200 firmware 2.1.0 where *2*0*0#4#02## moved all actuators on bus 02.
+        Only area and group scope covers behind an interface fan out to point commands.
+        """
+        if self.scope is None or self.scope.kind == "general":
+            return []
+        return self._members() if self.scope.interface is not None else []
+
+    def _fan_out_position_members(self) -> list[MyHOMECover]:
+        """Members to position individually: OpenWebNet has no broadcast percentage position."""
+        return self._members() if self.scope is not None and self.scope.interface is not None else []
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_open_cover(**kwargs)
+            return
+        await self._async_run_members_to_end(True)
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_close_cover(**kwargs)
+            return
+        await self._async_run_members_to_end(False)
+
+    async def _async_run_members_to_end(self, opening: bool) -> asyncio.Future[Any] | None:
+        """One scope frame runs every member to its end stop (no F422 fan-out: the main bus,
+        or a general frame, which crosses the interface natively).
+
+        The gateway relays the frame to the members. Each timed member opens its run on the
+        scope's frame and settles on its own travel timer (#770, #795); an early stop on a
+        known member still freezes its interpolated position, while an early stop on an
+        unknown member keeps settling to the end stop.
+        """
+        direction = "open" if opening else "close"
+        if self._is_tilting:
+            self._apply_tilt_stop()
+        followers = [m for m in self._members() if m._settles_full_run(opening)]
+        for member in followers:
+            member._begin_run(direction)
+        try:
+            written = await self._async_move(direction)
+        except Exception:
+            for member in followers:
+                member._abort_motion()  # the scope frame never reached the bus: nothing moved
+            raise
+        for member in followers:
+            member._follow_scope_run_to_end(opening, written)
+        return written
+
+    async def _async_run_to_end(self, opening: bool) -> None:
+        """`set_cover_position: 0` / `100` with one scope frame: the members settle too."""
+        written = await self._async_run_members_to_end(opening)
+        self._cancel_run_timeout()
+        self._settle_run_to_end(opening, written)
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_stop_cover(**kwargs)
+            return
+        if not self._is_tilting:
+            self._cancel_run_timeout()
+        at = kwargs.get("at")
+        queued_at = time.monotonic()
+        followers: list[MyHOMECover] = []
+        tilting_leaders: list[tuple[MyHOMECover, int]] = []
+        seen_leaders: set[int] = set()
+        for member in self._members():
+            if member._is_tilting:
+                if member._tilt_follows is not self:
+                    leader = member._tilt_follows if member._tilt_follows is not None else member
+                    if id(leader) not in seen_leaders:
+                        seen_leaders.add(id(leader))
+                        leader._cancel_stop_task()
+                        tilting_leaders.append((leader, leader._run_generation))
+            elif not member._advanced and not member._calibrating:
+                # Cancel each member's end-of-run settle and track the scope stop write
+                # so known members freeze (even without relayed stop frames or inside
+                # ECHO_WINDOW) and unknown members stay unknown (#770).
+                member._begin_stop(scope_where=self._full_where)
+                followers.append(member)
+            else:
+                member._cancel_stop_task()
+        try:
+            written = await self._async_stop(**kwargs)
+        except Exception:
+            for member in followers:
+                member._end_echo_window()
+            raise
+        for member in followers:
+            member._follow_scope_stop(written)
+        not_before = max(at, queued_at) if at is not None else queued_at
+        for leader, leader_gen in tilting_leaders:
+            if leader._is_tilting and leader_gen == leader._run_generation:
+                if isinstance(written, asyncio.Future) and not written.done():
+                    leader._pulse_stop_written = written
+                leader._settle_pulse_on_write(written, leader_gen, not_before)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        if members := self._fan_out_position_members():
+            if ATTR_POSITION in kwargs:
+                # Refuse before the first member moves: a member with an unknown
+                # position cannot be timed to a partial target.
+                for member in members:
+                    member._check_position_target(kwargs[ATTR_POSITION])
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_set_cover_position(**kwargs)
+            return
+        await super().async_set_cover_position(**kwargs)
+
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 100})
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 0})
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await self._pulse_members_one_by_one([m for m in members if m._slat_tilt], kwargs)
+            return
+        if not self._slat_tilt:
+            return
+        if any((m._attr_is_opening or m._attr_is_closing) and not m._is_tilting for m in self._members()):
+            raise HomeAssistantError(
+                f"{self._display_name} is moving; stop it before tilting the slats",
+                translation_domain=DOMAIN,
+                translation_key="cover_busy_moving",
+                translation_placeholders={"name": self._display_name},
+            )
+        await super().async_set_cover_tilt_position(**kwargs)
+
+    async def _pulse_members_one_by_one(self, members: list[MyHOMECover], kwargs: dict[str, Any]) -> None:
+        """Behind an F422 every blind needs its own pulse: run them one after the other.
+
+        Queued together, each blind's stop would wait in the FIFO send queue
+        behind the other blinds' direction frames, and its slats would turn on
+        (or its curtain move) until then.
+        """
+        errors: list[HomeAssistantError] = []
+        for member in members:
+            try:
+                await member.async_set_cover_tilt_position(**kwargs)
+                await member._async_wait_pulse_end()
+            except HomeAssistantError as err:
+                errors.append(err)
+        if errors:
+            raise errors[0]
+
+    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
+        if is_tilting and not self._fan_out():
+            # On the local bus one scope frame turns every member's slats: they
+            # follow this pulse instead of reading its frames as a curtain run.
+            self._pulse_followers = [m for m in self._members() if m._slat_tilt]
+            for member in self._pulse_followers:
+                member._follow_pulse(self, direction)
+        written = await super()._async_move(direction, is_tilting=is_tilting)
+        if not is_tilting:
+            self._watch_run()
+        return written
+
+    def _pulse_started(self) -> None:
+        for member in self._pulse_followers:
+            if member._tilt_follows is self and member._is_tilting:
+                member._tilt_start_time = self._tilt_start_time
+
+    def _apply_tilt_stop(self, at: float | None = None) -> None:
+        start = self._tilt_start_time
+        super()._apply_tilt_stop(at)
+        followers, self._pulse_followers = self._pulse_followers, []
+        for member in followers:
+            if member._tilt_follows is self and member._is_tilting:
+                if member._tilt_start_time is None:
+                    member._tilt_start_time = start
+                member._apply_tilt_stop(at)
+                member._publish_state()
+
+    def _abort_tilt(self) -> None:
+        super()._abort_tilt()
+        followers, self._pulse_followers = self._pulse_followers, []
+        for member in followers:
+            if member._tilt_follows is self and member._is_tilting:
+                member._abort_tilt()
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            await asyncio.gather(*(m.async_stop_cover_tilt(**kwargs) for m in members if m._slat_tilt))
+            return
+        if self._slat_tilt:
+            await super().async_stop_cover_tilt(**kwargs)
+
+    @property
+    def current_cover_tilt_position(self) -> int | None:
+        if not (members := self._members()):
+            return super().current_cover_tilt_position
+        tilts = [t for m in members if m._slat_tilt and (t := m.current_cover_tilt_position) is not None]
+        return round(sum(tilts) / len(tilts)) if tilts else None
+
+    @callback
+    def handle_event(self, message: OWNMessage) -> None:
+        super().handle_event(message)
+        if not self._is_tilting:
+            self._watch_run()
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._added = False
+        self._cancel_run_timeout()
+        if self._unsub_members is not None:
+            self._unsub_members()
+            self._unsub_members = None
+        await super().async_will_remove_from_hass()
+
+    def _cancel_wall_settle(self) -> None:
+        self._cancel_run_timeout()
+        super()._cancel_wall_settle()
+
+    def _recompute_active_settle(self) -> None:
+        super()._recompute_active_settle()
+        if (
+            (self._attr_is_opening or self._attr_is_closing)
+            and not self._is_tilting
+            and self._pending_cmd != "stop"
+            and (self._stop_task is None or self._stop_task.done())
+        ):
+            self._watch_run(force_rearm=True)
+
+    @callback
+    def _watch_run(self, *, force_rearm: bool = False) -> None:
+        """Without members nothing reports the end of a run: end it after the travel time."""
+        moving = "open" if self._attr_is_opening else "close" if self._attr_is_closing else None
+        opening = moving == "open"
+        if (
+            moving is None
+            or self.hass is None
+            or self._members()
+            or self._is_tilting
+            or not self._settles_on_timer
+            or self._travel_for(opening) <= 0
+            or (self._stop_task is not None and not self._stop_task.done())
+        ):
+            self._cancel_run_timeout()
+            return
+        if not force_rearm and self._run_timeout is not None and self._run_timeout_direction == moving:
+            return
+        self._cancel_run_timeout()
+        elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
+        delay = max(0.0, self._travel_for(opening) - elapsed)
+        self._run_timeout_direction = moving
+        self._run_timeout = async_call_later(self.hass, delay, self._end_run)
+
+    @callback
+    def _cancel_run_timeout(self) -> None:
+        if self._run_timeout is not None:
+            self._run_timeout()
+        self._run_timeout = None
+        self._run_timeout_direction = None
+
+    @callback
+    def _end_run(self, _now: Any) -> None:
+        direction = self._run_timeout_direction
+        self._run_timeout = None
+        self._run_timeout_direction = None
+        opening = bool(self._attr_is_opening)
+        if direction != ("open" if opening else "close" if self._attr_is_closing else None):
+            return  # stopped or reversed meanwhile
+        end = 100 if opening else 0
+        travel = self._travel_for(opening)
+        at = time.monotonic()
+        if self._run_started_at is not None:
+            at = max(at, self._run_started_at + travel)
+        confirmed = (
+            not self._strategy.assumed_state
+            and self._run_started_at is not None
+            and travel > 0
+        )
+        self._freeze_position(at)
+        if not self._strategy.assumed_state:
+            # A full run by the model; the anchor may trail the timer by the queue delay.
+            self._attr_current_cover_position = self._start_position = end
+            if not confirmed:
+                self._strategy.on_position_confirmed(self, end, "end_stop")
+        if self._slat_tilt:
+            self._attr_current_cover_tilt_position = end
+        self._attr_is_closed = not opening
+        self._publish_state()

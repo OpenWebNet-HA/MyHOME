@@ -1,0 +1,136 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": null,
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-27T20:38:02.525Z",
+      "last": "2026-10-27T20:38:06.841Z",
+      "frames": 6,
+      "buffer_frames": 6,
+      "buffer_depth": 200,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.10.4",
+    "integration_version": "2.0.0b16",
+    "ownd_version": "2.0.0b11",
+    "exported_at": "2026-10-27T20:38:12.889Z"
+  },
+  "gateway": {
+    "model": "MH201",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "3.6.43",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.1,
+    "is_connected": true,
+    "identification": {
+      "model": "MH201",
+      "source": "ssdp",
+      "configured_model": "MH201",
+      "ssdp_model": "MH201",
+      "who13_code": "200",
+      "who13_model": "F454",
+      "who13_model_official": null,
+      "who13_model_observed": "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201",
+      "who13_firmware": "3.6.43",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "who1013_code": "10",
+      "who1013_model": "MH201",
+      "who1013_other_names": [],
+      "who1013_n_conf": "15",
+      "who1013_brand": "0",
+      "who1013_line": "5",
+      "profile": "MH201Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 3,
+    "total_tx": 3,
+    "captured_in_buffer": 6,
+    "buffer_depth": 200,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1793133482.525175,
+      "iso_time": "2026-10-27T20:38:02.525175+00:00",
+      "direction": "tx",
+      "raw": "*1*1*42##",
+      "who": "1",
+      "what": "1",
+      "where": "42",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793133482.851649,
+      "iso_time": "2026-10-27T20:38:02.851649+00:00",
+      "direction": "rx",
+      "raw": "*1*7*42##",
+      "who": "1",
+      "what": "7",
+      "where": "42",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793133482.915243,
+      "iso_time": "2026-10-27T20:38:02.915243+00:00",
+      "direction": "tx",
+      "raw": "*#1*42*1##",
+      "who": "1",
+      "what": null,
+      "where": "42",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793133483.04375,
+      "iso_time": "2026-10-27T20:38:03.043750+00:00",
+      "direction": "rx",
+      "raw": "*#1*42*1*148*5##",
+      "who": "1",
+      "what": null,
+      "where": "42",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793133486.761915,
+      "iso_time": "2026-10-27T20:38:06.761915+00:00",
+      "direction": "tx",
+      "raw": "*1*0*42##",
+      "who": "1",
+      "what": "0",
+      "where": "42",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1793133486.841518,
+      "iso_time": "2026-10-27T20:38:06.841518+00:00",
+      "direction": "rx",
+      "raw": "*1*0*42##",
+      "who": "1",
+      "what": "0",
+      "where": "42",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

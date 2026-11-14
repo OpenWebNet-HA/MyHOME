@@ -1,0 +1,250 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-09-26T18:19:42.317Z",
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-09-26T18:19:54.947Z",
+      "last": "2026-09-26T18:20:04.595Z",
+      "frames": 16,
+      "buffer_frames": 16,
+      "buffer_depth": 200,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.3",
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "exported_at": "2026-09-26T18:20:14.389Z"
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "Unknown",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.02,
+    "is_connected": true,
+    "identification": {
+      "model": "MyHomeServer1",
+      "source": "ssdp",
+      "configured_model": "MyHomeServer1",
+      "ssdp_model": "MyHomeServer1",
+      "who13_code": null,
+      "who13_model": null,
+      "who13_model_official": null,
+      "who13_model_observed": null,
+      "who13_firmware": null,
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MyHomeServer1Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 16,
+    "total_tx": 0,
+    "captured_in_buffer": 16,
+    "buffer_depth": 200,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1790446794.947636,
+      "iso_time": "2026-09-26T18:19:54.947636+00:00",
+      "direction": "rx",
+      "raw": "*2*11#100#001#1*0##",
+      "who": "2",
+      "what": "11",
+      "where": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446803.864683,
+      "iso_time": "2026-09-26T18:20:03.864683+00:00",
+      "direction": "rx",
+      "raw": "*2*10#001#1*0##",
+      "who": "2",
+      "what": "10",
+      "where": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446803.931729,
+      "iso_time": "2026-09-26T18:20:03.931729+00:00",
+      "direction": "rx",
+      "raw": "*#2*02*10*10*86*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "02",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446803.958797,
+      "iso_time": "2026-09-26T18:20:03.958797+00:00",
+      "direction": "rx",
+      "raw": "*2*0*02##",
+      "who": "2",
+      "what": "0",
+      "where": "02",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.07365,
+      "iso_time": "2026-09-26T18:20:04.073650+00:00",
+      "direction": "rx",
+      "raw": "*#2*03*10*10*76*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "03",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.075139,
+      "iso_time": "2026-09-26T18:20:04.075139+00:00",
+      "direction": "rx",
+      "raw": "*2*0*03##",
+      "who": "2",
+      "what": "0",
+      "where": "03",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.10775,
+      "iso_time": "2026-09-26T18:20:04.107750+00:00",
+      "direction": "rx",
+      "raw": "*#2*04*10*10*43*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "04",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.142361,
+      "iso_time": "2026-09-26T18:20:04.142361+00:00",
+      "direction": "rx",
+      "raw": "*2*0*04##",
+      "who": "2",
+      "what": "0",
+      "where": "04",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.209984,
+      "iso_time": "2026-09-26T18:20:04.209984+00:00",
+      "direction": "rx",
+      "raw": "*#2*08*10*10*36*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "08",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.251076,
+      "iso_time": "2026-09-26T18:20:04.251076+00:00",
+      "direction": "rx",
+      "raw": "*2*0*08##",
+      "who": "2",
+      "what": "0",
+      "where": "08",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.301629,
+      "iso_time": "2026-09-26T18:20:04.301629+00:00",
+      "direction": "rx",
+      "raw": "*#2*09*10*10*27*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "09",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.363708,
+      "iso_time": "2026-09-26T18:20:04.363708+00:00",
+      "direction": "rx",
+      "raw": "*2*0*09##",
+      "who": "2",
+      "what": "0",
+      "where": "09",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.435735,
+      "iso_time": "2026-09-26T18:20:04.435735+00:00",
+      "direction": "rx",
+      "raw": "*#2*0010*10*10*26*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "0010",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.472843,
+      "iso_time": "2026-09-26T18:20:04.472843+00:00",
+      "direction": "rx",
+      "raw": "*2*0*0010##",
+      "who": "2",
+      "what": "0",
+      "where": "0010",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.553043,
+      "iso_time": "2026-09-26T18:20:04.553043+00:00",
+      "direction": "rx",
+      "raw": "*#2*0011*10*10*25*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "0011",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790446804.595756,
+      "iso_time": "2026-09-26T18:20:04.595756+00:00",
+      "direction": "rx",
+      "raw": "*2*0*0011##",
+      "who": "2",
+      "what": "0",
+      "where": "0011",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

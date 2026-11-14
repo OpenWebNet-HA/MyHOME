@@ -1,0 +1,78 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": null,
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-05T11:15:45.642Z",
+      "last": "2026-10-05T11:15:45.642Z",
+      "frames": 1,
+      "buffer_frames": 1,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.4",
+    "integration_version": "2.0.0b14",
+    "ownd_version": "2.0.0b9",
+    "exported_at": "2026-10-05T11:16:07.654Z"
+  },
+  "gateway": {
+    "model": "F454",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "1.0.34",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "F454",
+      "source": "ssdp",
+      "configured_model": "F454",
+      "ssdp_model": "F454",
+      "who13_code": "200",
+      "who13_model": "F454",
+      "who13_model_official": null,
+      "who13_model_observed": "F454 / MyHomeServer1 / MH202 / F461 / H4890",
+      "who13_firmware": "1.0.34",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "who1013_code": "51",
+      "who1013_model": "F454",
+      "who1013_other_names": [
+        "003598"
+      ],
+      "who1013_n_conf": "15",
+      "who1013_brand": "1",
+      "who1013_line": "0 (Undefined)",
+      "profile": "F454Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 0,
+    "total_tx": 1,
+    "captured_in_buffer": 1,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1791198945.642566,
+      "iso_time": "2026-10-05T11:15:45.642566+00:00",
+      "direction": "tx",
+      "raw": "*#4*#0#1##",
+      "who": "4",
+      "what": null,
+      "where": "#0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

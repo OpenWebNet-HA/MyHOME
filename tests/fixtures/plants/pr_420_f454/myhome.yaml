@@ -1,0 +1,17 @@
+# Synthetic plant for the PR #420 F454 sweep (firmware 2.0.51): the fixture is
+# about gateway identification (WHO=13 dimension 15 = 200, WHO=1013 dimension 1
+# = 51), so only a light and a cover from the sweep's replies are declared.
+
+f454:
+  mac: "00:03:50:00:04:21"
+
+  light:
+    light_10:
+      where: "10"
+      name: "Light 10"
+      dimmable: False
+
+  cover:
+    cover_11:
+      where: "11"
+      name: "Cover 11"

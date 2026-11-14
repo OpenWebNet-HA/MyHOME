@@ -1,0 +1,21 @@
+- id: signaling.ack
+  frame: "*#*1##"
+  direction: signaling
+  who: null
+  what: null
+  where: null
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Acknowledge (*#*1##): Command accepted by gateway"
+  roundtrip: true
+
+- id: signaling.nack
+  frame: "*#*0##"
+  direction: signaling
+  who: null
+  what: null
+  where: null
+  source: public-readme
+  mcp_valid: true
+  mcp_notes: "Negative Acknowledge (*#*0##): Command rejected, invalid address, or bus busy"
+  roundtrip: true

@@ -1,0 +1,11 @@
+# Crowdin configuration for OpenWebNet-HA/MyHOME
+# Documentation: https://support.crowdin.com/configuration-file/
+
+project_id_env: CROWDIN_PROJECT_ID
+api_token_env: CROWDIN_PERSONAL_TOKEN
+base_path: "."
+preserve_hierarchy: true
+
+files:
+  - source: /custom_components/myhome/translations/en.json
+    translation: /custom_components/myhome/translations/%two_letters_code%.json

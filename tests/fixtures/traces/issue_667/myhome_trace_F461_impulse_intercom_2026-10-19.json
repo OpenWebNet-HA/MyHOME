@@ -1,0 +1,1895 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "started_at": "2026-10-19T08:31:02+00:00",
+    "notes": "Live BTicino F461 (firmware 2.0.11 / WHO 1013 134.15.5.0) + BT-F411/4 capture for PR #667: WHO=1 WHAT=18 (0.5s hardware timed impulse) vs software ON/OFF impulse cover cycle on physical relays 06 & 07, unpopulated relay NACK verification (71), WHO=6 door lock release & camera teardown frames, and WHO=8 video intercom call frames.",
+    "window": {
+      "first": "2026-10-19T08:31:02+00:00",
+      "last": "2026-10-19T08:31:31+00:00",
+      "frames": 34,
+      "rows": 161
+    }
+  },
+  "gateway": {
+    "model": "F461",
+    "manufacturer": "BTicino",
+    "firmware": "2.0.11",
+    "kernel": "5.10.35",
+    "ip": "192.0.2.92",
+    "mac": "00:03:50:00:04:97",
+    "identification": {
+      "model": "F461",
+      "who13_code": "200",
+      "who1013_code": "134"
+    }
+  },
+  "frames": [
+    {
+      "timestamp": 1.43,
+      "direction": "rx",
+      "raw": "*#13**15*200##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.882,
+      "direction": "rx",
+      "raw": "*#13**16*2*0*11##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.375,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.872,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 3.356,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 3.839,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.315,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.388,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.854,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.941,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 6.424,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 7.003,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 7.496,
+      "direction": "rx",
+      "raw": "*1*1*07##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 7.575,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.007,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.094,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 9.605,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.195,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.674,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 10.747,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.283,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.362,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 12.882,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 12.971,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 13.477,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 13.572,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 14.573,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 14.654,
+      "direction": "rx",
+      "raw": "*#1*#1*15*1##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 15.183,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 15.255,
+      "direction": "rx",
+      "raw": "*#1*#1*15*0##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 15.802,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "session": "evt"
+    },
+    {
+      "timestamp": 27.861,
+      "direction": "rx",
+      "raw": "*1*0*06##",
+      "run": "run4_plant_idle_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.347,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run4_plant_idle_verification",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.846,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run4_plant_idle_verification",
+      "session": "evt"
+    }
+  ],
+  "rows": [
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.378,
+      "step": "gateway_id",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**15##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.43,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**15*200##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.43,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**15*200##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.521,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.822,
+      "step": "gateway_id",
+      "dir": "result",
+      "frame": "*#13**15##",
+      "ack": true,
+      "reply_time_s": 0.144,
+      "replies": [
+        "*#13**15*200##"
+      ],
+      "events_after": [
+        "*#13**15*200##"
+      ],
+      "note": "who13_device_type"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.822,
+      "step": "gateway_id",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**16##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.882,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**16*2*0*11##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's firmware version is: 2.0.11."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.882,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**16*2*0*11##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 1.943,
+      "step": "gateway_id",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.244,
+      "step": "gateway_id",
+      "dir": "result",
+      "frame": "*#13**16##",
+      "ack": true,
+      "reply_time_s": 0.121,
+      "replies": [
+        "*#13**16*2*0*11##"
+      ],
+      "events_after": [
+        "*#13**16*2*0*11##"
+      ],
+      "note": "who13_firmware_version"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.244,
+      "step": "ensure_off",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.334,
+      "step": "ensure_off",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.375,
+      "step": "ensure_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.734,
+      "step": "ensure_off",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.09,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "ensure_06_off"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.734,
+      "step": "ensure_off",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*07##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.841,
+      "step": "ensure_off",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 2.872,
+      "step": "ensure_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.242,
+      "step": "ensure_off",
+      "dir": "result",
+      "frame": "*1*0*07##",
+      "ack": true,
+      "reply_time_s": 0.106,
+      "replies": [],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "ensure_07_off"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.242,
+      "step": "poll_initial",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.356,
+      "step": "poll_initial",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.358,
+      "step": "poll_initial",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.414,
+      "step": "poll_initial",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.715,
+      "step": "poll_initial",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.172,
+      "replies": [
+        "*1*0*06##"
+      ],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "poll_06_initial_off"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.715,
+      "step": "poll_initial",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.839,
+      "step": "poll_initial",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.839,
+      "step": "poll_initial",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 3.892,
+      "step": "poll_initial",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.192,
+      "step": "poll_initial",
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.177,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "poll_07_initial_off"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.192,
+      "step": "what18_pulse_06",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*18*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.282,
+      "step": "what18_pulse_06",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.315,
+      "step": "what18_pulse_06",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.388,
+      "step": "what18_pulse_06",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.854,
+      "step": "what18_pulse_06",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 4.941,
+      "step": "what18_pulse_06",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.284,
+      "step": "what18_pulse_06",
+      "dir": "result",
+      "frame": "*1*18*06##",
+      "ack": true,
+      "reply_time_s": 0.09,
+      "replies": [],
+      "events_after": [
+        "*1*1*06##",
+        "*#1*#1*15*1##",
+        "*1*0*06##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "what18_timed_05s_pulse_on_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.284,
+      "step": "what18_poll_06",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.421,
+      "step": "what18_poll_06",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.424,
+      "step": "what18_poll_06",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.473,
+      "step": "what18_poll_06",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.874,
+      "step": "what18_poll_06",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.189,
+      "replies": [
+        "*1*0*06##"
+      ],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "poll_06_after_what18_pulse"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.874,
+      "step": "what18_cleanup_06",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 6.97,
+      "step": "what18_cleanup_06",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 7.003,
+      "step": "what18_cleanup_06",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 7.371,
+      "step": "what18_cleanup_06",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.096,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "ensure_06_off_after_what18"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 7.371,
+      "step": "what18_pulse_07",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*18*07##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 7.464,
+      "step": "what18_pulse_07",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 7.496,
+      "step": "what18_pulse_07",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched on."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 7.575,
+      "step": "what18_pulse_07",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 8.007,
+      "step": "what18_pulse_07",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 8.094,
+      "step": "what18_pulse_07",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 9.465,
+      "step": "what18_pulse_07",
+      "dir": "result",
+      "frame": "*1*18*07##",
+      "ack": true,
+      "reply_time_s": 0.093,
+      "replies": [],
+      "events_after": [
+        "*1*1*07##",
+        "*#1*#1*15*1##",
+        "*1*0*07##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "what18_timed_05s_pulse_on_07"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 9.465,
+      "step": "what18_poll_07",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 9.605,
+      "step": "what18_poll_07",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 9.605,
+      "step": "what18_poll_07",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 9.656,
+      "step": "what18_poll_07",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.057,
+      "step": "what18_poll_07",
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.191,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "poll_07_after_what18_pulse"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.057,
+      "step": "what18_cleanup_07",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*07##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.155,
+      "step": "what18_cleanup_07",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.195,
+      "step": "what18_cleanup_07",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.555,
+      "step": "what18_cleanup_07",
+      "dir": "result",
+      "frame": "*1*0*07##",
+      "ack": true,
+      "reply_time_s": 0.098,
+      "replies": [],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "ensure_07_off_after_what18"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.555,
+      "step": "soft_pulse_open_on",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.641,
+      "step": "soft_pulse_open_on",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.674,
+      "step": "soft_pulse_open_on",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 10.747,
+      "step": "soft_pulse_open_on",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 11.143,
+      "step": "soft_pulse_open_on",
+      "dir": "result",
+      "frame": "*1*1*06##",
+      "ack": true,
+      "reply_time_s": 0.086,
+      "replies": [],
+      "events_after": [
+        "*1*1*06##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "impulse_open_relay_on_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 11.143,
+      "step": "soft_pulse_open_off",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 11.242,
+      "step": "soft_pulse_open_off",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 11.283,
+      "step": "soft_pulse_open_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 11.362,
+      "step": "soft_pulse_open_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 12.744,
+      "step": "soft_pulse_open_off",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.099,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "impulse_open_relay_off_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 12.744,
+      "step": "soft_pulse_stop_on",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 12.848,
+      "step": "soft_pulse_stop_on",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 12.882,
+      "step": "soft_pulse_stop_on",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 12.971,
+      "step": "soft_pulse_stop_on",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 13.349,
+      "step": "soft_pulse_stop_on",
+      "dir": "result",
+      "frame": "*1*1*06##",
+      "ack": true,
+      "reply_time_s": 0.103,
+      "replies": [],
+      "events_after": [
+        "*1*1*06##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "impulse_stop_relay_on_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 13.349,
+      "step": "soft_pulse_stop_off",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 13.444,
+      "step": "soft_pulse_stop_off",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 13.477,
+      "step": "soft_pulse_stop_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 13.572,
+      "step": "soft_pulse_stop_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 14.446,
+      "step": "soft_pulse_stop_off",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "impulse_stop_relay_off_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 14.446,
+      "step": "soft_pulse_close_on",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 14.543,
+      "step": "soft_pulse_close_on",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 14.573,
+      "step": "soft_pulse_close_on",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 14.654,
+      "step": "soft_pulse_close_on",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*1##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.045,
+      "step": "soft_pulse_close_on",
+      "dir": "result",
+      "frame": "*1*1*06##",
+      "ack": true,
+      "reply_time_s": 0.098,
+      "replies": [],
+      "events_after": [
+        "*1*1*06##",
+        "*#1*#1*15*1##"
+      ],
+      "note": "impulse_close_relay_on_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.045,
+      "step": "soft_pulse_close_off",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "is_status_request": false
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.15,
+      "step": "soft_pulse_close_off",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.183,
+      "step": "soft_pulse_close_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.255,
+      "step": "soft_pulse_close_off",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#1*#1*15*0##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light/motion sensor #1 has sent an unknown dimension 15."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.651,
+      "step": "soft_pulse_close_off",
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.105,
+      "replies": [],
+      "events_after": [
+        "*1*0*06##",
+        "*#1*#1*15*0##"
+      ],
+      "note": "impulse_close_relay_off_06"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.651,
+      "step": "poll_after_cycle",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.802,
+      "step": "poll_after_cycle",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.802,
+      "step": "poll_after_cycle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 15.854,
+      "step": "poll_after_cycle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 16.155,
+      "step": "poll_after_cycle",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.203,
+      "replies": [
+        "*1*0*06##"
+      ],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "poll_06_after_impulse_cycle"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 16.155,
+      "step": "unpopulated_71",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*18*71##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 18.22,
+      "step": "unpopulated_71",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 18.521,
+      "step": "unpopulated_71",
+      "dir": "result",
+      "frame": "*1*18*71##",
+      "ack": false,
+      "reply_time_s": 2.065,
+      "replies": [],
+      "events_after": [],
+      "note": "what18_unpopulated_71_nack"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 18.521,
+      "step": "unpopulated_71",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*71##",
+      "is_status_request": true
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 20.592,
+      "step": "unpopulated_71",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run1_f411_impulse_what18_and_software_pulse",
+      "t": 20.893,
+      "step": "unpopulated_71",
+      "dir": "result",
+      "frame": "*1*1*71##",
+      "ack": false,
+      "reply_time_s": 2.071,
+      "replies": [],
+      "events_after": [],
+      "note": "what1_unpopulated_71_nack"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 20.893,
+      "step": "lock_release",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*10*4000##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 20.951,
+      "step": "lock_release",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 21.352,
+      "step": "lock_release",
+      "dir": "result",
+      "frame": "*6*10*4000##",
+      "ack": false,
+      "reply_time_s": 0.059,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_open_lock_4000"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 21.352,
+      "step": "lock_release_riser",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*10*4001#2##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 21.406,
+      "step": "lock_release_riser",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 21.807,
+      "step": "lock_release_riser",
+      "dir": "result",
+      "frame": "*6*10*4001#2##",
+      "ack": false,
+      "reply_time_s": 0.054,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_open_lock_4001_riser2"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 21.807,
+      "step": "lock_release_panel1",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*10*1##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 21.858,
+      "step": "lock_release_panel1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 22.259,
+      "step": "lock_release_panel1",
+      "dir": "result",
+      "frame": "*6*10*1##",
+      "ack": false,
+      "reply_time_s": 0.052,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_open_lock_1"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 22.259,
+      "step": "lock_in_conv",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*22*1##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 22.311,
+      "step": "lock_in_conv",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 22.711,
+      "step": "lock_in_conv",
+      "dir": "result",
+      "frame": "*6*22*1##",
+      "ack": false,
+      "reply_time_s": 0.052,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_in_conversation_lock_1"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 22.711,
+      "step": "camera_on",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*0*4000##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 22.766,
+      "step": "camera_on",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 23.167,
+      "step": "camera_on",
+      "dir": "result",
+      "frame": "*6*0*4000##",
+      "ack": false,
+      "reply_time_s": 0.054,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_camera_on_4000"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 23.167,
+      "step": "camera_off_short",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*9##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 23.222,
+      "step": "camera_off_short",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 23.623,
+      "step": "camera_off_short",
+      "dir": "result",
+      "frame": "*6*9##",
+      "ack": false,
+      "reply_time_s": 0.055,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_camera_off_short"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 23.623,
+      "step": "camera_off_empty_where",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*9**##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 23.681,
+      "step": "camera_off_empty_where",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 24.082,
+      "step": "camera_off_empty_where",
+      "dir": "result",
+      "frame": "*6*9**##",
+      "ack": false,
+      "reply_time_s": 0.059,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_camera_off_empty_where"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 24.082,
+      "step": "doorbell_call_apt1",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*6*1##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 24.139,
+      "step": "doorbell_call_apt1",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 24.54,
+      "step": "doorbell_call_apt1",
+      "dir": "result",
+      "frame": "*6*6*1##",
+      "ack": false,
+      "reply_time_s": 0.056,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_doorbell_call_1"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 24.54,
+      "step": "doorbell_call_broadcast",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*6*6*4100##",
+      "is_status_request": true
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 24.6,
+      "step": "doorbell_call_broadcast",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run2_who6_door_entry_lock_and_camera",
+      "t": 25.0,
+      "step": "doorbell_call_broadcast",
+      "dir": "result",
+      "frame": "*6*6*4100##",
+      "ack": false,
+      "reply_time_s": 0.06,
+      "replies": [],
+      "events_after": [],
+      "note": "who6_doorbell_call_broadcast_4100"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.0,
+      "step": "who8_pe1_call",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*8*1#1#4*74##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.049,
+      "step": "who8_pe1_call",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.45,
+      "step": "who8_pe1_call",
+      "dir": "result",
+      "frame": "*8*1#1#4*74##",
+      "ack": false,
+      "reply_time_s": 0.049,
+      "replies": [],
+      "events_after": [],
+      "note": "who8_pe1_call_74"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.45,
+      "step": "who8_pe1_4comp_call",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*8*1#1#4#20*11##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.502,
+      "step": "who8_pe1_4comp_call",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.902,
+      "step": "who8_pe1_4comp_call",
+      "dir": "result",
+      "frame": "*8*1#1#4#20*11##",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": [],
+      "note": "who8_pe1_4comp_call_20_to_11"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.902,
+      "step": "who8_pickup",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*8*9#1#4*73##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 25.962,
+      "step": "who8_pickup",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 26.363,
+      "step": "who8_pickup",
+      "dir": "result",
+      "frame": "*8*9#1#4*73##",
+      "ack": false,
+      "reply_time_s": 0.059,
+      "replies": [],
+      "events_after": [],
+      "note": "who8_pickup_speech_73"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 26.363,
+      "step": "who8_internal_kind6",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*8*1#6#2#11*16##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 26.414,
+      "step": "who8_internal_kind6",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 26.815,
+      "step": "who8_internal_kind6",
+      "dir": "result",
+      "frame": "*8*1#6#2#11*16##",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": [],
+      "note": "who8_internal_intercom_kind6"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 26.815,
+      "step": "who8_external_kind7",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*8*1#7#2#11*16##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 26.871,
+      "step": "who8_external_kind7",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 27.271,
+      "step": "who8_external_kind7",
+      "dir": "result",
+      "frame": "*8*1#7#2#11*16##",
+      "ack": false,
+      "reply_time_s": 0.056,
+      "replies": [],
+      "events_after": [],
+      "note": "who8_external_intercom_kind7"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 27.271,
+      "step": "who8_pager_kind14",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*8*1#14#2#11*4##",
+      "is_status_request": true
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 27.326,
+      "step": "who8_pager_kind14",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run3_who8_intercom_call_kinds",
+      "t": 27.727,
+      "step": "who8_pager_kind14",
+      "dir": "result",
+      "frame": "*8*1#14#2#11*4##",
+      "ack": false,
+      "reply_time_s": 0.054,
+      "replies": [],
+      "events_after": [],
+      "note": "who8_pager_broadcast_kind14"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 27.727,
+      "step": "verify_idle",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 27.858,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*06##"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 27.861,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched off."
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 27.91,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.211,
+      "step": "verify_idle",
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.183,
+      "replies": [
+        "*1*0*06##"
+      ],
+      "events_after": [
+        "*1*0*06##"
+      ],
+      "note": "verify_06_off"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.211,
+      "step": "verify_idle",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.347,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.347,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.399,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.701,
+      "step": "verify_idle",
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.189,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ],
+      "note": "verify_07_off"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.701,
+      "step": "verify_idle",
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "is_status_request": true
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.846,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.846,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 28.901,
+      "step": "verify_idle",
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_plant_idle_verification",
+      "t": 29.202,
+      "step": "verify_idle",
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.2,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ],
+      "note": "verify_shutter_05_stopped"
+    }
+  ]
+}

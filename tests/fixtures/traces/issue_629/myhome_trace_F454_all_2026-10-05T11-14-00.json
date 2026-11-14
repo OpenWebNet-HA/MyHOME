@@ -1,0 +1,150 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": null,
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-05T11:13:50.537Z",
+      "last": "2026-10-05T11:13:51.685Z",
+      "frames": 7,
+      "buffer_frames": 7,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.4",
+    "integration_version": "2.0.0b14",
+    "ownd_version": "2.0.0b9",
+    "exported_at": "2026-10-05T11:14:00.914Z"
+  },
+  "gateway": {
+    "model": "F454",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "1.0.34",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "F454",
+      "source": "ssdp",
+      "configured_model": "F454",
+      "ssdp_model": "F454",
+      "who13_code": "200",
+      "who13_model": "F454",
+      "who13_model_official": null,
+      "who13_model_observed": "F454 / MyHomeServer1 / MH202 / F461 / H4890",
+      "who13_firmware": "1.0.34",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "who1013_code": "51",
+      "who1013_model": "F454",
+      "who1013_other_names": [
+        "003598"
+      ],
+      "who1013_n_conf": "15",
+      "who1013_brand": "1",
+      "who1013_line": "0 (Undefined)",
+      "profile": "F454Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 6,
+    "total_tx": 1,
+    "captured_in_buffer": 7,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1791198830.537632,
+      "iso_time": "2026-10-05T11:13:50.537632+00:00",
+      "direction": "tx",
+      "raw": "*#4*#0##",
+      "who": "4",
+      "what": null,
+      "where": "#0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791198830.666449,
+      "iso_time": "2026-10-05T11:13:50.666449+00:00",
+      "direction": "rx",
+      "raw": "*4*202*#0##",
+      "who": "4",
+      "what": "202",
+      "where": "#0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791198830.672852,
+      "iso_time": "2026-10-05T11:13:50.672852+00:00",
+      "direction": "rx",
+      "raw": "*4*21*#0##",
+      "who": "4",
+      "what": "21",
+      "where": "#0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791198830.696194,
+      "iso_time": "2026-10-05T11:13:50.696194+00:00",
+      "direction": "rx",
+      "raw": "*4*22*#0##",
+      "who": "4",
+      "what": "22",
+      "where": "#0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791198830.706876,
+      "iso_time": "2026-10-05T11:13:50.706876+00:00",
+      "direction": "rx",
+      "raw": "*4*24*#0##",
+      "who": "4",
+      "what": "24",
+      "where": "#0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791198831.155212,
+      "iso_time": "2026-10-05T11:13:51.155212+00:00",
+      "direction": "rx",
+      "raw": "*4*210*#5##",
+      "who": "4",
+      "what": "210",
+      "where": "#5",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791198831.685487,
+      "iso_time": "2026-10-05T11:13:51.685487+00:00",
+      "direction": "rx",
+      "raw": "*4*210*#12##",
+      "who": "4",
+      "what": "210",
+      "where": "#12",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

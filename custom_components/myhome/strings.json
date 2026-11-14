@@ -1,0 +1,895 @@
+{
+  "title": "MyHome",
+  "config": {
+    "flow_title": "MyHome {name} Gateway ({host})",
+    "step": {
+      "user": {
+        "title": "Pick your \"MyHome\" gateway",
+        "description": "MyHOME keeps one permanent event connection plus one connection per command worker (default 1) open to the gateway. A gateway only accepts a handful of simultaneous OpenWebNet connections (5 on an F455, fewer on an MH200N), shared with everything else that talks to it: the Legrand/BTicino Home+Project app, other Home Assistant instances, other integrations. If the connections run out, either MyHOME or the other client gets refused or dropped. Close other clients you do not need, and keep the command worker count low.",
+        "data": {
+          "host": "IP address"
+        }
+      },
+      "port": {
+        "title": "Gateway's service port",
+        "description": "Provide the port used for OpenWebNet communication with the {name} gateway {host}",
+        "data": {
+          "port": "Port"
+        }
+      },
+      "password": {
+        "title": "Gateway's password",
+        "description": "Provide the OpenWebNet password for the {name} gateway {host}",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "custom": {
+        "title": "Manual gateway entry",
+        "description": "Enter the gateway IP address and port. The MAC address and model will be auto-discovered.\n\nMyHOME keeps one permanent event connection plus one connection per command worker (default 1) open to the gateway. A gateway only accepts a handful of simultaneous OpenWebNet connections (5 on an F455, fewer on an MH200N), shared with everything else that talks to it: the Legrand/BTicino Home+Project app, other Home Assistant instances, other integrations. If the connections run out, either MyHOME or the other client gets refused or dropped. Close other clients you do not need, and keep the command worker count low.",
+        "data": {
+          "address": "IP address",
+          "port": "Port"
+        }
+      },
+      "custom_manual": {
+        "title": "Manual gateway entry (discovery failed)",
+        "description": "Could not auto-discover the gateway at {host}:{port}. Please enter the MAC address and model manually.",
+        "data": {
+          "serialNumber": "MAC address",
+          "modelName": "Device type"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Discovered MyHOME gateway",
+        "description": "Do you want to set up the {name} gateway ({host})?\n\nMyHOME keeps one permanent event connection plus one connection per command worker (default 1) open to the gateway. A gateway only accepts a handful of simultaneous OpenWebNet connections (5 on an F455, fewer on an MH200N), shared with everything else that talks to it: the Legrand/BTicino Home+Project app, other Home Assistant instances, other integrations. If the connections run out, either MyHOME or the other client gets refused or dropped. Close other clients you do not need, and keep the command worker count low."
+      },
+      "reconfigure": {
+        "title": "Reconfigure MyHome {name} Gateway",
+        "description": "Update connection settings or credentials for your {name} gateway.",
+        "data": {
+          "host": "IP address",
+          "port": "Port",
+          "password": "Password"
+        }
+      },
+      "bus_topology": {
+        "title": "Is this {name} on the same bus as another gateway?",
+        "description": "Another MyHOME gateway is already configured. If this {name} is connected to the same SCS bus, add it as that gateway's secondary or warm standby now: set up on its own, it would discover every device the other gateway already has a second time. You can change this later in the gateway's options.",
+        "data": {
+          "bus_topology": "Bus topology",
+          "primary_gateway": "Primary gateway (same bus only)",
+          "gateway_role": "Role of this gateway (same bus only)",
+          "delegated_whos": "Delegated subsystems (secondary only)"
+        },
+        "data_description": {
+          "gateway_role": "Suggested from the capabilities of both gateways: secondary when this gateway supports subsystems the primary lacks, otherwise warm standby.",
+          "delegated_whos": "Subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary."
+        }
+      }
+    },
+    "error": {
+      "invalid_port": "Invalid port",
+      "invalid_ip": "Invalid IP address",
+      "invalid_mac": "Invalid MAC address",
+      "invalid_password": "Invalid password",
+      "password_retry": "Gateway refusing password negotiation, wait 60s before retrying.",
+      "password_error": "Invalid password",
+      "primary_gateway_required": "A primary gateway must be selected for secondary or standby roles on a shared bus.",
+      "primary_gateway_not_found": "The selected primary gateway could not be found.",
+      "overlapping_delegated_whos": "One or more of the selected WHOs are already delegated to another secondary gateway on this bus.",
+      "who_not_supported_by_gateway": "One or more of the selected WHOs are not supported by this gateway model's profile.",
+      "multiple_standbys": "This primary gateway already has a standby configured. Only one standby is allowed per primary."
+    },
+    "abort": {
+      "discovery_timeout": "Unable to discover MyHome gateways",
+      "no_gateways": "No MyHome gateways discovered",
+      "all_configured": "All MyHome gateways are already configured",
+      "unknown": "An unknown error occured",
+      "cannot_connect": "Cannot connect to the gateway",
+      "no_serial": "The gateway did not report a serial number, so it cannot be identified. Add it manually.",
+      "connection_closed": "The gateway closed the connection during setup. It may be busy, out of session slots, require a reboot, or have IP address restrictions enabled.",
+      "connection_refused": "The gateway refused the connection request.",
+      "connection_error": "Communication error while connecting to the gateway.",
+      "negotiation_timeout": "The gateway did not answer the session negotiation in time.",
+      "negotiation_failed": "Session negotiation with the gateway failed.",
+      "negotiation_refused": "The gateway refused session negotiation.",
+      "negotiation_error": "Gateway authentication negotiation error.",
+      "already_configured": "This gateway is already configured",
+      "already_in_progress": "The configuration of this gateway is already in progress",
+      "reauth_successful": "Password change successful",
+      "reconfigure_successful": "Gateway connection reconfigured successfully."
+    }
+  },
+  "config_subentries": {
+    "expose": {
+      "initiate_flow": {
+        "user": "Expose entity to SCS bus",
+        "reconfigure": "Reconfigure exposed entity"
+      },
+      "entry_type": "Exposed entity",
+      "step": {
+        "user": {
+          "title": "Expose Home Assistant entity to SCS bus",
+          "description": "Emulate a virtual OpenWebNet device on the SCS bus backed by a Home Assistant entity.",
+          "data": {
+            "who": "WHO subsystem",
+            "where": "WHERE address",
+            "entity_id": "Source entity",
+            "attribute": "State attribute (optional)",
+            "dimension": "OpenWebNet dimension (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "min_delta": "Minimum delta threshold (optional)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus status/dimension queries",
+            "bidirectional": "Bidirectional (act on incoming bus commands)",
+            "brightness_step_pct": "Brightness step per dimmer press (%)",
+            "on_states": "Custom 'on' states (comma-separated, optional)",
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Turn-on / raise action (optional)",
+            "turn_off_action": "Turn-off / lower action (optional)",
+            "step_up_action": "Step-up action (optional)",
+            "step_down_action": "Step-down action (optional)"
+          },
+          "data_description": {
+            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
+            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure exposed entity",
+          "description": "Update the OpenWebNet address, source entity, throttling parameters, or custom actions for this exposed binding.",
+          "data": {
+            "who": "WHO subsystem",
+            "where": "WHERE address",
+            "entity_id": "Source entity",
+            "attribute": "State attribute (optional)",
+            "dimension": "OpenWebNet dimension (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "min_delta": "Minimum delta threshold (optional)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus status/dimension queries",
+            "bidirectional": "Bidirectional (act on incoming bus commands)",
+            "brightness_step_pct": "Brightness step per dimmer press (%)",
+            "on_states": "Custom 'on' states (comma-separated, optional)",
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Turn-on / raise action (optional)",
+            "turn_off_action": "Turn-off / lower action (optional)",
+            "step_up_action": "Step-up action (optional)",
+            "step_down_action": "Step-down action (optional)"
+          },
+          "data_description": {
+            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
+            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
+            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
+          }
+        }
+      },
+      "error": {
+        "invalid_who": "Unsupported WHO subsystem (supported: 1, 2, 4, 13, 18).",
+        "where_required": "A WHERE address is required for this WHO subsystem.",
+        "entity_required": "A source Home Assistant entity (or custom action for WHO 1 / WHO 2) is required.",
+        "action_not_supported_for_who": "Custom actions are supported only on WHO 1 (turn on/off and step up/down) and WHO 2 (turn on/off only); clear unsupported actions or change WHO.",
+        "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
+        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding.",
+        "who_injection_unsupported": "This gateway firmware does not support injecting frames for the selected WHO subsystem onto the SCS bus (supported on all gateways: WHO 1, 2, 13).",
+        "who4_probe_where_unsupported": "This gateway only translates WHO 4 #0 temperature writes on unused zone master addresses 1..99 (e.g. 50); 3-digit probe addresses (100..900) are rejected by firmware."
+      },
+      "abort": {
+        "reconfigure_successful": "Exposed entity binding updated successfully."
+      }
+    },
+    "thermo_switch": {
+      "initiate_flow": {
+        "user": "Add thermo actuator / towel-warmer switch (WHO 4)",
+        "reconfigure": "Reconfigure thermo actuator switch"
+      },
+      "entry_type": "Thermo actuator switch",
+      "step": {
+        "user": {
+          "title": "Add WHO=4 thermo actuator / towel-warmer switch",
+          "description": "Configure a probe-less thermoregulation relay (e.g. BTicino F430/2 or F430/4 towel warmer) as an on/off switch. Use Z#N (e.g. 7#1) to target one actuator channel without affecting a real thermostat on zone Z, or Z (e.g. 7) to claim the entire zone as a switch. Leave the trigger commands blank to send direct Dimension 20 writes (e.g. *#4*7#1*#20*1## and *#4*7#1*#20*0##; forwarded onto the SCS bus by F454, MH200N, F459, F460, F461, and MyHomeServer1, though listed as read-only in the public OpenWebNet specification). On MyHomeServer1 (Home + Project) 'Towel Warmer' objects, provide the paired CEN+ (e.g. *25*21#1*21## and *25*21#2*21##) or WHO=1 OpenWebNet frames linked to your Home + Project scenarios/automations.",
+          "data": {
+            "where": "Thermo actuator WHERE address (e.g. 7#1, 7, or 7#1#4#01)",
+            "name": "Friendly name (optional)",
+            "turn_on_command": "Custom Turn ON OpenWebNet frame (optional, e.g. *25*21#1*21##)",
+            "turn_off_command": "Custom Turn OFF OpenWebNet frame (optional, e.g. *25*21#2*21##)"
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure WHO=4 thermo actuator switch",
+          "description": "Update the WHERE address, friendly name, or custom OpenWebNet trigger commands for this probe-less thermo actuator switch.",
+          "data": {
+            "where": "Thermo actuator WHERE address (e.g. 7#1, 7, or 7#1#4#01)",
+            "name": "Friendly name (optional)",
+            "turn_on_command": "Custom Turn ON OpenWebNet frame (optional, e.g. *25*21#1*21##)",
+            "turn_off_command": "Custom Turn OFF OpenWebNet frame (optional, e.g. *25*21#2*21##)"
+          }
+        }
+      },
+      "error": {
+        "where_required": "A WHO=4 zone or actuator WHERE address is required (e.g. 7#1 or 7).",
+        "invalid_where": "Invalid WHO=4 actuator WHERE address. Expected Z (1..99) or Z#N (N=1..9), optionally behind #4#IF (00..15).",
+        "paired_commands_required": "Provide both Turn ON and Turn OFF OpenWebNet commands together, or leave both blank for direct Dimension 20 control.",
+        "invalid_command": "Invalid OpenWebNet command frame (must be a valid write/action frame such as *25*21#1*21## or *1*1*09##, not a status read or ACK).",
+        "already_configured": "A WHO=4 thermo actuator switch is already configured for this WHERE address."
+      },
+      "abort": {
+        "reconfigure_successful": "Thermo actuator switch updated successfully."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "user": {
+        "title": "MyHome options",
+        "description": "Advanced system settings and streaming decoder mapping",
+        "data": {
+          "source_1_name": "Source 1 — name of what is wired to matrix input S1 (leave blank if nothing is connected)",
+          "source_1_tuner": "Source 1 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
+          "source_2_name": "Source 2 — name of what is wired to matrix input S2 (leave blank if nothing is connected)",
+          "source_2_tuner": "Source 2 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
+          "source_3_name": "Source 3 — name of what is wired to matrix input S3 (leave blank if nothing is connected)",
+          "source_3_tuner": "Source 3 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
+          "source_4_name": "Source 4 — name of what is wired to matrix input S4 (leave blank if nothing is connected)",
+          "source_4_tuner": "Source 4 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
+          "address": "IP address",
+          "password": "Password",
+          "config_file_path": "Configuration file path",
+          "command_worker_count": "Number of concurrent command sessions",
+          "generate_events": "Generate events in Home Assistant for each message received",
+          "broadcast_resync": "Sweep group/area/general light addresses for status after a debounced silence window",
+          "transition_mode": "Brightness transition method",
+          "decoder_1_entity": "Decoder 1 — Media player entity (e.g. media_player.cambridge_audio_cxn)",
+          "decoder_1_source": "Decoder 1 — BTicino source input number (1–4)",
+          "decoder_1_pre_gain": "Decoder 1 — Pre-gain offset % (0 = Pre-Amp OFF, 20 = squeezelite, 100 = lock source volume at 100%)",
+          "decoder_1_companion": "Decoder 1 — Streaming companion (optional; leave empty to auto-detect)",
+          "decoder_2_entity": "Decoder 2 — Media player entity",
+          "decoder_2_source": "Decoder 2 — BTicino source input number (1–4)",
+          "decoder_2_pre_gain": "Decoder 2 — Pre-gain offset %",
+          "decoder_2_companion": "Decoder 2 — Streaming companion (optional; leave empty to auto-detect)",
+          "decoder_3_entity": "Decoder 3 — Media player entity",
+          "decoder_3_source": "Decoder 3 — BTicino source input number (1–4)",
+          "decoder_3_pre_gain": "Decoder 3 — Pre-gain offset %",
+          "decoder_3_companion": "Decoder 3 — Streaming companion (optional; leave empty to auto-detect)",
+          "decoder_4_entity": "Decoder 4 — Media player entity",
+          "decoder_4_source": "Decoder 4 — BTicino source input number (1–4)",
+          "decoder_4_pre_gain": "Decoder 4 — Pre-gain offset %",
+          "decoder_4_companion": "Decoder 4 — Streaming companion (optional; leave empty to auto-detect)",
+          "default_source_env_1": "Default source for environment 1 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_2": "Default source for environment 2 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_3": "Default source for environment 3 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_4": "Default source for environment 4 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_5": "Default source for environment 5 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_6": "Default source for environment 6 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_7": "Default source for environment 7 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_8": "Default source for environment 8 — used when a zone in that room is turned on from Home Assistant",
+          "default_source_env_9": "Default source for environment 9 — used when a zone in that room is turned on from Home Assistant",
+          "bus_topology": "Bus topology",
+          "gateway_role": "Gateway role",
+          "primary_gateway": "Primary gateway",
+          "delegated_whos": "Delegated subsystems",
+          "auto_join_streaming": "Auto-join streaming groups",
+          "ignored_addresses": "Ignored addresses",
+          "tuner_pictures": "Tuner pictures"
+        },
+        "data_description": {
+          "decoder_1_pre_gain": "Calibrate against the hardware, not a guess: if this decoder's line-out feeds a BTicino Ingresso RCA (L/N/NT4560) or Controllo Stereo (L4561) module, raise Pre-Gain while playing until that module's signal LED blinks orange — not steady green (signal too low) or steady red/orange (clipping). Always wire the decoder's fixed line-out ('OUT'), never a variable headphone/AUX output — a second uncontrolled gain stage there causes the same distortion BTicino's own troubleshooting guide warns about.",
+          "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
+          "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
+          "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
+          "tuner_pictures": "One MHz=URL per line (e.g. 96.2=/local/radio/one.png): the picture shown while a tuner is on that frequency. Your own images; none are bundled.",
+          "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "Invalid IP address",
+      "invalid_worker_count": "Workers must be between 1 and 10",
+      "worker_count_above_gateway_limit": "The {model} accepts at most {session_limit} command session(s) at a time; with more it stops answering.",
+      "invalid_config_path": "Configuration file does not exist at this path",
+      "invalid_password": "Invalid password",
+      "password_error": "Invalid password",
+      "not_a_media_player": "Must be a media_player entity (e.g. media_player.cambridge_audio_cxn)",
+      "companion_same_as_decoder": "The streaming companion must be a different entity than the decoder itself.",
+      "companion_without_decoder": "A streaming companion can only be configured for a slot that has a decoder entity.",
+      "mass_entity_not_allowed": "Infinite Loop Protection: Do not select Music Assistant clones! Select the original hardware entity instead.",
+      "myhome_entity_not_allowed": "Do not select MyHOME sound zones as decoders! Select the underlying physical streaming player instead.",
+      "primary_gateway_required": "A primary gateway must be selected for secondary or standby roles on a shared bus.",
+      "invalid_primary_gateway": "Cannot select this gateway itself as the primary gateway.",
+      "primary_gateway_not_found": "The selected primary gateway could not be found.",
+      "circular_gateway_reference": "Circular reference: the selected primary gateway already points to this gateway.",
+      "primary_gateway_not_shared_primary": "The selected gateway must first be configured with bus topology Shared and role Primary.",
+      "gateway_has_dependents": "Other gateways use this gateway as their primary. Point them at another primary (or make them standalone) first.",
+      "overlapping_delegated_whos": "One or more of the selected WHOs are already delegated to another secondary gateway on this bus.",
+      "who_not_supported_by_gateway": "One or more of the selected WHOs are not supported by this gateway model's profile.",
+      "multiple_standbys": "This primary gateway already has a standby configured. Only one standby is allowed per primary.",
+      "secondary_requires_shared_topology": "Secondary and warm standby roles require the bus topology to be set to Shared.",
+      "multiple_shared_primaries": "Another gateway is already configured as the primary gateway for this shared bus. Select Secondary or Warm standby.",
+      "duplicate_decoder_source": "Each decoder must be connected to a different matrix source input.",
+      "invalid_ignored_address": "Invalid ignored address format (expected 'WHO/WHERE', e.g. '1/74' or '1/74#4#01')"
+    }
+  },
+  "services": {
+    "sync_time": {
+      "name": "Syncronize time",
+      "description": "Syncronize gateway's time to HA local time.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address, as present in the config."
+        }
+      }
+    },
+    "send_message": {
+      "name": "Send message",
+      "description": "Send an arbitrary (but valid) OpenWebNet message to the gateway.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address, as present in the config."
+        },
+        "message": {
+          "name": "Message",
+          "description": "Valid OpenWebNet message."
+        }
+      }
+    },
+    "start_sending_instant_power": {
+      "name": "Start sending instant power",
+      "description": "Get automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will start sending instant power information."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+        }
+      }
+    },
+    "stop_sending_instant_power": {
+      "name": "Stop sending instant power",
+      "description": "Stop automatic instant power draw updates for a sensor.",
+      "fields": {
+        "entity_id": {
+          "name": "Entity",
+          "description": "Name(s) of entities that will stop sending instant power information."
+        }
+      }
+    },
+    "turn_on_timed": {
+      "name": "Turn on timed",
+      "description": "Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in seconds before the device turns off automatically."
+        },
+        "hours": {
+          "name": "Hours",
+          "description": "Optional hours component for custom timer duration (0-255)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Optional minutes component for custom timer duration (0-59)."
+        },
+        "seconds": {
+          "name": "Seconds",
+          "description": "Optional seconds component for custom timer duration (0-59)."
+        },
+        "brightness": {
+          "name": "Brightness",
+          "description": "Optional brightness level (1-255) for lights."
+        },
+        "brightness_pct": {
+          "name": "Brightness percentage",
+          "description": "Optional brightness percentage (1-100%) for lights."
+        }
+      }
+    },
+    "sweep_bus": {
+      "name": "Sweep bus status",
+      "description": "Triggers an active read-only status query across all bus subsystems (lighting, covers, thermoregulation, clock, and gateway diagnostics) to populate the diagnostic bus monitor ring buffer.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all active gateways)."
+        }
+      }
+    },
+    "calibrate_cover": {
+      "name": "Calibrate cover travel time",
+      "description": "Measures a timed cover's up and down travel times on the SCS bus and stores them: the cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway."
+    },
+    "stop_cover_calibration": {
+      "name": "Stop cover calibration",
+      "description": "Stops the running travel-time calibration and cancels the queued ones; the moving cover is stopped and nothing is stored.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to all gateways)."
+        }
+      }
+    },
+    "set_cover_travel_time": {
+      "name": "Set cover travel time",
+      "description": "Stores the physical travel times of a timed cover by hand instead of calibrating on the bus.",
+      "fields": {
+        "travel_time": {
+          "name": "Travel time",
+          "description": "Seconds for a full travel in both directions (1-300); used for whichever direction has no explicit value."
+        },
+        "travel_time_down": {
+          "name": "Travel time down",
+          "description": "Seconds for a full closing run (1-300)."
+        },
+        "travel_time_up": {
+          "name": "Travel time up",
+          "description": "Seconds for a full opening run (1-300)."
+        },
+        "slat_time": {
+          "name": "Slat time",
+          "description": "Seconds the slats of a Venetian blind need for a full rotation (0.5-10). Only used by covers with slat_tilt enabled."
+        },
+        "copied_from": {
+          "name": "Copied from",
+          "description": "The cover these times were taken from; the source is then reported as \"copied\" instead of \"manual\"."
+        },
+        "min_motor_pulse": {
+          "name": "Motor start-up floor",
+          "description": "Minimum duration in seconds (0.0-5.0) of a motor pulse to overcome mechanical deadband and brake inertia (0.0 disables)."
+        }
+      }
+    },
+    "reset_cover_travel_time": {
+      "name": "Reset cover travel time",
+      "description": "Forgets the measured or manually set travel times and returns to the myhome.yaml travel_time or the 25 s default."
+    },
+    "tuner_seek_up": {
+      "name": "Tuner seek up",
+      "description": "Seek forward to the next receivable FM radio frequency on an F500 tuner source."
+    },
+    "tuner_seek_down": {
+      "name": "Tuner seek down",
+      "description": "Seek backward to the previous receivable FM radio frequency on an F500 tuner source."
+    },
+    "tuner_set_frequency": {
+      "name": "Tuner set frequency",
+      "description": "Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source.",
+      "fields": {
+        "frequency": {
+          "name": "Frequency",
+          "description": "Target FM radio frequency in MHz (87.50–108.00 MHz, 0.05 MHz steps)."
+        }
+      }
+    },
+    "tuner_store_station": {
+      "name": "Tuner store station",
+      "description": "Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source.",
+      "fields": {
+        "station": {
+          "name": "Station",
+          "description": "Preset memory slot number (1–5 on F500, up to 1–15 on F500N)."
+        }
+      }
+    },
+    "send_scenario_plus_command": {
+      "name": "Send scenario plus command",
+      "description": "Send a WHO 25 scenario plus command (on, off, increase, decrease, stop) to an addressed scenario plus object.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "The gateway's MAC address (optional; defaults to primary gateway)."
+        },
+        "where": {
+          "name": "Where",
+          "description": "The scenario plus object address on the bus."
+        },
+        "action": {
+          "name": "Action",
+          "description": "The scenario plus action to execute (on, off, increase, decrease, or stop; step/speed for increase/decrease is fixed per protocol)."
+        }
+      }
+    },
+    "cancel_cover_request": {
+      "name": "Cancel gate or garage door request",
+      "description": "Cancels a pending approval request or a running pre-warning of an impulse gate or garage door. Cancelling is always safe; nothing moves."
+    },
+    "acknowledge_cover_fault": {
+      "name": "Acknowledge gate or garage door fault",
+      "description": "Clears the fault latched when a gate or garage door did not reach the expected state after a pulse (possible obstacle or reversal). Only an allowed user who is at home may acknowledge it; until then closing from Home Assistant stays blocked."
+    }
+  },
+  "issues": {
+    "invalid_decoder": {
+      "title": "Decoder {decoder} is a {platform} entity and is ignored",
+      "description": "The decoder slot points at `{decoder}`, which belongs to the `{platform}` integration. A decoder must be the physical streamer plugged into the matrix; a MyHOME zone or a Music Assistant player would route audio back into itself, so MyHOME leaves this slot out.\n\nOpen Configure on the gateway and pick the real hardware entity (Squeezelite, WiiM, Cambridge Audio, Cast, ...)."
+    },
+    "ambiguous_companion": {
+      "title": "Several streaming companions found for {decoder}",
+      "description": "`{decoder}` needs a DLNA / UPnP / Cast renderer of the same box to accept stream URLs, but more than one device matched: {candidates}.\n\nMyHOME does not guess. Open Configure on the gateway and set the *streaming companion* of this decoder slot to the right entity."
+    },
+    "multiple_audio_gateways": {
+      "title": "More than one gateway serves sound zones",
+      "description": "Sound zones are configured on several gateways ({gateways}). Sound addressing does not carry the bus interface yet, so zones of two audio matrices can collide on the same room number, entity and environment (issue #426).\n\nKeep the audio matrix on one gateway until this is resolved."
+    },
+    "unresponsive_zone": {
+      "title": "Heating zone {device} no longer answers ({gateway})",
+      "description": "The heating zone {device} on {gateway} did not answer its status request on two restarts in a row, so MyHOME stopped asking for it at startup (each unanswered request costs the gateway's command queue several seconds). If the zone no longer exists, remove its device or entity in Home Assistant. If it does exist, this clears as soon as it sends any frame, and it is asked again after a week."
+    },
+    "central_remote_control_disabled": {
+      "title": "Central heating unit {device} has remote control disabled ({gateway})",
+      "description": "The 99-zone central unit {device} (WHO {who}, address `{where}`) on {gateway} reported OpenWebNet status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nWhile remote control is disabled on the physical central unit (e.g., BTicino 3550), the gateway still acknowledges OpenWebNet commands with `*#*1##`, but the central unit ignores remote mode and setpoint writes from Home Assistant.\n\nEnable **Remote Control** (*Telegestione*) in the settings menu on the physical central unit panel. This issue clears automatically as soon as the central unit reports `*4*21*#0##` (`Remote control enabled`)."
+    },
+    "central_battery_fault": {
+      "title": "Central heating unit {device} reports a backup battery fault ({gateway})",
+      "description": "The 99-zone central unit {device} (WHO {who}, address `{where}`) on {gateway} reported OpenWebNet status `*4*31*#0##` (`Central unit battery KO`).\n\nCheck or replace the backup battery inside the physical central unit (e.g., BTicino 3550) so weekly schedules and clock settings are preserved during power outages. This issue clears automatically on the next central unit status report (`*#4*#0##`) once `*4*31*#0##` is no longer present."
+    },
+    "gateway_authentication_failed": {
+      "title": "Authentication failed for MyHOME gateway {gateway}",
+      "description": "The MyHOME gateway refused the configured OpenWebNet password or HMAC negotiation. Please check your credentials using the reconfigure flow."
+    },
+    "unconfigured_timezone": {
+      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
+      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (placeholder code '999'). This can cause date and time parsing failures or dropped gateway diagnostic messages.\n\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+    },
+    "unknown_gateway_model": {
+      "title": "Unknown gateway device type code ({code})",
+      "description": "The gateway reported a hardware model code ({code}) that is unknown to the MyHOME integration (WHO=13 device type, or WHO=1013 OBJECT_MODEL when prefixed 1013-1-). Please click 'Learn More' to open a GitHub issue and attach a diagnostic trace so we can add support for this model."
+    },
+    "unmapped_device_status": {
+      "title": "{device} reports an undocumented status",
+      "description": "{device} (WHO {who}, address `{where}`) reported status code WHAT {code}, which is not in the published OpenWebNet table for this subsystem, so the received status does not allow Home Assistant to determine the current state of the device.\n\nThis has been seen from a lighting actuator that was in a fault state. Check the device on site: its status LED, the load connected to it and the wiring of that load. If the device works normally, please report the code so it can be mapped.\n\nThis clears by itself when an on, off or brightness-level status for this address is seen on the bus. A command from a wall button or from Home Assistant produces the same frame, so it can clear early and come back at the next status request while the fault remains."
+    },
+    "unmapped_device_status_autodiag": {
+      "title": "{device} reports an undocumented status",
+      "description": "{device} (WHO {who}, address `{where}`) reported status code WHAT {code}, which is not in the published OpenWebNet table for this subsystem, so the received status does not allow Home Assistant to determine the current state of the device.\n\nThis has been seen from a lighting actuator that was in a fault state. Check the device on site: its status LED, the load connected to it and the wiring of that load. If the device works normally, please report the code so it can be mapped.\n\nThis clears by itself when an on, off or brightness-level status for this address is seen on the bus. A command from a wall button or from Home Assistant produces the same frame, so it can clear early and come back at the next status request while the fault remains.\n\nThe device also sent an autodiagnostic report. Its bits are not documented, so it is shown as received: `{evidence}`."
+    },
+    "bus_collision_storm": {
+      "title": "High SCS bus collision rate detected ({count} NACKs)",
+      "description": "An unusually high rate of bus collisions or NACK frames was detected on the SCS bus. Please check actuator wiring and physical bus termination."
+    },
+    "gateway_identity_mismatch": {
+      "title": "Gateway model mismatch for {configured}",
+      "description": "The gateway is configured as {configured} (source: {source}) but reports OpenWebNet device type {code}, which identifies {reported} according to {basis}. The configured model is kept; traces and diagnostics carry both values. If {reported} is what you own, open the integration's options (Configure) and pick the correct model; if {configured} is right, ignore this and please attach a trace to an issue so the code can be documented."
+    },
+    "gateway_identity_corrected": {
+      "title": "Gateway model corrected to {corrected}",
+      "description": "The gateway was configured as {previous} but reports model code {code}, which the OpenWebNet device-type table (WHO=13) or the gateway diagnostic catalogue (WHO=1013, codes prefixed 1013-1-) identifies as {corrected}. The model, gateway profile and device registry were updated to {corrected}. If that is wrong, open the integration's options (Configure) and set the model explicitly."
+    },
+    "shared_bus_detected": {
+      "title": "Shared OpenWebNet bus detected ({gateway_a} & {gateway_b})",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Configure Shared Bus Topology",
+            "description": "Home Assistant has analyzed the hardware capabilities of your gateways and calculated the recommended shared bus topology:\n\n- **Primary Gateway**: {primary}\n- **Follower Gateway**: {secondary}\n- **Assigned Role**: {role}\n- **Delegated Subsystems**: {subsystems}\n\n**Rationale**: {rationale}\n\nClick Submit to apply this recommended configuration automatically and reload both gateways."
+          }
+        },
+        "abort": {
+          "gateway_missing": "One of the gateways is no longer configured."
+        }
+      }
+    },
+    "gateway_failover_active": {
+      "title": "High Availability failover active: {primary} offline",
+      "description": "Primary MyHOME gateway {primary} is currently offline or unreachable. High Availability warm-standby failover has automatically routed bus traffic and status monitoring through standby gateway {standby}.\n\nWhen {primary} recovers, Home Assistant will automatically fail back to the primary gateway and resolve this issue."
+    },
+    "primary_gateway_missing": {
+      "title": "Primary gateway of {gateway} is missing",
+      "description": "{gateway} is configured as a secondary or warm standby gateway for {primary}, but that gateway is no longer configured as a Shared Primary gateway (it was removed or reconfigured). {gateway} keeps suppressing discovery until it is reconfigured.\n\nOpen Configure on {gateway} and either select another Primary gateway or set its Bus Topology to Standalone."
+    },
+    "legacy_yaml_imported": {
+      "title": "Legacy myhome.yaml imported for {gateway}",
+      "description": "The device configuration in `myhome.yaml` for {gateway} has been copied into Home Assistant's config entry options. While `myhome.yaml` exists it stays in charge and the copy follows its changes. If the file is removed or becomes unreadable, the devices keep the configuration of the last copy."
+    },
+    "incompatible_decoder_platform": {
+      "title": "Decoder {decoder} uses unsupported integration ({platform})",
+      "fix_flow": {
+        "step": {
+          "confirm_companion": {
+            "title": "Use DLNA streaming companion",
+            "description": "The configured decoder `{decoder}` ({platform}) does not support direct HTTP stream URLs. However, a compatible DLNA Digital Media Renderer was detected for this device: `{companion}`.\n\nClick **Submit** to automatically update your MyHOME decoder configuration to use `{companion}`."
+          },
+          "missing_companion": {
+            "title": "DLNA renderer not found",
+            "description": "The configured decoder `{decoder}` ({platform}) requires the DLNA Digital Media Renderer integration to accept stream URLs from Music Assistant.\n\nHome Assistant has not yet configured DLNA for this device. Please go to **Settings → Devices & Services**, add the **DLNA Digital Media Renderer** integration for your device, and click **Submit** to finish."
+          }
+        },
+        "abort": {
+          "companion_still_missing": "A DLNA Digital Media Renderer entity was not found for this device. Please configure DLNA and try again."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "alarm_read_only": {
+      "message": "{name} is read-only: arm and disarm through the AUX frames your central unit is programmed for"
+    },
+    "fan_speed_zone_only": {
+      "message": "{name} has no fan speed of its own: only a zone (1-99) takes one"
+    },
+    "auto_standalone_zone": {
+      "message": "{name} is a standalone thermostat: the central unit has no program for it"
+    },
+    "zone_heat_in_conditioning_season": {
+      "message": "{name} follows the central unit, which is in the conditioning season: change the season on the central unit"
+    },
+    "zone_cool_in_heating_season": {
+      "message": "{name} follows the central unit, which is in the heating season: change the season on the central unit"
+    },
+    "command_delivery_cancelled": {
+      "message": "{name}: direction command delivery was cancelled before reaching the bus"
+    },
+    "command_delivery_timeout": {
+      "message": "{name}: direction command was not delivered to the bus within {timeout} s"
+    },
+    "command_delivery_failed": {
+      "message": "{name}: direction command delivery failed: {error}"
+    },
+    "calibration_interrupted": {
+      "message": "{name}: {cause}"
+    },
+    "calibration_no_stop_status": {
+      "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
+    },
+    "calibration_actuator_cutoff_open": {
+      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+    },
+    "calibration_actuator_cutoff_close": {
+      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+    },
+    "cover_reports_position": {
+      "message": "{name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml."
+    },
+    "calibration_in_progress": {
+      "message": "{name} is already being calibrated"
+    },
+    "calibration_implausible_run_down": {
+      "message": "{name}: implausible down run of {seconds} s; not stored"
+    },
+    "calibration_implausible_run_up": {
+      "message": "{name}: implausible up run of {seconds} s; not stored"
+    },
+    "travel_time_missing": {
+      "message": "At least travel_time, travel_time_down/up, or min_motor_pulse must be specified"
+    },
+    "travel_time_out_of_range": {
+      "message": "{field} must be between {min} s and {max} s"
+    },
+    "cover_command_undelivered": {
+      "message": "Command undelivered (gateway disconnected or queue flushed)"
+    },
+    "cover_busy_calibrating": {
+      "message": "{entity_id} is being calibrated; try again when it has finished"
+    },
+    "cover_position_unknown": {
+      "message": "{name}: the position is unknown until the cover has run fully open or closed once"
+    },
+    "cover_tilt_position_unknown": {
+      "message": "{name}: the slat angle is unknown until the slats have been tilted fully open or closed once"
+    },
+    "cover_busy_moving": {
+      "message": "{name} is moving; stop it before tilting the slats"
+    },
+    "slat_tilt_not_enabled": {
+      "message": "{name} does not have slat_tilt enabled; slat_time cannot be set"
+    },
+    "decoders_busy": {
+      "message": "{entity_id}: all audio matrix inputs are currently in use by other rooms"
+    },
+    "decoder_start_failed": {
+      "message": "{entity_id}: decoder {decoder} failed to start playback: {error}"
+    },
+    "group_no_transition": {
+      "message": "{name}: a lighting group does not support software transition"
+    },
+    "group_no_timer": {
+      "message": "{name}: timed on/off is not supported for a lighting group"
+    },
+    "unknown_source": {
+      "message": "{entity_id}: unknown source \"{source}\""
+    },
+    "environment_busy": {
+      "message": "{entity_id}: {owner_name} is already streaming in environment {environment}; zones in one environment share a matrix input (also on it: {rooms})"
+    },
+    "routing_unsupported": {
+      "message": "{entity_id}: amplifier {where} has no matrix routing address (environment 0, or not a two-digit amplifier); switch its source at a wall panel"
+    },
+    "decoder_incompatible_platform": {
+      "message": "{entity_id}: decoder {decoder} ({platform}) does not support streaming URLs; configure it via DLNA DMR instead"
+    },
+    "foreign_entity_not_supported": {
+      "message": "{entity_id}: cannot join foreign entity {member}; only MyHOME sound zones can be grouped"
+    },
+    "grouping_unavailable": {
+      "message": "{entity_id}: audio grouping is not available yet; the decoder pool has not been initialised"
+    },
+    "decoder_wake_timeout": {
+      "message": "{entity_id}: decoder {decoder} did not wake up within 5 seconds"
+    },
+    "unknown_station": {
+      "message": "{entity_id}: unknown station \"{station}\""
+    },
+    "frequency_out_of_range": {
+      "message": "{entity_id}: {frequency} MHz is outside the FM band"
+    },
+    "invalid_tuner_media": {
+      "message": "{entity_id}: \"{media_id}\" is neither a station nor a frequency"
+    },
+    "seek_not_supported": {
+      "message": "{entity_id}: seek is only supported on tuner source entities"
+    },
+    "tuner_only_operation": {
+      "message": "{entity_id}: this action is only supported on tuner source entities"
+    },
+    "tuner_not_ready": {
+      "message": "{entity_id}: tuner {where} is not set up yet; reload the integration if this persists"
+    },
+    "volume_not_finite": {
+      "message": "{entity_id}: volume level {volume} is not a valid finite number"
+    },
+    "scenario_plus_gateway_not_found": {
+      "message": "Gateway \"{gateway}\" not found for scenario plus command"
+    },
+    "scenario_plus_no_gateway": {
+      "message": "No active MyHOME gateways found"
+    },
+    "scenario_plus_missing_where": {
+      "message": "No where/object specified for scenario plus command"
+    },
+    "scenario_plus_unknown_action": {
+      "message": "Unknown scenario plus action \"{action}\""
+    },
+    "scenario_plus_command_invalid": {
+      "message": "Could not build scenario plus command for where \"{where}\" and action \"{action}\""
+    },
+    "sync_time_unsupported_offset": {
+      "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."
+    },
+    "thermo_switch_no_timer": {
+      "message": "{name} is a WHO=4 thermo actuator and does not support WHO=1 hardware bus timers; use a Home Assistant automation delay instead."
+    },
+    "invert_switch_no_timer": {
+      "message": "{name} is a binary sensor configuration switch and does not support WHO=1 hardware bus timers."
+    },
+    "lock_gateway_who6_unsupported": {
+      "message": "{name}: gateway {gateway} rejected WHO=6 door-entry unlock ({frame}). Its firmware does not route WHO 6 (basic door entry)."
+    },
+    "lock_command_rejected": {
+      "message": "{name}: gateway {gateway} rejected or dropped the WHO=6 door-entry unlock command ({frame})"
+    },
+    "lock_command_timeout": {
+      "message": "{name}: door-entry unlock command was not confirmed within {timeout} s; it was withdrawn if it had not been sent yet"
+    },
+    "lock_command_failed": {
+      "message": "{name}: door-entry unlock command failed: {error}"
+    }
+  },
+  "entity": {
+    "button": {
+      "lock": {
+        "name": "Lock"
+      },
+      "unlock": {
+        "name": "Unlock"
+      },
+      "calibrate_travel_time": {
+        "name": "Calibrate travel time"
+      },
+      "calibrate_all_covers": {
+        "name": "Calibrate all covers"
+      },
+      "tuner_seek_up": {
+        "name": "Seek up"
+      },
+      "tuner_seek_down": {
+        "name": "Seek down"
+      }
+    },
+    "number": {
+      "tuner_frequency": {
+        "name": "Frequency"
+      }
+    },
+    "sensor": {
+      "energy_today": {
+        "name": "Energy (today)"
+      },
+      "energy_month": {
+        "name": "Energy (current month)"
+      }
+    },
+    "switch": {
+      "invert_state": {
+        "name": "Invert state"
+      }
+    }
+  },
+  "selector": {
+    "bus_topology": {
+      "options": {
+        "standalone": "Standalone (own SCS bus)",
+        "shared": "Shared SCS bus (same bus as another gateway)"
+      }
+    },
+    "gateway_role": {
+      "options": {
+        "primary": "Primary (discovers and polls the bus)",
+        "secondary": "Secondary (discovers only its delegated subsystems)",
+        "standby": "Warm standby (takes over while the primary is offline)"
+      }
+    },
+    "delegated_whos": {
+      "options": {
+        "1": "1 - Lighting",
+        "2": "2 - Covers / shutters",
+        "4": "4 - Thermoregulation",
+        "5": "5 - Burglar alarm",
+        "6": "6 - Door entry",
+        "8": "8 - Video door entry / intercom",
+        "9": "9 - Auxiliary",
+        "15": "15 - CEN scenarios",
+        "16": "16 - Sound diffusion",
+        "18": "18 - Energy management",
+        "22": "22 - Sound diffusion (audio matrix)",
+        "25": "25 - CEN+ scenarios"
+      }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "pushbutton_short_press": "\"{subtype}\" pressed",
+      "pushbutton_short_release": "\"{subtype}\" released after short press",
+      "pushbutton_long_press": "\"{subtype}\" held down",
+      "pushbutton_long_press_repeat": "\"{subtype}\" held down (repeating)",
+      "pushbutton_long_release": "\"{subtype}\" released after long press",
+      "rotary_cw_slow": "\"{subtype}\" turned clockwise slowly",
+      "rotary_cw_fast": "\"{subtype}\" turned clockwise quickly",
+      "rotary_ccw_slow": "\"{subtype}\" turned counter-clockwise slowly",
+      "rotary_ccw_fast": "\"{subtype}\" turned counter-clockwise quickly",
+      "centralized_shutter_open": "Centralized shutter OPEN command received",
+      "centralized_shutter_close": "Centralized shutter CLOSE command received",
+      "centralized_shutter_stop": "Centralized shutter STOP command received"
+    },
+    "trigger_subtype": {
+      "button_0": "Button 0",
+      "button_1": "Button 1",
+      "button_2": "Button 2",
+      "button_3": "Button 3",
+      "button_4": "Button 4",
+      "button_5": "Button 5",
+      "button_6": "Button 6",
+      "button_7": "Button 7",
+      "button_8": "Button 8",
+      "button_9": "Button 9",
+      "button_10": "Button 10",
+      "button_11": "Button 11",
+      "button_12": "Button 12",
+      "button_13": "Button 13",
+      "button_14": "Button 14",
+      "button_15": "Button 15",
+      "button_16": "Button 16",
+      "button_17": "Button 17",
+      "button_18": "Button 18",
+      "button_19": "Button 19",
+      "button_20": "Button 20",
+      "button_21": "Button 21",
+      "button_22": "Button 22",
+      "button_23": "Button 23",
+      "button_24": "Button 24",
+      "button_25": "Button 25",
+      "button_26": "Button 26",
+      "button_27": "Button 27",
+      "button_28": "Button 28",
+      "button_29": "Button 29",
+      "button_30": "Button 30",
+      "button_31": "Button 31"
+    }
+  }
+}

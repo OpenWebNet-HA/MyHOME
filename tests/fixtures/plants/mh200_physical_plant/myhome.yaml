@@ -1,0 +1,377 @@
+# ═══════════════════════════════════════════════════════════
+# BTicino MH200 — MyHOME Device Configuration
+# ═══════════════════════════════════════════════════════════
+# Place this file at: /config/myhome.yaml
+#
+# IMPORTANT: Replace the MAC address below with your MH200's
+# actual MAC (find it in TiMH200 or your router's DHCP list).
+# ═══════════════════════════════════════════════════════════
+
+mh200:
+  mac: "00:03:50:00:02:00"
+
+  # ── LIGHTS (62 devices) ──────────────────────────────────
+  light:
+    # ── group 1 ──
+    light_69:
+      where: "69"
+      name: "Light 69"
+      dimmable: True
+    light_73:
+      where: "73"
+      name: "Light 73"
+      dimmable: True
+    light_57:
+      where: "57"
+      name: "Light 57"
+      dimmable: False
+    light_67:
+      where: "67"
+      name: "Light 67"
+      dimmable: False
+    light_59:
+      where: "59"
+      name: "Light 59"
+      dimmable: True
+    light_61:
+      where: "61"
+      name: "Light 61"
+      dimmable: False
+
+    # ── group 2 ──
+    light_72:
+      where: "72"
+      name: "Light 72"
+      dimmable: True
+    light_53:
+      where: "53"
+      name: "Light 53"
+      dimmable: False
+    light_89:
+      where: "89"
+      name: "Light 89"
+      dimmable: True
+
+    # ── group 3 ──
+    light_19:
+      where: "19"
+      name: "Light 19"
+      dimmable: True
+    light_62:
+      where: "62"
+      name: "Light 62"
+      dimmable: False
+    light_48:
+      where: "48"
+      name: "Light 48"
+      dimmable: False
+    light_29:
+      where: "29"
+      name: "Light 29"
+      dimmable: True
+    light_75:
+      where: "75"
+      name: "Light 75"
+      dimmable: True
+
+    # ── group 4 ──
+    light_99:
+      where: "99"
+      name: "Light 99"
+      dimmable: True
+    light_81:
+      where: "81"
+      name: "Light 81"
+      dimmable: False
+    light_71:
+      where: "71"
+      name: "Light 71"
+      dimmable: True
+
+    # ── group 5 ──
+    light_79:
+      where: "79"
+      name: "Light 79"
+      dimmable: True
+    light_65:
+      where: "65"
+      name: "Light 65"
+      dimmable: False
+    light_64:
+      where: "64"
+      name: "Light 64"
+      dimmable: False
+
+    # ── group 6 ──
+    light_68:
+      where: "68"
+      name: "Light 68"
+      dimmable: False
+    light_58:
+      where: "58"
+      name: "Light 58"
+      dimmable: False
+    light_23:
+      where: "23"
+      name: "Light 23"
+      dimmable: False
+
+    # ── group 7 ──
+    light_56:
+      where: "56"
+      name: "Light 56"
+      dimmable: False
+    light_54:
+      where: "54"
+      name: "Light 54"
+      dimmable: False
+    light_42:
+      where: "42"
+      name: "Light 42"
+      dimmable: False
+    light_55:
+      where: "55"
+      name: "Light 55"
+      dimmable: False
+
+    # ── group 8 ──
+    light_39:
+      where: "39"
+      name: "Light 39"
+      dimmable: True
+    light_45:
+      where: "45"
+      name: "Light 45"
+      dimmable: False
+    light_49:
+      where: "49"
+      name: "Light 49"
+      dimmable: False
+    light_35:
+      where: "35"
+      name: "Light 35"
+      dimmable: False
+    light_34:
+      where: "34"
+      name: "Light 34"
+      dimmable: False
+
+    # ── group 9 ──
+    light_11:
+      where: "11"
+      name: "Light 11"
+      dimmable: False
+    light_52:
+      where: "52"
+      name: "Light 52"
+      dimmable: False
+    light_14:
+      where: "14"
+      name: "Light 14"
+      dimmable: False
+
+    # ── group 10 ──
+    light_24:
+      where: "24"
+      name: "Light 24"
+      dimmable: False
+    light_66:
+      where: "66"
+      name: "Light 66"
+      dimmable: False
+    light_25:
+      where: "25"
+      name: "Light 25"
+      dimmable: False
+    light_32:
+      where: "32"
+      name: "Light 32"
+      dimmable: False
+
+    # ── group 11 ──
+    light_17:
+      where: "17"
+      name: "Light 17"
+      dimmable: False
+    light_43:
+      where: "43"
+      name: "Light 43"
+      dimmable: False
+    light_21:
+      where: "21"
+      name: "Light 21"
+      dimmable: False
+    light_77:
+      where: "77"
+      name: "Light 77"
+      dimmable: False
+
+    # ── group 12 ──
+    light_18:
+      where: "18"
+      name: "Light 18"
+      dimmable: False
+    light_44:
+      where: "44"
+      name: "Light 44"
+      dimmable: False
+    light_16:
+      where: "16"
+      name: "Light 16"
+      dimmable: False
+    light_76:
+      where: "76"
+      name: "Light 76"
+      dimmable: False
+
+    # ── group 13 ──
+    light_37:
+      where: "37"
+      name: "Light 37"
+      dimmable: False
+    light_13:
+      where: "13"
+      name: "Light 13"
+      dimmable: False
+    light_26:
+      where: "26"
+      name: "Light 26"
+      dimmable: False
+    light_31:
+      where: "31"
+      name: "Light 31"
+      dimmable: False
+    light_12:
+      where: "12"
+      name: "Light 12"
+      dimmable: False
+    light_15:
+      where: "15"
+      name: "Light 15"
+      dimmable: False
+    light_38:
+      where: "38"
+      name: "Light 38"
+      dimmable: False
+    light_28:
+      where: "28"
+      name: "Light 28"
+      dimmable: False
+
+    # ── group 14 ──
+    light_91:
+      where: "91"
+      name: "Light 91"
+      dimmable: False
+    light_92:
+      where: "92"
+      name: "Light 92"
+      dimmable: False
+    light_93:
+      where: "93"
+      name: "Light 93"
+      dimmable: False
+    light_94:
+      where: "94"
+      name: "Light 94"
+      dimmable: False
+    light_96:
+      where: "96"
+      name: "Light 96"
+      dimmable: False
+    light_97:
+      where: "97"
+      name: "Light 97"
+      dimmable: False
+
+  # ── SWITCHES (7 devices) ─────────────────────────────────
+  switch:
+    switch_27:
+      where: "27"
+      name: "Switch 27"
+      class: switch
+    switch_78:
+      where: "78"
+      name: "Switch 78"
+      class: switch
+    switch_84:
+      where: "84"
+      name: "Switch 84"
+      class: outlet
+    switch_81:
+      where: "81"
+      name: "Switch 81"
+      class: outlet
+    switch_82:
+      where: "82"
+      name: "Switch 82"
+      class: outlet
+    switch_83:
+      where: "83"
+      name: "Switch 83"
+      class: outlet
+    switch_95:
+      where: "95"
+      name: "Switch 95"
+      class: switch
+
+  # ── COVERS / CURTAINS (11 devices) ───────────────────────
+  # Most use a F422 BUS-BUS Interface (interface: "02").
+  # sdomotica address "18#4#02" → where: "18", interface: "02"
+  # MyHOME sends the OpenWebNet address as 18#4#02 automatically.
+  # ─────────────────────────────────────────────────────────
+  cover:
+    cover_18i02:
+      where: "18"
+      interface: "02"
+      name: "Cover 18I02"
+      advanced: False
+    cover_19i02:
+      where: "19"
+      interface: "02"
+      name: "Cover 19I02"
+      advanced: False
+    cover_16i02:
+      where: "16"
+      interface: "02"
+      name: "Cover 16I02"
+      advanced: False
+    cover_11i02:
+      where: "11"
+      interface: "02"
+      name: "Cover 11I02"
+      advanced: False
+    cover_12i02:
+      where: "12"
+      interface: "02"
+      name: "Cover 12I02"
+      advanced: False
+    cover_13i02:
+      where: "13"
+      interface: "02"
+      name: "Cover 13I02"
+      advanced: False
+    cover_22i02:
+      where: "22"
+      interface: "02"
+      name: "Cover 22I02"
+      advanced: False
+    cover_21i02:
+      where: "21"
+      interface: "02"
+      name: "Cover 21I02"
+      advanced: False
+    cover_85:
+      where: "85"
+      name: "Cover 85"
+      advanced: False
+    cover_14i02:
+      where: "14"
+      interface: "02"
+      name: "Cover 14I02"
+      advanced: False
+    cover_15i02:
+      where: "15"
+      interface: "02"
+      name: "Cover 15I02"
+      advanced: False

@@ -1,0 +1,115 @@
+- id: cen_plus.event.short_press.btn1.21
+  frame: "*25*21#1*21##"
+  direction: event
+  who: 25
+  what: "21#1"
+  where: "21"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 1; the whole short press, no release frame follows (MH201 capture, MyHOME#418; MyHomeServer1 KW8011 capture, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: press
+    args: ["21", 1]
+
+- id: cen_plus.event.short_press.btn1.22
+  frame: "*25*21#1*22##"
+  direction: event
+  who: 25
+  what: "21#1"
+  where: "22"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 2; verified on physical MyHomeServer1 with Living Now KW8011 (MyHOME#466, comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: press
+    args: ["22", 1]
+
+- id: cen_plus.event.short_press.btn1.23
+  frame: "*25*21#1*23##"
+  direction: event
+  who: 25
+  what: "21#1"
+  where: "23"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 3; verified on physical MyHomeServer1 with Living Now KW8011 (MyHOME#466, comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: press
+    args: ["23", 1]
+
+- id: cen_plus.event.start_long_press.btn1.21
+  frame: "*25*22#1*21##"
+  direction: event
+  who: 25
+  what: "22#1"
+  where: "21"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Start of extended pressure on pushbutton 1 of Object 1; not preceded by 21 (MH201 capture, MyHOME#418; MyHomeServer1 KW8011 capture, MyHOME#466, comment 5859798807)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: start_long_press
+    args: ["21", 1]
+
+- id: cen_plus.event.still_held.btn1.21
+  frame: "*25*23#1*21##"
+  direction: event
+  who: 25
+  what: "23#1"
+  where: "21"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Extended pressure on pushbutton 1 of Object 1, repeated every 0.48-0.51 s while held (MH201 capture, MyHOME#418)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: still_held
+    args: ["21", 1]
+
+- id: cen_plus.event.release.btn1.21
+  frame: "*25*24#1*21##"
+  direction: event
+  who: 25
+  what: "24#1"
+  where: "21"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Release after extended pressure on pushbutton 1 of Object 1 (MH201 capture, MyHOME#418; MyHomeServer1 KW8011 capture, MyHOME#466, comment 5859798807)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: release
+    args: ["21", 1]
+
+- id: dry_contact.event.on.339
+  frame: "*25*31#1*339##"
+  direction: event
+  who: 25
+  what: "31#1"
+  where: "339"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Dry contact ON / IR detection at WHERE 339; #1 marks an event, #0 a state reply (Encyclopedia functional/who-25-transversal/dry-contact-ir.md). Captured on an H4890 (MyHOME tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-51-26.json, MyHOME#466). Replaces the Encyclopedia-derived *25*31#1*15##: on the bus every captured dry contact has a WHERE that starts with 3 (33, 331..339 on MH200N, MH202, F454 and H4890), and the firmware's bt_luci uses the same rule (gdluck's audit, OWNd#77). The judge warns that 339 is outside the documented 1..201; the captures show the bus form"
+  roundtrip: true
+
+- id: cen_plus.event.start_long_press.btn2.22047
+  frame: "*25*22#2*22047##"
+  direction: event
+  who: 25
+  what: "22#2"
+  where: "22047"
+  source: openwebnet4j
+  mcp_valid: true
+  mcp_notes: "CEN+: Start of extended pressure on pushbutton 2 of Object 2047"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: start_long_press
+    args: ["22047", 2]

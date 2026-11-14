@@ -1,0 +1,12 @@
+# MyHomeServer1 Direction + Stop Timeline (Trace 3, Issue #645)
+# Gateway: MyHomeServer1 (FW 2.87.13), Cover WHERE: 91
+# Reference epoch: 2026-10-11T16:32:34.000000+00:00 (1791736354.000)
+1791736354.000 [TX] *2*1*91## taken by worker 0 (command session reopened)
+1791736354.050 [RX] *2*1000#0*91## received (gateway translation)
+1791736354.095 [RX] *2*0*91## received (momentary stop status)
+1791736354.118 [RX] *2*1000#1*91## received (motion confirmed)
+1791736354.119 [RX] *#*1## acknowledged (*2*1*91##)
+1791736354.139 [TX] *2*0*91## taken by worker 0
+1791736354.179 [RX] *2*1000#0*91## received (gateway translation)
+1791736354.179 [RX] *#*1## acknowledged (*2*0*91##)
+1791736354.216 [RX] *2*0*91## received (actuator stop status)

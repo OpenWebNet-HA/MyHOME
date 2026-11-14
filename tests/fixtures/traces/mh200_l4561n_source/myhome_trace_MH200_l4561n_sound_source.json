@@ -1,0 +1,624 @@
+{
+  "capture": {
+    "kind": "trace",
+    "description": "Authentic on-wire trace of BTicino L4561N Stereo Control (Source 2) and Zone 21 amplifier transport actuation",
+    "started_at": "2026-10-07T18:17:42.740456+00:00",
+    "filters": {
+      "who": "16",
+      "where": "102, 21",
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-07T18:17:42.740456+00:00",
+      "last": "2026-10-07T18:18:22.208196+00:00",
+      "frames": 44,
+      "buffer_frames": 44,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.2",
+    "integration_version": "2.0.0b14",
+    "ownd_version": "2.0.0b9",
+    "gateway_host_redacted": "[REDACTED_IP]",
+    "gateway_port": 20000,
+    "exported_at": "2026-10-07T18:18:22.208195+00:00"
+  },
+  "gateway": {
+    "model": "MH200",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.0.32",
+    "connection_type": "tcp",
+    "identification": {
+      "model": "MH200",
+      "source": "bus",
+      "who13_model": "MH200",
+      "who13_firmware": "2.0.32",
+      "profile": "MH200Profile"
+    }
+  },
+  "target_device": {
+    "model": "L4561N",
+    "name": "Stereo Control Interface",
+    "subsystem": "Sound Diffusion (WHO=16)",
+    "address": "102",
+    "address_type": "Source 2",
+    "firmware_version": "04.00.06",
+    "associated_zone": "21"
+  },
+  "telemetry": {
+    "total_rx": 14,
+    "total_tx": 30,
+    "captured_in_buffer": 44,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1791397062.74,
+      "iso_time": "2026-10-07T18:17:42.740456+00:00",
+      "direction": "tx",
+      "raw": "*#13**15*4##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "15",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "4"
+      ]
+    },
+    {
+      "timestamp": 1791397063.957,
+      "iso_time": "2026-10-07T18:17:43.956519+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "15",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "4"
+      ]
+    },
+    {
+      "timestamp": 1791397063.957,
+      "iso_time": "2026-10-07T18:17:43.956519+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*5##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397065.317,
+      "iso_time": "2026-10-07T18:17:45.316541+00:00",
+      "direction": "rx",
+      "raw": "*16*3*102##",
+      "who": "16",
+      "what": "3",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397065.317,
+      "iso_time": "2026-10-07T18:17:45.316541+00:00",
+      "direction": "tx",
+      "raw": "*#16*101*5##",
+      "who": "16",
+      "what": null,
+      "where": "101",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397066.675,
+      "iso_time": "2026-10-07T18:17:46.674875+00:00",
+      "direction": "rx",
+      "raw": "*16*3*101##",
+      "who": "16",
+      "what": "3",
+      "where": "101",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397066.675,
+      "iso_time": "2026-10-07T18:17:46.674875+00:00",
+      "direction": "tx",
+      "raw": "*#16*21*5##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397068.019,
+      "iso_time": "2026-10-07T18:17:48.018780+00:00",
+      "direction": "rx",
+      "raw": "*16*13*21##",
+      "who": "16",
+      "what": "13",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397068.019,
+      "iso_time": "2026-10-07T18:17:48.018780+00:00",
+      "direction": "tx",
+      "raw": "*#16*21*1##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397069.341,
+      "iso_time": "2026-10-07T18:17:49.340624+00:00",
+      "direction": "rx",
+      "raw": "*#16*21*1*0##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "0"
+      ]
+    },
+    {
+      "timestamp": 1791397069.341,
+      "iso_time": "2026-10-07T18:17:49.340624+00:00",
+      "direction": "tx",
+      "raw": "*16*0*102##",
+      "who": "16",
+      "what": "0",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397070.568,
+      "iso_time": "2026-10-07T18:17:50.567591+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*5##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397071.873,
+      "iso_time": "2026-10-07T18:17:51.873500+00:00",
+      "direction": "rx",
+      "raw": "*16*3*102##",
+      "who": "16",
+      "what": "3",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397071.873,
+      "iso_time": "2026-10-07T18:17:51.873500+00:00",
+      "direction": "tx",
+      "raw": "*16*3*102##",
+      "who": "16",
+      "what": "3",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397073.716,
+      "iso_time": "2026-10-07T18:17:53.715500+00:00",
+      "direction": "rx",
+      "raw": "*16*3*102##",
+      "who": "16",
+      "what": "3",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397073.716,
+      "iso_time": "2026-10-07T18:17:53.715500+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*5##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397075.079,
+      "iso_time": "2026-10-07T18:17:55.079422+00:00",
+      "direction": "rx",
+      "raw": "*16*3*102##",
+      "who": "16",
+      "what": "3",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397075.079,
+      "iso_time": "2026-10-07T18:17:55.079422+00:00",
+      "direction": "rx",
+      "raw": "*#13**22*20*17*39*002*03*07*10*2026##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "22",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "20",
+        "17",
+        "39",
+        "002",
+        "03",
+        "07",
+        "10",
+        "2026"
+      ]
+    },
+    {
+      "timestamp": 1791397075.079,
+      "iso_time": "2026-10-07T18:17:55.079422+00:00",
+      "direction": "tx",
+      "raw": "*16*6001*102##",
+      "who": "16",
+      "what": "6001",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397076.384,
+      "iso_time": "2026-10-07T18:17:56.384337+00:00",
+      "direction": "tx",
+      "raw": "*16*6003*102##",
+      "who": "16",
+      "what": "6003",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397077.753,
+      "iso_time": "2026-10-07T18:17:57.753338+00:00",
+      "direction": "tx",
+      "raw": "*16*6005*102##",
+      "who": "16",
+      "what": "6005",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397079.017,
+      "iso_time": "2026-10-07T18:17:59.016597+00:00",
+      "direction": "tx",
+      "raw": "*16*6101*102##",
+      "who": "16",
+      "what": "6101",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397080.284,
+      "iso_time": "2026-10-07T18:18:00.284412+00:00",
+      "direction": "tx",
+      "raw": "*16*6102*102##",
+      "who": "16",
+      "what": "6102",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397081.55,
+      "iso_time": "2026-10-07T18:18:01.550074+00:00",
+      "direction": "tx",
+      "raw": "*16*6104*102##",
+      "who": "16",
+      "what": "6104",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397082.817,
+      "iso_time": "2026-10-07T18:18:02.816885+00:00",
+      "direction": "tx",
+      "raw": "*16*10*102##",
+      "who": "16",
+      "what": "10",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397084.092,
+      "iso_time": "2026-10-07T18:18:04.091803+00:00",
+      "direction": "tx",
+      "raw": "*16*13*102##",
+      "who": "16",
+      "what": "13",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397085.373,
+      "iso_time": "2026-10-07T18:18:05.372720+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*#7*1##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "#7",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "1"
+      ]
+    },
+    {
+      "timestamp": 1791397086.685,
+      "iso_time": "2026-10-07T18:18:06.684870+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*#7*2##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "#7",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "2"
+      ]
+    },
+    {
+      "timestamp": 1791397087.948,
+      "iso_time": "2026-10-07T18:18:07.947692+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*#7*5##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "#7",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "5"
+      ]
+    },
+    {
+      "timestamp": 1791397089.211,
+      "iso_time": "2026-10-07T18:18:09.211170+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*#7*1##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "#7",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "1"
+      ]
+    },
+    {
+      "timestamp": 1791397090.487,
+      "iso_time": "2026-10-07T18:18:10.487286+00:00",
+      "direction": "tx",
+      "raw": "*16*102*21##",
+      "who": "16",
+      "what": "102",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397091.721,
+      "iso_time": "2026-10-07T18:18:11.721195+00:00",
+      "direction": "tx",
+      "raw": "*#16*21*5##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397093.063,
+      "iso_time": "2026-10-07T18:18:13.062697+00:00",
+      "direction": "rx",
+      "raw": "*16*13*21##",
+      "who": "16",
+      "what": "13",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397093.063,
+      "iso_time": "2026-10-07T18:18:13.062697+00:00",
+      "direction": "tx",
+      "raw": "*16*1002*21##",
+      "who": "16",
+      "what": "1002",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397094.327,
+      "iso_time": "2026-10-07T18:18:14.327420+00:00",
+      "direction": "tx",
+      "raw": "*#16*21*1##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397095.683,
+      "iso_time": "2026-10-07T18:18:15.683156+00:00",
+      "direction": "rx",
+      "raw": "*#16*21*1*0##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "0"
+      ]
+    },
+    {
+      "timestamp": 1791397095.683,
+      "iso_time": "2026-10-07T18:18:15.683156+00:00",
+      "direction": "tx",
+      "raw": "*16*1003*21##",
+      "who": "16",
+      "what": "1003",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397096.948,
+      "iso_time": "2026-10-07T18:18:16.947767+00:00",
+      "direction": "tx",
+      "raw": "*#16*21*1##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397098.266,
+      "iso_time": "2026-10-07T18:18:18.265686+00:00",
+      "direction": "rx",
+      "raw": "*#16*21*1*0##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false,
+      "dimension_values": [
+        "0"
+      ]
+    },
+    {
+      "timestamp": 1791397098.266,
+      "iso_time": "2026-10-07T18:18:18.265686+00:00",
+      "direction": "tx",
+      "raw": "*16*0*21##",
+      "who": "16",
+      "what": "0",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397099.493,
+      "iso_time": "2026-10-07T18:18:19.492719+00:00",
+      "direction": "tx",
+      "raw": "*#16*21*5##",
+      "who": "16",
+      "what": null,
+      "where": "21",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397100.799,
+      "iso_time": "2026-10-07T18:18:20.799197+00:00",
+      "direction": "rx",
+      "raw": "*16*13*21##",
+      "who": "16",
+      "what": "13",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397100.799,
+      "iso_time": "2026-10-07T18:18:20.799197+00:00",
+      "direction": "tx",
+      "raw": "*#16*102*5##",
+      "who": "16",
+      "what": null,
+      "where": "102",
+      "dimension": "5",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1791397102.208,
+      "iso_time": "2026-10-07T18:18:22.208196+00:00",
+      "direction": "rx",
+      "raw": "*16*3*102##",
+      "who": "16",
+      "what": "3",
+      "where": "102",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

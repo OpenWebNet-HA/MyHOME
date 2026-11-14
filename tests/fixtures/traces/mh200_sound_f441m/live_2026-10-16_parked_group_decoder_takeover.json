@@ -1,0 +1,199 @@
+{
+  "meta": {
+    "captured": "2026-10-16",
+    "gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix",
+    "home_assistant": "2026.10.1",
+    "music_assistant": "2.11.0b5",
+    "build": "MyHOME 2.0.0b15, OWNd 2.0.0b10",
+    "how": "audio block from the MyHOME config-entry diagnostics download; group and play_pause sequence from the Music Assistant log and diagnostics",
+    "decoder": "media_player.audio_decoder (decoder_1, wired to matrix source 2, pre_gain_pct 25) with companion decoder_1_companion",
+    "zones": {
+      "17": {"name": "Audio Zone 17", "environment": 1, "role": "parked_leader"},
+      "18": {"name": "Audio Zone 18", "environment": 1, "role": "parked_member"},
+      "21": {"name": "Audio Zone 21", "environment": 2, "role": "new_member"},
+      "22": {"name": "Audio Zone 22", "environment": 2, "role": "new_member"},
+      "23": {"name": "Audio Zone 23", "environment": 2, "role": "new_member"},
+      "35": {"name": "Audio Zone 35", "environment": 3, "role": "new_member"},
+      "36": {"name": "badkamer", "environment": 3, "role": "new_leader"}
+    },
+    "findings": [
+      "a parked group (zone_17 leading zone_18) has hardware amplifiers off (_attr_state = 'off') and decoder_1 in 'off', yet zone_17.state reports 'idle' (or 'paused') in Home Assistant so Music Assistant does not dissolve the parked sync group",
+      "because DecoderPool.claim() and _environment_owners() checked the Home Assistant state machine (hass.states.get(owner).state) and only treated 'off' and 'unavailable' as inactive, zone_17's 'idle' state made DecoderPool treat decoder_1 as actively held and refuse zone_36 (badkamer) with 'All audio matrix inputs are currently in use by other rooms!'",
+      "when decoder_1 is idle/off and its owner is parked ('idle' or 'paused' in HA while the amplifier is off), DecoderPool.claim() must reassign decoder_1 to the new requester without emitting redundant OFF bus frames for the already-off parked rooms, and ZoneGroupLayer._reconcile_pool_loss() must clear _parked and _active_decoder on the displaced rooms so they transition cleanly from 'idle' to 'off'"
+    ]
+  },
+  "audio_diagnostics": {
+    "zones": {
+      "zone_21": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.16129032258064516,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_22": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.7419354838709677,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_23": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.8709677419354839,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_14": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.03225806451612903,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_35": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.5806451612903226,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_36": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.45161290322580644,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_17": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.57,
+        "is_volume_muted": false,
+        "has_decoder": true,
+        "parked": true,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_18": {
+        "state": "off",
+        "source": 2,
+        "volume_level": 0.4838709677419355,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": true,
+        "wake_pending": false,
+        "status_seen": true
+      },
+      "zone_1000": {
+        "state": "off",
+        "source": null,
+        "volume_level": null,
+        "is_volume_muted": false,
+        "has_decoder": false,
+        "parked": false,
+        "wake_pending": false,
+        "status_seen": false
+      }
+    },
+    "decoder_pool": {
+      "decoders": {
+        "decoder_1": {
+          "source": 2,
+          "pre_gain_pct": 25,
+          "stream_incompatible": false,
+          "companion": "decoder_1_companion",
+          "companion_chosen_by_user": false,
+          "state": "off",
+          "held_by": "zone_17"
+        }
+      },
+      "groups": {
+        "zone_17": [
+          "zone_18"
+        ]
+      },
+      "environments": {
+        "zone_17": "1",
+        "zone_18": "1"
+      },
+      "unconfirmed": []
+    }
+  },
+  "music_assistant_attempts": [
+    {
+      "attempt": 1,
+      "set_members_leader": "media_player.audio_zone_36",
+      "set_members_add": [
+        "media_player.audio_zone_21",
+        "media_player.audio_zone_23",
+        "media_player.audio_zone_22",
+        "media_player.audio_zone_35"
+      ],
+      "play_target": "media_player.audio_zone_36",
+      "log": [
+        "2026-10-16 09:27:21.379 INFO (MainThread) [music_assistant.players] Calling set_members on native player badkamer with add=['media_player.audio_zone_21', 'media_player.audio_zone_23', 'media_player.audio_zone_22', 'media_player.audio_zone_35'], remove=[]",
+        "2026-10-16 09:27:21.390 INFO (MainThread) [music_assistant.Home Assistant MediaPlayers] Setting active output protocol on badkamer to Native",
+        "2026-10-16 09:27:22.508 WARNING (MainThread) [music_assistant.webserver] players/cmd/play_pause: media_player.audio_zone_36: All audio matrix inputs are currently in use by other rooms!",
+        "2026-10-16 09:27:25.980 INFO (MainThread) [music_assistant.Sync Group Player] Dissolving syncgroup Huis (leader badkamer) and re-forming with a new leader",
+        "2026-10-16 09:27:30.981 INFO (MainThread) [music_assistant.players] Calling set_members on native player badkamer with add=[], remove=['media_player.audio_zone_35', 'media_player.audio_zone_21', 'media_player.audio_zone_22', 'media_player.audio_zone_23']",
+        "2026-10-16 09:27:31.009 INFO (MainThread) [music_assistant.Home Assistant MediaPlayers] Clearing active output protocol on badkamer"
+      ]
+    },
+    {
+      "attempt": 2,
+      "set_members_leader": "media_player.audio_zone_36",
+      "set_members_add": [
+        "media_player.audio_zone_35"
+      ],
+      "play_target": "media_player.audio_zone_36",
+      "log": [
+        "2026-10-16 09:27:40.535 INFO (MainThread) [music_assistant.players] Calling set_members on native player badkamer with add=['media_player.audio_zone_35'], remove=[]",
+        "2026-10-16 09:27:40.542 INFO (MainThread) [music_assistant.Home Assistant MediaPlayers] Setting active output protocol on badkamer to Native",
+        "2026-10-16 09:27:40.552 WARNING (MainThread) [music_assistant.webserver] players/cmd/play_pause: media_player.audio_zone_36: All audio matrix inputs are currently in use by other rooms!",
+        "2026-10-16 09:27:50.552 INFO (MainThread) [music_assistant.Sync Group Player] Idle-grace expired for syncgroup Huis, dissolving",
+        "2026-10-16 09:27:50.552 INFO (MainThread) [music_assistant.players] Calling set_members on native player badkamer with add=[], remove=['media_player.audio_zone_35']",
+        "2026-10-16 09:27:50.559 INFO (MainThread) [music_assistant.Home Assistant MediaPlayers] Clearing active output protocol on badkamer"
+      ]
+    }
+  ],
+  "expected_after_fix": {
+    "displaced_parked_zones": ["17", "18"],
+    "forbidden_tx": ["*16*13*17##", "*16*13*18##"],
+    "expected_leader_tx": ["*16*13*36##", "*16*3*36##", "*16*3*102##", "*16*3*132##"],
+    "expected_attempt_1_tx": [
+      "*16*13*36##",
+      "*16*3*36##",
+      "*16*3*102##",
+      "*16*3*132##",
+      "*16*3*122##",
+      "*16*13*21##",
+      "*16*3*21##",
+      "*16*13*23##",
+      "*16*3*23##",
+      "*16*13*22##",
+      "*16*3*22##",
+      "*16*13*35##",
+      "*16*3*35##"
+    ]
+  }
+}
