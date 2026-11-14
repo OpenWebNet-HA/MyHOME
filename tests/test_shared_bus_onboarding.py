@@ -21,7 +21,7 @@ from homeassistant.helpers.entity_platform import EntityPlatform
 from OWNd.message import OWNAutomationEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome import button
+from custom_components.myhome import binary_sensor, button, switch
 from custom_components.myhome.const import (
     CONF_BUS_TOPOLOGY,
     CONF_DELEGATED_WHOS,
@@ -36,7 +36,11 @@ from custom_components.myhome.const import (
     TOPOLOGY_SHARED,
     TOPOLOGY_STANDALONE,
 )
-from custom_components.myhome.discovery import PlatformDiscovery, prune_orphaned_companions
+from custom_components.myhome.discovery import (
+    PlatformDiscovery,
+    binary_sensor_only_on_primary,
+    prune_orphaned_companions,
+)
 from custom_components.myhome.topology import (
     _follower_delegation,
     gateway_supported_whos,
@@ -368,6 +372,154 @@ async def test_button_setup_prunes_orphans_on_followers_only(hass: HomeAssistant
         assert all((registry.async_get(b) is None) is follower for b in orphans)
     finally:
         await platform.async_reset()
+
+
+@pytest.mark.parametrize("follower", [True, False])
+async def test_button_setup_does_not_recreate_yaml_buttons_of_a_pruned_duplicate(
+    hass: HomeAssistant, follower: bool
+) -> None:
+    """A follower's myhome.yaml actuator that lives on the primary gets no lock / unlock buttons.
+
+    The button platform pruned the orphaned buttons and then created them again from the
+    entry's YAML config, on a device with nothing else (live F455 standby next to an F461
+    on 2.0.0b18, 2026-11-14: 20 lock / unlock buttons on 10 otherwise empty devices).
+    """
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    if follower:
+        entry_p, entry_x = _follower(hass)
+    else:
+        entry_p, _ = _create_mock_gateway(hass, PRI)
+        entry_x, _ = _create_mock_gateway(hass, NEW)
+    _actuator(hass, entry_p, PRI, "21")
+    _, cover, orphans = _actuator(hass, entry_x, NEW, "21")
+    registry.async_remove(cover.entity_id)  # what restore() does to the follower's duplicate
+    _actuator(hass, entry_x, NEW, "85", buttons=False)  # the primary lacks it
+    entry_x.runtime_data.platforms["button"] = {
+        "dup": {"who": "2", "where": "21", "name": "Duplicate"},
+        "own": {"who": "2", "where": "85", "name": "Only here"},
+        "new": {"who": "1", "where": "33", "name": "Not in any registry yet"},
+    }
+
+    platform = EntityPlatform(
+        hass=hass, logger=logging.getLogger(__name__), domain="button", platform_name=DOMAIN,
+        platform=button, scan_interval=timedelta(seconds=30), entity_namespace=None,
+    )
+    assert await platform.async_setup_entry(entry_x)
+    await hass.async_block_till_done()
+    try:
+        lock_buttons = {
+            e.unique_id
+            for e in er.async_entries_for_config_entry(registry, entry_x.entry_id)
+            if e.domain == "button" and e.unique_id.endswith(("-disable", "-enable"))
+        }
+        kept = {f"{NEW}-{who}-{where}-{suffix}" for who, where in (("2", "85"), ("1", "33")) for suffix in ("disable", "enable")}
+        duplicate = {f"{NEW}-2-21-disable", f"{NEW}-2-21-enable"}
+        assert lock_buttons == (kept if follower else kept | duplicate)
+        shells = [
+            d for d in dr.async_entries_for_config_entry(devices, entry_x.entry_id)
+            if (DOMAIN, f"{NEW}-2-21") in d.identifiers
+        ]
+        assert bool(shells) is not follower  # no empty "Duplicate" device left on the follower
+        if follower:
+            assert all(registry.async_get(b) is None for b in orphans)
+    finally:
+        await platform.async_reset()
+
+
+def _contact(hass: HomeAssistant, entry, mac: str, where: str, *, sensor: bool = True):
+    """A dry contact device with its "Invert state" switch and (optionally) its binary sensor."""
+    registry = er.async_get(hass)
+    device = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{mac}-25-{where}")}, name=f"Contact {where}",
+    )
+    if sensor:
+        registry.async_get_or_create(
+            "binary_sensor", DOMAIN, f"{mac}-25-{where}-motion", config_entry=entry, device_id=device.id,
+            original_device_class="motion",
+        )
+    invert = registry.async_get_or_create(
+        "switch", DOMAIN, f"{mac}-25-{where}-invert", config_entry=entry, device_id=device.id
+    )
+    return device, invert
+
+
+@pytest.mark.parametrize("follower", [True, False])
+async def test_switch_setup_does_not_recreate_the_invert_switch_of_a_pruned_duplicate(
+    hass: HomeAssistant, follower: bool
+) -> None:
+    """A follower's myhome.yaml contact that lives on the primary gets no "Invert state" switch.
+
+    The binary sensor of such a contact is pruned and not created again (#453, #896), but the
+    switch platform still created its invert switch from the entry's YAML config, on a device
+    with nothing else (live F455 standby next to an F461 on 2.0.0b18, 2026-11-14: the WHO 25
+    contact 344 kept ``{mac}-25-344-invert`` on the F455 while ``{mac}-25-344-motion`` lives
+    on the F461).
+    """
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    if follower:
+        entry_p, entry_x = _follower(hass)
+    else:
+        entry_p, _ = _create_mock_gateway(hass, PRI)
+        entry_x, _ = _create_mock_gateway(hass, NEW)
+    _contact(hass, entry_p, PRI, "344")
+    _contact(hass, entry_x, NEW, "344", sensor=False)  # what the pruned duplicate left behind
+    _contact(hass, entry_x, NEW, "77")  # the primary lacks it
+    entry_x.runtime_data.platforms["binary_sensor"] = {
+        # keys as validate.py re-keys them: "{who}-{where}"
+        "25-344": {"who": "25", "where": "344", "name": "Duplicate", "class": "motion", "inverted": False},
+        "25-77": {"who": "25", "where": "77", "name": "Only here", "class": "motion", "inverted": False},
+        "25-55": {"who": "25", "where": "55", "name": "Not in any registry yet", "class": "motion", "inverted": False},
+    }
+    entry_x.runtime_data.platforms["switch"] = {}
+
+    platforms = [
+        EntityPlatform(
+            hass=hass, logger=logging.getLogger(__name__), domain=domain, platform_name=DOMAIN,
+            platform=module, scan_interval=timedelta(seconds=30), entity_namespace=None,
+        )
+        for domain, module in (("binary_sensor", binary_sensor), ("switch", switch))
+    ]
+    try:
+        for platform in platforms:
+            assert await platform.async_setup_entry(entry_x)
+            await hass.async_block_till_done()
+        own = er.async_entries_for_config_entry(registry, entry_x.entry_id)
+        sensors = {e.unique_id for e in own if e.domain == "binary_sensor"}
+        inverts = {e.unique_id for e in own if e.domain == "switch" and e.unique_id.endswith("-invert")}
+        kept = {"77", "55"}
+        expected = kept if follower else kept | {"344"}
+        assert sensors == {f"{NEW}-25-{where}-motion" for where in expected}
+        assert inverts == {f"{NEW}-25-{where}-invert" for where in expected}
+        shells = [
+            d for d in dr.async_entries_for_config_entry(devices, entry_x.entry_id)
+            if (DOMAIN, f"{NEW}-25-344") in d.identifiers
+        ]
+        assert bool(shells) is not follower  # no empty "Duplicate" device left on the follower
+        # the primary keeps its contact with its invert switch
+        assert registry.async_get_entity_id("binary_sensor", DOMAIN, f"{PRI}-25-344-motion")
+        assert registry.async_get_entity_id("switch", DOMAIN, f"{PRI}-25-344-invert")
+    finally:
+        for platform in platforms:
+            await platform.async_reset()
+
+
+async def test_binary_sensor_only_on_primary(hass: HomeAssistant) -> None:
+    registry = er.async_get(hass)
+    entry_p, entry_x = _follower(hass)
+    _contact(hass, entry_p, PRI, "344")
+    _contact(hass, entry_p, PRI, "77")
+    _contact(hass, entry_x, NEW, "344", sensor=False)
+    _contact(hass, entry_x, NEW, "77")
+    _contact(hass, entry_x, NEW, "55")
+
+    def only_on_primary(identifier: str) -> bool:
+        return binary_sensor_only_on_primary(hass, registry, identifier, NEW, PRI)
+
+    assert only_on_primary(f"{NEW}-25-344") is True
+    assert only_on_primary(f"{NEW}-25-77") is False  # both gateways have the sensor
+    assert only_on_primary(f"{NEW}-25-55") is False  # the primary lacks it
+    assert only_on_primary(f"{NEW}-25-99") is False  # nobody has it
+    assert only_on_primary("11:22:33:44:55:66-25-344") is False  # not this gateway's device
 
 
 async def test_calibrate_all_button_reactive_availability_and_no_covers(

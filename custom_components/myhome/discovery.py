@@ -227,6 +227,44 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
 
 
 @callback
+def actuator_only_on_primary(registry: er.EntityRegistry, actuator_unique_id: str, own_mac: str, primary_mac: str) -> bool:
+    """Whether a follower no longer has this actuator while its primary gateway does.
+
+    That is the state ``PlatformDiscovery`` leaves behind when it prunes a follower's
+    duplicate (#453): the lock / unlock / calibrate buttons of such an actuator do not
+    belong on the follower either.
+    """
+    peer = peer_unique_id(actuator_unique_id, own_mac, primary_mac)
+    if peer is None or any(registry.async_get_entity_id(d, DOMAIN, actuator_unique_id) for d in ACTUATOR_DOMAINS):
+        return False
+    return any(registry.async_get_entity_id(d, DOMAIN, peer) for d in ACTUATOR_DOMAINS)
+
+
+@callback
+def binary_sensor_only_on_primary(
+    hass: HomeAssistant, registry: er.EntityRegistry, device_identifier: str, own_mac: str, primary_mac: str
+) -> bool:
+    """Whether a follower has no binary sensor on this device while its primary gateway does.
+
+    That is the state ``PlatformDiscovery`` leaves behind for a follower's dry contact or
+    auxiliary channel the primary already has (#453): its "Invert state" switch, which
+    shares the device, does not belong on the follower either.
+    """
+    peer = peer_unique_id(device_identifier, own_mac, primary_mac)
+    if peer is None:
+        return False
+    devices = dr.async_get(hass)
+    with_sensor: set[str] = set()
+    for entry in registry.entities.values():
+        if entry.domain != "binary_sensor" or entry.platform != DOMAIN or not entry.device_id:
+            continue
+        device = devices.async_get(entry.device_id)
+        if device is not None:
+            with_sensor.update(identifier for domain, identifier in device.identifiers if domain == DOMAIN)
+    return device_identifier not in with_sensor and peer in with_sensor
+
+
+@callback
 def prune_orphaned_companions(hass: HomeAssistant, config_entry_id: str, own_mac: str, primary_mac: str) -> None:
     """Remove a follower's buttons whose actuator was pruned in favour of the primary (#524).
 
@@ -240,10 +278,7 @@ def prune_orphaned_companions(hass: HomeAssistant, config_entry_id: str, own_mac
         if entry.domain != "button" or not entry.unique_id.endswith(COMPANION_SUFFIXES):
             continue
         actuator = entry.unique_id.rsplit("-", 1)[0]
-        peer = peer_unique_id(actuator, own_mac, primary_mac)
-        if peer is None or any(registry.async_get_entity_id(d, DOMAIN, actuator) for d in ACTUATOR_DOMAINS):
-            continue
-        if any(registry.async_get_entity_id(d, DOMAIN, peer) for d in ACTUATOR_DOMAINS):
+        if actuator_only_on_primary(registry, actuator, own_mac, primary_mac):
             LOGGER.info("Pruned orphaned button %s: its actuator lives on primary gateway %s", entry.entity_id, primary_mac)
             prune_entity(hass, registry, entry, config_entry_id)
 
