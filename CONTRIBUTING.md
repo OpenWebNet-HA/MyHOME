@@ -115,7 +115,7 @@ To maintain production stability and protect our release pipelines, this reposit
 - **No Direct Commits to Main/Master:** Direct pushes to `master`, `main`, or active release branches are blocked by branch protection rules for all contributors and maintainers.
 - **Pull Request Required:** All changes—no matter how small—must arrive via a Pull Request opened against `master` (or the targeted milestone branch).
 - **Mandatory Passing CI:** A PR cannot be merged unless all required GitHub Actions checks pass:
-    - `validate` (HACS schema and Home Assistant validation)
+    - `validate` (Home Assistant Marketplace / HACS schema and repository validation)
     - `Validate PyPI Packaging Standards` (`build`, `twine check --strict`, `check-wheel-contents`)
     - `test-coverage` (Pytest suite execution and 100% coverage enforcement)
 - **Review Approvals:** At least one maintainer review approval is required prior to merge.
@@ -212,7 +212,7 @@ stateDiagram-v2
 ### 1. Alpha & Beta Releases (`vX.Y.ZbN`)
 
 - Active development phase where new platforms, subsystems, and features are introduced.
-- Public beta releases are published via HACS to gather real-world bus trace feedback across diverse gateway models.
+- Public beta releases are published on GitHub Releases (and tracked via custom repositories in Home Assistant Marketplace / HACS) to gather real-world bus trace feedback across diverse gateway models.
 
 ### 2. Code Freeze & Release Candidates (`vX.Y.ZrcN`)
 

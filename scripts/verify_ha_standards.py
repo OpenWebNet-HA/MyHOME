@@ -452,6 +452,129 @@ def check_manifest_requirements_rule(checker: StandardsChecker):
         checker.log_ok(f"manifest.json requirements pin verified ({ownd_pins[0]}).")
 
 
+MARKETPLACE_MANIFEST_ALLOWED_KEYS = frozenset(
+    {
+        "content_in_root",
+        "filename",
+        "hacs",
+        "hide_default_branch",
+        "homeassistant",
+        "name",
+        "persistent_directory",
+        "zip_release",
+    }
+)
+
+
+def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | None = None):
+    """Enforce Home Assistant 2026.11 Marketplace & HACS hacs.json and validate.yml compliance."""
+    base_root = root_dir or ROOT_DIR
+    hacs_file = base_root / "hacs.json"
+    manifest_file = base_root / "custom_components" / "myhome" / "manifest.json"
+    validate_workflow = base_root / ".github" / "workflows" / "validate.yml"
+    errors_before = len(checker.errors)
+
+    if not hacs_file.exists():
+        checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, "hacs.json not found at repository root")
+        return
+
+    try:
+        hacs_data = json.loads(hacs_file.read_text(encoding="utf-8"))
+    except Exception as err:
+        checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, f"Failed to parse hacs.json: {err}")
+        return
+
+    if not isinstance(hacs_data, dict):
+        checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, "hacs.json root must be a JSON object")
+        return
+
+    unknown_keys = sorted(set(hacs_data.keys()) - MARKETPLACE_MANIFEST_ALLOWED_KEYS)
+    if unknown_keys:
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            hacs_file,
+            1,
+            f"hacs.json contains keys unsupported by Home Assistant 2026.11 Marketplace: {unknown_keys}. "
+            f"Allowed keys: {sorted(MARKETPLACE_MANIFEST_ALLOWED_KEYS)}",
+        )
+
+    hacs_name = hacs_data.get("name")
+    if not isinstance(hacs_name, str) or not hacs_name.strip():
+        checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, "hacs.json must define a non-empty string 'name'")
+    elif manifest_file.exists():
+        try:
+            manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+            manifest_name = manifest_data.get("name")
+            if isinstance(manifest_name, str) and manifest_name and hacs_name != manifest_name:
+                checker.log_error(
+                    "RULE_MARKETPLACE_MANIFEST",
+                    hacs_file,
+                    1,
+                    f"hacs.json name ({hacs_name!r}) must match manifest.json name ({manifest_name!r})",
+                )
+        except Exception as err:
+            checker.log_error("RULE_MARKETPLACE_MANIFEST", manifest_file, 1, f"Failed to parse manifest.json: {err}")
+
+    if "zip_release" in hacs_data and not isinstance(hacs_data["zip_release"], bool):
+        checker.log_error("RULE_MARKETPLACE_MANIFEST", hacs_file, 1, "hacs.json 'zip_release' must be a boolean")
+    elif hacs_data.get("zip_release") is True:
+        filename = hacs_data.get("filename")
+        if (
+            not isinstance(filename, str)
+            or not filename.endswith(".zip")
+            or "/" in filename
+            or "\\" in filename
+        ):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                hacs_file,
+                1,
+                f"hacs.json with zip_release=true must specify a valid .zip filename (got {filename!r})",
+            )
+
+    ha_min = hacs_data.get("homeassistant")
+    if not isinstance(ha_min, str) or not re.fullmatch(r"\d{4}\.\d+\.\d+(?:(?:a|b|rc)\d+)?", ha_min):
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            hacs_file,
+            1,
+            f"hacs.json 'homeassistant' must be a valid Home Assistant version string (got {ha_min!r})",
+        )
+
+    if validate_workflow.exists():
+        try:
+            import yaml
+
+            wf_data = yaml.safe_load(validate_workflow.read_text(encoding="utf-8")) or {}
+            jobs = wf_data.get("jobs", {}) if isinstance(wf_data, dict) else {}
+            for job_data in jobs.values():
+                if not isinstance(job_data, dict):
+                    continue
+                for step in job_data.get("steps", []):
+                    if not isinstance(step, dict):
+                        continue
+                    uses = str(step.get("uses", ""))
+                    if uses.startswith("hacs/action"):
+                        with_args = step.get("with", {})
+                        if isinstance(with_args, dict) and with_args.get("ignore"):
+                            checker.log_error(
+                                "RULE_MARKETPLACE_VALIDATE",
+                                validate_workflow,
+                                1,
+                                f"validate.yml must not bypass default-catalog checks via ignore: {with_args.get('ignore')!r}",
+                            )
+        except Exception as err:
+            checker.log_error(
+                "RULE_MARKETPLACE_VALIDATE",
+                validate_workflow,
+                1,
+                f"Failed to parse validate.yml: {err}",
+            )
+
+    if len(checker.errors) == errors_before:
+        checker.log_ok("Home Assistant Marketplace / HACS manifest (hacs.json) and validate.yml verified.")
+
+
 def check_quality_scale_rules(checker: StandardsChecker):
     """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum)."""
     # 1. [BRONZE] Runtime Data
@@ -807,6 +930,7 @@ def main():
     check_no_update_listener_reload_conflict(checker)
     check_ruff_standards(checker)
     check_manifest_requirements_rule(checker)
+    check_marketplace_manifest_rule(checker)
     check_future_annotations_and_syntax(checker)
     check_quality_scale_rules(checker)
     check_ownd_library_standards(checker)

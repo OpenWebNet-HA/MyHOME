@@ -102,7 +102,7 @@ MyHOME is engineered to achieve the **official Home Assistant 🥇 Platinum Qual
 > **Community Consultation on Upstream Core Inclusion vs. Independent Distribution**:  
 > While the integration strictly adheres to 100% of Home Assistant Core Platinum standards, the maintainers and community have **not decided** on upstream Core inclusion. As discussed in community channels (see [RFC Discussion #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)), there are important trade-offs:
 >
-> - **Benefits of Core inclusion**: Automatic out-of-the-box discovery for new Home Assistant users without requiring HACS; official documentation on `home-assistant.io`.
+> - **Benefits of Core inclusion**: Automatic out-of-the-box discovery for new Home Assistant users without requiring Marketplace / HACS installation; official documentation on `home-assistant.io`.
 > - **Drawbacks & Advantages of remaining an independent custom component**:
 >     - **Release Agility**: Rapid deployment of bugfixes, firmware quirk workarounds, and new WHO dimension features without waiting for monthly Home Assistant Core release windows.
 >     - **Dedicated Diagnostic Frontend**: Continued bundling and rapid iteration of the in-band `<myhome-bus-card>` Lovelace tool and live bus monitors, which are constrained within Core repository guidelines.

@@ -1,11 +1,14 @@
 """Automated test suite enforcing Home Assistant architectural standards."""
 
+import json
+
 from scripts.verify_ha_standards import (
     StandardsChecker,
     check_deprecated_constants,
     check_discovery_flows,
     check_future_annotations_and_syntax,
     check_manifest_requirements_rule,
+    check_marketplace_manifest_rule,
     check_no_blocking_calls,
     check_no_update_listener_reload_conflict,
     check_ruff_standards,
@@ -108,3 +111,71 @@ def test_update_listener_rule_catches_violations(tmp_path):
     checker = StandardsChecker()
     check_no_update_listener_reload_conflict(checker, target_dir=tmp_path)
     assert len(checker.errors) == 2
+
+
+def test_marketplace_manifest_and_workflow_standards():
+    """Verify hacs.json and validate.yml satisfy Home Assistant 2026.11 Marketplace standards."""
+    checker = StandardsChecker()
+    check_marketplace_manifest_rule(checker)
+    assert not checker.errors, f"Marketplace manifest/workflow violations found: {checker.errors}"
+
+
+def test_marketplace_manifest_rule_catches_violations(tmp_path):
+    """Verify check_marketplace_manifest_rule flags missing, invalid, and legacy hacs.json / validate.yml configs."""
+    # 1. Missing hacs.json
+    checker_missing = StandardsChecker()
+    check_marketplace_manifest_rule(checker_missing, root_dir=tmp_path)
+    assert any("hacs.json not found" in err for err in checker_missing.errors)
+
+    # 2. Invalid JSON in hacs.json
+    hacs_path = tmp_path / "hacs.json"
+    hacs_path.write_text("{not-json", encoding="utf-8")
+    checker_invalid = StandardsChecker()
+    check_marketplace_manifest_rule(checker_invalid, root_dir=tmp_path)
+    assert any("Failed to parse hacs.json" in err for err in checker_invalid.errors)
+
+    # 3. Non-object JSON in hacs.json
+    hacs_path.write_text("[]", encoding="utf-8")
+    checker_non_dict = StandardsChecker()
+    check_marketplace_manifest_rule(checker_non_dict, root_dir=tmp_path)
+    assert any("hacs.json root must be a JSON object" in err for err in checker_non_dict.errors)
+
+    # 4. Unsupported keys, name mismatch, missing .zip filename, invalid HA version, and validate.yml ignore
+    manifest_dir = tmp_path / "custom_components" / "myhome"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps({"domain": "myhome", "name": "MyHOME"}),
+        encoding="utf-8",
+    )
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "validate.yml").write_text(
+        "jobs:\n"
+        "  validate:\n"
+        "    steps:\n"
+        "      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a\n"
+        "        with:\n"
+        "          category: integration\n"
+        "          ignore: topics issues\n",
+        encoding="utf-8",
+    )
+    hacs_path.write_text(
+        json.dumps(
+            {
+                "name": "MyHome",
+                "render_readme": True,
+                "country": ["GB", "FR"],
+                "zip_release": True,
+                "filename": "sub/myhome.tar.gz",
+                "homeassistant": "latest",
+            }
+        ),
+        encoding="utf-8",
+    )
+    checker_bad = StandardsChecker()
+    check_marketplace_manifest_rule(checker_bad, root_dir=tmp_path)
+    assert any("unsupported by Home Assistant 2026.11 Marketplace" in err for err in checker_bad.errors)
+    assert any("must match manifest.json name" in err for err in checker_bad.errors)
+    assert any("zip_release=true must specify a valid .zip filename" in err for err in checker_bad.errors)
+    assert any("must be a valid Home Assistant version string" in err for err in checker_bad.errors)
+    assert any("validate.yml must not bypass default-catalog checks" in err for err in checker_bad.errors)
