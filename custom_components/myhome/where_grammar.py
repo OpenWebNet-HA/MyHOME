@@ -428,7 +428,47 @@ def thermo_event_interface(message: Any) -> str | None:
 
 
 _DIM20_ACTIVE_CODES = frozenset({1, 2, 6, 7, 8, 9})
-_DIM20_INACTIVE_CODES = frozenset({0, 3, 4, 5, 100})
+_DIM20_INACTIVE_CODES = frozenset({0, 3, 4, 5, 14, 15, 16, 100})
+_FAN_ACTIVE_CODES = frozenset({6, 7, 8, 9})
+_FAN_INACTIVE_CODES = frozenset({5, 14, 15, 16})
+_FAN_SPEED_BY_CODE: dict[int, int] = {6: 1, 7: 2, 8: 3}
+
+
+def _decode_thermo_output_code(
+    code: int,
+) -> tuple[bool, bool | None, int | None] | None:
+    """Decode a WHO=4 Dimension 19/20 output code into ``(is_active, fan_on, fan_speed)``.
+
+    Per ``bt_termo`` firmware disassembly across ``F454`` / ``F459`` / ``MH200N``
+    (``0x100d8..0x1013c``, table ``0x142ec``) and ``MyHomeServer1`` (table ``0x11e34``)
+    and the OpenWebNet WHO=4 specification:
+    - ``0, 3, 4``: valve/actuator OFF, Closed, Stop -> ``(False, None, None)``
+    - ``1, 2``: valve/actuator ON, Opened -> ``(True, None, None)``
+    - ``5``: fan-coil OFF -> ``(False, False, None)``
+    - ``6, 7, 8``: fan-coil ON at speed 1..3 -> ``(True, True, 1..3)``
+    - ``9``: fan-coil ON in Auto speed -> ``(True, True, None)``
+    - ``14, 15, 16``: extended fan-coil OFF-speed states 1..3 (``MyHomeServer1``)
+      -> ``(False, False, None)``
+    - ``100``: proportional 0-10 V output at 0% (OFF / stopped, SCS ``0x80``)
+      -> ``(False, None, None)``
+    - ``101..200``: proportional 0-10 V output at 1%..100% (active, SCS ``0x81..0xE4``)
+      -> ``(True, None, None)``
+    """
+    if code in _DIM20_ACTIVE_CODES:
+        return (
+            True,
+            True if code in _FAN_ACTIVE_CODES else None,
+            _FAN_SPEED_BY_CODE.get(code),
+        )
+    if 101 <= code <= 200:
+        return (True, None, None)
+    if code in _DIM20_INACTIVE_CODES:
+        return (
+            False,
+            False if code in _FAN_INACTIVE_CODES else None,
+            None,
+        )
+    return None
 
 
 def thermo_event_zone(message: Any) -> str | None:
@@ -453,6 +493,49 @@ def thermo_event_actuator(message: Any) -> str:
     return "1"
 
 
+def _is_ascii_uint(value: str) -> bool:
+    """Return True when ``value`` consists solely of ASCII decimal digits."""
+    return bool(value) and value.isascii() and value.isdigit()
+
+
+def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:
+    """Return ``(is_active, fan_on, fan_speed)`` for a WHO=4 Dimension 20 event or ``#20`` write.
+
+    Decodes ``dimension_value[0]`` directly before delegating to ``OWNd``, because
+    ``OWNd <= 2.0.0b14`` treats every Dimension 20 value ``>= 6`` (including ``100`` =
+    0% proportional 0-10 V OFF and ``14..16`` = extended fan-coil OFF speeds) as
+    ``is_active = True, fan_on = True`` (#908). Falls back to ``message.is_active()``
+    only for unit-test mocks without a ``dimension_value`` sequence.
+    """
+    who = getattr(message, "who", None)
+    if isinstance(who, (int, str)) and str(who) != "4":
+        return None
+    if getattr(message, "dimension", None) != 20:
+        return None
+    is_action = getattr(message, "message_type", None) == "hvac_action"
+    if not is_action and not isinstance(message, OWNCommand):
+        return None
+    vals = getattr(message, "dimension_value", None)
+    if isinstance(vals, (list, tuple)):
+        if not vals:
+            return None
+        first = str(vals[0])
+        if not _is_ascii_uint(first):
+            return None
+        return _decode_thermo_output_code(int(first))
+    if is_action and callable(getattr(message, "is_active", None)):
+        raw_fan_on = getattr(message, "fan_on", None)
+        raw_speed = getattr(message, "fan_speed", None)
+        fan_on = raw_fan_on if isinstance(raw_fan_on, bool) else None
+        speed = (
+            raw_speed
+            if isinstance(raw_speed, int) and not isinstance(raw_speed, bool)
+            else None
+        )
+        return (bool(message.is_active()), fan_on, speed)
+    return None
+
+
 def thermo_dim20_is_active(message: Any) -> bool | None:
     """Return actuator active state for a WHO=4 Dimension 20 event or ``#20`` write, or ``None``.
 
@@ -464,24 +547,77 @@ def thermo_dim20_is_active(message: Any) -> bool | None:
     Dimension 20 status *requests* (``*#4*Z#N*20##``) have an empty ``dimension_value``
     and return ``None``.
     """
-    if getattr(message, "dimension", None) != 20:
+    status = thermo_dim20_status(message)
+    return status[0] if status is not None else None
+
+
+def thermo_dim19_status(
+    message: Any,
+) -> tuple[bool, bool, bool, bool | None, bool | None, int | None] | None:
+    """Return ``(cooling_active, heating_active, zone_active, cooling_fan_on, heating_fan_on, fan_speed)``.
+
+    Decodes WHO=4 Dimension 19 (``*#4*WHERE*19*CV*HV##``) directly so proportional
+    0-10 V 0% OFF (``100``) and ``MyHomeServer1`` extended fan-coil OFF states
+    (``14..16``) are not misclassified as active heating/cooling fans by
+    ``OWNd <= 2.0.0b14`` (#908), and preserves active fan speed across both the
+    heating (``HV``) and cooling (``CV``) sides.
+    """
+    who = getattr(message, "who", None)
+    if isinstance(who, (int, str)) and str(who) != "4":
         return None
-    if getattr(message, "message_type", None) == "hvac_action" and callable(
-        getattr(message, "is_active", None)
+    if (
+        getattr(message, "dimension", None) != 19
+        or getattr(message, "message_type", None) != "hvac_action"
     ):
-        return bool(message.is_active())
-    if isinstance(message, OWNCommand):
-        vals = getattr(message, "dimension_value", None)
-        if not isinstance(vals, (list, tuple)) or not vals:
+        return None
+    vals = getattr(message, "dimension_value", None)
+    if (
+        isinstance(vals, (list, tuple))
+        and len(vals) >= 2
+        and _is_ascii_uint(str(vals[0]))
+        and _is_ascii_uint(str(vals[1]))
+    ):
+        c_dec = _decode_thermo_output_code(int(str(vals[0])))
+        h_dec = _decode_thermo_output_code(int(str(vals[1])))
+        if c_dec is None or h_dec is None:
             return None
-        first = str(vals[0])
-        if not first.isdigit():
-            return None
-        code = int(first)
-        if code in _DIM20_ACTIVE_CODES or 101 <= code <= 200:
-            return True
-        if code in _DIM20_INACTIVE_CODES:
-            return False
+        fan_speed = (
+            h_dec[2]
+            if h_dec[1] is True
+            else c_dec[2]
+            if c_dec[1] is True
+            else None
+        )
+        return (
+            c_dec[0],
+            h_dec[0],
+            bool(c_dec[0] or h_dec[0]),
+            c_dec[1],
+            h_dec[1],
+            fan_speed,
+        )
+    if callable(getattr(message, "is_active", None)):
+        raw_cfan = getattr(message, "cooling_fan_on", None)
+        raw_hfan = getattr(message, "fan_on", None)
+        raw_cspeed = getattr(message, "cooling_fan_speed", None)
+        raw_hspeed = getattr(message, "fan_speed", None)
+        c_fan = raw_cfan if isinstance(raw_cfan, bool) else None
+        h_fan = raw_hfan if isinstance(raw_hfan, bool) else None
+        c_speed = (
+            raw_cspeed
+            if isinstance(raw_cspeed, int) and not isinstance(raw_cspeed, bool)
+            else None
+        )
+        h_speed = (
+            raw_hspeed
+            if isinstance(raw_hspeed, int) and not isinstance(raw_hspeed, bool)
+            else None
+        )
+        speed = h_speed if h_fan is True else c_speed if c_fan is True else h_speed
+        c_act = bool(message.is_cooling())
+        h_act = bool(message.is_heating())
+        z_act = bool(message.is_active() or c_act or h_act or c_fan or h_fan)
+        return (c_act, h_act, z_act, c_fan, h_fan, speed)
     return None
 
 _TRIGGER_COMMAND_RE = re.compile(

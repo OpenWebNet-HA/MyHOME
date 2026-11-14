@@ -1,0 +1,171 @@
+{
+  "capture": {
+    "kind": "synthetic-firmware-oracle-trace",
+    "synthetic": true,
+    "source": "firmware-oracle-contract",
+    "provenance": "SYNTHETIC TRACE — NOT A LIVE PLANT CAPTURE. Deterministically constructed from own-firmware-oracle suites thermo-actuator (*#4*1*20##) and thermo-valve (*#4*1*19##) on emulated MH200N firmware 1.1.8 (010108, where *#4*1*20## is NACKed/SILENT while *#4*1*19## is OUT on SCS as $0499013013) plus bt_termo inbound SCS $04B7813380 -> *#4*1#3*20*100## periodic actuator broadcast.",
+    "started_at": "2026-11-14T09:00:00.000Z",
+    "filters": {
+      "who": "4,13",
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-11-14T09:00:00.000Z",
+      "last": "2026-11-14T09:08:05.000Z",
+      "frames": 9,
+      "buffer_frames": 9,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.11.1",
+    "integration_version": "2.0.0b18",
+    "ownd_version": "2.0.0b14",
+    "exported_at": "2026-11-14T09:08:06.000Z"
+  },
+  "gateway": {
+    "model": "MH200N",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "1.1.8",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true
+  },
+  "telemetry": {
+    "total_rx": 6,
+    "total_tx": 3,
+    "captured_in_buffer": 9,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1794646800.05,
+      "iso_time": "2026-11-14T09:00:00.050000+00:00",
+      "direction": "tx",
+      "raw": "*#13**16##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "16",
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (MH200N 010108 startup): firmware version query."
+    },
+    {
+      "timestamp": 1794646800.09,
+      "iso_time": "2026-11-14T09:00:00.090000+00:00",
+      "direction": "rx",
+      "raw": "*#13**16*1*1*8##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "16",
+      "dimension_values": ["1", "1", "8"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (MH200N 010108 oracle): firmware 1.1.8."
+    },
+    {
+      "timestamp": 1794646801.0,
+      "iso_time": "2026-11-14T09:00:01.000000+00:00",
+      "direction": "tx",
+      "raw": "*#4*1*20##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "20",
+      "is_ack": false,
+      "is_nack": false,
+      "scs_emitted": null,
+      "note": "SYNTHETIC (MH200N 010108 oracle thermo-actuator): NACK + SILENT (per-zone Dimension 20 poll refused)."
+    },
+    {
+      "timestamp": 1794646801.2,
+      "iso_time": "2026-11-14T09:00:01.200000+00:00",
+      "direction": "tx",
+      "raw": "*#4*1*19##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "19",
+      "is_ack": false,
+      "is_nack": false,
+      "scs_emitted": "$0499013013",
+      "note": "SYNTHETIC (MH200N 010108 oracle thermo-valve): OUT on SCS ($0499013013; oracle reply=nack without slave)."
+    },
+    {
+      "timestamp": 1794646801.35,
+      "iso_time": "2026-11-14T09:00:01.350000+00:00",
+      "direction": "rx",
+      "raw": "*4*1*1##",
+      "who": "4",
+      "what": "1",
+      "where": "1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): heating mode."
+    },
+    {
+      "timestamp": 1794646801.45,
+      "iso_time": "2026-11-14T09:00:01.450000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1*0*0205##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "0",
+      "dimension_values": ["0205"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): 20.5 C."
+    },
+    {
+      "timestamp": 1794646801.55,
+      "iso_time": "2026-11-14T09:00:01.550000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1*14*0190*1##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "14",
+      "dimension_values": ["0190", "1"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): setpoint 19.0 C."
+    },
+    {
+      "timestamp": 1794646801.65,
+      "iso_time": "2026-11-14T09:00:01.650000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1*19*0*0##",
+      "who": "4",
+      "what": null,
+      "where": "1",
+      "dimension": "19",
+      "dimension_values": ["0", "0"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (Zone 1): Dimension 19 establishes initial _active_source='zone' as idle."
+    },
+    {
+      "timestamp": 1794647285.0,
+      "iso_time": "2026-11-14T09:08:05.000000+00:00",
+      "direction": "rx",
+      "raw": "*#4*1#3*20*100##",
+      "who": "4",
+      "what": null,
+      "where": "1#3",
+      "dimension": "20",
+      "dimension_values": ["100"],
+      "is_ack": false,
+      "is_nack": false,
+      "scs_source": "$04B7813380",
+      "note": "SYNTHETIC (MH200N 010108 bt_termo): unsolicited 8-min 0-10 V 0% frame switches _active_source to 'actuators' while keeping hvac_action='idle'."
+    }
+  ]
+}
