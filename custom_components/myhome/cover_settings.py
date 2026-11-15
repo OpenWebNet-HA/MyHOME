@@ -87,8 +87,27 @@ MEASURED_SOURCES = ("guided", "automatic")
 ROLL_SOURCES = ("guided", "manual")
 
 
-def precision_class(settings: dict[str, Any] | None, record: dict[str, Any] | None) -> str:
-    """`none`, `basic`, `refined` or `verified`, from resolved settings (stored or public) and the cover's record."""
+ROLL_KEYS = ("opening_roll", "closing_roll")
+
+
+def roll_settings(settings: dict[str, Any] | None, profile: dict[str, Any] | None) -> dict[str, Any]:
+    """The rolls a cover uses, with their evidence: as resolved, or, for a profile whose geometry is the linear model
+    (resolved without geometry: no slats, rolls 1), the profile's own rolls and evidence. What was measured or entered
+    stays known even when it moves the edge exactly as the linear model."""
+    if settings and all(key in settings for key in ROLL_KEYS):
+        return {key: settings[key] for key in ROLL_KEYS}
+    geometry = (profile or {}).get("geometry")
+    if not geometry:
+        return {}
+    evidence_ = (profile or {}).get("geometry_provenance", {})
+    return {key: {"value": float(geometry[key]), "provenance": copy.deepcopy(evidence_.get(key, UNKNOWN))}
+            for key in ROLL_KEYS}
+
+
+def precision_class(settings: dict[str, Any] | None, record: dict[str, Any] | None,
+                    profile: dict[str, Any] | None = None) -> str:
+    """`none`, `basic`, `refined` or `verified`, from resolved settings (stored or public), the cover's record and the
+    profile it follows (its rolls' evidence, see `roll_settings`)."""
     def source(key: str) -> Any:
         return ((settings or {}).get(key) or {}).get("provenance", {}).get("source")
     if not any(source(direction) in MEASURED_SOURCES for direction in KEYS):
@@ -96,7 +115,8 @@ def precision_class(settings: dict[str, Any] | None, record: dict[str, Any] | No
     check = (record or {}).get("check_cm")
     if isinstance(check, (int, float)) and not isinstance(check, bool):
         return "verified"
-    if all(source(key) in ROLL_SOURCES for key in ("opening_roll", "closing_roll")):
+    rolls = roll_settings(settings, profile)
+    if all((rolls.get(key) or {}).get("provenance", {}).get("source") in ROLL_SOURCES for key in ROLL_KEYS):
         return "refined"
     return "basic"
 

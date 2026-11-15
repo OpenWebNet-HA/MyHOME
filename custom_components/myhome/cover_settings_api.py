@@ -15,7 +15,14 @@ from .const import DOMAIN
 from .cover_geometry import NONLINEAR_MODEL, model_name, public_geometry
 from .cover_profile_assignment import assignment_reason
 from .cover_profiles import WS_OVERVIEW, ProfileError, get_store, public_settings, respond
-from .cover_settings import CHECK_FIELDS, MODEL, precision_class, slats_state, travel_edit
+from .cover_settings import (
+    CHECK_FIELDS,
+    MODEL,
+    linear_geometry,
+    precision_class,
+    slats_state,
+    travel_edit,
+)
 from .typing_compat import as_any
 
 
@@ -53,7 +60,8 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                                          if item["origin"] == "override"},
                            "effective": effective,
                            # What the calibration is (none, basic, refined, verified), so the panel need not infer it.
-                           "precision": precision_class(effective, store.data["covers"].get(unique)),
+                           "precision": precision_class(effective, store.data["covers"].get(unique),
+                                                        store.data["profiles"].get(store.data["assignments"].get(unique))),
                            # What a travel entered on the card does for this cover (`manual_travel`).
                            "travel_edit": travel_edit(store.data, unique),
                            # What is known of its slats (cover_settings.SLATS_STATES).
@@ -70,7 +78,7 @@ async def overview(hass: Any, entry_id: str) -> dict[str, Any]:
                              "slats": profile["geometry"]["slat_time_s"] > 0 if profile.get("geometry") else None,
                              "provenance": public_provenance(profile, records, None),
                              **public_geometry(profile, records),
-                             "model": NONLINEAR_MODEL if "geometry" in profile else MODEL, "scaling": "height" if profile.get("reference_travel_cm") else "unscaled",
+                             "model": MODEL if linear_geometry(profile) else NONLINEAR_MODEL, "scaling": "height" if profile.get("reference_travel_cm") else "unscaled",
                              "assigned_to": [records[unique].entity_id if unique in records else None for unique in followers]})
         return {"entry_id": entry_id, "revision": store.data["revision"], "schema_version": 1,
                 "storage_version": 8, "model": "per_cover", "models": [MODEL, NONLINEAR_MODEL], "scaling": "optional_height",

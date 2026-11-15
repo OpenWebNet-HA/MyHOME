@@ -49,6 +49,7 @@ from .cover_settings import (
     NATIVE,
     centimetres,
     clear_check,
+    linear_geometry,
     migrate,
     native_provenance,
     precision_class,
@@ -258,7 +259,7 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | No
         "nonlinear": True, "position_known": cover.current_cover_position is not None if cover else False,
         "scaling": "height" if travel is not None and assigned and assigned.get("reference_travel_cm") else "unscaled",
         "travel_cm": travel, "height_scaling": True, "accuracy": {"kind": "not_measured"},
-        "profiles": [{"id": key, **value, **public_geometry(value, records, entity.unique_id), "model": NONLINEAR_MODEL if "geometry" in value else MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
+        "profiles": [{"id": key, **value, **public_geometry(value, records, entity.unique_id), "model": MODEL if linear_geometry(value) else NONLINEAR_MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
                       "provenance": public_provenance(value, records, entity.unique_id),
                       "uses": list(store.data["assignments"].values()).count(key),
                       "assigned_to": assignments(key)}
@@ -272,7 +273,7 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | No
         "configured": public_settings(store, entity, records, active=False),
         "effective": effective,
         # What the calibration is (none, basic, refined, verified), derived: see `precision_class`.
-        "precision": precision_class(effective, store.data["covers"].get(entity.unique_id)),
+        "precision": precision_class(effective, store.data["covers"].get(entity.unique_id), store.profile(entity.unique_id)),
         # What a travel entered on the card does here (`manual_travel`): see `travel_edit`.
         "travel_edit": travel_edit(store.data, entity.unique_id),
         # What is known of the cover's slats (`slats_state`); a profile's own is its slat time.

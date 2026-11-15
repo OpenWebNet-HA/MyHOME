@@ -47,7 +47,7 @@ from .cover_profiles import (
     travel_time,
     write_profile,
 )
-from .cover_settings import ROLL_SOURCES, precision_class, profile_source
+from .cover_settings import ROLL_SOURCES, precision_class, profile_source, roll_settings
 from .cover_translation import event_age
 from .data import MyHOMERuntimeData
 from .typing_compat import as_any
@@ -1268,9 +1268,9 @@ class CalibrationSession:
         cover moves exactly as the linear model); only a session never asked about slats (None)
         without such a roll saves a times-only profile.
         """
-        settings = self.cover.resolve_cover_settings(self.store.profile(self.cover.unique_id))
-        kept = {key: settings[key] for key in ROLLS
-                if key in settings and settings[key]["provenance"]["source"] in ROLL_SOURCES}
+        profile = self.store.profile(self.cover.unique_id)
+        rolls = roll_settings(self.cover.resolve_cover_settings(profile), profile)
+        kept = {key: rolls[key] for key in ROLLS if key in rolls and rolls[key]["provenance"]["source"] in ROLL_SOURCES}
         if self.slats:
             lift = self.samples.get("lift")
             if lift is None:
@@ -1375,7 +1375,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
             session_type = AutomaticCalibrationSession
         if msg.get("keep_times") and (msg.get("mode") != "geometry" or precision_class(
                 cover.resolve_cover_settings(store.profile(cover.unique_id)),
-                store.data["covers"].get(cover.unique_id)) == "none"):
+                store.data["covers"].get(cover.unique_id), store.profile(cover.unique_id)) == "none"):
             # The fine-tuning on the times already saved needs times measured (or inherited) to keep.
             raise ProfileError("invalid_profile")
         if msg.get("mode") == "geometry":

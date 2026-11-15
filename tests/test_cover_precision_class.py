@@ -80,3 +80,40 @@ async def test_typed_times_are_not_a_calibration(hass, plant):
     assert view["precision"] == "none"
     view = await write_profile(hass, message(plant))
     assert view["precision"] == "none"
+
+
+# A refinement whose rolls came out exactly 1 without slats: the linear model, yet refined.
+LINEAR = {"slat_time_s": 0.0, "opening_roll": 1.0, "closing_roll": 1.0}
+TAPE = {"source": "guided", "recorded_at": "2026-11-02T09:00:00+00:00", "origin_unique_id": None}
+
+
+def linear_profile(rolls_source):
+    rolls = {**TAPE, "source": rolls_source}
+    return {"geometry": dict(LINEAR), "geometry_provenance": {"slat_time_s": dict(TAPE), "opening_roll": dict(rolls),
+                                                              "closing_roll": dict(rolls)}}
+
+
+@pytest.mark.parametrize(("rolls_source", "expected"), [("guided", "refined"), ("manual", "refined"), ("unknown", "basic")])
+def test_rolls_of_1_without_slats_keep_what_measured_them(rolls_source, expected):
+    """Resolved as linear (no roll in the settings), the profile's own evidence of its rolls still counts."""
+    assert precision_class(settings("guided"), None, linear_profile(rolls_source)) == expected
+    assert precision_class(settings("guided"), {"check_cm": 1.0}, linear_profile(rolls_source)) == "verified"
+
+
+async def test_a_cover_following_a_refined_linear_profile_is_refined_and_linear(hass, plant):
+    from custom_components.myhome.cover_profiles import get_store
+
+    store = get_store(hass, plant.entries[0].entry_id)
+    unique = plant.covers[0].unique_id
+    times = {**TAPE, "origin_unique_id": unique}
+    store.data["profiles"]["door"] = {"name": "Door", "opening_time": 20.0, "closing_time": 20.0,
+                                      "provenance": {"opening": dict(times), "closing": dict(times)},
+                                      **linear_profile("guided")}
+    store.data["assignments"][unique] = "door"
+    plant.covers[0].async_apply_cover_profile(store.profile(unique))
+    view = await read_profile(hass, plant.entries[0].entry_id, plant.records[0].entity_id)
+    assert (view["precision"], view["model"]) == ("refined", "linear_time")
+    assert next(item for item in view["profiles"] if item["id"] == "door")["model"] == "linear_time"
+    listed = await overview(hass, plant.entries[0].entry_id)
+    assert next(item for item in listed["covers"] if item["entity_id"] == plant.records[0].entity_id)["precision"] == "refined"
+    assert next(item for item in listed["profiles"] if item["id"] == "door")["model"] == "linear_time"

@@ -1662,3 +1662,19 @@ async def test_a_reply_before_the_close_to_the_rest_moves_leaves_the_actuators_s
     cal.clock[0] += .3
     bus(cal, STOP)  # Already at the rest: over at once, no wait for the closing time.
     assert cal.session.phase == "confirm_closed"
+
+
+@pytest.mark.parametrize("base", [{"slats": False}], indirect=True)
+async def test_recalibrating_a_cover_refined_to_rolls_of_1_keeps_their_evidence(hass, base):
+    """Rolls measured as exactly 1 without slats resolve as the linear model; a new basic profile still keeps them as
+    measured, so the cover stays refined."""
+    cal = base
+    refined(cal, rolls=(1.0, 1.0), reference=None)
+    cal.session.store.data["profiles"]["fine"]["geometry"]["slat_time_s"] = 0.0
+    await runs(cal)
+    await act(cal, "save", name="Door again")
+    profile = saved(cal)
+    assert profile["geometry"] == {"slat_time_s": 0.0, "opening_roll": 1.0, "closing_roll": 1.0}
+    assert profile["geometry_provenance"]["opening_roll"] == profile["geometry_provenance"]["closing_roll"] == GUIDED
+    view = await read_profile(hass, cal.session.entry_id, cal.cover.entity_id)
+    assert (view["precision"], view["model"]) == ("refined", "linear_time")
