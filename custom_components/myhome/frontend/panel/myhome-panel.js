@@ -5,13 +5,34 @@ const assetUrl = (name) => {
   url.search = new URL(import.meta.url).search;
   return url.href;
 };
-const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }, { ProfileCatalogueEditor }, { CalibrationTab }] = await Promise.all([
-  import(assetUrl("panel-translations.js")), import(assetUrl("panel-model.js")),
-  import(assetUrl("panel-dom.js")), import(assetUrl("panel-bus-monitor.js")),
-  import(assetUrl("panel-cover-profiles.js")),
-  import(assetUrl("panel-cover-profile-list.js")), import(assetUrl("panel-profile-catalogue-editor.js")),
-  import(assetUrl("panel-calibration-tab.js")),
-]);
+/**
+ * Safari 26 can hand a module that is still in its top-level `await` to a second module importing it at the same
+ * moment, and that one then reads its exports too early ("Cannot access 'CoverCalibration' before initialization": a
+ * blank panel). So the modules load layer by layer: each layer imports only modules of the layers before it, which have
+ * all finished by then, and the modules of one layer never import each other. The bus monitor's view and its texts are
+ * not here: `panel-bus-monitor.js` still loads them only when the Bus section opens. A test keeps the layers true to
+ * the imports and checks that every module of the panel is either in one layer or loaded on demand
+ * (`panel-module-layers.test.mjs`).
+ */
+export const MODULE_LAYERS = [
+  ["panel-dom.js", "panel-model.js", "panel-translations.js", "panel-calibration-visual.js",
+   "panel-calibration-layout.js", "panel-calibration-morph.js", "panel-calibration-illustrations-svg.js"],
+  ["panel-cover-calibration.js", "panel-calibration-text.js", "panel-cover-geometry.js", "panel-profile-presentation.js",
+   "panel-calibration-illustration.js"],
+  ["panel-calibration-gateway.js", "panel-calibration-screens.js", "panel-cover-profiles.js",
+   "panel-cover-profile-list.js", "panel-bus-monitor.js"],
+  ["panel-calibration-wizard.js", "panel-profile-catalogue-editor.js"],
+  ["panel-calibration-tab.js"],
+];
+const loaded = {};
+for (const layer of MODULE_LAYERS) {
+  const modules = await Promise.all(layer.map((name) => import(assetUrl(name))));
+  layer.forEach((name, index) => { loaded[name] = modules[index]; });
+}
+const [{ translations }, model, { escapeHtml, replacePreservingFocus }, { BusMonitorSection }, { CoverProfileEditor }, { CoverProfileList }, { ProfileCatalogueEditor }, { CalibrationTab }] = [
+  "panel-translations.js", "panel-model.js", "panel-dom.js", "panel-bus-monitor.js", "panel-cover-profiles.js",
+  "panel-cover-profile-list.js", "panel-profile-catalogue-editor.js", "panel-calibration-tab.js",
+].map((name) => loaded[name]);
 const SETTINGS_URL = "/config/integrations/integration/myhome";
 const CATEGORY_VIEW_STORAGE_KEY = "myhome-panel-category-view-v1";
 const deviceUrl = (id) => `/config/devices/device/${encodeURIComponent(id)}`;
