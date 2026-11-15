@@ -5,7 +5,6 @@ import inspect
 import time
 from typing import Any, cast
 
-import voluptuous as vol
 from homeassistant.components.light import (  # type: ignore[attr-defined, unused-ignore]
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
@@ -30,7 +29,6 @@ from homeassistant.const import (
     CONF_NAME,
 )
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.color import (
@@ -63,7 +61,6 @@ from .const import (
     CONF_WORKER_COUNT,
     DEFAULT_TRANSITION_MODE,
     LOGGER,
-    SERVICE_TURN_ON_TIMED,
     TRANSITION_MODE_AUTO,
     TRANSITION_MODE_NATIVE,
     TRANSITION_MODE_SOFTWARE,
@@ -87,7 +84,7 @@ from .light_dali import DaliFeatureLock
 from .light_fade import SoftwareFadeEngine
 from .light_group import MyHOMELightGroup, _color_modes_from_flags
 from .myhome_device import MyHOMEEntity
-from .typing_compat import as_any
+from .services import async_register_turn_on_timed_service
 from .where_grammar import is_valid_hs_tuple, is_valid_rgb_tuple
 
 PARALLEL_UPDATES = 0
@@ -267,24 +264,7 @@ async def async_setup_entry(
         pre_message=route_foreign,
     ).start()
 
-    platform = entity_platform.current_platform.get()
-    if platform is not None:
-        platform.async_register_entity_service(
-            SERVICE_TURN_ON_TIMED,
-            as_any({
-                vol.Optional("duration"): vol.Coerce(float),
-                vol.Optional("hours", default=0): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=255)
-                ),
-                vol.Optional("minutes", default=0): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=59)
-                ),
-                vol.Optional("seconds", default=0): vol.All(
-                    vol.Coerce(float), vol.Range(min=0, max=59)
-                ),
-            }),
-            "async_turn_on_timed",
-        )
+    async_register_turn_on_timed_service(hass)
 
 
 class _ForeignAddresses:
@@ -889,19 +869,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
-
-        if "timer" in kwargs or "duration" in kwargs:
-            dur = kwargs.get("timer", kwargs.get("duration"))
-            await self.async_turn_on_timed(
-                duration=dur,
-                hours=kwargs.get("hours", 0),
-                minutes=kwargs.get("minutes", 0),
-                seconds=kwargs.get("seconds", 0),
-                brightness=kwargs.get(ATTR_BRIGHTNESS),
-                brightness_pct=kwargs.get(ATTR_BRIGHTNESS_PCT),
-            )
-            return
-
         if ATTR_FLASH in kwargs and self._attr_supported_features & LightEntityFeature.FLASH:
             if kwargs[ATTR_FLASH] == FLASH_SHORT:
                 await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 0.5))

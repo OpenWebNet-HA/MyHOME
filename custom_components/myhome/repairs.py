@@ -95,7 +95,7 @@ def async_create_unconfigured_timezone_issue(hass: HomeAssistant, entry_id: str,
         severity=IssueSeverity.WARNING,
         translation_key=ISSUE_UNCONFIGURED_TIMEZONE,
         translation_placeholders={"gateway": gateway_name},
-        learn_more_url="https://github.com/OpenWebNet-HA/MyHOME/wiki/Configuration#timezone",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#unconfigured-timezone",
     )
 
 
@@ -206,7 +206,7 @@ def async_create_shared_bus_issue(hass: HomeAssistant, mac_a: str, mac_b: str) -
             "gateway_a": disp_a,
             "gateway_b": disp_b,
         },
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#unconfigured-shared-bus-detected",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#unconfigured-shared-bus-detected",
         data={"mac_a": mac_a, "mac_b": mac_b},
     )
 
@@ -254,7 +254,7 @@ def async_create_failover_issue(
             "primary": f"{primary_name} ({primary_mac})",
             "standby": f"{standby_name} ({standby_mac})",
         },
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#gateway-failover-active-warm-standby-high-availability",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#gateway-failover-active-warm-standby-high-availability",
     )
 
 
@@ -276,7 +276,7 @@ def async_create_primary_missing_issue(hass: HomeAssistant, entry_id: str, gatew
         severity=IssueSeverity.WARNING,
         translation_key=ISSUE_PRIMARY_GATEWAY_MISSING,
         translation_placeholders={"gateway": gateway_name, "primary": primary},
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/#primary-gateway-missing",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#primary-gateway-missing",
     )
 
 
@@ -298,7 +298,7 @@ def async_create_incompatible_decoder_issue(
         severity=IssueSeverity.WARNING,
         translation_key=ISSUE_INCOMPATIBLE_DECODER,
         translation_placeholders={"decoder": decoder_id, "platform": platform},
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/configuration/use_cases/#music-assistant",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/#music-assistant",
         data={"entry_id": entry_id, "decoder_id": decoder_id, "platform": platform},
     )
 
@@ -319,7 +319,7 @@ def async_create_decoder_config_issue(
         severity=IssueSeverity.WARNING,
         translation_key=issue_key,
         translation_placeholders={"decoder": decoder_id, **placeholders},
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/beta/configuration/use_cases/#music-assistant",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/#music-assistant",
     )
 
 

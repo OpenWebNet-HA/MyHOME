@@ -41,10 +41,10 @@ graph TD
     - All WHO specifications (e.g., WHO=1 Lighting, WHO=2 Automation/Covers, WHO=4 Thermoregulation, WHO=5 Burglar Alarm, WHO=15/25 Dry Contacts).
     - All dimension decoders, gateway profile definitions (`F454Profile`, `MH200NProfile`, etc.), session concurrency rules, and raw TCP socket sessions (`OWNSession`, `OWNCommandSession`, `OWNEventSession`).
 - **`custom_components/myhome` (Home Assistant Integration):**
-    - Home Assistant platform entities (`light`, `switch`, `cover`, `climate`, `sensor`, `binary_sensor`, `alarm_control_panel`, `button`).
+    - All 11 Home Assistant platform entities (`alarm_control_panel`, `binary_sensor`, `button`, `climate`, `cover`, `light`, `lock`, `media_player`, `number`, `sensor`, `switch`).
     - Config flows, options flows, reauthentication, and YAML migration handlers.
     - Home Assistant device registry and entity registry bindings.
-    - Lovelace frontend card registration (`<myhome-bus-card>`) and WebSocket APIs.
+    - Lovelace frontend card registration (`<myhome-openwebnet-bus-monitor>`, alias `<myhome-bus-card>`) and WebSocket APIs.
 
 ### The Rule
 
@@ -83,11 +83,11 @@ Because of this, **we cannot diagnose or triage hardware/protocol issues from de
 Choose whichever method is easiest for you:
 
 #### Option A: 1-Click Bus Trace Bundle (Recommended)
-If you have the **MyHOME Bus Monitor Card** (`<myhome-bus-card>`) installed in your Lovelace dashboard:
+If you have the **MyHOME Bus Monitor Card** (`custom:myhome-openwebnet-bus-monitor`) installed in your Lovelace dashboard:
 
-1. Open the card during or immediately after reproducing the bug.
-2. Click **"📋 Report Issue / Copy Trace"**.
-3. Paste your clipboard directly into the GitHub issue description. It automatically bundles your gateway model, queue telemetry, and recent raw bus frames.
+1. Click **`🔴 Start Trace`** before reproducing the issue, then click **`⏹ Stop Trace`** once finished (or open the card immediately after reproducing the bug).
+2. Click **`📋 Copy Trace`** (to copy the formatted diagnostic trace to your clipboard) or **`💾 Export Trace`** (to download a `.json` trace bundle).
+3. Paste your clipboard or attach the downloaded `.json` bundle directly into the GitHub issue description. It automatically includes your gateway model, queue telemetry, and raw bus frames.
 
 #### Option B: Home Assistant Diagnostics File
 
@@ -175,9 +175,9 @@ pytest tests/ --cov=custom_components.myhome --cov-report=term-missing
 Our CI pipeline enforces zero-tolerance code coverage through [`scripts/verify_ownd_coverage.py`](scripts/verify_ownd_coverage.py).
 
 > [!IMPORTANT]
-> **Every statement and branch in every module under `custom_components/myhome/` must maintain 100.0% test coverage.**
+> **Every statement in every module under `custom_components/myhome/` must maintain 100.0% statement coverage.**
 > 
-> If your changes leave even a single line or branch uncovered, CI will fail. You can verify coverage compliance locally with:
+> If your changes leave even a single statement uncovered across any integration module, CI will fail. You can verify coverage compliance locally with:
 > ```bash
 > pytest tests/ --cov=custom_components.myhome --cov-report=xml
 > python scripts/verify_ownd_coverage.py

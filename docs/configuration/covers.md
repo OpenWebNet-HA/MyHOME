@@ -56,6 +56,10 @@ cover:
     class: curtain
 ```
 
+> [!NOTE]
+> **Single-Gateway vs Multi-Gateway `myhome.yaml` Layout**:
+> Flat top-level `cover:` blocks apply to single-gateway installations. On multi-gateway installations, nest `cover:` (and any other domain blocks) under each gateway's MAC address key (e.g. `"00:03:50:01:02:03":`).
+
 Covers set up in the UI (without `myhome.yaml`) change their device class in Home Assistant with the **"Show As"** feature, like [switches](switches.md) and [binary sensors](binary-sensors.md): **Settings → Devices & Services → Entities**, select the cover entity, click the **Settings (gear)** icon and pick the class under **Show As**.
 
 ---
@@ -75,8 +79,7 @@ For standard covers without hardware position feedback, the integration provides
 
 > [!NOTE]
 > Small moves can still drift. The estimate assumes the curtain moves for the whole run. A motor's start-up time (measured only on the Somfy Ilmo 50 WT in [#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466); another installation measured none on runs of about 0.76 s) is lost on every run, and the slat phase of a roller shutter with slats is booked as travel (one report: a 40 % request from fully closed lifted the curtain only about 18 % of its travel). A series of short moves can therefore book more travel than the curtain made. Send the cover to 0 % or 100 % now and then to re-sync it.
->
-> Venetian blinds are handled as a plain lift cover: lift only, no tilt, and no fine positioning.
+> For Venetian blinds and motorized louvres with tilting slats, enable `slat_tilt: true` (see [Venetian Blinds & Slat Tilt Positioning](#venetian-blinds-slat-tilt-positioning-timed-slat-inching)).
 
 > [!WARNING]
 > **Half the time is not half the height.** The estimate is linear: 50 % means the motor ran for half of the stored travel time. A roller shutter does not move at constant speed — coming down from the top the curtain runs fast on a full roll and is well past the middle at half time; going up from the bottom the first seconds go into gathering the slats and the curtain barely moves. Measured on a 107 cm shutter with exact travel times: `set_cover_position: 50` stopped at 27 cm from the sill coming down and at 37 cm going up, against a true midpoint of about 53 cm, while Home Assistant reported 50 % both times. The end positions (0 % / 100 %) are exact; intermediate positions are approximate and differ by direction. Treat the slider as "roughly there", not as a measurement — this applies to calibrated and manually set times alike.
@@ -90,6 +93,7 @@ The smallest change is set per cover with `min_position_delta` in `/config/myhom
 cover:
   living_room_shutter:
     where: '31'
+    name: Living Room Shutter
     advanced_shutter: true
     min_position_delta: 1
 ```
@@ -251,7 +255,7 @@ cover:
     members: ['11', '13']
 ```
 
-**Behind an F422 interface** (`bus_interface: '02'`, logical `#4#` addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. `11#4#02` … `22#4#02`).
+**Behind an F422 interface** (`interface: '02'`, logical `#4#` addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. `11#4#02` … `22#4#02`).
 
 ### 🏛️ The BTicino Way & Real-World Plant Discovery
 
@@ -279,16 +283,16 @@ The gateway routes the single broadcast frame through the F422 interface onto th
 The MyHOME integration implements a dual-layer architecture adhering to both Home Assistant standards and BTicino protocol engineering:
 
 1. **Native Broadcast for General Scope Covers (`where: '0'`)**:
-   When `open_cover`, `close_cover`, or `stop_cover` is called on a General cover behind an interface (`where: '0'`, `bus_interface: '02'`), the integration sends the native OpenWebNet broadcast frame directly (`*2*WHAT*0#4#<bus>##`).
+   When `open_cover`, `close_cover`, or `stop_cover` is called on a General cover behind an interface (`where: '0'`, `interface: '02'`), the integration sends the native OpenWebNet broadcast frame directly (`*2*WHAT*0#4#<bus>##`).
 
     - Actuators on the interface bus respond simultaneously without dropping frames.
     - When the gateway echoes `*2*WHAT*0#4#<bus>##`, the integration scopes the incoming frame strictly to entities on that interface (`interface == "02"`), preserving total bus isolation.
     - When individual actuators reach their end stops and report status frames (`*2*0*11#4#02##`, etc.), Home Assistant tracks each entity and aggregates the General cover's position automatically.
 
-2. **Paced Member Fan-Out (`PACED_FANOUT_DELAY = 0.3s`) for Percentage Positioning**:
-   OpenWebNet has no broadcast protocol for percentage positioning (Dimension 10 positioning `*#2*WHERE*#10*LEVEL##` is strictly point-to-point; there is no broadcast level command).
-   When `set_cover_position` is called on a scope/group cover, or when non-general scopes must address individual actuators, the integration staggers member commands with a safety interval of **0.3 s (300 ms)**.
-   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, completely eliminating frame loss during multi-cover repositioning.
+2. **Paced Member Fan-Out (`PACED_FANOUT_DELAY = 0.3s`) for Percentage Positioning Behind `interface` (`#4#II`)**:
+   OpenWebNet has no broadcast protocol for percentage positioning (**Dimension 11** positioning `*#2*WHERE*#11#001*LEVEL##` is write-only and strictly point-to-point, while **Dimension 10** `*#2*WHERE*10*BS*LEVEL*...##` is read-only status feedback).
+   When `set_cover_position` is called on an area, group, or general scope cover configured with `interface:` (`#4#II`), or when non-general scopes behind `interface:` execute `open_cover` / `close_cover` / `stop_cover`, `MyHOMEScopeCover` fans out individual point-to-point commands to its member covers staggered by **0.3 s (300 ms)** (`PACED_FANOUT_DELAY = 0.3`). *(On the main bus without `interface:`, `set_cover_position` on a scope cover does not fan out per-member Dimension 11 commands; instead it runs a timed scope run using the scope cover's `travel_time`.)*
+   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, eliminating frame loss during multi-cover repositioning.
 
 3. **Keypad Broadcast Reflection**:
    A general or area command from a physical wall switch or scenario unit also moves the individual covers in Home Assistant. A group or area cover whose shutters are not known yet ends its run after its own `travel_time`, so it never stays stuck on *opening* ([#433](https://github.com/OpenWebNet-HA/MyHOME/issues/433)).
@@ -335,11 +339,11 @@ Declare a General scope cover in `/config/myhome.yaml` for each bus interface, a
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:XX:XX:XX:
+"00:03:50:01:02:03":
   cover:
     all_shutters_oost:
       where: "0"
-      bus_interface: "02"
+      interface: "02"
       name: "All Shutters East"
 ```
 
@@ -499,20 +503,20 @@ Everything in this part applies **only to a cover that has an `access:` block**.
     - Any external close-block switch to report `off`.
     - Any missing, unavailable, or non-binary sensor state immediately fails closed.
 5. **Audible / Visual Pre-Warning & Watchdog**:
-   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
+   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds` and Home Assistant fires a `myhome_access_prewarning` bus event (`entity_id`, `name`, `seconds`) so speakers, sirens, or dashboard alerts can warn bystanders before motion starts. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
 6. **A Wall Button Starts the Gate, It Does Not Stop It**:
    A press of the wall button (or any other keypad on the bus) closes the relay and energizes the motor by itself; Home Assistant only sees the resulting `*1*1*WHERE##` frame afterwards. When such a frame arrives during an approval request or the pre-warning countdown, Home Assistant therefore *drops its own pending request* so that no second pulse follows and stops or reverses the gate. The movement the button started is not aborted. Use the hardware's own stop input or the remote control for an emergency stop.
 
 ### ⚙️ Configuring an Impulse Cover
 
-An impulse cover needs `who: 1` and a single point-to-point `where`. The minimal configuration is a hardware interface with no approval step:
+An impulse cover needs `who: "1"` (unquoted integer `who: 1` is also coerced to `"1"`) and a single point-to-point `where`. The minimal configuration is a hardware interface with no approval step:
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:XX:XX:XX:
+"00:03:50:01:02:03":
   cover:
     garage_door:
-      who: 1
+      who: "1"
       where: "71"
       name: Garage door
       device_class: garage
@@ -523,11 +527,11 @@ Add an `access:` block to opt in to the supervised workflow (phone approval, PIN
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:XX:XX:XX:
+"00:03:50:01:02:03":
   cover:
     garage_door:
-      who: 1
-      type: impulse_relay            # optional; only valid together with who: 1
+      who: "1"
+      type: impulse_relay            # optional; only valid together with who: "1"
       where: "71"                    # one relay, never a general, area or group address
       name: Garage door
       device_class: garage           # garage or gate (default gate)
@@ -561,15 +565,16 @@ Add an `access:` block to opt in to the supervised workflow (phone approval, PIN
 | `access.*` | Optional. Turns on the supervised workflow, see the flow above: `allowed_users`, `approvers`, `remote_close`, `camera`, `safety_devices_verified`, `safety_check_days`, `prewarn_light`, `prewarn_seconds`, `close_block_entity`, `watchdog_margin`, `approval_timeout`. |
 
 > [!NOTE]
-> `type: impulse_relay` together with `who: 2` (and `type: shutter` or `standard` together with `who: 1`) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.
+> `type: impulse_relay` together with `who: "2"` (and `type: shutter` or `standard` together with `who: "1"`) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.
 
 ### 🔒 Configuring a Door Strike Lock
 
 ```yaml
-00:03:50:XX:XX:XX:
+# /config/myhome.yaml
+"00:03:50:01:02:03":
   lock:
     front_door:
-      who: 6                         # the only value; WHO 1 relays are covers
+      who: "6"                       # the only value (unquoted who: 6 is also coerced); WHO 1 relays are covers
       where: "4001"                  # 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"
       name: Front door
       code: "1234"                   # optional digit-only PIN; asked on every unlock
@@ -610,5 +615,5 @@ Locks exist only when they are configured here (and are restored from the regist
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](../../0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
+> If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
 

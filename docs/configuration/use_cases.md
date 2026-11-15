@@ -12,7 +12,7 @@ The usual starting point: a house wired with SCS actuators and a gateway (F454, 
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:81:22:33:
+"00:03:50:81:22:33":
   light:
     living_room:
       where: "12"
@@ -22,7 +22,7 @@ The usual starting point: a house wired with SCS actuators and a gateway (F454, 
     garden_socket:
       where: "34"
       name: "Garden socket"
-      device_class: outlet
+      class: outlet
   cover:
     kitchen_blind:
       where: "25"
@@ -95,7 +95,7 @@ automation:
           position: 50
 ```
 
-Position-reporting actuators (dimension 10, `advanced_shutter: true`) skip all of this: they are exact out of the box.
+Position-reporting actuators (dimension 10, `advanced: true`) skip all of this: they are exact out of the box.
 
 ## 4. Lights that switch off by themselves — even if Home Assistant is down
 
@@ -113,12 +113,12 @@ automation:
         target:
           entity_id: light.cellar
         data:
-          minutes: 10
+          duration: 600
 ```
 
 The same service accepts `switch` entities (a socket, a fan).
 
-## 5. Whole-house multiroom audio with Music Assistant
+## 5. Whole-house multiroom audio with Music Assistant { #music-assistant }
 
 The F441 / F441M analog matrix plays whatever is on its inputs. Map one or more network decoders (a Squeezelite, WiiM, or Cambridge Audio DLNA DMR player per input) in the options flow (**Configure**, one row per decoder: entity, source input, pre-gain), and name the sources wired to the matrix. Every audio zone advertises `GROUPING` and (with decoders configured) `PLAY_MEDIA`:
 
@@ -189,7 +189,7 @@ Energy meters (WHO 18) create an instantaneous power sensor and a total energy s
 
 Someone reports "the kitchen light does not react". Ask them for:
 
-1. **Sweep Bus** then **Export Trace** on the card, or **Download diagnostics** on the integration — both carry the last 500 frames, the gateway identity and the queue state, with passwords redacted.
+1. **Sweep Bus** then **`💾 Export Trace`** / **`📋 Copy Trace`** on the card, or **Download diagnostics** on the integration — both carry the last 500 frames, the gateway identity and the queue state, with passwords redacted.
 2. A raw command sent from the card's **Send frame** bar (administrators only) — `*1*1*12##` — while watching whether the actuator answers with `*1*1*12##` or the gateway with a NACK.
 
 The [troubleshooting guide](troubleshooting.md) maps the usual symptoms to what the trace shows.
@@ -198,15 +198,15 @@ The [troubleshooting guide](troubleshooting.md) maps the usual symptoms to what 
 
 When closing many shutters together at sunset, targeting a dozen individual cover entities causes Home Assistant to dispatch commands concurrently. Behind an F422 interface, sending rapid consecutive point-to-point commands overloads the interface FIFO buffer, causing un-acknowledged shutters to stall open.
 
-Instead, declare a **General scope cover** (`where: "0"`, with `bus_interface:` if on a secondary bus) in `myhome.yaml`:
+Instead, declare a **General scope cover** (`where: "0"`, with `interface:` if on a secondary bus) in `myhome.yaml`:
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:81:22:33:
+"00:03:50:81:22:33":
   cover:
     all_shutters_east:
       where: "0"
-      bus_interface: "02"
+      interface: "02"
       name: "All East Shutters"
 ```
 
@@ -233,8 +233,8 @@ In traditional BTicino MyHome wiring, bathroom extractor fans are often configur
 
 Instead of wasting a second contact and wiring two relays in parallel, **decouple the fan contact on your F411** by giving it its own distinct Point address:
 
-- **Output 1 (Light)**: `A=1, PL1=1`, `M = [empty]` (Address `11`, discovered as `light.bathroom_light`).
-- **Output 2 (Fan)**: `A=1, PL2=2`, `M = [empty]` (Address `12`, discovered as `switch.bathroom_fan` or shown as a Fan via UI).
+- **Output 1 (Light)**: `A=1, PL1=1`, `M = [empty]` (Address `11`, auto-discovered as `light.bathroom_light`).
+- **Output 2 (Fan)**: `A=1, PL2=2`, `M = [empty]` (Address `12`, declared under `switch:` in `/config/myhome.yaml` as `switch.bathroom_fan` — unconfigured `WHO = 1` addresses auto-discover as `light.*` — and optionally shown as a Fan via Home Assistant's **Show As** setting).
 
 Home Assistant now coordinates the master/slave link with far more flexibility than hardware configurators:
 
@@ -276,7 +276,7 @@ automation:
                 target:
                   entity_id: switch.bathroom_fan
                 data:
-                  minutes: 10
+                  duration: 600
 
   - alias: "Bathroom Fan - High Humidity Purge"
     id: bathroom_fan_humidity_purge

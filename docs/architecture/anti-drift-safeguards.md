@@ -54,7 +54,7 @@ graph TD
     subgraph "Pillar 1: Shift-Left Downstream Canary (OWNd)"
         O1[OWNd PR or Commit] --> O2[Build Candidate OWNd Wheel]
         O2 --> O3[Checkout MyHOME integration]
-        O3 --> O4[Run full MyHOME 1,600+ test suite]
+        O3 --> O4[Run full MyHOME 5,800+ test suite]
         O4 -->|Any failure| O5[Block OWNd PR from Merging]
         O4 -->|All green| O6[Allow OWNd Merge]
     end

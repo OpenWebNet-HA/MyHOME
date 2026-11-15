@@ -51,7 +51,7 @@ action: myhome.turn_on_timed
 target:
   entity_id: light.hallway_light
 data:
-  time: 120   # Turn on and automatically turn off after 2 minutes
+  duration: 120   # Turn on and automatically turn off after 2 minutes (0.5–918000 s)
 ```
 
 ---
@@ -75,11 +75,11 @@ For Home Assistant installations, **managing lighting groups software-side using
 ---
 
 ### Approach 2: Physical SCS Hardware Groups (`where: '#G'`) via `myhome.yaml`
-If your actuators are physically configured into an SCS group (e.g. `WHERE = #1` programmed via physical configurators or MyHOME_Suite) and you prefer Home Assistant to transmit single group frames directly on the bus, you can declare the group in `/config/myhome.yaml`:
+If your actuators are physically configured into an SCS group (e.g. `WHERE = #1` programmed via physical configurators or MyHOME_Suite) and you prefer Home Assistant to transmit single group frames directly on the bus, declare the group under `light:` in `/config/myhome.yaml` (nested under your gateway's `<MAC>:` key on multi-gateway setups):
 
 ```yaml
 # /config/myhome.yaml
-groups:
+light:
   living_room_group:
     where: '#1'
     name: Living Room Group
@@ -143,5 +143,5 @@ To add intelligent bedtime curfews, companion light synchronization, or decouple
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `light:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Light Documentation](../../0.9.4/configuration/lights/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all lights are managed dynamically via Home Assistant's native registry.
+> If you are upgrading from legacy v0.9 installations and still have manual `light:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Light Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/lights/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all lights are managed dynamically via Home Assistant's native registry.
 

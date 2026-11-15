@@ -496,3 +496,28 @@ def test_main_cli_modes(tmp_path, mock_registry_data, mock_sdomotica_config_json
         "--gateway-mac", "00:03:50:AA:BB:CC",
     ])
     assert code == 0
+
+
+def test_generate_myhome_yaml_only_emits_icon_for_supported_domains(
+    mock_sdomotica_config_json,
+):
+    """Custom icons are emitted only for schemas that accept `icon` (light, switch) and pass config_schema."""
+    entities, gw_info = extract_sdomotica_config_json(mock_sdomotica_config_json)
+    for ent in entities:
+        ent.icon = f"mdi:custom-{ent.domain}"
+
+    yaml_text = generate_myhome_yaml(
+        entities,
+        gateway_mac="00:03:50:11:22:33",
+        gateway_host=gw_info["host"],
+    )
+    assert 'icon: "mdi:custom-light"' in yaml_text
+    assert 'icon: "mdi:custom-switch"' in yaml_text
+    for unsupported in ("cover", "climate", "binary_sensor", "sensor", "alarm_control_panel", "lock"):
+        assert f"mdi:custom-{unsupported}" not in yaml_text
+
+    validated = config_schema(yaml.safe_load(yaml_text))
+    platforms = validated["00:03:50:11:22:33"]["platforms"]
+    assert platforms["light"]["1-12"]["icon"] == "mdi:custom-light"
+    assert platforms["switch"]["1-11"]["icon"] == "mdi:custom-switch"
+

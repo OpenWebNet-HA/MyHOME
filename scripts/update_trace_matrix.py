@@ -23,7 +23,48 @@ GATEWAY_CANONICAL_KEYS = {
     "AM4890": "H4890",
     "LN4890": "H4890",
     "LN4890A": "H4890",
+    "573958": "H4890",
+    "078479": "H4890",
 }
+
+WHO_LABELS: dict[int, str] = {
+    0: "Scenario",
+    1: "Lights",
+    2: "Autom.",
+    3: "Load",
+    4: "Climate",
+    5: "Alarm",
+    6: "Door",
+    7: "Video",
+    8: "Intercom",
+    9: "Aux",
+    13: "Gateway",
+    14: "Lock",
+    15: "CEN",
+    16: "Audio",
+    17: "Scenario",
+    18: "Energy",
+    22: "Audio Diff.",
+    25: "CEN+",
+    1001: "Diag",
+    1004: "Diag",
+    1013: "Diag",
+    1022: "Diag",
+}
+
+
+def validate_who_labels(labels: dict[int, str] = WHO_LABELS) -> None:
+    """Validate canonical short labels for OpenWebNet WHO columns."""
+    expected_canonical = {
+        9: "Aux",
+        25: "CEN+",
+    }
+    for who_code, expected_label in expected_canonical.items():
+        actual = labels.get(who_code)
+        if actual != expected_label:
+            raise ValueError(
+                f"WHO {who_code} label in WHO_LABELS must be {expected_label!r}, got {actual!r}"
+            )
 
 
 def canonical_gateway(model):
@@ -40,99 +81,35 @@ def get_who(frame):
         return int(m.group(1))
     return None
 
+
 def build_matrix():
-    # Gather data
+    try:
+        from scripts.update_roadmap_tables import scan_fixture_corpus
+    except ImportError:
+        from update_roadmap_tables import scan_fixture_corpus
+
+    summary = scan_fixture_corpus(fixtures_dir=FIXTURES_DIR, validate_models=False)
     gateways_data = {}
-
-    for p in FIXTURES_DIR.rglob('*'):
-        if not p.is_file():
+    for model_key, stats in summary.by_model.items():
+        if stats.phys_rx_frames <= 0 or not stats.phys_whos:
             continue
-
-        if p.suffix == '.json':
-            try:
-                with open(p, 'r', encoding='utf-8') as f:
-                    j = json.load(f)
-
-                whos = set()
-                gateway = 'Unknown'
-
-                if 'data' in j and 'gateway' in j['data']:
-                    gateway = j['data']['gateway'].get('model_name', 'Unknown')
-                    if 'bus_monitor' in j['data'] and 'recent_frames' in j['data']['bus_monitor']:
-                        for frame_obj in j['data']['bus_monitor']['recent_frames']:
-                            w = get_who(frame_obj['raw'])
-                            if w is not None:
-                                whos.add(w)
-                elif 'frames' in j:
-                    for frame_obj in j['frames']:
-                        w = get_who(frame_obj['raw'])
-                        if w is not None:
-                            whos.add(w)
-                    if 'gateway' in j and isinstance(j['gateway'], dict) and j['gateway'].get('model'):
-                        gateway = j['gateway']['model']
-                    else:
-                        m = re.search(r'_(?:trace|sweep)_([A-Za-z0-9]+)_', p.name)
-                        if m:
-                            gateway = m.group(1)
-
-                gateway = GATEWAY_CANONICAL_KEYS.get(gateway, gateway)
-                if whos:
-                    if gateway not in gateways_data:
-                        gateways_data[gateway] = set()
-                    gateways_data[gateway].update(whos)
-            except Exception:
-                pass
-
-        elif p.suffix == '.txt':
-            try:
-                with open(p, 'r', encoding='utf-8') as f:
-                    lines = f.readlines()
-                whos = set()
-                gateway = 'F454' # from issue_429 readme
-                labelled = {}  # Home Assistant debug logs: frames per labelled gateway
-                for line in lines:
-                    # Home Assistant debug logs: the frame sits in backticks after a
-                    # "[<model> gateway - <address>]" label, which names the gateway.
-                    m = HA_LOG_FRAME.search(line)
-                    if m:
-                        model = canonical_gateway(m.group(1))
-                        if model != 'Generic':
-                            w = get_who(m.group(2))
-                            if w is not None:
-                                labelled.setdefault(model, set()).add(w)
-                        continue
-                    line_clean = re.sub(r'^\[.*?\]\s*\[.*?\]\s*', '', line.strip())
-                    w = get_who(line_clean)
-                    if w is not None:
-                        whos.add(w)
-                for model, model_whos in labelled.items():
-                    gateways_data.setdefault(model, set()).update(model_whos)
-                if whos:
-                    if gateway not in gateways_data:
-                        gateways_data[gateway] = set()
-                    gateways_data[gateway].update(whos)
-            except Exception:
-                pass
+        canon = canonical_gateway(model_key)
+        gateways_data.setdefault(canon, set()).update(stats.phys_whos)
 
     # Build markdown table
     all_whos_found = set()
     for whos in gateways_data.values():
         all_whos_found.update(whos)
 
-    who_names = {
-        0: 'Scenario', 1: 'Lights', 2: 'Autom.', 3: 'Load', 4: 'Climate', 5: 'Alarm', 6: 'Door', 9: 'Power',
-        13: 'Gateway', 14: 'Lock', 15: 'CEN', 16: 'Audio', 17: 'Scenario', 18: 'Energy',
-        22: 'Audio Diff.', 25: 'Diag', 1001: 'Diag', 1004: 'Diag', 1013: 'Diag', 1022: 'Diag'
-    }
-
-    whos_list = sorted([w for w in all_whos_found if w in who_names])
+    validate_who_labels(WHO_LABELS)
+    whos_list = sorted([w for w in all_whos_found if w in WHO_LABELS])
 
     GATEWAY_DISPLAY_NAMES = {
         "H4684": "H4684 / H/L4684",
         "H4890": "H4890 / AM4890",
     }
 
-    header = "| Gateway Model | " + " | ".join([f"WHO {w}<br>{who_names.get(w, '')}" for w in whos_list]) + " |"
+    header = "| Gateway Model | " + " | ".join([f"WHO {w}<br>{WHO_LABELS.get(w, '')}" for w in whos_list]) + " |"
     separator = "| :--- | " + " | ".join([" :---: " for _ in whos_list]) + " |"
 
     rows = []

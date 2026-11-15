@@ -41,6 +41,7 @@ from custom_components.myhome.validate import (
     MyHomeSensorSchema,
     PointToPoint,
     SpecialWhere,
+    alarm_control_panel_schema,
     binary_sensor_schema,
     climate_schema,
     config_schema,
@@ -928,5 +929,72 @@ class TestImpulseCoverTypeConsistency:
     def test_impulse_cover_min_cycle_time_must_exceed_pulse_duration(self, pulse, cycle):
         with pytest.raises(Invalid, match="min_cycle_time must be greater than pulse_duration"):
             self._cover(**{CONF_WHO: "1", "pulse_duration": pulse, "min_cycle_time": cycle})
+
+
+class TestWhoCoercionAcrossSchemas:
+    """Unquoted integer `who` in myhome.yaml coerces cleanly to `str` across all schemas."""
+
+    @pytest.mark.parametrize(
+        ("schema_fn", "raw_entry", "who_int", "expected_key"),
+        [
+            (light_schema, {CONF_WHERE: "11", CONF_NAME: "Light"}, 1, "1-11"),
+            (switch_schema, {CONF_WHERE: "12", CONF_NAME: "Switch"}, 1, "1-12"),
+            (switch_schema, {CONF_WHERE: "8", CONF_NAME: "Thermo Sw"}, 4, "4-8"),
+            (cover_schema, {CONF_WHERE: "21", CONF_NAME: "Shutter"}, 2, "2-21"),
+            (cover_schema, {CONF_WHERE: "72", CONF_NAME: "Gate"}, 1, "1-72"),
+            (binary_sensor_schema, {CONF_WHERE: "04", CONF_NAME: "Motion"}, 1, "1-04"),
+            (binary_sensor_schema, {CONF_WHERE: "01", CONF_NAME: "Aux 1"}, 9, "9-01"),
+            (binary_sensor_schema, {CONF_WHERE: "31", CONF_NAME: "Contact"}, 25, "25-31"),
+            (
+                sensor_schema,
+                {CONF_WHERE: "04", CONF_NAME: "Lux", CONF_DEVICE_CLASS: SensorDeviceClass.ILLUMINANCE},
+                1,
+                "1-04",
+            ),
+            (
+                sensor_schema,
+                {CONF_WHERE: "101", CONF_NAME: "Temp", CONF_DEVICE_CLASS: SensorDeviceClass.TEMPERATURE},
+                4,
+                "4-101",
+            ),
+            (
+                sensor_schema,
+                {CONF_WHERE: "51", CONF_NAME: "Power", CONF_DEVICE_CLASS: SensorDeviceClass.POWER},
+                18,
+                "18-51",
+            ),
+            (climate_schema, {CONF_ZONE: "1", CONF_NAME: "Zone 1"}, 4, "4-1"),
+            (alarm_control_panel_schema, {CONF_WHERE: "0", CONF_NAME: "Alarm"}, 5, "5-0"),
+            (lock_schema, {CONF_WHERE: "4001", CONF_NAME: "Door"}, 6, "6-4001"),
+        ],
+    )
+    def test_integer_and_string_who_coerce_to_str(
+        self, schema_fn, raw_entry, who_int, expected_key
+    ):
+        for raw_who in (who_int, str(who_int)):
+            res = schema_fn({"dev": {**raw_entry, CONF_WHO: raw_who}})
+            assert expected_key in res
+            assert res[expected_key][CONF_WHO] == str(who_int)
+            assert isinstance(res[expected_key][CONF_WHO], str)
+
+    @pytest.mark.parametrize(
+        ("schema_fn", "raw_entry"),
+        [
+            (cover_schema, {CONF_WHERE: "21", CONF_NAME: "Shutter"}),
+            (binary_sensor_schema, {CONF_WHERE: "31", CONF_NAME: "Contact"}),
+            (
+                sensor_schema,
+                {CONF_WHERE: "51", CONF_NAME: "Power", CONF_DEVICE_CLASS: SensorDeviceClass.POWER},
+            ),
+            (climate_schema, {CONF_ZONE: "1", CONF_NAME: "Zone 1"}),
+            (alarm_control_panel_schema, {CONF_WHERE: "0", CONF_NAME: "Alarm"}),
+            (lock_schema, {CONF_WHERE: "4001", CONF_NAME: "Door"}),
+        ],
+    )
+    @pytest.mark.parametrize("bad_who", [99, "99", True, False])
+    def test_invalid_integer_or_boolean_who_rejected(self, schema_fn, raw_entry, bad_who):
+        with pytest.raises(Invalid):
+            schema_fn({"dev": {**raw_entry, CONF_WHO: bad_who}})
+
 
 

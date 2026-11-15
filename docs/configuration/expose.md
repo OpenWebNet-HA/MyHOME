@@ -58,82 +58,82 @@ Click **Submit**. The binding activates immediately without requiring a Home Ass
 
 ### Method 2: Declarative YAML (`myhome.yaml`)
 
-You can also define exposed bindings in your `myhome.yaml` file under the gateway's MAC address:
+You can also define exposed bindings in `/config/myhome.yaml` under your gateway's MAC address (on single-gateway installations, `expose:` can also sit directly at the top level of `/config/myhome.yaml`):
 
 ```yaml
-myhome:
-  00:03:50:XX:XX:XX:   # Your Gateway MAC address
-    expose:
-      # -----------------------------------------------------------------
-      # 1. Virtual Light / Dimmer (WHO = 1)
-      # Short press on WHERE "83" turns the smart bulb ON/OFF; holding up/down
-      # steps brightness by 25%. Setting 'attribute: brightness' also mirrors
-      # brightness level changes back onto the bus.
-      # -----------------------------------------------------------------
-      - who: 1
-        where: "83"
-        entity_id: light.smart_bedroom
-        attribute: brightness
-        bidirectional: true
-        brightness_step_pct: 25
-        cooldown: 0.5
+# /config/myhome.yaml
+"00:03:50:01:02:03":   # Your Gateway MAC address (optional on single-gateway setups)
+  expose:
+    # -----------------------------------------------------------------
+    # 1. Virtual Light / Dimmer (WHO = 1)
+    # Short press on WHERE "83" turns the smart bulb ON/OFF; holding up/down
+    # steps brightness by 25%. Setting 'attribute: brightness' also mirrors
+    # brightness level changes back onto the bus.
+    # -----------------------------------------------------------------
+    - who: 1
+      where: "83"
+      entity_id: light.smart_bedroom
+      attribute: brightness
+      bidirectional: true
+      brightness_step_pct: 25
+      cooldown: 0.5
 
-      # -----------------------------------------------------------------
-      # 2. Virtual Cover / Shutter (WHO = 2)
-      # Tapping up/down/stop on wall screen at WHERE "31" controls pergola curtain.
-      # -----------------------------------------------------------------
-      - who: 2
-        where: "31"
-        entity_id: cover.pergola_curtain
-        bidirectional: true
+    # -----------------------------------------------------------------
+    # 2. Virtual Cover / Shutter (WHO = 2)
+    # Tapping up/down/stop on wall screen at WHERE "31" controls pergola curtain.
+    # -----------------------------------------------------------------
+    - who: 2
+      where: "31"
+      entity_id: cover.pergola_curtain
+      bidirectional: true
 
-      # -----------------------------------------------------------------
-      # 3. Virtual Temperature Probe (WHO = 4, Dimension 0)
-      # Publishes outdoor temperature onto unused zone master address 50
-      # (1..99 required on F461 / bt_termo; 100..900 only on reply-injection gateways).
-      # -----------------------------------------------------------------
-      - who: 4
-        where: "50"
-        dimension: 0
-        entity_id: sensor.outdoor_temperature
-        cooldown: 5.0
-        min_delta: 0.2
-        periodic_send: 60
+    # -----------------------------------------------------------------
+    # 3. Virtual Temperature Probe (WHO = 4, Dimension 0)
+    # Publishes outdoor temperature onto unused zone master address 50
+    # (1..99 required on F461 / bt_termo; 100..900 only on reply-injection gateways).
+    # -----------------------------------------------------------------
+    - who: 4
+      where: "50"
+      dimension: 0
+      entity_id: sensor.outdoor_temperature
+      cooldown: 5.0
+      min_delta: 0.2
+      periodic_send: 60
 
-      # -----------------------------------------------------------------
-      # 4. Virtual Active Power Meter (WHO = 18, Dimension 113)
-      # Publishes grid active power (W) onto meter address 51.
-      # Auto-converts kW -> W if the sensor unit of measurement is kW.
-      # -----------------------------------------------------------------
-      - who: 18
-        where: "51"
-        dimension: 113
-        entity_id: sensor.grid_active_power
-        cooldown: 2.0
-        min_delta: 10.0
+    # -----------------------------------------------------------------
+    # 4. Virtual Active Power Meter (WHO = 18, Dimension 113)
+    # Publishes grid active power (W) onto meter address 51.
+    # Auto-converts kW -> W if the sensor unit of measurement is kW.
+    # -----------------------------------------------------------------
+    - who: 18
+      where: "51"
+      dimension: 113
+      entity_id: sensor.grid_active_power
+      cooldown: 2.0
+      min_delta: 10.0
 
-      # -----------------------------------------------------------------
-      # 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)
-      # Publishes cumulative grid energy totalizer (Wh) onto meter address 51.
-      # Auto-converts kWh -> Wh if the sensor unit of measurement is kWh.
-      # -----------------------------------------------------------------
-      - who: 18
-        where: "51"
-        dimension: 51
-        entity_id: sensor.grid_energy_consumed
-        cooldown: 5.0
-        min_delta: 100.0   # Broadcast on 100 Wh increments
+    # -----------------------------------------------------------------
+    # 5. Virtual Energy Counter / Totalizer (WHO = 18, Dimension 51)
+    # Publishes cumulative grid energy totalizer (Wh) onto meter address 51.
+    # Auto-converts kWh -> Wh if the sensor unit of measurement is kWh.
+    # -----------------------------------------------------------------
+    - who: 18
+      where: "51"
+      dimension: 51
+      entity_id: sensor.grid_energy_consumed
+      cooldown: 5.0
+      min_delta: 100.0   # Broadcast on 100 Wh increments
 
-      # -----------------------------------------------------------------
-      # 6. Bus Clock & DST Sync (WHO = 13, Dimension 22)
-      # Broadcasts atomic time, date, and calendar once every hour.
-      # Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads
-      # without proactive pushes, ideal for NTP-synchronized gateways).
-      # -----------------------------------------------------------------
-      - who: 13
-        dimension: 22
-        periodic_send: 3600
-        respond_to_read: true
+    # -----------------------------------------------------------------
+    # 6. Bus Clock & DST Sync (WHO = 13, Dimension 22)
+    # Broadcasts atomic time, date, and calendar once every hour.
+    # Note: Set 'periodic_send: 0' for query-only mode (answers *#13** reads
+    # without proactive pushes, ideal for NTP-synchronized gateways).
+    # -----------------------------------------------------------------
+    - who: 13
+      dimension: 22
+      periodic_send: 3600
+      respond_to_read: true
 ```
 
 ---
@@ -165,33 +165,33 @@ Both modalities work identically for a point-to-point virtual dimmer:
 For complex integrations (such as cycling media playlists, executing sequences, or calling third-party services with conditions), you can configure `turn_on_action`, `turn_off_action`, `step_up_action`, and `step_down_action` either directly in the **UI Config Subentry** action pickers or in `myhome.yaml` using Home Assistant's native `Script` syntax:
 
 ```yaml
-myhome:
-  00:03:50:XX:XX:XX:
-    expose:
-      - who: 1
-        where: "95"
-        entity_id: media_player.kitchen_sonos
-        on_states:
-          - playing
-        turn_on_action:
-          - action: media_player.play_media
-            target:
-              entity_id: media_player.kitchen_sonos
-            data:
-              media_content_id: "http://icecast.radiofrance.fr/fip-midfi.mp3"
-              media_content_type: "audio/mp3"
-        turn_off_action:
-          - action: media_player.media_pause
-            target:
-              entity_id: media_player.kitchen_sonos
-        step_up_action:
-          - action: media_player.volume_up
-            target:
-              entity_id: media_player.kitchen_sonos
-        step_down_action:
-          - action: media_player.volume_down
-            target:
-              entity_id: media_player.kitchen_sonos
+# /config/myhome.yaml
+"00:03:50:01:02:03":
+  expose:
+    - who: 1
+      where: "95"
+      entity_id: media_player.kitchen_sonos
+      on_states:
+        - playing
+      turn_on_action:
+        - action: media_player.play_media
+          target:
+            entity_id: media_player.kitchen_sonos
+          data:
+            media_content_id: "http://icecast.radiofrance.fr/fip-midfi.mp3"
+            media_content_type: "audio/mp3"
+      turn_off_action:
+        - action: media_player.media_pause
+          target:
+            entity_id: media_player.kitchen_sonos
+      step_up_action:
+        - action: media_player.volume_up
+          target:
+            entity_id: media_player.kitchen_sonos
+      step_down_action:
+        - action: media_player.volume_down
+          target:
+            entity_id: media_player.kitchen_sonos
 ```
 
 ### Action Script Variables & Templates

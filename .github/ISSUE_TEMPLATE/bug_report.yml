@@ -94,8 +94,8 @@ body:
     id: integration_version
     attributes:
       label: MyHOME Integration Version
-      description: Exact version of the MyHOME integration (please verify on the latest v2 Phase 1 beta release, e.g. 2.0.0b18).
-      placeholder: "e.g. 2.0.0b18"
+      description: Exact version of the MyHOME integration (please verify on the latest v2.0 release, e.g. 2.0.0 / 2.0.0b18).
+      placeholder: "e.g. 2.0.0"
     validations:
       required: true
 
