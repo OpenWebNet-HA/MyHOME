@@ -374,8 +374,6 @@ class TestPlatformServiceRegistration:
     """Test registration of turn_on_timed service in light and switch platforms."""
 
     async def test_light_registers_turn_on_timed(self, hass):
-        from homeassistant.helpers import entity_platform
-
         mock_gateway = MagicMock()
         mock_gateway.mac = "AA:BB:CC:DD:EE:FF"
         hass.data = {DOMAIN: {mock_gateway.mac: {"entity": mock_gateway}}}
@@ -384,23 +382,14 @@ class TestPlatformServiceRegistration:
         config_entry.data = {"mac": mock_gateway.mac}
         config_entry.entry_id = "test_light_entry"
 
-        mock_platform = MagicMock()
-        token = entity_platform.current_platform.set(mock_platform)
-        try:
-            with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
-                 patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
-                attach_runtime(hass, config_entry)
-                await async_setup_light_entry(hass, config_entry, MagicMock())
+        with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+             patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
+            attach_runtime(hass, config_entry)
+            await async_setup_light_entry(hass, config_entry, MagicMock())
 
-            mock_platform.async_register_entity_service.assert_called_once()
-            service_name = mock_platform.async_register_entity_service.call_args[0][0]
-            assert service_name == SERVICE_TURN_ON_TIMED
-        finally:
-            entity_platform.current_platform.reset(token)
+        assert hass.services.has_service(DOMAIN, SERVICE_TURN_ON_TIMED)
 
     async def test_switch_registers_turn_on_timed(self, hass):
-        from homeassistant.helpers import entity_platform
-
         mock_gateway = MagicMock()
         mock_gateway.mac = "AA:BB:CC:DD:EE:FF"
         hass.data = {DOMAIN: {mock_gateway.mac: {"entity": mock_gateway, "platforms": {"switch": {}}}}}
@@ -409,16 +398,9 @@ class TestPlatformServiceRegistration:
         config_entry.data = {"mac": mock_gateway.mac}
         config_entry.entry_id = "test_switch_entry"
 
-        mock_platform = MagicMock()
-        token = entity_platform.current_platform.set(mock_platform)
-        try:
-            with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
-                 patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
-                attach_runtime(hass, config_entry)
-                await async_setup_switch_entry(hass, config_entry, MagicMock())
+        with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+             patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
+            attach_runtime(hass, config_entry)
+            await async_setup_switch_entry(hass, config_entry, MagicMock())
 
-            mock_platform.async_register_entity_service.assert_called_once()
-            service_name = mock_platform.async_register_entity_service.call_args[0][0]
-            assert service_name == SERVICE_TURN_ON_TIMED
-        finally:
-            entity_platform.current_platform.reset(token)
+        assert hass.services.has_service(DOMAIN, SERVICE_TURN_ON_TIMED)

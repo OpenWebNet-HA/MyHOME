@@ -147,7 +147,7 @@ Upgrading from the previous stable release? Follow the [upgrade guide](https://o
 | Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 7<br>Video | WHO 8<br>Intercom | WHO 9<br>Aux | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>CEN+ | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
 | :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
 | **067292** |  | ✅ |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
-| **F453** |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
+| **F453** |  |  | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ |  |  | ✅ |  |
 | **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |
 | **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |  | ✅ |  |
 | **F455** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
@@ -207,7 +207,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### Code Coverage
 
-The integration maintains 5865 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+The integration maintains 5881 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
 
 <details>
 <summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>

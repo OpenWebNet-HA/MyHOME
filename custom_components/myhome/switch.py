@@ -8,7 +8,6 @@ import types
 from collections import defaultdict
 from typing import Any, cast
 
-import voluptuous as vol
 from homeassistant.components.switch import (  # type: ignore[attr-defined, unused-ignore]
     SwitchDeviceClass,
     SwitchEntity,
@@ -23,7 +22,6 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -59,7 +57,6 @@ from .const import (
     CONF_WHO,
     DOMAIN,
     LOGGER,
-    SERVICE_TURN_ON_TIMED,
     SIGNAL_BINARY_SENSOR_INVERTED,
     SIGNAL_NEW_BINARY_SENSOR,
     build_timed_turn_on_command,
@@ -80,8 +77,8 @@ from .expose import is_exposed_on_bus
 from .gateway import MyHOMEGatewayHandler
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
+from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
-from .typing_compat import as_any
 from .where_grammar import (
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -534,20 +531,7 @@ async def async_setup_entry(
         else:
             async_add_entities(startup_entities)
 
-    platform = entity_platform.current_platform.get()
-    if platform is not None:
-        platform.async_register_entity_service(
-            SERVICE_TURN_ON_TIMED,
-            as_any({
-                vol.Optional("duration"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=918000)),
-                vol.Optional("hours", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
-                vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
-                vol.Optional("seconds", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=59)),
-                vol.Optional("brightness"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
-                vol.Optional("brightness_pct"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
-            }),
-            "async_turn_on_timed",
-        )
+    async_register_turn_on_timed_service(hass)
     return True
 
 

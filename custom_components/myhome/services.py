@@ -10,10 +10,13 @@ from typing import TYPE_CHECKING, Any, cast
 import OWNd.message as _ownd_message
 import voluptuous as vol
 from homeassistant.const import CONF_MAC
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_platform
+from homeassistant.helpers import service as service_helper
+from homeassistant.helpers.entity import Entity
 
 from .const import (
     ATTR_ACTION,
@@ -23,6 +26,7 @@ from .const import (
     DOMAIN,
     SERVICE_SEND_SCENARIO_PLUS_COMMAND,
     SERVICE_STOP_COVER_CALIBRATION,
+    SERVICE_TURN_ON_TIMED,
 )
 from .data import get_runtime_data
 from .typing_compat import as_any
@@ -93,6 +97,58 @@ SEND_SCENARIO_PLUS_COMMAND_SCHEMA = vol.Schema(
     },
     extra=vol.PREVENT_EXTRA,
 )
+TURN_ON_TIMED_SCHEMA = cv.make_entity_service_schema(
+    {
+        vol.Optional("duration"): vol.All(
+            vol.Coerce(float), vol.Range(min=0.5, max=918000)
+        ),
+        vol.Optional("hours", default=0): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=255)
+        ),
+        vol.Optional("minutes", default=0): vol.All(
+            vol.Coerce(int), vol.Range(min=0, max=59)
+        ),
+        vol.Optional("seconds", default=0): vol.All(
+            vol.Coerce(float), vol.Range(min=0, max=59)
+        ),
+        vol.Optional("brightness"): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=255)
+        ),
+        vol.Optional("brightness_pct"): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=100)
+        ),
+    }
+)
+
+
+@callback
+def async_register_turn_on_timed_service(hass: HomeAssistant) -> None:
+    """Register the cross-platform myhome.turn_on_timed service across light and switch."""
+    if hass.services.has_service(DOMAIN, SERVICE_TURN_ON_TIMED):
+        return
+
+    def _turn_on_timed_entities() -> dict[str, Entity]:
+        entities: dict[str, Entity] = {}
+        for platform in entity_platform.async_get_platforms(hass, DOMAIN):
+            if platform.domain in ("light", "switch"):
+                entities.update(platform.entities)
+        return entities
+
+    async def handle_turn_on_timed(call: ServiceCall) -> None:
+        """Dispatch myhome.turn_on_timed across MyHOME light and switch entities."""
+        await service_helper.entity_service_call(
+            hass,
+            _turn_on_timed_entities,
+            "async_turn_on_timed",
+            call,
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_TURN_ON_TIMED,
+        handle_turn_on_timed,
+        schema=as_any(TURN_ON_TIMED_SCHEMA),
+    )
 
 
 def _loaded_gateways(hass: HomeAssistant) -> dict[str, MyHOMEGatewayHandler]:
@@ -455,3 +511,4 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         handle_send_scenario_plus_command,
         schema=as_any(SEND_SCENARIO_PLUS_COMMAND_SCHEMA),
     )
+    async_register_turn_on_timed_service(hass)

@@ -105,7 +105,18 @@ NON_MYHOME_ROOT_KEYS = {
     "id",
 }
 
-HA_TARGET_KEYS = {"entity_id", "device_id", "area_id", "floor_id", "label_id"}
+HA_TARGET_KEYS = {
+    "entity_id",
+    "device_id",
+    "area_id",
+    "floor_id",
+    "label_id",
+    "exclude",
+    *(
+        str(k.schema if hasattr(k, "schema") else k)
+        for k in getattr(cv, "ENTITY_SERVICE_FIELDS", {})
+    ),
+}
 
 
 class _DocYamlLoader(yaml.SafeLoader):
@@ -677,7 +688,11 @@ async def test_turn_on_timed_end_to_end_via_hass_service_bus(
                 },
                 blocking=True,
             )
-            assert mock_send.call_count >= 2
+            assert [str(c.args[0]) for c in mock_send.call_args_list] == [
+                "*#1*11*#1*175*0##",
+                "*1*12*11##",
+                "*1*11*12##",
+            ]
     finally:
         await hass.config_entries.async_unload(entry.entry_id)
 
