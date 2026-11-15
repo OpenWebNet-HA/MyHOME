@@ -427,8 +427,8 @@ def thermo_event_interface(message: Any) -> str | None:
     return if_str.zfill(2) if if_str.isdigit() else if_str
 
 
-_DIM20_ACTIVE_CODES = frozenset({1, 2, 6, 7, 8, 9})
-_DIM20_INACTIVE_CODES = frozenset({0, 3, 4, 5, 14, 15, 16, 100})
+_DIM20_ACTIVE_CODES = frozenset({1, 2, 6, 7, 8, 9, 10, 11, 12, 18, 19, 20, 21, 22})
+_DIM20_INACTIVE_CODES = frozenset({0, 3, 4, 5, 13, 14, 15, 16, 17, 100})
 _FAN_ACTIVE_CODES = frozenset({6, 7, 8, 9})
 _FAN_INACTIVE_CODES = frozenset({5, 14, 15, 16})
 _FAN_SPEED_BY_CODE: dict[int, int] = {6: 1, 7: 2, 8: 3}
@@ -439,20 +439,40 @@ def _decode_thermo_output_code(
 ) -> tuple[bool, bool | None, int | None] | None:
     """Decode a WHO=4 Dimension 19/20 output code into ``(is_active, fan_on, fan_speed)``.
 
-    Per ``bt_termo`` firmware disassembly across ``F454`` / ``F459`` / ``MH200N``
-    (``0x100d8..0x1013c``, table ``0x142ec``) and ``MyHomeServer1`` (table ``0x11e34``)
-    and the OpenWebNet WHO=4 specification:
+    Gateway firmware support matrix (5 inspected gateways):
+    - Discrete ``0..13``: ``MH200N`` (``010108``), ``F454`` (``020051``), ``MH202``
+      (``010024``), ``MyHomeServer1`` (``028206``), and ``F461`` (``020011``) across
+      Dimension 19 and Dimension 20 (including ``9`` on Dimension 19).
+    - Expanded discrete ``0..22``: ``MyHomeServer1`` (``028206``) and ``F461``
+      (``020011``) across Dimension 19, Dimension 20, and ``#20``.
+    - Proportional 0-10 V ``100..200`` (``0%..100%``, SCS ``0x80..0xE4`` as ``100 + pct``):
+      unsupported on ``MH200N`` (``010108``); supported on Dimension 20 only on ``F454``
+      (``020051``) and ``MH202`` (``010024``); supported on Dimension 19, Dimension 20,
+      and ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Note that
+      only ``100`` has a live plant capture; ``101..200``, ``10..13``, and ``17..22``
+      are firmware-verified without a live capture yet.
+
+    Per-code semantics:
     - ``0, 3, 4``: valve/actuator OFF, Closed, Stop -> ``(False, None, None)``
+      (``MyHomeServer1`` ``bt_thermo_manager`` active bitmask marks ``4`` active,
+      but ``MyHOME`` keeps ``4`` = 3-point motorized valve Stop inactive so stopped
+      valves report ``HVACAction.IDLE``)
     - ``1, 2``: valve/actuator ON, Opened -> ``(True, None, None)``
     - ``5``: fan-coil OFF -> ``(False, False, None)``
     - ``6, 7, 8``: fan-coil ON at speed 1..3 -> ``(True, True, 1..3)``
     - ``9``: fan-coil ON in Auto speed -> ``(True, True, None)``
-    - ``14, 15, 16``: extended fan-coil OFF-speed states 1..3 (``MyHomeServer1``)
+    - ``10, 11, 12``: active discrete output per ``MyHomeServer1``
+      ``bt_thermo_manager`` bitmask (no fan state claimed) -> ``(True, None, None)``
+    - ``13, 17``: inactive discrete output per ``MyHomeServer1``
+      ``bt_thermo_manager`` bitmask (no fan state claimed) -> ``(False, None, None)``
+    - ``14, 15, 16``: extended fan-coil OFF speeds 1..3 (``MyHomeServer1``/``F461``)
       -> ``(False, False, None)``
-    - ``100``: proportional 0-10 V output at 0% (OFF / stopped, SCS ``0x80``)
-      -> ``(False, None, None)``
-    - ``101..200``: proportional 0-10 V output at 1%..100% (active, SCS ``0x81..0xE4``)
+    - ``18..22``: active discrete output per ``MyHomeServer1``
+      ``bt_thermo_manager`` bitmask (no fan state claimed) -> ``(True, None, None)``
+    - ``100``: proportional 0-10 V output at 0% (OFF / stopped) -> ``(False, None, None)``
+    - ``101..200``: proportional 0-10 V output at 1%..100% (active)
       -> ``(True, None, None)``
+    - ``< 0``, ``23..99``, ``> 200``: unassigned -> ``None``
     """
     if code in _DIM20_ACTIVE_CODES:
         return (
@@ -501,11 +521,18 @@ def _is_ascii_uint(value: str) -> bool:
 def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:
     """Return ``(is_active, fan_on, fan_speed)`` for a WHO=4 Dimension 20 event or ``#20`` write.
 
-    Decodes ``dimension_value[0]`` directly before delegating to ``OWNd``, because
-    ``OWNd <= 2.0.0b14`` treats every Dimension 20 value ``>= 6`` (including ``100`` =
-    0% proportional 0-10 V OFF and ``14..16`` = extended fan-coil OFF speeds) as
-    ``is_active = True, fan_on = True`` (#908). Falls back to ``message.is_active()``
-    only for unit-test mocks without a ``dimension_value`` sequence.
+    Decodes ``dimension_value[0]`` directly before delegating to ``OWNd`` because:
+    - ``#20`` writes (``OWNCommand``) do not expose ``.is_active()``.
+    - ``OWNd <= 2.0.0b14`` (the release pinned in ``manifest.json``) treats every
+      Dimension 20 value ``>= 6`` (including ``100`` = 0% proportional 0-10 V OFF
+      and ``14..16`` = extended fan-coil OFF speeds) as ``is_active = True,
+      fan_on = True`` (#908).
+    - ``OWNd`` ``b2a1f9ee`` returns ``None`` for ``10..13`` and ``17..22`` pending its
+      correctional PR, whereas ``MyHOME`` classifies them via the ``MyHomeServer1``
+      ``bt_thermo_manager`` bitmask (``13, 17`` inactive; ``10..12, 18..22`` active).
+
+    Falls back to ``message.is_active()`` only for unit-test mocks without a
+    ``dimension_value`` sequence.
     """
     who = getattr(message, "who", None)
     if isinstance(who, (int, str)) and str(who) != "4":
@@ -556,11 +583,15 @@ def thermo_dim19_status(
 ) -> tuple[bool, bool, bool, bool | None, bool | None, int | None] | None:
     """Return ``(cooling_active, heating_active, zone_active, cooling_fan_on, heating_fan_on, fan_speed)``.
 
-    Decodes WHO=4 Dimension 19 (``*#4*WHERE*19*CV*HV##``) directly so proportional
-    0-10 V 0% OFF (``100``) and ``MyHomeServer1`` extended fan-coil OFF states
-    (``14..16``) are not misclassified as active heating/cooling fans by
-    ``OWNd <= 2.0.0b14`` (#908), and preserves active fan speed across both the
-    heating (``HV``) and cooling (``CV``) sides.
+    Decodes WHO=4 Dimension 19 (``*#4*WHERE*19*CV*HV##``) directly via
+    :func:`_decode_thermo_output_code` so proportional 0-10 V 0% OFF (``100``) and
+    ``MyHomeServer1``/``F461`` extended fan-coil OFF states (``14..16``) are not
+    misclassified as active heating/cooling fans by ``OWNd <= 2.0.0b14`` (#908),
+    ``10..13`` and ``17..22`` follow the ``MyHomeServer1`` ``bt_thermo_manager``
+    bitmask rather than returning ``None`` as in ``OWNd`` ``b2a1f9ee``, and active
+    fan speed is preserved across both the heating (``HV``) and cooling (``CV``)
+    sides. Falls back to ``message.is_active()`` only for unit-test mocks without
+    a two-element numeric ``dimension_value`` sequence.
     """
     who = getattr(message, "who", None)
     if isinstance(who, (int, str)) and str(who) != "4":

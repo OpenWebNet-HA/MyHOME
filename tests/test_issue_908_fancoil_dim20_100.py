@@ -1,4 +1,4 @@
-"""Regression and multi-gateway trace tests for Issue #908 (WHO=4 Dimension 19/20 value 100 & 14..16).
+"""Regression and multi-gateway trace tests for Issue #908 (WHO=4 Dimension 19/20 output codes).
 
 Verifies that:
 1. Proportional 0-10 V 0% output (``*#4*Z#N*20*100##``, ``*#4*Z#N*#20*100##``, and
@@ -8,8 +8,10 @@ Verifies that:
 2. Proportional 0-10 V 1%..100% output (``101..200``) is decoded as **active** without
    falsely enabling discrete fan-coil mode on pure 0-10 V mixing valves or spawning
    ghost ``climate`` entities on probe-less ``MyHOMEThermoSwitch`` zones (#785).
-3. ``MyHomeServer1`` extended fan-coil OFF-speed states ``14, 15, 16`` (SCS ``'24'..'26'``)
-   decode as ``is_active = False, fan_on = False`` (``running_fan_speed = "off"``).
+3. ``MyHomeServer1`` / ``F461`` extended fan-coil OFF-speed states ``14, 15, 16`` (SCS ``'24'..'26'``)
+   decode as ``is_active = False, fan_on = False`` (``running_fan_speed = "off"``), and auxiliary
+   discrete states ``10..13, 17..22`` follow ``bt_thermo_manager`` bitmask parity without
+   claiming a fan state.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.switch import MyHOMEThermoSwitch
 from custom_components.myhome.switch import async_setup_entry as switch_setup_entry
 from custom_components.myhome.where_grammar import (
+    _decode_thermo_output_code,
     thermo_dim19_status,
     thermo_dim20_is_active,
     thermo_dim20_status,
@@ -50,8 +53,8 @@ MHS1_LIVE_TRACE_PATH = (
     TRACES_DIR / "myhome_trace_MyHomeServer1_fancoil_dim20_100_2026-11-14.json"
 )
 F459_TRACE_PATH = TRACES_DIR / "myhome_trace_oracle_f459_sabiana_fancoil_dim20_100.json"
-MH200N_TRACE_PATH = (
-    TRACES_DIR / "myhome_trace_oracle_mh200n_dim20_poll_dropped_periodic_100.json"
+MH202_TRACE_PATH = (
+    TRACES_DIR / "myhome_trace_oracle_mh202_dim20_poll_dropped_periodic_100.json"
 )
 MHS1_TRACE_PATH = (
     TRACES_DIR / "myhome_trace_oracle_myhomeserver1_extended_fancoil_off_14_16.json"
@@ -125,11 +128,11 @@ def _make_zone(
 
 
 def test_issue_908_oracle_gateway_divergence_on_who4_dim20() -> None:
-    """Verify the firmware oracle contract backing the three Issue #908 gateway traces."""
+    """Verify the firmware oracle contract backing the Issue #908 gateway traces."""
     assert MHS1_LIVE_TRACE_PATH.is_file()
     assert json.loads(MHS1_LIVE_TRACE_PATH.read_text(encoding="utf-8"))["synthetic"] is False
     assert F459_TRACE_PATH.is_file()
-    assert MH200N_TRACE_PATH.is_file()
+    assert MH202_TRACE_PATH.is_file()
     assert MHS1_TRACE_PATH.is_file()
 
     oracle = json.loads(ORACLE_JSON_PATH.read_text(encoding="utf-8"))["verdicts"]
@@ -147,47 +150,136 @@ def test_issue_908_oracle_gateway_divergence_on_who4_dim20() -> None:
 
 
 def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
-    """Verify protocol-exact decoding of all Dimension 20 and Dimension 19 codes and mocks."""
-    # Inactive non-fan codes: 0 (OFF), 3 (Closed), 4 (Stop), 100 (0% 0-10 V OFF)
-    for code in (0, 3, 4, 100):
-        evt = OWNHeatingEvent(f"*#4*1#3*20*{code}##")
-        cmd = OWNHeatingCommand(f"*#4*1#3*#20*{code}##")
-        assert thermo_dim20_status(evt) == (False, None, None)
-        assert thermo_dim20_status(cmd) == (False, None, None)
-        assert thermo_dim20_is_active(evt) is False
-        assert thermo_dim20_is_active(cmd) is False
+    """Verify protocol-exact decoding of the full 0..259 & -1 Dim 19/20 table and mocks."""
+    # Exhaustive 0..259 matrix across Dimension 20 (status & #20 write) and Dimension 19
+    expected_by_code: dict[int, tuple[bool, bool | None, int | None] | None] = {}
+    for code in range(260):
+        if code in (0, 3, 4, 13, 17, 100):
+            expected_by_code[code] = (False, None, None)
+        elif code in (5, 14, 15, 16):
+            expected_by_code[code] = (False, False, None)
+        elif code in (1, 2, 10, 11, 12, 18, 19, 20, 21, 22):
+            expected_by_code[code] = (True, None, None)
+        elif code in (6, 7, 8):
+            expected_by_code[code] = (True, True, code - 5)
+        elif code == 9:
+            expected_by_code[code] = (True, True, None)
+        elif 101 <= code <= 200:
+            expected_by_code[code] = (True, None, None)
+        else:
+            expected_by_code[code] = None
 
-    # Inactive fan-coil codes: 5 (Fan OFF), 14..16 (MyHomeServer1 OFF speeds 1..3)
-    for code in (5, 14, 15, 16):
-        evt = OWNHeatingEvent(f"*#4*1#2*20*{code}##")
-        cmd = OWNHeatingCommand(f"*#4*1#2*#20*{code}##")
-        assert thermo_dim20_status(evt) == (False, False, None)
-        assert thermo_dim20_status(cmd) == (False, False, None)
-        assert thermo_dim20_is_active(evt) is False
-        assert thermo_dim20_is_active(cmd) is False
+    for code, expected in expected_by_code.items():
+        evt20 = OWNHeatingEvent(f"*#4*1#3*20*{code}##")
+        cmd20 = OWNHeatingCommand(f"*#4*1#3*#20*{code}##")
+        expected_active = expected[0] if expected is not None else None
+        assert thermo_dim20_status(evt20) == expected
+        assert thermo_dim20_status(cmd20) == expected
+        assert thermo_dim20_is_active(evt20) is expected_active
+        assert thermo_dim20_is_active(cmd20) is expected_active
 
-    # Active discrete valve codes: 1 (ON), 2 (Opened)
-    for code in (1, 2):
-        assert thermo_dim20_status(OWNHeatingEvent(f"*#4*1#1*20*{code}##")) == (
-            True,
+        evt19_heat = OWNHeatingEvent(f"*#4*1*19*0*{code}##")
+        evt19_cool = OWNHeatingEvent(f"*#4*1*19*{code}*0##")
+        if expected is None:
+            assert thermo_dim19_status(evt19_heat) is None
+            assert thermo_dim19_status(evt19_cool) is None
+        else:
+            assert thermo_dim19_status(evt19_heat) == (
+                False,
+                expected[0],
+                expected[0],
+                None,
+                expected[1],
+                expected[2],
+            )
+            assert thermo_dim19_status(evt19_cool) == (
+                expected[0],
+                False,
+                expected[0],
+                expected[1],
+                None,
+                expected[2],
+            )
+
+    # Explicit boundary checks for bt_thermo_manager bitmask codes 10..13 & 17..22
+    for code in (13, 17):
+        assert thermo_dim20_status(OWNHeatingEvent(f"*#4*1#3*20*{code}##")) == (False, None, None)
+        assert thermo_dim20_status(OWNHeatingCommand(f"*#4*1#3*#20*{code}##")) == (
+            False,
+            None,
+            None,
+        )
+        assert thermo_dim19_status(OWNHeatingEvent(f"*#4*1*19*0*{code}##")) == (
+            False,
+            False,
+            False,
+            None,
+            None,
+            None,
+        )
+        assert thermo_dim19_status(OWNHeatingEvent(f"*#4*1*19*{code}*0##")) == (
+            False,
+            False,
+            False,
+            None,
             None,
             None,
         )
 
-    # Active fan-coil codes: 6..8 (speeds 1..3), 9 (Auto speed)
-    assert thermo_dim20_status(OWNHeatingEvent("*#4*1#2*20*6##")) == (True, True, 1)
-    assert thermo_dim20_status(OWNHeatingEvent("*#4*1#2*20*7##")) == (True, True, 2)
-    assert thermo_dim20_status(OWNHeatingEvent("*#4*1#2*20*8##")) == (True, True, 3)
-    assert thermo_dim20_status(OWNHeatingEvent("*#4*1#2*20*9##")) == (True, True, None)
+    for code in (10, 11, 12, 18, 19, 20, 21, 22):
+        assert thermo_dim20_status(OWNHeatingEvent(f"*#4*1#3*20*{code}##")) == (True, None, None)
+        assert thermo_dim20_status(OWNHeatingCommand(f"*#4*1#3*#20*{code}##")) == (
+            True,
+            None,
+            None,
+        )
+        assert thermo_dim19_status(OWNHeatingEvent(f"*#4*1*19*0*{code}##")) == (
+            False,
+            True,
+            True,
+            None,
+            None,
+            None,
+        )
+        assert thermo_dim19_status(OWNHeatingEvent(f"*#4*1*19*{code}*0##")) == (
+            True,
+            False,
+            True,
+            None,
+            None,
+            None,
+        )
 
-    # Active proportional 0-10 V codes: 101 (1%) .. 200 (100%)
-    for code in (101, 155, 200):
-        evt = OWNHeatingEvent(f"*#4*1#3*20*{code}##")
-        cmd = OWNHeatingCommand(f"*#4*1#3*#20*{code}##")
-        assert thermo_dim20_status(evt) == (True, None, None)
-        assert thermo_dim20_status(cmd) == (True, None, None)
-        assert thermo_dim20_is_active(evt) is True
-        assert thermo_dim20_is_active(cmd) is True
+    # Unassigned gaps (23..99, 201..259) and mixed valid + 23 on Dimension 19 -> None
+    for code in (*range(23), *range(100, 201)):
+        assert thermo_dim19_status(OWNHeatingEvent(f"*#4*1*19*{code}*23##")) is None
+        assert thermo_dim19_status(OWNHeatingEvent(f"*#4*1*19*23*{code}##")) is None
+
+    # Negative value (-1) via helper and non-negative-string fallback -> None
+    assert _decode_thermo_output_code(-1) is None
+    assert (
+        thermo_dim20_status(
+            SimpleNamespace(
+                who=4,
+                dimension=20,
+                message_type=MESSAGE_TYPE_ACTION,
+                dimension_value=["-1"],
+            )
+        )
+        is None
+    )
+    for vals in (["-1", "0"], ["0", "-1"]):
+        assert (
+            thermo_dim19_status(
+                SimpleNamespace(
+                    who=4,
+                    dimension=19,
+                    message_type=MESSAGE_TYPE_ACTION,
+                    dimension_value=vals,
+                )
+            )
+            is None
+        )
 
     # Status requests, cross-WHO frames, non-ASCII digits, out-of-table codes, and non-Dim20 -> None
     assert thermo_dim20_status(OWNHeatingCommand("*#4*1#3*20##")) is None
@@ -389,11 +481,11 @@ async def test_f459_sabiana_trace_replay_no_stuck_or_flipping_heating(
 
 
 @pytest.mark.asyncio
-async def test_mh200n_dropped_poll_trace_periodic_100_keeps_idle(
+async def test_mh202_dropped_poll_trace_periodic_100_keeps_idle(
     hass: HomeAssistant,
 ) -> None:
-    """On MH200N (*#4*1*20## dropped), unsolicited 8-min *#4*1#3*20*100## keeps hvac_action IDLE."""
-    trace = json.loads(MH200N_TRACE_PATH.read_text(encoding="utf-8"))
+    """On MH202 (*#4*1*20## dropped), unsolicited 8-min *#4*1#3*20*100## keeps hvac_action IDLE."""
+    trace = json.loads(MH202_TRACE_PATH.read_text(encoding="utf-8"))
     gw = _make_gateway(
         model=trace["gateway"]["model"],
         firmware=trace["gateway"]["firmware"],
@@ -818,3 +910,137 @@ def test_issue_908_golden_corpus_conformance_entries() -> None:
         False,
         None,
     )
+
+
+@pytest.mark.asyncio
+async def test_climate_and_thermo_switch_extended_bitmask_codes_10_to_13_and_17_to_22(
+    hass: HomeAssistant,
+) -> None:
+    """Codes 10..13 and 17..22 drive Climate/ThermoSwitch without enabling fan mode or ghost entities."""
+    gw = _make_gateway(model="MyHomeServer1", firmware="2.82.6")
+
+    # 1. MyHOMEClimate: active codes (10..12, 18..22) set HEATING/COOLING; inactive (13, 17) set IDLE;
+    #    none of them enable _fan or leak a fan speed attribute.
+    heat_zone = _make_zone(hass, gw, "1")
+    heat_zone._attr_hvac_mode = HVACMode.HEAT
+    cool_zone = _make_zone(hass, gw, "2")
+    cool_zone._attr_hvac_mode = HVACMode.COOL
+    auto_zone = _make_zone(hass, gw, "3")
+    auto_zone._attr_hvac_mode = HVACMode.AUTO
+
+    for active_code, inactive_code in (
+        (10, 13),
+        (11, 17),
+        (12, 13),
+        (18, 17),
+        (19, 13),
+        (20, 17),
+        (21, 13),
+        (22, 17),
+    ):
+        heat_zone.handle_event(OWNHeatingEvent(f"*#4*1#1*20*{active_code}##"))
+        assert heat_zone.hvac_action == HVACAction.HEATING
+        assert heat_zone._fan is False
+        assert "running_fan_speed" not in heat_zone.extra_state_attributes
+
+        heat_zone.handle_event(OWNHeatingEvent(f"*#4*1#1*20*{inactive_code}##"))
+        assert heat_zone.hvac_action == HVACAction.IDLE
+        assert heat_zone._fan is False
+
+        cool_zone.handle_event(OWNHeatingEvent(f"*#4*2#1*20*{active_code}##"))
+        assert cool_zone.hvac_action == HVACAction.COOLING
+        assert cool_zone._fan is False
+        cool_zone.handle_event(OWNHeatingEvent(f"*#4*2#1*20*{inactive_code}##"))
+        assert cool_zone.hvac_action == HVACAction.IDLE
+        assert cool_zone._fan is False
+
+        auto_zone.handle_event(OWNHeatingEvent(f"*#4*3*19*0*{active_code}##"))
+        assert auto_zone.hvac_action == HVACAction.HEATING
+        assert auto_zone._fan is False
+        auto_zone.handle_event(OWNHeatingEvent(f"*#4*3*19*{active_code}*0##"))
+        assert auto_zone.hvac_action == HVACAction.COOLING
+        assert auto_zone._fan is False
+        auto_zone.handle_event(OWNHeatingEvent(f"*#4*3*19*{inactive_code}*13##"))
+        assert auto_zone.hvac_action == HVACAction.IDLE
+        assert auto_zone._fan is False
+
+    # 2. Probe-less discovery deferral + MyHOMEThermoSwitch tracking for 10..13 and 17..22
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: gw.mac, "host": "192.0.2.99", "port": 20000},
+        unique_id=gw.mac,
+        subentries_data=[
+            {
+                "data": {CONF_WHO: "4", CONF_WHERE: "7#1", "name": "Aux Actuator"},
+                "subentry_type": SUBENTRY_TYPE_THERMO_SWITCH,
+                "title": "Aux Actuator",
+                "unique_id": f"{gw.mac}-thermo-switch-7#1",
+            },
+            {
+                "data": {CONF_WHO: "4", CONF_WHERE: "8", "name": "Aux Zone"},
+                "subentry_type": SUBENTRY_TYPE_THERMO_SWITCH,
+                "title": "Aux Zone",
+                "unique_id": f"{gw.mac}-thermo-switch-8",
+            },
+        ],
+    )
+    entry.add_to_hass(hass)
+    plat_dict: dict[str, dict[str, dict[str, str]]] = {p: {} for p in PLATFORMS}
+    entry.runtime_data = MyHOMERuntimeData(
+        gateway=gw,
+        platforms=plat_dict,
+        entities={p: {} for p in PLATFORMS},
+    )
+
+    added_climates: list[MyHOMEClimate] = []
+    added_switches: list[MyHOMEThermoSwitch] = []
+
+    def _collect_switches(entities: list[MyHOMEThermoSwitch], **_: object) -> None:
+        for ent in entities:
+            ent.hass = hass
+            ent.entity_id = f"switch.thermo_{ent._where.replace('#', '_')}"
+            ent.async_write_ha_state = MagicMock()
+            ent.async_schedule_update_ha_state = MagicMock()
+        added_switches.extend(entities)
+
+    await climate_setup_entry(hass, entry, added_climates.extend)  # type: ignore[arg-type]
+    await switch_setup_entry(hass, entry, _collect_switches)  # type: ignore[arg-type]
+    sw_by_where = {s._full_where: s for s in added_switches}
+
+    for code, expected_on in (
+        (10, True),
+        (13, False),
+        (11, True),
+        (17, False),
+        (12, True),
+        (13, False),
+        (18, True),
+        (17, False),
+        (19, True),
+        (13, False),
+        (20, True),
+        (17, False),
+        (21, True),
+        (13, False),
+        (22, True),
+        (17, False),
+    ):
+        evt20 = OWNHeatingEvent(f"*#4*7#1*20*{code}##")
+        cmd20 = OWNHeatingCommand(f"*#4*7#1*#20*{code}##")
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", evt20)
+        sw_by_where["7#1"].handle_event(evt20)
+        assert sw_by_where["7#1"].is_on is expected_on
+        sw_by_where["7#1"].handle_event(cmd20)
+        assert sw_by_where["7#1"].is_on is expected_on
+
+        evt19_h = OWNHeatingEvent(f"*#4*8*19*0*{code}##")
+        evt19_c = OWNHeatingEvent(f"*#4*8*19*{code}*0##")
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", evt19_h)
+        sw_by_where["8"].handle_event(evt19_h)
+        assert sw_by_where["8"].is_on is expected_on
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", evt19_c)
+        sw_by_where["8"].handle_event(evt19_c)
+        assert sw_by_where["8"].is_on is expected_on
+
+    # None of the probe-less zones spawned a climate entity across 10..13 and 17..22!
+    assert added_climates == []
