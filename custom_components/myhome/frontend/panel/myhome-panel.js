@@ -687,6 +687,21 @@ class MyHomePanel extends HTMLElement {
   }
 
   /**
+   * The twin of `_openCalibrationWizard` for one cover (docs/panel-calibration-open-cover.md): the Calibration tab, with
+   * that cover's view open (`CalibrationTab.requestCover`). No control calls it yet; wiring one is the owning tab's choice.
+   */
+  _openCalibrationCover(entity, options = {}) {
+    if (!this._data) return false;
+    this._view = "entities";
+    this._coverView = "calibration";
+    if (this._categoryMode === "single") this._selectedWho = "2";
+    const asked = this._calibrationTab.requestCover(entity.entry_id, entity.entity_id, options);
+    this._renderContent();
+    this.shadowRoot.getElementById("cover-calibration-tab")?.scrollIntoView?.({ block: "start" });
+    return asked;
+  }
+
+  /**
    * A tab registers `guard` while leaving it would interrupt something (null to remove it). Before the panel moves
    * away from the tab (Entities/Bus monitor, gateway, WHO category, cover view, a link, the type and area filters) it
    * calls `guard()`: a falsy result lets the navigation happen at once; a promise delays it and cancels it if it
