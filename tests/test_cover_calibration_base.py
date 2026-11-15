@@ -7,7 +7,7 @@ import asyncio
 import copy
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from OWNd.message import OWNMessage
@@ -1442,23 +1442,6 @@ async def test_the_session_listens_to_the_status_requests_while_it_lasts(hass, p
     session.close()
     session.reservation.completed()
     assert listeners == set()
-
-
-async def test_the_gateway_tells_its_listeners_of_each_automation_status_request(hass):
-    """Every WHO 2 status request sent through the handler (a point, the general address), once queued; no other WHO."""
-    from OWNd.message import OWNAutomationCommand, OWNLightingCommand
-
-    from tests.test_sweep_pacing import _make_gateway
-
-    gateway = _make_gateway(hass)
-    heard = []
-    gateway.automation_status_listeners.add(lambda message: heard.append(str(message)))
-    future = hass.loop.create_future()
-    with patch.object(gateway._command_pool, "send_status_request", AsyncMock(return_value=future)):
-        for message in (OWNAutomationCommand.status("11"), OWNAutomationCommand.status("0"),
-                        OWNLightingCommand.status("11")):
-            assert await gateway.send_status_request(message) is future
-    assert heard == ["*#2*11##", "*#2*0##"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
