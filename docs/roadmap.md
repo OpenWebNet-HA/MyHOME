@@ -9,9 +9,9 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ---
 
-## 🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)
+## 🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** across **v2.0.0b1 through v2.0.0b18** on `OWNd==2.0.0b14`. The remaining work is final **v2.0.0** release stabilization: see *Final Stabilization* below.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** for **v2.0.0** on `OWNd==2.0.0`.
 
 ```mermaid
 gantt
@@ -61,8 +61,11 @@ gantt
     WHO 4 Startup Pacing, Offset Reads & 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
     Expose Virtual Dimmer Hold-Up & Firmware Gates (#883, #904) :done, 2026-11-09, 2026-11-14
     OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909) :done, 2026-11-13, 2026-11-14
+    section Delivered in v2.0.0
+    RestoreSensor kWh Fix, Dim 19/20 Idle & N4692 Knob (#913, #914, #921) :done, 2026-11-14, 2026-11-15
+    Marketplace 2026.11, Apache-2.0 Docs & Golden Corpus (#906, #922, #923) :done, 2026-11-14, 2026-11-15
     section Final Stabilization
-    v2.0.0 Release Candidate & Distribution Consultation :2026-10-05, 2026-11-30
+    v2.0.0 Release Stabilization :done, 2026-10-05, 2026-11-15
 ```
 
 ---
@@ -73,7 +76,7 @@ The following table summarizes the completed architectural features and protocol
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.0b14`) | Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.0`) | Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles. |
 | **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators, firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Multi-Gateway Isolation Architecture** | Core / Routing | ✅ **Shipped** (#453) | Namespaced dispatchers, independent session queues, and cross-gateway bus protection eliminating cross-talk in multi-gateway installations. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | Native Home Assistant UI device triggers with preserved 4-digit addressing (`"0001"`), parent gateway isolation, and all 8 press/held/release actions with repeat debouncing. |
@@ -81,14 +84,14 @@ The following table summarizes the completed architectural features and protocol
 | **Dynamic Command Worker Concurrency** | Transports | ✅ **Shipped** | User-configurable (1–4 workers) command concurrency automatically capped to hardware-safe limits per gateway model (e.g. 1 for MH200/MH201, 4 for F454/MHS1). |
 | **Native Hardware Bus Timers** | WHO=1 | ✅ **Shipped** | Offloaded countdown timers on Legrand DIN actuators (F411) via the dedicated `myhome.turn_on_timed` service action (`0.5–918,000` seconds). |
 | **Central Unit Coordination (P4)** | WHO=4 | ✅ **Shipped** (#817, #846, #909) | Dedicated master coordination for 99-zone Central Unit (`#0`, model 3550, including `*4*3100*#0##` auto restore) and 4-zone Central Unit (`#0#1`, model 4695). Master Seasonal switches propagate to subordinate zones. |
-| **Climate Zone State Diagnostics** | WHO=4 | ✅ **Shipped** (#404, #457, #908) | Dynamic HVAC action deduction (`heating`, `cooling`, `idle`), `Dimension 11` / `20` fancoils, fan mode persistence across restarts, and paced startup sweeps. |
+| **Climate Zone State Diagnostics** | WHO=4 | ✅ **Shipped** (#404, #457, #908, #914, #921) | Dynamic HVAC action deduction (`heating`, `cooling`, `idle` incl. Dimension 19/20 codes `14..16` & `100`), `Dimension 11` / `20` fancoils, `Dimension 13` knob detents, fan mode persistence across restarts, and paced startup sweeps. |
 | **Real-World CI Trace Replay Engine (P5)** | Testing / CI | ✅ **Shipped** | Automated pytest fixture engine (`tests/test_trace_replay.py`) replaying authentic on-wire captures across 12 physical gateway families directly against Home Assistant state machines. |
 | **DALI Tunable White & Color** | WHO=1 | ✅ **Shipped** | DALI DT8 tunable white (Kelvin 2000K–6535K / mireds, Dimension 14), native HSV color promotion (Dimension 12), and smooth dimming speed curves. |
 | **Declared Groups & Assumed State** | WHO=1 | ✅ **Shipped** (#368, #376, #377) | Lighting groups declared under `light:` (`where: '#G'`, optional `members:`) with aggregate/assumed-state inference and 500 ms debounced targeted status sweeps (`broadcast_resync`) upon intercepting group (`WHERE=#1`), area, or general (`WHERE=0`) frames. |
 | **Cover Live Animation, Venetian Tilt & Travel Calibration** | WHO=2 | ✅ **Shipped** (#433, #870, #900) | ~1 s interpolated live travel-time positioning, `Dimension 10` / `11` position feedback, Venetian slat-tilt tracking across intermediate `Dimension 10` stops, dedicated cover run-stop locks, and on-bus stopwatch calibration (`myhome.calibrate_cover`, **Calibrate travel time**, and **Calibrate all covers**). |
 | **Sound System 2.0, WHO 22 RDS Tuners & Streaming Proxy** | WHO=16 / 22 | ✅ **Shipped** (#695, #839, #844) | Multi-room matrix amplifier control (`F441`/`F441M` over `WHO = 16`), `F500`/`F500N` FM RDS tuner controls (`media_player`, `number`, `button`) on both `WHO = 22`-only (`MyHomeServer1`, `F461`) and dual-stack gateways, `4#<area>` active-source area tracking, and Dynamic Proxy Decoders for Music Assistant / Spotify. |
 | **Door Entry Locks & Intercom Events** | WHO=6 / 8 | ✅ **Shipped** (#667) | Door lock release entities (`lock.py`, configurable hold pulse and optional PIN confirmation) and video intercom call event triggers. |
-| **Energy Management & Metering** | WHO=18 | ✅ **Shipped** (#494, #907) | Instantaneous active power (W), cumulative total/daily/monthly Wh counters, and proactive bus sweeps for `F520` / `F521` / `3522` DIN meters. |
+| **Energy Management & Metering** | WHO=18 | ✅ **Shipped** (#494, #907, #913) | Instantaneous active power (W), unit-safe `RestoreSensor` cumulative total/daily/monthly Wh/kWh counters, and proactive bus sweeps for `F520` / `F521` / `3522` DIN meters. |
 | **Burglar Alarm** | WHO=5 | ✅ **Shipped** (#564) | Armed / disarmed / triggered state (read-only panel), zone 0 synchronization, `myhome_alarm_event` notifications, and optional AUX (`WHO = 9`) arming/disarming bridge for central units (`3485`/`3486`). |
 | **Dry Contacts & Technical Alarms** | WHO=25 | ✅ **Shipped** | Dynamic discovery, device class suffix stripping (#247), inverted contact states, and event dispatching for Legrand 3477 binary sensors. |
 | **Lovelace Bus Monitor Card** | Frontend | ✅ **Shipped** (`<myhome-openwebnet-bus-monitor>`) | Live scrolling stream, color-coded WHO badges, scoped custom element registry self-healing (#277), syntax injector, **`🔴 Start Trace` / `⏹ Stop Trace`** recording, and **`📋 Copy Trace`** / **`💾 Export Trace`** export. |
@@ -163,7 +166,7 @@ graph LR
     - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
 
 4. **Platinum Tier**:
-    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0b14`) on PyPI.
+    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0`) on PyPI.
     - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
 
 ---

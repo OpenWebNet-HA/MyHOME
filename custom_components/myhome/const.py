@@ -23,7 +23,7 @@ ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 ATTR_WHERE = "where"
 ATTR_ACTION = "action"
-INTEGRATION_VERSION = "2.0.0b18"
+INTEGRATION_VERSION = "2.0.0"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 

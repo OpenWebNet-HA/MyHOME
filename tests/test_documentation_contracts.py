@@ -1251,10 +1251,23 @@ def test_gate6_blueprints_and_stable_version_branch_transition(
     assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is False
     door_bp.write_text(orig_door_bp, encoding="utf-8")
 
-    # 2. Simulate stable release version "2.0.0" in manifest.json:
-    #    - check mode must FAIL while URLs point to v2-phase1-architecture
-    #    - update mode must rewrite all 4 target groups to master
-    #    - subsequent check mode must PASS
+    # 2. Verify bidirectional branch transitions (beta <-> stable) regardless of
+    #    whether the live repo is currently on a pre-release or stable version:
+    #    a) Put sandbox into beta ("2.0.0b18" -> v2-phase1-architecture)
+    fake_manifest.write_text(
+        re.sub(r'"version":\s*"[^"]+"', '"version": "2.0.0b18"', orig_manifest),
+        encoding="utf-8",
+    )
+    if '"version": "2.0.0"' in orig_manifest:
+        assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is False
+    assert sync_doc.sync_blueprints_and_branch_urls(update=True)[0] is True
+    assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is True
+    assert "/blob/v2-phase1-architecture/blueprints/" in door_bp.read_text(encoding="utf-8")
+
+    #    b) Transition sandbox from beta to stable ("2.0.0" -> master):
+    #       - check mode must FAIL while URLs point to v2-phase1-architecture
+    #       - update mode must rewrite all 4 target groups to master
+    #       - subsequent check mode must PASS
     fake_manifest.write_text(
         re.sub(r'"version":\s*"[^"]+"', '"version": "2.0.0"', orig_manifest),
         encoding="utf-8",

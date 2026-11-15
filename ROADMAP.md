@@ -8,7 +8,7 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ## 🗺️ Current Delivery Status (v2.0.0 Release Readiness & Platinum IQS)
 
-Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0 architecture** (currently at `2.0.0b18`). Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
+Through intense community collaboration and engineering, the major architectural milestones originally planned across Phases 1, 2, 3, and 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** in the **v2.0.0 architecture** (shipped in `2.0.0` on `OWNd==2.0.0`). Furthermore, **Phase 5 (Home Assistant Integration Quality Scale)** has been achieved ahead of schedule, with the integration officially qualifying for the **🏆 Platinum Quality Scale** and strict typing enforced with zero errors across all modules.
 
 ```mermaid
 gantt
@@ -46,16 +46,19 @@ gantt
     WHO 4 Startup Pacing, Offset Reads & 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
     Expose Virtual Dimmer Hold-Up & Firmware Gates (#883, #904)      :done, 2026-11-09, 2026-11-14
     OWNd 2.0.0b14 Pin & BTicino F453 Identity (#901, #909)           :done, 2026-11-13, 2026-11-14
+    section Delivered in v2.0.0
+    RestoreSensor kWh Fix, Dim 19/20 Idle & N4692 Knob (#913, #914, #921) :done, 2026-11-14, 2026-11-15
+    Marketplace 2026.11, Apache-2.0 Docs & Golden Corpus (#906, #922, #923) :done, 2026-11-14, 2026-11-15
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
     RFC - Scope Resolution for WHO 14, WHO 24 & WHO 22              :done, 2026-09-11, 2026-11-04
     section Release Milestones
-    Stable v2.0.0 - merge v2 into master (PR #232)                  :2026-10-01, 2026-11-30
+    Stable v2.0.0 - merge v2 into master (PR #232)                  :done, 2026-10-01, 2026-11-15
 ```
 
 ---
 
-## 📦 What is Shipped & Operational in v2.0.0b18
+## 📦 What is Shipped & Operational in v2.0.0
 
 The following table summarizes the completed architectural features and protocol subsystems verified in the current release:
 
@@ -64,7 +67,7 @@ The following table summarizes the completed architectural features and protocol
 | **Cover Live Animation, End-Stop Settle & Min Delta** | WHO=2 | ✅ **Shipped** (#778, #834, #847, #870, #900) | ~1 s interpolated live position during timed runs, full-run settle on `travel_time + 2s`, 0.5 s early cutoff tolerance, `min_position_delta` (1–5%), and Venetian slat-tilt tracking across intermediate `Dimension 10` stops. |
 | **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators (with `H4652/2` hold-up step-up, retry dedup, and UI action selectors), firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Venetian Blinds, Impulse Gates & Cover Start-Up Floor** | WHO=2 / WHO=1 | ✅ **Shipped** (#508, #667, #702, #707, #708) | Slat tilt as timed slat pulses (`slat_tilt`, `slat_time`); impulse garage / gate covers on WHO 1 relays with optional safety approval; per-cover `min_motor_pulse`, full runs at 0 % / 100 %, and timed runs ended at the actuator's stop status. |
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.0b14`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, idle command-socket recovery (`OWNd#165`), WHO 4 profile flags (`OWNd#168`), and `*4*3100*#0##` central `auto` builder (`OWNd#169`). |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.0`) | Extracted into an independent, strongly typed Python library on PyPI; PEP 561 `py.typed` compliance, idle command-socket recovery (`OWNd#165`), WHO 4 profile flags (`OWNd#168`), `*4*3100*#0##` central `auto` builder (`OWNd#169`), and WHO 4 `Dimension 19/20` idle codes (`OWNd#174`). |
 | **Lighting Groups & General Debounced Resync (P7)** | WHO=1 | ✅ **Shipped** (#367, #376, #377, #391) | Declared groups under `light:` in `myhome.yaml` (`where: '#G'`, optional `members:`) with aggregate status or `assumed_state`; 500 ms debounced sweep with bidirectional echo window and per-address cancellation; truthful event emission and centralized `FrameRouter` integration. |
 | **Strict Typing & Platinum Quality Seal** | Core / IQS | ✅ **Shipped** (`quality_scale.yaml`) | 100% compliance across all Bronze, Silver, Gold, and Platinum rules; strict `mypy` typing with 0 errors across all integration modules. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | First-class Home Assistant UI device triggers with string-preserved addressing (`"0001"`), gateway MAC isolation, and all 8 press/held/release actions. |
@@ -205,7 +208,7 @@ graph LR
 
 #### 2. 🥈 Silver Robustness & Quality Hardening — ✅ 100% Complete (10/10)
 
-* **`test-coverage` (100.0% Strict Statement Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (over 5,800 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
+* **`test-coverage` (100.0% Strict Statement Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (6,321 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
 * **`action-exceptions`**: Service actions validate all inputs and raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` mapped directly to localized translation keys under `exceptions` in `strings.json`.
 * **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all 11 platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `number.py`, `alarm_control_panel.py`, `lock.py`) for non-blocking local push stream processing.
 
@@ -222,14 +225,14 @@ graph LR
 
 #### 4. 🏆 Platinum Engineering Tier — ✅ 100% Complete (3/3)
 
-* **`async-dependency`**: The underlying `OWNd` protocol engine (`OWNd==2.0.0b14`, pinned in `manifest.json`) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
+* **`async-dependency`**: The underlying `OWNd` protocol engine (`OWNd==2.0.0`, pinned in `manifest.json`) is a 100% non-blocking asyncio library with zero synchronous blocking socket calls.
 * **`inject-websession`**: Formally exempt (all communication operates over raw OpenWebNet binary/text TCP streams; no HTTP websession required).
 * **`strict-typing`**: Enforces `mypy --strict` with **0 errors across all integration modules**. Cascading type errors were eliminated alongside `OWNd`'s PEP 561 `py.typed` marker (PR #393), guarded in CI by `scripts/typing_ratchet.py`.
 
 #### 5. 🌐 Release Status: Stable v2.0.0
 
 * **Branding Assets (`brands`)**: Already in place. Local brand assets (`icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`) are bundled in `custom_components/myhome/brand/` for Home Assistant 2026.3+ and the Home Assistant Marketplace (2026.11+), and the MyHOME icon and logo were also merged into `home-assistant/brands` in [`#2052`](https://github.com/home-assistant/brands/pull/2052) (2020-11-30, for the original integration); nothing is pending.
-* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that Home Assistant Marketplace (2026.11+) and HACS (`< 2026.11`) users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Every release so far (latest `v2.0.0b18`) is a pre-release, and the integration requires Home Assistant 2026.3 or newer (Python 3.14).
+* **PR #232 (`v2-phase1-architecture` → `master`)**: The pull request that brings v2 to `master` inside this repository, so that Home Assistant Marketplace (2026.11+) and HACS (`< 2026.11`) users receive it as a stable release; it is not a Home Assistant core submission. It is mergeable and awaiting review. Prepared for the `v2.0.0` stable release on `OWNd==2.0.0`; requires Home Assistant 2026.3 or newer (Python 3.14).
 
 ---
 
