@@ -2,24 +2,8 @@
 #
 # Plant A: BTicino MH200 + F441M, amplifier addresses 14/17/18/21/22/23/35/36,
 #          sources: L4561 stereo control (S2) and F500 tuner (S1).
-# Plant B: BTicino MH200N + F441M (contributed via PR #422), amplifier addresses
+# Plant B: BTicino MH200N + F441M (contributed via MyHOME#422), amplifier addresses
 #          11/12/21/31/41, captured from wall controls and the iMyHome iOS app.
-#
-# The routing fixtures are the reason this file exists. An amplifier address is
-# EA — environment digit, then amplifier within that environment — and the
-# matrix routes per output, one output per environment. The routing pseudo
-# address is therefore "1" + environment + source. Plant B pins the digit order
-# independently of plant A: the same amplifier 11 is routed to source 2 with
-# 112 and to source 1 with 111, and a general power-on sweeps 111..181 (eight
-# environments, one source).
-#
-# No builder is asserted for the routing frames yet: OWNSoundCommand.select_source
-# in OWNd still composes this address from the wrong digits (see PR #422 and the
-# OWNd fix). Add the builder here once that lands, so the corpus locks it in.
-#
-# Frames are verbatim except where a note says otherwise.
-
-# ── Status discovery (DIMENSION 5) ────────────────────────────────────────────
 
 - id: sound.dim.state.request.0
   frame: "*#16*0*5##"
@@ -44,8 +28,6 @@
   mcp_valid: true
   mcp_notes: "Plant A: request state for stereo source device 101 on MH200."
   roundtrip: true
-
-# ── Source devices (WHERE 101-109) ────────────────────────────────────────────
 
 - id: sound.cmd.source.on.1
   frame: "*16*3*101##"
@@ -90,8 +72,6 @@
   mcp_valid: true
   mcp_notes: "Plant A: source 2 (L4561 stereo control) released; its power LED returns to standby."
   roundtrip: true
-
-# ── Matrix routing: "1" + environment + source ────────────────────────────────
 
 - id: sound.event.routing.env1.source1
   frame: "*16*3*111##"
@@ -158,8 +138,6 @@
   mcp_valid: true
   mcp_notes: "Plant B: last environment of the same sweep. Eight environments on one source rules out reading the middle digit as the source."
   roundtrip: true
-
-# ── Amplifier zones (WHERE EA) ────────────────────────────────────────────────
 
 - id: sound.cmd.zone.on.11
   frame: "*16*3*11##"
@@ -234,8 +212,6 @@
   mcp_valid: true
   mcp_notes: "Plant A: amplifier 2 in environment 2 ON."
   roundtrip: true
-
-# ── Volume (DIMENSION 1) ──────────────────────────────────────────────────────
 
 - id: sound.dim.volume.response.11
   frame: "*#16*11*1*17##"
@@ -325,8 +301,6 @@
   mcp_notes: "Plant A: amplifier 22 reports volume 15 of 31 on MH200."
   roundtrip: true
 
-# ── RDS (DIMENSION 8) ─────────────────────────────────────────────────────────
-
 - id: sound.dim.rds.response.101
   frame: "*#16*101*8*32*82*97*100*105*111*32*49##"
   direction: dimension_response
@@ -338,8 +312,6 @@
   mcp_valid: true
   mcp_notes: "Plant B captured a live RDS broadcast on source 1 as eight ASCII codes. The station name has been replaced with ' Radio 1' here — the payload is what the contributor happened to be listening to, and only the shape (DIMENSION 8, eight codes) is under test."
   roundtrip: true
-
-# ── Intercom audio ducking & volume restoration (Issue #669) ──────────────────
 
 - id: sound.dim.volume.duck.41
   frame: "*#16*41*1*1##"

@@ -1,0 +1,158 @@
+# WHO=6 Door Entry System — lock release, camera switching & call signaling.
+
+- id: door_entry.capture.open_lock.4000
+  frame: "*6*10*4000##"
+  direction: command
+  who: 6
+  what: 10
+  where: "4000"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Release door lock on external unit 4000 (WHAT 10; received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNDoorEntryCommand
+    method: open_lock
+    args: [4000]
+
+- id: door_entry.capture.open_lock.4003
+  frame: "*6*10*4003##"
+  direction: command
+  who: 6
+  what: 10
+  where: "4003"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Release door lock on external unit 4003 (H/L4684 capture, MyHOME#839)"
+  roundtrip: true
+  builder:
+    class: OWNDoorEntryCommand
+    method: open_lock
+    args: [4003]
+
+- id: door_entry.capture.open_lock.4001.sub2
+  frame: "*6*10*4001#2##"
+  direction: command
+  who: 6
+  what: 10
+  where: "4001"
+  where_param: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Release door lock on external unit 4001 sub-relay 2 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNDoorEntryCommand
+    method: open_lock
+    args: ["4001#2"]
+
+- id: door_entry.capture.camera_on.4000
+  frame: "*6*0*4000##"
+  direction: command
+  who: 6
+  what: 0
+  where: "4000"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Switch ON / receive video from external camera 4000 (WHAT 0; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNDoorEntryCommand
+    method: camera_on
+    args: [4000]
+
+- id: door_entry.capture.camera_off.empty_where
+  frame: "*6*9##"
+  direction: command
+  who: 6
+  what: 9
+  where: ""
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Free audio/video channel (WHAT 9 without WHERE; received once on an MH200 (FW 2.1.0) bus, MyHOME trace issue_667, MH200 intercom bell gate, 2026-10-09; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNDoorEntryCommand
+    method: camera_off
+    args: []
+
+- id: door_entry.capture.camera_off.broadcast_star
+  frame: "*6*9**##"
+  direction: event
+  who: 6
+  what: 9
+  where: "*"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Broadcast end-of-session / free channel with WHERE='*' (received on an MH202 bus, two MyHOME traces in mh202_sound_intercom_ducking; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+
+- id: door_entry.capture.call.4100
+  frame: "*6*6*4100##"
+  direction: event
+  who: 6
+  what: 6
+  where: "4100"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Incoming broadcast call (WHAT 6, WHERE 4100; 'Broadcast receiving call' in the WHO 6 L4686SDK PDF §2.4, a received event). Never received in a stored trace: sent once as a probe to an F461 (FW 2.0.11) and answered NACK (MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+
+- id: door_entry.capture.event.what22.1
+  frame: "*6*22*1##"
+  direction: event
+  who: 6
+  what: 22
+  where: "1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: WHAT 22, 'Open Lock with EU in conversation' in the WHO 6 L4686SDK PDF (§2.8, printed there with WHERE 4000 to 4095), here with WHERE 1 (received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+
+- id: door_entry.capture.event.what23.4000
+  frame: "*6*23*4000##"
+  direction: event
+  who: 6
+  what: 23
+  where: "4000"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: External unit 4000 call/session event WHAT 23 (MH202 plant capture, MyHOME#669; openwebnet-mcp catalog stub warns on WHAT 23)"
+  roundtrip: true
+
+- id: door_entry.capture.event.what24.1
+  frame: "*6*24*1##"
+  direction: event
+  who: 6
+  what: 24
+  where: "1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Handset/session event WHAT 24 on address 1 (MH202 plant capture, MyHOME#669; openwebnet-mcp catalog stub warns on WHAT 24)"
+  roundtrip: true
+
+- id: door_entry.cmd.staircase_light_on.4000
+  frame: "*6*12*4000##"
+  direction: command
+  who: 6
+  what: 12
+  where: "4000"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Door Entry System: Switch staircase light ON via external unit 4000 (WHAT 12)"
+  roundtrip: true
+  builder:
+    class: OWNDoorEntryCommand
+    method: staircase_light_on
+    args: [4000]
+
+- id: door_entry.capture.req.status.general
+  frame: "*#6*0##"
+  direction: status_request
+  who: 6
+  what: null
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Door Entry System: General status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
+  roundtrip: true

@@ -1,0 +1,106 @@
+# WHO=8 Video Door Entry / Intercom — parameterized internal, external & pager calls.
+
+- id: intercom.capture.call_internal.11.to.16
+  frame: "*8*1#6#2#11*16##"
+  direction: command
+  who: 8
+  what: "1#6#2#11"
+  where: "16"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): Internal audio call from handset 11 to handset 16 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNIntercomCommand
+    method: call_internal
+    args: [11, 16]
+
+- id: intercom.capture.call_external.11.to.16
+  frame: "*8*1#7#2#11*16##"
+  direction: command
+  who: 8
+  what: "1#7#2#11"
+  where: "16"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): External intercom audio call from 11 to 16 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNIntercomCommand
+    method: call_external
+    args: [11, 16]
+
+- id: intercom.capture.call_pager.11
+  frame: "*8*1#14#2#11*4##"
+  direction: command
+  who: 8
+  what: "1#14#2#11"
+  where: "4"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): Pager broadcast call from handset 11 to broadcast WHERE 4 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+  builder:
+    class: OWNIntercomCommand
+    method: call_pager
+    args: [11]
+
+- id: intercom.capture.event.pe1_av_call.20.to.11
+  frame: "*8*1#1#4#20*11##"
+  direction: event
+  who: 8
+  what: "1#1#4#20"
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): External panel 20 audio-video call to indoor station 11 (received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+
+- id: intercom.capture.event.pe1_av_call.74
+  frame: "*8*1#1#4*74##"
+  direction: event
+  who: 8
+  what: "1#1#4"
+  where: "74"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): External panel audio-video call without caller param to 74 (received once on an MH200 (FW 2.1.0) bus, MyHOME trace issue_667, MH200 intercom bell gate, 2026-10-09; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
+  roundtrip: true
+
+- id: intercom.capture.event.caller_address.20
+  frame: "*8*9#1#4*20##"
+  direction: event
+  who: 8
+  what: "9#1#4"
+  where: "20"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): WHAT 9#1#4 caller-address report naming 20 (*8*9#KIND#MMTYPE*CALLER##, Encyclopedia functional/who-8-video-door-entry-telephony; OWNd decodes it as a caller notification); received once on an MH202 bus (MyHOME trace mh202_sound_intercom_ducking, 2026-10-18) and once in the MyHomeServer1 full debug log of 2026-11-04 (MyHOME traces issue_466)"
+  roundtrip: true
+
+- id: intercom.capture.req.status.11
+  frame: "*#8*11##"
+  direction: status_request
+  who: 8
+  what: null
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): Status request on intercom station 11 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNIntercomCommand
+    method: status
+    args: [11]
+
+- id: intercom.capture.req.dim0.11
+  frame: "*#8*11*0##"
+  direction: dimension_request
+  who: 8
+  what: null
+  where: "11"
+  dimension: 0
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Video Door Entry / Intercom (WHO 8): Dimension 0 inquiry on intercom station 11 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true

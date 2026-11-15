@@ -1,0 +1,144 @@
+# WHO=3 Load Control — priority load management & central unit electrical dimensions.
+
+- id: load.capture.event.enabled.priority8
+  frame: "*3*1*#8##"
+  direction: event
+  who: 3
+  what: 1
+  where: "#8"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Priority #8 load enabled (WHAT 1, WHERE #8 preserving leading '#'; ownkb:claim:c003098, ownkb:chunk:r000559; captured on @andrea-mag H/L4684 FW 6.0.11, MyHOME#466 comment 6846511850)"
+  roundtrip: true
+
+- id: load.capture.event.enabled.priority1
+  frame: "*3*1*#1##"
+  direction: event
+  who: 3
+  what: 1
+  where: "#1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Priority #1 load enabled (H/L4684 FW 6.0.11 capture, MyHOME#466 comment 6846511850)"
+  roundtrip: true
+
+- id: load.cmd.force.priority1
+  frame: "*3*2*#1##"
+  direction: command
+  who: 3
+  what: 2
+  where: "#1"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Load Control: Force priority #1 load ON (WHAT 2; ownkb:chunk:r000559)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: force
+    args: [1]
+
+- id: load.capture.req.status.priority1
+  frame: "*#3*#1##"
+  direction: status_request
+  who: 3
+  what: null
+  where: "#1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request status of priority #1 load (priority status request, WHO 3 PDF §1.4.3; probe only: sent 3 times to an F461 (FW 2.0.11), answered NACK each time, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: status
+    args: [1]
+
+- id: load.capture.req.status.general
+  frame: "*#3*0##"
+  direction: status_request
+  who: 3
+  what: null
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request general status of all controlled loads (WHERE 0; the WHO 3 PDF prints the general request as *#3##, §1.4.2; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME traces f461_live_2026-10-15 and f461_live_2026-10-23)"
+  roundtrip: true
+
+- id: load.capture.req.all_dimensions.cu10
+  frame: "*#3*10*0##"
+  direction: dimension_request
+  who: 3
+  what: null
+  where: "10"
+  dimension: 0
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request all electrical measurements (Dimension 0) from central load control unit 10 (WHO 3 PDF §1.4.4; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: request_measurement
+    args: [0]
+
+- id: load.capture.req.voltage.cu10
+  frame: "*#3*10*1##"
+  direction: dimension_request
+  who: 3
+  what: null
+  where: "10"
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request voltage (Dimension 1) from central load control unit 10 (WHO 3 PDF §1.4.5 to §1.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: request_measurement
+    args: [1]
+
+- id: load.capture.req.current.cu10
+  frame: "*#3*10*2##"
+  direction: dimension_request
+  who: 3
+  what: null
+  where: "10"
+  dimension: 2
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request current (Dimension 2) from central load control unit 10 (WHO 3 PDF §1.4.5 to §1.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: request_measurement
+    args: [2]
+
+- id: load.capture.req.power.cu10
+  frame: "*#3*10*3##"
+  direction: dimension_request
+  who: 3
+  what: null
+  where: "10"
+  dimension: 3
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request active power (Dimension 3) from central load control unit 10 (WHO 3 PDF §1.4.5 to §1.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: request_measurement
+    args: [3]
+
+- id: load.capture.req.energy.cu10
+  frame: "*#3*10*4##"
+  direction: dimension_request
+  who: 3
+  what: null
+  where: "10"
+  dimension: 4
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Load Control: Request energy totalizer (Dimension 4) from central load control unit 10 (WHO 3 PDF §1.4.5 to §1.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNLoadCommand
+    method: request_measurement
+    args: [4]
