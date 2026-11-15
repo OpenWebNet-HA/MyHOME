@@ -6,6 +6,8 @@ on:
       - master
       - v2-phase1-architecture
     paths:
+      - 'README.md'
+      - 'ROADMAP.md'
       - 'docs/**'
       - 'docs-v0.9/**'
       - 'mkdocs*.yml'
@@ -71,6 +73,11 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.ref_name || inputs.version }}
           REF_NAME: ${{ github.ref_name }}
         run: |
+          # 0. Explicitly fetch origin/gh-pages and all tags: `actions/checkout` with `ref:`
+          #    fetches only that single ref, leaving `origin/gh-pages` absent so `mike list`
+          #    would see `[]` and `mike deploy --push` would fail with non-fast-forward.
+          git fetch --force --tags origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages || true
+
           # 1. Remove any pre-release (alpha/beta/rc) entries from GitHub Pages so
           #    the version switcher only lists clean release lines (2.x, dev, legacy).
           mapfile -t PRE_VERSIONS < <(

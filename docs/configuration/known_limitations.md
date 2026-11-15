@@ -32,7 +32,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 | **Calibration on an MH200 / MH200N can fail** with *no stop status from the actuator*, and **configurator run-time cut-offs (60 s, 120 s, …) are refused**. | The single-session gateway delays or drops the actuator's stop status; actuators at a whole-minute configurator limit stop on their timer rather than at the end stop. | Measure the run with a stopwatch and store the timings via `myhome.set_cover_travel_time`. |
 | **One calibration at a time per gateway.** | Two motors on one paced session make the timings meaningless. | Queue is automatic; `myhome.stop_cover_calibration` cancels it. |
 | **Rapid concurrent point-to-point commands behind an F422 interface can drop frames.** | The physical F422 interface internal FIFO buffer and secondary SCS bus arbitration saturate under rapid unpaced bursts. | Use native General broadcast covers (`where: '0'`, `bus_interface: '<id>'`) which send a single OpenWebNet broadcast (`*2*WHAT*0#4#<id>##`), or rely on the integration's automatic 0.3 s paced member fan-out for position control. See [Covers](covers.md#the-bticino-way-real-world-plant-discovery). |
-| **No slat / tilt control.** | Not implemented; the frames exist in OWNd. | `myhome.send_message` with the tilt frame. |
+| **Timed Venetian slat tilt (`slat_tilt` / `slat_time`) is dead-reckoned on standard relays.** | Standard `WHO 2` shutter relays lack angle encoders; only advanced actuators reporting `Dimension 10` / `11` (`F401`, `LN4661M2`, `067557`) emit hardware tilt feedback. | Configure `slat_time` for timed Venetian blinds; a full open or close resynchronises the slat estimate. |
 
 ## Thermoregulation (WHO 4)
 
@@ -47,7 +47,7 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 
 | Limitation | Why | Workaround |
 | :--- | :--- | :--- |
-| **Zones are not entities; the panel follows the central unit.** Some plants (F454 + 3486) surface several zone objects with no arm / disarm frames answered (#311). | WHO 5 zone and sensor discovery needs a bus trace from a physical central unit to model correctly; the current implementation is built on golden frames. | Zone frames are available as `myhome_message_event` (with **Generate Events** on) and alarm state changes as `myhome_alarm_event`; a trace attached to #311 unblocks the design. |
+| **Zones are not individual entities; the panel follows the central unit (`3485` / `3486`).** Some plants (`F454 + 3486`) emit zone status frames without exposing direct OpenWebNet arm / disarm commands (#311). | OpenWebNet `WHO 5` central units reject unauthenticated TCP arm/disarm writes by design; the integration models the central unit as a read-only panel (with optional `WHO 9` AUX arm/disarm bridges) validated against physical `3486` and `MH202` captures. | Individual zone frames are available as `myhome_message_event` (with **Generate Events** on) and alarm state changes as `myhome_alarm_event`. |
 | **Arming requires the central unit to accept the command.** | Central units reject arming while a zone is open or the engineer code is active; the bus only reports the refusal. | Watch the bus-monitor card for the NACK. |
 
 ## Door entry and intercom (WHO 6 / WHO 8)
@@ -70,16 +70,15 @@ Things the integration does not do, or does with a caveat, and the reason. Where
 
 | Limitation | Why | Workaround |
 | :--- | :--- | :--- |
-| **CEN / CEN+ devices are stateless.** They have no entity, only device triggers. | Pushbuttons report presses, not a state. | Use the device triggers (see [CEN & CEN+](cen_cenplus.md)) or the [community blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345). |
-| **Multi-click bursts are verified on synthetic frames only.** | No physical wall-switch burst trace yet. | Please attach one to RFC #248. |
+| **CEN / CEN+ devices are stateless.** They have no entity, only device triggers. | Pushbuttons report presses, holds, releases and rotary steps rather than a persistent on/off state. | Use the device triggers (see [CEN & CEN+](cen_cenplus.md)) or the [community blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345). |
 
 ## Home Assistant integration surface
 
 | Limitation | Why | Workaround |
 | :--- | :--- | :--- |
 | **`entity_name` in `myhome.yaml` only applies to sensors and binary sensors.** On a light, switch, cover, thermostat, audio zone or alarm panel it is ignored: those entities *are* their device and carry the device `name`. | Home Assistant's device / entity naming model; `entity_name` never named those platforms in earlier versions either. | Rename the device in the UI, or change `name`. |
-| **Fresh installs name sensor ids after the device class** (`sensor.house_power`, `binary_sensor.cancello_opening`) where 2.0.0b12 produced `sensor.house`, `sensor.house_2`, `binary_sensor.cancello`. | The previous ids were the device name with numeric suffixes for the second and third sensor of a device. | Existing installations keep their ids; automations on a fresh install use the new ids. |
-| **Strict typing is complete.** | `mypy --strict` is fully enforced across all 31 source modules as of 2.0.0b13 (Platinum Quality Scale). | — |
+| **Fresh installs name sensor ids after the device class** (`sensor.house_power`, `binary_sensor.cancello_opening`) where earlier pre-releases produced `sensor.house`, `sensor.house_2`, `binary_sensor.cancello`. | Earlier pre-releases used the device name with numeric suffixes for the second and third sensor of a device. | Existing installations keep their ids; automations on a fresh install use the new ids. |
+| **Strict typing is complete.** | `mypy --strict` is enforced with zero errors across all integration modules (Platinum Quality Scale). | — |
 | **`myhome.yaml` is a compatibility path, not the primary configuration.** Devices are discovered from the bus; YAML only adds names, device classes and options. | v2 is UI-first. | Keep `myhome.yaml` for names and `travel_time`; delete devices you no longer want from the device page. |
 | **Deleting a device does not stop it from coming back.** | Devices are re-discovered from bus traffic; a device that still exists reappears on its next status frame. | Only delete devices that are physically gone. |
-| **Home Assistant 2026.3 or newer is required** (`hacs.json`). | Current cores need Python 3.14 and dropped the pre-2026 device-registry and static-path APIs; carrying shims for cores nobody can test any more is not honest support. | Stay on integration 2.0.0b12 on older cores. |
+| **Home Assistant 2026.3 or newer is required** (`hacs.json`). | Current cores require Python 3.14 and modern device-registry and static-path APIs. | Upgrade Home Assistant Core to 2026.3 or newer before installing MyHOME v2.0. |

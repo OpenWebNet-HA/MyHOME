@@ -564,6 +564,7 @@ def test_check_readme_and_site_standards_detects_docs_workflow_regressions(tmp_p
     assert any("strip stale non-legacy aliases" in m for m in messages)
     assert any("keep '/latest/' updated on pushes to master" in m for m in messages)
     assert any("guard older-minor patch releases" in m for m in messages)
+    assert any("fetch origin/gh-pages explicitly" in m for m in messages)
 
 
 def test_check_readme_and_site_standards_rejects_beta_and_wiki_urls_in_component_and_docs(
@@ -856,12 +857,13 @@ def test_sync_roadmap_tables_detects_drift_missing_markers_and_updates(tmp_path,
 
 
 def test_check_readme_and_site_standards_rejects_roadmap_regressions(tmp_path, monkeypatch):
-    """Verify false WHO 22 deprecation, shutterRun=AUTO, beta/wiki URLs, and outdated OWNd pins in ROADMAP fail."""
+    """Verify false WHO 22 deprecation/entity claims, shutterRun=AUTO, beta/wiki URLs, and outdated OWNd pins fail."""
     bad_roadmap = tmp_path / "ROADMAP.md"
     bad_roadmap.write_text(
         "# Roadmap\n\n"
         "### 5. WHO 22 — Formally Deprecated\n"
         "WHO 22 defines protocol frames for obsolete Legrand analog FM radio tuner modules.\n"
+        "Exposes station preset slot `1-8` number and (50 kHz step and preset save).\n"
         "Calibration uses shutterRun=AUTO.\n"
         "Pinned to `OWNd==1.0.0`.\n"
         "Manual: [Beta](https://openwebnet-ha.github.io/MyHOME/beta/)\n"
@@ -875,6 +877,8 @@ def test_check_readme_and_site_standards_rejects_roadmap_regressions(tmp_path, m
     assert ok_std is False
     assert any("Formally Deprecated" in m for m in msgs_std)
     assert any("obsolete Legrand analog FM" in m for m in msgs_std)
+    assert any("station preset slot" in m for m in msgs_std)
+    assert any("preset save)" in m for m in msgs_std)
     assert any("shutterRun=AUTO" in m for m in msgs_std)
     assert any("ROADMAP.md still links to '/MyHOME/beta'" in m for m in msgs_std)
     assert any("ROADMAP.md still links to deprecated GitHub '/wiki'" in m for m in msgs_std)
@@ -889,4 +893,115 @@ def test_check_readme_and_site_standards_rejects_roadmap_regressions(tmp_path, m
     assert ok_ver_up is True
     _, expected_ownd = syncdoc.extract_manifest_version_info()
     assert expected_ownd in bad_roadmap.read_text(encoding="utf-8")
+
+
+def test_roadmap_tables_keyed_json_windows_concatenated_tcp_and_readme_model_order(tmp_path):
+    """Verify keyed JSON window captures, concatenated TCP bursts, compound tilt/dimmer frames, and README model order."""
+    import json
+
+    urt = _load_update_roadmap_tables()
+    fix_dir = tmp_path / "fixtures"
+
+    # 1. Keyed JSON scenario windows ([ts, gw, raw], <gw>_*: [ts, rx|tx, raw], meta.gateway + dir/bus_rx)
+    win_dir = fix_dir / "traces" / "live_windows"
+    win_dir.mkdir(parents=True)
+    (win_dir / "central_flags.json").write_text(
+        json.dumps(
+            {
+                "quarter_0745": [
+                    ["07:45:00.940", "f455", "*#4*4*0*0256##"],
+                    ["07:45:01.743", "f461", "*#4*4*12*0240*3##"],
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (win_dir / "climate_mode.json").write_text(
+        json.dumps(
+            {
+                "_source": "Live capture",
+                "f455_zone2_heat": [
+                    ["14:26:29.114", "tx", "*#4*#0#1##"],
+                    ["14:26:29.209", "rx", "*4*3100*#0##"],
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (win_dir / "audio_wake.json").write_text(
+        json.dumps(
+            {
+                "meta": {"gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix"},
+                "tx": [{"t": 0.0, "frame": "*#4*#0#1##"}],
+                "park": {
+                    "expected_tx": ["*#4*#0#1##"],
+                    "bus_rx": [{"t": "10:56:20", "frame": "*#16*36*1*26##"}],
+                },
+                "second_play": [
+                    {"t": 0.1, "dir": "tx", "frame": "*#4*#0#1##"},
+                    {"t": 0.8, "dir": "rx", "frame": "*16*3*36##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    # Directionless frames dict with telemetry.total_rx == 0 must be ignored
+    (win_dir / "zero_rx.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "MH201"},
+                "telemetry": {"total_rx": 0, "total_tx": 1},
+                "frames": [{"raw": "*#4*#0#1##"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # 2. README earliest-mention gateway attribution + concatenated TCP bursts + Dim 4 + compound Venetian #11#001#1
+    f454_dir = fix_dir / "traces" / "readme_order_f454"
+    f454_dir.mkdir(parents=True)
+    (f454_dir / "README.md").write_text(
+        "# Capture\nRecorded on an F454 webserver (behaves differently from MyHomeServer1).\n",
+        encoding="utf-8",
+    )
+    (f454_dir / "capture.txt").write_text(
+        "[12:00:00.100] [RX] *#1*0010*4*181*2##*#2*21*#11#001#1*10##*0*1*43##\n",
+        encoding="utf-8",
+    )
+
+    mh200n_dir = fix_dir / "traces" / "readme_tie_mh200n"
+    mh200n_dir.mkdir(parents=True)
+    (mh200n_dir / "README.md").write_text(
+        "# Capture\nRecorded on MH200N gateway.\n",
+        encoding="utf-8",
+    )
+    (mh200n_dir / "capture.txt").write_text(
+        "[12:00:01.000] [RX] *25*11#0*11##\n",
+        encoding="utf-8",
+    )
+
+    summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    gw_map = {r.mermaid_id: r for r in urt.evaluate_gateway_rows(summary)}
+    sub_map = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(summary)}
+
+    assert gw_map["GW_F455"].status_cell == "🟢 **Covered**"
+    assert gw_map["GW_F461"].status_cell == "🟢 **Covered**"
+    assert gw_map["GW_MH200"].status_cell == "🟢 **Covered**"
+    assert gw_map["GW_F454"].status_cell == "🟢 **Covered**"
+    assert gw_map["GW_MH200N"].status_cell == "🟢 **Covered**"
+    # F454 README mentioned MyHomeServer1 second; MH200N tied at offset with MH200 -> neither misattributed!
+    assert gw_map["GW_MHS1"].status_cell == "🔴 **Needed**"
+    assert gw_map["GW_MH201"].status_cell == "🔴 **Needed**"
+
+    # Outbound tx '#0#1' frames and zero_rx frames were ignored
+    assert sub_map["SUB_CU4695"].status_cell == "🔴 **Needed**"
+    # Concatenated TCP line & new subsystem regexes matched all 3 frames + CEN+ 11# + thermo zones + CU 3550 + WHO 16
+    assert sub_map["SUB_LIGHT"].status_cell == "🟢 **Covered**"
+    assert sub_map["SUB_COV_H"].status_cell == "🟢 **Covered**"
+    assert sub_map["SUB_SCENARIOS"].status_cell == "🟢 **Covered**"
+    assert sub_map["SUB_CEN"].status_cell == "🟢 **Covered**"
+    assert sub_map["SUB_THERMO_ZONES"].status_cell == "🟢 **Covered**"
+    assert sub_map["SUB_CU3550"].status_cell == "🟢 **Covered**"
+    assert sub_map["SUB_WHO16"].status_cell == "🟢 **Covered**"
+
 

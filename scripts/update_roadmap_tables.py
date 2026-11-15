@@ -40,7 +40,7 @@ STANDARD_DISPLAY_WHOS: frozenset[int] = frozenset(
 )
 
 _WHO_PREFIX_RE = re.compile(r"^\*#?(\d+)\*")
-_OWN_FRAME_TOKEN_RE = re.compile(r"(?:^|(?<=[\s`]))(\*(?:(?!##)[^\s`])+##)")
+_OWN_FRAME_TOKEN_RE = re.compile(r"(?:^|(?<=[\s`])|(?<=##))(\*(?:(?!##)[^\s`])+##)")
 _HA_LOG_RX_RE = re.compile(
     r"\[([^\]]+?) gateway - [^\]]*\] (?:Message received: |Collected command response )`([^`]+)`"
 )
@@ -253,7 +253,7 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**Lighting (WHO = 1) — Relays & Dimmers**",
         mermaid_id="SUB_LIGHT",
         mermaid_title="Lighting & Dimmers (WHO 1)",
-        frame_regex=r"^(?:\*1\*(?:[0-9]|10|19|2[0-9]|3[0-9]|1000#\d+)\*[^*]+##|\*#1\*[^*]+\*1\*)",
+        frame_regex=r"^(?:\*1\*(?:[0-9]|10|19|2[0-9]|3[0-9]|1000#\d+)\*[^*]+##|\*#1\*[^*]+\*#?(?:1|4|13)\*)",
         covered_note="*Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.*",
         missing_target="**Lighting trace**: Standard relay and dimmer status frames (`WHO = 1`).",
     ),
@@ -308,8 +308,8 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**Covers (WHO = 2) — Advanced Position & Venetian Tilt (`Dim 10 / 11`)**",
         mermaid_id="SUB_COV_H",
         mermaid_title="Covers Dim 10 / Tilt (WHO 2)",
-        frame_regex=r"^\*#2\*[^*]+\*#?(?:10|11)\*(?!\d+\*255\*)",
-        covered_note="*Baseline covered (`F401` / `LN4661M2` percentage position & Venetian tilt).*",
+        frame_regex=r"^(?:\*#2\*[^*]+\*#?(?:10|11)(?:[#*])(?!\d+\*255\*)|\*2\*(?:1[012]#|1000#1[012]#)[^*]+\*[^*]+##$)",
+        covered_note="*Baseline covered (`F401` / `LN4661M2` percentage position & Venetian slat tilt).*",
         missing_target="**Advanced shutter trace**: `Dimension 10` / `11` position and tilt feedback.",
     ),
     SubsystemRoadmapRowSpec(
@@ -328,6 +328,15 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
             "Unit tests for `*#2*WHERE*10*BS*255*...##` in `tests/test_cover.py` "
             "(0 physical `LEVEL=255` `rx` frames in `tests/fixtures/`)"
         ),
+    ),
+    SubsystemRoadmapRowSpec(
+        key="who4_zones",
+        display_name="**Thermoregulation (WHO = 4) — Zone Thermostats, Probes & Humidity**",
+        mermaid_id="SUB_THERMO_ZONES",
+        mermaid_title="Zone Thermostats & Probes (WHO 4)",
+        frame_regex=r"^(?:\*#4\*(?!#0)[^*]+\*#?(?:0|7|12|13|14|19|60)\*|\*4\*[^*]+\*(?!#0(?:\*|#|##))[^*]+##$)",
+        covered_note="*Baseline covered (zone temperature `Dim 0`, setpoints `Dim 12/14`, knob offsets `Dim 13` & `Dim 60` humidity).*",
+        missing_target="**Zone thermostat trace**: Zone temperature (`Dim 0`), setpoint (`Dim 12/14`), and humidity (`Dim 60`) frames.",
     ),
     SubsystemRoadmapRowSpec(
         key="who4_cu3550",
@@ -396,9 +405,18 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**CEN / CEN+ Pushbuttons & Rotary Triggers (WHO = 15 / 25)**",
         mermaid_id="SUB_CEN",
         mermaid_title="CEN / CEN+ Triggers (WHO 15/25)",
-        frame_regex=r"^(?:\*#?15\*|\*#?25\*2[0-9]#)",
+        frame_regex=r"^(?:\*#?15\*|\*#?25\*(?:11|2[0-9])#)",
         covered_note="*Baseline covered (short, long-press, repeat, release & rotary bursts active in CI).*",
         missing_target="**Pushbutton trace**: `WHO = 15` / `WHO = 25` `21#..25#` wall switch events.",
+    ),
+    SubsystemRoadmapRowSpec(
+        key="who0_17_scenarios",
+        display_name="**Scenarios & Schedulers (WHO = 0 / 17)**",
+        mermaid_id="SUB_SCENARIOS",
+        mermaid_title="Scenarios (WHO 0/17)",
+        frame_regex=r"^\*#?(?:0|17)\*",
+        covered_note="*Baseline covered (MH200 / MH200N / MH201 / F420 scenario activation & scheduler frames).*",
+        missing_target="**Scenario module trace**: `WHO = 0` / `WHO = 17` scenario activation frames.",
     ),
     SubsystemRoadmapRowSpec(
         key="who14_locks",
@@ -425,8 +443,8 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         mermaid_title="Sound Diffusion & RDS (WHO 22)",
         frame_regex=r"^\*#?22\*",
         covered_note=(
-            "*Baseline covered (`F500` / `F500N` FM RDS tuners, `H4562` zones, and `4#<area>` "
-            "active-source tracking across `MyHomeServer1` & dual-stack gateways).*"
+            "*Baseline covered (`F500` / `F500N` FM RDS tuners on `WHO = 22`-only & dual-stack "
+            "gateways, `4#<area>` active-source tracking, and `H4562` `WHO = 22` zone captures).*"
         ),
         missing_target="**WHO 22 sound trace**: `F500` RDS tuner or `WHO = 22` zone frames.",
     ),
@@ -563,6 +581,47 @@ def _artifact_label_for_file(file_path: Path, fixtures_dir: Path) -> str:
     return f"tests/fixtures/{rel}"
 
 
+_KNOWN_CANONICAL_MODELS: frozenset[str] = frozenset(MODEL_CANONICAL_ALIASES.values())
+_FREE_TEXT_MODEL_TOKENS: tuple[str, ...] = (
+    "MyHomeServer1",
+    "F453AV",
+    "F452V",
+    "F452",
+    "F453",
+    "F454",
+    "F455",
+    "F459",
+    "F461",
+    "MH200N",
+    "MH200",
+    "MH201",
+    "MH202",
+    "H/L4684",
+    "HL4684",
+    "L4684",
+    "H4684",
+    "LN4890A",
+    "LN4890",
+    "AM4890",
+    "H4890",
+    "067292",
+    "573958",
+    "078479",
+)
+
+
+def _extract_model_from_free_text(text: str) -> str:
+    """Return the earliest canonical gateway model mentioned in free text (longest match on tie)."""
+    best: tuple[int, int, str] | None = None
+    for model_tok in _FREE_TEXT_MODEL_TOKENS:
+        m = re.search(rf"(?<![A-Za-z0-9]){re.escape(model_tok)}(?![A-Za-z0-9])", text, re.IGNORECASE)
+        if m:
+            candidate = (m.start(), -len(model_tok), normalize_gateway_model(model_tok))
+            if best is None or candidate[:2] < best[:2]:
+                best = candidate
+    return best[2] if best is not None else ""
+
+
 def _infer_model_from_filename_or_readme(file_path: Path) -> str:
     """Infer gateway model from filename tokens or sibling README.md when log headers omit it."""
     stem = file_path.stem
@@ -574,7 +633,7 @@ def _infer_model_from_filename_or_readme(file_path: Path) -> str:
 
     for token in re.split(r"[^A-Za-z0-9/]+", stem):
         cand = normalize_gateway_model(token)
-        if cand in MODEL_CANONICAL_ALIASES.values():
+        if cand in _KNOWN_CANONICAL_MODELS:
             return cand
 
     readme = file_path.parent / "README.md"
@@ -585,26 +644,9 @@ def _infer_model_from_filename_or_readme(file_path: Path) -> str:
             cand = normalize_gateway_model(m_rm.group(1))
             if cand and cand != "Generic":
                 return cand
-        for model_tok in (
-            "MyHomeServer1",
-            "F453AV",
-            "F453",
-            "F454",
-            "F455",
-            "F459",
-            "F461",
-            "MH200N",
-            "MH200",
-            "MH201",
-            "MH202",
-            "H/L4684",
-            "H4684",
-            "H4890",
-            "AM4890",
-            "067292",
-        ):
-            if re.search(rf"\b{re.escape(model_tok)}\b", readme_text):
-                return normalize_gateway_model(model_tok)
+        cand_free = _extract_model_from_free_text(readme_text)
+        if cand_free:
+            return cand_free
     return ""
 
 
@@ -689,10 +731,15 @@ def _parse_json_fixture(
             or payload["gateway"].get("model_name")
             or ""
         )
+    elif isinstance(payload.get("meta"), dict) and isinstance(payload["meta"].get("gateway"), str):
+        gw_raw = _extract_model_from_free_text(payload["meta"]["gateway"])
     if not gw_raw or gw_raw == "Unknown":
         gw_raw = _infer_model_from_filename_or_readme(file_path)
 
-    frames_list = []
+    telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else None
+    telemetry_zero_rx = bool(telemetry and telemetry.get("total_rx") == 0)
+
+    frames_list: list[object] | None = None
     if isinstance(data_sec, dict) and isinstance(data_sec.get("bus_monitor"), dict):
         recent = data_sec["bus_monitor"].get("recent_frames")
         if isinstance(recent, list):
@@ -700,30 +747,105 @@ def _parse_json_fixture(
     elif isinstance(payload.get("frames"), list):
         frames_list = payload["frames"]
 
-    for item in frames_list:
-        if isinstance(item, dict):
-            direction = str(item.get("direction", "rx")).strip().lower()
-            if direction != "rx":
-                continue
-            raw = item.get("raw")
-            if isinstance(raw, str):
+    if frames_list is not None:
+        for item in frames_list:
+            if isinstance(item, dict):
+                if "direction" in item or "dir" in item:
+                    direction = str(item.get("direction") or item.get("dir") or "").strip().lower()
+                    if direction != "rx":
+                        continue
+                elif telemetry_zero_rx:
+                    continue
+                raw = item.get("raw") or item.get("frame")
+                if isinstance(raw, str):
+                    _record_rx_frame(
+                        summary,
+                        raw=raw,
+                        gateway=gw_raw,
+                        file_rel=file_rel,
+                        artifact_label=artifact_label,
+                        is_oracle=is_oracle,
+                    )
+            elif isinstance(item, str) and not telemetry_zero_rx:
                 _record_rx_frame(
                     summary,
-                    raw=raw,
+                    raw=item,
                     gateway=gw_raw,
                     file_rel=file_rel,
                     artifact_label=artifact_label,
                     is_oracle=is_oracle,
                 )
-        elif isinstance(item, str):
-            _record_rx_frame(
-                summary,
-                raw=item,
-                gateway=gw_raw,
-                file_rel=file_rel,
-                artifact_label=artifact_label,
-                is_oracle=is_oracle,
-            )
+        return
+
+    # Support keyed scenario-window JSON captures (e.g. central_flags_*, climate_mode_*, group_park_and_resume)
+    for top_key, top_val in payload.items():
+        key_lower = str(top_key).lower()
+        if key_lower.startswith("_") or key_lower in ("meta", "findings", "decoder_states_seen", "audio_diagnostics"):
+            continue
+        if key_lower == "tx" or key_lower.startswith("tx_") or "expected_tx" in key_lower:
+            continue
+
+        key_prefix_gw = normalize_gateway_model(str(top_key).split("_", 1)[0])
+        effective_gw = key_prefix_gw if key_prefix_gw in _KNOWN_CANONICAL_MODELS else gw_raw
+
+        if isinstance(top_val, dict) and isinstance(top_val.get("bus_rx"), list):
+            for rx_obj in top_val["bus_rx"]:
+                if isinstance(rx_obj, dict):
+                    raw_f = rx_obj.get("raw") or rx_obj.get("frame")
+                    if isinstance(raw_f, str):
+                        _record_rx_frame(
+                            summary,
+                            raw=raw_f,
+                            gateway=effective_gw,
+                            file_rel=file_rel,
+                            artifact_label=artifact_label,
+                            is_oracle=is_oracle,
+                        )
+        elif isinstance(top_val, list):
+            for entry in top_val:
+                if (
+                    isinstance(entry, list)
+                    and len(entry) == 3
+                    and all(isinstance(part, str) for part in entry)
+                ):
+                    mid = entry[1].strip()
+                    mid_low = mid.lower()
+                    if mid_low == "tx":
+                        continue
+                    if mid_low == "rx":
+                        _record_rx_frame(
+                            summary,
+                            raw=entry[2],
+                            gateway=effective_gw,
+                            file_rel=file_rel,
+                            artifact_label=artifact_label,
+                            is_oracle=is_oracle,
+                        )
+                    else:
+                        mid_gw = normalize_gateway_model(mid)
+                        if mid_gw in _KNOWN_CANONICAL_MODELS:
+                            _record_rx_frame(
+                                summary,
+                                raw=entry[2],
+                                gateway=mid_gw,
+                                file_rel=file_rel,
+                                artifact_label=artifact_label,
+                                is_oracle=is_oracle,
+                            )
+                elif isinstance(entry, dict):
+                    direction = str(entry.get("direction") or entry.get("dir") or "").strip().lower()
+                    if direction != "rx":
+                        continue
+                    raw_f = entry.get("raw") or entry.get("frame")
+                    if isinstance(raw_f, str):
+                        _record_rx_frame(
+                            summary,
+                            raw=raw_f,
+                            gateway=effective_gw,
+                            file_rel=file_rel,
+                            artifact_label=artifact_label,
+                            is_oracle=is_oracle,
+                        )
 
 
 def _parse_jsonl_fixture(
@@ -804,14 +926,17 @@ def _parse_text_or_log_fixture(
             gw_label = normalize_gateway_model(m_ha.group(1))
             if gw_label == "Generic" and fallback_gw:
                 gw_label = fallback_gw
-            _record_rx_frame(
-                summary,
-                raw=m_ha.group(2),
-                gateway=gw_label,
-                file_rel=file_rel,
-                artifact_label=artifact_label,
-                is_oracle=is_oracle,
-            )
+            payload_str = m_ha.group(2)
+            tokens = [t.group(1) for t in _OWN_FRAME_TOKEN_RE.finditer(payload_str)]
+            for tok in (tokens or [payload_str]):
+                _record_rx_frame(
+                    summary,
+                    raw=tok,
+                    gateway=gw_label,
+                    file_rel=file_rel,
+                    artifact_label=artifact_label,
+                    is_oracle=is_oracle,
+                )
             continue
 
         stripped = line.strip()
@@ -821,8 +946,7 @@ def _parse_text_or_log_fixture(
         if re.search(r"(?:\[TX\]|\bTX\b)", stripped):
             continue
         if re.search(r"(?:\[RX\]|\bRX\b|\bOWN\s+\*)", stripped):
-            m_tok = _OWN_FRAME_TOKEN_RE.search(stripped)
-            if m_tok:
+            for m_tok in _OWN_FRAME_TOKEN_RE.finditer(stripped):
                 _record_rx_frame(
                     summary,
                     raw=m_tok.group(1),

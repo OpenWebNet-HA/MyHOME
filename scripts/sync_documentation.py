@@ -1217,6 +1217,8 @@ def check_readme_and_site_standards() -> tuple[bool, list[str]]:
         ("Formally Deprecated", "false WHO 22 deprecation status"),
         ("obsolete Legrand analog FM", "false WHO 22 obsolete analog FM claim"),
         ("shutterRun=AUTO", "non-OpenWebNet openHAB shutterRun=AUTO claim"),
+        ("station preset slot", "false WHO 22 preset-slot number entity claim"),
+        ("preset save)", "false WHO 22 preset-save button entity claim"),
     )
     for rm_path in (ROADMAP_MD, DOCS_DIR / "roadmap.md"):
         if not rm_path.exists():
@@ -1289,6 +1291,11 @@ def check_readme_and_site_standards() -> tuple[bool, list[str]]:
         if "IS_LATEST_MINOR" not in wf_text:
             messages.append(
                 ".github/workflows/docs.yml must guard older-minor patch releases from overwriting 'latest'"
+            )
+            all_ok = False
+        if "refs/heads/gh-pages:refs/remotes/origin/gh-pages" not in wf_text:
+            messages.append(
+                ".github/workflows/docs.yml must fetch origin/gh-pages explicitly before running mike"
             )
             all_ok = False
 

@@ -142,22 +142,22 @@ For clean uninstallation steps, see [Removal & Clean Uninstall](https://openwebn
 <summary><strong>📊 Hardware Trace Availability Matrix (Real-Plant CI Corpus)</strong></summary>
 
 <!-- TRACE_MATRIX_START -->
-| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 9<br>Power | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>Diag | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
-| :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
-| **067292** |  | ✅ |  |  | ✅ |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
-| **F453** |  | ✅ | ✅ |  | ✅ |  |  |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  | ✅ |  |
-| **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ |  |  | ✅ |  |  |  |
-| **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  | ✅ |  |  | ✅ |  |
-| **F455** |  | ✅ | ✅ |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  | ✅ |  |
-| **F459** |  | ✅ | ✅ |  | ✅ |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
-| **F461** |  | ✅ | ✅ |  | ✅ | ✅ |  |  | ✅ | ✅ |  | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |
-| **H4684 / H/L4684** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  |
-| **H4890 / AM4890** |  | ✅ | ✅ |  | ✅ | ✅ |  | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |  |
-| **MH200** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |
-| **MH200N** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ |
-| **MH201** | ✅ | ✅ | ✅ |  | ✅ |  |  |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ |  |  |  |  |
-| **MH202** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ |  |
-| **MyHomeServer1** |  | ✅ | ✅ |  | ✅ |  |  | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |
+| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 7<br>Video | WHO 8<br>Intercom | WHO 9<br>Power | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>Diag | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
+| :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
+| **067292** |  | ✅ |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| **F453** |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
+| **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |
+| **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |  | ✅ |  |
+| **F455** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
+| **F459** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
+| **F461** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  | ✅ |  | ✅ |  |
+| **H4684 / H/L4684** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ | ✅ |  |  |
+| **H4890 / AM4890** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |  |
+| **MH200** |  | ✅ | ✅ |  |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |
+| **MH200N** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ |
+| **MH201** | ✅ | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  |
+| **MH202** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ |  |
+| **MyHomeServer1** |  | ✅ | ✅ |  | ✅ |  |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |
 <!-- TRACE_MATRIX_END -->
 
 *Checkmarks (✅) indicate that at least one anonymized bus capture in `tests/fixtures/` exercises that subsystem on the given gateway model. See [Trace Availability](https://openwebnet-ha.github.io/MyHOME/latest/trace-availability/) and [Issue #466](https://github.com/OpenWebNet-HA/MyHOME/issues/466) to contribute traces.*
