@@ -588,12 +588,13 @@ def test_opening_roll_fit_rejects_inconsistent_measurements(args, error):
         opening_roll_fit(*args)
 
 
-async def test_start_takes_slats_only_for_geometry_and_only_as_a_boolean(hass, plant, hass_ws_client):
+async def test_start_takes_slats_for_geometry_and_basic_only_as_a_boolean(hass, plant, hass_ws_client):
     queued = []
     plant.gateways[0].async_queue_calibration = lambda *args: queued.append(args)
     request = {"entry_id": plant.entries[0].entry_id, "entity_id": plant.records[0].entity_id, "revision": 0}
+    # The guided session takes it too (basic calibration), but not with a single direction.
     with pytest.raises(ProfileError, match="invalid_profile"):
-        await begin(hass, MagicMock(subscriptions={}), {"id": 1, **request, "slats": True})
+        await begin(hass, MagicMock(subscriptions={}), {"id": 1, **request, "slats": True, "direction": "opening"})
     assert get_store(hass, request["entry_id"]).calibration is None
     register_api(hass)
     with patch("aiohttp.connector.DefaultResolver", ThreadedResolver):

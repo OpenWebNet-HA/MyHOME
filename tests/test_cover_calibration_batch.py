@@ -101,7 +101,7 @@ async def test_batch_sequences_selected_covers_and_saves_one_atomic_revision(has
 
     session = batch.session
     hass.states.async_set(batch.plant.covers[0].entity_id, "open", {"friendly_name": "Garden Door"})
-    assert session.view()["targets"][0]["name"] == "Garden Door", "L-5: the dialog's rows name the cover"
+    assert session.view()["targets"][0]["name"] == "Garden Door", "the dialog's rows name the cover"
     hass.states.async_remove(batch.plant.covers[0].entity_id)
     before = copy.deepcopy(session.store.data)
     assert batch.queue == []
@@ -313,7 +313,7 @@ async def test_targets_gateway_scope_unavailable_entries_and_removed_during_load
     assert len(data["targets"]) == 2 and data["revision"] == 0
     assert data["targets"][0]["name"] == "Kitchen"
     assert data["targets"][1]["reason"] == "advanced_cover"
-    # L-5: no registry name: the name Home Assistant shows (the friendly name from the device), never the entity id.
+    # No registry name: the name Home Assistant shows (the friendly name from the device), never the entity id.
     hass.states.async_set(plant.covers[1].entity_id, "open", {"friendly_name": "Garden Door"})
     assert (await read_targets(hass, entry_id))["targets"][1]["name"] == "Garden Door"
     hass.states.async_remove(plant.covers[1].entity_id)
@@ -415,10 +415,10 @@ async def test_batch_review_rejects_single_cover_save_destinations(batch):
     await measure(batch)
     assert batch.session.view()["save_modes"] == ["new"]
     before = copy.deepcopy(batch.session.store.data)
-    for mode in ("cover", "shared"):
-        with pytest.raises(profiles.ProfileError, match="invalid_profile"):
-            await action(batch, "save", save_mode=mode)
-    with pytest.raises(profiles.ProfileError, match="calibration_step"):
-        await action(batch, "preview_save", save_mode="shared")
+    with pytest.raises(profiles.ProfileError, match="invalid_profile"):
+        await action(batch, "save", save_mode="cover")
+    for verb in ("save", "preview_save"):  # `shared` refused with its own code.
+        with pytest.raises(profiles.ProfileError, match="profile_not_source"):
+            await action(batch, verb, save_mode="shared")
     assert batch.session.store.data == before
     assert batch.session.phase == "review"

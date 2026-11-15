@@ -35,7 +35,8 @@ from OWNd.message import OWNAutomationCommand
 
 from .const import CONF_COVER_TRAVEL_TIMES, DOMAIN
 from .cover_calibration_reservation import CalibrationReservation
-from .cover_motion import ECHO_WINDOW
+from .cover_geometry import UNKNOWN
+from .cover_motion import ECHO_WINDOW, MotionPosition
 from .cover_profile_provenance import EVIDENCE, evidence, unknown_provenance
 from .cover_profiles import (
     DATA_KEY,
@@ -46,6 +47,7 @@ from .cover_profiles import (
     travel_time,
     write_profile,
 )
+from .cover_settings import ROLL_SOURCES, profile_source
 from .cover_translation import event_age
 from .data import MyHOMERuntimeData
 from .typing_compat import as_any
@@ -72,6 +74,35 @@ START_SECONDS = 10
 MAX_TRAVEL_SECONDS = 600
 STOP_QUEUE_SECONDS = 30
 TERMINAL = {"interrupted", "cancelled", "saved"}
+# The runs the bus starts after an armed command, and the phase each one times once it has.
+RUNS = {"starting_open": "opening", "starting_close": "closing", "starting_lift": "lifting"}
+RISING = {"starting_open", "opening", "starting_lift", "lifting"}
+# The runs back to an end stop that the session ends by itself (nothing is measured), and their direction.
+BACK = {"reclosing": "close", "reopening": "open", "rehoming": "close"}
+# The rolls of a basic calibration's profile, and the largest a profile stores (GEOMETRY).
+ROLLS = ("opening_roll", "closing_roll")
+ROLL_MAX = 5.0
+# Basic calibration with slats: the lift-off is the Stop and the cover stays where it stopped. Only a repeat of the
+# lift run (or a lift-off refused as too late) closes it again: the Stop, this pause, then the close back to the rest;
+# the lift run then starts only from the operator's `open`, never by itself.
+RECLOSE_SETTLE_SECONDS = 1.0
+# The close back to the rest ends at its stop status or, at the latest, after the seconds the motor rose times
+# RECLOSE_RISE_SHARE plus RECLOSE_RISE_SECONDS (a few centimetres take a few seconds, not a full run), and never later
+# than the full closing time plus its margin (as the panel's positioning: max(4 s, 25 %)). A timer
+# actuator reports its stop only at its timer: the session ends the close at that limit with a Stop of its own.
+RECLOSE_RISE_SHARE = 1.5
+RECLOSE_RISE_SECONDS = 2.0
+RECLOSE_MARGIN_SECONDS = 4.0
+RECLOSE_MARGIN_SHARE = 0.25
+# In the basic calibration a full run ends at whichever comes first, the operator's press or the actuator's own stop:
+# on that stop the session confirms the run by itself, timed to it. Not on a stop at an actuator's relay timer (60 s,
+# or 120 s with configurator M=1, #837): there the motor ran on past the end stop, and the operator's press is the end.
+TIMER_STOP_WINDOWS = ((59.0, 65.0), (119.0, 125.0))
+# A stop status this soon after the run's anchor (the bus's movement status) is the actuator stopping at the end stop
+# the cover already stood at. The gateway's own interlock Stop precedes the movement status (in bus traces 0.07-0.16 s
+# after the write, the movement at 0.56-0.67 s), and no full run of a shutter lasts 2 s (the shortest measured: about
+# 12 s); an evolved actuator reports its stop 0.3 s after the motor stops.
+ALREADY_THERE_SECONDS = 2.0
 
 
 @dataclass(eq=False)
@@ -94,7 +125,7 @@ class CalibrationSession:
     measured_travel: float | None = None
     safe_phases = {"confirm_closed", "confirm_open", "confirm_automatic", "review", "saving"}
 
-    def __init__(self, hass: Any, store: Any, entry: Any, cover: Any, connection: Any, subscription_id: Any, *, direction: Any=None, profile: dict[str, Any] | None=None, client_id: str | None=None) -> None:
+    def __init__(self, hass: Any, store: Any, entry: Any, cover: Any, connection: Any, subscription_id: Any, *, direction: Any=None, profile: dict[str, Any] | None=None, client_id: str | None=None, slats: bool | None=None) -> None:
         self.hass, self.store, self.cover = hass, store, cover
         self.entry_id = entry.entry_id
         self.connection = connection
@@ -114,12 +145,32 @@ class CalibrationSession:
             self.provenance[retained] = copy.deepcopy(profile["provenance"][retained])
             self.phase = "confirm_closed" if direction == "opening" else "confirm_open"
         self.started_at: float | None = None
+        # Basic calibration of a cover with slats: after the closing run, the lift run from the rest takes `lift`,
+        # the seconds from the motor start to the moment the bottom edge leaves it (`samples["lift"]`, saved as the
+        # slat time). That press is the Stop, and review follows with the cover where it stopped. None: never
+        # asked (one direction, automatic): a save then leaves the slat time as it was.
+        self.slats = slats
+        self.samples: dict[str, float] = {}
+        self.lift_evidence: dict[str, Any] | None = None
+        # After an accepted lift-off: "stopping" until its Stop is written, "written" until the bus reports the stop
+        # (at most ECHO_WINDOW after the write); meanwhile the lift run's own statuses may still arrive.
+        self.lift_stop: str | None = None
+        # The cover stopped at the lift-off and has not moved since: the edge on the sill, the slats open.
+        self.lifted = False
+        # A run back to an end stop (`reclosing`, `reopening`): "stopping" (a Stop, then a pause), "starting", "running".
+        self.back_stage: str | None = None
+        # The seconds the motor rose in the lift run being closed back (see `reclose_seconds`).
+        self.risen: float | None = None
         # The bus reported the motor's stop during a run that the operator confirms
         # (see `stop_awaits_endpoint`): seconds from the motor start, rounded as `endpoint`.
         self.motor_stopped = False
         self.stopped_elapsed: float | None = None
+        # The direction (True: opening) and the time a full run was confirmed, to recognise its own late statuses.
+        self.run_end: tuple[bool, float] | None = None
         # The sequence of the view that published that stop (see `press_across_stop`).
         self.stop_sequence: int | None = None
+        # The sequence of the view that published a run ended at the actuator's own stop (see `press_after_arrival`).
+        self.arrival_sequence: int | None = None
         self.armed = False
         self.stop_requested = False
         self.listener = True
@@ -165,6 +216,10 @@ class CalibrationSession:
         return {"entry_id": self.entry_id, "entity_id": self.cover.entity_id,
                 "session_id": self.id, "sequence": self.sequence, "revision": self.revision,
                 "phase": self.phase, "mode": self.mode, "reason": self.reason, "values": dict(self.values),
+                # What ended each run timed in `values`: the operator's press (`press`) or the actuator's own stop
+                # (`bus_stop`), as its provenance says; only the directions that have it.
+                "ended_by": {direction: item["ended_by"] for direction, item in self.provenance.items()
+                             if isinstance(item, dict) and item.get("ended_by")},
                 "elapsed": round(monotonic() - self.started_at, 2) if self.started_at is not None else None,
                 "stop_requested": self.stop_requested,
                 "motor_stopped": self.motor_stopped, "stopped_elapsed": self.stopped_elapsed,
@@ -178,10 +233,26 @@ class CalibrationSession:
                     "recovery_seconds": self.lease_seconds, "owner": False, "read_only": True,
                     "idle_expires_at": None if self.closed or self.lease_expires_at is None
                     else self.lease_expires_at.isoformat()} if self.client_id else {}),
-                "save_modes": ["new", "cover", "shared"] if self.store.profile(self.cover.unique_id) else ["new", "cover"],
+                # A calibration always saves into a profile: a new one, or the one the cover follows. The cover's
+                # own values (`cover`) stay for the manual overrides only.
+                "save_modes": self.save_modes(),
+                "slats": bool(self.slats), "samples": dict(self.samples), "lift_taken": "lift" in self.samples,
+                "reclose_seconds": self.reclose_seconds() if self.phase == "reclosing" else None,
+                "reopen_seconds": self.reopen_seconds() if self.phase == "reopening" else None,
+                "rehome_seconds": self.rehome_seconds() if self.phase == "rehoming" else None,
+                # For the waiting screen of a run back: its stage, and with `elapsed` (from the bus's start) and the
+                # seconds above, its progress.
+                "back_stage": self.back_stage if self.phase in BACK else None,
                 **({"origin": self.origin} if self.origin else {}),
                 **({"screen": copy.deepcopy(self.shown)} if self.shown is not None else {}),
                 **({"direction": self.direction} if self.direction else {})}
+
+    def save_modes(self) -> list[str]:
+        """Where a review may be saved: always a new profile; the profile the cover follows (`shared`) only from its
+        source: a cover that follows a profile measured on another one, or made by hand, saves a profile of its own,
+        and the others keep theirs."""
+        profile = self.store.profile(self.cover.unique_id)
+        return ["new", "shared"] if profile_source(profile, self.cover.unique_id) else ["new"]
 
     def present(self) -> bool:
         """The owner sent a heartbeat or a verb recently. It never decides who may act."""
@@ -403,6 +474,9 @@ class CalibrationSession:
         self.phase, self.reason = "interrupted", reason
         self.values.clear()
         self.provenance.clear()
+        self.samples.clear()
+        self.lift_evidence = self.back_stage = self.lift_stop = self.risen = None
+        self.lifted = False
         self.started_at = None
         self.forget_motor_stop()
         self.resume_step = self.next_step = self.paused_at = None
@@ -453,15 +527,21 @@ class CalibrationSession:
         if self.phase != expected:
             raise ProfileError("calibration_step")
         # The action itself confirms the starting endpoint and stationary state.
+        self.reason = None
         self.confirm_position(0 if direction == "open" else 100)
         self.queue_move(direction)
 
-    def queue_move(self, direction: Any) -> Any:
-        """Use the same guarded queue for guided and automatic movements."""
+    def queue_move(self, direction: Any, phase: str | None = None) -> Any:
+        """Use the same guarded queue for guided and automatic movements.
+
+        `phase` names a movement that is not one of the two full runs (`starting_lift`, `reclosing`).
+        """
         token = self._motion_token = object()
         self.moved = True
+        self.lifted = False
         self.reservation.generation += 1
-        self.phase = f"starting_{direction}"
+        starting = phase or f"starting_{direction}"
+        self.phase = starting
         self.armed = False
         self.started_at = None
         self.forget_motor_stop()
@@ -470,7 +550,7 @@ class CalibrationSession:
         self.arm_deadline(START_SECONDS, "start_timeout")
 
         def guard() -> Any:
-            if self._motion_token is not token or self.phase != f"starting_{direction}" or monotonic() > expires:
+            if self._motion_token is not token or self.phase != starting or monotonic() > expires:
                 return False
             self.armed = True
             self.reservation.dispatched()
@@ -491,16 +571,32 @@ class CalibrationSession:
         self.reservation.observe(event)
         if self.closed:
             return
-        if self.phase not in {"starting_open", "starting_close", "opening", "closing"}:
+        if self.phase in BACK:
+            self.back_event(event)
+            return
+        if self.lift_stop is not None:
+            self.lift_stop_event(event)
+            return
+        if self.phase == "confirm_lift" and event.is_closing:
+            # At its rest, after the closing run or a close back: the close's own late statuses (or a wall switch's
+            # close) move nothing further down. Only `open` starts the lift run.
+            return
+        # The direction of a full run that has just ended (True: opening), None once ECHO_WINDOW has passed.
+        late = self.run_end[0] if self.run_end and monotonic() - self.run_end[1] < ECHO_WINDOW else None
+        if self.phase not in {*RUNS, *RUNS.values()} and late is not None and (event.is_opening if late else event.is_closing):
+            # The run just ended at the actuator's own stop; a status of that run still on its way (a reply to a
+            # status sweep sent before the stop) changes nothing.
+            return
+        if self.phase not in {*RUNS, *RUNS.values()}:
             if self.active and (event.is_opening or event.is_closing):
                 self.interrupt("unexpected_movement")
             return
-        opening = self.phase in {"starting_open", "opening"}
+        opening = self.phase in RISING
         expected = event.is_opening if opening else event.is_closing
         opposite = event.is_closing if opening else event.is_opening
-        if self.phase.startswith("starting_"):
+        if self.phase in RUNS:
             if expected and self.armed:
-                self.phase = "opening" if opening else "closing"
+                self.phase = RUNS[self.phase]
                 # A command translation standing for a missing status dates the run on its arrival.
                 self.started_at = monotonic() - event_age(event)
                 self.arm_deadline(self.travel_seconds, self.travel_reason)
@@ -515,9 +611,11 @@ class CalibrationSession:
             if event.state == 0 and getattr(event, "myhome_status_reply", False) is True:
                 # The actuator's answer to a status request, read on the command session: the state when it
                 # answered, possibly before its motor started, and a copy of a frame the monitor session brings
-                # in its bus order. Not the motor stopping: it neither dates nor ends the run.
+                # in its bus order. Not the motor stopping: neither "already at the end stop" nor the end.
                 return
-            if event.state == 0 and self.stop_awaits_endpoint():
+            if event.state == 0 and self.basic_run() and monotonic() - cast(float, self.started_at) < ALREADY_THERE_SECONDS:
+                self.already_there()
+            elif event.state == 0 and self.stop_awaits_endpoint():
                 # A stop status this close to the motor start is the gateway relaying a
                 # stop around our own direction command, not the end of the travel: it
                 # must not date the run, and the real end stop will. Calibration commands
@@ -534,7 +632,9 @@ class CalibrationSession:
 
         Guided `opening`/`closing` runs: the operator is told to confirm when the motor
         stops by itself, so the actuator's own stop status usually arrives first. Automatic
-        mode handles its stop statuses before reaching here.
+        mode handles its stop statuses before reaching here. In the `lifting` run of a basic
+        calibration the stop is dated the same way (`motor_stopped`), but nothing confirms it:
+        the lift-off can no longer be marked there, and `repeat` closes the cover and runs it again.
         """
         return self.mode == "guided"
 
@@ -552,8 +652,54 @@ class CalibrationSession:
             return
         self.motor_stopped = True
         self.stopped_elapsed = round(monotonic() - cast(float, self.started_at), 2)
+        if self.stop_arrives():
+            # The actuator stopped by itself at the end stop: the run is over, timed to that stop.
+            try:
+                self.arrive()
+            except ProfileError:
+                return  # Not a possible time: already interrupted (`invalid_measurement`).
+            self.arrival_sequence = self.sequence
+            return
         self.emit()
         self.stop_sequence = self.sequence
+
+    def at_relay_timer(self) -> bool:
+        """The stop came when an actuator's relay timer runs out (#837): the motor may have run on past the end stop."""
+        return any(low <= cast(float, self.stopped_elapsed) <= high for low, high in TIMER_STOP_WINDOWS)
+
+    def stop_arrives(self) -> bool:
+        """The actuator's own stop ends the run by itself (`arrive`) instead of waiting for the operator's `endpoint`:
+        in the basic calibration's full runs, unless it came at a relay timer."""
+        return self.basic_run() and not self.at_relay_timer()
+
+    def arrive(self) -> None:
+        """The run ends at the actuator's stop, as if `endpoint` had been sent at once."""
+        self.endpoint()
+
+    def basic_run(self) -> bool:
+        """A full run of the basic calibration (the guided session started with `slats`, both directions): the runs whose
+        actuator's own stop ends them and that refuse a start at the end stop. Other guided sessions (one
+        direction, older clients) keep waiting for the operator's confirmation."""
+        return self.basic_session() and self.phase in {"opening", "closing"}
+
+    def basic_session(self) -> bool:
+        """The basic calibration: the guided session started with `slats`, both directions."""
+        return self.mode == "guided" and self.slats is not None and not self.direction
+
+    def already_there(self) -> None:
+        """The actuator stopped right after the start: the cover was already at the end stop it was sent to (HA's
+        state was stale). Nothing is measured; the run is refused (`already_at_end`) and the session waits where it
+        started, Stop written; `repeat` takes the cover to where the run starts (the ascent from the rest, the descent
+        from the top) and the run can be made again."""
+        cast(asyncio.TimerHandle, self.deadline).cancel()
+        opening = self.phase == "opening"
+        self.started_at = None
+        self.forget_motor_stop()
+        self.queue_stop()
+        self.confirm_position(100 if opening else 0)
+        self.phase = "confirm_closed" if opening else "confirm_open"
+        self.reason = "already_at_end"
+        self.emit()
 
     def press_across_stop(self, msg: dict[str, Any]) -> bool:
         """An `endpoint` sent before the stop's view reached the client still confirms the run.
@@ -564,6 +710,13 @@ class CalibrationSession:
         stop (no other transition, ownership change included, has moved the sequence on).
         """
         return (msg["action"] == "endpoint" and self.motor_stopped and self.sequence == self.stop_sequence
+                and msg.get("sequence") == self.sequence - 1)
+
+    def press_after_arrival(self, msg: dict[str, Any]) -> bool:
+        """An `endpoint` sent before the view of a run ended at the actuator's own stop reached the client: the press
+        has nothing left to confirm and is answered with the view, not refused. Only with exactly the sequence just
+        before that view, and while nothing else has changed since."""
+        return (msg["action"] == "endpoint" and self.arrival_sequence is not None and self.sequence == self.arrival_sequence
                 and msg.get("sequence") == self.sequence - 1)
 
     def forget_motor_stop(self) -> None:
@@ -593,7 +746,13 @@ class CalibrationSession:
             raise ProfileError("invalid_profile") from error
         self.values[f"{direction}_time"] = elapsed
         self.provenance[direction] = evidence("guided", self.cover.unique_id, ended_by)
-        self.phase = "confirm_open" if direction == "opening" and not self.direction else "review"
+        self.run_end = (direction == "opening", monotonic())
+        # A closing run repeated after the lift-off keeps it while it is still shorter than both full runs.
+        if "lift" in self.samples and self.samples["lift"] >= min(self.values["opening_time"], self.values["closing_time"]):
+            self.samples.pop("lift")
+            self.lift_evidence = None
+        self.phase = ("confirm_open" if direction == "opening" and not self.direction
+                      else "confirm_lift" if self.slats and "lift" not in self.samples else "review")
         self.started_at = None
         self.forget_motor_stop()
         cast(asyncio.TimerHandle, self.deadline).cancel()
@@ -602,6 +761,260 @@ class CalibrationSession:
         # cannot establish it, even when it dated the run. Keep the existing travel
         # settings until Save.
         self.confirm_position(100 if direction == "opening" else 0)
+        self.emit()
+
+    def start_lift(self) -> None:
+        """Basic calibration with slats: from the rest the cover rises until the operator marks the lift-off."""
+        self.confirm_position(0)
+        self.reason = None
+        self.queue_move("open", "starting_lift")
+
+    def mark_lift(self) -> None:
+        """The bottom edge left its rest: this press is the Stop of the lift run.
+
+        Timed from the same anchor as the full runs (the bus's movement status), to the press. An
+        accepted lift-off leads to review with the cover where it stopped: nothing closes it again.
+        A lift-off that is not shorter than both full times is rejected
+        (`lift_not_shorter`): nothing is kept, the session closes the cover again and the lift run
+        can be run again. After a stop status from the bus the lift-off can no longer be marked.
+        """
+        if self.phase != "lifting" or self.motor_stopped:
+            raise ProfileError("calibration_step")
+        lift = round(monotonic() - cast(float, self.started_at), 2)
+        accepted = lift < min(self.values["opening_time"], self.values["closing_time"])
+        self.reason = None if accepted else "lift_not_shorter"
+        if accepted:
+            self.samples["lift"] = lift
+            self.lift_evidence = evidence("guided", self.cover.unique_id)
+            self.stop_at_lift_off()
+            return
+        self.risen = lift
+        self.stop_and_go_back("reclosing")
+        raise ProfileError("lift_not_shorter")
+
+    def stop_at_lift_off(self) -> None:
+        """The accepted lift-off: Stop on the bus, and review with the cover where it stopped.
+
+        The Stop must still reach the bus: never written (`not_delivered`) or not within
+        STOP_QUEUE_SECONDS (`not_stopped`), the session ends as in a run. Until the bus reports
+        the stop, or ECHO_WINDOW after the write, the lift run's own statuses change nothing.
+        """
+        cast(asyncio.TimerHandle, self.deadline).cancel()
+        self.phase, self.lift_stop = "review", "stopping"
+        self.started_at = None
+        self.forget_motor_stop()
+        token = self._motion_token = object()
+        written = self.queue_stop()
+        if written is None:
+            self.interrupt("stop_queue_full", send_stop=False)
+            return
+        self.arm_deadline(STOP_QUEUE_SECONDS, "not_stopped")
+        written.add_done_callback(lambda future: self.lift_off_stop_written(future, token))
+        self.confirm_lifted()
+        self.emit()
+
+    def lift_off_stop_written(self, future: asyncio.Future[float], token: object) -> None:
+        if self._motion_token is not token or self.lift_stop != "stopping" or self.closed:
+            return
+        if future.cancelled():
+            self.interrupt("not_delivered")
+            return
+        self.lift_stop = "written"
+        cast(asyncio.TimerHandle, self.deadline).cancel()
+        self.deadline = self.hass.loop.call_later(max(0.0, future.result() + ECHO_WINDOW - monotonic()),
+                                                  self.lift_off_stopped)
+
+    def lift_off_stopped(self) -> None:
+        """The motor stopped at the lift-off: from now on any movement is foreign, as in every review."""
+        cast(asyncio.TimerHandle, self.deadline).cancel()
+        self.lift_stop = None
+
+    def lift_stop_event(self, event: Any) -> None:
+        """The bus after the lift-off's Stop: a close is foreign; a rise is the lift run's own.
+
+        A rise after the Stop was written means the motor still runs: only its stop status ends the
+        wait now, within STOP_QUEUE_SECONDS (`not_stopped`), as after the geometry session's Stops.
+        """
+        if event.is_closing:
+            self.interrupt("unexpected_movement")
+        elif event.is_opening:
+            if self.lift_stop == "written":
+                self.arm_deadline(STOP_QUEUE_SECONDS, "not_stopped")
+        elif event.state == 0 and self.lift_stop == "written":
+            self.lift_off_stopped()
+
+    def confirm_lifted(self) -> None:
+        """At the lift-off: 0 % (the edge on its sill) with the slats open, as far as the cover's model knows slats."""
+        self.confirm_position(0)
+        self.lifted = True
+        motion = self.cover._motion
+        if motion.model is not None:
+            motion.position = MotionPosition(0.0, 1.0)
+
+    def repeat_lift(self) -> None:
+        """Run the lift run again: the session closes the cover back (Stop first), then waits for `open` (`confirm_lift`).
+
+        From review the cover is where the lift-off stopped it; during the lift run (also after a
+        stop status from the bus) it is stopped first. The full runs stay. The lift run never starts by
+        itself, after a repeat either: only the operator's `open` starts it.
+        """
+        if not self.slats or self.phase not in {"lifting", "review"}:
+            raise ProfileError("calibration_step")
+        if self.phase == "review":
+            risen = self.samples["lift"]
+        elif self.motor_stopped:
+            risen = cast(float, self.stopped_elapsed)
+        else:
+            risen = round(monotonic() - cast(float, self.started_at), 2)
+        self.samples.pop("lift", None)
+        self.lift_evidence = None
+        self.risen = risen
+        self.stop_and_go_back("reclosing")
+
+    def repeat_closing(self) -> None:
+        """Run the closing run again, and only it: the session opens the cover back, then `confirm_open`.
+
+        Once the closing run is confirmed (`confirm_lift`, or review). The opening time, its evidence
+        and a lift-off already marked stay; the closing time goes until the closing run is confirmed
+        again. Nothing is measured while the cover opens back.
+        """
+        refused = self.phase == "confirm_open" and self.reason == "already_at_end"
+        if self.direction == "opening" or (self.phase not in {"confirm_lift", "review"} and not refused):
+            raise ProfileError("calibration_step")
+        self.values.pop("closing_time", None)
+        self.provenance.pop("closing", None)
+        self.reason = None
+        self.stop_and_go_back("reopening")
+
+    def repeat_opening(self) -> None:
+        """The opening run again, and only it: the session closes the cover back to the rest by itself (`rehoming`),
+        then `confirm_closed`. Once the opening run is confirmed (`confirm_open`), or refused because the cover was
+        already at the top (`already_at_end`). The opening time and its evidence go."""
+        refused = self.phase == "confirm_closed" and self.reason == "already_at_end"
+        if self.direction == "closing" or (self.phase != "confirm_open" and not refused) \
+                or (self.phase == "confirm_open" and "opening_time" not in self.values):
+            raise ProfileError("calibration_step")
+        self.values.pop("opening_time", None)
+        self.provenance.pop("opening", None)
+        self.reason = None
+        self.stop_and_go_back("rehoming")
+
+    def rehome_seconds(self) -> float:
+        """How long the close back to the rest may last: the closing time in use and its margin."""
+        closing = self.values.get("closing_time") or travel_time(self.cover.resolve_cover_settings(
+            self.store.profile(self.cover.unique_id))["closing"]["value"] or MAX_TRAVEL_SECONDS)
+        return round(min(MAX_TRAVEL_SECONDS, closing + max(RECLOSE_MARGIN_SECONDS, RECLOSE_MARGIN_SHARE * closing)), 2)
+
+    def reclose_seconds(self) -> float:
+        """How long the close back to the rest may last: the rise it undoes with its margin, at most a full close."""
+        closing = self.values["closing_time"]
+        full = closing + max(RECLOSE_MARGIN_SECONDS, RECLOSE_MARGIN_SHARE * closing)
+        return round(min(full, cast(float, self.risen) * RECLOSE_RISE_SHARE + RECLOSE_RISE_SECONDS), 2)
+
+    def reopen_seconds(self) -> float:
+        """How long the open back to the top may last: the confirmed opening time and its margin."""
+        opening = self.values["opening_time"]
+        return round(opening + max(RECLOSE_MARGIN_SECONDS, RECLOSE_MARGIN_SHARE * opening), 2)
+
+    def stop_and_go_back(self, phase: str) -> None:
+        """A run back to an end stop (`reclosing`, `reopening`): Stop on the bus, then, once it is written and
+        after a pause, the run back."""
+        if self.deadline:
+            self.deadline.cancel()
+        self.phase, self.back_stage, self.lift_stop = phase, "stopping", None
+        self.lifted = False
+        self.started_at = None
+        self.forget_motor_stop()
+        self._motion_token = object()
+        written = self.queue_stop()
+        if written is None:
+            self.interrupt("stop_queue_full", send_stop=False)
+            return
+        self.once_stopped(written, self.go_back)
+        self.emit()
+
+    def once_stopped(self, written: asyncio.Future[float], then: Callable[[], None]) -> None:
+        """Once this Stop is written (within STOP_QUEUE_SECONDS) and after a pause, `then`: never a reversal on the fly."""
+        token = self._motion_token
+        self.arm_deadline(STOP_QUEUE_SECONDS, "not_stopped")
+
+        def done(future: asyncio.Future[float]) -> None:
+            if self._motion_token is not token or self.phase not in BACK:
+                return
+            if future.cancelled():
+                self.interrupt("not_delivered")
+                return
+            cast(asyncio.TimerHandle, self.deadline).cancel()
+            self.settle = self.hass.loop.call_later(RECLOSE_SETTLE_SECONDS, then)
+        written.add_done_callback(done)
+
+    def go_back(self) -> None:
+        """After the pause: the run back, through the same guarded queue as every run."""
+        self.settle = None
+        if self.phase not in BACK or self.store.calibration is not self:
+            return
+        self.back_stage = "starting"
+        try:
+            self.queue_move(BACK[self.phase], self.phase)
+        except ProfileError:
+            return  # Already interrupted (`command_queue_full`).
+
+    def back_seconds(self) -> float:
+        return {"reclosing": self.reclose_seconds, "rehoming": self.rehome_seconds}.get(self.phase, self.reopen_seconds)()
+
+    def back_event(self, event: Any) -> None:
+        """A run back to an end stop, as the bus reports it.
+
+        Until it starts, the previous run's own statuses may still arrive (its movement, its stop)
+        and change nothing; one in our direction before ours is foreign. Once it runs, the opposite
+        direction is foreign, and a stop status ends it, unless it is the gateway's echo of our own
+        command (ECHO_WINDOW). In the basic calibration (the close to the rest before the ascent, and the runs back
+        of a repeat) a stop within ALREADY_THERE_SECONDS of the movement is the actuator stopping at the end stop the
+        cover already stood at, as in the full runs: the run back is over at once. A reply to a status request
+        (marked by the gateway) is not that stop.
+        """
+        opening = self.phase == "reopening"
+        expected = event.is_opening if opening else event.is_closing
+        opposite = event.is_closing if opening else event.is_opening
+        if expected:
+            if self.back_stage == "starting" and self.armed:
+                self.back_stage = "running"
+                self.started_at = monotonic()
+                cast(asyncio.TimerHandle, self.deadline).cancel()
+                self.deadline = self.hass.loop.call_later(self.back_seconds(), self.back_done)
+                self.emit()
+            elif self.back_stage != "running":
+                self.interrupt("unexpected_movement")
+        elif self.back_stage == "running":
+            elapsed = monotonic() - cast(float, self.started_at)
+            if opposite:
+                self.interrupt("unexpected_movement")
+            elif event.state != 0:
+                return
+            elif elapsed >= ECHO_WINDOW:
+                self.back_done()
+            elif self.basic_session() and elapsed < ALREADY_THERE_SECONDS and getattr(
+                    event, "myhome_status_reply", False) is not True:
+                self.back_done()
+
+    def back_done(self) -> None:
+        """At the end stop: its stop status came, or the time allowed for the run back has passed.
+
+        Stop is written either way (a timer actuator keeps its relay on). Opened back: the closing
+        run waits for the operator (`confirm_open`). Closed back (a repeat, or a lift-off refused): the
+        lift run waits for the operator's `open` (`confirm_lift`): nothing more moves by itself.
+        """
+        cast(asyncio.TimerHandle, self.deadline).cancel()
+        self.started_at = None
+        if self.queue_stop() is None:
+            # No Stop could be queued: a timer actuator's relay may still be on. Nobody waits for the operator.
+            self.interrupt("stop_queue_full", send_stop=False)
+            return
+        opened = self.phase == "reopening"
+        self.confirm_position(100 if opened else 0)
+        rehomed = self.phase == "rehoming"
+        self.back_stage = self.risen = None
+        self.phase = "confirm_open" if opened else "confirm_closed" if rehomed else "confirm_lift"
         self.emit()
 
     def confirm_position(self, position: Any) -> None:
@@ -635,6 +1048,8 @@ class CalibrationSession:
         if action == "detach":
             self.detach(self.attachment)
             return self.view()
+        if self.active and self.press_after_arrival(msg):
+            return self.view()
         if not self.active or (msg.get("sequence") != self.sequence and not self.press_across_stop(msg)):
             raise ProfileError("calibration_step")
         entry, entity = target(self.hass, self.entry_id, self.cover.entity_id)
@@ -651,23 +1066,38 @@ class CalibrationSession:
             if self.mode != "automatic" or self.phase != "confirm_automatic":
                 raise ProfileError("calibration_step")
             self.queue_move("open")
-        elif action in {"open", "close", "endpoint"} and self.mode != "guided":
+        elif action in {"open", "close", "endpoint", "lift", "repeat"} and self.mode != "guided":
             raise ProfileError("calibration_step")
+        elif action == "open" and self.phase == "confirm_lift":
+            self.start_lift()
         elif action in {"open", "close"}:
             self.move(action)
         elif action == "endpoint":
             self.endpoint()
-        elif action in {"next", "lift", "reading", "repeat", "check"}:
+        elif action == "lift":
+            self.mark_lift()
+        elif action == "repeat" and msg.get("direction") == "closing":
+            self.repeat_closing()
+        elif action == "repeat" and msg.get("direction") == "opening":
+            self.repeat_opening()
+        elif action == "repeat" and "direction" not in msg:
+            self.repeat_lift()
+        elif action == "repeat":
+            raise ProfileError("calibration_step")
+        elif action in {"next", "reading", "check"}:
             raise ProfileError("calibration_step")
         elif action == "preview_save":
-            if self.phase != "review" or msg.get("save_mode") != "shared" or "shared" not in self.view()["save_modes"]:
+            if self.phase != "review" or msg.get("save_mode") != "shared":
                 raise ProfileError("calibration_step")
-            from .cover_calibration_save import save_measurement
-            preview = await save_measurement(self, msg, preview=True)
+            if "shared" not in self.view()["save_modes"]:
+                raise ProfileError("profile_not_source")  # Only the profile's source updates it.
+            preview = await self.shared_save(msg, preview=True)
             return {**self.view(), "save_preview": preview}
         elif action == "save":
             if self.phase != "review":
                 raise ProfileError("calibration_step")
+            if msg.get("save_mode") == "shared" and "shared" not in self.view()["save_modes"]:
+                raise ProfileError("profile_not_source")  # Only the profile's source updates it.
             if msg.get("save_mode", "new") not in self.view()["save_modes"]:
                 raise ProfileError("invalid_profile")
             self.phase = "saving"
@@ -686,6 +1116,11 @@ class CalibrationSession:
         return self.view()
 
 
+    async def shared_save(self, msg: dict[str, Any], *, preview: bool = False) -> Any:
+        """`shared`: the measurement saved into the profile the cover follows, after a revision-bound preview."""
+        from .cover_calibration_save import save_measurement
+        return await save_measurement(self, msg, preview=preview)
+
     def geometry_action(self, msg: dict[str, Any]) -> None:
         """Only the geometry subclass implements these protocol actions."""
         raise ProfileError("calibration_step")
@@ -694,18 +1129,96 @@ class CalibrationSession:
         if msg.get("save_mode", "new") != "new":
             from .cover_calibration_save import save_measurement
             revision = await save_measurement(self, msg)
-            # R-4: saved on the cover («solo tempi») or on its shared profile, the same re-anchoring as a new profile.
+            # Saved into the profile the cover follows: the same re-anchoring as a new profile.
             self._apply_saved_times()
             return revision
         travel = self.store.data["covers"].get(self.cover.unique_id, {}).get("travel_cm")
+        geometry = self.base_geometry()
         result = await write_profile(self.hass, {
             "entry_id": self.entry_id, "entity_id": self.cover.entity_id,
             "revision": self.revision, "action": "save", "profile_id": None,
-            "profile": {"name": msg.get("name", ""), **self.values,
-                        **({"reference_travel_cm": travel} if travel is not None else {})},
+            "profile": {"name": self.profile_name(msg), **self.values,
+                        **({"reference_travel_cm": travel} if travel is not None else {}),
+                        **({"geometry": geometry} if geometry is not None else {})},
         }, calibration=self)
         self._apply_saved_times()
         return result["revision"]
+
+    def profile_name(self, msg: dict[str, Any]) -> str:
+        """A new profile is named as the panel says (an empty name is refused by the store), or, without a name, after
+        its cover (the name the panel offers)."""
+        if "name" in msg:
+            return str(msg["name"])
+        from homeassistant.helpers import entity_registry as er
+        record = er.async_get(self.hass).async_get(self.cover.entity_id)
+        state = self.hass.states.get(self.cover.entity_id)
+        # The name Home Assistant shows (as the panel's cards), else the registry's, else the entity id.
+        name = (state and state.attributes.get("friendly_name")) or (record and (record.name or record.original_name))
+        return str(name or self.cover.entity_id).strip()[:64] or self.cover.entity_id[:64]
+
+    def shared_geometry(self, profile: dict[str, Any], travel: float | None) -> tuple[dict[str, float], dict[str, Any]] | None:
+        """What a basic calibration saved into the profile the cover follows gives its geometry; None: nothing.
+
+        The lift-off measured here is the profile's slat time (scaled back to the profile's reference travel, as the
+        times are), with the profile's rolls (1 where it has none) and their evidence, so it is never lost, on a
+        refinement too; without slats it is 0, except on a profile whose rolls were both measured or entered (a
+        refinement): that one keeps its whole geometry. A session that was never asked about slats (one direction,
+        automatic) changes nothing.
+        """
+        if self.slats is None or self.direction:
+            return None
+        geometry, evidence_ = profile.get("geometry"), profile.get("geometry_provenance", {})
+        if not self.slats and geometry and all(evidence_.get(key, UNKNOWN)["source"] in ROLL_SOURCES for key in ROLLS):
+            # A refinement's whole geometry stays when no lift-off was measured here. With one, its slat time is the
+            # lift-off just measured (rescaled as the times), and the rolls the tape measured stay.
+            return None
+        if self.slats:
+            lift = self.samples.get("lift")
+            if lift is None:
+                raise ProfileError("lift_missing")
+            slat_evidence = dict(cast(dict[str, Any], self.lift_evidence))
+        else:
+            lift, slat_evidence = 0.0, evidence("guided", self.cover.unique_id)
+        reference = profile.get("reference_travel_cm")
+        ratio = travel / reference if reference is not None and travel is not None else 1.0
+        rolls = {key: float(geometry[key]) if geometry else 1.0 for key in ROLLS}
+        return ({"slat_time_s": lift / ratio, **rolls},
+                {"slat_time_s": slat_evidence,
+                 **{key: copy.deepcopy(evidence_.get(key, UNKNOWN)) if geometry else dict(UNKNOWN) for key in ROLLS}})
+
+    def base_geometry(self) -> dict[str, float] | None:
+        """The geometry of a basic calibration saved as a new profile, or None for a times-only profile.
+
+        With slats the lift-off of the lift run is the slat time; without, there is none (0). The
+        rolls are not measured: a roll that a previous refinement measured (guided) or that was
+        entered (manual) stays as this cover uses it now (a new calibration measures the times again
+        and keeps the refinement), the evidence with it; any other is 1, the model's linear case
+        (after the slats the edge follows the time), recorded as unknown evidence, never as a
+        measurement. "Without slats" said in this session is a slat time of 0 (with rolls 1 the
+        cover moves exactly as the linear model); only a session never asked about slats (None)
+        without such a roll saves a times-only profile.
+        """
+        settings = self.cover.resolve_cover_settings(self.store.profile(self.cover.unique_id))
+        kept = {key: settings[key] for key in ROLLS
+                if key in settings and settings[key]["provenance"]["source"] in ROLL_SOURCES}
+        if self.slats:
+            lift = self.samples.get("lift")
+            if lift is None:
+                raise ProfileError("lift_missing")
+            if lift >= min(self.values["opening_time"], self.values["closing_time"]):
+                raise ProfileError("lift_not_shorter")
+            # Dated by its own run, as the times are.
+            slat, slat_evidence = lift, dict(cast(dict[str, Any], self.lift_evidence))
+        elif kept or self.slats is False:
+            # Without slats, said in this session (or as the refinement of a cover without slats): none.
+            slat, slat_evidence = 0.0, evidence("guided", self.cover.unique_id)
+        else:
+            return None
+        self.geometry_provenance = {"slat_time_s": slat_evidence, **{
+            key: copy.deepcopy(kept[key]["provenance"]) if key in kept else dict(UNKNOWN) for key in ROLLS}}
+        # A roll scaled to a taller cover may exceed what a profile stores (1-5): the nearest it can.
+        return {"slat_time_s": slat, **{key: min(ROLL_MAX, float(kept[key]["value"])) if key in kept else 1.0
+                                        for key in ROLLS}}
 
     def _apply_saved_times(self) -> None:
         """L-36: as the geometry session: in review the motor is still at the end stop the operator confirmed, so the
@@ -714,7 +1227,10 @@ class CalibrationSession:
         self.cover._attr_is_opening = self.cover._attr_is_closing = False
         self.cover._move_start_time = None
         self.cover._apply_pending_cover_profile()
-        if position in (0, 100):
+        if self.lifted:
+            # Saved where the lift-off stopped it, the slats open, in the model just applied.
+            self.confirm_lifted()
+        elif position in (0, 100):
             self.confirm_position(position)
 
 
@@ -792,11 +1308,21 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
             session_type = GeometryCalibrationSession
             options = {"slats": msg.get("slats", True)}
         elif "slats" in msg:
+            # Basic calibration: the guided session over both runs, and the lift run after them if the cover has slats.
+            if msg.get("mode", "guided") != "guided" or "direction" in msg:
+                raise ProfileError("invalid_profile")
+            options = {"slats": msg["slats"]}
+        if msg.get("home") and "slats" not in msg:
             raise ProfileError("invalid_profile")
         session = session_type(hass, store, entry, cover, connection, msg["id"], client_id=msg.get("client_id"), **options)
         session.origin = msg.get("origin")
         store.calibration = cover._calibration = session
         session.subscribe()
+        if msg.get("home"):
+            # The basic calibration starts from the rest the session itself has reached: it closes the cover first
+            # (`rehoming`: the stop status at the bottom, or the closing time in use and its margin), never trusting a
+            # "closed" Home Assistant may have kept from before; then `confirm_closed`, the ascent ready.
+            session.stop_and_go_back("rehoming")
         return session
 
 
@@ -806,6 +1332,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
     vol.Optional("mode"): vol.In(["guided", "automatic", "geometry"]),
     vol.Optional("direction"): vol.In(["opening", "closing"]),
     vol.Optional("slats"): bool,
+    vol.Optional("home"): bool,
     vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64)),
     vol.Optional("session_id"): vol.All(str, vol.Length(min=1, max=64)),
     vol.Optional("origin"): vol.In(["wizard"]),

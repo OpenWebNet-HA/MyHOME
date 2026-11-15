@@ -18,8 +18,15 @@ from tests.test_panel_cover_calibration import act, bus
 plant = plant_fixture
 
 
+def measured_on(store, profile_id, unique):
+    """The profile took its times from `unique`, its source (the only cover that updates it with `shared`)."""
+    evidence = {"source": "guided", "recorded_at": "2026-10-01T08:00:00+00:00", "origin_unique_id": unique}
+    store.data["profiles"][profile_id]["provenance"] = {"opening": dict(evidence), "closing": dict(evidence)}
+
+
 @pytest.fixture(params=["opening", "closing"])
 async def quick(hass, plant, request):
+    """A one-direction session on the first cover, the source of the profile 'Shared', which the second follows."""
     entry_id = plant.entries[0].entry_id
     source = await profiles.write_profile(
         hass,
@@ -32,6 +39,7 @@ async def quick(hass, plant, request):
         },
     )
     profile_id = source["assigned_profile_id"]
+    measured_on(profiles.get_store(hass, entry_id), profile_id, plant.covers[0].unique_id)
     await profiles.write_profile(
         hass,
         {
@@ -93,7 +101,7 @@ async def test_one_leg_preserves_saved_evidence_shared_profile_and_restart(
     if retained_source == "unknown":
         original["provenance"][retained] = unknown_provenance()[retained]
     elif retained_source == "catalogue":
-        original["provenance"][retained]["origin_unique_id"] = None
+        original["provenance"][retained].update(source="manual", origin_unique_id=None)
     else:
         original["provenance"][retained]["source"] = retained_source
     await session.store.store.async_save(session.store.data)

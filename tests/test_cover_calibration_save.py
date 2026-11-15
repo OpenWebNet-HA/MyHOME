@@ -22,7 +22,19 @@ quick = quick_fixture
 calibration = calibration_fixture
 
 
-@pytest.mark.parametrize("mode", ["cover", "shared"])
+async def test_a_calibration_no_longer_saves_on_the_cover(hass, quick):
+    """Always a profile; the cover's own values stay for the manual overrides."""
+    await measure(quick)
+    before = copy.deepcopy(quick.session.store.data)
+    assert quick.session.view()["save_modes"] == ["new", "shared"]
+    with pytest.raises(profiles.ProfileError, match="invalid_profile"):
+        await act(quick, "save", save_mode="cover")
+    with pytest.raises(profiles.ProfileError, match="invalid_profile"):
+        await save_measurement(quick.session, {"save_mode": "cover"})
+    assert (quick.session.phase, quick.session.store.data) == ("review", before)
+
+
+@pytest.mark.parametrize("mode", ["shared"])
 async def test_partial_destination_persists_only_measured_direction(hass, quick, mode):
     await measure(quick)
     session, cover = quick.session, quick.cover
@@ -31,11 +43,10 @@ async def test_partial_destination_persists_only_measured_direction(hass, quick,
     opposite = "closing" if direction == "opening" else "opening"
     kwargs = {"save_mode": mode}
     queued = len(quick.queue)
-    if mode == "shared":
-        preview = (await act(quick, "preview_save", **kwargs))["save_preview"]
-        assert session.store.data == before
-        assert len(preview["followers"]) == 2
-        kwargs["confirmation"] = preview["confirmation"]
+    preview = (await act(quick, "preview_save", **kwargs))["save_preview"]
+    assert session.store.data == before
+    assert len(preview["followers"]) == 2
+    kwargs["confirmation"] = preview["confirmation"]
     with patch.object(session.store.store, "async_save", wraps=session.store.store.async_save) as save:
         await act(quick, "save", **kwargs)
     save.assert_awaited_once()
@@ -44,32 +55,30 @@ async def test_partial_destination_persists_only_measured_direction(hass, quick,
     assert data["assignments"] == before["assignments"]
     assert len(data["profiles"]) == len(before["profiles"])
     assert len(quick.queue) == queued
-    if mode == "cover":
-        assert data["profiles"] == before["profiles"]
-        overrides = data["covers"][cover.unique_id]["overrides"]
-        assert list(overrides) == [direction]
-        assert overrides[direction] == {"value": 12.75, "provenance": session.provenance[direction]}
-    else:
-        result = data["profiles"][quick.original_id]
-        assert result[f"{direction}_time"] == 12.75
-        assert result["provenance"][direction] == session.provenance[direction]
-        assert result[f"{opposite}_time"] == before["profiles"][quick.original_id][f"{opposite}_time"]
-        assert result["provenance"][opposite] == before["profiles"][quick.original_id]["provenance"][opposite]
+    result = data["profiles"][quick.original_id]
+    assert result[f"{direction}_time"] == 12.75
+    assert result["provenance"][direction] == session.provenance[direction]
+    assert result[f"{opposite}_time"] == before["profiles"][quick.original_id][f"{opposite}_time"]
+    assert result["provenance"][opposite] == before["profiles"][quick.original_id]["provenance"][opposite]
     hass.data[profiles.DATA_KEY].pop(session.entry_id)
     await profiles.bind_cover(hass, cover)
     assert profiles.get_store(hass, session.entry_id).data == data
 
 
-async def test_full_cover_only_without_profile_keeps_backend_evidence(hass, calibration):
+async def test_without_a_profile_a_new_one_named_after_the_cover_keeps_backend_evidence(hass, calibration):
     await measured(calibration)
     session = calibration.session
-    await act(calibration, "save", save_mode="cover", name="ignored")
+    assert session.view()["save_modes"] == ["new"]
+    await act(calibration, "save")  # No name: the cover's.
     data = session.store.data
-    assert data["profiles"] == data["assignments"] == {}
-    assert data["covers"][calibration.cover.unique_id]["overrides"] == {
-        direction: {"value": value, "provenance": session.provenance[direction]}
-        for direction, value in [("opening", 20.5), ("closing", 40.5)]
-    }
+    profile = data["profiles"][data["assignments"][calibration.cover.unique_id]]
+    assert profile["name"] == calibration.session.profile_name({}) == calibration.cover.entity_id  # No state, no name.
+    hass.states.async_set(calibration.cover.entity_id, "closed", {"friendly_name": "Hall door"})
+    assert calibration.session.profile_name({}) == "Hall door"  # The name Home Assistant shows.
+    assert calibration.session.profile_name({"name": "Mine"}) == "Mine"
+    assert data["covers"].get(calibration.cover.unique_id, {}).get("overrides", {}) == {}
+    assert profile["provenance"] == {direction: session.provenance[direction] for direction in ("opening", "closing")}
+    assert (profile["opening_time"], profile["closing_time"]) == (20.5, 40.5)
 
 
 async def test_shared_preview_matches_override_removal_and_preserves_other_overrides(hass, quick):
@@ -93,7 +102,7 @@ async def test_shared_preview_matches_override_removal_and_preserves_other_overr
     assert store.data["covers"][quick.plant.covers[1].unique_id]["overrides"][direction]["value"] == 55
 
 
-@pytest.mark.parametrize("mode", ["cover", "shared"])
+@pytest.mark.parametrize("mode", ["new", "shared"])
 async def test_failed_save_keeps_review_and_all_committed_data(hass, quick, mode):
     await measure(quick)
     session = quick.session
@@ -131,7 +140,7 @@ async def test_new_modes_revalidate_session_and_target_after_lock_wait(hass, qui
     await measure(quick)
     store = quick.session.store
     async with store.lock:
-        pending = asyncio.create_task(act(quick, "save", save_mode="cover"))
+        pending = asyncio.create_task(act(quick, "save", save_mode="new", name="Late"))
         await asyncio.sleep(0)
         quick.session.close()
     with pytest.raises(profiles.ProfileError, match="calibration_expired"):
@@ -148,17 +157,17 @@ async def test_shared_destination_and_busy_follower_are_revalidated(hass, quick)
             await act(quick, "save", save_mode="shared", confirmation=preview["confirmation"])
     with patch("custom_components.myhome.cover_calibration_save.ready_cover", return_value=object()):
         with pytest.raises(profiles.ProfileError, match="cover_unavailable"):
-            await act(quick, "save", save_mode="cover")
+            await act(quick, "save", save_mode="shared", confirmation=preview["confirmation"])
     session.store.data["assignments"].pop(quick.cover.unique_id)
-    assert session.view()["save_modes"] == ["new", "cover"]
-    with pytest.raises(profiles.ProfileError, match="invalid_profile"):
+    assert session.view()["save_modes"] == ["new"]
+    with pytest.raises(profiles.ProfileError, match="profile_not_source"):  # No profile, nothing to update.
         await act(quick, "save", save_mode="shared")
     with pytest.raises(profiles.ProfileError, match="profile_not_found"):
         await save_measurement(session, {"save_mode": "shared"}, preview=True)
 
 
 @pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
-@pytest.mark.parametrize("mode", ["cover", "shared"])
+@pytest.mark.parametrize("mode", ["new", "shared"])
 async def test_automatic_destinations_keep_measured_evidence(hass, calibration, mode):
     cal = calibration
     cal.session.close()
@@ -180,7 +189,7 @@ async def test_automatic_destinations_keep_measured_evidence(hass, calibration, 
         assert item["provenance"]["source"] == "automatic"
 
 
-async def test_real_websocket_accepts_cover_save_and_rejects_browser_timings(hass, plant, hass_ws_client):
+async def test_real_websocket_saves_a_new_profile_and_rejects_browser_timings(hass, plant, hass_ws_client):
     register_api(hass)
     queue, clock = [], [100.0]
     plant.gateways[0].async_queue_calibration = lambda *args: queue.append(args)
@@ -191,13 +200,13 @@ async def test_real_websocket_accepts_cover_save_and_rejects_browser_timings(has
                                 "entity_id": plant.covers[0].entity_id, "revision": 0})
         assert (await client.receive_json())["success"]
         state = (await client.receive_json())["event"]
-        assert state["save_modes"] == ["new", "cover"]
+        assert state["save_modes"] == ["new"]
         session = profiles.get_store(hass, state["entry_id"]).calibration
         cal = SimpleNamespace(session=session, cover=plant.covers[0], queue=queue, clock=clock)
         with patch("custom_components.myhome.cover_calibration.monotonic", side_effect=lambda: clock[0]):
             await measured(cal)
         request = {"type": WS_ACTION, "entry_id": session.entry_id, "session_id": session.id,
-                   "sequence": session.sequence, "action": "save", "save_mode": "cover"}
+                   "sequence": session.sequence, "action": "save", "save_mode": "new"}
         await client.send_json({"id": 2, **request, "values": {"opening_time": 999}})
         while (response := await client.receive_json()).get("id") != 2:
             pass

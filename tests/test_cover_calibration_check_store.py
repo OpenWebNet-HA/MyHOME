@@ -205,6 +205,9 @@ async def test_a_shared_save_clears_the_checks_of_every_follower(hass, quick):
     for unique in group:
         seed_unique(store, unique)
     preview = (await act(quick, "preview_save", save_mode="shared"))["save_preview"]
+    # The preview says which other cover loses its check (the source's own goes with its new times).
+    assert {row["entity_id"]: row["loses_check"] for row in preview["followers"]} == {
+        quick.cover.entity_id: False, quick.plant.covers[1].entity_id: True}
     await act(quick, "save", save_mode="shared", confirmation=preview["confirmation"])
     for unique in group:
         assert kept(store, unique) == dict.fromkeys(CHECK_FIELDS), unique
@@ -308,7 +311,7 @@ async def test_a_new_travel_or_none_on_the_source_clears_its_check(hass, plant, 
 # ---------------------------------------------------------------------------------
 # A times-only save on the cover or on its shared profile re-anchors like a new profile.
 # ---------------------------------------------------------------------------------
-@pytest.mark.parametrize("mode", ["cover", "shared"])
+@pytest.mark.parametrize("mode", ["new", "shared"])
 async def test_a_times_only_save_applies_the_new_times_at_once_and_keeps_the_end_stop(hass, quick, mode):
     from tests.test_cover_calibration_direction import measure
 
