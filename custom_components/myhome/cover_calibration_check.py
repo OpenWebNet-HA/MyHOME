@@ -3,8 +3,9 @@
 The run lasts the motor seconds the model needs to bring the bottom edge from the end
 stop to the target height. The expectation is where the model puts the edge after the
 seconds the motor really ran, up to the Stop write, so a late Stop is not counted
-against the model. The verdict is on whole centimetres, rounded half away from zero:
-Python's ``round()`` rounds half to even and would pass 4.5 cm as 4.
+against the model. The gap and its verdict are on a tenth of a centimetre, the precision
+of a tape reading, rounded half away from zero: Python's ``round()`` follows the binary
+value and would make a gap of 4.05 cm 4.0, and pass it.
 """
 from __future__ import annotations
 
@@ -18,8 +19,10 @@ import voluptuous as vol
 from .cover_motion import CoverMotionModel, MotionPosition
 from .cover_profiles import ProfileError
 
-# A check passes when the bottom edge stopped within this many whole centimetres of
-# the expectation: the precision a basic calibration declares.
+# A check passes when the bottom edge stopped within this many centimetres of the
+# expectation (the gap to a tenth): the threshold of the check that ends the fine-tuning
+# with the tape (the geometry session). A basic calibration (times and lift-off, no
+# tape) runs no check and declares no precision.
 CHECK_THRESHOLD_CM = 4
 CHECK_DIRECTIONS = ("opening", "closing")
 # Upwards from the bottom end stop: an ascent crosses the slat phase and the opening
@@ -52,16 +55,17 @@ def tenth(value: float) -> float:
     return float(_quantize(Decimal(repr(value)), "0.1"))
 
 
-def deviation_cm(measured_cm: float, expected_cm: float) -> int:
-    """Tape minus expectation in whole centimetres, ties away from zero; positive is above.
+def deviation_cm(measured_cm: float, expected_cm: float) -> float:
+    """Tape minus expectation to a tenth of a centimetre, ties away from zero; positive is above.
 
-    Both operands are taken as written (``repr``), so 9.7 - 5.2 is 4.5 and not
-    4.499999999999999.
+    Both operands are taken as written (``repr``), so 98.8 - 98.5 is 0.3 and not
+    0.29999999999999716. A gap below the centimetre stays readable (0.3, not 0); a gap
+    that rounds to nothing is 0.0, never -0.0.
     """
-    return int(_quantize(Decimal(repr(measured_cm)) - Decimal(repr(expected_cm)), "1"))
+    return float(_quantize(Decimal(repr(measured_cm)) - Decimal(repr(expected_cm)), "0.1")) or 0.0
 
 
-def passes(deviation: int) -> bool:
+def passes(deviation: float) -> bool:
     return abs(deviation) <= CHECK_THRESHOLD_CM
 
 
@@ -80,7 +84,7 @@ class CalibrationCheck:
     check_seconds: float | None = None
     expected_cm: float | None = None
     measured_cm: float | None = None
-    deviation_cm: int | None = None
+    deviation_cm: float | None = None
     passed: bool | None = None
 
     @classmethod
@@ -93,7 +97,7 @@ class CalibrationCheck:
                 or not MIN_TARGET_FRACTION <= target / travel_cm <= MAX_TARGET_FRACTION):
             raise ProfileError("invalid_check")
         check = cls(model, travel_cm, direction, float(target))
-        # L-78: the slat phase lies at the start of an ascent and at the end of a descent: down from the top the curtain
+        # The slat phase lies at the start of an ascent and at the end of a descent: down from the top the curtain
         # moves from the first second, so only an ascent has the slat time to cross before the curtain counts.
         if check.planned_seconds - (model.slat_time_s if check.opening else 0) <= MIN_CURTAIN_SECONDS:
             raise ProfileError("invalid_check")
@@ -102,7 +106,7 @@ class CalibrationCheck:
     @classmethod
     def plan_possible(cls, model: CoverMotionModel, travel_cm: float, direction: Any = None,
                       target_cm: Any = None, *, fraction: float = HALF_TRAVEL_FRACTION) -> CalibrationCheck:
-        """The check asked for, or the nearest one this model can make (L-78: never a dead end).
+        """The check asked for, or the nearest one this model can make (never a dead end).
 
         A request the session should take but this model cannot carry out (a run that would not move the curtain
         long enough, e.g. after a late lift-off fitted a long slat phase) is moved to the nearest fraction of the band
@@ -164,7 +168,7 @@ class CalibrationCheck:
         self.passed = passes(self.deviation_cm)
 
     def view(self) -> dict[str, Any]:
-        # L-44: the planned run too (the panel's bar for the run to the target).
+        # The planned run too (the panel's bar for the run to the target).
         return {"direction": self.direction, "target_cm": self.target_cm, "check_seconds": self.check_seconds,
                 "planned_seconds": round(self.planned_seconds, 2),
                 "expected_cm": self.expected_cm, "measured_cm": self.measured_cm,

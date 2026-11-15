@@ -39,6 +39,7 @@ REVIEWED: dict[str, str] = {
     "sound_source.py::who22_tuner_listener.listener": "WHO 22: H/L4684 empty-WHERE (< 100 MHz) tuner report fallback",
     "media_player.py::MyHOMEMediaPlayer.handle_event": "WHO 16: WHERE is the sound zone",
     "cover.py::MyHOMECover.handle_event": "WHO 2 calibration: general frame test and the cover's own WHERE",
+    "cover_calibration.py::CalibrationSession.status_requested": "WHO 2 status request: whether it reaches the calibrated cover (its point, general, area, group)",
     "cover.py::MyHOMECover._handle_echo": "WHO 2 stop echo: general frame test (WHERE 0)",
     "cover_translation.py::CoverTranslationRelay._key": "WHO 2 point-to-point translation: WHERE (+ F422 interface) is the shutter address",
     "cover_translation.py::CoverTranslationRelay._addressed_by": "WHO 2 group / area / general Stop or direction: WHERE (+ F422 interface) is the scope it addresses",

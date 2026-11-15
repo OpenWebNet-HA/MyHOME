@@ -49,14 +49,18 @@ from .cover_settings import (
     NATIVE,
     centimetres,
     clear_check,
+    linear_geometry,
     migrate,
     native_provenance,
+    precision_class,
     profile_times_changed,
     record_check,
     reference_profile,
     resolve,
     seconds,
     set_overrides,
+    slats_state,
+    travel_edit,
     validate_scaling,
 )
 from .typing_compat import as_any
@@ -91,6 +95,9 @@ DIRECTIONAL_PROFILE = vol.Schema({
     vol.Required("closing_time"): travel_time,
     vol.Optional("reference_travel_cm"): vol.Any(None, centimetres),
     vol.Optional("geometry"): vol.Any(None, GEOMETRY),
+    # A profile no longer carries a slats mark: its slat time says it (> 0 with, 0 without,
+    # no geometry: not said). A mark sent by an older panel, or stored before, is dropped in silence.
+    vol.Remove("slats"): object,
 })
 PROFILE = vol.Any(DIRECTIONAL_PROFILE, vol.All(LEGACY_PROFILE, directional_profile))
 STORED_DIRECTIONAL_PROFILE = DIRECTIONAL_PROFILE.extend({
@@ -220,7 +227,7 @@ def target(hass: Any, entry_id: str, entity_id: str) -> Any:
 def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | None = None) -> Any:
     """An allowlisted view; never expose gateway credentials or runtime objects.
 
-    L-93: with `client_id`, the open session also says whether that client owns it (`client_owner`): its `resume`
+    With `client_id`, the open session also says whether that client owns it (`client_owner`): its `resume`
     then carries on as owner, any other client's only follows it. Who the owner is stays private.
     """
     cover = store.covers.get(entity.unique_id)
@@ -234,6 +241,7 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | No
     records = {record.unique_id: record for record in
                er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
                if record.domain == "cover" and record.platform == DOMAIN}
+    effective = public_settings(store, entity, records, active=True)
     def assignments(profile_id: Any) -> Any:
         return [{"entity_id": records[unique].entity_id if unique in records else None,
                  "name": (records[unique].name or records[unique].original_name
@@ -251,7 +259,7 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | No
         "nonlinear": True, "position_known": cover.current_cover_position is not None if cover else False,
         "scaling": "height" if travel is not None and assigned and assigned.get("reference_travel_cm") else "unscaled",
         "travel_cm": travel, "height_scaling": True, "accuracy": {"kind": "not_measured"},
-        "profiles": [{"id": key, **value, **public_geometry(value, records, entity.unique_id), "model": NONLINEAR_MODEL if "geometry" in value else MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
+        "profiles": [{"id": key, **value, **public_geometry(value, records, entity.unique_id), "model": MODEL if linear_geometry(value) else NONLINEAR_MODEL, "scaling": "height" if value.get("reference_travel_cm") else "unscaled",
                       "provenance": public_provenance(value, records, entity.unique_id),
                       "uses": list(store.data["assignments"].values()).count(key),
                       "assigned_to": assignments(key)}
@@ -263,7 +271,13 @@ def snapshot(hass: Any, store: Any, entry: Any, entity: Any, client_id: str | No
         "effective_closing_time": cover._travel_time_down if cover else None,
         "pending": bool(cover and cover._pending_profile is not None),
         "configured": public_settings(store, entity, records, active=False),
-        "effective": public_settings(store, entity, records, active=True),
+        "effective": effective,
+        # What the calibration is (none, basic, refined, verified), derived: see `precision_class`.
+        "precision": precision_class(effective, store.data["covers"].get(entity.unique_id), store.profile(entity.unique_id)),
+        # What a travel entered on the card does here (`manual_travel`): see `travel_edit`.
+        "travel_edit": travel_edit(store.data, entity.unique_id),
+        # What is known of the cover's slats (`slats_state`); a profile's own is its slat time.
+        "slats_state": slats_state(store.data, entity.unique_id),
     }
 
 
@@ -320,7 +334,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             raise ProfileError("calibration_expired")
         if msg["revision"] != store.data["revision"]:
             raise ProfileError("revision_conflict")
-        if msg["action"] in ("travel", "overrides", "preview", "update_shared"):
+        if msg["action"] in ("travel", "manual_travel", "manual_slats", "overrides", "preview", "update_shared"):
             from .cover_profile_mutations import mutate_settings
 
             return await mutate_settings(hass, store, entry, entity, msg)
@@ -359,13 +373,15 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             times_changed = previous is None or profile_times_changed(previous, profile)
             if calibration is not None and calibration.geometry_provenance is not None:
                 profile["geometry_provenance"] = copy.deepcopy(GEOMETRY_PROVENANCE(calibration.geometry_provenance))
-                data["covers"].setdefault(entity.unique_id, {})["travel_cm"] = calibration.measured_travel
+                # A basic calibration measures no travel: the one already saved for the cover stays.
+                if calibration.measured_travel is not None:
+                    data["covers"].setdefault(entity.unique_id, {})["travel_cm"] = calibration.measured_travel
             data["profiles"][profile_id] = profile
             if calibration is not None:
                 # The measured cover follows the new profile; old overrides must
                 # not silently mask the measurement just accepted in review.
                 set_overrides(data, entity.unique_id, {})
-                # L-73: a completed check is kept with the cover; times saved without one clear the old check.
+                # A completed check is kept with the cover; times saved without one clear the old check.
                 record_check(data, entity.unique_id, getattr(calibration, "check", None))
         elif "copy_from_profile_id" in msg:
             raise ProfileError("invalid_profile")
@@ -379,7 +395,7 @@ async def write_profile(hass: Any, msg: dict[str, Any], *, calibration: Any=None
             data["assignments"].pop(entity.unique_id, None)
         else:
             data["assignments"][entity.unique_id] = profile_id
-        # L-73: other times for this cover without a calibration (an assigned or copied profile, an edit): its stored
+        # Other times for this cover without a calibration (an assigned or copied profile, an edit): its stored
         # check no longer applies, and an assigned profile never carries another cover's check.
         if calibration is None and msg["action"] != "delete" and (
                 times_changed or store.data["assignments"].get(entity.unique_id) != data["assignments"].get(entity.unique_id)):
@@ -497,7 +513,9 @@ async def ws_read(hass: Any, connection: Any, msg: dict[str, Any]) -> None:
 @websocket_command(as_any({
     vol.Required("type"): WS_WRITE, **TARGET,
     vol.Required("revision"): vol.All(int, vol.Range(min=0)),
-    vol.Required("action"): vol.In(["assign", "save", "delete", "overrides", "preview", "update_shared", "travel"]),
+    vol.Required("action"): vol.In(["assign", "save", "delete", "overrides", "preview", "update_shared", "travel",
+                                    "manual_travel", "manual_slats"]),
+    vol.Optional("slats"): vol.Any(None, bool),
     vol.Optional("travel_cm"): vol.Any(None, centimetres),
     vol.Optional("profile_id"): vol.Any(str, None),
     vol.Optional("copy_from_profile_id"): str,

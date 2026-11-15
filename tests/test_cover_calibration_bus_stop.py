@@ -1,4 +1,6 @@
 """A stop status from the bus in a run the operator confirms dates the run instead of ending it."""
+import asyncio
+
 import pytest
 import voluptuous as vol
 from OWNd.message import OWNMessage
@@ -170,21 +172,22 @@ def test_evidence_without_ended_by_stays_valid_and_unknown_values_are_refused():
 
 # Guided geometry.
 
-async def test_geometry_home_stop_lets_the_confirmation_continue_without_waiting(hass, geometry):
+async def test_geometry_home_arrives_at_the_actuators_own_stop(hass, geometry):
+    """A run to an end stop that times nothing ends at the actuator's stop, as the basic calibration's runs: no
+    `motor_stopped` waiting for a press."""
     cal = geometry
     await start(cal)
     assert (cal.session.step, cal.session.phase) == ("home", "closing")
     cal.clock[0] += 9
     bus(cal, STOP)
-    view = cal.session.view()
-    assert (view["phase"], view["motor_stopped"], view["stopped_elapsed"]) == ("closing", True, 9.0)
-    await act(cal, "endpoint")
     # The bus already reported the stop: no second stop status is awaited.
-    assert (cal.session.step, cal.session.phase) == ("lift", "briefing")
+    view = cal.session.view()
+    assert (view["step"], view["phase"], view["motor_stopped"], view["stopped_elapsed"]) == ("lift", "briefing", False, None)
     assert str(cal.queue[-1][0]) == STOP and cal.session.values == {}
     assert cal.cover.current_cover_position == 0
     cal.queue[-1][3].set_result(cal.clock[0])  # Its delivery, or a stop status after it, changes nothing.
     bus(cal, STOP)
+    bus(cal, LOWER)  # A status of the run still on its way (a reply to a sweep sent before the stop): nothing.
     assert (cal.session.step, cal.session.phase, cal.session.view()["motor_stopped"]) == ("lift", "briefing", False)
 
 
@@ -196,9 +199,7 @@ async def test_geometry_full_runs_take_the_bus_stop_or_the_press(hass, geometry)
     assert cal.session.step == "opening"
     await start(cal)
     cal.clock[0] += 22
-    bus(cal, STOP)  # The motor stops by itself at the top.
-    cal.clock[0] += 2.5
-    await act(cal, "endpoint")
+    bus(cal, STOP)  # The motor stops by itself at the top: the run is over, timed to that stop.
     assert cal.session.phase == "reading" and cal.session.values == {"opening_time": 22}
     assert cal.session.provenance["opening"]["ended_by"] == "bus_stop"
     await act(cal, "reading", reading_cm=200)
@@ -220,11 +221,14 @@ async def test_geometry_lift_stop_before_the_press_still_interrupts(geometry):
 
 async def test_geometry_opposite_movement_after_the_stop_still_interrupts(geometry):
     cal = geometry
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
     await start(cal)
-    cal.clock[0] += 9
-    bus(cal, STOP)
+    cal.clock[0] += 60
+    bus(cal, STOP)  # A relay timer: the timed ascent still waits for the press.
     assert cal.session.motor_stopped
-    bus(cal, RAISE)
+    bus(cal, LOWER)
     assert (cal.session.phase, cal.session.reason) == ("interrupted", "unexpected_movement")
 
 
@@ -249,10 +253,9 @@ async def test_geometry_check_return_to_the_end_stop_takes_the_bus_stop(hass, ge
     await start(cal)
     assert (cal.session.step, cal.session.phase) == ("home", "closing")
     cal.clock[0] += 20
-    bus(cal, STOP)
-    assert cal.session.phase == "closing" and cal.session.check_interrupted is None
-    await act(cal, "endpoint")
+    bus(cal, STOP)  # At the end stop: arrived, the check goes on.
     assert (cal.session.step, cal.session.phase) == ("check", "briefing")
+    assert cal.session.check_interrupted is None
     # A check run is stopped by the session: a stop before that is still early.
     await start(cal)
     bus(cal, STOP)
@@ -306,12 +309,34 @@ async def test_only_endpoint_and_only_the_sequence_just_before_the_stop_cross_it
 
 async def test_geometry_press_sent_before_the_stop_view_arrived_is_accepted(geometry):
     cal = geometry
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
+    await start(cal)
+    before = cal.session.sequence
+    cal.clock[0] += 61
+    bus(cal, STOP)  # A relay timer: the press decides.
+    await cal.session.action({"action": "endpoint", "sequence": before})
+    assert (cal.session.phase, cal.session.values) == ("reading", {"opening_time": 61})
+
+
+async def test_geometry_a_press_that_crossed_the_arrival_at_the_actuators_stop_changes_nothing(geometry):
+    """The actuator's stop ended the run while the operator's press was on its way, with the sequence just before:
+    nothing is left to confirm, and the press is not refused. Any later transition closes that allowance."""
+    cal = geometry
     await start(cal)
     before = cal.session.sequence
     cal.clock[0] += 9
     bus(cal, STOP)
-    await cal.session.action({"action": "endpoint", "sequence": before})
-    assert (cal.session.step, cal.session.phase) == ("lift", "briefing")
+    arrived = cal.session.view()
+    assert (arrived["step"], arrived["phase"]) == ("lift", "briefing")
+    view = await cal.session.action({"action": "endpoint", "sequence": before})
+    assert (view["step"], view["phase"], view["sequence"]) == ("lift", "briefing", arrived["sequence"])
+    with pytest.raises(ProfileError, match="calibration_step"):
+        await cal.session.action({"action": "endpoint", "sequence": before - 1})
+    cal.session.emit()
+    with pytest.raises(ProfileError, match="calibration_step"):
+        await cal.session.action({"action": "endpoint", "sequence": before})
 
 
 # The gateway relaying a stop right after our own direction command.
@@ -352,11 +377,8 @@ async def test_geometry_echo_stop_right_after_the_start_does_not_date_the_run(ge
     bus(cal, STOP)
     assert cal.session.phase == "opening" and not cal.session.motor_stopped
     cal.clock[0] += 21.95
-    bus(cal, STOP)
-    cal.clock[0] += 2
-    await act(cal, "endpoint")
-    assert cal.session.values == {"opening_time": 22}
-
+    bus(cal, STOP)  # The real end stop ends and dates the run.
+    assert cal.session.phase == "reading" and cal.session.values == {"opening_time": 22}
 
 
 # The actuator's answer to a status request, as the gateway reads it on the command session.
@@ -393,6 +415,31 @@ async def test_a_status_reply_does_not_interrupt_a_geometry_half_run(geometry):
     cal.clock[0] += 3
     status_reply(cal)
     assert cal.session.phase == "opening" and cal.session.reason is None and not cal.session.motor_stopped
+
+
+async def test_a_status_reply_after_the_sessions_stop_does_not_end_a_geometry_half_run(geometry):
+    """Once the session's Stop of a half run is written, only the actuator's own stop moves on to the reading."""
+    cal = geometry
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
+    await endpoint(cal, 22)
+    await act(cal, "reading", reading_cm=200)
+    await endpoint(cal, 20)
+    await start(cal)  # The half open, which the session stops by itself.
+    assert cal.session.step == "half_open"
+    cal.clock[0] += 12
+    callback = cal.session.deadline._callback
+    cal.session.deadline.cancel()
+    callback()
+    _, guard, _, written = cal.queue[-1]
+    assert guard()
+    written.set_result(cal.clock[0])
+    await asyncio.sleep(0)
+    status_reply(cal)
+    assert cal.session.phase == "geometry_wait_stop"
+    bus(cal, STOP)
+    assert cal.session.phase == "reading"
 
 
 @pytest.mark.parametrize("calibration", ["automatic"], indirect=True)

@@ -11,7 +11,7 @@ for (const key of ["window", "document", "HTMLElement", "customElements", "Custo
 dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
 dom.window.HTMLDialogElement.prototype.close = function () { this.open = false; };
 await import("../../custom_components/myhome/frontend/panel/myhome-panel.js");
-const { coverStatus, timedCovers } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-tab.js");
+const { coverStatus, statusBadge, timedCovers } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-tab.js");
 
 const tick = async (count = 3) => { for (let i = 0; i < count; i++) await new Promise((resolve) => setImmediate(resolve)); };
 afterEach(() => { document.body.replaceChildren(); window.localStorage.clear(); window.history.replaceState(null, "", "/"); });
@@ -98,6 +98,15 @@ test("L-73: status comes from the saved evidence and the kept check: to calibrat
   assert.equal(coverStatus(bedroom).status, "to_measure");
   assert.equal(coverStatus(bedroom).last, null);
   assert.deepEqual(timedCovers(data).map((cover) => cover.entity_id), ["cover.living_one", "cover.living_two", "cover.kitchen_two", "cover.bedroom"]);
+});
+
+test("a check kept to the tenth of a centimetre is still verified, judged on its tenth", () => {
+  const [one] = overview().covers;
+  assert.deepEqual([coverStatus({ ...one, check_cm: 0.3 }).status, coverStatus({ ...one, check_cm: 0.3 }).check], ["verified", 0.3]);
+  assert.equal(coverStatus({ ...one, check_cm: 0 }).status, "verified", "no gap at all");
+  const t = (key) => ({ calTabStatus_verified: "Verified · {cm} cm" })[key] ?? key;
+  assert.match(statusBadge(coverStatus({ ...one, check_cm: 4.0 }), t), /data-tone="success"[^>]*>Verified · 4 cm</);
+  assert.match(statusBadge(coverStatus({ ...one, check_cm: 4.1 }), t), /data-tone="warning"[^>]*>Verified · 4.1 cm</);
 });
 
 test("the Calibration sub-tab sits next to Devices and Profiles and lists timed covers only, without commands", async () => {

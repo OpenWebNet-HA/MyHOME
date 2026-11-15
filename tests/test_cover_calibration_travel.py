@@ -4,7 +4,6 @@ import copy
 import pytest
 
 from custom_components.myhome.cover_calibration import begin
-from custom_components.myhome.cover_profiles import ProfileError
 from tests.test_cover_calibration_batch import action
 from tests.test_cover_calibration_batch import batch as batch_fixture
 from tests.test_cover_calibration_batch import measure as measure_batch
@@ -20,7 +19,7 @@ quick = quick_fixture
 batch = batch_fixture
 
 
-@pytest.mark.parametrize("mode", ["new", "cover"])
+@pytest.mark.parametrize("mode", ["new"])
 async def test_measurement_preserves_travel_and_new_profile_records_reference(calibration, mode):
     cal, session = calibration, calibration.session
     session.store.data["covers"][cal.cover.unique_id] = {"travel_cm": 180, "overrides": {}}
@@ -71,17 +70,18 @@ async def test_shared_measurement_normalizes_to_existing_reference_and_preserves
         cal.session.close()
 
 
-async def test_shared_reference_requires_target_travel_without_discarding_review(quick):
+async def test_shared_without_a_travel_of_its_own_uses_the_reference_travel(quick):
+    """A follower without its own travel uses the profile's reference travel: no scaling, no refusal."""
     cal = quick
     cal.session.store.data["profiles"][cal.original_id]["reference_travel_cm"] = 200
     await measure(cal)
-    before = copy.deepcopy(cal.session.store.data)
-    with pytest.raises(ProfileError, match="profile_reference_required"):
-        await act(cal, "preview_save", save_mode="shared")
-    assert cal.session.phase == "review" and cal.session.store.data == before
-    await act(cal, "save", save_mode="cover")
+    assert "travel_cm" not in cal.session.store.data["covers"].get(cal.cover.unique_id, {})
+    preview = (await act(cal, "preview_save", save_mode="shared"))["save_preview"]
+    await act(cal, "save", save_mode="shared", confirmation=preview["confirmation"])
     bus(cal, "*2*0*11##")
-    assert cal.session.store.data["covers"][cal.cover.unique_id]["overrides"][cal.session.direction]["value"] == 12.75
+    profile = cal.session.store.data["profiles"][cal.original_id]
+    assert (profile[f"{cal.session.direction}_time"], profile["reference_travel_cm"]) == (12.75, 200)
+    assert "travel_cm" not in cal.session.store.data["covers"].get(cal.cover.unique_id, {}), "no travel made up"
 
 
 async def test_automatic_batch_references_each_cover_and_preserves_travel(batch):

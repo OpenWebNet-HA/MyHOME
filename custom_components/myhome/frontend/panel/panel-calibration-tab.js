@@ -63,7 +63,8 @@ export function coverStatus(cover) {
   const dates = [...measured, ...["slat_time_s", "opening_roll", "closing_roll"].map((key) => effective[key]?.provenance)]
     .map((item) => item?.recorded_at).filter((value) => value && !Number.isNaN(Date.parse(value))).sort();
   const latest = [...measured].sort((a, b) => String(b.recorded_at).localeCompare(String(a.recorded_at)))[0] || null;
-  const check = Number.isInteger(cover.check_cm) ? cover.check_cm : null;
+  // The gap is kept to a tenth of a centimetre (records saved before kept it whole).
+  const check = cover.check_cm != null && Number.isFinite(Number(cover.check_cm)) ? Number(cover.check_cm) : null;
   return {
     status: !measured.length ? "to_measure" : check != null ? "verified" : "calibrated",
     // What was measured, for the «Metodo» line and the wizard's «already calibrated (…)»: times, or times and roll.
