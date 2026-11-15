@@ -1512,11 +1512,11 @@
 
 
 <h1 id="lights-configuration-v09x-yaml">Lights Configuration (v0.9.x YAML)<a class="headerlink" href="#lights-configuration-v09x-yaml" title="Permanent link">&para;</a></h1>
-<blockquote>
-<p>[!WARNING]
-<strong>Legacy Configuration</strong>: This page describes manual YAML configuration in <code>/config/myhome.yaml</code> used by MyHOME v0.9.x.
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>Legacy Configuration</strong>: This page describes manual YAML configuration in <code>/config/myhome.yaml</code> used by MyHOME v0.9.x.
 In MyHOME v2.0+, lights are automatically discovered from the bus via Config Flow.</p>
-</blockquote>
+</div>
 <p>For lights, the only variation compared to the generic device elements is the <code>dimmable</code> option.<br />
 <code>dimmable</code> is an optional boolean defaulting to <code>false</code> that you need to set to <code>true</code> if your device supports dimming (e.g. <code>F418</code> and <code>F418U2</code> DIN modules).</p>
 <hr />
@@ -1621,6 +1621,10 @@ The integration automatically dispatches a bus event named <code>myhome_group_li
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
+    </div>
   
   
     Made with

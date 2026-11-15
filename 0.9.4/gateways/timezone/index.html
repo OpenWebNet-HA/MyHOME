@@ -1502,10 +1502,10 @@
 
 
 <h1 id="gateway-timezone-configuration">Gateway Timezone Configuration<a class="headerlink" href="#gateway-timezone-configuration" title="Permanent link">&para;</a></h1>
-<blockquote>
-<p>[!NOTE]
-What the <strong>"Unconfigured timezone on MyHOME gateway"</strong> repair issue means, why it happens, how to resolve it across different gateway models, and how Home Assistant automatically clears it.</p>
-</blockquote>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>What the <strong>"Unconfigured timezone on MyHOME gateway"</strong> repair issue means, why it happens, how to resolve it across different gateway models, and how Home Assistant automatically clears it.</p>
+</div>
 <p><strong>Summary</strong>: When an OpenWebNet gateway has never had its timezone explicitly configured (or was reset), it reports a placeholder sentinel value <code>999</code> in its WHO=13 time telemetry frames. Home Assistant flags this via a Repair issue (<code>unconfigured_timezone</code>). Once you configure the correct timezone in the gateway's web UI or MyHOME_Suite, the gateway emits a valid offset and Home Assistant automatically dismisses the repair issue.</p>
 <hr />
 <h2 id="why-this-issue-is-raised">Why This Issue Is Raised<a class="headerlink" href="#why-this-issue-is-raised" title="Permanent link">&para;</a></h2>
@@ -1558,7 +1558,7 @@ What the <strong>"Unconfigured timezone on MyHOME gateway"</strong> repair issue
 <h2 id="related-documentation">Related Documentation<a class="headerlink" href="#related-documentation" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../identification/">Gateway Identification</a> — Model resolution precedence and model mismatch repairs.</li>
-<li><a href="../../latest/">v2.0 Documentation</a> — Modern UI-first documentation.</li>
+<li><a href="https://openwebnet-ha.github.io/MyHOME/latest/">v2.0 Documentation</a> — Modern UI-first documentation.</li>
 </ul>
 
 
@@ -1593,6 +1593,10 @@ What the <strong>"Unconfigured timezone on MyHOME gateway"</strong> repair issue
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
       <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
+    </div>
   
   
     Made with
