@@ -47,7 +47,7 @@ from .cover_profiles import (
     travel_time,
     write_profile,
 )
-from .cover_settings import ROLL_SOURCES, profile_source
+from .cover_settings import ROLL_SOURCES, precision_class, profile_source
 from .cover_translation import event_age
 from .data import MyHOMERuntimeData
 from .typing_compat import as_any
@@ -398,7 +398,8 @@ class CalibrationSession:
     def same_request(self, msg: dict[str, Any]) -> bool:
         """A replayed start names the same target, mode and direction as this session."""
         return bool(msg.get("entity_id") == self.cover.entity_id and msg.get("mode", "guided") == self.mode
-                    and msg.get("direction") == self.direction)
+                    and msg.get("direction") == self.direction
+                    and msg.get("keep_times", False) == getattr(self, "keep_times", False))
 
     def leave(self, subscriber: Subscriber) -> None:
         """A reader goes away. The owner ends the session only if nothing has moved yet."""
@@ -1303,10 +1304,15 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
         if msg.get("mode", "guided") == "automatic":
             from .cover_calibration_automatic import AutomaticCalibrationSession
             session_type = AutomaticCalibrationSession
+        if msg.get("keep_times") and (msg.get("mode") != "geometry" or precision_class(
+                cover.resolve_cover_settings(store.profile(cover.unique_id)),
+                store.data["covers"].get(cover.unique_id)) == "none"):
+            # The fine-tuning on the times already saved needs times measured (or inherited) to keep.
+            raise ProfileError("invalid_profile")
         if msg.get("mode") == "geometry":
             from .cover_calibration_geometry import GeometryCalibrationSession
             session_type = GeometryCalibrationSession
-            options = {"slats": msg.get("slats", True)}
+            options = {"slats": msg.get("slats", True), "keep_times": msg.get("keep_times", False)}
         elif "slats" in msg:
             # Basic calibration: the guided session over both runs, and the lift run after them if the cover has slats.
             if msg.get("mode", "guided") != "guided" or "direction" in msg:
@@ -1332,6 +1338,7 @@ async def begin(hass: Any, connection: Any, msg: dict[str, Any]) -> Any:
     vol.Optional("mode"): vol.In(["guided", "automatic", "geometry"]),
     vol.Optional("direction"): vol.In(["opening", "closing"]),
     vol.Optional("slats"): bool,
+    vol.Optional("keep_times"): bool,
     vol.Optional("home"): bool,
     vol.Optional("client_id"): vol.All(str, vol.Length(min=1, max=64)),
     vol.Optional("session_id"): vol.All(str, vol.Length(min=1, max=64)),

@@ -6,7 +6,7 @@ import hashlib
 from typing import Any
 
 from .cover_calibration import ready_cover
-from .cover_geometry import reference_timing
+from .cover_geometry import GEOMETRY_PROVENANCE, reference_timing
 from .cover_profile_mutations import shared_preview
 from .cover_profile_provenance import DIRECTIONS, PROVENANCE
 from .cover_profiles import PROFILE, ProfileError, commit_profiles, target
@@ -89,6 +89,63 @@ async def save_measurement(session: Any, msg: dict[str, Any], *, preview: bool =
                 if unique != entity.unique_id:
                     clear_check(data, unique)
         # Times saved without a check of their own: the measured cover's stored check no longer applies.
+        record_check(data, entity.unique_id, getattr(session, "check", None))
+        await commit_profiles(hass, store, entry.entry_id, data, affected)
+        return data["revision"]
+
+
+async def save_geometry(session: Any, msg: dict[str, Any], *, preview: bool = False) -> Any:
+    """A measurement with the tape saved into the profile the cover follows, after a revision-bound preview.
+
+    The profile then describes this cover: its times (measured, or kept with `keep_times`) and their evidence, the
+    travel read as its reference travel, the fitted geometry and its evidence; its name stays. The cover's own times
+    go (they are in the profile now) and its travel is the one read. The covers that follow it get their times from
+    the new profile, scaled to their own travel where they have one: the preview lists them, and their checks go when
+    their times change. The cover's own values cannot hold a geometry: there is no `cover` save here.
+    """
+    store, hass = session.store, session.hass
+    async with store.lock:
+        if store.calibration is not session or not session.active:
+            raise ProfileError("calibration_expired")
+        if session.revision != store.data["revision"]:
+            raise ProfileError("revision_conflict")
+        entry, entity = target(hass, session.entry_id, session.cover.entity_id)
+        if ready_cover(hass, store, entry.entry_id, entity.entity_id) is not session.cover:
+            raise ProfileError("cover_unavailable")
+        data = copy.deepcopy(store.data)
+        profile_id = data["assignments"].get(entity.unique_id)
+        if profile_id not in data["profiles"]:
+            raise ProfileError("profile_not_found")
+        previous = data["profiles"][profile_id]
+        if not profile_source(previous, entity.unique_id):
+            raise ProfileError("profile_not_source")  # Only the source updates its profile.
+        values = PROFILE({"name": previous["name"], **session.values})
+        proposal = {"name": previous["name"], "opening_time": values["opening_time"],
+                    "closing_time": values["closing_time"], "reference_travel_cm": session.measured_travel,
+                    "geometry": dict(session.geometry)}
+        impact = shared_preview(store, entity, profile_id, proposal, clear_overrides=DIRECTIONS,
+                                clears_checks=profile_times_changed(previous, proposal))
+        # A confirmation from another measurement cannot authorize this save.
+        impact["confirmation"] = hashlib.sha256((session.id + impact["confirmation"]).encode()).hexdigest()
+        if preview:
+            return impact
+        if msg.get("confirmation") != impact["confirmation"]:
+            raise ProfileError("preview_required")
+        affected = [unique for unique, assigned in data["assignments"].items() if assigned == profile_id]
+        if any(store.covers[unique].native_calibration_busy() for unique in affected if unique in store.covers):
+            raise ProfileError("calibration_busy")
+        data["profiles"][profile_id] = {
+            **proposal, "provenance": copy.deepcopy(PROVENANCE(session.provenance)),
+            "geometry_provenance": copy.deepcopy(GEOMETRY_PROVENANCE(session.geometry_provenance))}
+        record = data["covers"].setdefault(entity.unique_id, {"overrides": {}})
+        record["travel_cm"] = session.measured_travel
+        set_overrides(data, entity.unique_id, {})
+        # The other covers that follow the profile get other times: their checks no longer apply.
+        if profile_times_changed(previous, data["profiles"][profile_id]):
+            for unique in affected:
+                if unique != entity.unique_id:
+                    clear_check(data, unique)
+        # The check made in this session, or none: the stored one described other times.
         record_check(data, entity.unique_id, getattr(session, "check", None))
         await commit_profiles(hass, store, entry.entry_id, data, affected)
         return data["revision"]
