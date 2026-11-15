@@ -44,6 +44,10 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
             if elapsed < 0.15:  # Trailing relay echo, as in #349; keep the deadline.
                 return
             self.reservation.observe(event)
+            if self.answers_status_request():
+                # Its copy on the monitor session: the reply to one of our status requests sent before the movement,
+                # not the run's stop. It neither ends nor times the run.
+                return
             if CUTOFF_MIN <= elapsed <= CUTOFF_MAX:
                 self.interrupt("automatic_cutoff")
                 return

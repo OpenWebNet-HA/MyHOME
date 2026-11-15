@@ -627,7 +627,7 @@ class CalibrationSession:
             # either direction (a wall switch, a scenario) leaves its dated stop meaningless.
             self.interrupt("unexpected_movement")
         elif not expected:
-            if event.state == 0 and (getattr(event, "myhome_status_reply", False) is True or self.answers_status_request()):
+            if event.state == 0 and self.is_status_reply(event):
                 # The reply to a status request: as read on the command session (the gateway marks it; its copy on
                 # the monitor session comes too), or one of ours sent before the run's start (the actuator answered
                 # before its motor started). Not its stop: neither "already at the end stop" nor the end.
@@ -658,6 +658,12 @@ class CalibrationSession:
             self.reservation.asked()
             if not self.closed:
                 self.status_asked.append(monotonic())
+
+    def is_status_reply(self, event: Any) -> bool:
+        """A stop status is the reply to a status request, not the motor stopping: the copy read on the command session,
+        which the gateway marks and which may come late, or the monitor session's copy of a reply to one of our
+        requests sent before the movement (`answers_status_request`, which it consumes: evaluated once per event)."""
+        return getattr(event, "myhome_status_reply", False) is True or self.answers_status_request()
 
     def answers_status_request(self) -> bool:
         """A stop status in a run is the reply to one of our status requests, sent before the session learnt of the
@@ -889,7 +895,8 @@ class CalibrationSession:
         elif event.is_opening:
             if self.lift_stop == "written":
                 self.arm_deadline(STOP_QUEUE_SECONDS, "not_stopped")
-        elif event.state == 0 and self.lift_stop == "written":
+        elif event.state == 0 and self.lift_stop == "written" and not self.is_status_reply(event):
+            # A reply to a status request is not the lift-off's stop: the actuator's own stop status still comes.
             self.lift_off_stopped()
 
     def confirm_lifted(self) -> None:
@@ -1041,10 +1048,8 @@ class CalibrationSession:
                 self.interrupt("unexpected_movement")
             elif event.state != 0:
                 return
-            elif elapsed >= ECHO_WINDOW:
-                self.back_done()
-            elif self.basic_session() and elapsed < ALREADY_THERE_SECONDS and not (
-                    getattr(event, "myhome_status_reply", False) is True or self.answers_status_request()):
+            elif (elapsed >= ECHO_WINDOW or self.basic_session() and elapsed < ALREADY_THERE_SECONDS) \
+                    and not self.is_status_reply(event):
                 self.back_done()
 
     def back_done(self) -> None:

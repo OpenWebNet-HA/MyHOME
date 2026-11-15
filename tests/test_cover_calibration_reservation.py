@@ -14,7 +14,7 @@ from custom_components.myhome.cover_profiles import ProfileError, read_profile, 
 from tests.test_cover_calibration_base import asked
 from tests.test_cover_calibration_geometry import GAP, endpoint, lift, start
 from tests.test_cover_calibration_geometry import geometry as geometry_fixture
-from tests.test_panel_cover_calibration import act, bus
+from tests.test_panel_cover_calibration import act, automatic_next, automatic_run, bus
 from tests.test_panel_cover_calibration import calibration as calibration_fixture
 from tests.test_panel_cover_calibration import plant as plant_fixture
 
@@ -371,6 +371,66 @@ async def test_a_request_after_the_cancel_still_has_its_reply_awaited(calibratio
     cal.clock[0] += .1
     bus(cal, "*2*0*11##")  # The reply to the request sent after the cancel.
     assert session.reservation.pending and session.store.calibration is session
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None
+
+
+# An automatic run and the monitor copy of a reply: the run does not take it for its stop.
+
+def automatic_closing(cal):
+    """The first automatic run done; the closing run's command written, and our request sent before its movement."""
+    automatic_run(cal, "open", 0.5)
+    automatic_next(cal)
+    assert cal.queue[-1][1]()
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_an_unmarked_status_reply_neither_ends_nor_times_an_automatic_run(calibration):
+    cal, session = calibration, calibration.session
+    await act(cal, "run")
+    automatic_closing(cal)
+    await asked(cal)
+    cal.clock[0] += .05
+    bus(cal, "*2*2*11##")
+    cal.clock[0] += .3
+    bus(cal, "*2*0*11##")  # The reply, 0.35 s after the request: it would otherwise time a 0.3 s closing run.
+    assert (session.phase, session.values, session.reason) == ("closing", {}, None)
+    cal.clock[0] += 19.5
+    bus(cal, "*2*0*11##")  # The actuator's own stop times the run.
+    assert (session.phase, session.values) == ("settling", {"closing_time": 19.8})
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_an_unmarked_status_reply_in_an_automatic_run_then_cancel_keeps_the_gateway(calibration):
+    cal, session = calibration, calibration.session
+    await asked_then_dispatched(cal)
+    cal.clock[0] += .2
+    bus(cal, "*2*0*11##")  # The reply: the opening run goes on.
+    assert (session.phase, session.run_index, session.settle) == ("opening", 0, None)
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    assert session.closed and session.reservation.pending and stop_guard()
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None and not stop_guard()
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_an_unmarked_status_reply_after_cancelling_an_automatic_run_keeps_the_gateway(calibration):
+    cal, session = calibration, calibration.session
+    await act(cal, "run")
+    automatic_closing(cal)
+    cal.clock[0] += 1
+    bus(cal, "*2*2*11##")
+    cal.clock[0] += 3
+    await asked(cal)
+    cal.clock[0] += .1
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    cal.clock[0] += .2
+    bus(cal, "*2*0*11##")  # The reply to the request sent before the cancel.
+    assert session.reservation.pending and session.store.calibration is session and stop_guard()
     cal.clock[0] += 2
     bus(cal, "*2*0*11##")
     assert not session.reservation.pending and session.store.calibration is None

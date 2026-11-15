@@ -330,14 +330,15 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             return
         if self._auto_rest() and self.phase == "closing" and event.state == 0 and not (event.is_opening or event.is_closing):
             self.reservation.observe(event)
-            if guided.monotonic() - cast(float, self.started_at) >= ECHO_WINDOW:
+            if guided.monotonic() - cast(float, self.started_at) >= ECHO_WINDOW and not self.is_status_reply(event):
                 self._at_rest()
             return
         if self.phase == "geometry_wait_stop":
             self.reservation.observe(event)
             if (event.is_closing if self._rising() else event.is_opening):
                 self.interrupt("unexpected_movement")
-            elif event.state == 0 and self.stop_written:
+            elif event.state == 0 and self.stop_written and not self.is_status_reply(event):
+                # A reply to a status request is not this run's stop: the actuator's own stop status still comes.
                 self._stopped()
             elif self.stop_grace and (event.is_opening or event.is_closing):
                 # The run is still reported after our Stop: only its stop status ends it now.

@@ -1,4 +1,6 @@
 """A stop status from the bus in a run the operator confirms dates the run instead of ending it."""
+import asyncio
+
 import pytest
 import voluptuous as vol
 from OWNd.message import OWNMessage
@@ -413,6 +415,31 @@ async def test_a_status_reply_does_not_interrupt_a_geometry_half_run(geometry):
     cal.clock[0] += 3
     status_reply(cal)
     assert cal.session.phase == "opening" and cal.session.reason is None and not cal.session.motor_stopped
+
+
+async def test_a_status_reply_after_the_sessions_stop_does_not_end_a_geometry_half_run(geometry):
+    """Once the session's Stop of a half run is written, only the actuator's own stop moves on to the reading."""
+    cal = geometry
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
+    await endpoint(cal, 22)
+    await act(cal, "reading", reading_cm=200)
+    await endpoint(cal, 20)
+    await start(cal)  # The half open, which the session stops by itself.
+    assert cal.session.step == "half_open"
+    cal.clock[0] += 12
+    callback = cal.session.deadline._callback
+    cal.session.deadline.cancel()
+    callback()
+    _, guard, _, written = cal.queue[-1]
+    assert guard()
+    written.set_result(cal.clock[0])
+    await asyncio.sleep(0)
+    status_reply(cal)
+    assert cal.session.phase == "geometry_wait_stop"
+    bus(cal, STOP)
+    assert cal.session.phase == "reading"
 
 
 @pytest.mark.parametrize("calibration", ["automatic"], indirect=True)

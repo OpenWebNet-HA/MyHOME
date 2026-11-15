@@ -1585,3 +1585,36 @@ async def test_no_save_into_the_profile_followed_from_a_session_no_longer_open(h
         await save_measurement(cal.session, {"save_mode": "shared"}, preview=True)
     store.calibration = cal.session
     assert cal.session.phase == "review" and store.data["profiles"]["fine"]["opening_time"] == 15.0
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A reply read on the command session may come late: it never ends a run back or the wait after the lift-off.
+# ---------------------------------------------------------------------------------------------------------------------
+def marked_stop(cal):
+    marked = OWNMessage.parse(STOP)
+    marked.myhome_status_reply = True
+    cal.cover.handle_event(marked)
+
+
+@pytest.mark.parametrize("base", [{"slats": True, "home": True}], indirect=True)
+async def test_a_late_marked_reply_does_not_end_the_close_to_the_rest(base):
+    cal = base
+    await homing(cal)
+    cal.clock[0] += 3
+    marked_stop(cal)
+    assert (cal.session.phase, cal.session.back_stage) == ("rehoming", "running")
+    cal.clock[0] += 2
+    bus(cal, STOP)
+    assert cal.session.phase == "confirm_closed"
+
+
+async def test_a_late_marked_reply_does_not_end_the_wait_after_the_lift_off(base):
+    cal = base
+    await runs(cal)
+    await lift_run(cal)
+    assert written(cal) == STOP
+    await asyncio.sleep(0)
+    marked_stop(cal)
+    assert cal.session.lift_stop == "written"
+    bus(cal, STOP)
+    assert cal.session.lift_stop is None

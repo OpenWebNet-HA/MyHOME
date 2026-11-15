@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from OWNd.message import OWNMessage
 
 from custom_components.myhome.cover_calibration import begin
 from custom_components.myhome.cover_profiles import ProfileError, get_store, read_profile
@@ -516,4 +517,18 @@ async def test_the_automatic_rise_does_not_start_on_a_cover_no_longer_writable(h
         callback()
     assert (cal.session.phase, cal.session.reason) == ("interrupted", "cover_unavailable")
     assert all("*2*1*" not in str(item[0]) for item in cal.queue[commands:])
+    cal.session.close()
+
+
+async def test_a_late_marked_reply_does_not_end_the_close_to_the_rest_before_the_automatic_rise(hass, plant, clocked):
+    seed(plant)
+    cal = await started(hass, plant)
+    cal.clock = clocked
+    await at_rest(cal, stop=False)
+    marked = OWNMessage.parse("*2*0*11##")
+    marked.myhome_status_reply = True
+    cal.cover.handle_event(marked)
+    assert (cal.session.phase, cal.session.step) == ("closing", "home")
+    bus(cal, "*2*0*11##")
+    assert cal.session.phase == "settling"
     cal.session.close()
