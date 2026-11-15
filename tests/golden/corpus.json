@@ -4472,7 +4472,7 @@
     "dimension": 13,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: General WHERE=0 local knob offset request (Dimension 13, WHO_4 v2.0.0 pp. 16-17; probe only: sent via myhome.send_frame to an F453 FW 2.0.10 with 61 active N4692 probes, zero zone replies over 9.75 s, never received in a stored trace; MyHOME trace discussion_770_f453_n4692/myhome_sweep_F453_all_2026-11-14T13-34-42.json, @DinoMesina Discussion #770 comment 19616515)",
+    "mcp_notes": "Thermoregulation: General WHERE=0 local knob offset request (Dimension 13, WHO_4 v2.0.0 s1.5.4 pp. 16-17 gives where=[1-99], WHERE=0 is in the general WHERE table only; probe only: sent via myhome.send_message to an F453 FW 2.0.10 with 61 active N4692 probes \u2014 zero zone replies over 9.75 s \u2014 and an F461 FW 2.0.11 answers NACK after 5.4 ms with no bus frame in 12 s, never received in a stored trace; MyHOME trace discussion_770_f453_n4692/myhome_sweep_F453_all_2026-11-14T13-34-42.json, @DinoMesina Discussion #770 comment 19616515)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },

@@ -2,7 +2,7 @@
 
 > **Authoritative Specification & Verification Baseline**  
 > *Last Updated: November 14, 2026*  
-> *Corpus Version: 2.0.0 (451 Fixtures, 21 Subsystems, 1,000+ Automated Conformance Assertions)*
+> *Corpus Version: 2.0.0 (452 Fixtures, 21 Subsystems, 1,000+ Automated Conformance Assertions)*
 
 This document serves as the **verifiable truth** for OpenWebNet protocol conformance across the Home Assistant (`OpenWebNet-HA/MyHOME`) and Python protocol driver (`OpenWebNet-HA/OWNd`) ecosystem.
 
@@ -78,7 +78,7 @@ Sources for the examples changed in [OWNd#77](https://github.com/OpenWebNet-HA/O
 Any contributor or user can independently verify the conformance suite:
 
 ```bash
-# Run automated assertions against the 451-fixture golden corpus
+# Run automated assertions against the 452-fixture golden corpus
 python -m pytest tests/test_golden_conformance.py tests/test_golden_privacy.py
 
 # Run non-mutating schema, privacy & corpus.json sync validation

@@ -17,13 +17,13 @@
 
 ## 1. Point-to-Point vs Broadcast/Central `Dimension 13` Queries (`frames[130..135]`)
 
-Manual `myhome.send_frame` queries on the live `F453` (`2.0.10`) confirm both point-to-point forwarding and why general/central `Dimension 13` forms are never used by `MyHOME`:
+Manual `myhome.send_message` queries on the live `F453` (`2.0.10`) confirm both point-to-point forwarding and why general/central `Dimension 13` forms are never used by `MyHOME` (in `WHO_4` rev. `2.0.0` of `27/11/2013`, section `1.5.4` pp. `16–17` gives `where = [1-99]` for `Dimension 13` requests and answers, listing `WHERE = 0` only in the general `WHERE` table; on `@gdluck`'s test plant, a `BTicino F461` FW `2.0.11` also answers `*#4*0*13##` with `NACK` after `5.4 ms` and emits no bus frame in the next `12 s`):
 
 | Index | TX Query | RX Reply | Latency | Hardware Verdict |
 |:---:|---|---|:---:|---|
 | `130–131` | `*#4*1*0##` | `*#4*1*0*0130##` | `94.8 ms` | Zone `1` `N4692` ambient temperature = `13.0 °C` |
 | `132–133` | `*#4*1*13##` | `*#4*1*13*00##` | `87.1 ms` | Zone `1` `N4692` local knob at centre (`0`) |
-| `134` | `*#4*0*13##` | *(no reply over `9.75 s`)* | — | General `WHERE=0` `Dimension 13` query produces zero zone replies |
+| `134` | `*#4*0*13##` | *(no reply over `9.75 s`)* | — | General `WHERE=0` `Dimension 13` query produces zero zone replies (`F461` `2.0.11` answers `NACK` in `5.4 ms`) |
 | `135` | `*#4*#0*13##` | *(no reply)* | — | Central `WHERE=#0` `Dimension 13` query produces zero replies |
 
 ---
