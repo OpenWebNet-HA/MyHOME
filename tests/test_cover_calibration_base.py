@@ -1618,3 +1618,47 @@ async def test_a_late_marked_reply_does_not_end_the_wait_after_the_lift_off(base
     assert cal.session.lift_stop == "written"
     bus(cal, STOP)
     assert cal.session.lift_stop is None
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A reply that comes before the movement answers its request there: the actuator's own stop after it is not taken for it.
+# ---------------------------------------------------------------------------------------------------------------------
+@pytest.mark.parametrize("base", [{"slats": False}], indirect=True)
+async def test_a_reply_before_the_movement_leaves_the_actuators_stop_its_meaning(base):
+    """The request shares the queue with the command: its reply (on both sessions) comes before the bus's movement.
+    The actuator's stop 0.3 s after the movement, within a second of the request, still says the cover stood at the top
+    already, and a press after it saves nothing."""
+    cal = base
+    await act(cal, "open")
+    assert cal.queue[-1][1]()
+    await asked(cal)
+    cal.clock[0] += .1
+    marked_stop(cal)
+    bus(cal, STOP)  # Its copy on the monitor session, still before the movement.
+    assert cal.session.phase == "starting_open"
+    cal.clock[0] += .3
+    bus(cal, RISE)
+    cal.clock[0] += .3
+    bus(cal, STOP)
+    assert (cal.session.phase, cal.session.reason) == ("confirm_closed", "already_at_end")
+    cal.clock[0] += 4.7
+    with pytest.raises(ProfileError, match="calibration_step"):
+        await act(cal, "endpoint")
+    assert "opening_time" not in cal.session.values
+
+
+@pytest.mark.parametrize("base", [{"slats": True, "home": True}], indirect=True)
+async def test_a_reply_before_the_close_to_the_rest_moves_leaves_the_actuators_stop_its_meaning(base):
+    cal = base
+    assert written(cal) == STOP
+    await asyncio.sleep(0)
+    fire(cal.session.settle)
+    assert written(cal) == LOWER
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, STOP)  # The reply, before the movement.
+    cal.clock[0] += .3
+    bus(cal, LOWER)
+    cal.clock[0] += .3
+    bus(cal, STOP)  # Already at the rest: over at once, no wait for the closing time.
+    assert cal.session.phase == "confirm_closed"

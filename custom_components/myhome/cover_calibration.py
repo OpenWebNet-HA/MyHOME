@@ -622,6 +622,8 @@ class CalibrationSession:
                 self.emit()
             elif expected or opposite:
                 self.interrupt("unexpected_movement")
+            elif event.state == 0:
+                self.stop_before_movement(event)
         elif opposite or (expected and self.motor_stopped):
             # Once the motor has stopped the run expects no movement at all: a new one in
             # either direction (a wall switch, a scenario) leaves its dated stop meaningless.
@@ -658,6 +660,17 @@ class CalibrationSession:
             self.reservation.asked()
             if not self.closed:
                 self.status_asked.append(monotonic())
+
+    def stop_before_movement(self, event: Any) -> None:
+        """A stop status before the run's movement is learnt: as the monitor session reads it (unmarked, not a command
+        translation), it may be the reply to one of our status requests, and answers the oldest still open, so the
+        actuator's own stop after the movement is never taken for that reply. It changes nothing else."""
+        if getattr(event, "myhome_status_reply", False) is True or getattr(event, "translated", False) is True:
+            return
+        now = monotonic()
+        self.status_asked = [asked for asked in self.status_asked if now - asked <= STATUS_REPLY_SECONDS]
+        if self.status_asked:
+            self.status_asked.pop(0)
 
     def is_status_reply(self, event: Any) -> bool:
         """A stop status is the reply to a status request, not the motor stopping: the copy read on the command session,
@@ -1051,6 +1064,8 @@ class CalibrationSession:
             elif (elapsed >= ECHO_WINDOW or self.basic_session() and elapsed < ALREADY_THERE_SECONDS) \
                     and not self.is_status_reply(event):
                 self.back_done()
+        elif event.state == 0:
+            self.stop_before_movement(event)
 
     def back_done(self) -> None:
         """At the end stop: its stop status came, or the time allowed for the run back has passed.

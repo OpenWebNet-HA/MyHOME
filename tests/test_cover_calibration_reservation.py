@@ -434,3 +434,19 @@ async def test_an_unmarked_status_reply_after_cancelling_an_automatic_run_keeps_
     cal.clock[0] += 2
     bus(cal, "*2*0*11##")
     assert not session.reservation.pending and session.store.calibration is None
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_a_reply_before_the_first_automatic_run_moves_leaves_the_actuators_stop_its_meaning(calibration):
+    """Already at the top: the actuator's stop right after the movement ends the first run (nothing is timed by it)."""
+    cal, session = calibration, calibration.session
+    await act(cal, "run")
+    assert cal.queue[-1][1]()
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, "*2*0*11##")  # The reply, before the movement.
+    cal.clock[0] += .3
+    bus(cal, "*2*1*11##")
+    cal.clock[0] += .3
+    bus(cal, "*2*0*11##")
+    assert (session.phase, session.run_index, session.reason) == ("settling", 1, None)
