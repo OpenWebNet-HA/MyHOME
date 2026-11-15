@@ -512,6 +512,11 @@ class CalibrationSession:
             # either direction (a wall switch, a scenario) leaves its dated stop meaningless.
             self.interrupt("unexpected_movement")
         elif not expected:
+            if event.state == 0 and getattr(event, "myhome_status_reply", False) is True:
+                # The actuator's answer to a status request, read on the command session: the state when it
+                # answered, possibly before its motor started, and a copy of a frame the monitor session brings
+                # in its bus order. Not the motor stopping: it neither dates nor ends the run.
+                return
             if event.state == 0 and self.stop_awaits_endpoint():
                 # A stop status this close to the motor start is the gateway relaying a
                 # stop around our own direction command, not the end of the travel: it

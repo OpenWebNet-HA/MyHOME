@@ -1,13 +1,14 @@
 """A stop status from the bus in a run the operator confirms dates the run instead of ending it."""
 import pytest
 import voluptuous as vol
+from OWNd.message import OWNMessage
 
 from custom_components.myhome.cover_profile_provenance import EVIDENCE, PROVENANCE
 from custom_components.myhome.cover_profiles import ProfileError, read_profile
 from tests.test_cover_calibration_geometry import GAP, LIFT, endpoint, lift, review, start
 from tests.test_cover_calibration_geometry import geometry as geometry_fixture
 from tests.test_cover_profiles import plant as plant_fixture
-from tests.test_panel_cover_calibration import act, bus
+from tests.test_panel_cover_calibration import act, automatic_next, automatic_run, bus
 from tests.test_panel_cover_calibration import calibration as calibration_fixture
 
 plant = plant_fixture
@@ -356,3 +357,56 @@ async def test_geometry_echo_stop_right_after_the_start_does_not_date_the_run(ge
     await act(cal, "endpoint")
     assert cal.session.values == {"opening_time": 22}
 
+
+
+# The actuator's answer to a status request, as the gateway reads it on the command session.
+
+def status_reply(cal, raw=STOP):
+    """A status request sent around the run's command can be answered «stopped» before the motor starts; read on
+    the command session, that answer can reach the session after the run's start."""
+    reply = OWNMessage.parse(raw)
+    reply.myhome_status_reply = True
+    cal.cover.handle_event(reply)
+
+
+async def test_a_status_reply_neither_dates_nor_ends_a_guided_run(calibration):
+    cal = calibration
+    await opening_run(cal)
+    sequence = cal.session.sequence
+    cal.clock[0] += 3
+    status_reply(cal)
+    assert (cal.session.phase, cal.session.motor_stopped, cal.session.sequence) == ("opening", False, sequence)
+    cal.clock[0] += 18
+    bus(cal, STOP)  # The actuator's own stop still dates the run.
+    assert cal.session.stopped_elapsed == 21.0
+    await act(cal, "endpoint")
+    assert cal.session.values == {"opening_time": 21.0}
+    assert cal.session.provenance["opening"]["ended_by"] == "bus_stop"
+
+
+async def test_a_status_reply_does_not_interrupt_a_geometry_half_run(geometry):
+    cal = geometry
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
+    await start(cal)
+    cal.clock[0] += 3
+    status_reply(cal)
+    assert cal.session.phase == "opening" and cal.session.reason is None and not cal.session.motor_stopped
+
+
+@pytest.mark.parametrize("calibration", ["automatic"], indirect=True)
+async def test_a_status_reply_does_not_end_an_automatic_run(calibration):
+    cal = calibration
+    await act(cal, "run")
+    automatic_run(cal, "open", 0.5)
+    automatic_next(cal)
+    assert cal.queue[-1][1]()
+    cal.clock[0] += 2
+    bus(cal, LOWER)
+    cal.clock[0] += 3
+    status_reply(cal)  # Would otherwise be taken for a 3 s closing time.
+    assert cal.session.phase == "closing" and cal.session.values == {} and cal.session.reason is None
+    cal.clock[0] += 19.5
+    bus(cal, STOP)
+    assert cal.session.values == {"closing_time": 22.5} and cal.session.phase == "settling"

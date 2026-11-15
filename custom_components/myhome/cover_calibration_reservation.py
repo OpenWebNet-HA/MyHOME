@@ -30,7 +30,10 @@ class CalibrationReservation:
     def observe(self, event: Any) -> None:
         if event.is_opening or event.is_closing:
             self.dispatched()
-        elif event.state == 0:
+        elif event.state == 0 and getattr(event, "myhome_status_reply", False) is not True:
+            # A stop read as the answer to a status request (the gateway marks it) may predate our own command, so
+            # the motor may still run: only the actuator's own stop, or the guard, frees the gateway, even once the
+            # session is closed and its Stop is still queued.
             self.completed()
 
     def completed(self) -> None:

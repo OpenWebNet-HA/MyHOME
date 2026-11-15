@@ -6,15 +6,19 @@ import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CoreState
 from homeassistant.exceptions import ServiceValidationError
+from OWNd.message import OWNMessage
 
 from custom_components.myhome.cover_calibration import begin
 from custom_components.myhome.cover_calibration_reservation import GUARD_SECONDS
 from custom_components.myhome.cover_profiles import ProfileError, read_profile, write_profile
+from tests.test_cover_calibration_geometry import GAP, endpoint, lift, start
+from tests.test_cover_calibration_geometry import geometry as geometry_fixture
 from tests.test_panel_cover_calibration import act, bus
 from tests.test_panel_cover_calibration import calibration as calibration_fixture
 from tests.test_panel_cover_calibration import plant as plant_fixture
 
 calibration = calibration_fixture
+geometry = geometry_fixture
 plant = plant_fixture
 
 
@@ -151,5 +155,60 @@ async def test_saved_partial_measurement_waits_for_bus_stop(calibration):
     await act(cal, "save", name="Measured")
     assert session.phase == "saved" and session.closed
     assert session.store.calibration is session and session.view()["waiting_for_stop"]
+    bus(cal, "*2*0*11##")
+    assert session.store.calibration is None
+
+
+# The actuator's answer to a status request, as the gateway reads it on the command session.
+
+def status_reply(cal, raw="*2*0*11##"):
+    """Answered «stopped» around the run's command, it can reach the session while the motor may still run."""
+    reply = OWNMessage.parse(raw)
+    reply.myhome_status_reply = True
+    cal.cover.handle_event(reply)
+
+
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
+async def test_a_status_reply_in_a_run_keeps_the_gateway_for_the_cancel_stop(calibration):
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    cal.clock[0] += 3
+    status_reply(cal)
+    assert session.reservation.pending and session.active
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    assert session.closed and session.reservation.pending and session.store.calibration is session
+    assert stop_guard()  # The Stop still goes out.
+    bus(cal, "*2*0*11##")  # The actuator's own stop frees the gateway, as before.
+    assert not session.reservation.pending and session.store.calibration is None
+    assert not stop_guard()
+
+
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
+async def test_a_status_reply_after_cancel_does_not_release_the_gateway(calibration):
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    status_reply(cal)
+    assert session.reservation.pending and session.store.calibration is session
+    assert cal.cover._calibration is session and session.view()["waiting_for_stop"]
+    assert stop_guard()
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None
+    assert cal.cover._calibration is None and not stop_guard()
+
+
+async def test_a_status_reply_in_a_geometry_run_keeps_the_gateway_for_the_cancel_stop(geometry):
+    cal, session = geometry, geometry.session
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
+    await start(cal)
+    status_reply(cal)
+    assert session.reservation.pending
+    session.close()
+    stop_guard = cal.queue[-1][1]
+    assert session.reservation.pending and session.store.calibration is session and stop_guard()
     bus(cal, "*2*0*11##")
     assert session.store.calibration is None
