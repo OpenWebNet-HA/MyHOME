@@ -139,16 +139,17 @@ async def test_old_path_queues_p2p_and_loses_five_addresses(hass: HomeAssistant)
                 ):
                     queued_p2p.append(msg_str)
 
-        # Assert that the old path queued the avalanche of point-to-point queries
+        # Assert that the old path queued the avalanche of point-to-point queries.
+        # Dimension 10 covers (0111, 0112, 0115) auto-detect as native and poll *10##.
         expected_queued = [
             "*#1*16##",
-            "*#2*0112##",
-            "*#2*0111##",
+            "*#2*0112*10##",
+            "*#2*0111*10##",
             "*#1*15##",
             "*#1*22##",
             "*#1*0015##",
             "*#1*05##",
-            "*#2*0115##",
+            "*#2*0115*10##",
             "*#1*10##",
             "*#1*08##",
             "*#1*07##",
@@ -304,8 +305,23 @@ async def test_new_path_trace_replay_suppresses_polling_and_discovers_all(hass: 
             assert cover.attributes.get("current_position") == expected_pos, (
                 f"{entity_id} position {cover.attributes.get('current_position')} != {expected_pos}"
             )
+            assert cover.attributes.get("min_position_delta") == 2, (
+                f"{entity_id} did not auto-promote to NativePositionStrategy"
+            )
+            assert "travel_time" not in cover.attributes, (
+                f"{entity_id} still exposes timed travel_time attribute after Dimension 10 discovery"
+            )
             expected_state = "closed" if expected_pos == 0 else "open"
             assert cover.state == expected_state, f"{entity_id} state {cover.state} != {expected_state}"
+        assert entry.options.get("advanced_covers") == {
+            "0111": True,
+            "0112": True,
+            "0113": True,
+            "0114": True,
+            "0115": True,
+            "0110": True,
+            "19": True,
+        }
     finally:
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

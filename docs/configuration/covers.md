@@ -26,11 +26,11 @@ The integration distinguishes between two types of MyHOME covers:
 | **Standard (Timed) Covers** | Standard relay actuators (`F411/2`, `F411U2`, standard `F401`, older flush-mount units) | ✅ Estimated | Actuator has no position feedback. The v2 runtime estimates position from the elapsed share of the **travel time** (`travel_time_down` and `travel_time_up`). |
 
 > [!NOTE]
-> Every discovered cover starts as a **timed** cover. Position-reporting hardware is not detected automatically: set `advanced_shutter: true` for that cover in `/config/myhome.yaml` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Advanced covers refuse `myhome.calibrate_cover` and travel times in `myhome.set_cover_travel_time`, as they do not need a travel time (a Venetian blind with `slat_tilt` still accepts `slat_time` there).
+> Unconfigured point-to-point covers start as **timed** covers until the bus reports a calibrated `Dimension = 10` position (`0..100`), at which point they **automatically promote** to `native` (`advanced: true`) and remember that promotion across restarts. Uncalibrated actuators reporting `255` and covers with explicit YAML kinematics or saved travel-time calibration remain `timed`. You can also set `advanced: true` (or its alias `advanced_shutter: true`) explicitly in `/config/myhome.yaml` — for example when pairing `native` with `slat_tilt: true` or setting a custom `min_position_delta` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Native / advanced covers refuse `myhome.calibrate_cover` and travel times in `myhome.set_cover_travel_time`, as they do not need a travel time (a Venetian blind with `slat_tilt` still accepts `slat_time` there).
 
 ### Choosing the cover model (`strategy`)
 
-Each WHO=2 cover runs one of four position models. Without `strategy`, the flags pick it: `advanced_shutter: true` gives `native`, `slat_tilt: true` gives `venetian`, `travel_time: 0` gives `simple`, and anything else gives `timed`. Set `strategy` in `/config/myhome.yaml` to name it explicitly:
+Each WHO=2 cover runs one of four position models. Without `strategy`, the flags (or calibrated `Dimension = 10` bus traffic on an unconfigured cover) pick it: `advanced: true` / `advanced_shutter: true` (or auto-detected calibrated `Dimension = 10`) gives `native`, `slat_tilt: true` gives `venetian`, `travel_time: 0` gives `simple`, and anything else gives `timed`. Set `strategy` in `/config/myhome.yaml` to name it explicitly:
 
 | `strategy` | Position | Use for |
 | :--- | :--- | :--- |

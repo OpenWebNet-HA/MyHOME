@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import re
 import typing
+from collections.abc import Mapping
 
 from homeassistant.components.alarm_control_panel import (  # type: ignore[attr-defined]
     DOMAIN as ALARM_CONTROL_PANEL,
@@ -87,6 +88,7 @@ from .const import (
     CONF_DIMMABLE,
     CONF_ENTITIES,
     CONF_ENTITY_NAME,
+    CONF_EXPLICIT_KINEMATICS,
     CONF_EXPOSE,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
@@ -135,6 +137,7 @@ from .const import (
     COVER_STRATEGIES,
     DEFAULT_MIN_MOTOR_PULSE,
     DEFAULT_SLAT_TIME,
+    EXPLICIT_COVER_KINEMATICS_KEYS,
     LOGGER,
     MAX_MIN_POSITION_DELTA,
     MAX_SLAT_TIME,
@@ -342,10 +345,17 @@ class MyHomeConfigSchema(Schema):
 
 class MyHomeDeviceSchema(Schema):
     def __call__(self, data):  # type: ignore
+        explicit_kinematics = {
+            str(device)
+            for device, raw in (data.items() if isinstance(data, Mapping) else ())
+            if isinstance(raw, Mapping)
+            and any(key in raw for key in EXPLICIT_COVER_KINEMATICS_KEYS)
+        }
         data = super().__call__(data)  # type: ignore
         _rekeyed_data = {}
 
         for device in data:
+            data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
             data[device][CONF_ENTITIES] = {}
             interface = data[device].get(CONF_BUS_INTERFACE)
             routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""

@@ -58,7 +58,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | :--- | :---: | :--- |
 | Open / close / stop | ✅ | Standard WHO 2 shutter actuators. |
 | Impulse cover (WHO 1) | ✅ | Pulse-driven gates and garage doors: direct pulses with deadband and sensor feedback by default, and an optional `access:` workflow with phone approval, pre-warning (`myhome_access_prewarning`), and watchdog. |
-| Position (position-reporting actuators) | ✅ | Requires `advanced_shutter: true` / `advanced: true` in `myhome.yaml` (commands via Dimension 11, status via Dimension 10; area/general `set_cover_position` requires `interface` `#4#II` or configured `members:`). |
+| Position (position-reporting actuators) | ✅ | Auto-detected from calibrated `Dimension 10` frames (`0..100`), or explicit `advanced: true` / `advanced_shutter: true` in `myhome.yaml` (commands via `Dimension 11`, status via `Dimension 10`; area/general `set_cover_position` requires `interface` `#4#II` or configured `members:`). |
 | Position (timed actuators) | ✅ | Virtual position from the travel time: `travel_time` in YAML, measured with `myhome.calibrate_cover`, or set by hand with `myhome.set_cover_travel_time`. |
 | Tilt (Venetian blinds) | ✅ | Timed slat rotation (`slat_tilt: true` in `myhome.yaml`, calibrated with `slat_time` in `myhome.set_cover_travel_time`; estimated from `slat_time` on every actuator, including `advanced_shutter: true`, as `WHO 2` carries no slat-angle field on the bus). |
 | Echo suppression | ✅ | The gateway's relay of our own command is not mistaken for a keypad press. |
