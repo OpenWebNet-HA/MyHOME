@@ -93,8 +93,8 @@
   what: 1
   where: ""
   source: legrand-spec
-  mcp_valid: true
-  mcp_notes: "Burglar Alarm: system activation with an empty WHERE, the spelling field units log next to *5*WHAT**##. Stays empty: MH200N gateways without a panel dump *5*9*## on the poll (MyHOME#466 trace), a panel sends *5*9*0##"
+  mcp_valid: false
+  mcp_notes: "Burglar Alarm: system activation with an empty WHERE, the spelling field units log next to *5*WHAT**##. Stays empty: MH200N gateways without a panel dump *5*9*## on the poll (MyHOME#466 trace), a panel sends *5*9*0##. openwebnet-mcp rejects the empty WHERE (SYNTAX_ERROR, 'Frame does not match any valid OpenWebNet message grammar pattern') and accepts the star spelling *5*1**##, hence mcp_valid false; OWNd parses both"
   roundtrip: true
 
 - id: alarm.event.system_maintenance.empty_where
@@ -104,8 +104,8 @@
   what: 0
   where: ""
   source: legrand-spec
-  mcp_valid: true
-  mcp_notes: "Burglar Alarm: system maintenance with an empty WHERE (*5*0*##), the MH200N poll reply seen in the MyHOME#466 trace. Stays empty, see alarm.event.system_activation.empty_where"
+  mcp_valid: false
+  mcp_notes: "Burglar Alarm: system maintenance with an empty WHERE (*5*0*##), the MH200N poll reply seen in the MyHOME#466 trace. Stays empty, see alarm.event.system_activation.empty_where. openwebnet-mcp rejects the empty WHERE (SYNTAX_ERROR), hence mcp_valid false"
   roundtrip: true
 
 - id: alarm.event.system_activation.star_where

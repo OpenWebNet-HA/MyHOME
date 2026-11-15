@@ -12,8 +12,8 @@
   where: "5"
   where_param: ["2", "1"]
   source: community-plant-capture
-  mcp_valid: false
-  mcp_notes: "Grammar valid; openwebnet-mcp's WHO=22 catalog is a stub (two WHAT codes, no dimensions) and cannot judge this frame. The Encyclopedia's WHO=22 page is the authority used here: WHAT 2 'source turned on' with multimedia type 4 (stereo) and area 1, WHERE 5#2#1 naming source 1. Mirrors *16*3*111##."
+  mcp_valid: true
+  mcp_notes: "Grammar accepted by openwebnet-mcp (STATUS_EVENT). The meaning follows the Encyclopedia's WHO=22 page: WHAT 2 'source turned on' with multimedia type 4 (stereo) and area 1, WHERE 5#2#1 naming source 1. Mirrors *16*3*111##."
   roundtrip: true
 
 - id: sounddiff.event.routing.env1.source2
@@ -24,7 +24,7 @@
   where: "5"
   where_param: ["2", "2"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Same area, source 2. Against sounddiff.event.routing.env1.source1 only the source field moves, which is what pins the last digit of the WHO=16 form. Mirrors *16*3*112##."
   roundtrip: true
 
@@ -36,7 +36,7 @@
   where: "5"
   where_param: ["2", "1"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Area 2, source 1: here the area field moves instead. Mirrors *16*3*121##."
   roundtrip: true
 
@@ -48,7 +48,7 @@
   where: "5"
   where_param: ["2", "1"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Last frame of a general power-on that sweeps areas 1..8 onto source 1. Mirrors *16*3*181##."
   roundtrip: true
 
@@ -61,7 +61,7 @@
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Speaker area 1, point 1: device state ON, multimedia type 4 (stereo). Mirrors *16*3*11## — the WHO=16 address 11 written out as area 1, point 1."
   roundtrip: true
 
@@ -74,7 +74,7 @@
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Area 1, point 2. Mirrors *16*3*12##: same area as 11, different amplifier."
   roundtrip: true
 
@@ -87,7 +87,7 @@
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Area 3, point 1. Mirrors *16*3*31##."
   roundtrip: true
 
@@ -100,7 +100,7 @@
   dimension: 1
   dimension_values: ["17"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Volume 17 on area 1 point 1, emitted together with *#16*11*1*17##. DIMENSION 1 carries the same 0..31 scale in both dialects."
   roundtrip: true
 
@@ -113,7 +113,7 @@
   dimension: 12
   dimension_values: ["1", "4"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Source 1 active, stereo. Mirrors *16*3*101##."
   roundtrip: true
 
@@ -126,7 +126,7 @@
   dimension: 10
   dimension_values: ["32", "82", "97", "100", "105", "111", "32", "49"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "RDS text for source 1 under DIMENSION 10, where WHO=16 reports the same payload under DIMENSION 8. Station name replaced with ' Radio 1' for the same reason as sound.dim.rds.response.101."
   roundtrip: true
 
@@ -139,7 +139,7 @@
   dimension: 1
   dimension_values: ["1"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Plant MH202 (issue #669): video intercom stream start ducks volume to 1 on area 4 point 1 (zone 41). Mirrors *#16*41*1*1##."
   roundtrip: true
 
@@ -152,7 +152,7 @@
   dimension: 1
   dimension_values: ["6"]
   source: community-plant-capture
-  mcp_valid: false
+  mcp_valid: true
   mcp_notes: "Plant MH202 (issue #669): video intercom stream stop restores volume 6 on area 4 point 1 (zone 41). Mirrors *#16*41*1*6##."
   roundtrip: true
 

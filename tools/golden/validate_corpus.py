@@ -51,7 +51,12 @@ def validate_corpus(check_only: bool = False) -> int:
             )
             with open(CORPUS_JSON_PATH, encoding="utf-8") as f:
                 records = json.load(f)
-            assert isinstance(records, list) and len(records) >= 1
+            if not (isinstance(records, list) and len(records) >= 1):
+                print(
+                    f"Error: {CORPUS_JSON_PATH} must be a non-empty JSON list of fixtures.",
+                    file=sys.stderr,
+                )
+                return 1
             return 0
         print(
             "Warning: pyyaml not installed and corpus.json missing.",

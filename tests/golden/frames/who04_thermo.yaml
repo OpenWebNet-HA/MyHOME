@@ -870,7 +870,7 @@
   mcp_notes: "Thermoregulation: Zone 2 actuator 1 status 8 (Dimension 20 = 8, 'ON Vel 3' = fan-coil ON at speed 3; WHO 4 PDF dimension 20 table, p. 22) on F455/F461 + 3550 central unit (MyHOME#912)"
   roundtrip: true
 
-- id: thermo.capture.dim20.write.actuator_on_6.z4.act2
+- id: thermo.capture.dim20.write.fancoil_on_speed1.z4.act2
   frame: "*#4*4#2*#20*6##"
   direction: dimension_write
   who: 4
@@ -881,10 +881,10 @@
   dimension_values: ["6"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Thermoregulation: Paired #20 actuator status write ON_6 (6) on zone 4 actuator 2 (F461 FW 2.0.11 + 3550 central unit capture, MyHOME#912)"
+  mcp_notes: "Thermoregulation: Paired #20 actuator status write, value 6 = 'ON Vel 1' (fan-coil ON at speed 1; WHO 4 PDF dimension 20 table, p. 22) on zone 4 actuator 2 (F461 FW 2.0.11 + 3550 central unit capture, MyHOME#912)"
   roundtrip: true
 
-- id: thermo.capture.dim20.status.actuator_on_6.z4.act2
+- id: thermo.capture.dim20.status.fancoil_on_speed1.z4.act2
   frame: "*#4*4#2*20*6##"
   direction: dimension_response
   who: 4
@@ -895,7 +895,7 @@
   dimension_values: ["6"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Thermoregulation: Zone 4 actuator 2 status ON_6 (Dimension 20 = 6) on F455/F461 + 3550 central unit (MyHOME#912)"
+  mcp_notes: "Thermoregulation: Zone 4 actuator 2 status 6 (Dimension 20 = 6, 'ON Vel 1' = fan-coil ON at speed 1; WHO 4 PDF dimension 20 table, p. 22) on F455/F461 + 3550 central unit (MyHOME#912)"
   roundtrip: true
 
 - id: thermo.capture.write.setpoint.cool.zone2.200
@@ -1119,4 +1119,20 @@
   source: encyclopedia
   mcp_valid: true
   mcp_notes: "Thermoregulation: MyHomeServer1 extended fan-coil OFF speed 3 (code 16, SCS 26) on zone 1 actuator 2 (MyHOME#908)"
+  roundtrip: true
+
+- id: thermo.capture.req.offset.general
+  frame: '*#4*0*13##'
+  direction: dimension_request
+  who: 4
+  what: null
+  where: '0'
+  dimension: 13
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: 'Thermoregulation: General WHERE=0 local knob offset request (Dimension
+    13, WHO_4 v2.0.0 pp. 16-17; probe only: sent via myhome.send_frame to an F453
+    FW 2.0.10 with 61 active N4692 probes, zero zone replies over 9.75 s, never received
+    in a stored trace; MyHOME trace discussion_770_f453_n4692/myhome_sweep_F453_all_2026-11-14T13-34-42.json,
+    @DinoMesina Discussion #770 comment 19616515)'
   roundtrip: true
