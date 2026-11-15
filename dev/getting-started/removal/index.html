@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/dev/getting-started/removal/">
       
       
-        <link rel="prev" href="../../roadmap/beta-differences/">
+        <link rel="prev" href="../hardware-compatibility/">
       
       
         <link rel="next" href="../../configuration/gateways/">
@@ -583,34 +583,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -685,10 +657,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-clean-up-storage-persistent-data" class="md-nav__link">
+  <a href="#step-2-automatic-storage-repair-cleanup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Clean Up Storage &amp; Persistent Data
+        Step 2: Automatic Storage &amp; Repair Cleanup
       
     </span>
   </a>
@@ -696,10 +668,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-remove-custom-lovelace-bus-monitor-card-if-installed" class="md-nav__link">
+  <a href="#step-3-lovelace-bus-monitor-card-resource-cleanup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)
+        Step 3: Lovelace Bus Monitor Card Resource Cleanup
       
     </span>
   </a>
@@ -1683,34 +1655,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1966,34 +1910,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2039,10 +1955,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-2-clean-up-storage-persistent-data" class="md-nav__link">
+  <a href="#step-2-automatic-storage-repair-cleanup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 2: Clean Up Storage &amp; Persistent Data
+        Step 2: Automatic Storage &amp; Repair Cleanup
       
     </span>
   </a>
@@ -2050,10 +1966,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-3-remove-custom-lovelace-bus-monitor-card-if-installed" class="md-nav__link">
+  <a href="#step-3-lovelace-bus-monitor-card-resource-cleanup" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)
+        Step 3: Lovelace Bus Monitor Card Resource Cleanup
       
     </span>
   </a>
@@ -2114,29 +2030,22 @@
 <li>Home Assistant will remove the gateway connection, terminate background event listening sessions, and remove all associated discovered devices from the Device Registry.</li>
 </ol>
 <hr />
-<h2 id="step-2-clean-up-storage-persistent-data">Step 2: Clean Up Storage &amp; Persistent Data<a class="headerlink" href="#step-2-clean-up-storage-persistent-data" title="Permanent link">&para;</a></h2>
-<p>The MyHOME integration stores non-volatile calibration data (such as measured cover travel times and device options) in Home Assistant's internal storage:</p>
-<ol>
-<li>Connect to your Home Assistant host via SSH, Terminal, or the Studio Code Server addon.</li>
-<li>Navigate to your configuration directory:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>/config/.storage
-</span></code></pre></div></li>
-<li>Remove any integration storage files:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>myhome.*
-</span></code></pre></div>
-   <em>(This removes stored cover travel time calibrations and cached hardware profiles).</em></li>
-</ol>
+<h2 id="step-2-automatic-storage-repair-cleanup">Step 2: Automatic Storage &amp; Repair Cleanup<a class="headerlink" href="#step-2-automatic-storage-repair-cleanup" title="Permanent link">&para;</a></h2>
+<p>Deleting the MyHOME integration entry in Step 1 cleans up persistent integration state automatically (<code>async_remove_entry</code>):</p>
+<ul>
+<li><strong>Cover calibration times (<code>cover_travel_times</code>) &amp; imported YAML snapshots</strong>: Stored directly inside the gateway config entry's <code>options</code> and deleted by Home Assistant as part of removing the config entry.</li>
+<li><strong>Decoder pool state (<code>.storage/myhome.decoder_pool.&lt;entry_id&gt;</code>)</strong>: Automatically removed by <code>async_remove_entry</code>.</li>
+<li><strong>Integration Repair Issues</strong>: All <code>myhome</code> domain Repair Issues linked to that gateway entry are automatically cleared from Home Assistant's Issue Registry (and any remaining secondary/standby gateways linked to a removed primary are flagged automatically).</li>
+</ul>
+<p>No manual deletion inside <code>/config/.storage/</code> is required. <em>(If you previously ran an early pre-v2 build and want to verify no orphaned files remain, you can inspect <code>ls -la /config/.storage/myhome.*</code> via SSH or Terminal.)</em></p>
 <hr />
-<h2 id="step-3-remove-custom-lovelace-bus-monitor-card-if-installed">Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)<a class="headerlink" href="#step-3-remove-custom-lovelace-bus-monitor-card-if-installed" title="Permanent link">&para;</a></h2>
-<p>If you installed the custom Lovelace Bus Monitor card (<code>myhome-bus-card</code>):</p>
+<h2 id="step-3-lovelace-bus-monitor-card-resource-cleanup">Step 3: Lovelace Bus Monitor Card Resource Cleanup<a class="headerlink" href="#step-3-lovelace-bus-monitor-card-resource-cleanup" title="Permanent link">&para;</a></h2>
+<p>In v2, the bundled Bus Monitor card is served from <code>/myhome_static/myhome-bus-card.js?v=...</code> and its Lovelace dashboard resource is <strong>removed automatically</strong> when you delete the final MyHOME gateway entry.</p>
 <ol>
-<li>Navigate to <strong>Settings → Dashboards → Three dots (⋮) in top right → Resources</strong>.</li>
-<li>Locate the resource referencing:
-   <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>/local/myhome-bus-card.js
-</span></code></pre></div></li>
-<li>Click on the resource and select <strong>Delete</strong>.</li>
-<li>In your Home Assistant <code>/config/www/</code> folder, remove the card JavaScript file if present:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/www/myhome-bus-card.js
+<li>Remove any <code>custom:myhome-openwebnet-bus-monitor</code> (or <code>custom:myhome-bus-card</code>) cards from your Lovelace dashboard views.</li>
+<li>Optionally open <strong>Settings → Dashboards → Three dots (⋮) in top right → Resources</strong> to confirm no <code>/myhome_static/myhome-bus-card.js</code> resource remains.</li>
+<li>If you manually copied a pre-v2 standalone card into <code>/config/www/</code> (<code>/local/myhome-bus-card.js</code>), delete that manual resource entry in <strong>Resources</strong> and remove the file:
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/www/myhome-bus-card.js
 </span></code></pre></div></li>
 </ol>
 <hr />
@@ -2149,10 +2058,10 @@
 </ul>
 </li>
 <li><strong>If installed manually or via SSH one-liner:</strong> delete the custom component folder using your terminal or file manager:
-    <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>/config/custom_components/myhome
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>rm<span class="w"> </span>-rf<span class="w"> </span>/config/custom_components/myhome
 </span></code></pre></div></li>
 <li>If you maintain a legacy <code>/config/myhome.yaml</code> file, you can safely archive or delete it:
-    <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/myhome.yaml
+    <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>rm<span class="w"> </span>-f<span class="w"> </span>/config/myhome.yaml
 </span></code></pre></div></li>
 </ol>
 <hr />
@@ -2160,7 +2069,7 @@
 <p>Restart Home Assistant to flush cached Python bytecode and finalize clean removal:</p>
 <ul>
 <li>Navigate to <strong>Settings → System → Restart</strong>, or run:
-  <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>ha<span class="w"> </span>core<span class="w"> </span>restart
+  <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>ha<span class="w"> </span>core<span class="w"> </span>restart
 </span></code></pre></div></li>
 </ul>
 
@@ -2198,7 +2107,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

@@ -15,7 +15,7 @@
         <link rel="canonical" href="https://openwebnet-ha.github.io/MyHOME/dev/quality_scale_plan/">
       
       
-        <link rel="prev" href="../f454-regression-checks/">
+        <link rel="prev" href="../trace-availability/">
       
       
         <link rel="next" href="../migration/upgrade-from-094/">
@@ -563,34 +563,6 @@
     
   
     Hardware Compatibility
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -1578,34 +1550,6 @@
                 
   
   
-  
-  
-    <li class="md-nav__item">
-      <a href="../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
     
   
   
@@ -1680,10 +1624,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending" class="md-nav__link">
+  <a href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-done-4-of-4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (brands pending)
+        Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — ✅ done (4 of 4)
       
     </span>
   </a>
@@ -2010,34 +1954,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2083,10 +1999,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending" class="md-nav__link">
+  <a href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-done-4-of-4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (brands pending)
+        Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — ✅ done (4 of 4)
       
     </span>
   </a>
@@ -2191,7 +2107,7 @@
 
 
 <h1 id="integration-quality-scale-plan-myhome-platinum">Integration Quality Scale plan: MyHOME → 🏆 Platinum<a class="headerlink" href="#integration-quality-scale-plan-myhome-platinum" title="Permanent link">&para;</a></h1>
-<p><em>Status on 2026-09-14 (<code>scripts/quality_scale_report.py</code>): <strong>no tier reached yet</strong> — 52/54 rules satisfied (Bronze 19/20, Silver 10/10, Gold 21/21, Platinum 2/3). Phases 0–4 are done; 🥉 Bronze is blocked only by <code>brands</code> (an external PR), Platinum by <code>strict-typing</code>. There is no "Diamond" tier in the official scale; the top is 🏆 Platinum. Tiers are formally awarded only by Home Assistant core review — this plan gets the self-audit there, which is the precondition for the upstream submission in ROADMAP Phase 5.</em></p>
+<p><em>Status (<code>scripts/quality_scale_report.py --require platinum</code>): <strong>🏆 Platinum self-audit reached — 54/54 rules satisfied/exempt</strong> (🥉 Bronze 20/20, 🥈 Silver 10/10, 🥇 Gold 21/21, 🏆 Platinum 3/3) in <code>custom_components/myhome/quality_scale.yaml</code> and enforced on every push and PR in <code>.github/workflows/quality-scale.yml</code>. All Phases 0–5 below are complete. (Tiers are formally awarded only by Home Assistant Core review upon upstream submission; there is no "Diamond" tier in the official scale — the top tier is 🏆 Platinum.)</em></p>
 <p>Reference: <a href="https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/">https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/</a><br />
 Manifest: <a href="https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/custom_components/myhome/quality_scale.yaml"><code>custom_components/myhome/quality_scale.yaml</code></a></p>
 <h2 id="phase-0-land-whats-in-flight-prerequisite-done">Phase 0 — Land what's in flight (prerequisite) — ✅ done<a class="headerlink" href="#phase-0-land-whats-in-flight-prerequisite-done" title="Permanent link">&para;</a></h2>
@@ -2199,7 +2115,7 @@ Manifest: <a href="https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-archit
 <li>Finish, test and merge <code>feat/cover-calibration</code> (<code>cover.py</code>, the bus-monitor card, <code>services.py</code>). It adds new services and ~10 new <code>HomeAssistantError</code> raises that Phases 2–4 must cover (<code>docs-actions</code>, <code>exception-translations</code>); doing quality work on an unmerged branch means doing it twice.</li>
 <li>Fix the local crash in <code>scripts/quality_scale_report.py</code> (cp1252 <code>UnicodeEncodeError</code> on Windows — <code>sys.stdout.reconfigure(encoding="utf-8")</code>) so the report is runnable locally, not only in CI.</li>
 </ul>
-<h2 id="phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending">Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (<code>brands</code> pending)<a class="headerlink" href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-3-of-4-done-brands-pending" title="Permanent link">&para;</a></h2>
+<h2 id="phase-1-bronze-4-rules-the-tier-appears-on-the-badge-done-4-of-4">Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — ✅ done (4 of 4)<a class="headerlink" href="#phase-1-bronze-4-rules-the-tier-appears-on-the-badge-done-4-of-4" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -2329,7 +2245,7 @@ Phases 1 (<code>has-entity-name</code>) and 4 (<code>stale-devices</code>, <code
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

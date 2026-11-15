@@ -498,10 +498,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#compatibility-matrix" class="md-nav__link">
+  <a href="#supported-gateways" class="md-nav__link">
     <span class="md-ellipsis">
       
-        📦 Compatibility Matrix
+        📦 Supported Gateways
       
     </span>
   </a>
@@ -652,34 +652,6 @@
     
   
     Hardware Compatibility
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -1667,34 +1639,6 @@
   
   
     <li class="md-nav__item">
-      <a href="f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="quality_scale_plan/" class="md-nav__link">
         
   
@@ -1950,34 +1894,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2034,10 +1950,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#compatibility-matrix" class="md-nav__link">
+  <a href="#supported-gateways" class="md-nav__link">
     <span class="md-ellipsis">
       
-        📦 Compatibility Matrix
+        📦 Supported Gateways
       
     </span>
   </a>
@@ -2084,9 +2000,9 @@
 <ul>
 <li><strong>UI-First Configuration</strong>: Streamlined gateway setup, automatic on-wire bus discovery, and device management via Home Assistant's native Config Flow and Options Flow (with backward compatibility for existing <code>myhome.yaml</code> files and SCS groups).</li>
 <li><strong>Native Automation Device Triggers</strong>: Automate physical CEN (<code>WHO = 15</code>) and CEN+ (<code>WHO = 25</code>) scenario pushbuttons directly in Home Assistant's automation builder (Short press, Long press, Release, and Rotary Encoder dials).</li>
-<li><strong>In-Band Diagnostic Bus Monitor</strong>: Real-time Lovelace card (<code>custom:myhome-bus-card</code>) providing live OpenWebNet frame monitoring, filtering, bus sweeping, and 1-click trace export without consuming extra gateway sockets.</li>
-<li><strong>Diffusione Sonora Dynamic Proxy</strong>: Stream music from Music Assistant or Spotify into BTicino analog audio matrix amplifier zones (<code>WHO = 16</code>) with automatic power management and anti-hiss gain staging.</li>
-<li><strong>Decoupled OWNd 2.0 Engine</strong>: Clean protocol abstraction preventing drift, backed by 1,600+ regression tests with 100% code coverage.</li>
+<li><strong>In-Band Diagnostic Bus Monitor</strong>: Real-time Lovelace card (<code>custom:myhome-openwebnet-bus-monitor</code>) providing live OpenWebNet frame monitoring, filtering, bus sweeping, and 1-click trace export without consuming extra gateway sockets.</li>
+<li><strong>Diffusione Sonora &amp; Dynamic Proxy</strong>: Stream music from Music Assistant or Spotify into BTicino analog audio matrix amplifier zones (<code>WHO = 16</code>, with <code>WHO = 22</code> active-source area tracking), control F500/F500N FM RDS radio tuners (<code>WHO = 16</code> / <code>WHO = 22</code>), and get automatic power management with anti-hiss gain staging.</li>
+<li><strong>Decoupled OWNd 2.0 Engine</strong>: Clean protocol abstraction preventing drift, backed by 5,700+ automated tests with 100% statement coverage.</li>
 </ul>
 <hr />
 <h2 id="navigation-quick-links">🧭 Navigation &amp; Quick Links<a class="headerlink" href="#navigation-quick-links" title="Permanent link">&para;</a></h2>
@@ -2120,7 +2036,7 @@
 <li>
 <p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 12a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0 8a5 5 0 0 1-5-5 5 5 0 0 1 5-5 5 5 0 0 1 5 5 5 5 0 0 1-5 5m0-16a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2c0-1.11.89-2 2-2m5-2H7c-1.11 0-2 .89-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2"/></svg></span> <strong><a href="configuration/media_player/">Sound System / Audio</a></strong></p>
 <hr />
-<p>F441/F441M matrix routing, multiroom streaming proxy, and decoder pooling.</p>
+<p>F441/F441M matrix routing, F500/F500N FM RDS tuners (<code>WHO = 16</code> / <code>WHO = 22</code>), multiroom streaming proxy, and decoder pooling.</p>
 </li>
 <li>
 <p><span class="twemoji"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 5c2.21 0 4 1.79 4 4 0 1.5-.8 2.77-2 3.46v-1.22c.61-.55 1-1.35 1-2.24 0-1.66-1.34-3-3-3s-3 1.34-3 3c0 .89.39 1.69 1 2.24v1.22C9.8 11.77 9 10.5 9 9c0-2.21 1.79-4 4-4m7 15.5c-.03.82-.68 1.47-1.5 1.5H13c-.38 0-.74-.15-1-.43l-4-4.2.74-.77c.19-.21.46-.32.76-.32h.2L12 18V9c0-.55.45-1 1-1s1 .45 1 1v4.47l1.21.13 3.94 2.19c.53.24.85.77.85 1.35zM20 2H4c-1.1 0-2 .9-2 2v8a2 2 0 0 0 2 2h4v-2H4V4h16v8h-2v2h2v-.04l.04.04c1.09 0 1.96-.91 1.96-2V4a2 2 0 0 0-2-2"/></svg></span> <strong><a href="configuration/cen_cenplus/">CEN &amp; CEN+ Triggers</a></strong></p>
@@ -2145,55 +2061,113 @@
 </ul>
 </div>
 <hr />
-<h2 id="compatibility-matrix">📦 Compatibility Matrix<a class="headerlink" href="#compatibility-matrix" title="Permanent link">&para;</a></h2>
+<h2 id="supported-gateways">📦 Supported Gateways<a class="headerlink" href="#supported-gateways" title="Permanent link">&para;</a></h2>
+<!-- GATEWAY_PROFILES_START -->
 <table>
 <thead>
 <tr>
-<th style="text-align: left;">Hardware Gateway</th>
-<th style="text-align: left;">Protocol Transport</th>
-<th style="text-align: center;">Concurrent Sessions</th>
-<th style="text-align: center;">HMAC Authentication</th>
-<th style="text-align: center;">Recommended Worker Count</th>
+<th>Gateway Model</th>
+<th>Protocol Support</th>
+<th>Max Command Workers</th>
+<th>Inter-Frame Delay</th>
+<th>UPnP Discovery</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>MyHomeServer1</strong></td>
-<td style="text-align: left;">TCP (<code>20000</code>)</td>
-<td style="text-align: center;">4</td>
-<td style="text-align: center;">Yes</td>
-<td style="text-align: center;">4</td>
+<td><strong>F454</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>50 ms</td>
+<td>✅ Port 49153</td>
+<td>Full high-speed multi-session support</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F454 / F455 / F461</strong></td>
-<td style="text-align: left;">TCP (<code>20000</code>)</td>
-<td style="text-align: center;">4</td>
-<td style="text-align: center;">Optional</td>
-<td style="text-align: center;">4</td>
+<td><strong>F455</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>50 ms</td>
+<td>✅ Port 49153</td>
+<td>Basic gateway (single SCS bus)</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH202</strong></td>
-<td style="text-align: left;">TCP (<code>20000</code>)</td>
-<td style="text-align: center;">2</td>
-<td style="text-align: center;">Optional</td>
-<td style="text-align: center;">2</td>
+<td><strong>F461</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>50 ms</td>
+<td>❌ Manual</td>
+<td>Compact DIN Ethernet Web Server</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH200N / MH201 / MH200</strong></td>
-<td style="text-align: left;">TCP (<code>20000</code>)</td>
-<td style="text-align: center;">1</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">1</td>
+<td><strong>MH202</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>2 workers</td>
+<td>100 ms</td>
+<td>✅ Port 49153</td>
+<td>Modern scenario programmer gateway</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F452 / F452V / MHServer</strong></td>
-<td style="text-align: left;">TCP (<code>20000</code>)</td>
-<td style="text-align: center;">1</td>
-<td style="text-align: center;">No</td>
-<td style="text-align: center;">1</td>
+<td><strong>MH201</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>100 ms</td>
+<td>✅ Port 49153</td>
+<td>Second-generation scenario programmer</td>
+</tr>
+<tr>
+<td><strong>MyHomeServer1</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>20 ms</td>
+<td>✅ SSDP</td>
+<td>Cloud/local hybrid gateway</td>
+</tr>
+<tr>
+<td><strong>MH200N</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>150 ms</td>
+<td>✅ SSDP</td>
+<td>Second-generation scenario programmer</td>
+</tr>
+<tr>
+<td><strong>MH200</strong> <em>(Legacy)</em></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>150 ms</td>
+<td>✅ SSDP</td>
+<td>Strict single-session pacing; watchdog hardened</td>
+</tr>
+<tr>
+<td><strong>H4890 / AM4890</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>50 ms</td>
+<td>✅ SSDP</td>
+<td>3.5" Touch screen display IP gateway (Axolute / Livinglight)</td>
+</tr>
+<tr>
+<td><strong>F452 / F453 / F453AV</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>150 ms</td>
+<td>✅ Port 49153</td>
+<td>Audio/video &amp; web server gateway</td>
+</tr>
+<tr>
+<td><strong>H4684 / H/L4684</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>50 ms</td>
+<td>✅ SSDP</td>
+<td>Colour touch screen IP gateway (Axolute / LivingLight)</td>
 </tr>
 </tbody>
 </table>
+<!-- GATEWAY_PROFILES_END -->
+
+<p>See <a href="getting-started/hardware-compatibility/">Hardware Compatibility</a> for per-gateway startup discovery capabilities and firmware details.</p>
 <hr />
 <h2 id="need-help">🛠️ Need Help?<a class="headerlink" href="#need-help" title="Permanent link">&para;</a></h2>
 <ul>
@@ -2236,7 +2210,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

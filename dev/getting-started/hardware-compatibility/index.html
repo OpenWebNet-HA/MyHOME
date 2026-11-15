@@ -18,7 +18,7 @@
         <link rel="prev" href="../installation/">
       
       
-        <link rel="next" href="../../roadmap/beta-differences/">
+        <link rel="next" href="../removal/">
       
       
         
@@ -654,34 +654,6 @@
   
 </nav>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
     </li>
   
 
@@ -1661,34 +1633,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1931,34 +1875,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2234,14 +2150,20 @@
 <tr>
 <td style="text-align: left;"><strong>Sound System</strong></td>
 <td style="text-align: center;"><code>16</code></td>
-<td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">F441, F441M (Audio matrix), L4561N / L4561, L4560, 3482, 3495 (Audio source interfaces &amp; isolator), H4562, L4562, F502, 3484, 3487 (Room amplifiers), F500, F500COAX (FM RDS Tuners)</td>
+<td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
+<td style="text-align: left;">F441, F441M (Audio matrix), L4561N / L4561, L4560, 3482, 3495 (Audio source interfaces &amp; isolator), H4562, L4562, F502, 3484, 3487 (Room amplifiers), F500, F500N, F500COAX (FM RDS Tuners)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Energy Management</strong></td>
 <td style="text-align: center;"><code>18</code></td>
 <td style="text-align: left;"><code>sensor</code></td>
 <td style="text-align: left;">F520, F521, F522, F523, 3522</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Sound Diffusion</strong></td>
+<td style="text-align: center;"><code>22</code></td>
+<td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
+<td style="text-align: left;">F500, F500N, F500COAX FM RDS tuners (<code>5#2#S</code> / <code>2#S</code>, including <code>WHO 22</code>-only gateways <code>MyHomeServer1</code>, <code>F461</code>) and active-source area tracking (<code>4#&lt;area&gt;</code>)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Scenario Control (CEN+)</strong></td>
@@ -2257,7 +2179,7 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p><strong>Sound System (WHO = 16) Wiring</strong>: The 2-wire SCS bus carries both digital commands (power, volume, input routing via OpenWebNet WHO 16) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the <a href="../../configuration/media_player/">Sound System / Media Player Guide</a>.</p>
+<p><strong>Sound System (<code>WHO = 16</code> / <code>WHO = 22</code>) Wiring</strong>: The 2-wire SCS bus carries both digital commands (amplifier power, volume, and input routing via OpenWebNet <code>WHO = 16</code>, plus FM tuner control and active-source area telemetry on <code>WHO = 16</code> / <code>WHO = 22</code>) and modulated stereo audio simultaneously over the same 2-wire bus. External audio streamers connect their stereo analog line-out to an audio source interface (e.g. Legrand / BTicino L4561N, L4560, or 3482), which modulates the audio onto the 2-wire SCS bus into the F441/F441M matrix inputs S1–S4. For full details and the official wiring schematic, see the <a href="../../configuration/media_player/">Sound System / Media Player Guide</a>.</p>
 </div>
 <hr />
 <h2 id="gateway-startup-discovery-capabilities">Gateway Startup Discovery Capabilities<a class="headerlink" href="#gateway-startup-discovery-capabilities" title="Permanent link">&para;</a></h2>
@@ -2377,7 +2299,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

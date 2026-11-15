@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1422,10 +1394,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#sound-system-who-16" class="md-nav__link">
+  <a href="#sound-system-who-16-who-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Sound system (WHO 16)
+        Sound system (WHO 16 / WHO 22)
       
     </span>
   </a>
@@ -1727,34 +1699,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2010,34 +1954,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2138,10 +2054,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#sound-system-who-16" class="md-nav__link">
+  <a href="#sound-system-who-16-who-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Sound system (WHO 16)
+        Sound system (WHO 16 / WHO 22)
       
     </span>
   </a>
@@ -2203,9 +2119,9 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>One command session per gateway on MH200 / MH200N / MH201.</strong> Commands are queued and paced (150 / 80 / 60 ms).</td>
+<td style="text-align: left;"><strong>One command session per gateway on MH200 / MH200N / MH201 / F452 / F453 / F453AV / H4684 / H4890.</strong> Commands are queued and paced (<code>150 ms</code> on <code>MH200</code> / <code>MH200N</code> / <code>F452</code> / <code>F453</code> / <code>F453AV</code>, <code>100 ms</code> on <code>MH201</code>, <code>50 ms</code> on <code>H4684</code> / <code>H4890</code>).</td>
 <td style="text-align: left;">Those gateways refuse or drop overlapping sessions; the pacing is what keeps them alive.</td>
-<td style="text-align: left;">Keep the worker count at the profile default. F454 / F455 / MyHOMEServer1 / MH202 take more workers.</td>
+<td style="text-align: left;">Keep the worker count at the profile default (<code>1</code>). <code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MyHomeServer1</code> (up to <code>4</code>) and <code>MH202</code> (up to <code>2</code>) take more workers.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Entities can be unavailable for up to 60 s after a gateway drop.</strong></td>
@@ -2215,7 +2131,7 @@
 <tr>
 <td style="text-align: left;"><strong>A gateway's model can be mislabelled.</strong></td>
 <td style="text-align: left;">Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware.</td>
-<td style="text-align: left;">The <a href="../gateway-identification/">identification rules</a> correct manual choices and raise a repair issue when evidence contradicts SSDP; use the reconfigure flow to set the model explicitly.</td>
+<td style="text-align: left;">The <a href="../gateway-identification/">identification rules</a> correct manual choices and raise a repair issue when evidence contradicts SSDP; open <strong>Configure</strong> (Options Flow) to set the hardware <code>model</code> explicitly (<strong>Reconfigure</strong> updates <code>host</code>/<code>port</code>/<code>password</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>USB / serial gateways (<code>Legrand 3578</code> / <code>088328</code> OpenZigBee) are not supported in <code>v2.0</code>.</strong></td>
@@ -2223,14 +2139,14 @@
 <td style="text-align: left;">Connect via a supported TCP/IP OpenWebNet gateway, or contribute a raw serial capture on <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/466">#466</a> for <code>v2.1+</code>.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>No HMAC on MH200 / MH200N / MH201 / AM4890.</strong></td>
-<td style="text-align: left;">Those gateways only implement the numeric (SHA-less) password.</td>
-<td style="text-align: left;">Configure the numeric OpenWebNet password on the gateway.</td>
+<td style="text-align: left;"><strong>No HMAC on MH200 / MH200N / MH201 / F452 / F453 / F453AV / H4684 / AM4890 / H4890.</strong></td>
+<td style="text-align: left;">Those gateways only implement the legacy numeric (SHA-less) OPEN password; SHA-256 HMAC is supported on <code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MH202</code>, and <code>MyHomeServer1</code>.</td>
+<td style="text-align: left;">Configure the numeric OpenWebNet password on legacy gateways.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Broadcast, Area 00, and General 0 frames do not generate entities.</strong></td>
 <td style="text-align: left;">Broadcast frames (<code>WHERE="0"</code>, <code>"00"</code>) coordinate multiple actuators and do not represent individual physical devices (except WHO 5 where <code>WHERE="0"</code> is the alarm central unit). Creating entities from these frames produced phantom entities like <code>sensor.zone_00</code> or <code>climate.climate_zone_00</code>.</td>
-<td style="text-align: left;">Control individual actuators or use YAML declared groups (<code>where: '#G'</code>) and manual scenes.</td>
+<td style="text-align: left;">Control individual actuators or use YAML declared groups (<code>where: '#G'</code> under <code>light:</code>) and manual scenes.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Secondary energy meters (<code>52</code>–<code>59</code>) require bus activity or manual configuration for initial setup.</strong></td>
@@ -2250,8 +2166,8 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>Group, area and general commands from wall switches re-sync with a ~250 ms delay, and only areas with a known light.</strong> (P7, #368)</td>
-<td style="text-align: left;">A debounced re-sync (see <a href="../runtime_behaviour/#broadcast-re-sync-group-area-general">runtime behaviour</a>) only sweeps <code>*#1*A##</code> per area/group, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes <em>nothing</em> to confirm the fallback is sufficient there.</td>
+<td style="text-align: left;"><strong>Group, area and general commands from wall switches re-sync with a ~500 ms delay, and only areas with a known light.</strong> (P7, #368)</td>
+<td style="text-align: left;">A <code>500 ms</code> (<code>RESYNC_DEBOUNCE_S = 0.5</code>) debounced re-sync (see <a href="../runtime_behaviour/#broadcast-re-sync-group-area-general">runtime behaviour</a>) only sweeps <code>*#1*A##</code> per area/group, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes <em>nothing</em> to confirm the fallback is sufficient there.</td>
 <td style="text-align: left;">Disable <strong>Sweep group/area/general light addresses for status</strong> in the Options Flow if your gateway needs a different cadence, and report a bus trace on #368.</td>
 </tr>
 <tr>
@@ -2304,12 +2220,12 @@
 <tr>
 <td style="text-align: left;"><strong>Rapid concurrent point-to-point commands behind an F422 interface can drop frames.</strong></td>
 <td style="text-align: left;">The physical F422 interface internal FIFO buffer and secondary SCS bus arbitration saturate under rapid unpaced bursts.</td>
-<td style="text-align: left;">Use native General broadcast covers (<code>where: '0'</code>, <code>bus_interface: '&lt;id&gt;'</code>) which send a single OpenWebNet broadcast (<code>*2*WHAT*0#4#&lt;id&gt;##</code>), or rely on the integration's automatic 0.3 s paced member fan-out for position control. See <a href="../covers/#the-bticino-way-real-world-plant-discovery">Covers</a>.</td>
+<td style="text-align: left;">Use native General broadcast covers (<code>where: '0'</code>, <code>interface: '&lt;id&gt;'</code>) which send a single OpenWebNet broadcast (<code>*2*WHAT*0#4#&lt;id&gt;##</code>), or rely on the integration's automatic 0.3 s paced member fan-out for position control. See <a href="../covers/#the-bticino-way-real-world-plant-discovery">Covers</a>.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>No slat / tilt control.</strong></td>
-<td style="text-align: left;">Not implemented; the frames exist in OWNd.</td>
-<td style="text-align: left;"><code>myhome.send_message</code> with the tilt frame.</td>
+<td style="text-align: left;"><strong>Timed Venetian slat tilt (<code>slat_tilt</code> / <code>slat_time</code>) is dead-reckoned on every actuator.</strong></td>
+<td style="text-align: left;"><code>WHO 2</code> has no slat-angle field: <code>Dimension 10</code> reports status, level, priority and info, and <code>Dimension 11</code> is the go-to-level write. The slat angle is therefore an estimate from <code>slat_time</code> on every actuator, including the advanced ones (<code>F401</code>, <code>LN4661M2</code>, <code>067557</code>), whose <code>Dimension 10</code> position reports are only used to time that estimate.</td>
+<td style="text-align: left;">Configure <code>slat_time</code> for timed Venetian blinds; a full open or close resynchronises the slat estimate.</td>
 </tr>
 </tbody>
 </table>
@@ -2356,9 +2272,9 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>Zones are not entities; the panel follows the central unit.</strong> Some plants (F454 + 3486) surface several zone objects with no arm / disarm frames answered (#311).</td>
-<td style="text-align: left;">WHO 5 zone and sensor discovery needs a bus trace from a physical central unit to model correctly; the current implementation is built on golden frames.</td>
-<td style="text-align: left;">Zone frames are available as <code>myhome_message_event</code> (with <strong>Generate Events</strong> on) and alarm state changes as <code>myhome_alarm_event</code>; a trace attached to #311 unblocks the design.</td>
+<td style="text-align: left;"><strong>Zones are not individual entities; the panel follows the central unit (<code>3485</code> / <code>3486</code>).</strong> Some plants (<code>F454 + 3486</code>) emit zone status frames without exposing direct OpenWebNet arm / disarm commands (#311).</td>
+<td style="text-align: left;">OpenWebNet <code>WHO 5</code> central units reject unauthenticated TCP arm/disarm writes by design; the integration models the central unit as a read-only panel (with optional <code>WHO 9</code> AUX arm/disarm bridges) validated against physical <code>3486</code> and <code>MH202</code> captures.</td>
+<td style="text-align: left;">Individual zone frames are available as <code>myhome_message_event</code> (with <strong>Generate Events</strong> on) and alarm state changes as <code>myhome_alarm_event</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Arming requires the central unit to accept the command.</strong></td>
@@ -2394,7 +2310,7 @@
 </tr>
 </tbody>
 </table>
-<h2 id="sound-system-who-16">Sound system (WHO 16)<a class="headerlink" href="#sound-system-who-16" title="Permanent link">&para;</a></h2>
+<h2 id="sound-system-who-16-who-22">Sound system (WHO 16 / WHO 22)<a class="headerlink" href="#sound-system-who-16-who-22" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -2415,9 +2331,9 @@
 <td style="text-align: left;">Play to a Music Assistant <strong>Sync Group</strong> with <em>Dynamic members</em> on, so any room can be ticked and unticked; see <a href="../media_player/#recommended-one-music-assistant-sync-group-for-the-house">Recommended: one Music Assistant Sync Group for the house</a>. With temporary groups, play to a room that stays on: removing a member never interrupts anything.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Plants that use only the later sound-diffusion dialect (WHO 22) get no audio entities.</strong></td>
-<td style="text-align: left;">The integration speaks the WHO 16 sound system (amplifiers, sources, the F441 / F441M matrix). WHO 22 is BTicino's later sound-diffusion dialect and is not implemented; it is not the FM tuner, which the integration handles as a WHO 16 source.</td>
-<td style="text-align: left;">—</td>
+<td style="text-align: left;"><strong>Gateways that speak only <code>WHO 22</code> (<code>MyHomeServer1</code>, <code>F461</code>) expose declared F500 / F500N FM tuners, not room amplifier zones.</strong></td>
+<td style="text-align: left;">Those gateways ship <code>bt_multi</code> without <code>bt_difson</code> and reject every <code>WHO 16</code> frame. F500 / F500N tuner sources (<code>2#S</code> / <code>5#2#S</code>) are fully controlled and decoded over <code>WHO 22</code>, and dual-stack gateways also track <code>WHO 22</code> area-source routing (<code>4#&lt;area&gt;</code>), whereas room amplifier discovery and zone power/volume/routing commands (<code>01</code>–<code>99</code>) require <code>WHO 16</code>.</td>
+<td style="text-align: left;">On a shared bus, pair a <code>WHO 16</code>-capable secondary gateway (such as <code>MH200N</code>, <code>MH202</code>, <code>F454</code>, <code>H4890</code>, or <code>H/L4684</code> FW ≥ <code>6.0.0</code> for coupled <code>WHO 16</code> / <code>WHO 22</code>, or <code>MH200</code> for <code>WHO 16</code>) with audio delegated to it.</td>
 </tr>
 </tbody>
 </table>
@@ -2433,13 +2349,8 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><strong>CEN / CEN+ devices are stateless.</strong> They have no entity, only device triggers.</td>
-<td style="text-align: left;">Pushbuttons report presses, not a state.</td>
+<td style="text-align: left;">Pushbuttons report presses, holds, releases and rotary steps rather than a persistent on/off state.</td>
 <td style="text-align: left;">Use the device triggers (see <a href="../cen_cenplus/">CEN &amp; CEN+</a>) or the <a href="https://community.home-assistant.io/t/myhome-cen-commands/260345">community blueprint</a>.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Multi-click bursts are verified on synthetic frames only.</strong></td>
-<td style="text-align: left;">No physical wall-switch burst trace yet.</td>
-<td style="text-align: left;">Please attach one to RFC #248.</td>
 </tr>
 </tbody>
 </table>
@@ -2459,13 +2370,13 @@
 <td style="text-align: left;">Rename the device in the UI, or change <code>name</code>.</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Fresh installs name sensor ids after the device class</strong> (<code>sensor.house_power</code>, <code>binary_sensor.cancello_opening</code>) where 2.0.0b12 produced <code>sensor.house</code>, <code>sensor.house_2</code>, <code>binary_sensor.cancello</code>.</td>
-<td style="text-align: left;">The previous ids were the device name with numeric suffixes for the second and third sensor of a device.</td>
+<td style="text-align: left;"><strong>Fresh installs name sensor ids after the device class</strong> (<code>sensor.house_power</code>, <code>binary_sensor.cancello_opening</code>) where earlier pre-releases produced <code>sensor.house</code>, <code>sensor.house_2</code>, <code>binary_sensor.cancello</code>.</td>
+<td style="text-align: left;">Earlier pre-releases used the device name with numeric suffixes for the second and third sensor of a device.</td>
 <td style="text-align: left;">Existing installations keep their ids; automations on a fresh install use the new ids.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Strict typing is complete.</strong></td>
-<td style="text-align: left;"><code>mypy --strict</code> is fully enforced across all 31 source modules as of 2.0.0b13 (Platinum Quality Scale).</td>
+<td style="text-align: left;"><code>mypy --strict</code> is enforced with zero errors across all integration modules (Platinum Quality Scale).</td>
 <td style="text-align: left;">—</td>
 </tr>
 <tr>
@@ -2480,8 +2391,8 @@
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Home Assistant 2026.3 or newer is required</strong> (<code>hacs.json</code>).</td>
-<td style="text-align: left;">Current cores need Python 3.14 and dropped the pre-2026 device-registry and static-path APIs; carrying shims for cores nobody can test any more is not honest support.</td>
-<td style="text-align: left;">Stay on integration 2.0.0b12 on older cores.</td>
+<td style="text-align: left;">Current cores require Python 3.14 and modern device-registry and static-path APIs.</td>
+<td style="text-align: left;">Upgrade Home Assistant Core to 2026.3 or newer before installing MyHOME v2.0.</td>
 </tr>
 </tbody>
 </table>
@@ -2520,7 +2431,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -2302,34 +2274,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2572,34 +2516,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -3344,6 +3260,7 @@
 <p>This document provides a comprehensive reference for all custom services registered by the <strong>MyHOME</strong> integration in Home Assistant.</p>
 <hr />
 <h2 id="services-summary">📋 Services Summary<a class="headerlink" href="#services-summary" title="Permanent link">&para;</a></h2>
+<!-- SERVICES_TABLE_START -->
 <table>
 <thead>
 <tr>
@@ -3356,22 +3273,22 @@
 <tr>
 <td style="text-align: left;"><a href="#1-myhomesend_message"><code>myhome.send_message</code></a></td>
 <td style="text-align: left;">Gateway</td>
-<td style="text-align: left;">Send an arbitrary, validated OpenWebNet frame to the SCS bus.</td>
+<td style="text-align: left;">Send an arbitrary (but valid) OpenWebNet message to the gateway.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#2-myhometurn_on_timed"><code>myhome.turn_on_timed</code></a></td>
 <td style="text-align: left;"><code>light</code>, <code>switch</code></td>
-<td style="text-align: left;">Turn on an actuator with a hardware-offloaded SCS timer that turns off automatically even if Home Assistant reboots.</td>
+<td style="text-align: left;">Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#3-myhomesync_time"><code>myhome.sync_time</code></a></td>
 <td style="text-align: left;">Gateway</td>
-<td style="text-align: left;">Synchronize the gateway internal clock with Home Assistant's local time.</td>
+<td style="text-align: left;">Synchronize gateway's time to HA local time.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#4-myhomestart_sending_instant_power"><code>myhome.start_sending_instant_power</code></a></td>
 <td style="text-align: left;"><code>sensor</code></td>
-<td style="text-align: left;">Request a temporary continuous stream of instant power readings from an energy meter.</td>
+<td style="text-align: left;">Get automatic instant power draw updates for a sensor.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#5-myhomestop_sending_instant_power"><code>myhome.stop_sending_instant_power</code></a></td>
@@ -3381,68 +3298,75 @@
 <tr>
 <td style="text-align: left;"><a href="#6-myhomesweep_bus"><code>myhome.sweep_bus</code></a></td>
 <td style="text-align: left;">Gateway</td>
-<td style="text-align: left;">Actively poll status across all subsystems to populate diagnostic buffers.</td>
+<td style="text-align: left;">Triggers an active read-only status query across all bus subsystems (lighting, covers, thermoregulation, clock, and gateway diagnostics) to populate the diagnostic bus monitor ring buffer.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#7-myhomecalibrate_cover"><code>myhome.calibrate_cover</code></a></td>
 <td style="text-align: left;"><code>cover</code></td>
-<td style="text-align: left;">Measure a timed cover's up and down travel times on the bus and store them.</td>
+<td style="text-align: left;">Measures a timed cover's up and down travel times on the SCS bus and stores them. The cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway. Do not run while the shutter must stay put.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#8-myhomestop_cover_calibration"><code>myhome.stop_cover_calibration</code></a></td>
 <td style="text-align: left;">Gateway</td>
-<td style="text-align: left;">Stop the running calibration and cancel queued ones.</td>
+<td style="text-align: left;">Stops the running travel-time calibration and cancels the queued ones. The moving cover is stopped; nothing is stored. Without a gateway every gateway is stopped.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#9-myhomeset_cover_travel_time"><code>myhome.set_cover_travel_time</code></a></td>
 <td style="text-align: left;"><code>cover</code></td>
-<td style="text-align: left;">Store stopwatch-measured travel times without driving the cover.</td>
+<td style="text-align: left;">Stores the physical travel times of a timed cover by hand (measured with a stopwatch) instead of calibrating on the bus. Values are kept in the config entry, survive restarts and apply to discovered covers without YAML.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#10-myhomereset_cover_travel_time"><code>myhome.reset_cover_travel_time</code></a></td>
 <td style="text-align: left;"><code>cover</code></td>
-<td style="text-align: left;">Forget measured / manual travel times; back to YAML or the default.</td>
+<td style="text-align: left;">Forgets the measured or manually set travel times of a timed cover and returns to the myhome.yaml travel_time or the 25 s default.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#11-myhometuner_seek_up"><code>myhome.tuner_seek_up</code></a></td>
 <td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">Seek forward to the next receivable FM radio frequency on an F500 tuner.</td>
+<td style="text-align: left;">Seek forward to the next receivable FM radio frequency on an F500 tuner source.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#12-myhometuner_seek_down"><code>myhome.tuner_seek_down</code></a></td>
 <td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">Seek backward to the previous receivable FM radio frequency on an F500 tuner.</td>
+<td style="text-align: left;">Seek backward to the previous receivable FM radio frequency on an F500 tuner source.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#13-myhomesend_scenario_plus_command"><code>myhome.send_scenario_plus_command</code></a></td>
 <td style="text-align: left;">Gateway</td>
-<td style="text-align: left;">Send a WHO 25 scenario plus command (on, off, increase, decrease, stop).</td>
+<td style="text-align: left;">Send a WHO 25 scenario plus command (on, off, increase, decrease, stop) to an addressed scenario plus object.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#14-myhomecancel_cover_request"><code>myhome.cancel_cover_request</code></a></td>
 <td style="text-align: left;"><code>cover</code></td>
-<td style="text-align: left;">Cancel a pending approval request or running pre-warning countdown.</td>
+<td style="text-align: left;">Cancels a pending approval request or a running pre-warning of an impulse gate or garage door. Cancelling is always safe; nothing moves.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#15-myhomeacknowledge_cover_fault"><code>myhome.acknowledge_cover_fault</code></a></td>
 <td style="text-align: left;"><code>cover</code></td>
-<td style="text-align: left;">Clear a latched safety watchdog fault after verifying physical gate/door clearance.</td>
+<td style="text-align: left;">Clears the fault latched when a gate or garage door did not reach the expected state after a pulse (possible obstacle or reversal). Only an allowed user who is at home may acknowledge it; until then closing from Home Assistant stays blocked.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#16-myhometuner_set_frequency"><code>myhome.tuner_set_frequency</code></a></td>
 <td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">Tune an F500 / F500N radio tuner directly to an FM frequency in MHz (<code>87.50–108.00 MHz</code>).</td>
+<td style="text-align: left;">Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><a href="#17-myhometuner_store_station"><code>myhome.tuner_store_station</code></a></td>
 <td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">Memorise the currently tuned FM frequency into a preset station slot (<code>1–15</code>).</td>
+<td style="text-align: left;">Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source.</td>
 </tr>
 </tbody>
 </table>
+<!-- SERVICES_TABLE_END -->
+
 <hr />
 <h2 id="1-myhomesend_message">1. <code>myhome.send_message</code><a class="headerlink" href="#1-myhomesend_message" title="Permanent link">&para;</a></h2>
 <p>Sends an arbitrary, valid OpenWebNet message through the gateway command session. The integration validates syntax, dispatches the frame, and logs the transaction to the Bus Monitor.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong><code>WHO = 4</code> Dimension 22 Firmware Crash Guard (<code>is_refused_dimension_22</code>)</strong>:
+Non-split <code>WHO = 4</code> Dimension 22 frames whose <code>WHERE</code> carries no actuator token (such as a zone <code>*#4*1*22##</code>, the general address <code>*#4*0*22##</code>, or the central unit <code>*#4*#0*22##</code>) kill the thermostat daemon on Linux IP gateways (<code>F461</code>, <code>F454</code>, <code>MH200N</code>, etc.) and are <strong>strictly refused</strong> before reaching the socket. Published split-unit forms (<code>*#4*3#Z#N*22##</code> and <code>*#4*3#Z#N*#22*MOD*SP*VEL*SWING##</code>) are safe across all twelve emulated gateway firmwares and are permitted.</p>
+</div>
 <h3 id="fields">Fields<a class="headerlink" href="#fields" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3459,7 +3383,7 @@
 <td style="text-align: left;"><code>gateway</code></td>
 <td style="text-align: center;">string</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">The MAC address of the target gateway (defaults to the first configured gateway). Unknown keys such as <code>gw_mac</code> are rejected.</td>
+<td style="text-align: left;">The MAC address of the target gateway (defaults to the <code>is_primary</code> gateway, or the first loaded gateway if none is primary). Unknown keys such as <code>gw_mac</code> are rejected.</td>
 <td style="text-align: left;"><code>"00:03:50:20:00:01"</code></td>
 </tr>
 <tr>
@@ -3479,10 +3403,14 @@
 </span></code></pre></div>
 <hr />
 <h2 id="2-myhometurn_on_timed">2. <code>myhome.turn_on_timed</code><a class="headerlink" href="#2-myhometurn_on_timed" title="Permanent link">&para;</a></h2>
-<p>Turns on a light or switch with a <strong>hardware-offloaded SCS timer</strong>. </p>
+<p>Turns on an individual <code>WHO = 1</code> light or switch actuator with a <strong>hardware-offloaded SCS timer</strong>.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
 <p><strong>Why use this service?</strong> Standard Home Assistant timers (e.g. <code>delay: 00:02:00</code> followed by <code>light.turn_off</code>) will fail if Home Assistant restarts or crashes during the delay. <code>myhome.turn_on_timed</code> programs the hardware actuator itself to count down and power off autonomously on the physical bus.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Supported Entities</strong>: <code>myhome.turn_on_timed</code> applies only to individual point-to-point <code>WHO = 1</code> light and switch actuators (<code>0.5–918,000</code> seconds via preset <code>WHAT</code> codes or <code>Dimension 2</code> <code>*#1*WHERE*#2*H*M*S##</code>). Calling it on an SCS group light (<code>#G</code>, <code>group_no_timer</code>), a <code>WHO = 4</code> probe-less thermo switch (<code>thermo_switch_no_timer</code>), or a <code>WHO = 9/25</code> <strong>Invert state</strong> configuration switch (<code>invert_switch_no_timer</code>) raises a <code>ServiceValidationError</code>.</p>
 </div>
 <h3 id="fields_1">Fields<a class="headerlink" href="#fields_1" title="Permanent link">&para;</a></h3>
 <table>
@@ -3500,47 +3428,47 @@
 <td style="text-align: left;"><code>duration</code></td>
 <td style="text-align: center;">float</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Total duration in seconds (0.5 to 918,000s).</td>
+<td style="text-align: left;">Total duration in seconds (<code>0.5</code> to <code>918,000</code> s — <code>0.5</code> s impulse preset up to <code>255</code> hours via <code>Dimension 2</code>).</td>
 <td style="text-align: left;"><code>120</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>hours</code></td>
 <td style="text-align: center;">integer</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Hours component (0–255).</td>
+<td style="text-align: left;">Hours component (<code>0</code>–<code>255</code>).</td>
 <td style="text-align: left;"><code>0</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>minutes</code></td>
 <td style="text-align: center;">integer</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Minutes component (0–59).</td>
+<td style="text-align: left;">Minutes component (<code>0</code>–<code>59</code>).</td>
 <td style="text-align: left;"><code>5</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>seconds</code></td>
 <td style="text-align: center;">float</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Seconds component (0–59).</td>
+<td style="text-align: left;">Seconds component (<code>0</code>–<code>59</code>).</td>
 <td style="text-align: left;"><code>30</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>brightness</code></td>
 <td style="text-align: center;">integer</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Brightness level (1–255) for dimmable lights.</td>
+<td style="text-align: left;">Brightness level (<code>1</code>–<code>255</code>) for dimmable lights.</td>
 <td style="text-align: left;"><code>200</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>brightness_pct</code></td>
 <td style="text-align: center;">integer</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Brightness percentage (1–100%) for dimmable lights.</td>
+<td style="text-align: left;">Brightness percentage (<code>1</code>–<code>100%</code>) for dimmable lights.</td>
 <td style="text-align: left;"><code>80</code></td>
 </tr>
 </tbody>
 </table>
-<p><em>(Note: You can specify <code>duration</code> directly, or specify custom <code>hours</code>/<code>minutes</code>/<code>seconds</code>).</em></p>
+<p><em>(Note: Specify <code>duration</code> directly, or specify custom <code>hours</code>/<code>minutes</code>/<code>seconds</code>.)</em></p>
 <h3 id="example-yaml-call_1">Example YAML Call<a class="headerlink" href="#example-yaml-call_1" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.turn_on_timed</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
@@ -3553,6 +3481,13 @@
 <hr />
 <h2 id="3-myhomesync_time">3. <code>myhome.sync_time</code><a class="headerlink" href="#3-myhomesync_time" title="Permanent link">&para;</a></h2>
 <p>Synchronizes the gateway's real-time clock (RTC) with Home Assistant's local time using <code>WHO = 13</code> dimension frames. This ensures scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules) run in lockstep with real time.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<ul>
+<li><strong>Shared-Bus Topology</strong>: When <code>gateway</code> is omitted, follower (<code>secondary</code> / <code>standby</code>) gateways on a shared SCS bus are automatically skipped so only primary gateways broadcast clock updates.</li>
+<li><strong>Whole-Hour UTC Offset Requirement</strong>: Because the OpenWebNet <code>WHO = 13</code> timezone offset field (<code>0HH</code> / <code>1HH</code>) only encodes whole hours, calling <code>myhome.sync_time</code> when Home Assistant is configured in a fractional-hour timezone (such as <code>Asia/Kolkata</code> <code>+05:30</code>) raises <code>ServiceValidationError</code> (<code>sync_time_unsupported_offset</code>) rather than transmitting a truncated offset.</li>
+</ul>
+</div>
 <h3 id="fields_2">Fields<a class="headerlink" href="#fields_2" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3569,7 +3504,7 @@
 <td style="text-align: left;"><code>gateway</code></td>
 <td style="text-align: center;">string</td>
 <td style="text-align: center;">No</td>
-<td style="text-align: left;">Target gateway MAC address (defaults to all gateways).</td>
+<td style="text-align: left;">Target gateway MAC address (defaults to all primary gateways).</td>
 <td style="text-align: left;"><code>"00:03:50:20:00:01"</code></td>
 </tr>
 </tbody>
@@ -3581,7 +3516,7 @@
 </span></code></pre></div>
 <hr />
 <h2 id="4-myhomestart_sending_instant_power">4. <code>myhome.start_sending_instant_power</code><a class="headerlink" href="#4-myhomestart_sending_instant_power" title="Permanent link">&para;</a></h2>
-<p>By default, MyHOME energy meters (F520, F521, F522, F523) transmit energy readings periodically to conserve bus bandwidth. Calling this service causes the meter to continuously stream high-frequency instant power updates for a defined duration.</p>
+<p>By default, MyHOME energy meters (<code>F520</code>, <code>F521</code>, <code>F522</code>, <code>F523</code>, <code>3522</code>) transmit energy readings periodically to conserve bus bandwidth. Calling this entity service instructs the targeted power sensor's meter to stream high-frequency instant power updates (<code>Dimension 113</code>) for a bounded window (<code>1–255</code> minutes, default <code>65</code>). To stop streaming early, call <a href="#5-myhomestop_sending_instant_power"><code>myhome.stop_sending_instant_power</code></a> (<code>duration: 0</code> is rejected by schema validation).</p>
 <h3 id="fields_3">Fields<a class="headerlink" href="#fields_3" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -3596,25 +3531,26 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><code>entity_id</code></td>
-<td style="text-align: center;">string</td>
+<td style="text-align: center;">target</td>
 <td style="text-align: center;"><strong>Yes</strong></td>
-<td style="text-align: left;">The power sensor entity ID.</td>
-<td style="text-align: left;"><code>"sensor.general_power"</code></td>
+<td style="text-align: left;">Target MyHOME <code>sensor</code> entity (<code>device_class: power</code>).</td>
+<td style="text-align: left;"><code>sensor.general_power</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>duration</code></td>
 <td style="text-align: center;">integer</td>
-<td style="text-align: center;"><strong>Yes</strong></td>
-<td style="text-align: left;">Duration in minutes to keep streaming (0 to stop).</td>
-<td style="text-align: left;"><code>60</code></td>
+<td style="text-align: center;">No</td>
+<td style="text-align: left;">Duration in minutes (<code>1</code>–<code>255</code>, default <code>65</code>) to keep streaming instant power; call <code>myhome.stop_sending_instant_power</code> to stop early.</td>
+<td style="text-align: left;"><code>65</code></td>
 </tr>
 </tbody>
 </table>
 <h3 id="example-yaml-call_3">Example YAML Call<a class="headerlink" href="#example-yaml-call_3" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.start_sending_instant_power</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="s">"sensor.heat_pump_power"</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.heat_pump_power</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">65</span>
 </span></code></pre></div>
 <hr />
 <h2 id="5-myhomestop_sending_instant_power">5. <code>myhome.stop_sending_instant_power</code><a class="headerlink" href="#5-myhomestop_sending_instant_power" title="Permanent link">&para;</a></h2>
@@ -3633,17 +3569,17 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><code>entity_id</code></td>
-<td style="text-align: center;">string</td>
+<td style="text-align: center;">target</td>
 <td style="text-align: center;"><strong>Yes</strong></td>
-<td style="text-align: left;">The power sensor entity ID.</td>
-<td style="text-align: left;"><code>"sensor.general_power"</code></td>
+<td style="text-align: left;">Target MyHOME <code>sensor</code> entity (<code>device_class: power</code>).</td>
+<td style="text-align: left;"><code>sensor.general_power</code></td>
 </tr>
 </tbody>
 </table>
 <h3 id="example-yaml-call_4">Example YAML Call<a class="headerlink" href="#example-yaml-call_4" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.stop_sending_instant_power</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="s">"sensor.heat_pump_power"</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.heat_pump_power</span>
 </span></code></pre></div>
 <hr />
 <h2 id="6-myhomesweep_bus">6. <code>myhome.sweep_bus</code><a class="headerlink" href="#6-myhomesweep_bus" title="Permanent link">&para;</a></h2>
@@ -4016,7 +3952,7 @@
 </span></code></pre></div>
 <hr />
 <h2 id="16-myhometuner_set_frequency">16. <code>myhome.tuner_set_frequency</code><a class="headerlink" href="#16-myhometuner_set_frequency" title="Permanent link">&para;</a></h2>
-<p>Tunes an F500 / F500N sound source tuner entity (<code>WHERE</code> 101–109 / <code>WHO 22</code> <code>2#S</code>) directly to an explicit FM radio frequency (<code>87.50–108.00 MHz</code>, <code>0.05 MHz</code> step), dispatching <code>*#16*10S*#6*0*&lt;kHz&gt;##</code> on <code>WHO 16</code> gateways or <code>*#22*2#S*#5*1*&lt;10kHz&gt;##</code> on <code>WHO 22</code>-only gateways (<code>MyHomeServer1</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>). You can also adjust this directly in the UI via the companion <code>number.&lt;source&gt;_frequency</code> entity.</p>
+<p>Tunes an F500 / F500N sound source tuner entity (<code>WHERE</code> 101–109 / <code>WHO 22</code> <code>2#S</code>) directly to an explicit FM radio frequency (<code>87.50–108.00 MHz</code>, <code>0.05 MHz</code> step), dispatching <code>*#16*10S*#6*0*&lt;kHz&gt;##</code> on <code>WHO 16</code> gateways or <code>*#22*2#S*#5*1*&lt;10kHz&gt;##</code> on <code>WHO 22</code>-only gateways (<code>MyHomeServer1</code>, <code>F461</code>). You can also adjust this directly in the UI via the companion <code>number.&lt;source&gt;_frequency</code> entity.</p>
 <h3 id="fields_15">Fields<a class="headerlink" href="#fields_15" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -4125,7 +4061,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

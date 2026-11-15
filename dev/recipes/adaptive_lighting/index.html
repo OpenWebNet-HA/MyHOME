@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1733,34 +1705,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2003,34 +1947,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2309,7 +2225,7 @@
 <p>Create a Light Group helper (<strong>Settings → Devices &amp; Services → Helpers → Create Helper → Light Group</strong>) combining your MyHOME fixtures. Point Adaptive Lighting directly to the <code>light.group_...</code> entity. Home Assistant will distribute the target brightness and color temperature across all members. This is the recommended default because it maintains 100% accurate per-entity state tracking regardless of physical actuator model.</p>
 <h3 id="option-b-myhome-scs-hardware-groups-where-g">Option B: MyHOME SCS Hardware Groups (<code>WHERE = '#G'</code>)<a class="headerlink" href="#option-b-myhome-scs-hardware-groups-where-g" title="Permanent link">&para;</a></h3>
 <p>If you define SCS groups in <code>/config/myhome.yaml</code> under your gateway MAC address:
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">00:03:50:xx:xx:xx</span><span class="p">:</span><span class="w">  </span><span class="c1"># Your gateway MAC address</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="s">"00:03:50:01:02:03"</span><span class="p p-Indicator">:</span><span class="w">  </span><span class="c1"># Replace with your gateway MAC address</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">light</span><span class="p">:</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="nt">living_room_dali_group</span><span class="p">:</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#1'</span>
@@ -2367,7 +2283,7 @@ Adaptive Lighting can control <code>light.living_room_dali_group</code> directly
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

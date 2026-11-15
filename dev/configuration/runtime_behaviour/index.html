@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1606,6 +1578,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#who-4-firmware-refusal-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🛡️ WHO = 4 Firmware Refusal Guards
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1757,34 +1740,6 @@
     
   
     Hardware Trace Availability
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
   
 
     
@@ -2060,34 +2015,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2220,6 +2147,17 @@
     <span class="md-ellipsis">
       
         🌡️ Central heating units (#0 / #0#1) are broadcast event-driven
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#who-4-firmware-refusal-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🛡️ WHO = 4 Firmware Refusal Guards
       
     </span>
   </a>
@@ -2525,19 +2463,18 @@ Options Flow if your gateway lags on repeated status requests.</p>
 <ol>
 <li><strong>Startup Hydration &amp; Polling</strong>: On restart, the central unit entity is restored from its previous state (<code>async_restore_last_state()</code>) and sends canonical status request <code>*#4*#0##</code>, updating its mode and subordinate zones upon answer.</li>
 <li>
-<p><strong>Outbound Mode Commands</strong>: When commanded from Home Assistant, the central unit receives seasonal mode commands:</p>
+<p><strong>Outbound Mode Commands</strong>: When commanded from Home Assistant, the central unit receives canonical seasonal mode commands (<code>OWNHeatingCommand.set_central_mode</code>):</p>
 <ul>
-<li><code>*4*100*#0##</code> (Conditioning OFF command)</li>
-<li><code>*4*101*#0##</code> (Manual Heating command)</li>
-<li><code>*4*102*#0##</code> (Manual Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 102 denotes Antifreeze protection)</li>
-<li><code>*4*103*#0##</code> (Auto Heating/Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 103 denotes Heating OFF)</li>
+<li><code>*4*303*#0##</code> (Central unit OFF command)</li>
+<li><code>*4*1*#0##</code> (Heating season command)</li>
+<li><code>*4*0*#0##</code> (Conditioning season command)</li>
+<li><code>*4*3100*#0##</code> (Auto / restore scheduled programming command)</li>
 <li><code>*#4*#0*#14*&lt;temp&gt;*&lt;mode&gt;##</code> (Target temperature setpoint command)</li>
-<li>
-<p><strong>Inbound Operating Mode &amp; Status Broadcasts</strong>: The physical central unit broadcasts events across the bus whenever its state changes:</p>
-</li>
-<li>
-<p>Operating mode status: <code>*4*110*#0##</code> (Manual Heating status), <code>*4*210*#0##</code> (Manual Cooling status), <code>*4*311*#0##</code> (Programmed/automatic generic status; mapped to <code>HVACMode.AUTO</code> in Home Assistant), <code>*4*303*#0##</code> (Generic OFF status), <code>*4*202*#0##</code> (Conditional OFF status).</p>
-</li>
+</ul>
+<p><em>(Note: <code>WHAT = 103</code> and <code>102</code> — Heating OFF and Antifreeze protection — are inbound status reports emitted by thermostats/central units on the bus, never outbound <code>#0</code> mode-switch commands.)</em>
+3. <strong>Inbound Operating Mode &amp; Status Broadcasts</strong>: The physical central unit broadcasts events across the bus whenever its state changes:</p>
+<ul>
+<li>Operating mode status: <code>*4*110*#0##</code> (Manual Heating status), <code>*4*210*#0##</code> (Manual Cooling / Conditioning status), <code>*4*311*#0##</code> (Programmed/automatic generic status; mapped to <code>HVACMode.AUTO</code> in Home Assistant), <code>*4*303*#0##</code> / <code>*4*103*#0##</code> (OFF status), <code>*4*202*#0##</code> (Conditional OFF status), <code>*4*102*#0##</code> (Antifreeze status).</li>
 <li>Target temperature setpoints: <code>*4*110#&lt;temp&gt;*#0##</code> (Heating setpoint), <code>*4*210#&lt;temp&gt;*#0##</code> (Cooling setpoint).</li>
 <li>Remote control / local adjustments: <code>*4*20*#0##</code>, <code>*4*21*#0##</code>, <code>*4*40*#0##</code>.</li>
 <li>Programs &amp; scenarios: <code>*4*1101*#0##</code> .. <code>*4*1103*#0##</code> (Weekly heating programs 1..3), <code>*4*1201*#0##</code> .. <code>*4*1216*#0##</code> (Scenarios 1..16).</li>
@@ -2548,6 +2485,17 @@ Options Flow if your gateway lags on repeated status requests.</p>
 </li>
 </ol>
 <p><em>(#582, #629)</em></p>
+<hr />
+<h2 id="who-4-firmware-refusal-guards">🛡️ <code>WHO = 4</code> Firmware Refusal Guards<a class="headerlink" href="#who-4-firmware-refusal-guards" title="Permanent link">&para;</a></h2>
+<p>Several BTicino / Legrand gateway firmwares deterministically NACK, drop, or crash on specific <code>WHO = 4</code> requests. The runtime enforces model-specific protocol guards in <code>gateway.py</code>, <code>climate.py</code>, and <code>services.py</code> before any frame reaches the TCP command queue:</p>
+<ul>
+<li><strong><code>GENERAL_ZONE_REQUEST_REFUSED</code></strong>: Broadcast <code>*#4*0##</code> status sweeps are suppressed on <code>F450</code>, <code>F454</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>, <code>H4684</code>, <code>MH200</code>, <code>MH201</code>, <code>MH202</code>, and <code>MyHomeServer1</code>, where firmware returns immediate NACK or silent timeout.</li>
+<li><strong><code>SILENT_ZONE_POLL</code> &amp; <code>ZONE_ACTUATOR_REQUEST_REFUSED</code> (<code>F455</code>)</strong>: On <code>F455</code>, <code>*#4*0##</code> returns nothing, <code>*#4*&lt;zone&gt;*20##</code> is refused immediately, and unanswered <code>*#4*&lt;zone&gt;##</code> polls stall the command socket for ~9 s. Climate zones skip startup polling and instead run the 120 s delayed sequential direct-read recovery described above (<code>*#4*&lt;zone&gt;*0##</code>, <code>*14##</code>, <code>*12##</code>, <code>*#4*&lt;zone&gt;#1*20##</code>), while skipping zone-wide <code>*#4*&lt;zone&gt;*20##</code> watches.</li>
+<li><strong>Local-bus <code>#4#II</code> write refusal</strong>: Gateway translators do not implement <code>#4#&lt;interface&gt;</code> sub-bus routing on <code>WHO = 4</code> thermoregulation writes; outbound <code>WHO = 4</code> frames carrying <code>#4#II</code> are refused rather than stalling or NACKing on the gateway.</li>
+<li><strong><code>HUMIDITY_REQUEST_REFUSED</code></strong>: Explicit Dimension 60 (<code>*#4*&lt;zone&gt;*60##</code>) humidity polls are suppressed on <code>F450</code>, <code>F453</code>, <code>F453AV</code>, <code>F454</code>, <code>F455</code>, <code>H4684</code>, <code>MH200</code>, <code>MH200N</code>, and <code>MH202</code> (zones still decode unsolicited Dimension 60 reports whenever broadcast on the bus).</li>
+<li><strong><code>ACTUATOR_REQUEST_REFUSED</code></strong>: Explicit Dimension 20 (<code>*#4*&lt;zone&gt;*20##</code>) actuator status polls are suppressed on <code>F453</code>, <code>F453AV</code>, <code>H4684</code>, <code>MH200</code>, <code>MH200N</code>, and <code>MH202</code>.</li>
+<li><strong>Non-split Dimension 22 crash guard (<code>is_refused_dimension_22</code>)</strong>: Non-split <code>WHO = 4</code> Dimension 22 queries such as <code>*#4*1*22##</code> or <code>*#4*0*22##</code> crash the thermostat daemon on <code>F461</code>, <code>F454</code>, and <code>MH200N</code> and are refused in <code>myhome.send_message</code> (split addressing <code>*#4*3#Z#N*22##</code> remains permitted).</li>
+</ul>
 <hr />
 <h2 id="timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses">🪟 Timed covers: clock starts at the write, echoes are not keypad presses<a class="headerlink" href="#timed-covers-clock-starts-at-the-write-echoes-are-not-keypad-presses" title="Permanent link">&para;</a></h2>
 <p>Covers without position feedback (<code>advanced: false</code>) estimate their position from <code>travel_time</code>. Measured on a MyHOMEServer1, this is what the bus does after Home Assistant queues a direction command:</p>
@@ -2600,7 +2548,7 @@ Options Flow if your gateway lags on repeated status requests.</p>
 </blockquote>
 <hr />
 <h2 id="device-links">🧭 Device links<a class="headerlink" href="#device-links" title="Permanent link">&para;</a></h2>
-<p>CEN / CEN+ scenario units are linked to their gateway with <code>via_device_id</code> on Home Assistant cores that support it (2026.x+), with <code>via_device</code> as the fallback on older cores. Identifiers are unchanged, so existing devices are matched in place. <em>(#310)</em></p>
+<p>Entity devices and CEN / CEN+ scenario units are linked to their parent gateway device via <code>via_device_id</code> (<code>MyHOME</code> v2 requires Home Assistant 2026.3+, and legacy <code>via_device</code> tuples are no longer used). Identifiers are unchanged, so existing devices are matched in place. <em>(#310)</em></p>
 <hr />
 <h2 id="ownd-version">📦 OWNd version<a class="headerlink" href="#ownd-version" title="Permanent link">&para;</a></h2>
 <p>The installed OWNd version is resolved <strong>once, in the executor</strong>, when the integration is set up and cached; nothing reads package metadata from the event loop. <code>manifest.json</code> is the single source of truth for the pin — Home Assistant installs it, and the integration no longer tries to (re)install or reload OWNd at runtime. <em>(#309)</em></p>
@@ -2639,7 +2587,7 @@ Options Flow if your gateway lags on repeated status requests.</p>
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

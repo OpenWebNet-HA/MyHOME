@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1428,7 +1400,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-whole-house-multiroom-audio-with-music-assistant" class="md-nav__link">
+  <a href="#music-assistant" class="md-nav__link">
     <span class="md-ellipsis">
       
         5. Whole-house multiroom audio with Music Assistant
@@ -1749,34 +1721,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2032,34 +1976,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2138,7 +2054,7 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-whole-house-multiroom-audio-with-music-assistant" class="md-nav__link">
+  <a href="#music-assistant" class="md-nav__link">
     <span class="md-ellipsis">
       
         5. Whole-house multiroom audio with Music Assistant
@@ -2244,7 +2160,7 @@
 <li>Give the discovered entities their names in <code>myhome.yaml</code> (optional): the file only adds names, device classes and options — it never replaces discovery.</li>
 </ol>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">00:03:50:81:22:33</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="s">"00:03:50:81:22:33"</span><span class="p p-Indicator">:</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">light</span><span class="p">:</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">living_room</span><span class="p">:</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"12"</span>
@@ -2254,7 +2170,7 @@
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span><span class="nt">garden_socket</span><span class="p">:</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"34"</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Garden</span><span class="nv"> </span><span class="s">socket"</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">outlet</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">      </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">outlet</span>
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">kitchen_blind</span><span class="p">:</span>
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"25"</span>
@@ -2316,7 +2232,7 @@
 </span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">        </span><span class="nt">data</span><span class="p">:</span>
 </span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">          </span><span class="nt">position</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50</span>
 </span></code></pre></div>
-<p>Position-reporting actuators (dimension 10, <code>advanced_shutter: true</code>) skip all of this: they are exact out of the box.</p>
+<p>Position-reporting actuators (dimension 10, <code>advanced: true</code>) skip all of this: they are exact out of the box.</p>
 <h2 id="4-lights-that-switch-off-by-themselves-even-if-home-assistant-is-down">4. Lights that switch off by themselves — even if Home Assistant is down<a class="headerlink" href="#4-lights-that-switch-off-by-themselves-even-if-home-assistant-is-down" title="Permanent link">&para;</a></h2>
 <p><code>myhome.turn_on_timed</code> programs the actuator's own timer, so the light goes out on the bus without a Home Assistant <code>delay:</code> that a restart would lose.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">automation</span><span class="p">:</span>
@@ -2330,10 +2246,10 @@
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">        </span><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">          </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.cellar</span>
 </span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">        </span><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">          </span><span class="nt">minutes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">          </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
 </span></code></pre></div>
 <p>The same service accepts <code>switch</code> entities (a socket, a fan).</p>
-<h2 id="5-whole-house-multiroom-audio-with-music-assistant">5. Whole-house multiroom audio with Music Assistant<a class="headerlink" href="#5-whole-house-multiroom-audio-with-music-assistant" title="Permanent link">&para;</a></h2>
+<h2 id="music-assistant">5. Whole-house multiroom audio with Music Assistant<a class="headerlink" href="#music-assistant" title="Permanent link">&para;</a></h2>
 <p>The F441 / F441M analog matrix plays whatever is on its inputs. Map one or more network decoders (a Squeezelite, WiiM, or Cambridge Audio DLNA DMR player per input) in the options flow (<strong>Configure</strong>, one row per decoder: entity, source input, pre-gain), and name the sources wired to the matrix. Every audio zone advertises <code>GROUPING</code> and (with decoders configured) <code>PLAY_MEDIA</code>:</p>
 <ul>
 <li><strong>Synchronized Multi-Room Grouping</strong>: In Music Assistant, grouping multiple MyHOME zones streams once to the leader, while the integration automatically routes the other rooms' physical matrix environments to the leader's source and powers on their room amplifiers.</li>
@@ -2390,19 +2306,19 @@
 <h2 id="9-diagnose-a-plant-remotely">9. Diagnose a plant remotely<a class="headerlink" href="#9-diagnose-a-plant-remotely" title="Permanent link">&para;</a></h2>
 <p>Someone reports "the kitchen light does not react". Ask them for:</p>
 <ol>
-<li><strong>Sweep Bus</strong> then <strong>Export Trace</strong> on the card, or <strong>Download diagnostics</strong> on the integration — both carry the last 500 frames, the gateway identity and the queue state, with passwords redacted.</li>
+<li><strong>Sweep Bus</strong> then <strong><code>💾 Export Trace</code></strong> / <strong><code>📋 Copy Trace</code></strong> on the card, or <strong>Download diagnostics</strong> on the integration — both carry the last 500 frames, the gateway identity and the queue state, with passwords redacted.</li>
 <li>A raw command sent from the card's <strong>Send frame</strong> bar (administrators only) — <code>*1*1*12##</code> — while watching whether the actuator answers with <code>*1*1*12##</code> or the gateway with a NACK.</li>
 </ol>
 <p>The <a href="../troubleshooting/">troubleshooting guide</a> maps the usual symptoms to what the trace shows.</p>
 <h2 id="10-whole-house-secondary-bus-shutter-automations-the-bticino-way">10. Whole-house &amp; secondary bus shutter automations (the BTicino way)<a class="headerlink" href="#10-whole-house-secondary-bus-shutter-automations-the-bticino-way" title="Permanent link">&para;</a></h2>
 <p>When closing many shutters together at sunset, targeting a dozen individual cover entities causes Home Assistant to dispatch commands concurrently. Behind an F422 interface, sending rapid consecutive point-to-point commands overloads the interface FIFO buffer, causing un-acknowledged shutters to stall open.</p>
-<p>Instead, declare a <strong>General scope cover</strong> (<code>where: "0"</code>, with <code>bus_interface:</code> if on a secondary bus) in <code>myhome.yaml</code>:</p>
+<p>Instead, declare a <strong>General scope cover</strong> (<code>where: "0"</code>, with <code>interface:</code> if on a secondary bus) in <code>myhome.yaml</code>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">00:03:50:81:22:33</span><span class="p">:</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="s">"00:03:50:81:22:33"</span><span class="p p-Indicator">:</span>
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="nt">all_shutters_east</span><span class="p">:</span>
 </span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
-</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">      </span><span class="nt">interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
 </span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">East</span><span class="nv"> </span><span class="s">Shutters"</span>
 </span></code></pre></div>
 <p>In your automation, trigger this single entity:</p>
@@ -2422,8 +2338,8 @@
 <p>In traditional BTicino MyHome wiring, bathroom extractor fans are often configured as hardware slaves (<code>M=SLA</code> or off-delay <code>M=1..4</code>) sharing the exact same <code>A</code> and <code>PL</code> address as the bathroom light actuator. While this turns the fan on whenever the light turns on, an actuator in <code>M=SLA</code> cannot be commanded independently by Home Assistant without also turning the light on, because both physical relays listen to the identical OpenWebNet <code>A*PL</code> broadcast telegram.</p>
 <p>Instead of wasting a second contact and wiring two relays in parallel, <strong>decouple the fan contact on your F411</strong> by giving it its own distinct Point address:</p>
 <ul>
-<li><strong>Output 1 (Light)</strong>: <code>A=1, PL1=1</code>, <code>M = [empty]</code> (Address <code>11</code>, discovered as <code>light.bathroom_light</code>).</li>
-<li><strong>Output 2 (Fan)</strong>: <code>A=1, PL2=2</code>, <code>M = [empty]</code> (Address <code>12</code>, discovered as <code>switch.bathroom_fan</code> or shown as a Fan via UI).</li>
+<li><strong>Output 1 (Light)</strong>: <code>A=1, PL1=1</code>, <code>M = [empty]</code> (Address <code>11</code>, auto-discovered as <code>light.bathroom_light</code>).</li>
+<li><strong>Output 2 (Fan)</strong>: <code>A=1, PL2=2</code>, <code>M = [empty]</code> (Address <code>12</code>, declared under <code>switch:</code> in <code>/config/myhome.yaml</code> as <code>switch.bathroom_fan</code> — unconfigured <code>WHO = 1</code> addresses auto-discover as <code>light.*</code> — and optionally shown as a Fan via Home Assistant's <strong>Show As</strong> setting).</li>
 </ul>
 <p>Home Assistant now coordinates the master/slave link with far more flexibility than hardware configurators:</p>
 <ul>
@@ -2464,7 +2380,7 @@
 </span><span id="__span-8-31"><a id="__codelineno-8-31" name="__codelineno-8-31" href="#__codelineno-8-31"></a><span class="w">                </span><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-8-32"><a id="__codelineno-8-32" name="__codelineno-8-32" href="#__codelineno-8-32"></a><span class="w">                  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">switch.bathroom_fan</span>
 </span><span id="__span-8-33"><a id="__codelineno-8-33" name="__codelineno-8-33" href="#__codelineno-8-33"></a><span class="w">                </span><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-8-34"><a id="__codelineno-8-34" name="__codelineno-8-34" href="#__codelineno-8-34"></a><span class="w">                  </span><span class="nt">minutes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
+</span><span id="__span-8-34"><a id="__codelineno-8-34" name="__codelineno-8-34" href="#__codelineno-8-34"></a><span class="w">                  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">600</span>
 </span><span id="__span-8-35"><a id="__codelineno-8-35" name="__codelineno-8-35" href="#__codelineno-8-35"></a>
 </span><span id="__span-8-36"><a id="__codelineno-8-36" name="__codelineno-8-36" href="#__codelineno-8-36"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">alias</span><span class="p">:</span><span class="w"> </span><span class="s">"Bathroom</span><span class="nv"> </span><span class="s">Fan</span><span class="nv"> </span><span class="s">-</span><span class="nv"> </span><span class="s">High</span><span class="nv"> </span><span class="s">Humidity</span><span class="nv"> </span><span class="s">Purge"</span>
 </span><span id="__span-8-37"><a id="__codelineno-8-37" name="__codelineno-8-37" href="#__codelineno-8-37"></a><span class="w">    </span><span class="nt">id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bathroom_fan_humidity_purge</span>
@@ -2512,7 +2428,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

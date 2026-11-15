@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1195,6 +1167,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="🖥️ Overview &amp; Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#websocket-api-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WebSocket API Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1783,34 +1772,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2066,34 +2027,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2135,6 +2068,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="🖥️ Overview &amp; Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#websocket-api-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WebSocket API Endpoints
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2326,7 +2276,7 @@
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>                     ▼
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>       ┌───────────────────────────┐
 </span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>       │   WebSocket Subscription  │
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>       │ (myhome/bus_monitor/sub)  │
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>       │(myhome/bus_monitor/stream)│
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>       └─────────────┬─────────────┘
 </span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                     ▼
 </span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>       ┌───────────────────────────┐
@@ -2334,17 +2284,70 @@
 </span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a>       │  (myhome-bus-card.js)     │
 </span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a>       └───────────────────────────┘
 </span></code></pre></div>
+<h3 id="websocket-api-endpoints">WebSocket API Endpoints<a class="headerlink" href="#websocket-api-endpoints" title="Permanent link">&para;</a></h3>
+<p>All real-time streaming, history backfill, diagnostic frame injection, and cover calibration trace exports run over Home Assistant's native WebSocket API (<code>custom_components/myhome/websocket.py</code>):</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">WebSocket <code>type</code></th>
+<th style="text-align: center;">Access</th>
+<th style="text-align: left;">Parameters &amp; Limits</th>
+<th style="text-align: left;">Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>myhome/bus_monitor/stream</code></td>
+<td style="text-align: center;">Signed-in user</td>
+<td style="text-align: left;">Optional <code>mac</code>, <code>who</code>, <code>where</code>, <code>direction</code> (<code>all</code>, <code>rx</code>, <code>tx</code>, <code>ack</code>, <code>nack</code>)</td>
+<td style="text-align: left;">Live push subscription forwarding matching bus frames as they arrive.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>myhome/bus_monitor/history</code></td>
+<td style="text-align: center;">Signed-in user</td>
+<td style="text-align: left;">Optional <code>mac</code>, <code>limit</code> (<code>1–1000</code>, default <code>100</code>; backend ring holds <code>500</code>), <code>who</code>, <code>where</code>, <code>direction</code></td>
+<td style="text-align: left;">Returns buffered historical frames from the in-memory circular buffer.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>myhome/bus_monitor/info</code></td>
+<td style="text-align: center;">Signed-in user</td>
+<td style="text-align: left;">Optional <code>mac</code></td>
+<td style="text-align: left;">Returns gateway model, firmware, host/port, <code>OWNd</code> &amp; integration versions, and ring-buffer stats.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>myhome/bus_monitor/send</code></td>
+<td style="text-align: center;"><strong>Administrator</strong></td>
+<td style="text-align: left;">Required <code>frame</code>, optional <code>mac</code></td>
+<td style="text-align: left;">Transmits a validated raw OpenWebNet frame (blocks signaling frames and <code>is_refused_dimension_22</code> crash frames).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>myhome/bus_monitor/clear</code></td>
+<td style="text-align: center;"><strong>Administrator</strong></td>
+<td style="text-align: left;">Optional <code>mac</code></td>
+<td style="text-align: left;">Clears the backend circular frame buffer and resets RX/TX counters.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>myhome/cover/calibration_trace</code></td>
+<td style="text-align: center;">Signed-in user</td>
+<td style="text-align: left;">Optional <code>mac</code></td>
+<td style="text-align: left;">Exports recorded cover calibration run traces and timing anchors for the gateway.</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="adding-the-card-to-your-lovelace-dashboard">🎴 Adding the Card to your Lovelace Dashboard<a class="headerlink" href="#adding-the-card-to-your-lovelace-dashboard" title="Permanent link">&para;</a></h2>
-<p>The frontend card is bundled directly with the integration and registered automatically.</p>
+<p>The frontend card is bundled directly with the integration and registered automatically under <code>custom:myhome-openwebnet-bus-monitor</code> (with <code>custom:myhome-bus-card</code> registered as a backward-compatible alias).</p>
 <h3 id="method-1-ui-dashboard-editor">Method 1: UI Dashboard Editor<a class="headerlink" href="#method-1-ui-dashboard-editor" title="Permanent link">&para;</a></h3>
 <ol>
 <li>In Home Assistant, open your dashboard and click the pencil icon (<strong>Edit Dashboard</strong>).</li>
 <li>Click <strong>Add Card</strong> and choose <strong>Manual</strong> (at the bottom).</li>
 <li>Paste the following configuration:</li>
 </ol>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom:myhome-bus-card</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MyHOME Bus Monitor</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom:myhome-openwebnet-bus-monitor</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># Note: custom:myhome-bus-card is also supported as an alias</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">MyHOME OpenWebNet Bus Monitor</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">max_frames</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500</span><span class="w">          </span><span class="c1"># Optional: 50–1000 (step 50, default 500)</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># mac: "00:03:50:01:02:03"  # Optional: pin to a specific gateway MAC on multi-gateway plants</span>
 </span></code></pre></div>
 <ol>
 <li>Click <strong>Save</strong>.</li>
@@ -2355,22 +2358,13 @@
 <h3 id="1-live-streaming-controls">1. Live Streaming Controls<a class="headerlink" href="#1-live-streaming-controls" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>▶️ Resume / ⏸️ Pause</strong>: Pause the live scrolling stream to examine a specific sequence of frames without new telegrams pushing it out of view.</li>
-<li><strong>🗑️ Clear</strong>: Clears the current frontend display buffer.</li>
+<li><strong>🗑️ Clear</strong>: Clears the current frontend display buffer (and backend ring buffer for administrators).</li>
 </ul>
 <h3 id="2-powerful-filtering">2. Powerful Filtering<a class="headerlink" href="#2-powerful-filtering" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Filter by WHO Subsystem</strong>: Click chips to isolate specific traffic:<ul>
-<li><code>💡 WHO=1</code> Lighting</li>
-<li><code>🪟 WHO=2</code> Automation / Covers</li>
-<li><code>🌡️ WHO=4</code> Thermoregulation</li>
-<li><code>🚨 WHO=5</code> Burglar Alarm</li>
-<li><code>🔘 WHO=15 / WHO=25</code> CEN &amp; CEN+ Scenario Controls</li>
-<li><code>🎵 WHO=16</code> Sound System / Audio Matrix</li>
-<li><code>⚙️ WHO=13</code> Gateway Diagnostics</li>
-</ul>
-</li>
-<li><strong>Direction Filter</strong>: Switch between <code>All</code>, <code>RX Only</code> (bus events), or <code>TX Only</code> (commands sent from Home Assistant).</li>
-<li><strong>Free-Text &amp; Regex Search</strong>: Search for specific addresses (e.g. <code>*1*1*12##</code> or <code>12#1</code>).</li>
+<li><strong>Filter by WHO Subsystem (<code>&lt;select&gt;</code> dropdown)</strong>: Choose <code>All Subsystems</code> or isolate any of the <strong>21</strong> built-in <code>WHO</code> catalog entries (<code>WHO = 0, 1, 2, 3, 4, 5, 6, 7, 9, 13, 14, 15, 16, 17, 18, 22, 24, 25, 1001, 1004, 1013</code>), plus any unknown <code>WHO</code> codes dynamically learned from live bus traffic.</li>
+<li><strong>Direction Filter (<code>&lt;select&gt;</code> dropdown)</strong>: Switch across <strong>5</strong> direction/signaling options — <code>All</code>, <code>RX</code> (inbound bus events), <code>TX</code> (outbound commands from Home Assistant), <code>ACK</code> (<code>*#*1##</code>), or <code>NACK</code> (<code>*#*0##</code>).</li>
+<li><strong>Substring &amp; Field-Prefix Search</strong>: Case-insensitive substring search across <code>where</code>, <code>what</code>, <code>dimension</code>, and <code>raw</code> frame text, or targeted prefix queries using <code>where:</code>, <code>what:</code>, <code>dim:</code>, or <code>raw:</code> (also accepts <code>=</code>, e.g. <code>where:12</code>, <code>what:1</code>, <code>dim:20</code>, <code>raw:*#4*</code>; plain substring matching, not regular expressions).</li>
 </ul>
 <h3 id="3-capturing-start-trace-vs-sweep-bus">3. Capturing: Start Trace vs Sweep Bus<a class="headerlink" href="#3-capturing-start-trace-vs-sweep-bus" title="Permanent link">&para;</a></h3>
 <p>Two ways to begin a capture. <strong>Both are harmless</strong> — neither can switch a load, move a shutter or touch the alarm.</p>
@@ -2478,7 +2472,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

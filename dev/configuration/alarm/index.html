@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1091,6 +1063,17 @@
     <span class="md-ellipsis">
       
         📊 Dashboard Display (Lovelace Alarm Panel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-bus-notifications-myhome_alarm_event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📡 Event Bus Notifications (myhome_alarm_event)
       
     </span>
   </a>
@@ -1705,34 +1688,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1988,34 +1943,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2098,6 +2025,17 @@
     <span class="md-ellipsis">
       
         📊 Dashboard Display (Lovelace Alarm Panel)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#event-bus-notifications-myhome_alarm_event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        📡 Event Bus Notifications (myhome_alarm_event)
       
     </span>
   </a>
@@ -2258,6 +2196,22 @@
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arm_away</span>
 </span></code></pre></div>
 <hr />
+<h2 id="event-bus-notifications-myhome_alarm_event">📡 Event Bus Notifications (<code>myhome_alarm_event</code>)<a class="headerlink" href="#event-bus-notifications-myhome_alarm_event" title="Permanent link">&para;</a></h2>
+<p>Every <code>WHO = 5</code> frame received from the burglar alarm central unit or its zones also fires <code>myhome_alarm_event</code> on the Home Assistant event bus, so automations can react to individual zone activations (<code>*5*11*#n##</code> / <code>*5*18*#n##</code>) and technical alarms without polling:</p>
+<ul>
+<li><code>where</code>: Wire zone or central-unit address as a string (e.g. <code>"0"</code>, <code>"#1"</code>, or an empty string <code>""</code> on empty-WHERE system frames)</li>
+<li><code>state</code>: Decoded state string from OWNd (e.g. <code>"disengage"</code>, <code>"engage"</code>, <code>"intrusion alarm"</code>, <code>"active zone"</code>, <code>"technical alarm"</code>)</li>
+<li><code>state_code</code>: Numeric <code>WHAT</code> state code</li>
+<li><code>is_alarm</code>: <code>True</code> when the frame reports an active alarm condition</li>
+<li><code>message</code>: Raw OpenWebNet frame string</li>
+</ul>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">trigger</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_alarm_event</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="nt">is_alarm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<hr />
 <h2 id="interactive-diagnostics-via-bus-monitor">🧪 Interactive Diagnostics via Bus Monitor<a class="headerlink" href="#interactive-diagnostics-via-bus-monitor" title="Permanent link">&para;</a></h2>
 <p>You can query the alarm with the <a href="../bus_monitor/">Lovelace Bus Monitor Card</a> Command Injector:</p>
 <ul>
@@ -2268,7 +2222,7 @@
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If you are upgrading from legacy v0.9 installations and still have manual <code>alarm_control_panel:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/alarm/">v0.9.4 Legacy Alarm Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, alarm panels are discovered dynamically.</p>
+<p>If you are upgrading from legacy v0.9 installations and still have manual <code>alarm_control_panel:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/alarm/">v0.9.4 Legacy Alarm Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, alarm panels are discovered dynamically.</p>
 </div>
 
 
@@ -2305,7 +2259,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

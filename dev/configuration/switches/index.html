@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#switches-relays-who-1-who-4" class="md-skip">
+        <a href="#switches-relays-who-1-who-4-who-9-who-25" class="md-skip">
           Skip to content
         </a>
       
@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -959,10 +931,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#auto-discovery" class="md-nav__link">
+  <a href="#how-who-1-relays-are-discovered-vs-declared-as-switches" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚀 Auto-Discovery
+        🚀 How WHO = 1 Relays Are Discovered vs Declared as Switches
       
     </span>
   </a>
@@ -970,10 +942,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#displaying-relays-as-outlets-valves-or-appliances" class="md-nav__link">
+  <a href="#displaying-relays-as-outlets-valves-or-fans-show-as" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🔌 Displaying Relays as Outlets, Valves, or Appliances
+        🔌 Displaying Relays as Outlets, Valves, or Fans ("Show As")
       
     </span>
   </a>
@@ -1031,10 +1003,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#legacy-yaml-note" class="md-nav__link">
+  <a href="#legacy-yaml-import-multi-gateway-note" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🔄 Legacy YAML Note
+        🔄 Legacy YAML Import &amp; Multi-Gateway Note
       
     </span>
   </a>
@@ -1711,34 +1683,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1994,34 +1938,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2056,10 +1972,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#auto-discovery" class="md-nav__link">
+  <a href="#how-who-1-relays-are-discovered-vs-declared-as-switches" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🚀 Auto-Discovery
+        🚀 How WHO = 1 Relays Are Discovered vs Declared as Switches
       
     </span>
   </a>
@@ -2067,10 +1983,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#displaying-relays-as-outlets-valves-or-appliances" class="md-nav__link">
+  <a href="#displaying-relays-as-outlets-valves-or-fans-show-as" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🔌 Displaying Relays as Outlets, Valves, or Appliances
+        🔌 Displaying Relays as Outlets, Valves, or Fans ("Show As")
       
     </span>
   </a>
@@ -2128,10 +2044,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#legacy-yaml-note" class="md-nav__link">
+  <a href="#legacy-yaml-import-multi-gateway-note" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🔄 Legacy YAML Note
+        🔄 Legacy YAML Import &amp; Multi-Gateway Note
       
     </span>
   </a>
@@ -2158,20 +2074,32 @@
   
 
 
-<h1 id="switches-relays-who-1-who-4">Switches &amp; Relays (WHO = 1 &amp; WHO = 4)<a class="headerlink" href="#switches-relays-who-1-who-4" title="Permanent link">&para;</a></h1>
-<p>The <strong>MyHOME</strong> integration provides full control for on/off relay actuators, socket outlets, contactors, and appliance relays operating on OpenWebNet <strong>WHO = 1</strong>, as well as probe-less thermoregulation relays / towel warmers (<code>F430/2</code>, <code>F430/4</code>) operating on <strong>WHO = 4</strong>.</p>
-<p>In v2, setup and management are <strong>100% UI-first</strong>: switch relays are automatically discovered over the SCS bus, and entity types (such as distinguishing between a wall switch and a power outlet) are configured natively through Home Assistant's UI settings without manual YAML.</p>
-<hr />
-<h2 id="auto-discovery">🚀 Auto-Discovery<a class="headerlink" href="#auto-discovery" title="Permanent link">&para;</a></h2>
-<p>When your gateway connects to Home Assistant:</p>
+<h1 id="switches-relays-who-1-who-4-who-9-who-25">Switches &amp; Relays (WHO = 1, WHO = 4, WHO = 9 &amp; WHO = 25)<a class="headerlink" href="#switches-relays-who-1-who-4-who-9-who-25" title="Permanent link">&para;</a></h1>
+<p>The <strong>MyHOME</strong> integration provides <code>switch</code> entities across three OpenWebNet families:</p>
 <ol>
-<li><strong>Dynamic Bus Discovery</strong>: The integration listens to OpenWebNet <code>WHO = 1</code> relay commands and active addresses.</li>
-<li><strong>Device Creation</strong>: Each physical relay actuator (<code>WHERE = 1..99</code> or area/point addresses <code>WHERE = 01..9999</code>) is registered as a Home Assistant entity linked to your gateway device.</li>
-<li><strong>UI Customization</strong>: You can rename the switch, assign it to an Area (e.g. <em>Kitchen</em>, <em>Utility Room</em>), and select a custom icon directly in the Home Assistant UI.</li>
+<li><strong>On/Off Relay Actuators (<code>WHO = 1</code>)</strong>: Socket outlets, contactors, pumps, and appliance relays declared under <code>switch:</code> in <code>/config/myhome.yaml</code>.</li>
+<li><strong>Probe-less Thermo Actuators &amp; Towel Warmers (<code>WHO = 4</code>)</strong>: <code>F430/2</code> and <code>F430/4</code> thermoregulation relays configured via the UI Config Subentry flow (<strong>Add thermo actuator / towel-warmer switch (WHO 4)</strong>) or <code>switch:</code> in <code>/config/myhome.yaml</code>.</li>
+<li><strong>Contact Polarity Toggle (<code>WHO = 9</code> &amp; <code>WHO = 25</code>)</strong>: Per-device <strong>Invert state</strong> configuration switches (<code>EntityCategory.CONFIG</code>) created automatically alongside every <code>WHO = 25</code> dry contact and <code>WHO = 9</code> auxiliary binary sensor.</li>
 </ol>
 <hr />
-<h2 id="displaying-relays-as-outlets-valves-or-appliances">🔌 Displaying Relays as Outlets, Valves, or Appliances<a class="headerlink" href="#displaying-relays-as-outlets-valves-or-appliances" title="Permanent link">&para;</a></h2>
-<p>In legacy configurations, distinguishing between an outlet and a switch required manual <code>class: outlet</code> YAML entries. In Home Assistant v2, this is handled natively in the UI using Home Assistant's <strong>"Show As"</strong> feature:</p>
+<h2 id="how-who-1-relays-are-discovered-vs-declared-as-switches">🚀 How <code>WHO = 1</code> Relays Are Discovered vs Declared as Switches<a class="headerlink" href="#how-who-1-relays-are-discovered-vs-declared-as-switches" title="Permanent link">&para;</a></h2>
+<p>OpenWebNet <code>WHO = 1</code> bus frames (<code>*1*0*WHERE##</code> / <code>*1*1*WHERE##</code>) carry no hardware metadata distinguishing a ceiling light relay from a wall socket or extractor fan relay. Because <code>switch.py</code> sets <code>listen=False</code>, <strong>unconfigured <code>WHO = 1</code> addresses seen on the SCS bus are auto-discovered as <code>light.*</code> entities</strong>, never automatically as <code>switch.*</code>.</p>
+<p>To expose a <code>WHO = 1</code> relay as a <code>switch.*</code> entity (suppressing the duplicate <code>light.*</code> entity on that address), declare it under <code>switch:</code> in <code>/config/myhome.yaml</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">switch</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">kitchen_counter_socket</span><span class="p">:</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"14"</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Kitchen Counter Socket</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">outlet</span>
+</span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Single-Gateway vs Multi-Gateway <code>myhome.yaml</code> Layout</strong>:
+Flat top-level <code>switch:</code> blocks apply to single-gateway installations. On multi-gateway installations, nest <code>switch:</code> (and any other domain blocks) under each gateway's MAC address key (e.g. <code>"00:03:50:01:02:03":</code>).</p>
+</div>
+<hr />
+<h2 id="displaying-relays-as-outlets-valves-or-fans-show-as">🔌 Displaying Relays as Outlets, Valves, or Fans ("Show As")<a class="headerlink" href="#displaying-relays-as-outlets-valves-or-fans-show-as" title="Permanent link">&para;</a></h2>
+<p>Once a relay is declared under <code>switch:</code> (with optional <code>class: outlet</code> or <code>class: switch</code>), you can also refine how Home Assistant presents it in the UI using <strong>"Show As"</strong>:</p>
 <ol>
 <li>Open Home Assistant and navigate to <strong>Settings → Devices &amp; Services → Entities</strong>.</li>
 <li>Select your switch entity (e.g. <code>switch.kitchen_counter_socket</code>).</li>
@@ -2179,20 +2107,19 @@
 <li>Under <strong>Show As</strong>, choose how you want the entity presented across your dashboards:<ul>
 <li><strong>Switch</strong> (<em>Default</em>): Standard relay, appliance, or heater.</li>
 <li><strong>Outlet</strong>: Wall socket / plug load.</li>
-<li><strong>Light</strong>: If the relay controls an external transformer or ballast.</li>
-<li><strong>Valve</strong>: Irrigation or water shutoff valve.</li>
+<li><strong>Fan / Valve / Light</strong>: Helper wrapper around the underlying switch.</li>
 </ul>
 </li>
 <li>Click <strong>Update</strong>. Home Assistant immediately converts the entity representation across Lovelace dashboards, voice assistants (HomeKit, Alexa, Google Assistant), and automations.</li>
 </ol>
 <hr />
 <h2 id="native-hardware-bus-timers">⏱️ Native Hardware Bus Timers<a class="headerlink" href="#native-hardware-bus-timers" title="Permanent link">&para;</a></h2>
-<p>Like MyHOME lights, physical SCS switch relays can run native hardware timers directly on the bus. This ensures that pumps, heaters, or ventilation relays turn off after the elapsed time regardless of whether Home Assistant is running:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.turn_on_timed</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">target</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">switch.bed_heating_pad</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 30 minutes (1800s)</span>
+<p>Like MyHOME lights, physical SCS <code>WHO = 1</code> switch relays can run native hardware timers directly on the bus (<code>myhome.turn_on_timed</code> applies to individual <code>WHO = 1</code> relays and refuses <code>WHO = 4</code> thermo switches and <code>WHO = 9/25</code> invert switches). This ensures that pumps, heaters, or ventilation relays turn off after the elapsed time regardless of whether Home Assistant is running:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.turn_on_timed</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">switch.bed_heating_pad</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1800</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 30 minutes (1800 s)</span>
 </span></code></pre></div>
 <hr />
 <h2 id="master-slave-msla-actuators-vs-decoupled-independent-control">🔀 Master / Slave (<code>M=SLA</code>) Actuators vs Decoupled Independent Control<a class="headerlink" href="#master-slave-msla-actuators-vs-decoupled-independent-control" title="Permanent link">&para;</a></h2>
@@ -2206,7 +2133,7 @@ On the physical bus, an actuator in <code>M=SLA</code> does not have its own ind
 <p>Instead of wiring two relays in parallel or keeping <code>M=SLA</code>:</p>
 <ol>
 <li><strong>Remove <code>M=SLA</code></strong>: Configure the auxiliary relay (e.g. Channel 2 of an <code>F411/2</code> or <code>F411/4</code>) with its own distinct <code>PL</code> address (e.g. Light = <code>11</code>, Fan = <code>12</code>, with <code>M</code> left empty).</li>
-<li><strong>Expose as Fan / Switch</strong>: Home Assistant discovers <code>12</code> as an independent entity (<code>switch.bathroom_fan</code> or <code>fan.bathroom_fan</code>).</li>
+<li><strong>Declare as Switch</strong>: Declare address <code>12</code> under <code>switch:</code> in <code>/config/myhome.yaml</code> (<code>switch.bathroom_fan</code>) and optionally wrap it as a Fan via Home Assistant's <strong>Show As</strong> setting.</li>
 <li><strong>Automate the Overrun in HA</strong>: Use an automation to turn on the fan when the light turns on, and run an overrun timer (<code>myhome.turn_on_timed</code>) or humidity purge when the light turns off.</li>
 </ol>
 <p>See the complete guide and YAML configuration in <a href="../use_cases/#11-decoupled-bathroom-extractor-fan-with-smart-overrun-humidity-boost-single-f411-contact">Use Cases — Decoupled Bathroom Extractor Fan</a>.</p>
@@ -2224,22 +2151,22 @@ On the physical bus, an actuator in <code>M=SLA</code> does not have its own ind
 </ol>
 </li>
 </ul>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># Optional YAML equivalent in myhome.yaml:</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">switch</span><span class="p">:</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">bathroom_towel_warmer</span><span class="p">:</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"4"</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"7#1"</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bathroom Towel Warmer</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="c1"># Optional — required on MyHomeServer1 Home + Project BNTR Towel Warmers</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="c1"># (or on gateways like H4684 / MH200 that drop Dimension 20 writes):</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">turn_on_command</span><span class="p">:</span><span class="w"> </span><span class="s">"*25*21#1*21##"</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="nt">turn_off_command</span><span class="p">:</span><span class="w"> </span><span class="s">"*25*21#2*21##"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Optional YAML equivalent in myhome.yaml:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">switch</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">bathroom_towel_warmer</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"4"</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"7#1"</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bathroom Towel Warmer</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="c1"># Optional — required on MyHomeServer1 Home + Project BNTR Towel Warmers</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="c1"># (or on gateways like H4684 / MH200 that drop Dimension 20 writes):</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">turn_on_command</span><span class="p">:</span><span class="w"> </span><span class="s">"*25*21#1*21##"</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">turn_off_command</span><span class="p">:</span><span class="w"> </span><span class="s">"*25*21#2*21##"</span>
 </span></code></pre></div>
 <hr />
-<h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
+<h2 id="legacy-yaml-import-multi-gateway-note">🔄 Legacy YAML Import &amp; Multi-Gateway Note<a class="headerlink" href="#legacy-yaml-import-multi-gateway-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If you are upgrading from legacy v0.9 installations and still have manual <code>switch:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/switches/">v0.9.4 Legacy Switch Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all switches are managed dynamically via Home Assistant's native registry.</p>
+<p>Validated <code>switch:</code> entries in <code>/config/myhome.yaml</code> are automatically imported and cached into the gateway's config entry options (<code>migrated_yaml_platforms</code>) so <code>WHO = 1</code> relays remain <code>switch.*</code> entities even if <code>/config/myhome.yaml</code> is later removed. On multi-gateway setups, place <code>switch:</code> under each gateway's <code>&lt;MAC&gt;:</code> header. For migrating pre-v0.9 <code>configuration.yaml</code> files, see the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>.</p>
 </div>
 
 
@@ -2276,7 +2203,7 @@ On the physical bus, an actuator in <code>M=SLA</code> does not have its own ind
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

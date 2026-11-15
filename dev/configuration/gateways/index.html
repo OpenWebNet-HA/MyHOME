@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -836,10 +808,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-command-worker-concurrency-worker_count" class="md-nav__link">
+  <a href="#1-command-worker-concurrency-command_worker_count" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Command Worker Concurrency (worker_count)
+        1. Command Worker Concurrency (command_worker_count)
       
     </span>
   </a>
@@ -880,10 +852,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#5-multi-room-audio-routing-dynamic-proxy-decoders-who-16" class="md-nav__link">
+  <a href="#5-multi-room-audio-routing-tuners-dynamic-proxy-decoders-who-16-who-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Multi-Room Audio Routing &amp; Dynamic Proxy Decoders (WHO = 16)
+        5. Multi-Room Audio Routing, Tuners &amp; Dynamic Proxy Decoders (WHO = 16 / WHO = 22)
       
     </span>
   </a>
@@ -891,10 +863,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-in-place-gateway-reconfiguration" class="md-nav__link">
+  <a href="#6-reconfigure-vs-configure-options-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. In-Place Gateway Reconfiguration
+        6. Reconfigure vs Configure (Options Flow)
       
     </span>
   </a>
@@ -1989,34 +1961,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2272,34 +2216,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2407,10 +2323,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#1-command-worker-concurrency-worker_count" class="md-nav__link">
+  <a href="#1-command-worker-concurrency-command_worker_count" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Command Worker Concurrency (worker_count)
+        1. Command Worker Concurrency (command_worker_count)
       
     </span>
   </a>
@@ -2451,10 +2367,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#5-multi-room-audio-routing-dynamic-proxy-decoders-who-16" class="md-nav__link">
+  <a href="#5-multi-room-audio-routing-tuners-dynamic-proxy-decoders-who-16-who-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Multi-Room Audio Routing &amp; Dynamic Proxy Decoders (WHO = 16)
+        5. Multi-Room Audio Routing, Tuners &amp; Dynamic Proxy Decoders (WHO = 16 / WHO = 22)
       
     </span>
   </a>
@@ -2462,10 +2378,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#6-in-place-gateway-reconfiguration" class="md-nav__link">
+  <a href="#6-reconfigure-vs-configure-options-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. In-Place Gateway Reconfiguration
+        6. Reconfigure vs Configure (Options Flow)
       
     </span>
   </a>
@@ -2828,14 +2744,15 @@
 <h2 id="connection-setup-via-config-flow">🔌 Connection Setup via Config Flow<a class="headerlink" href="#connection-setup-via-config-flow" title="Permanent link">&para;</a></h2>
 <h3 id="step-1-initial-discovery">Step 1: Initial Discovery<a class="headerlink" href="#step-1-initial-discovery" title="Permanent link">&para;</a></h3>
 <ul>
-<li>In many networks, MyHOME gateways announce themselves via <strong>SSDP</strong> or <strong>mDNS</strong>.</li>
-<li>If discovered automatically, Home Assistant displays a notification prompting to configure the discovered gateway.</li>
-<li>If configuring manually: Go to <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>Add Integration</strong> -&gt; search <strong>MyHOME</strong>.</li>
+<li>On local networks, MyHOME gateways announce themselves via <strong>SSDP / UPnP</strong> (mDNS / <code>.local</code> hostnames are not used by OpenWebNet gateways).</li>
+<li>If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to <strong>Configure</strong> the gateway, or lists discovered gateways in the setup picker alongside <strong>"Custom (IP Gateway)"</strong>.</li>
+<li>If configuring manually: Go to <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>Add Integration</strong> -&gt; search <strong>MyHOME</strong> -&gt; choose <strong>Custom (IP Gateway)</strong>.</li>
 </ul>
 <h3 id="step-2-installation-parameters-reference">Step 2: Installation Parameters Reference<a class="headerlink" href="#step-2-installation-parameters-reference" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
+<th style="text-align: left;">Step</th>
 <th style="text-align: left;">Parameter</th>
 <th style="text-align: left;">Key</th>
 <th style="text-align: center;">Type</th>
@@ -2845,32 +2762,44 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>Host</strong></td>
-<td style="text-align: left;"><code>host</code></td>
-<td style="text-align: center;">String</td>
-<td style="text-align: center;">-</td>
-<td style="text-align: left;">IPv4 address or hostname of the OpenWebNet gateway (e.g. <code>192.168.1.50</code>). A static IP or permanent DHCP reservation is strongly advised.</td>
+<td style="text-align: left;"><code>custom</code></td>
+<td style="text-align: left;"><strong>IPv4 Address</strong></td>
+<td style="text-align: left;"><code>address</code> <em>(stored as <code>host</code>)</em></td>
+<td style="text-align: center;">IPv4 String</td>
+<td style="text-align: center;"><code>192.168.1.100</code></td>
+<td style="text-align: left;">Strict numeric IPv4 address of the OpenWebNet gateway (<code>.local</code> mDNS hostnames and IPv6 literals are rejected). A static IP or DHCP reservation is strongly advised.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>custom</code></td>
 <td style="text-align: left;"><strong>Port</strong></td>
 <td style="text-align: left;"><code>port</code></td>
 <td style="text-align: center;">Integer</td>
 <td style="text-align: center;"><code>20000</code></td>
-<td style="text-align: left;">TCP port for the OpenWebNet service (standard default is <code>20000</code>).</td>
+<td style="text-align: left;">TCP port for the OpenWebNet service (<code>1–65535</code>, standard default <code>20000</code>). Home Assistant then attempts a UPnP <code>get_gateway</code> metadata lookup at that IP.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><code>custom_manual</code> <em>(only if UPnP lookup fails)</em></td>
+<td style="text-align: left;"><strong>MAC Address</strong></td>
+<td style="text-align: left;"><code>serialNumber</code> <em>(stored as <code>mac</code>)</em></td>
+<td style="text-align: center;">String</td>
+<td style="text-align: center;"><code>00:03:50:00:00:00</code></td>
+<td style="text-align: left;">Gateway MAC address (<code>unique_id</code>). Automatically replaced after authentication if the gateway safely answers <code>*#13**12##</code> (<code>F461</code>, <code>MyHomeServer1</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>custom_manual</code> <em>(only if UPnP lookup fails)</em></td>
+<td style="text-align: left;"><strong>Device Type</strong></td>
+<td style="text-align: left;"><code>modelName</code> <em>(stored as <code>name</code>)</em></td>
+<td style="text-align: center;">Select</td>
+<td style="text-align: center;"><code>MyHomeServer1</code></td>
+<td style="text-align: left;">Hardware model (<code>SUPPORTED_GATEWAY_MODELS</code>, including <code>"Generic"</code>). Probed and refined post-auth via <code>*#13**15##</code>, <code>*#13**16##</code>, and <code>*#1013**1##</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>password</code> <em>(only when required by gateway)</em></td>
 <td style="text-align: left;"><strong>Password</strong></td>
 <td style="text-align: left;"><code>password</code></td>
 <td style="text-align: center;">String</td>
-<td style="text-align: center;">None</td>
-<td style="text-align: left;">OpenWebNet password. Can be numeric (4 or 9 digits) or alphanumeric depending on gateway model and firmware. For <strong>MyHomeServer1</strong>, use the installer password configured in MyHOME_Up. Leave blank if open LAN is active.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Gateway Model</strong></td>
-<td style="text-align: left;"><code>model</code></td>
-<td style="text-align: center;">Select</td>
-<td style="text-align: center;">Auto-detected</td>
-<td style="text-align: left;">Hardware model (e.g. <code>MyHomeServer1</code>, <code>F454</code>, <code>MH201</code>, <code>F453AV</code>). Auto-detected during handshake, or selected manually.</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: left;">Numeric OPEN password (<code>MH200</code>, <code>MH200N</code>, <code>MH201</code>, <code>F452</code>, <code>F453</code>, <code>F453AV</code>, <code>H4684</code>) or alphanumeric SHA-256 HMAC password (<code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MH202</code>, <code>MyHomeServer1</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -2934,11 +2863,11 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><strong>Command Worker Concurrency</strong></td>
-<td style="text-align: left;"><code>worker_count</code></td>
+<td style="text-align: left;"><code>command_worker_count</code></td>
 <td style="text-align: center;">Integer</td>
-<td style="text-align: center;"><code>1</code></td>
-<td style="text-align: left;">Range 1–10 (capped by model: 1 for MH200/MH201, 2 for MH202, 4 for F454/MHS1)</td>
-<td style="text-align: left;">Number of concurrent asynchronous command sessions dispatched to the gateway.</td>
+<td style="text-align: center;"><code>1</code> (<code>2</code> on F455 and MyHomeServer1, via <code>command_session_default</code>)</td>
+<td style="text-align: left;">Range 1–4 capped by model (<code>1</code> on single-session models, <code>2</code> on MH202, <code>4</code> on F454/F455/F461/MyHomeServer1; <code>1–10</code> on Generic)</td>
+<td style="text-align: left;">Number of concurrent asynchronous command sessions (<code>*99*0##</code>) dispatched to the gateway.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Dimmer Transition Mode</strong></td>
@@ -2946,7 +2875,7 @@
 <td style="text-align: center;">Select</td>
 <td style="text-align: center;"><code>software_stepped</code></td>
 <td style="text-align: left;"><code>software_stepped</code>, <code>native</code>, <code>auto</code></td>
-<td style="text-align: left;">Home Assistant software-stepped fade vs native hardware speed parameter.</td>
+<td style="text-align: left;">Home Assistant software-stepped fade interpolation vs native hardware speed parameter (<code>auto</code> aliases <code>software_stepped</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Event Bus Broadcasting</strong></td>
@@ -2962,79 +2891,31 @@
 <td style="text-align: center;">Boolean</td>
 <td style="text-align: center;"><code>True</code></td>
 <td style="text-align: left;">All gateways</td>
-<td style="text-align: left;">Automatically triggers targeted entity queries when general or area broadcast commands (<code>WHERE = 0</code>) are received.</td>
+<td style="text-align: left;">Sweeps group (<code>#G</code>), area, and general (<code>WHERE = 0</code>) light addresses for status after a debounced silence window.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Gateway Host Address</strong></td>
-<td style="text-align: left;"><code>address</code></td>
+<td style="text-align: left;"><code>address</code> <em>(writes <code>entry.data["host"]</code>)</em></td>
 <td style="text-align: center;">IPv4 String</td>
-<td style="text-align: center;">Current Host</td>
+<td style="text-align: center;">Current <code>host</code></td>
 <td style="text-align: left;">Valid IPv4</td>
-<td style="text-align: left;">In-place update of gateway IP address without deleting the integration entry.</td>
+<td style="text-align: left;">In-place update of the gateway IPv4 address (<code>host</code>) without deleting the config entry.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Gateway Password</strong></td>
-<td style="text-align: left;"><code>own_password</code></td>
+<td style="text-align: left;"><code>password</code> <em>(writes <code>entry.data["password"]</code>)</em></td>
 <td style="text-align: center;">String</td>
-<td style="text-align: center;">Current Pass</td>
-<td style="text-align: left;">Alphanumeric / Numeric</td>
-<td style="text-align: left;">In-place update of OpenWebNet password without deleting the integration entry.</td>
+<td style="text-align: center;">Current <code>password</code></td>
+<td style="text-align: left;">OPEN numeric / SHA-256 HMAC</td>
+<td style="text-align: left;">In-place update of the OpenWebNet password without deleting the config entry.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Gateway Hardware Model</strong></td>
-<td style="text-align: left;"><code>name</code></td>
+<td style="text-align: left;"><code>name</code> <em>(writes <code>entry.data["name"]</code> / model)</em></td>
 <td style="text-align: center;">Select</td>
-<td style="text-align: center;">Current Model</td>
+<td style="text-align: center;">Current model</td>
 <td style="text-align: left;"><code>SUPPORTED_GATEWAY_MODELS</code></td>
-<td style="text-align: left;">In-place correction of gateway hardware model and active profile.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Audio Source Names</strong></td>
-<td style="text-align: left;"><code>source_name_1</code>..<code>4</code></td>
-<td style="text-align: center;">Text</td>
-<td style="text-align: center;"><code>""</code></td>
-<td style="text-align: left;">4 Matrix inputs</td>
-<td style="text-align: left;">Custom labels for physical sound sources plugged into F441/F441M matrix inputs (S1–S4).</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Audio Source Tuner Flag</strong></td>
-<td style="text-align: left;"><code>source_tuner_1</code>..<code>4</code></td>
-<td style="text-align: center;">Boolean</td>
-<td style="text-align: center;"><code>False</code></td>
-<td style="text-align: left;">4 Matrix inputs</td>
-<td style="text-align: left;">Declares whether an input is an SCS radio tuner (enables RDS and frequency tuning commands).</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Audio Default Routing</strong></td>
-<td style="text-align: left;"><code>source_default_&lt;env&gt;</code></td>
-<td style="text-align: center;">Select</td>
-<td style="text-align: center;"><code>none</code></td>
-<td style="text-align: left;">Active audio environments</td>
-<td style="text-align: left;">Per-environment default sound source assigned when turning on amplifiers.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Proxy Decoder Entity</strong></td>
-<td style="text-align: left;"><code>decoder_entity_1</code>..<code>4</code></td>
-<td style="text-align: center;">Entity (<code>media_player</code>)</td>
-<td style="text-align: center;"><code>""</code></td>
-<td style="text-align: left;">4 Decoder slots</td>
-<td style="text-align: left;">External software audio player entity (e.g. Music Assistant, Squeezelite) mapped to matrix inputs.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Proxy Decoder Source</strong></td>
-<td style="text-align: left;"><code>decoder_source_1</code>..<code>4</code></td>
-<td style="text-align: center;">Select</td>
-<td style="text-align: center;">Slot index</td>
-<td style="text-align: left;">1–4</td>
-<td style="text-align: left;">Matrix source input plugged into the external audio player's sound card / DAC.</td>
-</tr>
-<tr>
-<td style="text-align: left;"><strong>Proxy Decoder Pre-Gain</strong></td>
-<td style="text-align: left;"><code>decoder_pre_gain_1</code>..<code>4</code></td>
-<td style="text-align: center;">Number</td>
-<td style="text-align: center;"><code>0</code></td>
-<td style="text-align: left;">-20 dB to +20 dB</td>
-<td style="text-align: left;">Gain trim compensation to balance volume levels across streaming sources and physical tuners.</td>
+<td style="text-align: left;">In-place override of the gateway hardware model and active OWNd profile (<code>model_source = "manual"</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Ignored Bus Addresses</strong></td>
@@ -3042,27 +2923,131 @@
 <td style="text-align: center;">Multiline Text</td>
 <td style="text-align: center;"><code>[]</code></td>
 <td style="text-align: left;">All gateways</td>
-<td style="text-align: left;">Addresses (<code>WHO/WHERE</code>, e.g. <code>1/74</code>, <code>1/74#4#01</code>) silenced from discovery, entity creation, and hardware fault repairs.</td>
+<td style="text-align: left;">Newline- or comma-separated <code>WHO/WHERE</code> addresses (e.g. <code>1/74</code>, <code>1/74#4#01</code>) silenced from discovery, entity creation, and fault tracking.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Bus Topology</strong></td>
+<td style="text-align: left;"><code>bus_topology</code></td>
+<td style="text-align: center;">Select</td>
+<td style="text-align: center;"><code>standalone</code></td>
+<td style="text-align: left;"><code>standalone</code>, <code>shared</code> <em>(multi-gateway setups)</em></td>
+<td style="text-align: left;">Declares whether this gateway operates on an independent SCS bus (<code>standalone</code>) or shares a physical SCS bus with another configured gateway (<code>shared</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Gateway Role</strong></td>
+<td style="text-align: left;"><code>gateway_role</code></td>
+<td style="text-align: center;">Select</td>
+<td style="text-align: center;"><code>primary</code></td>
+<td style="text-align: left;"><code>primary</code>, <code>secondary</code>, <code>standby</code> <em>(shared bus)</em></td>
+<td style="text-align: left;">Shared-bus coordination role: <code>primary</code> owns general bus discovery, <code>secondary</code> handles delegated <code>WHO</code> subsystems, and <code>standby</code> stays passive for hot failover.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Primary Gateway</strong></td>
+<td style="text-align: left;"><code>primary_gateway</code></td>
+<td style="text-align: center;">Select</td>
+<td style="text-align: center;">First peer gateway</td>
+<td style="text-align: left;">Configured non-follower gateways</td>
+<td style="text-align: left;">Target primary gateway MAC address paired with a <code>secondary</code> or <code>standby</code> follower on a shared SCS bus.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Delegated Subsystems</strong></td>
+<td style="text-align: left;"><code>delegated_whos</code></td>
+<td style="text-align: center;">Multi-Select</td>
+<td style="text-align: center;">Auto-inferred (<code>[]</code>)</td>
+<td style="text-align: left;">Delegatable <code>WHO</code> codes (<code>secondary</code> role)</td>
+<td style="text-align: left;">OpenWebNet <code>WHO</code> subsystems delegated to a <code>secondary</code> gateway on a shared bus (for example <code>WHO = 6</code> / <code>WHO = 8</code> door entry or <code>WHO = 16</code> audio).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Auto-Join Streaming Groups</strong></td>
+<td style="text-align: left;"><code>auto_join_streaming</code></td>
+<td style="text-align: center;">Boolean</td>
+<td style="text-align: center;"><code>True</code></td>
+<td style="text-align: left;">WHO 16 audio zones</td>
+<td style="text-align: left;">Automatically joins an active streaming decoder group when turning on a room amplifier or adjusting volume from a physical wall control.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>FM Tuner Station Pictures</strong></td>
+<td style="text-align: left;"><code>tuner_pictures</code></td>
+<td style="text-align: center;">Multiline Text</td>
+<td style="text-align: center;"><code>""</code></td>
+<td style="text-align: left;"><code>&lt;MHz&gt;=&lt;URL&gt;</code> lines</td>
+<td style="text-align: left;">Custom station artwork mapping (<code>MHz=URL</code> per line, e.g. <code>96.2=/local/radio/one.png</code>) displayed while an F500/F500N tuner is tuned to that frequency.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Audio Matrix Source Names</strong></td>
+<td style="text-align: left;"><code>source_1_name</code>..<code>source_4_name</code></td>
+<td style="text-align: center;">Text</td>
+<td style="text-align: center;"><code>""</code></td>
+<td style="text-align: left;">4 matrix inputs (<code>S1</code>–<code>S4</code>)</td>
+<td style="text-align: left;">Friendly labels for physical sound sources wired to F441/F441M matrix inputs <code>S1</code>–<code>S4</code> (blank hides unconfigured inputs from source selection).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Audio Source FM Tuner Flag</strong></td>
+<td style="text-align: left;"><code>source_1_tuner</code>..<code>source_4_tuner</code></td>
+<td style="text-align: center;">Boolean</td>
+<td style="text-align: center;"><code>False</code></td>
+<td style="text-align: left;">4 matrix inputs (<code>S1</code>–<code>S4</code>)</td>
+<td style="text-align: left;">Declares whether matrix input <code>S1</code>–<code>S4</code> is an F500/F500N RDS FM tuner, creating its radio <code>media_player</code>, frequency <code>number</code>, and seek <code>button</code> entities.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Audio Environment Default Source</strong></td>
+<td style="text-align: left;"><code>default_source_env_1</code>..<code>default_source_env_9</code> <em>(stored in <code>source_defaults</code>)</em></td>
+<td style="text-align: center;">Select</td>
+<td style="text-align: center;"><code>none</code></td>
+<td style="text-align: left;">Active audio environments <code>1</code>–<code>9</code> (<code>none</code>, <code>1</code>–<code>4</code>)</td>
+<td style="text-align: left;">Per-environment default matrix input (<code>S1</code>–<code>S4</code>) selected when turning on a two-digit room amplifier (<code>EA</code>) from Home Assistant (<code>none</code> leaves routing unchanged).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Streaming Decoder Entity</strong></td>
+<td style="text-align: left;"><code>decoder_1_entity</code>..<code>decoder_4_entity</code></td>
+<td style="text-align: center;">Entity (<code>media_player</code>)</td>
+<td style="text-align: center;"><code>""</code></td>
+<td style="text-align: left;">4 decoder slots (excludes MyHOME &amp; MA clones)</td>
+<td style="text-align: left;">Upstream hardware <code>media_player</code> entity (e.g. Squeezelite, WiiM, Cambridge Audio) whose analog line-out feeds one of the matrix inputs.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Streaming Decoder Matrix Input</strong></td>
+<td style="text-align: left;"><code>decoder_1_source</code>..<code>decoder_4_source</code></td>
+<td style="text-align: center;">Select</td>
+<td style="text-align: center;">Slot index (<code>1</code>–<code>4</code>)</td>
+<td style="text-align: left;">Unique matrix input <code>1</code>–<code>4</code> per active decoder</td>
+<td style="text-align: left;">Physical F441/F441M matrix source input (<code>S1</code>–<code>S4</code>) wired to each streaming decoder's line-out.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Streaming Decoder Pre-Gain</strong></td>
+<td style="text-align: left;"><code>decoder_1_pre_gain</code>..<code>decoder_4_pre_gain</code></td>
+<td style="text-align: center;">Integer (<code>%</code>)</td>
+<td style="text-align: center;"><code>0</code></td>
+<td style="text-align: left;"><code>0–100%</code> integer (<code>step: 1</code>)</td>
+<td style="text-align: left;">Fixed line-level feed trim (<code>0–100%</code> integer: <code>0%</code> leaves upstream volume untouched; <code>1–100%</code> sets upstream volume to <code>min(1.0, 0.75 + pre_gain / 100)</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Streaming Decoder Companion</strong></td>
+<td style="text-align: left;"><code>decoder_1_companion</code>..<code>decoder_4_companion</code></td>
+<td style="text-align: center;">Entity (<code>media_player</code>)</td>
+<td style="text-align: center;"><code>""</code> <em>(auto-detect)</em></td>
+<td style="text-align: left;">4 decoder slots (optional companion player)</td>
+<td style="text-align: left;">Optional companion <code>media_player</code> entity receiving stream URLs (<code>play_media</code>) on behalf of the hardware decoder when left blank for auto-detection.</td>
 </tr>
 </tbody>
 </table>
 <!-- GATEWAY_OPTIONS_END -->
 
-<h3 id="1-command-worker-concurrency-worker_count">1. Command Worker Concurrency (<code>worker_count</code>)<a class="headerlink" href="#1-command-worker-concurrency-worker_count" title="Permanent link">&para;</a></h3>
+<h3 id="1-command-worker-concurrency-command_worker_count">1. Command Worker Concurrency (<code>command_worker_count</code>)<a class="headerlink" href="#1-command-worker-concurrency-command_worker_count" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Range</strong>: <code>1</code> to <code>10</code> (Default: <code>1</code>).</li>
+<li><strong>Range</strong>: <code>1</code> to <code>4</code> on profiled gateways (<code>1</code> to <code>10</code> on <code>Generic</code>).</li>
 <li>Dynamically capped and validated against the gateway model's hardware limit:<ul>
-<li><strong>1 worker</strong>: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Generic.</li>
-<li><strong>2 workers</strong>: MH202.</li>
-<li><strong>Up to 4 workers</strong>: F454, F455, F461, MyHomeServer1.</li>
+<li><strong>1 worker</strong>: <code>MH200</code>, <code>MH200N</code>, <code>MH201</code>, <code>F452</code>, <code>F452V</code>, <code>F453</code>, <code>F453AV</code>, <code>H4684</code>, <code>AM4890</code> / <code>H4890</code> / <code>LN4890</code>.</li>
+<li><strong>Up to 2 workers</strong>: <code>MH202</code> (default <code>1</code>).</li>
+<li><strong>Up to 4 workers</strong>: <code>F454</code>, <code>F461</code> (default <code>1</code>); <code>F455</code>, <code>MyHomeServer1</code> (default <code>2</code>).</li>
 </ul>
 </li>
 <li>Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.</li>
 </ul>
 <h3 id="2-dimmer-transition-mode-transition_mode">2. Dimmer Transition Mode (<code>transition_mode</code>)<a class="headerlink" href="#2-dimmer-transition-mode-transition_mode" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>software_stepped</code> <em>(Default &amp; Recommended)</em>: Home Assistant calculates and dispatches smooth 100-step brightness interpolation. Guarantees consistent fade behavior across all BTicino dimmer generations (F418, F41835, DALI interfaces).</li>
-<li><code>native</code>: Passes the transition duration directly to the gateway as hardware speed parameters (<code>WHAT = 2</code>–<code>9</code>). Only supported if all physical dimmers support native hardware speed parameters.</li>
+<li><code>software_stepped</code> <em>(Default &amp; Recommended)</em>: Home Assistant calculates and dispatches smooth software-stepped brightness interpolation (up to <strong>25 steps</strong>, <code>SOFTWARE_TRANSITION_MAX_STEPS = 25</code>). Guarantees consistent fade behavior across all BTicino dimmer generations (<code>F418</code>, <code>F418U2</code>, DALI interfaces).</li>
+<li><code>native</code>: Passes the transition duration directly to the gateway using OpenWebNet hardware fade speed parameters (rather than fixed <code>WHAT = 2</code>–<code>9</code> brightness steps). Only recommended when your physical dimmers honour native hardware fade speed parameters.</li>
 <li><code>auto</code>: Alias for <code>software_stepped</code>.</li>
 </ul>
 <h3 id="3-event-bus-broadcasting-generate_events">3. Event Bus Broadcasting (<code>generate_events</code>)<a class="headerlink" href="#3-event-bus-broadcasting-generate_events" title="Permanent link">&para;</a></h3>
@@ -3073,23 +3058,24 @@
 <h3 id="4-broadcast-re-sync-broadcast_resync">4. Broadcast Re-sync (<code>broadcast_resync</code>)<a class="headerlink" href="#4-broadcast-re-sync-broadcast_resync" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Boolean switch (Default: <code>True</code>).</li>
-<li>When enabled, detecting general (<code>WHERE = 0</code>) or room-wide broadcast commands automatically triggers targeted queries to keep individual entity states synchronized.</li>
+<li>When enabled, detecting group (<code>#G</code>), area, or general (<code>WHERE = 0</code>) light broadcast commands arms a <strong>500 ms</strong> (<code>RESYNC_DEBOUNCE_S = 0.5</code>) debounce window and sweeps only addresses whose actuators did not echo spontaneously.</li>
 </ul>
-<h3 id="5-multi-room-audio-routing-dynamic-proxy-decoders-who-16">5. Multi-Room Audio Routing &amp; Dynamic Proxy Decoders (<code>WHO = 16</code>)<a class="headerlink" href="#5-multi-room-audio-routing-dynamic-proxy-decoders-who-16" title="Permanent link">&para;</a></h3>
+<h3 id="5-multi-room-audio-routing-tuners-dynamic-proxy-decoders-who-16-who-22">5. Multi-Room Audio Routing, Tuners &amp; Dynamic Proxy Decoders (<code>WHO = 16</code> / <code>WHO = 22</code>)<a class="headerlink" href="#5-multi-room-audio-routing-tuners-dynamic-proxy-decoders-who-16-who-22" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Audio Source Names &amp; Tuner Flags (<code>source_name_1</code>..<code>4</code>, <code>source_tuner_1</code>..<code>4</code>)</strong>: Assign friendly names for the physical inputs on the F441/F441M audio matrix (e.g. "Living Room HiFi", "FM Tuner"). Flag tuner inputs so frequency and RDS commands are enabled.</li>
-<li><strong>Default Source per Environment (<code>source_default_&lt;env&gt;</code>)</strong>: Declares which source input is selected when an amplifier in that environment is switched on.</li>
-<li><strong>Dynamic Proxy Decoders (<code>decoder_entity_1</code>..<code>4</code>, <code>decoder_source_1</code>..<code>4</code>, <code>decoder_pre_gain_1</code>..<code>4</code>)</strong>: Map external software streaming players (e.g., Music Assistant, Squeezelite) to physical matrix inputs, with pre-gain calibration (-20 dB to +20 dB).</li>
+<li><strong>Audio Source Names &amp; Tuner Flags (<code>source_1_name</code>..<code>source_4_name</code>, <code>source_1_tuner</code>..<code>source_4_tuner</code>)</strong>: Assign friendly names for the physical inputs on the F441/F441M audio matrix (e.g. "Living Room HiFi", "FM Tuner"). Enable <code>source_1_tuner</code>..<code>source_4_tuner</code> on F500/F500N inputs so FM frequency, preset, and RDS controls are created across <code>WHO = 16</code> and <code>WHO = 22</code> (including <code>WHO = 22</code>-only gateways).</li>
+<li><strong>Default Source per Environment (<code>default_source_env_1</code>..<code>default_source_env_9</code>)</strong>: Declares which matrix input (<code>S1</code>–<code>S4</code>) is selected when a two-digit <code>WHO = 16</code> amplifier in that environment is switched on.</li>
+<li><strong>Dynamic Proxy Decoders (<code>decoder_1_entity</code>..<code>decoder_4_entity</code>, <code>decoder_1_source</code>..<code>decoder_4_source</code>, <code>decoder_1_pre_gain</code>..<code>decoder_4_pre_gain</code>, <code>decoder_1_companion</code>..<code>decoder_4_companion</code>)</strong>: Map external streaming players (e.g. Music Assistant, Squeezelite, WiiM, DLNA DMR) to physical matrix inputs (<code>WHO = 16</code>), with integer pre-gain trim (<code>0–100%</code>).</li>
 </ul>
-<h3 id="6-in-place-gateway-reconfiguration">6. In-Place Gateway Reconfiguration<a class="headerlink" href="#6-in-place-gateway-reconfiguration" title="Permanent link">&para;</a></h3>
+<h3 id="6-reconfigure-vs-configure-options-flow">6. Reconfigure vs Configure (Options Flow)<a class="headerlink" href="#6-reconfigure-vs-configure-options-flow" title="Permanent link">&para;</a></h3>
 <ul>
-<li>You can update the gateway IP address (<code>address</code>), password (<code>own_password</code>), or hardware model (<code>name</code>) directly within the Options Flow without removing and re-adding devices or breaking entity IDs.</li>
+<li><strong>Reconfigure (<code>⋮ → Reconfigure</code>)</strong>: Updates connection transport settings in place — <code>host</code> (IPv4), <code>port</code>, and <code>password</code> — verifying connectivity before saving.</li>
+<li><strong>Configure (<code>Configure</code> button / Options Flow)</strong>: Changes the gateway hardware <strong>model</strong> (<code>name</code>), runtime worker/fade/audio options, shared-bus topology, or <code>address</code> / <code>password</code> in place without deleting devices or breaking entity IDs.</li>
 </ul>
 <hr />
 <h2 id="reliability-watchdogs">🛡️ Reliability &amp; Watchdogs<a class="headerlink" href="#reliability-watchdogs" title="Permanent link">&para;</a></h2>
 <p>The integration includes enterprise-grade connection reliability safeguards:</p>
 <ul>
-<li><strong>Active Keep-Alive</strong>: Periodically transmits diagnostic ping frames (<code>*#13**0##</code> or <code>*#13**22##</code>) to prevent gateway NAT socket closure.</li>
+<li><strong>OS-Level TCP Socket Keepalive</strong>: OWNd enables OS-level TCP socket keepalive probes (<code>SO_KEEPALIVE</code>) on the event session socket to detect half-open NAT/router drops. On <code>F454</code>, <code>F461</code>, <code>MH200</code> and <code>MH200N</code> it also writes the keepalive frame <code>*#*1##</code> on the event session every 90 s; on the other models that session carries no periodic application frames.</li>
 <li><strong>Backoff &amp; Auto-Reconnect</strong>: If a network glitch or gateway reboot occurs, the event and command workers automatically cycle through an exponential backoff reconnect loop.</li>
 <li><strong>Availability Grace Period</strong>: An entity availability grace timer (60 seconds) prevents entities from rapidly toggling to <code>Unavailable</code> during brief gateway reconnections or WiFi dropouts.</li>
 <li><strong>Silent Reconnect Cycles</strong>: The read cycle in which OWNd re-establishes the event socket produces no frame and is skipped at <code>DEBUG</code> level; <code>Event connection lost, reconnecting...</code> is OWNd's own log line and is normal on gateways that close idle sockets (MH200/MH201).</li>
@@ -3101,7 +3087,7 @@
 <hr />
 <h2 id="gateway-timezone-configuration">🕒 Gateway Timezone Configuration<a class="headerlink" href="#gateway-timezone-configuration" title="Permanent link">&para;</a></h2>
 <p>OpenWebNet gateways manage an internal real-time clock (RTC) queried via WHO=13 dimension 0 (<code>*#13**0##</code>) or dimension 22 (<code>*#13**22##</code>). When the timezone has not been configured in the gateway's management interface, the gateway emits a placeholder sentinel value <code>999</code> in the timezone field (e.g. <code>*#13**0*&lt;HH&gt;*&lt;MM&gt;*&lt;SS&gt;*999##</code> or <code>*#13**22*...*999*...##</code>).</p>
-<p>This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See also the <a href="https://github.com/OpenWebNet-HA/MyHOME/wiki/Gateway-Timezone-Configuration">Wiki guide on Gateway Timezone Configuration</a>).</p>
+<p>This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See <a href="../../diagnostics/repair-issues/#unconfigured-timezone">Unconfigured Timezone</a> in the Repair Issues Guide).</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The <strong>F461</strong> gateway is configured exclusively via the Home + Project app and maintains its clock via NTP. Its firmware always reports <code>999</code> over OpenWebNet even when configured; the integration recognizes this and automatically exempts the F461 from this warning.</p>
@@ -3288,7 +3274,7 @@
 </span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>                      |   1. Compare Hardware Performance Tiers  |
 </span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>                      |   - Tier 1: F454, F455, F461, MHS1       |
 </span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>                      |   - Tier 2: MH201, MH202, H4890/Touch    |
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>                      |   - Tier 3: MH200N, MH200, F452, F453    |
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>                      |   - Tier 3: MH200N/200, F452/453, H4684  |
 </span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>                      +--------------------+---------------------+
 </span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>                                           |
 </span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>                                           v
@@ -3330,9 +3316,9 @@
 </span></code></pre></div>
 <h5 id="gateway-performance-tiers-pacing">Gateway Performance Tiers &amp; Pacing<a class="headerlink" href="#gateway-performance-tiers-pacing" title="Permanent link">&para;</a></h5>
 <ol>
-<li><strong>Tier 1 (High Throughput / Multi-Session, ≤ 50 ms pacing)</strong>: <code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MyHomeServer1</code>.</li>
-<li><strong>Tier 2 (Linux / Touchscreen Gateways, 100 ms pacing)</strong>: <code>MH201</code>, <code>MH202</code>, <code>H4890</code> / <code>AM4890</code> / <code>LN4890</code>.</li>
-<li><strong>Tier 3 (Legacy Microcontroller Gateways, 150 ms pacing)</strong>: <code>MH200N</code>, <code>MH200</code>, <code>F452</code>, <code>F453</code>.</li>
+<li><strong>Tier 1 (High Throughput / Multi-Session, 20–50 ms pacing)</strong>: <code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MyHomeServer1</code>.</li>
+<li><strong>Tier 2 (Modern Scenario &amp; Touchscreen Gateways, 50–100 ms pacing)</strong>: <code>MH201</code>, <code>MH202</code>, <code>H4890</code> / <code>AM4890</code> / <code>LN4890</code> (and Legrand catalogue equivalents <code>067292</code>, <code>573958</code>, <code>078479</code>).</li>
+<li><strong>Tier 3 (Legacy &amp; Single-Session Gateways)</strong>: <code>MH200N</code>, <code>MH200</code>, <code>F452</code>, <code>F452V</code>, <code>F453</code>, <code>F453AV</code>, <code>H4684</code> / <code>H/L4684</code>, and <code>Generic</code>.</li>
 </ol>
 <p>When two gateways are paired on a shared bus, the integration ranks them by performance tier (Tier 1 &gt; Tier 2 &gt; Tier 3), supported OpenWebNet subsystem coverage (more supported WHO dimensions wins), and deterministic MAC address ordering (<code>pri_mac &lt;= sec_mac</code>) as a final tie-breaker. The broader, more performant gateway is assigned as the <strong>Primary</strong>.</p>
 <h5 id="capability-delta-formula">Capability Delta Formula<a class="headerlink" href="#capability-delta-formula" title="Permanent link">&para;</a></h5>
@@ -3438,7 +3424,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

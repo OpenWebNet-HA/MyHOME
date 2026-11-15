@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -2039,34 +2011,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2309,34 +2253,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2900,6 +2816,11 @@
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Curtain</span>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">curtain</span>
 </span></code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Single-Gateway vs Multi-Gateway <code>myhome.yaml</code> Layout</strong>:
+Flat top-level <code>cover:</code> blocks apply to single-gateway installations. On multi-gateway installations, nest <code>cover:</code> (and any other domain blocks) under each gateway's MAC address key (e.g. <code>"00:03:50:01:02:03":</code>).</p>
+</div>
 <p>Covers set up in the UI (without <code>myhome.yaml</code>) change their device class in Home Assistant with the <strong>"Show As"</strong> feature, like <a href="../switches/">switches</a> and <a href="../binary-sensors/">binary sensors</a>: <strong>Settings → Devices &amp; Services → Entities</strong>, select the cover entity, click the <strong>Settings (gear)</strong> icon and pick the class under <strong>Show As</strong>.</p>
 <hr />
 <h2 id="timed-cover-position-engine">⏱️ Timed Cover Position Engine<a class="headerlink" href="#timed-cover-position-engine" title="Permanent link">&para;</a></h2>
@@ -2916,8 +2837,8 @@
 </ul>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Small moves can still drift. The estimate assumes the curtain moves for the whole run. A motor's start-up time (measured only on the Somfy Ilmo 50 WT in <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/466">#466</a>; another installation measured none on runs of about 0.76 s) is lost on every run, and the slat phase of a roller shutter with slats is booked as travel (one report: a 40 % request from fully closed lifted the curtain only about 18 % of its travel). A series of short moves can therefore book more travel than the curtain made. Send the cover to 0 % or 100 % now and then to re-sync it.</p>
-<p>Venetian blinds are handled as a plain lift cover: lift only, no tilt, and no fine positioning.</p>
+<p>Small moves can still drift. The estimate assumes the curtain moves for the whole run. A motor's start-up time (measured only on the Somfy Ilmo 50 WT in <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/466">#466</a>; another installation measured none on runs of about 0.76 s) is lost on every run, and the slat phase of a roller shutter with slats is booked as travel (one report: a 40 % request from fully closed lifted the curtain only about 18 % of its travel). A series of short moves can therefore book more travel than the curtain made. Send the cover to 0 % or 100 % now and then to re-sync it.
+For Venetian blinds and motorized louvres with tilting slats, enable <code>slat_tilt: true</code> (see <a href="#venetian-blinds-slat-tilt-positioning-timed-slat-inching">Venetian Blinds &amp; Slat Tilt Positioning</a>).</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
@@ -2929,8 +2850,9 @@
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">living_room_shutter</span><span class="p">:</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'31'</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">advanced_shutter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">min_position_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Shutter</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="nt">advanced_shutter</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="nt">min_position_delta</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span></code></pre></div>
 <hr />
 <h2 id="calibrating-travel-time-zero-yaml">📐 Calibrating Travel Time (Zero YAML)<a class="headerlink" href="#calibrating-travel-time-zero-yaml" title="Permanent link">&para;</a></h2>
@@ -3096,7 +3018,7 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Bedrooms</span>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="nt">members</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">'11'</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">'13'</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
-<p><strong>Behind an F422 interface</strong> (<code>bus_interface: '02'</code>, logical <code>#4#</code> addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. <code>11#4#02</code> … <code>22#4#02</code>).</p>
+<p><strong>Behind an F422 interface</strong> (<code>interface: '02'</code>, logical <code>#4#</code> addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. <code>11#4#02</code> … <code>22#4#02</code>).</p>
 <h3 id="the-bticino-way-real-world-plant-discovery">🏛️ The BTicino Way &amp; Real-World Plant Discovery<a class="headerlink" href="#the-bticino-way-real-world-plant-discovery" title="Permanent link">&para;</a></h3>
 <p>In large MyHOME installations, F422 interfaces physically segment the SCS bus (e.g., separating ground floor from upper floors or main house from outbuildings/curtain lines). How commands are routed across an F422 is fundamental to reliability:</p>
 <h4 id="1-why-naive-fan-out-overwhelms-f422-hardware-buffers">1. Why Naive Fan-Out Overwhelms F422 Hardware Buffers<a class="headerlink" href="#1-why-naive-fan-out-overwhelms-f422-hardware-buffers" title="Permanent link">&para;</a></h4>
@@ -3120,7 +3042,7 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 <ol>
 <li>
 <p><strong>Native Broadcast for General Scope Covers (<code>where: '0'</code>)</strong>:
-   When <code>open_cover</code>, <code>close_cover</code>, or <code>stop_cover</code> is called on a General cover behind an interface (<code>where: '0'</code>, <code>bus_interface: '02'</code>), the integration sends the native OpenWebNet broadcast frame directly (<code>*2*WHAT*0#4#&lt;bus&gt;##</code>).</p>
+   When <code>open_cover</code>, <code>close_cover</code>, or <code>stop_cover</code> is called on a General cover behind an interface (<code>where: '0'</code>, <code>interface: '02'</code>), the integration sends the native OpenWebNet broadcast frame directly (<code>*2*WHAT*0#4#&lt;bus&gt;##</code>).</p>
 <ul>
 <li>Actuators on the interface bus respond simultaneously without dropping frames.</li>
 <li>When the gateway echoes <code>*2*WHAT*0#4#&lt;bus&gt;##</code>, the integration scopes the incoming frame strictly to entities on that interface (<code>interface == "02"</code>), preserving total bus isolation.</li>
@@ -3128,10 +3050,10 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 </ul>
 </li>
 <li>
-<p><strong>Paced Member Fan-Out (<code>PACED_FANOUT_DELAY = 0.3s</code>) for Percentage Positioning</strong>:
-   OpenWebNet has no broadcast protocol for percentage positioning (Dimension 10 positioning <code>*#2*WHERE*#10*LEVEL##</code> is strictly point-to-point; there is no broadcast level command).
-   When <code>set_cover_position</code> is called on a scope/group cover, or when non-general scopes must address individual actuators, the integration staggers member commands with a safety interval of <strong>0.3 s (300 ms)</strong>.
-   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, completely eliminating frame loss during multi-cover repositioning.</p>
+<p><strong>Paced Member Fan-Out (<code>PACED_FANOUT_DELAY = 0.3s</code>) for Percentage Positioning Behind <code>interface</code> (<code>#4#II</code>)</strong>:
+   OpenWebNet has no broadcast protocol for percentage positioning (<strong>Dimension 11</strong> positioning <code>*#2*WHERE*#11#001*LEVEL##</code> is write-only and strictly point-to-point, while <strong>Dimension 10</strong> <code>*#2*WHERE*10*BS*LEVEL*...##</code> is read-only status feedback).
+   When <code>set_cover_position</code> is called on an area, group, or general scope cover configured with <code>interface:</code> (<code>#4#II</code>), or when non-general scopes behind <code>interface:</code> execute <code>open_cover</code> / <code>close_cover</code> / <code>stop_cover</code>, <code>MyHOMEScopeCover</code> fans out individual point-to-point commands to its member covers staggered by <strong>0.3 s (300 ms)</strong> (<code>PACED_FANOUT_DELAY = 0.3</code>). <em>(On the main bus without <code>interface:</code>, <code>set_cover_position</code> on a scope cover does not fan out per-member Dimension 11 commands; instead it runs a timed scope run using the scope cover's <code>travel_time</code>.)</em>
+   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, eliminating frame loss during multi-cover repositioning.</p>
 </li>
 <li>
 <p><strong>Keypad Broadcast Reflection</strong>:
@@ -3190,11 +3112,11 @@ Automated on-bus calibration relies entirely on the actuator emitting a stop fra
 <h4 id="recommended-target-the-general-scope-cover">Recommended: Target the General Scope Cover<a class="headerlink" href="#recommended-target-the-general-scope-cover" title="Permanent link">&para;</a></h4>
 <p>Declare a General scope cover in <code>/config/myhome.yaml</code> for each bus interface, and target that single entity in your automations:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="s">"00:03:50:01:02:03"</span><span class="p p-Indicator">:</span>
 </span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">    </span><span class="nt">all_shutters_oost</span><span class="p">:</span>
 </span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"0"</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">      </span><span class="nt">bus_interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">      </span><span class="nt">interface</span><span class="p">:</span><span class="w"> </span><span class="s">"02"</span>
 </span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="s">"All</span><span class="nv"> </span><span class="s">Shutters</span><span class="nv"> </span><span class="s">East"</span>
 </span></code></pre></div>
 <p>In your automation:
@@ -3338,19 +3260,19 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 <li>Any external close-block switch to report <code>off</code>.</li>
 <li>Any missing, unavailable, or non-binary sensor state immediately fails closed.</li>
 <li><strong>Audible / Visual Pre-Warning &amp; Watchdog</strong>:
-   Before a close pulse, an optional pre-warning flasher (<code>prewarn_light</code>) triggers for <code>prewarn_seconds</code>. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within <code>travel_time + watchdog_margin</code>, a latching fault is asserted with <strong>zero automatic retries</strong>. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the <code>myhome.acknowledge_cover_fault</code> action; an in-flight request or pre-warning can be cancelled at any time using <code>myhome.cancel_cover_request</code> (see <a href="../services/#14-myhomecancel_cover_request">Services</a>).</li>
+   Before a close pulse, an optional pre-warning flasher (<code>prewarn_light</code>) triggers for <code>prewarn_seconds</code> and Home Assistant fires a <code>myhome_access_prewarning</code> bus event (<code>entity_id</code>, <code>name</code>, <code>seconds</code>) so speakers, sirens, or dashboard alerts can warn bystanders before motion starts. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within <code>travel_time + watchdog_margin</code>, a latching fault is asserted with <strong>zero automatic retries</strong>. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the <code>myhome.acknowledge_cover_fault</code> action; an in-flight request or pre-warning can be cancelled at any time using <code>myhome.cancel_cover_request</code> (see <a href="../services/#14-myhomecancel_cover_request">Services</a>).</li>
 <li><strong>A Wall Button Starts the Gate, It Does Not Stop It</strong>:
    A press of the wall button (or any other keypad on the bus) closes the relay and energizes the motor by itself; Home Assistant only sees the resulting <code>*1*1*WHERE##</code> frame afterwards. When such a frame arrives during an approval request or the pre-warning countdown, Home Assistant therefore <em>drops its own pending request</em> so that no second pulse follows and stops or reverses the gate. The movement the button started is not aborted. Use the hardware's own stop input or the remote control for an emergency stop.</li>
 </ul>
 </li>
 </ol>
 <h3 id="configuring-an-impulse-cover">⚙️ Configuring an Impulse Cover<a class="headerlink" href="#configuring-an-impulse-cover" title="Permanent link">&para;</a></h3>
-<p>An impulse cover needs <code>who: 1</code> and a single point-to-point <code>where</code>. The minimal configuration is a hardware interface with no approval step:</p>
+<p>An impulse cover needs <code>who: "1"</code> (unquoted integer <code>who: 1</code> is also coerced to <code>"1"</code>) and a single point-to-point <code>where</code>. The minimal configuration is a hardware interface with no approval step:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="s">"00:03:50:01:02:03"</span><span class="p p-Indicator">:</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="nt">garage_door</span><span class="p">:</span>
-</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span>
 </span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"71"</span>
 </span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Garage door</span>
 </span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">garage</span>
@@ -3358,11 +3280,11 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 </span></code></pre></div>
 <p>Add an <code>access:</code> block to opt in to the supervised workflow (phone approval, PIN, presence, camera, pre-warning, safety audit). <strong>With <code>access:</code> an empty <code>allowed_users</code> refuses every open and close request</strong> with <code>AccessDenied</code>: that policy is fail-closed. The full example:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="s">"00:03:50:01:02:03"</span><span class="p p-Indicator">:</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="nt">cover</span><span class="p">:</span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">    </span><span class="nt">garage_door</span><span class="p">:</span>
-</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">impulse_relay</span><span class="w">            </span><span class="c1"># optional; only valid together with who: 1</span>
+</span><span id="__span-12-5"><a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span>
+</span><span id="__span-12-6"><a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">impulse_relay</span><span class="w">            </span><span class="c1"># optional; only valid together with who: "1"</span>
 </span><span id="__span-12-7"><a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"71"</span><span class="w">                    </span><span class="c1"># one relay, never a general, area or group address</span>
 </span><span id="__span-12-8"><a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Garage door</span>
 </span><span id="__span-12-9"><a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">      </span><span class="nt">device_class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">garage</span><span class="w">           </span><span class="c1"># garage or gate (default gate)</span>
@@ -3418,17 +3340,18 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 </table>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p><code>type: impulse_relay</code> together with <code>who: 2</code> (and <code>type: shutter</code> or <code>standard</code> together with <code>who: 1</code>) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.</p>
+<p><code>type: impulse_relay</code> together with <code>who: "2"</code> (and <code>type: shutter</code> or <code>standard</code> together with <code>who: "1"</code>) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.</p>
 </div>
 <h3 id="configuring-a-door-strike-lock">🔒 Configuring a Door Strike Lock<a class="headerlink" href="#configuring-a-door-strike-lock" title="Permanent link">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nt">00:03:50:XX:XX:XX</span><span class="p">:</span>
-</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">  </span><span class="nt">lock</span><span class="p">:</span>
-</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="nt">front_door</span><span class="p">:</span>
-</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">6</span><span class="w">                         </span><span class="c1"># the only value; WHO 1 relays are covers</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"4001"</span><span class="w">                  </span><span class="c1"># 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"</span>
-</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Front door</span>
-</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">      </span><span class="nt">code</span><span class="p">:</span><span class="w"> </span><span class="s">"1234"</span><span class="w">                   </span><span class="c1"># optional digit-only PIN; asked on every unlock</span>
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">      </span><span class="nt">pulse_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">            </span><span class="c1"># seconds until the lock shows locked again (default 5.0 s)</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># /config/myhome.yaml</span>
+</span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="s">"00:03:50:01:02:03"</span><span class="p p-Indicator">:</span>
+</span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">lock</span><span class="p">:</span>
+</span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">    </span><span class="nt">front_door</span><span class="p">:</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">      </span><span class="nt">who</span><span class="p">:</span><span class="w"> </span><span class="s">"6"</span><span class="w">                       </span><span class="c1"># the only value (unquoted who: 6 is also coerced); WHO 1 relays are covers</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"4001"</span><span class="w">                  </span><span class="c1"># 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Front door</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">      </span><span class="nt">code</span><span class="p">:</span><span class="w"> </span><span class="s">"1234"</span><span class="w">                   </span><span class="c1"># optional digit-only PIN; asked on every unlock</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">      </span><span class="nt">pulse_duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5.0</span><span class="w">            </span><span class="c1"># seconds until the lock shows locked again (default 5.0 s)</span>
 </span></code></pre></div>
 <p>Locks exist only when they are configured here (and are restored from the registry on restart with their YAML configuration intact). Neither a lock release seen on the bus nor a stale registry entry removed from <code>myhome.yaml</code> creates a lock entity, because such an entity would carry no code.</p>
 <h3 id="strict-distinction-covers-vs-locks">⚠️ Strict Distinction: Covers vs. Locks<a class="headerlink" href="#strict-distinction-covers-vs-locks" title="Permanent link">&para;</a></h3>
@@ -3475,7 +3398,7 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If you are upgrading from legacy v0.9 installations and still have manual <code>cover:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/covers/">v0.9.4 Legacy Cover Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all covers are managed dynamically via Home Assistant's native registry.</p>
+<p>If you are upgrading from legacy v0.9 installations and still have manual <code>cover:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/covers/">v0.9.4 Legacy Cover Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all covers are managed dynamically via Home Assistant's native registry.</p>
 </div>
 
 
@@ -3512,7 +3435,7 @@ The optional <code>AccessController</code> is designed exclusively to prevent Ho
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

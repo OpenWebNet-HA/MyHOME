@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -2004,34 +1976,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2274,34 +2218,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2762,9 +2678,9 @@
 </ul>
 <h3 id="reauthentication-required">"Reauthentication required"<a class="headerlink" href="#reauthentication-required" title="Permanent link">&para;</a></h3>
 <p>Log: <code>Gateway rejected the OpenWebNet password (password_error|password_required)</code>.</p>
-<p>Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). MH200 / MH200N / MH201 / AM4890 only support the numeric password; HMAC (alphanumeric) is available on F454 / F455 / MH202 / MyHOMEServer1. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.</p>
+<p>Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). <code>MH200</code>, <code>MH200N</code>, <code>MH201</code>, <code>F452</code>, <code>F453</code>, <code>F453AV</code>, <code>H4684</code>, and <code>AM4890</code> / <code>H4890</code> only support the legacy numeric OPEN password; SHA-256 HMAC (alphanumeric) is supported on <code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MH202</code>, and <code>MyHomeServer1</code>. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.</p>
 <h3 id="the-gateway-was-discovered-with-the-wrong-model-or-a-repair-issue-says-the-model-was-corrected">The gateway was discovered with the wrong model, or a repair issue says the model was corrected<a class="headerlink" href="#the-gateway-was-discovered-with-the-wrong-model-or-a-repair-issue-says-the-model-was-corrected" title="Permanent link">&para;</a></h3>
-<p>The model decides pacing and which subsystems are queried. See <a href="../gateway-identification/">How the gateway model is identified</a>: SSDP is authoritative, a manual choice is corrected when the WHO 13 device type contradicts it with an official code, and a repair issue asks you to confirm otherwise. Use the reconfigure flow to set the model explicitly. If the diagnostics show an unknown <code>who13_code</code>, please attach the download to an issue so the code can be documented.</p>
+<p>The model decides pacing and which subsystems are queried. See <a href="../gateway-identification/">How the gateway model is identified</a>: SSDP is authoritative, a manual choice is corrected when the WHO 13 device type contradicts it with an official code, and a repair issue asks you to confirm otherwise. Open <strong>Configure</strong> (Options Flow) on the integration card to set the hardware <code>model</code> explicitly (<strong>⋮ → Reconfigure</strong> updates <code>host</code>, <code>port</code>, and <code>password</code>). If the diagnostics show an unknown <code>who13_code</code>, please attach the download to an issue so the code can be documented.</p>
 <h3 id="no-module-named-custom_componentsmyhomebackup"><code>No module named 'custom_components.myhome.backup'</code><a class="headerlink" href="#no-module-named-custom_componentsmyhomebackup" title="Permanent link">&para;</a></h3>
 <p>A backup folder inside <code>/config/custom_components/</code> is loaded as an integration. Move it out:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>mv<span class="w"> </span>/config/custom_components/myhome.backup<span class="w"> </span>/config/myhome_backup
@@ -2852,7 +2768,7 @@
 <p>Download the MyHOME diagnostics (<em>Devices &amp; services → MyHOME → ⋮ → Download diagnostics</em>) and attach it to the issue; its <code>audio</code> block shows every zone, decoder and group without room names. Add the Music Assistant log only if the problem is on the Music Assistant side. See <a href="../media_player/#reporting-an-audio-problem">Reporting an audio problem</a>.</p>
 <h2 id="bus-and-gateway-behaviour">Bus and gateway behaviour<a class="headerlink" href="#bus-and-gateway-behaviour" title="Permanent link">&para;</a></h2>
 <h3 id="could-not-send-message-160-or-20-40-at-every-start"><code>Could not send message *#16*0##</code> (or <code>*#2*0##</code>, <code>*#4*0##</code>) at every start<a class="headerlink" href="#could-not-send-message-160-or-20-40-at-every-start" title="Permanent link">&para;</a></h3>
-<p>Startup discovery only asks for subsystems the gateway profile advertises. The bare <code>*#16*0##</code> was the wrong frame and every gateway NACKs it; current versions send <code>*#16*0*5##</code>. If a status request is still rejected, check that the gateway model is right and correct it with the reconfigure flow.</p>
+<p>Startup discovery only asks for subsystems the gateway profile advertises. The bare <code>*#16*0##</code> was the wrong frame and every gateway NACKs it; current versions send <code>*#16*0*5##</code>. If a status request is still rejected, check that the gateway model is right and correct it via <strong>Configure</strong> (Options Flow).</p>
 <h3 id="the-gateway-stops-answering-after-a-burst-of-commands">The gateway stops answering after a burst of commands<a class="headerlink" href="#the-gateway-stops-answering-after-a-burst-of-commands" title="Permanent link">&para;</a></h3>
 <p>Single-session gateways (MH200 / MH200N / MH201) need the inter-frame pacing of their profile. If you raised the worker count in the options flow, put it back to the default. The card shows the NACKs; the diagnostics download shows the queue depth.</p>
 <h3 id="frames-appear-in-the-card-with-the-wrong-time">Frames appear in the card with the wrong time<a class="headerlink" href="#frames-appear-in-the-card-with-the-wrong-time" title="Permanent link">&para;</a></h3>
@@ -2890,8 +2806,8 @@
 </ul>
 <h2 id="getting-help">Getting help<a class="headerlink" href="#getting-help" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Reproduce with debug logging on.</li>
-<li>Press <strong>Sweep Bus</strong> on the card, then <strong>Download diagnostics</strong> (or <strong>Export Trace</strong> on the card).</li>
+<li>Reproduce with debug logging on (or click <strong><code>🔴 Start Trace</code></strong> and <strong><code>⏹ Stop Trace</code></strong> on the Bus Monitor card).</li>
+<li>Press <strong>Sweep Bus</strong> on the card, then <strong>Download diagnostics</strong> (or click <strong><code>💾 Export Trace</code></strong> / <strong><code>📋 Copy Trace</code></strong> on the card).</li>
 <li>Open an issue with the structured form and attach the download; mention the gateway model, firmware and the exact frames you expected. For protocol questions, <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248">RFC #248</a> is the place.</li>
 </ol>
 
@@ -2929,7 +2845,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

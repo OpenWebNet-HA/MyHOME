@@ -688,34 +688,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../getting-started/removal/" class="md-nav__link">
         
   
@@ -1683,34 +1655,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1966,34 +1910,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2123,16 +2039,16 @@
 <p>In v2, gateway setup is <strong>100% UI-first</strong>:</p>
 <ol>
 <li>In Home Assistant, navigate to <strong>Settings → Devices &amp; Services</strong>.</li>
-<li>If your gateway is discovered automatically via SSDP or mDNS, click <strong>Configure</strong> on the discovery card.</li>
+<li>If your gateway is discovered automatically via <strong>SSDP / UPnP</strong>, click <strong>Configure</strong> on the discovery card (OpenWebNet gateways do not use mDNS).</li>
 <li>If adding manually:<ul>
-<li>Click <strong>Add Integration</strong> in the bottom right corner.</li>
-<li>Search for <strong>MyHOME</strong> and select it.</li>
+<li>Click <strong>Add Integration</strong> in the bottom right corner, search for <strong>MyHOME</strong>, and choose <strong>Custom (IP Gateway)</strong>.</li>
 </ul>
 </li>
 <li>Fill in the connection parameters:<ul>
-<li><strong>Host</strong>: Gateway IP address (e.g. <code>192.168.1.50</code>).</li>
-<li><strong>Port</strong>: <code>20000</code> (default OpenWebNet port).</li>
-<li><strong>Password</strong>: Your OpenWebNet or HMAC authentication password.</li>
+<li><strong>Address</strong> (<code>address</code> / <code>host</code>): Strict numeric IPv4 address of the gateway (e.g. <code>192.168.1.50</code>; <code>.local</code> mDNS hostnames are rejected).</li>
+<li><strong>Port</strong> (<code>port</code>): <code>20000</code> (default OpenWebNet TCP port).</li>
+<li><strong>MAC Address &amp; Device Type</strong> (<code>serialNumber</code> / <code>modelName</code>): Prompted only if UPnP metadata lookup at that IP fails; refined automatically via <code>WHO = 13</code> / <code>WHO = 1013</code> probing once connected.</li>
+<li><strong>Password</strong> (<code>password</code>): Prompted when the gateway requires numeric OPEN or SHA-256 HMAC authentication.</li>
 </ul>
 </li>
 <li>Click <strong>Submit</strong>. Home Assistant will establish the command session (<code>*99*0##</code>) and event listening session (<code>*99*1##</code>), verify the gateway hardware identity, and create the gateway device entry.</li>
@@ -2142,19 +2058,19 @@
 <h2 id="step-2-first-bus-discovery-device-creation">🔍 Step 2: First Bus Discovery &amp; Device Creation<a class="headerlink" href="#step-2-first-bus-discovery-device-creation" title="Permanent link">&para;</a></h2>
 <p>Once connected:</p>
 <ul>
-<li><strong>Automatic Bus Scanning</strong>: The integration queries the SCS bus across supported subsystems (<code>WHO = 1, 2, 4, 15, 18, 25</code>).</li>
+<li><strong>Automatic Bus Scanning</strong>: Startup discovery queries supported stateful subsystems (<code>WHO = 1, 2, 4, 5, 16, 18</code>, gated by the gateway's hardware profile and firmware-refusal guards) plus any registered <code>3xxx</code> (<code>WHO = 25</code>) dry contacts — stateless <code>WHO = 15</code> / <code>WHO = 25</code> scenario pushbuttons are never polled at startup and instead register on button press.</li>
 <li><strong>Device Registry Linking</strong>: Discovered actuators, thermostats, and sensors are automatically grouped and linked to your gateway device via Home Assistant's <code>via_device_id</code> registry model.</li>
-<li><strong>Non-Destructive Transition</strong>: If you have an existing <code>/config/myhome.yaml</code> file from v0.9.4, entity names and physical SCS groups (<code>#G</code>) are read on startup as a compatibility overlay.</li>
+<li><strong>Non-Destructive Transition</strong>: If you have an existing <code>/config/myhome.yaml</code> file from v0.9.4, entity names and physical SCS groups (<code>#G</code> under <code>light:</code>) are read on startup as a compatibility overlay.</li>
 <li><strong>Organizing Entities</strong>: Open <strong>Settings → Devices &amp; Services → Entities</strong> to customize entity names, assign rooms/areas (e.g. <em>Living Room</em>, <em>Kitchen</em>), and set custom icons.</li>
 </ul>
 <hr />
 <h2 id="step-3-tune-integration-options">⚙️ Step 3: Tune Integration Options<a class="headerlink" href="#step-3-tune-integration-options" title="Permanent link">&para;</a></h2>
 <p>Fine-tune runtime parameters by clicking <strong>Configure</strong> on the MyHOME integration card:</p>
 <ul>
-<li><strong>Command Worker Concurrency</strong>: Number of asynchronous command workers (default: <code>1</code>). Increase to <code>2</code>–<code>4</code> for high-throughput multi-session gateways like F454 or MHS1.</li>
-<li><strong>Dimmer Transition Mode</strong>: Choose between <code>software_stepped</code> (smooth 100-step software stepping managed by Home Assistant) and <code>native</code> (actuator hardware fade ramp).</li>
-<li><strong>Event Bus Broadcasting</strong>: Toggle whether raw bus frames are emitted as <code>myhome_message_event</code> events to Home Assistant for custom event automations.</li>
-<li><strong>Dynamic Proxy Decoders</strong>: Map network audio decoders (Music Assistant, Squeezelite) to physical F441 matrix source inputs for Diffusione Sonora.</li>
+<li><strong>Command Worker Concurrency (<code>command_worker_count</code>)</strong>: Number of asynchronous command workers (default <code>1</code>, or <code>2</code> on <code>F455</code> and <code>MyHomeServer1</code>; up to <code>2</code> on <code>MH202</code> and up to <code>4</code> on <code>F454</code>, <code>F455</code>, <code>F461</code>, and <code>MyHomeServer1</code>).</li>
+<li><strong>Dimmer Transition Mode (<code>transition_mode</code>)</strong>: Choose between <code>software_stepped</code> (smooth <strong>25-step</strong> software fade interpolation managed by Home Assistant) and <code>native</code> (actuator hardware fade speed parameter).</li>
+<li><strong>Event Bus Broadcasting (<code>generate_events</code>)</strong>: Toggle whether raw bus frames are emitted as <code>myhome_message_event</code> events to Home Assistant for custom event automations.</li>
+<li><strong>Dynamic Proxy Decoders (<code>decoder_1_entity</code>–<code>decoder_4_entity</code>)</strong>: Map network audio decoders (Music Assistant, Squeezelite, WiiM, DLNA DMR) to physical F441/F441M matrix source inputs for Diffusione Sonora.</li>
 </ul>
 <hr />
 <h2 id="detailed-subsystem-guides">📚 Detailed Subsystem Guides<a class="headerlink" href="#detailed-subsystem-guides" title="Permanent link">&para;</a></h2>
@@ -2190,7 +2106,7 @@
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Diffusione Sonora (Sound System)</strong></td>
-<td style="text-align: center;"><code>WHO = 16</code></td>
+<td style="text-align: center;"><code>WHO = 16</code>, <code>WHO = 22</code></td>
 <td style="text-align: left;"><a href="media_player/">Sound System / Media Player Guide</a></td>
 </tr>
 <tr>
@@ -2275,7 +2191,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1783,34 +1755,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2053,34 +1997,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2343,7 +2259,7 @@
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">target</span><span class="p">:</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">light.hallway_light</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">time</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 2 minutes</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 2 minutes (0.5–918000 s)</span>
 </span></code></pre></div>
 <hr />
 <h2 id="lighting-groups-scs-dali-groups">💡 Lighting Groups (SCS &amp; DALI Groups)<a class="headerlink" href="#lighting-groups-scs-dali-groups" title="Permanent link">&para;</a></h2>
@@ -2363,9 +2279,9 @@
 </ol>
 <hr />
 <h3 id="approach-2-physical-scs-hardware-groups-where-g-via-myhomeyaml">Approach 2: Physical SCS Hardware Groups (<code>where: '#G'</code>) via <code>myhome.yaml</code><a class="headerlink" href="#approach-2-physical-scs-hardware-groups-where-g-via-myhomeyaml" title="Permanent link">&para;</a></h3>
-<p>If your actuators are physically configured into an SCS group (e.g. <code>WHERE = #1</code> programmed via physical configurators or MyHOME_Suite) and you prefer Home Assistant to transmit single group frames directly on the bus, you can declare the group in <code>/config/myhome.yaml</code>:</p>
+<p>If your actuators are physically configured into an SCS group (e.g. <code>WHERE = #1</code> programmed via physical configurators or MyHOME_Suite) and you prefer Home Assistant to transmit single group frames directly on the bus, declare the group under <code>light:</code> in <code>/config/myhome.yaml</code> (nested under your gateway's <code>&lt;MAC&gt;:</code> key on multi-gateway setups):</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># /config/myhome.yaml</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">groups</span><span class="p">:</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">light</span><span class="p">:</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">living_room_group</span><span class="p">:</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">'#1'</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Living Room Group</span>
@@ -2412,7 +2328,7 @@
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If you are upgrading from legacy v0.9 installations and still have manual <code>light:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/lights/">v0.9.4 Legacy Light Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all lights are managed dynamically via Home Assistant's native registry.</p>
+<p>If you are upgrading from legacy v0.9 installations and still have manual <code>light:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/lights/">v0.9.4 Legacy Light Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all lights are managed dynamically via Home Assistant's native registry.</p>
 </div>
 
 
@@ -2449,7 +2365,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

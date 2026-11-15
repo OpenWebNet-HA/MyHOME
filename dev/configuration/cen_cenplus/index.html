@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1041,6 +1013,17 @@
   
     <nav class="md-nav" aria-label="📡 Advanced: Listening to the Event Bus">
       <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#who-25-scenario-plus-action-events-myhome_scenario_plus_event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHO 25 Scenario Plus Action Events (myhome_scenario_plus_event)
+      
+    </span>
+  </a>
+  
+</li>
         
           <li class="md-nav__item">
   <a href="#who-17-scenario-programmer-events-myhome_scene_event" class="md-nav__link">
@@ -1767,34 +1750,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2050,34 +2005,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2224,6 +2151,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#who-25-scenario-plus-action-events-myhome_scenario_plus_event" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WHO 25 Scenario Plus Action Events (myhome_scenario_plus_event)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#who-17-scenario-programmer-events-myhome_scene_event" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2290,34 +2228,39 @@
 <td style="text-align: left;">L/N/NT4652/2, 067554, 3477 (Dry Contacts), F428</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Buttons per Device</strong></td>
-<td style="text-align: left;">1 to 32</td>
-<td style="text-align: left;">0 to 255</td>
+<td style="text-align: left;"><strong>Buttons per Device (UI Device Triggers)</strong></td>
+<td style="text-align: left;"><code>0</code> to <code>31</code> (<code>00..31</code> on wire)</td>
+<td style="text-align: left;"><code>0</code> to <code>31</code> (<code>button_0</code>..<code>button_31</code> in UI; protocol supports <code>0..31</code> per CEN+ object)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Addressing Syntax</strong></td>
-<td style="text-align: left;"><code>*15*&lt;WHAT&gt;*&lt;WHERE&gt;#&lt;BUTTON&gt;##</code></td>
+<td style="text-align: left;"><code>*15*&lt;BB&gt;[#&lt;PHASE&gt;]*&lt;WHERE&gt;##</code></td>
 <td style="text-align: left;"><code>*25*&lt;WHAT&gt;#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Short Press Event</strong></td>
-<td style="text-align: left;"><code>WHAT = 1</code></td>
-<td style="text-align: left;"><code>WHAT = 21</code></td>
+<td style="text-align: left;"><code>*15*&lt;BB&gt;*&lt;WHERE&gt;##</code> (no phase qualifier)</td>
+<td style="text-align: left;"><code>WHAT = 21</code> (<code>*25*21#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code>)</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Start Long Press</strong></td>
-<td style="text-align: left;"><code>WHAT = 0</code></td>
-<td style="text-align: left;"><code>WHAT = 22</code></td>
+<td style="text-align: left;"><strong>Short Release Event</strong></td>
+<td style="text-align: left;"><code>#1</code> (<code>*15*&lt;BB&gt;#1*&lt;WHERE&gt;##</code>)</td>
+<td style="text-align: left;">N/A (CEN-only; CEN+ has no short-release frame)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Extended / Long Press</strong></td>
+<td style="text-align: left;"><code>#3</code> (<code>*15*&lt;BB&gt;#3*&lt;WHERE&gt;##</code>, repeated ~0.5 s while held)</td>
+<td style="text-align: left;"><code>WHAT = 22</code> (start) &amp; <code>WHAT = 23</code> (~0.5 s hold repeat)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Release Long Press</strong></td>
-<td style="text-align: left;"><code>WHAT = 2</code></td>
-<td style="text-align: left;"><code>WHAT = 24</code></td>
+<td style="text-align: left;"><code>#2</code> (<code>*15*&lt;BB&gt;#2*&lt;WHERE&gt;##</code>)</td>
+<td style="text-align: left;"><code>WHAT = 24</code> (<code>*25*24#&lt;BUTTON&gt;*&lt;WHERE&gt;##</code>)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Rotary Dials</strong></td>
-<td style="text-align: left;">Supported via vendor extensions</td>
-<td style="text-align: left;">Supported (CW/CCW slow &amp; fast)</td>
+<td style="text-align: left;">❌ Not supported on CEN</td>
+<td style="text-align: left;">✅ Supported (<code>WHAT = 25..28</code>: CW/CCW slow &amp; fast)</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Dry Contact Status</strong></td>
@@ -2349,19 +2292,19 @@ Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> 
 </div>
 <h3 id="supported-trigger-types">Supported Trigger Types<a class="headerlink" href="#supported-trigger-types" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>pushbutton_short_press</code>: Fired immediately upon a quick tap.</li>
-<li><code>pushbutton_short_release</code>: Fired when a short tap is released.</li>
-<li><code>pushbutton_long_press</code>: Fired when the button is held down (exceeding ~400ms). On CEN+ it fires once per hold.</li>
+<li><code>pushbutton_short_press</code>: Fired immediately upon a quick tap (CEN &amp; CEN+).</li>
+<li><code>pushbutton_short_release</code> (CEN only): Fired when a short tap is released (<code>*15*&lt;BB&gt;#1*&lt;WHERE&gt;##</code>).</li>
+<li><code>pushbutton_long_press</code>: Fired when the button is held down (exceeding ~400 ms; CEN <code>#3</code> / CEN+ <code>WHAT = 22</code>). On CEN+ it fires once per hold.</li>
 <li><code>pushbutton_long_press_repeat</code> (CEN+ only): Fired about every 0.5 s while the button stays held (<code>WHAT = 23</code>). Use it for "hold to dim"; use <code>pushbutton_long_press</code> for actions that should run once.</li>
-<li><code>pushbutton_long_release</code>: Fired when a held button is finally released.</li>
-<li><code>rotary_cw_slow</code>: Clockwise rotation at normal speed.</li>
-<li><code>rotary_cw_fast</code>: Clockwise rotation at fast speed.</li>
-<li><code>rotary_ccw_slow</code>: Counter-clockwise rotation at normal speed.</li>
-<li><code>rotary_ccw_fast</code>: Counter-clockwise rotation at fast speed.</li>
+<li><code>pushbutton_long_release</code>: Fired when a held button is finally released (CEN <code>#2</code> / CEN+ <code>WHAT = 24</code>).</li>
+<li><code>rotary_cw_slow</code> (CEN+ only): Clockwise rotation at normal speed.</li>
+<li><code>rotary_cw_fast</code> (CEN+ only): Clockwise rotation at fast speed.</li>
+<li><code>rotary_ccw_slow</code> (CEN+ only): Counter-clockwise rotation at normal speed.</li>
+<li><code>rotary_ccw_fast</code> (CEN+ only): Counter-clockwise rotation at fast speed.</li>
 </ul>
 <h3 id="button-subtypes">Button Subtypes<a class="headerlink" href="#button-subtypes" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>button_0</code> through <code>button_31</code> corresponding to physical button keys or rocker positions on the faceplate.</li>
+<li><code>button_0</code> through <code>button_31</code> (<code>0..31</code> for both CEN and CEN+ devices in <code>device_trigger.py</code>) corresponding to physical button keys or rocker positions on the faceplate.</li>
 </ul>
 <hr />
 <h2 id="automation-examples">🛠️ Automation Examples<a class="headerlink" href="#automation-examples" title="Permanent link">&para;</a></h2>
@@ -2478,6 +2421,23 @@ Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> 
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">      </span><span class="nt">pushbutton</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
 </span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">event</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pushbutton_short_press</span>
 </span></code></pre></div>
+<h3 id="who-25-scenario-plus-action-events-myhome_scenario_plus_event">WHO 25 Scenario Plus Action Events (<code>myhome_scenario_plus_event</code>)<a class="headerlink" href="#who-25-scenario-plus-action-events-myhome_scenario_plus_event" title="Permanent link">&para;</a></h3>
+<p>When a CEN+ Scenario Plus control sends an action frame (<code>WHO = 25</code>, <code>WHAT = 11..15</code>), the integration automatically registers a <strong><code>CEN+ Scenario Plus Control</code></strong> device in the Home Assistant Device Registry (<code>model="CEN+ Scenario Plus Control"</code>) and fires <code>myhome_scenario_plus_event</code>:</p>
+<ul>
+<li><code>object</code>: Scenario Plus object identifier (where available)</li>
+<li><code>where</code>: Wire Scenario Plus address (e.g. <code>"11"</code> or <code>"205"</code>)</li>
+<li><code>action</code>: Canonical action string — <code>on</code> (<code>WHAT = 11</code>), <code>off</code> (<code>WHAT = 12</code>), <code>increase</code> (<code>WHAT = 13</code>), <code>decrease</code> (<code>WHAT = 14</code>), or <code>stop</code> (<code>WHAT = 15</code>)</li>
+<li><code>gateway_mac</code>: Active gateway MAC address</li>
+<li><code>entry_id</code>: Config entry identifier</li>
+</ul>
+<p>You can also transmit outbound Scenario Plus commands from Home Assistant using <a href="../services/#13-myhomesend_scenario_plus_command"><code>myhome.send_scenario_plus_command</code></a>.</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">trigger</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_scenario_plus_event</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">where</span><span class="p">:</span><span class="w"> </span><span class="s">"11"</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="s">"on"</span>
+</span></code></pre></div>
 <h3 id="who-17-scenario-programmer-events-myhome_scene_event">WHO 17 Scenario Programmer Events (<code>myhome_scene_event</code>)<a class="headerlink" href="#who-17-scenario-programmer-events-myhome_scene_event" title="Permanent link">&para;</a></h3>
 <p>When a physical scenario programmer (e.g. MH200N, MH201, F420) executes or updates a stored scenario on the OpenWebNet bus, the integration fires <code>myhome_scene_event</code>:</p>
 <ul>
@@ -2494,12 +2454,12 @@ Home Assistant passively observes <code>WHO = 15</code> / <code>WHO = 25</code> 
 <p><strong>Scenario Lifecycle vs. Load Power State</strong>:<br />
 In OpenWebNet WHO 17 semantics, <code>is_on: true</code> denotes that the <strong>scenario routine has started executing</strong>, not that electrical circuits are turned on. For example, a "Leave Home" scene programmed to switch all lights OFF will emit <code>is_on: true</code> upon start, followed by actuator OFF commands, and <code>is_on: false</code> when execution finishes.</p>
 </div>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">trigger</span><span class="p">:</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_scene_event</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">      </span><span class="nt">scenario</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">      </span><span class="nt">is_on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">trigger</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">platform</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">event</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="nt">event_type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome_scene_event</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="nt">event_data</span><span class="p">:</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">      </span><span class="nt">scenario</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">      </span><span class="nt">is_on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <p>Enabling <strong>Generate Events</strong> in the <strong>Options Flow</strong> additionally fires every bus frame as <code>myhome_message_event</code>.</p>
 <hr />
@@ -2653,7 +2613,7 @@ In OpenWebNet WHO 17 semantics, <code>is_on: true</code> denotes that the <stron
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

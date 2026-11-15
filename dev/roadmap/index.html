@@ -18,8 +18,6 @@
         <link rel="prev" href="../migration/legacy-yaml/">
       
       
-        <link rel="next" href="beta-differences/">
-      
       
         
       
@@ -563,34 +561,6 @@
     
   
     Hardware Compatibility
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -1578,34 +1548,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1903,10 +1845,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#current-delivery-status-v200-beta-series-b18-released" class="md-nav__link">
+  <a href="#current-delivery-status-v200-release-readiness-b18-shipped" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🗺️ Current Delivery Status (v2.0.0 Beta Series, b18 Released)
+        🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)
       
     </span>
   </a>
@@ -2061,34 +2003,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2123,10 +2037,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#current-delivery-status-v200-beta-series-b18-released" class="md-nav__link">
+  <a href="#current-delivery-status-v200-release-readiness-b18-shipped" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🗺️ Current Delivery Status (v2.0.0 Beta Series, b18 Released)
+        🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)
       
     </span>
   </a>
@@ -2297,12 +2211,11 @@
 <p>Our overarching mission is to provide the most reliable, complete, and high-performance integration between Home Assistant and the BTicino / Legrand SCS OpenWebNet ecosystem. We adhere to strict standards: <strong>zero-latency asynchronous architecture</strong>, <strong>hardware-level protocol fidelity</strong>, <strong>100% automated test coverage</strong>, and <strong>full Home Assistant Core 2025/2026 compatibility</strong>.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>For release-by-release changelogs, capability matrices, and direct GitHub compare links across all releases, see the companion document:<br />
-🔗 <a href="beta-differences/"><strong>Beta Evolution, Architectural Milestones &amp; Delta Explorer</strong></a></p>
+<p>For release-by-release changelogs, download assets, and direct GitHub compare links across published versions, see <a href="https://github.com/OpenWebNet-HA/MyHOME/releases"><strong>GitHub Releases</strong></a>.</p>
 </div>
 <hr />
-<h2 id="current-delivery-status-v200-beta-series-b18-released">🗺️ Current Delivery Status (v2.0.0 Beta Series, b18 Released)<a class="headerlink" href="#current-delivery-status-v200-beta-series-b18-released" title="Permanent link">&para;</a></h2>
-<p>The major architectural milestones originally planned across Phases 1 through 4 have been <strong>consolidated, fully implemented, and validated with 100% statement and branch test coverage</strong> across the <strong>v2.0.0b1 through v2.0.0b18</strong> releases. <strong>v2.0.0b17</strong> was published on 2026-11-04; <strong>v2.0.0b18</strong> follows with the 38 pull requests merged since, on OWNd 2.0.0b14. The remaining work is v2.0.0 stabilization: see <em>Final Stabilization</em> below.</p>
+<h2 id="current-delivery-status-v200-release-readiness-b18-shipped">🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)<a class="headerlink" href="#current-delivery-status-v200-release-readiness-b18-shipped" title="Permanent link">&para;</a></h2>
+<p>The major architectural milestones originally planned across Phases 1 through 4 have been <strong>consolidated, fully implemented, and validated with 100% statement and branch test coverage</strong> across <strong>v2.0.0b1 through v2.0.0b18</strong> on <code>OWNd==2.0.0b14</code>. The remaining work is final <strong>v2.0.0</strong> release stabilization: see <em>Final Stabilization</em> below.</p>
 <pre class="mermaid"><code>gantt
     title MyHOME Integration Status &amp; Roadmap
     dateFormat  YYYY-MM-DD
@@ -2346,7 +2259,7 @@
     F500 FM Tuner Controls &amp; Station Range Bounds (#839, #844) :done, 2026-10-28, 2026-11-04
     Dimmer Preset Echo &amp; Coarse Curve Alignment (#828, #852) :done, 2026-10-28, 2026-11-04
     section Released in v2.0.0b18
-    Live Cover Animation (~1 s) &amp; Venetian Dim 10 Tilt (#870, #900) :done, 2026-11-05, 2026-11-14
+    Live Cover Animation (~1 s) &amp; Venetian Tilt on Dim 10 Stops (#870, #900) :done, 2026-11-05, 2026-11-14
     WHO 4 Startup Pacing, Offset Reads &amp; 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
     Expose Virtual Dimmer Hold-Up &amp; Firmware Gates (#883, #904) :done, 2026-11-09, 2026-11-14
     OWNd 2.0.0b14 Pin &amp; BTicino F453 Identity (#901, #909) :done, 2026-11-13, 2026-11-14
@@ -2354,7 +2267,7 @@
     v2.0.0 Release Candidate &amp; Distribution Consultation :2026-10-05, 2026-11-30</code></pre>
 <hr />
 <h2 id="what-is-shipped-operational-in-the-v200-series">📦 What is Shipped &amp; Operational in the v2.0.0 Series<a class="headerlink" href="#what-is-shipped-operational-in-the-v200-series" title="Permanent link">&para;</a></h2>
-<p>The following table summarizes the completed architectural features and protocol subsystems verified across the current beta series:</p>
+<p>The following table summarizes the completed architectural features and protocol subsystems verified for the v2.0.0 release:</p>
 <table>
 <thead>
 <tr>
@@ -2368,8 +2281,14 @@
 <tr>
 <td><strong>Standalone Protocol Engine (P1)</strong></td>
 <td>Core</td>
-<td>✅ <strong>Shipped</strong> (<code>OWNd 2.0.0b8</code>)</td>
-<td>Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes.</td>
+<td>✅ <strong>Shipped</strong> (<code>OWNd==2.0.0b14</code>)</td>
+<td>Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles.</td>
+</tr>
+<tr>
+<td><strong>Expose HA Entities to the Bus</strong></td>
+<td>Core / WHO=1, 2, 4, 13, 18</td>
+<td>✅ <strong>Shipped</strong> (#750, #883, #904)</td>
+<td>Declarative <code>expose</code> engine: virtual WHO 1 / WHO 2 actuators, firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock.</td>
 </tr>
 <tr>
 <td><strong>Multi-Gateway Isolation Architecture</strong></td>
@@ -2387,7 +2306,7 @@
 <td><strong>In-Place Gateway Reconfiguration</strong></td>
 <td>Config / Options</td>
 <td>✅ <strong>Shipped</strong></td>
-<td>Update IP address, password, or hardware model directly through Options Flow without deleting devices or breaking entity IDs.</td>
+<td>Update IP address (<code>host</code>), <code>port</code>, or <code>password</code> via <strong>Reconfigure</strong>, and change hardware <code>model</code> or runtime options via <strong>Configure</strong> (Options Flow) without deleting devices or breaking entity IDs.</td>
 </tr>
 <tr>
 <td><strong>Dynamic Command Worker Concurrency</strong></td>
@@ -2399,25 +2318,25 @@
 <td><strong>Native Hardware Bus Timers</strong></td>
 <td>WHO=1</td>
 <td>✅ <strong>Shipped</strong></td>
-<td>Offloaded countdown timers on Legrand DIN actuators (F411) via <code>myhome.turn_on_timed</code> or <code>duration</code> parameters in <code>light.turn_on</code> / <code>switch.turn_on</code>.</td>
+<td>Offloaded countdown timers on Legrand DIN actuators (F411) via the dedicated <code>myhome.turn_on_timed</code> service action (<code>0.5–918,000</code> seconds).</td>
 </tr>
 <tr>
 <td><strong>Central Unit Coordination (P4)</strong></td>
 <td>WHO=4</td>
-<td>✅ <strong>Shipped</strong></td>
-<td>Dedicated master coordination for 99-zone Central Unit (<code>#0</code>, model 3550) and 4-zone Central Unit (<code>#0#1</code>, model 4695). Master Seasonal switches propagate to subordinate zones.</td>
+<td>✅ <strong>Shipped</strong> (#817, #846, #909)</td>
+<td>Dedicated master coordination for 99-zone Central Unit (<code>#0</code>, model 3550, including <code>*4*3100*#0##</code> auto restore) and 4-zone Central Unit (<code>#0#1</code>, model 4695). Master Seasonal switches propagate to subordinate zones.</td>
 </tr>
 <tr>
 <td><strong>Climate Zone State Diagnostics</strong></td>
 <td>WHO=4</td>
-<td>✅ <strong>Shipped</strong> (#404, #457)</td>
-<td>Dynamic HVAC action deduction (<code>heating</code>, <code>cooling</code>, <code>idle</code>), fan mode persistence across restarts, and startup diagnostic sweeps.</td>
+<td>✅ <strong>Shipped</strong> (#404, #457, #908)</td>
+<td>Dynamic HVAC action deduction (<code>heating</code>, <code>cooling</code>, <code>idle</code>), <code>Dimension 11</code> / <code>20</code> fancoils, fan mode persistence across restarts, and paced startup sweeps.</td>
 </tr>
 <tr>
 <td><strong>Real-World CI Trace Replay Engine (P5)</strong></td>
 <td>Testing / CI</td>
 <td>✅ <strong>Shipped</strong></td>
-<td>Automated pytest fixture engine (<code>tests/test_trace_replay.py</code>) replaying authentic on-wire captures across multiple plants (Nicola Cavallo #247, MH200 physical plant, F454/MH202 captures, F418U2 dimmers).</td>
+<td>Automated pytest fixture engine (<code>tests/test_trace_replay.py</code>) replaying authentic on-wire captures across 12 physical gateway families directly against Home Assistant state machines.</td>
 </tr>
 <tr>
 <td><strong>DALI Tunable White &amp; Color</strong></td>
@@ -2428,32 +2347,38 @@
 <tr>
 <td><strong>Declared Groups &amp; Assumed State</strong></td>
 <td>WHO=1</td>
-<td>✅ <strong>Shipped</strong> (#368)</td>
-<td>Lighting groups with assumed-state inference and automated targeted status sweeps (<code>broadcast_resync</code>) upon intercepting group (<code>WHERE=#1</code>) or all-off (<code>WHERE=0</code>) frames.</td>
+<td>✅ <strong>Shipped</strong> (#368, #376, #377)</td>
+<td>Lighting groups declared under <code>light:</code> (<code>where: '#G'</code>, optional <code>members:</code>) with aggregate/assumed-state inference and 500 ms debounced targeted status sweeps (<code>broadcast_resync</code>) upon intercepting group (<code>WHERE=#1</code>), area, or general (<code>WHERE=0</code>) frames.</td>
 </tr>
 <tr>
-<td><strong>Cover Concurrency &amp; Travel Calibration</strong></td>
+<td><strong>Cover Live Animation, Venetian Tilt &amp; Travel Calibration</strong></td>
 <td>WHO=2</td>
-<td>✅ <strong>Shipped</strong> (#433)</td>
-<td>Virtual travel-time positioning, dedicated cover run-stop locks, hardware feedback (Dimension 10), and Lovelace calibration dashboard card.</td>
+<td>✅ <strong>Shipped</strong> (#433, #870, #900)</td>
+<td>~1 s interpolated live travel-time positioning, <code>Dimension 10</code> / <code>11</code> position feedback, Venetian slat-tilt tracking across intermediate <code>Dimension 10</code> stops, dedicated cover run-stop locks, and on-bus stopwatch calibration (<code>myhome.calibrate_cover</code>, <strong>Calibrate travel time</strong>, and <strong>Calibrate all covers</strong>).</td>
 </tr>
 <tr>
-<td><strong>Sound System 2.0 &amp; Streaming Proxy</strong></td>
+<td><strong>Sound System 2.0, WHO 22 RDS Tuners &amp; Streaming Proxy</strong></td>
 <td>WHO=16 / 22</td>
-<td>✅ <strong>Shipped</strong></td>
-<td>Multi-room matrix amplifier control (F441/F441M), volume normalization (0–31 scale), F500 FM Tuner RDS decoding, and Dynamic Proxy Decoders for Music Assistant / Spotify.</td>
+<td>✅ <strong>Shipped</strong> (#695, #839, #844)</td>
+<td>Multi-room matrix amplifier control (<code>F441</code>/<code>F441M</code> over <code>WHO = 16</code>), <code>F500</code>/<code>F500N</code> FM RDS tuner controls (<code>media_player</code>, <code>number</code>, <code>button</code>) on both <code>WHO = 22</code>-only (<code>MyHomeServer1</code>, <code>F461</code>) and dual-stack gateways, <code>4#&lt;area&gt;</code> active-source area tracking, and Dynamic Proxy Decoders for Music Assistant / Spotify.</td>
+</tr>
+<tr>
+<td><strong>Door Entry Locks &amp; Intercom Events</strong></td>
+<td>WHO=6 / 8</td>
+<td>✅ <strong>Shipped</strong> (#667)</td>
+<td>Door lock release entities (<code>lock.py</code>, configurable hold pulse and optional PIN confirmation) and video intercom call event triggers.</td>
 </tr>
 <tr>
 <td><strong>Energy Management &amp; Metering</strong></td>
 <td>WHO=18</td>
-<td>✅ <strong>Shipped</strong> (#494)</td>
-<td>Instantaneous active power (W), line voltage (V), current (mA), cumulative totalizers, and proactive bus sweeps for F520 DIN meters.</td>
+<td>✅ <strong>Shipped</strong> (#494, #907)</td>
+<td>Instantaneous active power (W), cumulative total/daily/monthly Wh counters, and proactive bus sweeps for <code>F520</code> / <code>F521</code> / <code>3522</code> DIN meters.</td>
 </tr>
 <tr>
 <td><strong>Burglar Alarm</strong></td>
 <td>WHO=5</td>
-<td>✅ <strong>Shipped</strong></td>
-<td>Partitions, arm away/home, disarm, panic trigger, and zone 0 synchronization for central units (3485/3486).</td>
+<td>✅ <strong>Shipped</strong> (#564)</td>
+<td>Armed / disarmed / triggered state (read-only panel), zone 0 synchronization, <code>myhome_alarm_event</code> notifications, and optional AUX (<code>WHO = 9</code>) arming/disarming bridge for central units (<code>3485</code>/<code>3486</code>).</td>
 </tr>
 <tr>
 <td><strong>Dry Contacts &amp; Technical Alarms</strong></td>
@@ -2464,8 +2389,8 @@
 <tr>
 <td><strong>Lovelace Bus Monitor Card</strong></td>
 <td>Frontend</td>
-<td>✅ <strong>Shipped</strong> (<code>&lt;myhome-bus-card&gt;</code>)</td>
-<td>Live scrolling stream, color-coded WHO badges, scoped custom element registry self-healing (#277), syntax injector, and 1-click clipboard export.</td>
+<td>✅ <strong>Shipped</strong> (<code>&lt;myhome-openwebnet-bus-monitor&gt;</code>)</td>
+<td>Live scrolling stream, color-coded WHO badges, scoped custom element registry self-healing (#277), syntax injector, <strong><code>🔴 Start Trace</code> / <code>⏹ Stop Trace</code></strong> recording, and <strong><code>📋 Copy Trace</code></strong> / <strong><code>💾 Export Trace</code></strong> export.</td>
 </tr>
 </tbody>
 </table>
@@ -2524,250 +2449,372 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <p><strong>Bronze Tier</strong>:</p>
 <ul>
 <li><code>has-entity-name</code>: All entity implementations inherit device names cleanly without manual <code>self.entity_id</code> overrides.</li>
-<li><code>runtime-data</code>: 100% single-source access via <code>entry.runtime_data</code> (<code>MyHomeData</code> dataclass); zero legacy <code>hass.data[DOMAIN]</code> global lookups.</li>
+<li><code>runtime-data</code>: 100% single-source access via <code>entry.runtime_data</code> (<code>MyHOMERuntimeData</code>); zero legacy <code>hass.data[DOMAIN]</code> global lookups.</li>
 <li><code>action-setup</code>: Service actions registered once in <code>async_setup</code> and preserved across individual entry reloads.</li>
 </ul>
 </li>
 <li>
 <p><strong>Silver Tier</strong>:</p>
 <ul>
-<li><code>test-coverage</code>: Enforced strict 100.0% statement and branch coverage across all integration modules (verified by <code>tests/test_coverage_enforcer.py</code>).</li>
-<li><code>parallel-updates</code>: Explicit <code>PARALLEL_UPDATES = 0</code> declared across all 9 platform files to guarantee event-driven thread safety.</li>
+<li><code>test-coverage</code>: Enforced strict 100.0% statement coverage across all integration modules (verified by <code>tests/test_coverage_enforcer.py</code> and <code>scripts/verify_ownd_coverage.py</code>).</li>
+<li><code>parallel-updates</code>: Explicit <code>PARALLEL_UPDATES = 0</code> declared across all 11 platform files to guarantee event-driven thread safety.</li>
 </ul>
 </li>
 <li>
 <p><strong>Gold Tier</strong>:</p>
 <ul>
-<li><code>reconfiguration-flow</code>: In-place gateway IP address, port, password, and model corrections supported natively in the UI.</li>
-<li><code>repair-issues</code>: Built-in repairs platform (<code>repairs.py</code>) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel <code>999</code>, duplicate address alerts, model conflicts).</li>
+<li><code>reconfiguration-flow</code>: In-place gateway IP address (<code>host</code>), <code>port</code>, and <code>password</code> updates via <strong>Reconfigure</strong>, with hardware <code>model</code> and runtime options configurable via <strong>Configure</strong> (Options Flow).</li>
+<li><code>repair-issues</code>: Built-in repairs platform (<code>repairs.py</code>) raising user-actionable diagnostics (e.g. unconfigured gateway timezone sentinel <code>999</code>, unknown gateway model <code>999</code>, model conflicts, device faults).</li>
 <li><code>diagnostics</code>: Comprehensive diagnostics export with automatic redaction of passwords and tokens.</li>
 </ul>
 </li>
 <li>
 <p><strong>Platinum Tier</strong>:</p>
 <ul>
-<li><code>async-dependency</code>: Zero blocking network calls; standalone asynchronous client engine (<code>OWNd==2.0.0b8</code>) on PyPI.</li>
+<li><code>async-dependency</code>: Zero blocking network calls; standalone asynchronous client engine (<code>OWNd==2.0.0b14</code>) on PyPI.</li>
 <li><code>clean-separation</code>: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.</li>
 </ul>
 </li>
 </ol>
 <hr />
 <h2 id="real-world-trace-coverage-schematic-what-we-have-vs-what-we-need">📊 Real-World Trace Coverage Schematic (What We Have vs. What We Need)<a class="headerlink" href="#real-world-trace-coverage-schematic-what-we-have-vs-what-we-need" title="Permanent link">&para;</a></h2>
-<p>To eliminate regression risks and verify complex timing constraints, our <strong>Trace Replay Engine</strong> (<code>tests/test_trace_replay.py</code>) replays authentic on-wire captures against the Home Assistant integration. </p>
-<p>Below is the updated status of real-world captures in CI, and remaining niche plant scenarios where community traces are welcomed:</p>
+<p>To eliminate regression risks and verify complex timing constraints, our <strong>Trace Replay Engine</strong> (<code>tests/test_trace_replay.py</code>) replays authentic on-wire captures against the Home Assistant integration.</p>
+<p>Below is the live, automatically synchronized status of real-world captures in CI, and remaining niche plant scenarios where community traces are welcomed:</p>
 <h3 id="system-coverage-overview">🗺️ System Coverage Overview<a class="headerlink" href="#system-coverage-overview" title="Permanent link">&para;</a></h3>
+<!-- ROADMAP_COVERAGE_MERMAID_START -->
 <pre class="mermaid"><code>graph TD
     subgraph Gateways["🏛️ Gateways &amp; Transports"]
-        GW_MHS1["🟢 MyHomeServer1&lt;br/&gt;(Full 70+ dev plant #247)"]
-        GW_F454["🟢 F454&lt;br/&gt;(High-speed IP capture #466)"]
-        GW_MH200["🟢 MH200 / MH200N&lt;br/&gt;(Physical plant &amp; captures #466)"]
-        GW_MH202["🟢 MH202&lt;br/&gt;(Physical plant capture #466)"]
-        GW_F461["🟢 F461&lt;br/&gt;(DALI DIN Web Server)"]
-        GW_H4890["🟢 H4890 / AM4890&lt;br/&gt;(Touchscreen IP gateway #466)"]
-        GW_F455["🟢 F455&lt;br/&gt;(Physical plant capture #466)"]
+        GW_MHS1["🟢 MyHomeServer1&lt;br/&gt;(47 captures · 6,879 rx)"]
+        GW_F454["🟢 F454&lt;br/&gt;(23 captures · 4,447 rx)"]
+        GW_F455["🟢 F455&lt;br/&gt;(9 captures · 563 rx)"]
+        GW_F459["🟢 F459&lt;br/&gt;(1 capture · 898 rx)"]
+        GW_F461["🟢 F461&lt;br/&gt;(18 captures · 2,846 rx)"]
+        GW_MH202["🟢 MH202&lt;br/&gt;(9 captures · 672 rx)"]
+        GW_MH201["🟢 MH201&lt;br/&gt;(9 captures · 970 rx)"]
+        GW_MH200N["🟢 MH200N&lt;br/&gt;(16 captures · 1,664 rx)"]
+        GW_MH200["🟢 MH200&lt;br/&gt;(12 captures · 1,332 rx)"]
+        GW_F453["🟢 F452 / F453 / F453AV&lt;br/&gt;(10 captures · 1,065 rx)"]
+        GW_H4890["🟢 H4890 / AM4890 / 067292&lt;br/&gt;(5 captures · 983 rx)"]
+        GW_H4684["🟢 H4684 / H/L4684&lt;br/&gt;(11 captures · 1,179 rx)"]
         GW_3578["🔴 Legrand 3578&lt;br/&gt;(Deferred to v2.1+ · #879)"]
     end
 
-    subgraph Subsystems["⚙️ Protocol Subsystems &amp; Scenarios"]
-        SUB_LIGHT["🟢 Lighting / Relays (WHO 1)&lt;br/&gt;(4-digit &amp; on/off covered)"]
-        SUB_DALI["🟢 DALI DT8 / HSV (WHO 1)&lt;br/&gt;(Dim 12 HSV + Dim 14 TW)"]
-        SUB_F418["🟢 F418U2 Dimmers (WHO 1)&lt;br/&gt;(MH200 &amp; F454 captures #501)"]
-        SUB_TIMER["🟢 DIN Bus Timers (WHO 1)&lt;br/&gt;(Timed execution covered)"]
-        SUB_GRP["🟢 Lighting Groups (WHO 1)&lt;br/&gt;(Assumed state &amp; resync #368)"]
-        SUB_COV_V["🟢 Covers Virtual (WHO 2)&lt;br/&gt;(Travel-time positioning #433)"]
-        SUB_COV_H["🟢 Covers Hardware (WHO 2)&lt;br/&gt;(Dim 10 status covered)"]
-        SUB_CU3550["🟢 Central Unit 3550 (WHO 4)&lt;br/&gt;(99-zone master mode)"]
-        SUB_CU4695["🟢 Central Unit 4695 (WHO 4)&lt;br/&gt;(4-zone master mode)"]
-        SUB_FANCOIL["🟢 Fancoil Thermostat (WHO 4)&lt;br/&gt;(Dim 11 fan speeds &amp; offsets)"]
-        SUB_ENERGY["🟢 Energy Management (WHO 18)&lt;br/&gt;(W, V, mA &amp; F520 sweeps #494)"]
-        SUB_DRY["🟢 Dry Contacts (WHO 25)&lt;br/&gt;(Technical alarms &amp; AUX)"]
-        SUB_CEN["🟢 CEN / CEN+ (WHO 15/25)&lt;br/&gt;(Triggers &amp; long-press debounce)"]
-        SUB_AUDIO["🟢 Multi-Room Audio (WHO 16)&lt;br/&gt;(Matrix routing &amp; F500 tuner)"]
-        SUB_ALARM["🟢 Burglar Alarm (WHO 5)&lt;br/&gt;(Partitions &amp; central unit)"]
-        SUB_ROUTER["🟢 F422 Bus Router&lt;br/&gt;(Cross-bus #4#02 routing covered)"]
+    subgraph Subsystems["⚙️ Protocol Subsystems &amp; Edge Scenarios"]
+        SUB_LIGHT["🟢 Lighting &amp; Dimmers (WHO 1)&lt;br/&gt;(5,235 rx · 85 captures)"]
+        SUB_DALI["🟢 DALI DT8 &amp; HSV (WHO 1)&lt;br/&gt;(18 rx · 2 captures)"]
+        SUB_TIMER["🟢 DIN Bus Timers (WHO 1)&lt;br/&gt;(8 rx · 5 captures)"]
+        SUB_GRP["🟢 Lighting Groups (WHO 1)&lt;br/&gt;(27 rx · 10 captures)"]
+        SUB_COV_V["🟢 Covers Timed &amp; Calibrated (WHO 2)&lt;br/&gt;(1,404 rx · 55 captures)"]
+        SUB_COV_H["🟢 Covers Dim 10 / 11 (WHO 2)&lt;br/&gt;(495 rx · 25 captures)"]
+        SUB_COV_255["🟡 Uncalibrated Dim 10=255 (WHO 2)&lt;br/&gt;(Unit tests only)"]
+        SUB_THERMO_ZONES["🟢 Zone Thermostats &amp; Probes (WHO 4)&lt;br/&gt;(8,663 rx · 78 captures)"]
+        SUB_CU3550["🟢 Central Unit 3550 (WHO 4)&lt;br/&gt;(236 rx · 20 captures)"]
+        SUB_CU4695["🔴 Central Unit 4695 (WHO 4)&lt;br/&gt;(Physical capture needed)"]
+        SUB_FANCOIL["🟢 Fancoils Dim 11/20 (WHO 4)&lt;br/&gt;(342 rx · 25 captures)"]
+        SUB_ALARM["🟢 Burglar Alarm (WHO 5)&lt;br/&gt;(273 rx · 12 captures)"]
+        SUB_DOOR["🟢 Door Entry (WHO 6/8)&lt;br/&gt;(42 rx · 5 captures)"]
+        SUB_DRY["🟢 AUX &amp; Dry Contacts (WHO 9/25)&lt;br/&gt;(210 rx · 15 captures)"]
+        SUB_CEN["🟢 CEN / CEN+ Triggers (WHO 15/25)&lt;br/&gt;(95 rx · 20 captures)"]
+        SUB_SCENARIOS["🟢 Scenarios (WHO 0/17)&lt;br/&gt;(33 rx · 7 captures)"]
+        SUB_LOCK14["🟢 Actuator Locks (WHO 14)&lt;br/&gt;(24 rx · 6 captures)"]
+        SUB_WHO16["🟢 Audio Matrix (WHO 16)&lt;br/&gt;(431 rx · 22 captures)"]
+        SUB_WHO22["🟢 Sound Diffusion &amp; RDS (WHO 22)&lt;br/&gt;(404 rx · 18 captures)"]
+        SUB_ENERGY["🟢 Energy Metering (WHO 18)&lt;br/&gt;(1,425 rx · 27 captures)"]
+        SUB_DIAG["🟢 Gateway Identity (WHO 13/1013)&lt;br/&gt;(1,195 rx · 79 captures)"]
+        SUB_ROUTER["🟢 F422 Cross-Bus (#4#bus)&lt;br/&gt;(411 rx · 14 captures)"]
     end
 
-    subgraph Engine["🧪 CI Test Suite"]
-        HARNESS["tests/test_trace_replay.py&lt;br/&gt;(100% Deterministic Replay)"]
+    subgraph Engine["🧪 CI Replay &amp; Regression Suite"]
+        HARNESS["tests/test_trace_replay.py &amp; fixture tests&lt;br/&gt;(Deterministic On-Wire Replay)"]
     end
 
     GW_MHS1 --&gt; HARNESS
     GW_F454 --&gt; HARNESS
-    GW_MH200 --&gt; HARNESS
-    GW_MH202 --&gt; HARNESS
-    GW_F461 --&gt; HARNESS
-    GW_H4890 --&gt; HARNESS
     GW_F455 --&gt; HARNESS
+    GW_F459 --&gt; HARNESS
+    GW_F461 --&gt; HARNESS
+    GW_MH202 --&gt; HARNESS
+    GW_MH201 --&gt; HARNESS
+    GW_MH200N --&gt; HARNESS
+    GW_MH200 --&gt; HARNESS
+    GW_F453 --&gt; HARNESS
+    GW_H4890 --&gt; HARNESS
+    GW_H4684 --&gt; HARNESS
     SUB_LIGHT --&gt; HARNESS
     SUB_DALI --&gt; HARNESS
-    SUB_F418 --&gt; HARNESS
     SUB_TIMER --&gt; HARNESS
     SUB_GRP --&gt; HARNESS
     SUB_COV_V --&gt; HARNESS
     SUB_COV_H --&gt; HARNESS
+    SUB_THERMO_ZONES --&gt; HARNESS
     SUB_CU3550 --&gt; HARNESS
-    SUB_CU4695 --&gt; HARNESS
     SUB_FANCOIL --&gt; HARNESS
-    SUB_ENERGY --&gt; HARNESS
+    SUB_ALARM --&gt; HARNESS
+    SUB_DOOR --&gt; HARNESS
     SUB_DRY --&gt; HARNESS
     SUB_CEN --&gt; HARNESS
-    SUB_AUDIO --&gt; HARNESS
-    SUB_ALARM --&gt; HARNESS
+    SUB_SCENARIOS --&gt; HARNESS
+    SUB_LOCK14 --&gt; HARNESS
+    SUB_WHO16 --&gt; HARNESS
+    SUB_WHO22 --&gt; HARNESS
+    SUB_ENERGY --&gt; HARNESS
+    SUB_DIAG --&gt; HARNESS
     SUB_ROUTER --&gt; HARNESS
 
     classDef covered fill:#2e7d32,stroke:#1b5e20,color:#ffffff;
+    classDef partial fill:#f57f17,stroke:#e65100,color:#ffffff;
     classDef needed fill:#c62828,stroke:#b71c1c,color:#ffffff;
+    class GW_MHS1,GW_F454,GW_F455,GW_F459,GW_F461,GW_MH202,GW_MH201,GW_MH200N,GW_MH200,GW_F453,GW_H4890,GW_H4684,SUB_LIGHT,SUB_DALI,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_THERMO_ZONES,SUB_CU3550,SUB_FANCOIL,SUB_ALARM,SUB_DOOR,SUB_DRY,SUB_CEN,SUB_SCENARIOS,SUB_LOCK14,SUB_WHO16,SUB_WHO22,SUB_ENERGY,SUB_DIAG,SUB_ROUTER covered;
+    class SUB_COV_255 partial;
+    class GW_3578,SUB_CU4695 needed;</code></pre>
+<!-- ROADMAP_COVERAGE_MERMAID_END -->
 
-    class GW_MHS1,GW_F454,GW_MH200,GW_MH202,GW_F461,GW_H4890,GW_F455,SUB_LIGHT,SUB_DALI,SUB_F418,SUB_TIMER,SUB_GRP,SUB_COV_V,SUB_COV_H,SUB_CU3550,SUB_CU4695,SUB_FANCOIL,SUB_ENERGY,SUB_DRY,SUB_CEN,SUB_AUDIO,SUB_ALARM,SUB_ROUTER covered;
-    class GW_3578 needed;</code></pre>
 <hr />
 <h3 id="table-1-gateway-models-hardware-transports">🏛️ Table 1: Gateway Models &amp; Hardware Transports<a class="headerlink" href="#table-1-gateway-models-hardware-transports" title="Permanent link">&para;</a></h3>
+<!-- ROADMAP_GATEWAY_TABLE_START -->
 <table>
 <thead>
 <tr>
-<th>Gateway Model</th>
-<th>Status</th>
-<th>Current Evidence / Fixture</th>
-<th>Community Trace Needed / Target Scenario</th>
+<th style="text-align: left;">Gateway Model</th>
+<th style="text-align: left;">Status</th>
+<th style="text-align: left;">Current Evidence / Fixture</th>
+<th style="text-align: left;">Community Trace Needed / Target Scenario</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>MyHomeServer1 (MHS1)</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td><code>tests/fixtures/plants/issue_247_nicolacavallo84/</code> (100 on-wire frames from @nicolacavallo84)</td>
-<td><em>None needed — full production plant active in CI.</em></td>
+<td style="text-align: left;"><strong>MyHomeServer1 (MHS1)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">47 physical captures (6,879 <code>rx</code> frames; <code>WHO = 1, 2, 4, 7, 8, 9, 13, 14, 15, 18, 22, 25, 1000, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/myhomeserver1_live_2026-10-25/</code></td>
+<td style="text-align: left;"><em>None needed — cloud/local hybrid gateway plant active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>F454</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Nicola Cavallo capture #247 + F454 traces in #466 &amp; #501</td>
-<td><em>None needed — high-speed multi-session plant active in CI.</em></td>
+<td style="text-align: left;"><strong>F454</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">23 physical captures (4,447 <code>rx</code> frames; <code>WHO = 0, 1, 2, 4, 5, 9, 13, 14, 18, 25, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_429/</code>, <code>tests/fixtures/traces/issue_466/</code></td>
+<td style="text-align: left;"><em>None needed — high-speed multi-session IP webserver active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>MH200 / MH200N</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td><code>tests/fixtures/plants/mh200_physical_plant/</code> (107 frames) + issue #466 &amp; #501 traces</td>
-<td><em>None needed — physical plant with 62 lights, 7 switches, 11 covers active in CI.</em></td>
+<td style="text-align: left;"><strong>F455</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">9 physical captures (563 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 25, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/central_restore_3100_live_2026-11-12/</code></td>
+<td style="text-align: left;"><em>None needed — single-bus DIN IP gateway active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>MH202</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Real-world plant capture in #466</td>
-<td><em>None needed — verified against physical MH202 installation.</em></td>
+<td style="text-align: left;"><strong>F459</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">1 physical capture (898 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code></td>
+<td style="text-align: left;"><em>None needed — WHO 1013 code 65 &amp; WHO 4 capture active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>H4890 / AM4890</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Livinglight / Axolute 3.5" touchscreen capture in #466</td>
-<td><em>None needed — verified against physical display gateway.</em></td>
+<td style="text-align: left;"><strong>F461 Web Server</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">18 physical captures (2,846 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 14, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/f461_live_2026-10-24/</code>, <code>tests/fixtures/traces/f461_live_2026-10-15/</code></td>
+<td style="text-align: left;"><em>None needed — DIN Ethernet Web Server (DALI DT8 &amp; fancoils) active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>F461 Web Server</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Issue #273 capture (@lyubomirtraykov)</td>
-<td><em>None needed — DALI DT8 ballasts verified.</em></td>
+<td style="text-align: left;"><strong>MH202</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">9 physical captures (672 <code>rx</code> frames; <code>WHO = 1, 2, 4, 5, 6, 8, 9, 13, 14, 16, 18, 22, 25, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh202_sound_intercom_ducking/</code></td>
+<td style="text-align: left;"><em>None needed — modern scenario programmer plant active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>F455</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Real-world plant capture in #466 (@lionelser)</td>
-<td><em>None needed — verified against physical F455 basic gateway.</em></td>
+<td style="text-align: left;"><strong>MH201</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">9 physical captures (970 <code>rx</code> frames; <code>WHO = 0, 1, 2, 4, 13, 15, 18, 25</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh201-fresh-discovery-20260930.log</code></td>
+<td style="text-align: left;"><em>None needed — single-worker scenario programmer plant active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>Legrand 3578 USB/Serial</strong></td>
-<td>🔴 <strong>Deferred (v2.1+)</strong></td>
-<td>Deferred out of <code>v2.0.0</code> (<a href="https://github.com/orgs/OpenWebNet-HA/discussions/879">Discussion #879</a>)</td>
-<td><strong>Hardware tester &amp; raw serial stream</strong>: Active tester + raw byte capture (<code>#466</code>) from physical OpenZigBee installation (<code>WHERE=&lt;id&gt;#9</code>).</td>
+<td style="text-align: left;"><strong>MH200N</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">16 physical captures (1,664 <code>rx</code> frames; <code>WHO = 0, 1, 2, 4, 5, 9, 13, 15, 16, 17, 18, 22, 25, 1001, 1013, 1022</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/f500_tuner/</code></td>
+<td style="text-align: left;"><em>None needed — second-generation scenario programmer active in CI.</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>MH200</strong> <em>(Legacy)</em></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">12 physical captures (1,332 <code>rx</code> frames; <code>WHO = 1, 2, 5, 6, 8, 9, 13, 16, 17, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh200_sound_f441m/</code></td>
+<td style="text-align: left;"><em>None needed — legacy single-session plant &amp; F441M audio active in CI.</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>F452 / F453 / F453AV</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">Traced <code>F453AV, F453</code>: 10 physical captures (1,065 <code>rx</code> frames; <code>WHO = 1, 2, 4, 5, 13, 25, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_619/</code>, <code>tests/fixtures/traces/discussion_770_f453_n4692/</code></td>
+<td style="text-align: left;"><em>Family covered by physical <code>F453AV</code> &amp; <code>F453</code> captures; optional legacy <code>F452 / F452V</code> captures welcomed.</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H4890 / AM4890 / 067292</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">Traced <code>H4890, 067292</code>: 5 physical captures (983 <code>rx</code> frames; <code>WHO = 1, 2, 4, 5, 9, 13, 16, 18, 22, 25</code>) — e.g. <code>tests/fixtures/traces/issue_832/</code>, <code>tests/fixtures/traces/issue_466/</code></td>
+<td style="text-align: left;"><em>None needed — 3.5" touchscreen IP gateways (BTicino &amp; Legrand) active in CI.</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>H4684 / H/L4684</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">Traced <code>H/L4684</code>: 11 physical captures (1,179 <code>rx</code> frames; <code>WHO = 1, 2, 3, 4, 5, 6, 9, 13, 16, 22, 1001, 1004</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code></td>
+<td style="text-align: left;"><em>None needed — colour touchscreen IP gateway (FW 2.x &amp; 6.x) active in CI.</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Legrand 3578 USB/Serial</strong></td>
+<td style="text-align: left;">🔴 <strong>Deferred (v2.1+)</strong></td>
+<td style="text-align: left;">Deferred out of <code>v2.0.0</code> (<a href="https://github.com/orgs/OpenWebNet-HA/discussions/879">Discussion #879</a>)</td>
+<td style="text-align: left;"><strong>Hardware tester &amp; raw serial stream</strong>: Active tester + raw byte capture (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/466">Issue #466</a>) from a physical OpenZigBee installation (<code>WHERE=&lt;id&gt;#9</code>).</td>
 </tr>
 </tbody>
 </table>
+<p><em>Table 1 is automatically generated and verified from physical bus captures in <code>tests/fixtures/</code> and supported models in <code>custom_components/myhome/const.py</code> by <code>scripts/sync_documentation.py</code>.</em></p>
+<!-- ROADMAP_GATEWAY_TABLE_END -->
+
 <hr />
 <h3 id="table-2-subsystems-dimensions-edge-scenarios">⚙️ Table 2: Subsystems, Dimensions &amp; Edge Scenarios<a class="headerlink" href="#table-2-subsystems-dimensions-edge-scenarios" title="Permanent link">&para;</a></h3>
+<!-- ROADMAP_SUBSYSTEM_TABLE_START -->
 <table>
 <thead>
 <tr>
-<th>Subsystem &amp; Domain</th>
-<th>Status</th>
-<th>Current Evidence / Fixture</th>
-<th>Community Trace Status</th>
+<th style="text-align: left;">Subsystem &amp; Domain</th>
+<th style="text-align: left;">Status</th>
+<th style="text-align: left;">Current Evidence / Fixture</th>
+<th style="text-align: left;">Community Trace Needed / Target Scenario</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><strong>Lighting (WHO = 1) — Relays &amp; Dimmers</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>F411U2, F418, F418U2 (#501), 4-digit addressing <code>1000</code>, <code>0910</code>, MH200 plant</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Lighting (WHO = 1) — Relays &amp; Dimmers</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">5,235 physical <code>rx</code> frames across 85 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_629/</code></td>
+<td style="text-align: left;"><em>Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.</em></td>
 </tr>
 <tr>
-<td><strong>Lighting (WHO = 1) — DALI Tunable White &amp; Color</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Dimension 14 (Kelvin 2000K–6535K / mireds) + Dimension 12 HSV color</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Lighting (WHO = 1) — DALI Tunable White &amp; HSV Color</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">18 physical <code>rx</code> frames across 2 captures on 1 gateway model — e.g. <code>tests/fixtures/plants/issue_288_f461_dali_dt8/</code>, <code>tests/fixtures/traces/issue_466/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>Dimension 12</code> HSV &amp; <code>Dimension 14</code> Kelvin/mireds).</em></td>
 </tr>
 <tr>
-<td><strong>Lighting (WHO = 1) — Groups &amp; Broadcasts</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Declared groups, assumed-state inference, and automated <code>broadcast_resync</code> (#368)</td>
-<td><em>Resolved in b12/b13.</em></td>
+<td style="text-align: left;"><strong>Lighting (WHO = 1) — Native DIN Timers</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">8 physical <code>rx</code> frames across 5 captures on 3 gateway models — e.g. <code>tests/fixtures/plants/issue_311_f454/</code>, <code>tests/fixtures/traces/f461_live_2026-10-15/</code></td>
+<td style="text-align: left;"><em>Preset temporization &amp; <code>Dimension 2</code> replies covered; optional mid-countdown <code>*#1*WHERE*2*H*M*S##</code> (<code>H/M/S &gt; 0</code>) trace welcomed.</em></td>
 </tr>
 <tr>
-<td><strong>Covers (WHO = 2) — Travel-Time &amp; Feedback</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Nicola Cavallo capture (<code>*2*0*42##</code>, LN4661M2) + Dimension 10 status feedback</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Lighting (WHO = 1) — Groups &amp; General Broadcasts (P7)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">27 physical <code>rx</code> frames across 10 captures on 6 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/f461_live_2026-10-15/</code></td>
+<td style="text-align: left;"><em>None needed — group (<code>#G</code>) and general (<code>WHERE=0</code>) resync engine active in CI.</em></td>
 </tr>
 <tr>
-<td><strong>Covers (WHO = 2) — Run-Stop Lock &amp; Centralized Triggers</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Dedicated cover lock (#433) + WHO=2 centralized automation triggers (#466)</td>
-<td><em>Resolved in b14.</em></td>
+<td style="text-align: left;"><strong>Covers (WHO = 2) — Travel-Time Positioning &amp; On-Bus Calibration</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">1,404 physical <code>rx</code> frames across 55 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/discussion_856/</code>; plus 23 calibrated <code>cover_travel_times</code> profiles in <code>tests/fixtures/traces/discussion_856/</code>, <code>tests/fixtures/traces/mh200_sound_f441m/</code></td>
+<td style="text-align: left;"><em>Baseline covered (stopwatch <code>myhome.calibrate_cover</code> runs, <code>cover_travel_times</code> profiles, and timed slat pulses active in CI).</em></td>
 </tr>
 <tr>
-<td><strong>Thermoregulation (WHO = 4) — Central Units</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>99-zone Central Unit 3550 (<code>#0</code>) + 4-zone Central Unit 4695 (<code>#0#1</code>)</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Covers (WHO = 2) — Advanced Position (<code>Dim 10 / 11</code>)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">495 physical <code>rx</code> frames across 25 captures on 6 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/discussion_770_f454_f401/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>F401</code> / <code>LN4661M2</code> percentage position; the slat angle is not on the bus).</em></td>
 </tr>
 <tr>
-<td><strong>Thermoregulation (WHO = 4) — Fancoils &amp; Actions</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Dimension 11 3-speed fancoils, temperature offsets, dynamic HVAC action (#457)</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Covers (WHO = 2) — Uncalibrated Hardware Sentinel (<code>Dim 10</code> <code>LEVEL=255</code>)</strong></td>
+<td style="text-align: left;">🟡 <strong>Synthetic</strong></td>
+<td style="text-align: left;">Unit tests for <code>*#2*WHERE*10*BS*255*...##</code> in <code>tests/test_cover.py</code> (0 physical <code>LEVEL=255</code> <code>rx</code> frames in <code>tests/fixtures/</code>)</td>
+<td style="text-align: left;"><strong>Uncalibrated actuator trace</strong>: Bus capture of an uncalibrated <code>F401</code>, <code>LN4672M2</code>, or <code>067557</code> reporting <code>*#2*WHERE*10*BS*255*...##</code> prior to <em>Push&amp;Learn</em> end-stop learning.</td>
 </tr>
 <tr>
-<td><strong>Sound System (WHO = 16 / 22) — Matrix &amp; Tuner</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>F441/F441M matrix amplifier control, Dynamic Streaming Proxy, F500 FM Tuner RDS</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Thermoregulation (WHO = 4) — Zone Thermostats, Probes &amp; Humidity</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">8,663 physical <code>rx</code> frames across 78 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_429/</code></td>
+<td style="text-align: left;"><em>Baseline covered (zone temperature <code>Dim 0</code>, setpoints <code>Dim 12/14</code>, knob offsets <code>Dim 13</code> &amp; <code>Dim 60</code> humidity).</em></td>
 </tr>
 <tr>
-<td><strong>Energy Management (WHO = 18)</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Active power (W), line voltage (V), current (mA), cumulative energy, F520 sweep (#494)</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Thermoregulation (WHO = 4) — 99-Zone Central Unit 3550 (<code>#0</code>)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">236 physical <code>rx</code> frames across 20 captures on 8 gateway models — e.g. <code>tests/fixtures/traces/central_restore_3100_live_2026-11-12/</code>, <code>tests/fixtures/traces/issue_466/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>#0</code> master modes, <code>*4*3100*#0##</code> auto restore, &amp; zone sync).</em></td>
 </tr>
 <tr>
-<td><strong>Burglar Alarm (WHO = 5)</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>Partitions, arm away/home, disarm, panic trigger, central units (3485/3486)</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Thermoregulation (WHO = 4) — 4-Zone Central Unit 4695 (<code>#0#1</code>)</strong></td>
+<td style="text-align: left;">🔴 <strong>Needed</strong></td>
+<td style="text-align: left;">Synthetic unit tests in <code>tests/test_climate.py</code> only (0 inbound <code>#0#1</code> <code>rx</code> frames in <code>tests/fixtures/</code>)</td>
+<td style="text-align: left;"><strong>4-zone central unit trace</strong>: Physical capture from a plant running a 4-zone <code>4695</code> / <code>HD4695</code> (<code>#0#1</code>) central unit.</td>
 </tr>
 <tr>
-<td><strong>CEN / CEN+ (WHO = 15 / 25) — Dry Contacts &amp; Triggers</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>F482V12 / 3477 binary sensors, 8-action UI device triggers with long-press repeat debounce</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Thermoregulation (WHO = 4) — Fancoils (<code>Dim 11 / 20</code>)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">342 physical <code>rx</code> frames across 25 captures on 4 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/f461_live_2026-10-15/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>Dimension 11</code> fan speeds &amp; <code>Dimension 20</code> fan-coil states <code>5</code>–<code>8</code>).</em></td>
 </tr>
 <tr>
-<td><strong>F422 Cross-Bus Router</strong></td>
-<td>🟢 <strong>Covered</strong></td>
-<td>MH200 physical plant trace (<code>tests/fixtures/plants/mh200_physical_plant/</code>, <code>#4#02</code>)</td>
-<td><em>Baseline covered.</em></td>
+<td style="text-align: left;"><strong>Burglar Alarm (WHO = 5)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">273 physical <code>rx</code> frames across 12 captures on 7 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/plants/issue_311_f454/</code></td>
+<td style="text-align: left;"><em>Baseline covered (physical <code>3486</code> / <code>MH202</code> partition &amp; zone captures active in CI).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Door Entry &amp; Intercom Locks (WHO = 6 / 8)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">42 physical <code>rx</code> frames across 5 captures on 4 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh202_sound_intercom_ducking/</code></td>
+<td style="text-align: left;"><em>Baseline covered (door lock release &amp; video intercom call events active in CI).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>AUX &amp; Dry Contacts (WHO = 9 / 25)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">210 physical <code>rx</code> frames across 15 captures on 9 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh202_sound_intercom_ducking/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>WHO = 9</code> auxiliary channels &amp; <code>3477</code> / <code>F428</code> contact sensors).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>CEN / CEN+ Pushbuttons &amp; Rotary Triggers (WHO = 15 / 25)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">95 physical <code>rx</code> frames across 20 captures on 6 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_434/</code></td>
+<td style="text-align: left;"><em>Baseline covered (short, long-press, repeat &amp; release active in CI); a <code>WHO = 25</code> rotary capture (<code>WHAT = 25..28</code>) is welcome.</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scenarios &amp; Schedulers (WHO = 0 / 17)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">33 physical <code>rx</code> frames across 7 captures on 3 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/f500_tuner/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>WHO = 0</code> activation on an F454, <code>WHO = 17</code> frames on MH200 / MH200N).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Actuator Maintenance Locks (WHO = 14)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">24 physical <code>rx</code> frames across 6 captures on 4 gateway models — e.g. <code>tests/fixtures/plants/issue_247_myhomeserver1/</code>, <code>tests/fixtures/traces/f461_who14_live_2026-10-18/</code></td>
+<td style="text-align: left;"><em>Baseline covered (hardware pushbutton lock/unlock status frames active in CI).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Sound System (WHO = 16) — Matrix &amp; Streaming Proxy</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">431 physical <code>rx</code> frames across 22 captures on 5 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh200_sound_f441m/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>F441</code> / <code>F441M</code> matrix routing, group takeover &amp; ducking).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Sound Diffusion (WHO = 22) — FM RDS Tuners &amp; Active-Source Sync</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">404 physical <code>rx</code> frames across 18 captures on 5 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/f500_tuner/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>F500</code> / <code>F500N</code> FM RDS tuners on <code>WHO = 22</code>-only &amp; dual-stack gateways, <code>4#&lt;area&gt;</code> active-source tracking, and <code>H4562</code> <code>WHO = 22</code> zone captures).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Energy Management &amp; Metering (WHO = 18)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">1,425 physical <code>rx</code> frames across 27 captures on 6 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_907/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>F520</code> / <code>F521</code> / <code>3522</code> active power <code>W</code> and total/daily/monthly <code>Wh</code> energy counters).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Gateway Clock, Identity &amp; Diagnostics (WHO = 13 / 1001–1022)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">1,195 physical <code>rx</code> frames across 79 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh200_sound_f441m/</code></td>
+<td style="text-align: left;"><em>Baseline covered (<code>WHO = 13</code> device type/firmware/clock &amp; <code>WHO = 1013</code> <code>OBJECT_MODEL</code>).</em></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>F422 Cross-Bus Router (<code>#4#&lt;bus&gt;</code>)</strong></td>
+<td style="text-align: left;">🟢 <strong>Covered</strong></td>
+<td style="text-align: left;">411 physical <code>rx</code> frames across 14 captures on 4 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/plants/issue_288_f461_dali_dt8/</code></td>
+<td style="text-align: left;"><em>None needed — physical F422 local-bus routing (<code>#4#01</code>, <code>#4#02</code>, ...) active in CI.</em></td>
 </tr>
 </tbody>
 </table>
+<p><em>Table 2 is automatically generated and verified from inbound (<code>rx</code>) OpenWebNet frames and calibration bundles in <code>tests/fixtures/</code> by <code>scripts/sync_documentation.py</code>.</em></p>
+<!-- ROADMAP_SUBSYSTEM_TABLE_END -->
+
 <hr />
 <h3 id="dual-track-guide-how-community-testers-can-submit-a-trace">📋 Dual-Track Guide: How Community Testers Can Submit a Trace<a class="headerlink" href="#dual-track-guide-how-community-testers-can-submit-a-trace" title="Permanent link">&para;</a></h3>
 <p>We offer <strong>two simple ways</strong> to contribute real-world bus traces, tailored to your technical setup:</p>
@@ -2775,7 +2822,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <p>Ideal for standard users running Home Assistant with the MyHOME integration:</p>
 <ol>
 <li><strong>Sweep the Bus</strong>: In Home Assistant, go to <strong>Developer Tools</strong> &gt; <strong>Services</strong> and call <code>myhome.sweep_bus</code> (or trigger it from the Lovelace Bus Monitor Card). This actively queries all lighting, cover, HVAC, and gateway diagnostic states in under 3 seconds.</li>
-<li><strong>Download Diagnostics</strong>: Navigate to <strong>Settings</strong> &gt; <strong>Devices &amp; Services</strong> &gt; <strong>MyHOME</strong> &gt; click the three dots (<code>⋮</code>) &gt; <strong>Download diagnostics</strong> (or click <strong><code>📋 Export Trace</code></strong> on the <code>&lt;myhome-bus-card&gt;</code>).</li>
+<li><strong>Download Diagnostics</strong>: Navigate to <strong>Settings</strong> &gt; <strong>Devices &amp; Services</strong> &gt; <strong>MyHOME</strong> &gt; click the three dots (<code>⋮</code>) &gt; <strong>Download diagnostics</strong> (or click <strong><code>💾 Export Trace</code></strong> / <strong><code>📋 Copy Trace</code></strong> on the Bus Monitor card).</li>
 <li><strong>Submit</strong>: Attach the downloaded <code>.json</code> file to <a href="https://github.com/orgs/OpenWebNet-HA/discussions/248"><strong>RFC Discussion #248</strong></a> or open a GitHub Issue.</li>
 <li><em>Privacy Guarantee</em>: Home Assistant and MyHOME automatically redact all passwords, authentication tokens, and private credentials before exporting.</li>
 </ol>
@@ -2783,7 +2830,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <p>Ideal for installers, bench testers, and developers testing isolated gateways without Home Assistant installed:</p>
 <ol>
 <li><strong>Run the Trace Recorder</strong>:
-   <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>scripts/record_gateway_trace.py<span class="w"> </span>--host<span class="w"> </span><span class="m">192</span>.168.1.35<span class="w"> </span>--password<span class="w"> </span><span class="m">12345</span><span class="w"> </span>--model<span class="w"> </span>MH202
+   <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>python<span class="w"> </span>scripts/record_gateway_trace.py<span class="w"> </span>--host<span class="w"> </span><span class="m">192</span>.0.2.35<span class="w"> </span>--password<span class="w"> </span><span class="m">12345</span><span class="w"> </span>--model<span class="w"> </span>MH202
 </span></code></pre></div></li>
 <li><strong>Active Sweep &amp; Listen</strong>: The script automatically executes the diagnostic status sweep, listens for ambient button presses or scenario bursts, and scrubs sensitive credentials.</li>
 <li><strong>Drop &amp; Commit</strong>: The tool writes a complete ready-to-test fixture folder in <code>tests/fixtures/plants/&lt;model&gt;_plant/</code>.</li>
@@ -2792,9 +2839,9 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <hr />
 <h2 id="community-links-resources">💬 Community Links &amp; Resources<a class="headerlink" href="#community-links-resources" title="Permanent link">&para;</a></h2>
 <p>Please share your feedback, real-world bus captures, and questions in our community channels:</p>
-<p>👉 <strong><a href="beta-differences/">Beta Evolution &amp; Differences Matrix</a></strong> — Side-by-side capabilities across all releases<br />
+<p>👉 <strong><a href="https://github.com/OpenWebNet-HA/MyHOME/releases">GitHub Releases &amp; Changelogs</a></strong> — Release notes and download archives<br />
 👉 <strong><a href="https://github.com/orgs/OpenWebNet-HA/discussions/248">Join the Community Discussion on RFC #248</a></strong><br />
-👉 <strong><a href="https://github.com/OpenWebNet-HA/MyHOME/issues">Report Beta Issues or Submit Bus Traces</a></strong></p>
+👉 <strong><a href="https://github.com/OpenWebNet-HA/MyHOME/issues">Report Issues or Submit Bus Traces</a></strong></p>
 
 
 
@@ -2830,7 +2877,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../getting-started/removal/" class="md-nav__link">
         
   
@@ -1647,10 +1619,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-multi-room-sound-distribution-who-16-vs-sound-diffusion-who-22" class="md-nav__link">
+  <a href="#2-multi-room-sound-system-who-16-vs-sound-diffusion-who-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Multi-Room Sound Distribution (WHO = 16) vs Sound Diffusion (WHO = 22)
+        2. Multi-Room Sound System (WHO = 16) vs Sound Diffusion (WHO = 22)
       
     </span>
   </a>
@@ -1797,34 +1769,6 @@
     
   
     Hardware Trace Availability
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
   
 
     
@@ -2100,34 +2044,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2252,10 +2168,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#2-multi-room-sound-distribution-who-16-vs-sound-diffusion-who-22" class="md-nav__link">
+  <a href="#2-multi-room-sound-system-who-16-vs-sound-diffusion-who-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Multi-Room Sound Distribution (WHO = 16) vs Sound Diffusion (WHO = 22)
+        2. Multi-Room Sound System (WHO = 16) vs Sound Diffusion (WHO = 22)
       
     </span>
   </a>
@@ -2378,7 +2294,7 @@
 <li>🏛️ <strong>Official Legrand Developer Portal</strong>: <a href="https://developer.legrand.com/local-interoperability/#PDF%20documentation">Legrand Local Interoperability — PDF Documentation</a></li>
 <li>📦 <strong>Master Document Archive</strong>: <a href="https://github.com/user-attachments/files/32008617/OWN.DOC.zip">OWN DOC.zip (GitHub PR #232 Attachment)</a> — Complete 15-document bundle preserved and contributed by <strong>@GianlucaCh</strong>.</li>
 <li>🪄 <strong>Home Assistant Community Blueprint</strong>: <a href="https://community.home-assistant.io/t/myhome-cen-commands/260345">MyHome CEN+ Commands Blueprint</a> — Connect physical MyHOME CEN / CEN+ scenario pushbuttons to toggle non-BTicino entities and dim lights.</li>
-<li>📖 <strong>Interactive GitHub Wiki</strong>: <a href="https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&amp;-WHO-Specifications">OpenWebNet Protocol &amp; WHO Specifications</a></li>
+<li>📖 <strong>OpenWebNet Encyclopedia (Machine-Readable KB &amp; Reference)</strong>: <a href="https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia">OpenWebNet-HA/OpenWebNet-Encyclopedia</a> — Epistemic protocol reference cross-checked against official specifications and hardware traces.</li>
 </ul>
 <hr />
 <h2 id="community-cross-check-verification-status">📋 Community Cross-Check &amp; Verification Status<a class="headerlink" href="#community-cross-check-verification-status" title="Permanent link">&para;</a></h2>
@@ -2440,7 +2356,7 @@
 <td style="text-align: left;"><code>Open Web Net Language (Scenarios)</code> / <code>WHO_0.pdf</code></td>
 <td style="text-align: center;"><strong>v2.0.0 (2010-10-01)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>event</code>, automations</td>
+<td style="text-align: left;"><code>—</code> (<code>myhome.send_message</code>)</td>
 <td style="text-align: left;">32 standard scenarios. Legrand 03551, 88301; BTicino F420, IR interface 3456. Contributed by GianlucaCh.</td>
 </tr>
 <tr>
@@ -2449,8 +2365,8 @@
 <td style="text-align: left;"><code>Who = 1 LIGHTING</code> / <code>WHO_1.pdf</code></td>
 <td style="text-align: center;"><strong>v1.1.0 (2014-11-17)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>light</code></td>
-<td style="text-align: left;">ON, OFF, Dimming (1-100%, 10 levels, steps), Blink, Timer, Speed of transition. Extended lighting &amp; DALI dimensions (tunable white / RGBW via F429/F429G). Contributed by GianlucaCh.</td>
+<td style="text-align: left;"><code>light</code>, <code>switch</code>, <code>cover</code>, <code>binary_sensor</code>, <code>sensor</code></td>
+<td style="text-align: left;">ON, OFF, Dimming (1-100%, 10 levels, steps), Blink, Timer, Speed of transition, impulse covers, motion/lux sensors. Extended lighting &amp; DALI dimensions (tunable white / RGBW via F429/F429G). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>2</strong></td>
@@ -2459,7 +2375,7 @@
 <td style="text-align: center;"><strong>v1.0.0 (2015-11-12)</strong></td>
 <td style="text-align: center;">🟢</td>
 <td style="text-align: left;"><code>cover</code></td>
-<td style="text-align: left;">Roller shutters, venetian blinds, motorized curtains, gates. Standard UP/DOWN/STOP and advanced absolute positioning percentage (0-100%, Legrand 67557). Contributed by GianlucaCh.</td>
+<td style="text-align: left;">Roller shutters, venetian blinds (lift &amp; slat tilt), motorized curtains, gates. Standard UP/DOWN/STOP and advanced absolute positioning percentage (0-100%, Legrand 67557). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>3</strong></td>
@@ -2467,7 +2383,7 @@
 <td style="text-align: left;"><code>OpenWebNet_Community_3_LoadControl</code> / <code>WHO_3.pdf</code></td>
 <td style="text-align: center;">v1.0.0 (2006)</td>
 <td style="text-align: center;">🟡</td>
-<td style="text-align: left;"><code>switch</code>, <code>sensor</code></td>
+<td style="text-align: left;">— (not implemented)</td>
 <td style="text-align: left;">Priority-based load disconnection central unit (F421). Inhibit/force actuators.</td>
 </tr>
 <tr>
@@ -2476,8 +2392,8 @@
 <td style="text-align: left;"><code>Open Web Net Language - Heating adjustment</code> / <code>WHO_4 2.pdf</code></td>
 <td style="text-align: center;"><strong>v2.0.0 (2013-11-27)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>climate</code>, <code>sensor</code></td>
-<td style="text-align: left;">4-zone / 99-zone central units (3550), standalone thermostats (L/N/NT4691, Living Now), external probe sensors (3475). Supports dimension 0 (temperature), dimension 11 (fancoil 3-speed), dimension 12/14 (setpoints), dimension 13 (offset), dimension 20 (actuators), and dimension 60 (relative humidity). Contributed by GianlucaCh.</td>
+<td style="text-align: left;"><code>climate</code>, <code>sensor</code>, <code>switch</code></td>
+<td style="text-align: left;">4-zone / 99-zone central units (4695, 3550), standalone thermostats (L/N/NT4691, Living Now), probe-less actuator relays, external probe sensors (3475). Supports dimension 0 (temperature), dimension 11 (fancoil 3-speed), dimension 12/14 (setpoints), dimension 13 (offset), dimension 15 (slave probes), dimension 20 (actuators), and dimension 60 (relative humidity). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>5</strong></td>
@@ -2485,8 +2401,8 @@
 <td style="text-align: left;"><code>MyHome Burglar Alarm</code> / <code>WHO_5.pdf</code></td>
 <td style="text-align: center;"><strong>(2008-02-13)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>alarm_control_panel</code></td>
-<td style="text-align: left;">Central units (3485, 3486), partition arming/disarming, panic alarms, gas/water technical alarms, sensor zone status. Authored by Lorenzo Pini. Contributed by GianlucaCh.</td>
+<td style="text-align: left;"><code>alarm_control_panel</code>, <code>myhome_alarm_event</code></td>
+<td style="text-align: left;">Central units (3485, 3486), read-only panel status and event bus notifications (arm/disarm via installer-programmed AUX frames). Authored by Lorenzo Pini. Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>6</strong></td>
@@ -2494,8 +2410,8 @@
 <td style="text-align: left;"><code>OpenWebNet_Community_DoorEntry</code> / <code>WHO_6.pdf</code></td>
 <td style="text-align: center;">v1.0.0 (2006)</td>
 <td style="text-align: center;">🟡</td>
-<td style="text-align: left;"><code>lock</code>, <code>switch</code>, <code>event</code></td>
-<td style="text-align: left;">Audio door entry calls, door lock release (<code>*6*10*&lt;WHERE&gt;##</code>), staircase light, camera switching, incoming call chimes.</td>
+<td style="text-align: left;"><code>lock</code>, <code>myhome_doorbell_event</code></td>
+<td style="text-align: left;">Audio door entry calls, door lock release (<code>*6*10*&lt;WHERE&gt;##</code>), incoming call notifications.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>7</strong></td>
@@ -2503,8 +2419,17 @@
 <td style="text-align: left;"><code>Open Web Net WHO=7</code> / <code>WHO_7.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.1 (2011-12-01)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>camera</code></td>
+<td style="text-align: left;">— (not implemented)</td>
 <td style="text-align: left;">Video session establishment, camera selection, video stream routing over IP for Video Server F453AV. Contributed by GianlucaCh.</td>
+</tr>
+<tr>
+<td style="text-align: center;"><strong>8</strong></td>
+<td style="text-align: left;"><strong>Video Door Entry / Intercom</strong></td>
+<td style="text-align: left;"><em>Internal / Installer Spec</em> (<code>bt_vct</code>)</td>
+<td style="text-align: center;">—</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: left;"><code>myhome_doorbell_event</code></td>
+<td style="text-align: left;">Entrance panel video doorbell notifications (<code>*8*1#&lt;1..4&gt;#&lt;mm&gt;*&lt;WHERE&gt;##</code>) on gateways connected to the door-entry riser (<code>F454</code>, <code>F459</code>, etc.).</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>9</strong></td>
@@ -2512,8 +2437,8 @@
 <td style="text-align: left;"><code>OpenWebNet_Community_Auxiliary</code> / <code>WHO_9.pdf</code></td>
 <td style="text-align: center;">v1.0.0 (2006)</td>
 <td style="text-align: center;">🟡</td>
-<td style="text-align: left;"><code>switch</code></td>
-<td style="text-align: left;">Auxiliary channels (AUX 1 to AUX 9) for triggering remote relays, annunciators, or inter-system signals without occupying lighting addresses.</td>
+<td style="text-align: left;"><code>binary_sensor</code>, <code>switch</code></td>
+<td style="text-align: left;">Auxiliary channels (AUX 0 to AUX 9, declared in <code>myhome.yaml</code>) and per-device <strong>Invert state</strong> configuration switches.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>13</strong></td>
@@ -2521,8 +2446,8 @@
 <td style="text-align: left;"><code>OpenWebNet_Community_2_device_v1_0_0_EN</code> / <code>WHO_13.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.0 (2006-06-13)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;">Core diagnostics</td>
-<td style="text-align: left;">Date/time synchronization (<code>*#13**0*...</code>), firmware version query, IP configuration, MAC address, uptime, reboot command. Contributed by GianlucaCh.</td>
+<td style="text-align: left;">— (Core diagnostics, <code>myhome.sync_time</code>)</td>
+<td style="text-align: left;">Date/time synchronization (<code>*#13**#0*...</code>), firmware version query, IP configuration, MAC address, device model probing. Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>14</strong></td>
@@ -2530,8 +2455,8 @@
 <td style="text-align: left;"><code>Light &amp; Shutter Actuators Lock</code> <em>(No Public PDF)</em></td>
 <td style="text-align: center;">v1.0.0 (2008)</td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;">Core diagnostics, <code>button</code>, <code>lock</code></td>
-<td style="text-align: left;">Physical endpoint lock/unlock. Lock (<code>*14*0*&lt;WHERE&gt;##</code>), Unlock (<code>*14*1*&lt;WHERE&gt;##</code>), Status query (<code>*#14*&lt;WHERE&gt;##</code>). Inverts/locks physical wall button input. Legrand never distributed a public standalone PDF (internal diagnostic spec).</td>
+<td style="text-align: left;"><code>button</code></td>
+<td style="text-align: left;">Physical endpoint lock/unlock. Lock (<code>*14*0*&lt;WHERE&gt;##</code>), Unlock (<code>*14*1*&lt;WHERE&gt;##</code>), Status query (<code>*#14*&lt;WHERE&gt;##</code>). Disables/enables physical wall button input. Legrand never distributed a public standalone PDF (internal diagnostic spec).</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>15</strong></td>
@@ -2539,7 +2464,7 @@
 <td style="text-align: left;"><code>CEN Frames for Scenario Scheduler</code> / <code>WHO_15-25.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.0 (2010-10-01)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>event</code>, device triggers</td>
+<td style="text-align: left;"><code>myhome_cen_event</code>, device triggers</td>
 <td style="text-align: left;">Pushbutton scenario events for Scenario Scheduler (MH200, MH200N, Legrand 03565): Virtual/physical pressure, short release, extended pressure, release after extended pressure. Contributed by GianlucaCh.</td>
 </tr>
 <tr>
@@ -2548,8 +2473,8 @@
 <td style="text-align: left;"><code>OpenWebNet_Community_4_soundsystem</code> / <code>WHO_16.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.1 (2011-11-24)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">Multi-room audio matrix &amp; zone control: Amplifier ON/OFF, volume control (step &amp; %), audio input source selection (RDS tuner, RCA/aux, USB, Bluetooth), equalizer (bass, treble, balance), station presets (F441, F441M, F450, 3487).</td>
+<td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
+<td style="text-align: left;">Multi-room audio matrix &amp; zone control: Amplifier ON/OFF, volume control (step &amp; %), audio input source selection (RDS tuner, RCA/aux, network decoders), station presets (F441, F441M, F500, F500N, F450, 3487).</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>17</strong></td>
@@ -2557,8 +2482,8 @@
 <td style="text-align: left;"><code>Who = 17 SCENES</code> / <code>WHO_17.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.0 (2015-04-09)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>switch</code>, <code>event</code></td>
-<td style="text-align: left;">MH200 / MH200N / MH202 scenario programmer integration, enable/disable automated schedules, trigger macro executions. Contributed by GianlucaCh.</td>
+<td style="text-align: left;">— (not implemented; <code>myhome_scene_event</code> only)</td>
+<td style="text-align: left;">MH200 / MH200N / MH202 scenario programmer lifecycle telemetry (<code>myhome_scene_event</code> on start/stop/enable/disable). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>18</strong></td>
@@ -2567,7 +2492,7 @@
 <td style="text-align: center;"><strong>v1.0.0 (2011-07-15)</strong></td>
 <td style="text-align: center;">🟢</td>
 <td style="text-align: left;"><code>sensor</code></td>
-<td style="text-align: left;">Electricity, water, and gas pulse meters. Instantaneous power (W), cumulative active energy (kWh), current (mA), voltage (V), power factor, tariff periods (F80/x, F520, F521, F522, F523, 3522). Contributed by GianlucaCh.</td>
+<td style="text-align: left;">Instantaneous active power (W) and cumulative/daily/monthly active energy counters (Wh) in Home Assistant (F80/x, F520, F521, F522, F523, 3522; spec also defines V/mA/tariff dimensions). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>22</strong></td>
@@ -2575,8 +2500,8 @@
 <td style="text-align: left;"><code>Who = 22 Sound Diffusion</code> / <code>WHO_22.pdf</code></td>
 <td style="text-align: center;"><strong>v1.1.0 (2014-06-12)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>media_player</code></td>
-<td style="text-align: left;">Sound source navigation &amp; speaker control: Radio FM frequency step up/down, station navigation, track skipping (next/previous track), RDS text display control (<code>*22*31...</code>), station presets, and speaker volume. Contributed by GianlucaCh.</td>
+<td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
+<td style="text-align: left;">Sound source navigation &amp; speaker control: Radio FM frequency step up/down, station navigation, track skipping (next/previous track), RDS text display control (<code>*22*31...</code>), station presets, active-source area notifications (<code>4#&lt;area&gt;</code>), and speaker volume (F500, F500N). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>24</strong></td>
@@ -2584,8 +2509,8 @@
 <td style="text-align: left;"><code>Who_24_eng_PUBBLIC.doc</code> / <code>WHO_24.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.0 (2012-04-06)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>light</code>, <code>sensor</code></td>
-<td style="text-align: left;">Legrand / BTicino Lighting Management System (BMNE500 / 002645 room controller, BMview, Lighting Console). Zone addressing (<code>1000+zone</code>), dimensions 1–12 (switch-on level %, max lux, maintained level lux, auto switch on/off, switch on/off delay, delay timer, standby timer/value, off value, slave offset GAP), dimension 17 (state: Auto/Manual/Stop), dimension 18 (centralised lux sensor reporting). Profile frames (<code>*24*1#Profile_ID*WHERE##</code>) and slave offset (<code>*24*2#[0-1]*WHERE##</code>). Contributed by GianlucaCh.</td>
+<td style="text-align: left;">— (not implemented)</td>
+<td style="text-align: left;">Legrand / BTicino Lighting Management System (BMNE500 / 002645 room controller, BMview, Lighting Console). Zone addressing (<code>1000+zone</code>), dimensions 1–12, dimension 17 (Auto/Manual/Stop), dimension 18 (centralised lux reporting). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>25</strong> <em>(CEN+)</em></td>
@@ -2593,8 +2518,8 @@
 <td style="text-align: left;"><code>CEN Frames for Scenario Scheduler</code> / <code>WHO_15-25.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.0 (2010-10-01)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>event</code>, device triggers</td>
-<td style="text-align: left;">Extended CEN protocol with up to 256 buttons/scenarios for MH200/MH200N/03565: Short pressure (&lt;0.5s), start of extended pressure (&gt;=0.5s), extended pressure holding, release after extended pressure. Contributed by GianlucaCh.</td>
+<td style="text-align: left;"><code>myhome_cenplus_event</code>, <code>myhome_scenario_plus_event</code>, device triggers</td>
+<td style="text-align: left;">Extended CEN+ protocol for MH200/MH200N/03565: Short pressure (&lt;0.5s), start of extended pressure (&gt;=0.5s), extended pressure holding, release after extended pressure, rotary dials, and Scenario Plus actions (<code>WHAT = 11..15</code>). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>25</strong> <em>(Contacts)</em></td>
@@ -2602,8 +2527,8 @@
 <td style="text-align: left;"><code>DRY CONTACT AND IR STATE FUNCTIONS</code> / <code>WHO_25.pdf</code></td>
 <td style="text-align: center;"><strong>v1.0.0 (2010-11-04)</strong></td>
 <td style="text-align: center;">🟢</td>
-<td style="text-align: left;"><code>binary_sensor</code></td>
-<td style="text-align: left;">Dry contact interfaces &amp; IR sensor state: State ON / IR detection (<code>WHAT=31</code>), State OFF / IR not detected (<code>WHAT=32</code>), event-driven (<code>PARAM=1</code>) or poll request (<code>PARAM=0</code>). BTicino 3477, F428, 3480, F482, IR 4610/4611/4640; Legrand 573996, 03553, 067513, etc. Contributed by GianlucaCh.</td>
+<td style="text-align: left;"><code>binary_sensor</code>, <code>switch</code></td>
+<td style="text-align: left;">Dry contact interfaces &amp; IR sensor state: State ON / IR detection (<code>WHAT=31</code>), State OFF / IR not detected (<code>WHAT=32</code>), plus per-device <strong>Invert state</strong> configuration switches. BTicino 3477, F428, 3480, F482, IR 4610/4611/4640; Legrand 573996, 03553, 067513, etc. Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>HMAC</strong></td>
@@ -2612,7 +2537,7 @@
 <td style="text-align: center;"><strong>v1.1.0 (2016-08-05)</strong></td>
 <td style="text-align: center;">🟢</td>
 <td style="text-align: left;">Core transport</td>
-<td style="text-align: left;">Cryptographic challenge-response HMAC-SHA256 authentication replacing legacy OPEN numeric password authentication for modern gateways (MyHomeServer1, F455, F461). Contributed by GianlucaCh.</td>
+<td style="text-align: left;">Cryptographic challenge-response HMAC-SHA256 authentication replacing legacy OPEN numeric password authentication for modern gateways (<code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MH202</code>, <code>MyHomeServer1</code>). Contributed by GianlucaCh.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>INTRO</strong></td>
@@ -2692,30 +2617,27 @@
 </li>
 </ol>
 <hr />
-<h3 id="2-multi-room-sound-distribution-who-16-vs-sound-diffusion-who-22">2. Multi-Room Sound Distribution (<code>WHO = 16</code>) vs Sound Diffusion (<code>WHO = 22</code>)<a class="headerlink" href="#2-multi-room-sound-distribution-who-16-vs-sound-diffusion-who-22" title="Permanent link">&para;</a></h3>
-<p>The sound subsystem is split across two dedicated OpenWebNet WHO families:</p>
+<h3 id="2-multi-room-sound-system-who-16-vs-sound-diffusion-who-22">2. Multi-Room Sound System (<code>WHO = 16</code>) vs Sound Diffusion (<code>WHO = 22</code>)<a class="headerlink" href="#2-multi-room-sound-system-who-16-vs-sound-diffusion-who-22" title="Permanent link">&para;</a></h3>
+<p><code>WHO = 16</code> and <code>WHO = 22</code> are two distinct OpenWebNet audio dialects encoding overlapping concepts with different commands, addresses, and dimensions:</p>
 <ol>
 <li>
-<p><strong>WHO = 16 (Sound Distribution — Zone &amp; Matrix Management)</strong>:</p>
+<p><strong>WHO = 16 (Sound System — Amplifiers, Matrix Routing &amp; Sources)</strong>:</p>
 <ul>
-<li>Controls physical audio amplifiers and source matrix units (F441, F441M, F450, 3487).</li>
-<li>Functions include: Zone power (ON/OFF), volume attenuation (0–31 scale / percentages), audio input channel routing (IN 1 to IN 4), tone equalizers (bass, treble, balance), and master room follow-me.</li>
-<li>Mapped to Home Assistant <code>media_player</code> entities.</li>
+<li>Original BTicino sound-system dialect (<code>WHO_16.pdf</code> v1.0.1, <code>bt_difson</code> gateway daemon) covering <strong>both</strong> room amplifiers (<code>01</code>–<code>99</code>), F441/F441M environment matrix routing (<code>1ES</code>), <strong>and</strong> audio source / F500 / F500N FM tuner devices (<code>101</code>–<code>109</code>).</li>
+<li>Functions include: Zone power (<code>WHAT = 0/3/10/13</code>), volume (<code>0–31</code> scale), environment-to-source routing (<code>*16*3*1ES##</code>), tone equalizers, FM tuner frequency (<code>*#16*10S*#6*0*&lt;KHZ&gt;##</code>), presets (<code>*#16*10S*#7/&lt;station&gt;##</code>, <code>*#16*10S*#10*&lt;slot&gt;##</code>), seek, and RDS (<code>*#16*10S*8*...##</code>).</li>
+<li>Mapped in Home Assistant to zone <code>media_player</code> entities (plus dynamic streaming proxy) and tuner <code>media_player</code> / <code>number</code> / <code>button</code> entities.</li>
 </ul>
 </li>
 <li>
-<p><strong>WHO = 22 (Sound Diffusion — Source &amp; Speaker Navigation)</strong>:</p>
+<p><strong>WHO = 22 (Sound Diffusion / Multimedia — Structured Later Dialect)</strong>:</p>
 <ul>
-<li>Controls the audio source devices themselves (FM tuner, CD player, multimedia source) and individual speaker units.</li>
+<li>Later multimedia dialect (<code>WHO_22.pdf</code> v1.1.0, <code>bt_multi</code> gateway daemon) using tagged addresses for sources (<code>2#&lt;S&gt;</code> / <code>5#2#&lt;S&gt;</code>), speakers (<code>3#&lt;A&gt;#&lt;P&gt;</code>), and speaker areas (<code>4#&lt;A&gt;</code>). Dual-stack gateways (<code>MH200N</code>, <code>MH202</code>, <code>F454</code>, <code>H4890</code>, <code>H/L4684</code> FW ≥ <code>6.0.0</code>) emit both dialects; newer gateways (<code>MyHomeServer1</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>) ship <code>bt_multi</code> (<code>WHO = 22</code>) only.</li>
 <li>Functions include:<ul>
-<li>FM tuner frequency step up/down (<code>WHAT = 5</code> / <code>WHAT = 6</code>).</li>
-<li>Station preset navigation (<code>WHAT = 9</code> next / <code>WHAT = 10</code> previous).</li>
-<li>Track navigation (<code>WHAT = 11</code> next track / <code>WHAT = 12</code> previous track).</li>
-<li>RDS text string display streaming (<code>WHAT = 31</code> start / <code>WHAT = 32</code> stop).</li>
-<li>Direct frequency tuning and preset memorization (<code>WHAT = 33</code>).</li>
-<li>Speaker volume adjustment (<code>WHAT = 3</code> increase / <code>WHAT = 4</code> decrease).</li>
+<li>FM tuner frequency search/tune (<code>WHAT = 5</code> / <code>WHAT = 6</code>), station preset navigation (<code>WHAT = 9</code> / <code>WHAT = 10</code>), preset storage (<code>WHAT = 33</code>), frequency/station telemetry (<code>Dimension 5 / 6 / 11</code>), and RDS text (<code>WHAT = 31</code> / <code>32</code>, <code>Dimension 10</code>).</li>
+<li>Active-source area notifications (<code>WHAT = 1/2/21/23#4#&lt;area&gt;</code>) and speaker volume/tone controls (<code>WHAT = 3</code> / <code>4</code>, <code>Dimension 1–4</code>).</li>
 </ul>
 </li>
+<li>In Home Assistant, declared F500 / F500N FM tuners (<code>media_player</code>, <code>number</code>, <code>button</code>) are controlled and decoded across <strong>both</strong> <code>WHO = 16</code> and <code>WHO = 22</code> (including <code>WHO = 22</code>-only gateways), and dual-stack gateways also track <code>WHO = 22</code> active-source area routing (<code>4#&lt;area&gt;</code>) alongside <code>WHO = 16</code> room amplifier zones.</li>
 </ul>
 </li>
 </ol>
@@ -2758,116 +2680,116 @@
 <li>By creating a simple <code>input_boolean</code> helper (e.g. <code>input_boolean.living_dim_direction</code>), the blueprint tracks dimming direction so alternating long presses cycle between brightening and dimming.</li>
 </ul>
 </li>
-<li><strong>Zero-Delay Bus Processing</strong>: Fully compatible with the stateless <code>myhome.cen</code> and <code>myhome.cen_plus</code> events dispatched by the modernized MyHOME integration.</li>
+<li><strong>Zero-Delay Bus Processing</strong>: Fully compatible with the stateless <code>myhome_cen_event</code> and <code>myhome_cenplus_event</code> events dispatched by the modernized MyHOME integration.</li>
 </ol>
 <hr />
 <h2 id="gateway-architecture-hardware-profiles">🔌 Gateway Architecture &amp; Hardware Profiles<a class="headerlink" href="#gateway-architecture-hardware-profiles" title="Permanent link">&para;</a></h2>
-<p>The table below outlines supported hardware gateways, transport layers, queue pacing requirements, and authentication mechanisms:</p>
+<p>The table below outlines supported hardware gateways, session concurrency, inter-frame pacing requirements, and authentication mechanisms (automatically synchronized with <code>OWNd</code> profiles):</p>
+<!-- GATEWAY_PROFILES_START -->
 <table>
 <thead>
 <tr>
-<th style="text-align: left;">Model</th>
-<th style="text-align: left;">Hardware Type</th>
-<th style="text-align: left;">Transport</th>
-<th style="text-align: center;">Default Port</th>
-<th style="text-align: left;">Auth Protocol</th>
-<th style="text-align: center;">Queue Pacing</th>
-<th style="text-align: left;">Features &amp; Firmware Notes</th>
+<th>Gateway Model</th>
+<th>Protocol Support</th>
+<th>Max Command Workers</th>
+<th>Inter-Frame Delay</th>
+<th>UPnP Discovery</th>
+<th>Notes</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>MH200</strong></td>
-<td style="text-align: left;">Scenario Programmer</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open password / None</td>
-<td style="text-align: center;">150 ms</td>
-<td style="text-align: left;">Embedded ARM, scenario scheduler, legacy buffer limits.</td>
+<td><strong>F454</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>50 ms</td>
+<td>✅ Port 49153</td>
+<td>Full high-speed multi-session support</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH200N</strong></td>
-<td style="text-align: left;">Scenario Programmer</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open password / None</td>
-<td style="text-align: center;">100 ms</td>
-<td style="text-align: left;">Updated network interface, scenario engine.</td>
+<td><strong>F455</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>50 ms</td>
+<td>✅ Port 49153</td>
+<td>Basic gateway (single SCS bus)</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH201</strong></td>
-<td style="text-align: left;">Scenario Controller</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open password / None</td>
-<td style="text-align: center;">80 ms</td>
-<td style="text-align: left;">High-performance DIN-rail scenario controller.</td>
+<td><strong>F461</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>50 ms</td>
+<td>❌ Manual</td>
+<td>Compact DIN Ethernet Web Server</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MH202</strong></td>
-<td style="text-align: left;">Scenario Programmer</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open password / None</td>
-<td style="text-align: center;">50 ms</td>
-<td style="text-align: left;">High-speed ARM CPU, expanded memory and scenario memory.</td>
+<td><strong>MH202</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>2 workers</td>
+<td>100 ms</td>
+<td>✅ Port 49153</td>
+<td>Modern scenario programmer gateway</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F452</strong></td>
-<td style="text-align: left;">Web Server IP</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open password / None</td>
-<td style="text-align: center;">150 ms</td>
-<td style="text-align: left;">Early generation IP gateway.</td>
+<td><strong>MH201</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>100 ms</td>
+<td>✅ Port 49153</td>
+<td>Second-generation scenario programmer</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F453AV</strong></td>
-<td style="text-align: left;">Audio/Video Web Server</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open password / None</td>
-<td style="text-align: center;">120 ms</td>
-<td style="text-align: left;">Supports door entry and basic web control.</td>
+<td><strong>MyHomeServer1</strong></td>
+<td>OpenWebNet / HMAC</td>
+<td>4 workers</td>
+<td>20 ms</td>
+<td>✅ SSDP</td>
+<td>Cloud/local hybrid gateway</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F454</strong></td>
-<td style="text-align: left;">Web Server IP</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open numeric password</td>
-<td style="text-align: center;">80 ms</td>
-<td style="text-align: left;">Dual bus interface, widely deployed standard DIN gateway.</td>
+<td><strong>MH200N</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>150 ms</td>
+<td>✅ SSDP</td>
+<td>Second-generation scenario programmer</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F455</strong></td>
-<td style="text-align: left;">Basic IP Gateway</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Open numeric password</td>
-<td style="text-align: center;">50 ms</td>
-<td style="text-align: left;">Single SCS bus basic gateway (lights, automation, temperature, energy).</td>
+<td><strong>MH200</strong> <em>(Legacy)</em></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>150 ms</td>
+<td>✅ SSDP</td>
+<td>Strict single-session pacing; watchdog hardened</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>MyHomeServer1</strong></td>
-<td style="text-align: left;">Modern IoT Gateway</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;"><strong>HMAC-SHA2 (SHA-256)</strong></td>
-<td style="text-align: center;">30 ms</td>
-<td style="text-align: left;">Fast SoC, alphanumeric credentials, cloud integration bridge.</td>
+<td><strong>H4890 / AM4890</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>50 ms</td>
+<td>✅ SSDP</td>
+<td>3.5" Touch screen display IP gateway (Axolute / Livinglight)</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>F461</strong></td>
-<td style="text-align: left;">Next-Gen DIN Server</td>
-<td style="text-align: left;">TCP/IP</td>
-<td style="text-align: center;">20000</td>
-<td style="text-align: left;">Alphanumeric / HMAC</td>
-<td style="text-align: center;">20 ms</td>
-<td style="text-align: left;">Latest generation BTicino DIN-rail server/gateway.</td>
+<td><strong>F452 / F453 / F453AV</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>150 ms</td>
+<td>✅ Port 49153</td>
+<td>Audio/video &amp; web server gateway</td>
+</tr>
+<tr>
+<td><strong>H4684 / H/L4684</strong></td>
+<td>OpenWebNet</td>
+<td>1 worker</td>
+<td>50 ms</td>
+<td>✅ SSDP</td>
+<td>Colour touch screen IP gateway (Axolute / LivingLight)</td>
 </tr>
 </tbody>
 </table>
+<!-- GATEWAY_PROFILES_END -->
+
 <hr />
 <h2 id="openwebnet-frame-syntax-quick-reference">🔍 OpenWebNet Frame Syntax Quick Reference<a class="headerlink" href="#openwebnet-frame-syntax-quick-reference" title="Permanent link">&para;</a></h2>
 <p>OpenWebNet messages always begin with <code>*</code> and end with <code>##</code>. Fields are separated by <code>*</code>:</p>
@@ -2892,7 +2814,7 @@
 <p><strong>Dimension Writing (Command with Parameters)</strong>:
     <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>*#WHO*WHERE*#DIMENSION*VAL1*VAL2*...*VALn##
 </span></code></pre></div>
-    <em>Example</em>: <code>*#16*1*#1*30##</code> (Set volume of audio Amplifier 1 to 30%)</p>
+    <em>Example</em>: <code>*#16*1*#1*30##</code> (Set volume of audio Amplifier 1 to step 30 of 31, ~97%)</p>
 </li>
 <li>
 <p><strong>Dimension Response (Status Report)</strong>:
@@ -2921,7 +2843,7 @@
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># Note: custom:myhome-bus-card is also supported as an alias</span>
 </span></code></pre></div></li>
 <li>Operate your devices (e.g. adjust a DALI color ballast, toggle a dry contact switch, or change audio volume).</li>
-<li>Click <strong><code>📋 Report Issue / Copy Trace</code></strong> to copy a sanitized diagnostics report with the exact bus frames.</li>
+<li>Click <strong><code>📋 Copy Trace</code></strong> or <strong><code>💾 Export Trace</code></strong> to export a sanitized capture with the exact bus frames.</li>
 </ol>
 
 
@@ -2958,7 +2880,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1578,34 +1550,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2054,34 +1998,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2583,7 +2499,7 @@ Or directly from your Sdomotica <code>config.json</code> backup:
 <td style="text-align: left;">Multi-channel sound amplifier</td>
 <td style="text-align: left;"><code>media_player</code></td>
 <td style="text-align: center;">16</td>
-<td style="text-align: left;"><code>zone: "&lt;zone&gt;"</code></td>
+<td style="text-align: left;"><code>zone: "&lt;zone&gt;"</code> <em>(emitted commented-out in <code>myhome.yaml</code>; auto-discovered from bus)</em></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>SecuritySystem</code></td>
@@ -2594,13 +2510,21 @@ Or directly from your Sdomotica <code>config.json</code> backup:
 </tr>
 <tr>
 <td style="text-align: left;"><code>Door</code></td>
-<td style="text-align: left;">Garage / gate door opener</td>
+<td style="text-align: left;">Door / gate relay accessory</td>
 <td style="text-align: left;"><code>switch</code></td>
-<td style="text-align: center;">1 / 6</td>
-<td style="text-align: left;"><code>where: "&lt;addr&gt;"</code></td>
+<td style="text-align: center;">1</td>
+<td style="text-align: left;"><code>where: "&lt;addr&gt;"</code> <em>(default; see Door / Gate note below)</em></td>
 </tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong><code>Door</code> Accessories &amp; Custom Entity Icons (<code>scripts/migrate_from_sdomotica.py</code>)</strong></p>
+<ul>
+<li><strong><code>Door</code> mapping</strong>: SDomotica <code>Door</code> accessories default to <code>WHO = 1</code> <code>switch:</code> (<code>where: "&lt;addr&gt;"</code>). If the physical endpoint is a <strong>door-entry electric strike</strong> (<code>WHO = 6</code>, <code>*6*10*&lt;where&gt;##</code>), move it under <code>lock:</code> with <code>who: "6"</code> and <code>where: "&lt;addr&gt;"</code> (see <a href="../../configuration/supported_functions/#lock-who-6">Supported Functions — <code>lock</code> (<code>WHO = 6</code>)</a>). If it is a <strong><code>WHO = 1</code> pulse-driven motorized gate or garage door</strong>, move it under <code>cover:</code> with <code>who: "1"</code> and <code>type: impulse_relay</code> so deadband and optional access-policy protections apply (see <a href="../../configuration/covers/">Covers &amp; Shutters — Impulse Covers</a>).</li>
+<li><strong><code>icon:</code> preservation</strong>: When generating <code>/config/myhome.yaml</code>, custom <code>icon:</code> attributes from the entity registry are emitted only on <code>light</code> and <code>switch</code> entries (the two v2 YAML device schemas that accept <code>icon:</code>). For other platforms, custom icons remain managed in the Home Assistant Entity Registry (<code>--migrate-registry</code> or UI).</li>
+</ul>
+</div>
 <hr />
 <h2 id="post-migration-verification-checklist">🛡️ Post-Migration Verification Checklist<a class="headerlink" href="#post-migration-verification-checklist" title="Permanent link">&para;</a></h2>
 <p>After restarting Home Assistant with MyHOME:</p>
@@ -2652,7 +2576,7 @@ Or directly from your Sdomotica <code>config.json</code> backup:
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

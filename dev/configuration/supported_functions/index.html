@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1563,10 +1535,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#switch-who-1" class="md-nav__link">
+  <a href="#switch-who-1-4-9-25" class="md-nav__link">
     <span class="md-ellipsis">
       
-        switch (WHO 1)
+        switch (WHO 1 / 4 / 9 / 25)
       
     </span>
   </a>
@@ -1790,34 +1762,6 @@
     
   
     Hardware Trace Availability
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
   
 
     
@@ -2093,34 +2037,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2189,10 +2105,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#switch-who-1" class="md-nav__link">
+  <a href="#switch-who-1-4-9-25" class="md-nav__link">
     <span class="md-ellipsis">
       
-        switch (WHO 1)
+        switch (WHO 1 / 4 / 9 / 25)
       
     </span>
   </a>
@@ -2381,51 +2297,65 @@
 <tr>
 <td style="text-align: center;">1</td>
 <td style="text-align: left;">Lighting</td>
-<td style="text-align: left;"><code>light</code>, <code>switch</code>, <code>binary_sensor</code>, <code>sensor</code></td>
+<td style="text-align: left;"><code>light</code>, <code>switch</code>, <code>cover</code>, <code>binary_sensor</code>, <code>sensor</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">See the platform table below.</td>
+<td style="text-align: left;">Lighting actuators, declared relay switches &amp; impulse covers, motion/lux sensors; see the platform tables below.</td>
 </tr>
 <tr>
 <td style="text-align: center;">2</td>
 <td style="text-align: left;">Automation (shutters, blinds)</td>
 <td style="text-align: left;"><code>cover</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Timed and position-reporting actuators.</td>
+<td style="text-align: left;">Timed, position-reporting, and Venetian slat-tilt actuators.</td>
+</tr>
+<tr>
+<td style="text-align: center;">3</td>
+<td style="text-align: left;">Load control (legacy)</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: left;">F421 load disconnection; not implemented.</td>
 </tr>
 <tr>
 <td style="text-align: center;">4</td>
 <td style="text-align: left;">Thermoregulation</td>
-<td style="text-align: left;"><code>climate</code>, <code>sensor</code></td>
+<td style="text-align: left;"><code>climate</code>, <code>switch</code>, <code>sensor</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Zone thermostats, central units 3550 (<code>#0</code>) and 4695 (<code>#0#1</code>), probes.</td>
+<td style="text-align: left;">Zone thermostats, central units 3550 (<code>#0</code>) and 4695 (<code>#0#1</code>), probe-less thermo actuator switches, probes.</td>
 </tr>
 <tr>
 <td style="text-align: center;">5</td>
 <td style="text-align: left;">Burglar alarm</td>
 <td style="text-align: left;"><code>alarm_control_panel</code></td>
 <td style="text-align: center;">👁️</td>
-<td style="text-align: left;">Central unit status (read-only); arm/disarm through installer-programmed AUX frames — see <a href="../alarm/#arming-and-disarming">alarm</a>.</td>
+<td style="text-align: left;">Central unit status (read-only) plus <code>myhome_alarm_event</code> on the event bus; arm/disarm through installer-programmed AUX frames — see <a href="../alarm/#arming-and-disarming">alarm</a>.</td>
 </tr>
 <tr>
 <td style="text-align: center;">6</td>
 <td style="text-align: left;">Door entry</td>
 <td style="text-align: left;"><code>lock</code>, event bus</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Door strikes (<code>*6*10*&lt;where&gt;##</code>), lock release status, and doorbell events. Requires a gateway whose firmware routes <code>WHO 6</code> and that sees the door-entry riser: <code>MH200</code>, <code>MH202</code>, <code>F453</code> (firmware-verified); <code>F453AV</code>, <code>F452</code>, <code>F452V</code>, <code>H4684</code>, <code>H4890</code>, <code>MH201</code>, <code>MH200N</code> (unverified). Not routed by <code>F454</code> / <code>F459</code> (<code>WHO 8</code> only) or by <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F450</code>, and <code>F460</code>.</td>
+<td style="text-align: left;">Door strikes (<code>*6*10*&lt;where&gt;##</code>), lock release status, and <code>myhome_doorbell_event</code>. Requires a gateway whose firmware routes <code>WHO 6</code> and that sees the door-entry riser: <code>MH200</code>, <code>MH202</code>, <code>F453</code> (firmware-verified); <code>F453AV</code>, <code>F452</code>, <code>F452V</code>, <code>H4684</code>, <code>H4890</code>, <code>MH201</code>, <code>MH200N</code> (unverified). Not routed by <code>F454</code> / <code>F459</code> (<code>WHO 8</code> only) or by <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F450</code>, and <code>F460</code>.</td>
+</tr>
+<tr>
+<td style="text-align: center;">7</td>
+<td style="text-align: left;">Video door entry / multimedia</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: left;">F453AV video session routing; not implemented.</td>
 </tr>
 <tr>
 <td style="text-align: center;">8</td>
 <td style="text-align: left;">Video door entry / intercom</td>
 <td style="text-align: left;">event bus</td>
 <td style="text-align: center;">👁️</td>
-<td style="text-align: left;">Entrance panel doorbell events (<code>*8*1#&lt;1..4&gt;#&lt;mm&gt;*&lt;where&gt;##</code>) from a gateway that sees the door-entry riser: <code>F454</code>, <code>F459</code>; <code>F453AV</code>, <code>F452</code>, <code>F452V</code> (unverified); or <code>MH200</code> / <code>MH200N</code> / <code>MH202</code> when the riser reaches their bus (e.g. through an <code>F422</code>).</td>
+<td style="text-align: left;">Entrance panel <code>myhome_doorbell_event</code> (<code>*8*1#&lt;1..4&gt;#&lt;mm&gt;*&lt;where&gt;##</code>) from a gateway that sees the door-entry riser: <code>F454</code>, <code>F459</code>; <code>F453AV</code>, <code>F452</code>, <code>F452V</code> (unverified); or <code>MH200</code> / <code>MH200N</code> / <code>MH202</code> when the riser reaches their bus (e.g. through an <code>F422</code>).</td>
 </tr>
 <tr>
 <td style="text-align: center;">9</td>
 <td style="text-align: left;">Auxiliary channels</td>
-<td style="text-align: left;"><code>binary_sensor</code></td>
-<td style="text-align: center;">👁️</td>
-<td style="text-align: left;">AUX 1–9 as binary sensors.</td>
+<td style="text-align: left;"><code>binary_sensor</code>, <code>switch</code></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">AUX 0–9 binary sensors (configured in <code>myhome.yaml</code>) and per-device <strong>Invert state</strong> configuration switches.</td>
 </tr>
 <tr>
 <td style="text-align: center;">13</td>
@@ -2446,7 +2376,7 @@
 <td style="text-align: left;">CEN scenario pushbuttons</td>
 <td style="text-align: left;">device triggers</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Short / long press and release, rotary dials.</td>
+<td style="text-align: left;">Short / long press and short / long release (buttons <code>00..31</code>), <code>myhome_cen_event</code>.</td>
 </tr>
 <tr>
 <td style="text-align: center;">16</td>
@@ -2456,32 +2386,39 @@
 <td style="text-align: left;">F441 / F441M matrices, F500 / F500N FM radio tuners, streaming proxy for network decoders.</td>
 </tr>
 <tr>
+<td style="text-align: center;">17</td>
+<td style="text-align: left;">Scenario programmer (scenes)</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: center;">👁️</td>
+<td style="text-align: left;">Fires <code>myhome_scene_event</code> on scene start/stop/enable/disable; no entity is created.</td>
+</tr>
+<tr>
 <td style="text-align: center;">18</td>
 <td style="text-align: left;">Energy management</td>
 <td style="text-align: left;"><code>sensor</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Instantaneous power, total / daily / monthly energy.</td>
+<td style="text-align: left;">Instantaneous active power (W) and total / daily / monthly energy counters (Wh).</td>
 </tr>
 <tr>
 <td style="text-align: center;">22</td>
 <td style="text-align: left;">Sound diffusion (audio matrix &amp; FM tuner)</td>
 <td style="text-align: left;"><code>media_player</code>, <code>number</code>, <code>button</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">F500 / F500N FM tuner control and telemetry (<code>5#2#S</code> / <code>2#S</code>) on dual-stack and <code>WHO 22</code>-only gateways (<code>MyHomeServer1</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>, <code>H/L4684</code> FW ≥ 6.0).</td>
+<td style="text-align: left;">F500 / F500N FM tuner control and telemetry (<code>5#2#S</code> / <code>2#S</code>) on dual-stack gateways (including <code>H/L4684</code> FW ≥ <code>6.0.0</code>) and <code>WHO 22</code>-only gateways (<code>MyHomeServer1</code>, <code>F461</code>), plus active-source area routing (<code>4#&lt;area&gt;</code>) on dual-stack plants (room amplifier discovery and zone commands require <code>WHO 16</code>).</td>
 </tr>
 <tr>
 <td style="text-align: center;">24</td>
 <td style="text-align: left;">Lighting management (commercial)</td>
 <td style="text-align: left;">—</td>
 <td style="text-align: center;">❌</td>
-<td style="text-align: left;">BMNE500 / BMview controllers; out of residential scope.</td>
+<td style="text-align: left;">BMNE500 / BMview controllers; not implemented.</td>
 </tr>
 <tr>
 <td style="text-align: center;">25</td>
 <td style="text-align: left;">CEN+ pushbuttons and dry contacts</td>
-<td style="text-align: left;">device triggers, <code>binary_sensor</code></td>
+<td style="text-align: left;">device triggers, <code>binary_sensor</code>, <code>switch</code></td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Short / long press, release; F482 / 3477 dry contacts.</td>
+<td style="text-align: left;">Short / long press, hold repeat, release, rotary dials (<code>myhome_cenplus_event</code>), Scenario Plus actions <code>WHAT = 11..15</code> (<code>myhome_scenario_plus_event</code> + <code>CEN+ Scenario Plus Control</code> devices), F482 / 3477 dry contacts, and per-device <strong>Invert state</strong> configuration switches.</td>
 </tr>
 </tbody>
 </table>
@@ -2509,7 +2446,7 @@
 <tr>
 <td style="text-align: left;">Transitions</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;"><code>software_stepped</code> (default) or the actuator's native fade — gateway option.</td>
+<td style="text-align: left;"><code>software_stepped</code> (default, up to 25 steps) or the actuator's native fade speed parameter — gateway option.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Flash</td>
@@ -2533,12 +2470,12 @@
 </tr>
 <tr>
 <td style="text-align: left;">Group / area / general commands from wall switches</td>
-<td style="text-align: center;">👁️</td>
-<td style="text-align: left;">Frames are seen, but entities only update when the actuator reports its own status — see limitations.</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;"><code>LightingResyncManager</code> runs a <code>500 ms</code> debounced status sweep (<code>broadcast_resync</code>, enabled by default), updates declared <code>light:</code> group entities (<code>where: '#1'</code>..<code>'#255'</code> with optional <code>members:</code>), and fires <code>myhome_group_light_event</code> / <code>myhome_area_light_event</code> / <code>myhome_general_light_event</code>.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="switch-who-1"><code>switch</code> (WHO 1)<a class="headerlink" href="#switch-who-1" title="Permanent link">&para;</a></h3>
+<h3 id="switch-who-1-4-9-25"><code>switch</code> (WHO 1 / 4 / 9 / 25)<a class="headerlink" href="#switch-who-1-4-9-25" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2549,14 +2486,24 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;">On / off</td>
+<td style="text-align: left;">On / off (lighting relays, WHO 1)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Device class <code>switch</code> or <code>outlet</code> from <code>myhome.yaml</code>.</td>
+<td style="text-align: left;">Declared under <code>switch:</code> in <code>myhome.yaml</code> (<code>class: switch</code> or <code>outlet</code>; <code>WHO 1</code> bus traffic otherwise auto-discovers as <code>light</code>).</td>
 </tr>
 <tr>
-<td style="text-align: left;">Hardware timer</td>
+<td style="text-align: left;">Thermoregulation zone / actuator power switch (WHO 4)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;"><code>myhome.turn_on_timed</code>.</td>
+<td style="text-align: left;">Probe-less thermo actuator / towel-warmer relays (<code>Z</code> or <code>Z#N</code> in <code>thermo_switch.py</code>, configured via subentry flow or <code>myhome.yaml</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;">Auxiliary / CEN+ contact invert switch (WHO 9 / 25)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Per-device <strong>Invert state</strong> configuration switch (<code>EntityCategory.CONFIG</code>) paired with WHO 9 and WHO 25 binary sensors.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Hardware timer (WHO 1)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;"><code>myhome.turn_on_timed</code> (<code>duration</code> or <code>hours</code> / <code>minutes</code> / <code>seconds</code>, individual <code>WHO 1</code> point addresses only).</td>
 </tr>
 </tbody>
 </table>
@@ -2578,12 +2525,12 @@
 <tr>
 <td style="text-align: left;">Impulse cover (WHO 1)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Pulse-driven gates and garage doors: direct pulses with deadband and sensor feedback by default, and an optional <code>access:</code> workflow with phone approval, pre-warning, and watchdog.</td>
+<td style="text-align: left;">Pulse-driven gates and garage doors: direct pulses with deadband and sensor feedback by default, and an optional <code>access:</code> workflow with phone approval, pre-warning (<code>myhome_access_prewarning</code>), and watchdog.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Position (position-reporting actuators)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Requires <code>advanced_shutter: true</code> in <code>myhome.yaml</code>; it is not learned from the bus.</td>
+<td style="text-align: left;">Requires <code>advanced_shutter: true</code> / <code>advanced: true</code> in <code>myhome.yaml</code> (commands via Dimension 11, status via Dimension 10; area/general <code>set_cover_position</code> requires <code>interface</code> <code>#4#II</code> or configured <code>members:</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Position (timed actuators)</td>
@@ -2591,9 +2538,9 @@
 <td style="text-align: left;">Virtual position from the travel time: <code>travel_time</code> in YAML, measured with <code>myhome.calibrate_cover</code>, or set by hand with <code>myhome.set_cover_travel_time</code>.</td>
 </tr>
 <tr>
-<td style="text-align: left;">Tilt</td>
-<td style="text-align: center;">❌</td>
-<td style="text-align: left;">Slat commands are parsed by OWNd but not exposed.</td>
+<td style="text-align: left;">Tilt (Venetian blinds)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Timed slat rotation (<code>slat_tilt: true</code> in <code>myhome.yaml</code>, calibrated with <code>slat_time</code> in <code>myhome.set_cover_travel_time</code>; estimated from <code>slat_time</code> on every actuator, including <code>advanced_shutter: true</code>, as <code>WHO 2</code> carries no slat-angle field on the bus).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Echo suppression</td>
@@ -2615,7 +2562,7 @@
 <tr>
 <td style="text-align: left;">Door entry lock (WHO 6)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Door entry strikes from <code>myhome.yaml</code> with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; <code>who: 1</code> relays are rejected (motorized gates and garage doors are impulse covers). Requires a gateway that routes <code>WHO 6</code> and sees the door-entry riser, or <strong>Shared Bus → Secondary</strong> <code>WHO 6</code> delegation to one (such as an <code>MH202</code> on the riser); <code>F454</code> / <code>F459</code> route only <code>WHO 8</code>. If the gateway rejects <code>*6*10*&lt;where&gt;##</code> with <code>*#*0##</code> (e.g. <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F454</code>), <code>lock.unlock</code> raises <code>HomeAssistantError</code> and leaves the entity locked; an unlock not confirmed within 15 s is withdrawn if it has not been sent yet.</td>
+<td style="text-align: left;">Door entry strikes from <code>myhome.yaml</code> with optional constant-time PIN authentication and auto-relock. Never created from bus traffic; <code>who: "1"</code> relays are rejected (motorized gates and garage doors are impulse covers). Requires a gateway that routes <code>WHO 6</code> and sees the door-entry riser, or <strong>Shared Bus → Secondary</strong> <code>WHO 6</code> delegation to one (such as an <code>MH202</code> on the riser); <code>F454</code> / <code>F459</code> route only <code>WHO 8</code>. If the gateway rejects <code>*6*10*&lt;where&gt;##</code> with <code>*#*0##</code> (e.g. <code>MyHomeServer1</code>, <code>F455</code>, <code>F461</code>, <code>F454</code>), <code>lock.unlock</code> raises <code>HomeAssistantError</code> and leaves the entity locked; an unlock not confirmed within 15 s is withdrawn if it has not been sent yet.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Doorbell event (WHO 6 / WHO 8)</td>
@@ -2662,7 +2609,7 @@
 <tr>
 <td style="text-align: left;">Central unit modes</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Central unit 3550 (<code>#0</code>) and 4695 (<code>#0#1</code>) as <code>central: true</code> zones; seasonal propagation. Central units operate via autonomous events and are exempt from point-to-point status polling.</td>
+<td style="text-align: left;">Central unit 3550 (<code>#0</code>) and 4695 (<code>#0#1</code>..<code>#0#4</code>) as <code>central: true</code> zones; seasonal propagation. 99-zone <code>#0</code> is polled via <code>*#4*#0##</code>, while 4-zone <code>#0#1</code>..<code>#0#4</code> units remain exempt from point-to-point status polling.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Weekly programs / scenarios</td>
@@ -2690,6 +2637,11 @@
 <td style="text-align: left;">State (disarmed / armed away / triggered)</td>
 <td style="text-align: center;">👁️</td>
 <td style="text-align: left;">Central units 3485 / 3486.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Event bus notifications</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Every <code>WHO 5</code> status and zone frame fires <code>myhome_alarm_event</code> (<code>where</code>, <code>state</code>, <code>state_code</code>, <code>is_alarm</code>, <code>message</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Arm away / arm home / disarm</td>
@@ -2721,17 +2673,17 @@
 <tr>
 <td style="text-align: left;">Dry contacts (CEN+, WHO 25)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">F428 / 3477 / 3480 / F482; device class selectable in UI (<strong>Show As</strong>) or YAML.</td>
+<td style="text-align: left;">F428 / 3477 / 3480 / F482 (<code>3xxx</code> addresses auto-discover); device class selectable in UI (<strong>Show As</strong>) or YAML.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Auxiliary channels (WHO 9)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">AUX 0–9.</td>
+<td style="text-align: left;">AUX 0–9 (declared under <code>binary_sensor:</code> in <code>myhome.yaml</code>; not auto-discovered from bus traffic).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Motion / presence (WHO 1)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Motion frames of lighting sensors; a timeout restores <code>off</code>.</td>
+<td style="text-align: left;">Motion frames of lighting sensors (auto-discovered); a timeout restores <code>off</code>.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Inverted contacts</td>
@@ -2753,7 +2705,7 @@
 <tr>
 <td style="text-align: left;">Instantaneous power (W)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Push-driven; <code>myhome.start_sending_instant_power</code> requests a burst of readings.</td>
+<td style="text-align: left;">Push-driven; <code>myhome.start_sending_instant_power</code> requests a burst of readings (<code>myhome.stop_sending_instant_power</code> stops it).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Energy total / today / month (Wh)</td>
@@ -2763,7 +2715,7 @@
 <tr>
 <td style="text-align: left;">Temperature (zones and probes)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Zones are polled every 5 min; probes (<code>WHERE ≥ 100</code>) are push-driven and only polled when silent.</td>
+<td style="text-align: left;">Standalone probes (<code>WHERE ≥ 100</code> or Dimension 15) auto-discover and are push-driven (polled only when silent); thermostat zones <code>1..99</code> belong to <code>climate</code> unless declared under <code>sensor:</code> in <code>myhome.yaml</code> (polled every 5 min).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Illuminance (lux)</td>
@@ -2839,7 +2791,7 @@
 <tr>
 <td style="text-align: left;">FM radio tuner sources (F500 / F500N)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Power on/off, stored presets (<code>Station 1</code>–<code>15</code>), RDS programme text, Media Browser (<code>BROWSE_MEDIA</code>), direct frequency tuning (<code>myhome.tuner_set_frequency</code> / <code>play_media</code>), hardware seek (<code>myhome.tuner_seek_up</code> / <code>tuner_seek_down</code>), and preset storage (<code>myhome.tuner_store_station</code>) across both <code>WHO 16</code> and <code>WHO 22</code> gateways.</td>
+<td style="text-align: left;">Power on/off, stored presets (<code>Station 1</code>–<code>5</code> by default, dynamically expanding up to <code>Station 1</code>–<code>15</code> on <code>WHO 22</code>), RDS programme text, custom <code>tuner_pictures</code> (<code>MHz=URL</code>), Media Browser (<code>BROWSE_MEDIA</code>), direct frequency tuning (<code>myhome.tuner_set_frequency</code> / <code>play_media</code>), hardware seek (<code>myhome.tuner_seek_up</code> / <code>tuner_seek_down</code>), and preset storage (<code>myhome.tuner_store_station</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Streaming (play, pause, next, previous)</td>
@@ -2854,7 +2806,7 @@
 <tr>
 <td style="text-align: left;">Speaker groups</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Home Assistant <code>join</code> / <code>unjoin</code> and Music Assistant sync groups: rooms of a group share one decoder and one source. See <a href="../media_player/#multi-room-audio-grouping-music-assistant-home-assistant">Multi-Room Audio Grouping</a>.</td>
+<td style="text-align: left;">Home Assistant <code>join</code> / <code>unjoin</code>, optional <code>auto_join_streaming</code>, and Music Assistant sync groups: rooms of a group share one decoder and one source (Environment <code>0</code> zones <code>01</code>–<code>09</code> omit <code>GROUPING</code>). See <a href="../media_player/#multi-room-audio-grouping-music-assistant-home-assistant">Multi-Room Audio Grouping</a>.</td>
 </tr>
 </tbody>
 </table>
@@ -2863,29 +2815,44 @@
 <thead>
 <tr>
 <th style="text-align: left;">Trigger</th>
-<th style="text-align: center;">CEN</th>
-<th style="text-align: center;">CEN+</th>
+<th style="text-align: center;">CEN (<code>WHO = 15</code>)</th>
+<th style="text-align: center;">CEN+ (<code>WHO = 25</code>)</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;">Short press / short release</td>
+<td style="text-align: left;">Short press (<code>pushbutton_short_press</code>)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 </tr>
 <tr>
-<td style="text-align: left;">Long press / long release</td>
+<td style="text-align: left;">Short release (<code>pushbutton_short_release</code>)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+</tr>
+<tr>
+<td style="text-align: left;">Long press (<code>pushbutton_long_press</code>)</td>
 <td style="text-align: center;">✅</td>
 <td style="text-align: center;">✅</td>
 </tr>
 <tr>
-<td style="text-align: left;">Rotary dial clockwise / counter-clockwise, slow and fast</td>
+<td style="text-align: left;">Long press repeat while held (<code>pushbutton_long_press_repeat</code>)</td>
+<td style="text-align: center;">❌</td>
 <td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;">Long release (<code>pushbutton_long_release</code>)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td style="text-align: left;">Rotary dial clockwise / counter-clockwise, slow &amp; fast (<code>rotary_cw_slow</code>, <code>rotary_cw_fast</code>, <code>rotary_ccw_slow</code>, <code>rotary_ccw_fast</code>)</td>
+<td style="text-align: center;">❌</td>
 <td style="text-align: center;">✅</td>
 </tr>
 </tbody>
 </table>
-<p>Buttons 0–31 per device; every trigger carries the gateway MAC so multi-gateway plants do not cross-fire.</p>
+<p>Buttons <code>0</code>–<code>31</code> (<code>button_0</code>..<code>button_31</code>) per device for both CEN and CEN+; every trigger carries the gateway MAC so multi-gateway plants do not cross-fire.</p>
 <h2 id="services">Services<a class="headerlink" href="#services" title="Permanent link">&para;</a></h2>
 <p>All services are documented in the <a href="../services/">Services Reference</a>: <code>send_message</code>, <code>turn_on_timed</code>, <code>sync_time</code>, <code>start_sending_instant_power</code>, <code>stop_sending_instant_power</code>, <code>sweep_bus</code>, <code>calibrate_cover</code>, <code>stop_cover_calibration</code>, <code>set_cover_travel_time</code>, <code>reset_cover_travel_time</code>, <code>tuner_seek_up</code>, <code>tuner_seek_down</code>, <code>tuner_set_frequency</code>, <code>tuner_store_station</code>, <code>send_scenario_plus_command</code>, <code>cancel_cover_request</code>, <code>acknowledge_cover_fault</code>.</p>
 <h2 id="diagnostics-and-tooling">Diagnostics and tooling<a class="headerlink" href="#diagnostics-and-tooling" title="Permanent link">&para;</a></h2>
@@ -2955,7 +2922,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

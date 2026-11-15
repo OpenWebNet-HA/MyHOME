@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -2440,34 +2412,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2710,34 +2654,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -3674,8 +3590,8 @@
 <h3 id="how-to-resolve_2">How to resolve<a class="headerlink" href="#how-to-resolve_2" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Check the physical hardware label on your gateway unit in the electrical cabinet.</li>
-<li>Open <strong>Settings → Devices &amp; Services → MyHOME → ⋮ → Reconfigure</strong>.</li>
-<li>Select the correct physical model.</li>
+<li>Open <strong>Settings → Devices &amp; Services → MyHOME → Configure</strong> (Options Flow; <strong>⋮ → Reconfigure</strong> is for <code>host</code>, <code>port</code>, and <code>password</code>).</li>
+<li>Select the correct physical <strong>Gateway Hardware Model</strong> (<code>name</code>).</li>
 </ol>
 <hr />
 <h2 id="gateway-model-corrected">Gateway Model Corrected<a class="headerlink" href="#gateway-model-corrected" title="Permanent link">&para;</a></h2>
@@ -3839,8 +3755,8 @@
 <p>Home Assistant automatically inspects the hardware models, command concurrency, queue pacing, and supported OpenWebNet subsystems (<code>WHO</code> dimensions) of both gateways:</p>
 <ul>
 <li><strong>Tier 1 (High Throughput / Multi-Session)</strong>: <code>F454</code>, <code>F455</code>, <code>F461</code>, <code>MyHomeServer1</code>.</li>
-<li><strong>Tier 2 (Linux / Touchscreen Gateways)</strong>: <code>MH201</code>, <code>MH202</code>, <code>H4890</code> / <code>AM4890</code> / <code>LN4890</code>.</li>
-<li><strong>Tier 3 (Legacy Microcontroller Gateways)</strong>: <code>MH200N</code>, <code>MH200</code>, <code>F452</code>, <code>F453</code>.</li>
+<li><strong>Tier 2 (Modern Scenario &amp; Touchscreen Gateways)</strong>: <code>MH201</code>, <code>MH202</code>, <code>H4890</code> / <code>AM4890</code> / <code>LN4890</code> (and Legrand catalogue equivalents <code>067292</code>, <code>573958</code>, <code>078479</code>).</li>
+<li><strong>Tier 3 (Legacy &amp; Single-Session Gateways)</strong>: <code>MH200N</code>, <code>MH200</code>, <code>F452</code>, <code>F452V</code>, <code>F453</code>, <code>F453AV</code>, <code>H4684</code> / <code>H/L4684</code>, and <code>Generic</code>.</li>
 </ul>
 <p>The integration designates the higher-tier or broader-subsystem-coverage gateway as <strong>Primary</strong> (ranking by hardware tier, supported WHO count, and deterministic MAC address tie-break), and calculates the capability delta for the follower (<code>Δ = S_sec \ S_pri</code>):</p>
 <ul>
@@ -3990,7 +3906,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1711,34 +1683,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -1994,34 +1938,6 @@
 
               
             
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
           </ul>
         </nav>
       
@@ -2169,11 +2085,11 @@
 <li><strong>BTicino F522 / F523</strong>: Multi-circuit energy and power management modules (<code>WHERE = 71</code> through <code>7255</code>).</li>
 </ul>
 <h3 id="auto-discovered-entities">Auto-Discovered Entities<a class="headerlink" href="#auto-discovered-entities" title="Permanent link">&para;</a></h3>
-<p>When an energy meter is detected on the SCS bus, the integration creates:</p>
+<p>When an energy meter is detected on the SCS bus, the integration creates entities only for the measurements the meter actually reports:</p>
 <ol>
 <li><strong>Instantaneous Power Sensor</strong> (<code>device_class: power</code>): Real-time active power consumption in Watts (<strong>W</strong>).</li>
-<li><strong>Total Energy Counter</strong> (<code>device_class: energy</code>, <code>state_class: total_increasing</code>): Cumulative electrical energy consumption in Watt-hours (<strong>Wh</strong>) or kilowatt-hours (<strong>kWh</strong>).</li>
-<li><strong>Periodic Energy Counters</strong>: Daily and monthly energy sub-counters.</li>
+<li><strong>Total Energy Counter</strong> (<code>device_class: energy</code>, <code>state_class: total_increasing</code>): Cumulative electrical energy consumption in Watt-hours (<strong>Wh</strong>).</li>
+<li><strong>Periodic Energy Counters</strong>: Daily and monthly energy sub-counters (created disabled by default in the entity registry; enable them in Home Assistant if needed).</li>
 </ol>
 <h3 id="home-assistant-energy-dashboard-integration">Home Assistant Energy Dashboard Integration<a class="headerlink" href="#home-assistant-energy-dashboard-integration" title="Permanent link">&para;</a></h3>
 <p>Because energy entities implement standard <code>state_class: total_increasing</code> and <code>device_class: energy</code>:</p>
@@ -2183,11 +2099,16 @@
 <li>Home Assistant automatically generates hourly, daily, and monthly solar/grid tracking graphs.</li>
 </ol>
 <h3 id="live-high-frequency-power-streaming">Live High-Frequency Power Streaming<a class="headerlink" href="#live-high-frequency-power-streaming" title="Permanent link">&para;</a></h3>
-<p>To instruct the gateway to stream high-frequency instantaneous power updates to Home Assistant, call the <code>myhome.start_sending_instant_power</code> service action:</p>
+<p>To instruct a power meter to stream high-frequency instantaneous power updates (<code>Dimension 113</code>) to Home Assistant, call <code>myhome.start_sending_instant_power</code> targeting the power sensor entity (optional <code>duration</code>: <code>1–255</code> minutes, default <code>65</code>), and call <code>myhome.stop_sending_instant_power</code> to stop streaming early:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.start_sending_instant_power</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">meter_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">    </span><span class="c1"># Meter address (e.g. 1 for F520 address 51)</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span><span class="w">   </span><span class="c1"># Push interval in seconds</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.general_power</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">65</span><span class="w">   </span><span class="c1"># Optional: 1–255 minutes (default: 65)</span>
+</span></code></pre></div>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.stop_sending_instant_power</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">target</span><span class="p">:</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.general_power</span>
 </span></code></pre></div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
@@ -2196,10 +2117,10 @@ To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdg
 </div>
 <hr />
 <h2 id="temperature-sensors-who-4">🌡️ Temperature Sensors (WHO = 4)<a class="headerlink" href="#temperature-sensors-who-4" title="Permanent link">&para;</a></h2>
-<p>Standalone and secondary temperature probes operating on WHO 4 are automatically exposed as <code>sensor</code> entities with <code>device_class: temperature</code>:</p>
+<p>Standalone and secondary temperature probes operating on <code>WHO = 4</code> are automatically discovered as <code>sensor</code> entities with <code>device_class: temperature</code>:</p>
 <ul>
-<li><strong>Main Zone Probes (<code>WHERE = 1..99</code>)</strong>: Reports ambient room temperature for individual zones.</li>
-<li><strong>Secondary Radio Probes (<code>WHERE ≥ 100</code>)</strong>: Reports battery-powered wireless probes (e.g. BTicino <code>3455</code> behind <code>L4577</code> radio interfaces). The v2 engine utilizes push-driven listening, eliminating unnecessary bus polling.</li>
+<li><strong>Standalone &amp; Secondary Probes (<code>WHERE ≥ 100</code>, i.e. <code>0101</code>–<code>0999</code> / <code>101</code>–<code>899</code>, or <code>Dimension 15</code>)</strong>: Auto-discovered from SCS bus traffic (including battery-powered wireless probes such as BTicino <code>3455</code> behind <code>L4577</code> radio interfaces, and outdoor/slave probes <code>3475</code>/<code>3476</code>).</li>
+<li><strong>Thermostat Zones (<code>WHERE = 1..99</code>)</strong>: Zone addresses <code>1..99</code> belong to <code>climate.*</code> thermostat entities by default and do <strong>not</strong> spawn duplicate standalone temperature <code>sensor</code> entities unless explicitly declared under <code>sensor:</code> in <code>/config/myhome.yaml</code>.</li>
 </ul>
 <hr />
 <h2 id="illuminance-lux-sensors-who-1">☀️ Illuminance Lux Sensors (WHO = 1)<a class="headerlink" href="#illuminance-lux-sensors-who-1" title="Permanent link">&para;</a></h2>
@@ -2214,7 +2135,7 @@ To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdg
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>If you are upgrading from legacy v0.9 installations and still have manual <code>sensor:</code> blocks in <code>/config/myhome.yaml</code>, please refer to the <a href="../../0.9.4/configuration/sensors/">v0.9.4 Legacy Sensor Documentation</a> or the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>. In v2, all sensors are discovered dynamically.</p>
+<p><code>WHO = 18</code> energy meters, <code>WHO = 4</code> standalone probes (<code>WHERE ≥ 100</code> or <code>Dimension 15</code>), and <code>WHO = 1</code> illuminance sensors are discovered dynamically from the bus; <code>sensor:</code> entries in <code>/config/myhome.yaml</code> remain supported for custom naming or exposing thermostat zone (<code>1..99</code>) temperatures as standalone <code>sensor</code> entities. For migrating pre-v0.9 <code>configuration.yaml</code> files, see the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>.</p>
 </div>
 
 
@@ -2251,7 +2172,7 @@ To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdg
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   

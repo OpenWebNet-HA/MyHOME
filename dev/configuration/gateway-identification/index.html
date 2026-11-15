@@ -583,34 +583,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../getting-started/removal/" class="md-nav__link">
         
   
@@ -1783,34 +1755,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../f454-regression-checks/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    F454 Regression Checks
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../quality_scale_plan/" class="md-nav__link">
         
   
@@ -2053,34 +1997,6 @@
     
   
     Project Roadmap
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../../roadmap/beta-differences/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Beta Evolution & Differences
   
 
     
@@ -2541,21 +2457,27 @@
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;">1</td>
+<td style="text-align: left;">1a</td>
 <td style="text-align: left;"><code>*#13**15##</code></td>
-<td style="text-align: left;">always</td>
+<td style="text-align: left;">always (setup &amp; runtime startup)</td>
 <td style="text-align: left;">the WHO=13 device type; every known gateway answers it</td>
+</tr>
+<tr>
+<td style="text-align: left;">1b</td>
+<td style="text-align: left;"><code>*#13**16##</code></td>
+<td style="text-align: left;">always (setup &amp; runtime startup when firmware is unknown)</td>
+<td style="text-align: left;">the gateway firmware version (<code>V.R.B</code>), which also gates firmware-specific profile capabilities (e.g. <code>H/L4684</code> FW ≥ <code>6.0.0</code>)</td>
 </tr>
 <tr>
 <td style="text-align: left;">2</td>
 <td style="text-align: left;"><code>*#1013**1##</code></td>
-<td style="text-align: left;">only when step 1 returned a <strong>shared</strong> code (<code>200</code>)</td>
+<td style="text-align: left;">only when step 1a returned a <strong>shared</strong> code (<code>200</code>)</td>
 <td style="text-align: left;">the OBJECT_MODEL, one code per model</td>
 </tr>
 <tr>
 <td style="text-align: left;">3</td>
 <td style="text-align: left;"><code>*#13**12##</code> (MAC)</td>
-<td style="text-align: left;">only when <strong>every</strong> model the codes can name is in <code>MAC_REQUEST_SAFE_MODELS</code></td>
+<td style="text-align: left;">setup only, when <strong>every</strong> model the codes can name is in <code>MAC_REQUEST_SAFE_MODELS</code></td>
 <td style="text-align: left;">the gateway's real MAC</td>
 </tr>
 </tbody>
@@ -2613,8 +2535,8 @@
 <p>"Contradicts — uncertain code" covers both field evidence and the third-party table: neither can prove your gateway is something else, so the configured model stands untouched.</p>
 <p>Two repair issues exist for this:</p>
 <ul>
-<li><strong>Gateway model mismatch for …</strong> (<code>gateway_identity_mismatch</code>) — the reported and configured models disagree and the integration is <em>not</em> sure enough to act. It names the code, what the specification or field evidence says it means, and how to fix it (reconfigure flow) if the reported model is what you own.</li>
-<li><strong>Gateway model corrected to …</strong> (<code>gateway_identity_corrected</code>) — a manually chosen model was contradicted by an official 2006 code or by a catalogue <code>WHO=1013</code> OBJECT_MODEL and was corrected; reconfigure if that is wrong.</li>
+<li><strong>Gateway model mismatch for …</strong> (<code>gateway_identity_mismatch</code>) — the reported and configured models disagree and the integration is <em>not</em> sure enough to act. It names the code, what the specification or field evidence says it means, and how to fix it via <strong>Configure</strong> (Options Flow; <strong>Reconfigure</strong> updates <code>host</code>/<code>port</code>/<code>password</code>) if the reported model is what you own.</li>
+<li><strong>Gateway model corrected to …</strong> (<code>gateway_identity_corrected</code>) — a manually chosen model was contradicted by an official 2006 code or by a catalogue <code>WHO=1013</code> OBJECT_MODEL and was corrected; open <strong>Configure</strong> (Options Flow) if you need to override the model manually.</li>
 </ul>
 <p>Neither issue is raised twice for the same finding, and a mismatch issue is withdrawn automatically if the gateway later reports a code that no longer contradicts.</p>
 <hr />
@@ -2671,7 +2593,7 @@
 </span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">"who1013_n_conf"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
 </span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">  </span><span class="nt">"who1013_brand"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
 </span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">"who1013_line"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
-</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="nt">"profile"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MH200NProfile"</span><span class="p">,</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">  </span><span class="nt">"profile"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MH200Profile"</span><span class="p">,</span>
 </span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">  </span><span class="nt">"conflict"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
 </span><span id="__span-2-21"><a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="p">}</span>
 </span></code></pre></div>
@@ -2679,18 +2601,18 @@
 <ul>
 <li><code>source</code> — which of the three sources produced the label.</li>
 <li><code>who13_code</code> — the raw code your gateway reported; <code>who13_model_official</code> / <code>who13_model_observed</code> — what the 2006 specification and the field evidence say it means (either may be <code>null</code>).</li>
-<li><code>who13_firmware</code>, <code>who13_kernel</code>, <code>who13_distribution</code> — dimensions 16 / 23 / 24, corroborating evidence when the gateway sends them.</li>
+<li><code>who13_firmware</code>, <code>who13_kernel</code>, <code>who13_distribution</code> — dimensions 16 / 23 / 24, corroborating evidence when the gateway sends them (<code>*#13**16##</code> is actively queried on startup whenever the firmware version is not yet known).</li>
 <li><code>who1013_code</code> / <code>who1013_model</code> — the <code>WHO=1013</code> OBJECT_MODEL reply and what the diagnostic catalogue or field evidence says it means; both <code>null</code> unless <code>who13_code</code> was a shared code (the question is not asked automatically otherwise) or <code>myhome.sweep_bus</code> queried <code>*#1013*0*1##</code> and the gateway answered. On an MH200 they are always <code>null</code>.</li>
 <li><code>who1013_other_names</code> — the same product's other brand name(s), e.g. <code>["003598"]</code> for an F454.</li>
 <li><code>who1013_n_conf</code>, <code>who1013_brand</code>, <code>who1013_line</code> — the rest of the reply, rendered as <code>value (meaning)</code> when the value has been seen before and as the bare value when it has not, so a new one reaches the trace instead of being dropped. Traced gateways show <code>"1 (BTicino)"</code> or <code>"5 (Legrand BTicino)"</code>, and <code>"0 (Undefined)"</code>.</li>
-<li><code>profile</code> — the OWNd profile actually in use (MH200 and MH200N share <code>MH200NProfile</code>; that is expected).</li>
+<li><code>profile</code> — the OWNd profile actually in use (<code>MH200</code> uses <code>MH200Profile</code>, which disables <code>WHO 22</code> and <code>WHO 25</code>, distinct from <code>MH200NProfile</code> used by <code>MH200N</code>).</li>
 <li><code>conflict</code> — non-null exactly when a <em>Gateway model mismatch</em> repair issue is open, with the reason.</li>
 </ul>
 <p>If <code>source</code> is <code>manual</code> and <code>who13_code</code> is not in either table, you are the first to see that code: please open an issue with the export attached.</p>
 <hr />
 <h2 id="what-to-do-if-your-gateway-is-mislabelled">What to do if your gateway is mislabelled<a class="headerlink" href="#what-to-do-if-your-gateway-is-mislabelled" title="Permanent link">&para;</a></h2>
 <ol>
-<li>Open the entry's <strong>⋮ → Reconfigure</strong> and set the model you own. The reconfigure flow keeps your entities.</li>
+<li>Open the entry's <strong>Configure</strong> button (Options Flow) and select the <strong>Gateway Hardware Model</strong> (<code>name</code>) you own (<strong>⋮ → Reconfigure</strong> is for <code>host</code>, <code>port</code>, and <code>password</code>). Changing the model in <strong>Configure</strong> preserves all of your devices and entity IDs.</li>
 <li>If you know your model but the integration keeps questioning it, the WHO=13 code your gateway sends is new evidence — attach the export to an issue so the table above can grow.</li>
 <li>Never edit <code>custom_components/myhome/const.py</code> on your installation to "fix" a code: the precedence rule above is what protects you from the next mislabel.</li>
 </ol>
@@ -2729,7 +2651,7 @@
       <div class="md-copyright">
   
     <div class="md-copyright__highlight">
-      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0
+      Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0
     </div>
   
   
