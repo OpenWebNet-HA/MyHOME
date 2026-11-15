@@ -363,6 +363,7 @@ async def test_options_update_rebuilds_decoder_pool(hass: HomeAssistant):
 
         # Update options with a decoder mapping via options flow
         form = await hass.config_entries.options.async_init(config_entry.entry_id)
+        form = await hass.config_entries.options.async_configure(form["flow_id"], {"next_step_id": "user"})
         assert form["type"] == "form"
         result = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1375,6 +1376,8 @@ async def test_options_update_flags_a_stream_incompatible_decoder(hass: HomeAssi
         issue_id = f"incompatible_decoder_platform_{config_entry.entry_id}_media_player_cxn"
 
         form = await hass.config_entries.options.async_init(config_entry.entry_id)
+
+        form = await hass.config_entries.options.async_configure(form["flow_id"], {"next_step_id": "user"})
         assert form["type"] == "form"
         res = await hass.config_entries.options.async_configure(
             form["flow_id"],
@@ -1396,6 +1399,8 @@ async def test_options_update_flags_a_stream_incompatible_decoder(hass: HomeAssi
         assert pool.stream_incompatible == frozenset({"media_player.cxn"})
 
         form2 = await hass.config_entries.options.async_init(config_entry.entry_id)
+
+        form2 = await hass.config_entries.options.async_configure(form2["flow_id"], {"next_step_id": "user"})
         assert form2["type"] == "form"
         res2 = await hass.config_entries.options.async_configure(
             form2["flow_id"],

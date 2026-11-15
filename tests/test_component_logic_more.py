@@ -461,7 +461,8 @@ class TestCoverEntity:
 
             # 2. Test message listener handling
             assert config_entry.async_on_unload.called
-            assert len(listeners) == 1
+            # The WHO 2 discovery's listener, the translation relay's listener and its close.
+            assert len(listeners) == 3
 
         # Test async_unload_entry
         attach_runtime(mock_hass, config_entry)
@@ -536,9 +537,9 @@ class TestCoverEntity:
             msg_handler(valid_msg)
 
     @pytest.mark.asyncio
-    async def test_cover_async_added_to_hass(self, cover, mock_hass):
-        cover.hass = mock_hass
-        cover.entity_id = cover.entity_id or "test.cover"
+    async def test_cover_async_added_to_hass(self, cover, hass):
+        # Startup now resolves profiles through the real HA entity registry.
+        cover.hass = hass
         cover.async_on_remove = MagicMock()
         await cover.async_added_to_hass()
         assert cover.async_on_remove.call_count == 1  # availability; frames come via the router

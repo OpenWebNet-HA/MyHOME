@@ -24,7 +24,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from OWNd.message import OWNMessage
+from OWNd.message import OWNGatewayEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import (
@@ -894,8 +894,12 @@ class TestTraceReplayHarness:
         # 2. Test F454 hardware model identification frame
         model_frame = "*#13**15*200##"
         model_msg = OWNMessage.parse(model_frame)
-        assert isinstance(model_msg, OWNMessage)
-        assert "F454" in (getattr(model_msg, "_device_type", None) or "")
+        assert isinstance(model_msg, OWNGatewayEvent)
+        assert model_msg.who == 13
+        assert model_msg.dimension == 15
+        # Resolve the shared code using integration identity evidence, not
+        # OWNd's diagnostic label (formerly F454, now a gateway family).
+        assert getattr(model_msg, "dimension_value", getattr(model_msg, "_dimension_value", None)) == ["200"]
         await handler._process_message(model_msg)
         assert handler.model == "F454"
         assert handler.profile.model_name == "F454"

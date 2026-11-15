@@ -144,7 +144,8 @@ def test_f461_gateway_diagnostics_frames() -> None:
     device_type_reply = OWNMessage.parse("*#13**15*200##")
     assert isinstance(device_type_reply, OWNGatewayEvent)
     assert device_type_reply.who == 13
-    assert "F454" in (device_type_reply._device_type or "")
+    assert device_type_reply.dimension == 15
+    assert getattr(device_type_reply, "dimension_value", getattr(device_type_reply, "_dimension_value", None)) == ["200"]
 
     firmware_reply = OWNMessage.parse("*#13**16*2*0*11##")
     assert isinstance(firmware_reply, OWNGatewayEvent)

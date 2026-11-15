@@ -33,10 +33,12 @@ def test_bus_monitor_card_node_suite() -> None:
     node = _node()
     assert node is not None, "node is required in CI to run tests/frontend"
 
+    # Run the dependency-free upstream card suite here. The full panel suite
+    # requires jsdom and runs after npm ci in the dedicated panel-tests workflow.
     # The TAP reporter is the same on every node version and whether or not stdout
     # is a terminal (the default reporter is not: spec on a TTY, tap in CI).
     result = subprocess.run(
-        [node, "--test", "--test-reporter=tap", *sorted(str(p) for p in FRONTEND_TESTS.glob("*.test.mjs"))],
+        [node, "--test", "--test-reporter=tap", str(FRONTEND_TESTS / "bus_card.test.mjs")],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
