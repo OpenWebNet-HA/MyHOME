@@ -11,6 +11,7 @@ from OWNd.message import OWNMessage
 from custom_components.myhome.cover_calibration import begin
 from custom_components.myhome.cover_calibration_reservation import GUARD_SECONDS
 from custom_components.myhome.cover_profiles import ProfileError, read_profile, write_profile
+from tests.test_cover_calibration_base import asked
 from tests.test_cover_calibration_geometry import GAP, endpoint, lift, start
 from tests.test_cover_calibration_geometry import geometry as geometry_fixture
 from tests.test_panel_cover_calibration import act, bus
@@ -212,3 +213,164 @@ async def test_a_status_reply_in_a_geometry_run_keeps_the_gateway_for_the_cancel
     assert session.reservation.pending and session.store.calibration is session and stop_guard()
     bus(cal, "*2*0*11##")
     assert session.store.calibration is None
+
+
+# The same answer as the monitor session reads it: no mark, only one of our status requests heard just before.
+
+async def asked_then_dispatched(cal):
+    """Our request to this cover goes out with the run's command, before the bus reports the movement."""
+    await act(cal, "run" if cal.session.mode == "automatic" else "open")
+    assert cal.queue[-1][1]()
+    await asked(cal)
+    cal.clock[0] += .05
+    bus(cal, "*2*1*11##")
+
+
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
+async def test_an_unmarked_status_reply_in_a_run_keeps_the_gateway_for_the_cancel_stop(calibration):
+    cal, session = calibration, calibration.session
+    await asked_then_dispatched(cal)
+    cal.clock[0] += .2
+    before = session.view()
+    bus(cal, "*2*0*11##")  # The reply, 0.25 s after the request.
+    assert session.reservation.pending and session.active
+    if session.mode == "guided":  # The run reads it as before: the reply, not the end of the travel.
+        assert (session.phase, session.reason, session.motor_stopped) == (before["phase"], None, False)
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    assert session.closed and session.reservation.pending and session.store.calibration is session
+    assert stop_guard()
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")  # The actuator's own stop frees the gateway, as before.
+    assert not session.reservation.pending and session.store.calibration is None
+    assert not stop_guard()
+
+
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
+async def test_an_unmarked_status_reply_after_cancel_does_not_release_the_gateway(calibration):
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    cal.clock[0] += 3
+    await asked(cal)
+    cal.clock[0] += .1
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    cal.clock[0] += .2
+    bus(cal, "*2*0*11##")  # The reply to the request sent before the cancel.
+    assert session.reservation.pending and session.store.calibration is session
+    assert cal.cover._calibration is session and session.view()["waiting_for_stop"]
+    assert stop_guard()
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None
+    assert cal.cover._calibration is None and not stop_guard()
+
+
+async def test_an_unmarked_status_reply_in_a_geometry_run_keeps_the_gateway_for_the_cancel_stop(geometry):
+    cal, session = geometry, geometry.session
+    await lift(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await endpoint(cal, 8)
+    await start(cal)
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, "*2*0*11##")
+    assert session.reservation.pending
+    session.close()
+    stop_guard = cal.queue[-1][1]
+    assert session.reservation.pending and session.store.calibration is session and stop_guard()
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")
+    assert session.store.calibration is None
+
+
+async def test_the_actuators_stop_right_after_a_reply_the_run_has_read_frees_the_gateway(calibration):
+    """The run takes the reply for the answer to our request; a stop after it is the actuator's, even this soon."""
+    cal, session = calibration, calibration.session
+    await asked_then_dispatched(cal)
+    cal.clock[0] += .1
+    bus(cal, "*2*0*11##")  # The reply: the run reads it and the request is answered.
+    assert session.phase == "opening" and session.reservation.pending
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    assert stop_guard()
+    cal.clock[0] += .3
+    bus(cal, "*2*0*11##")  # Still within the reply time of the request, but it was answered.
+    assert not session.reservation.pending and session.store.calibration is None
+    assert not stop_guard()
+
+
+# Each request has one reply: once it has come, the actuator's own stop frees the gateway, however soon.
+
+@pytest.mark.parametrize("calibration", ["guided", "automatic"], indirect=True)
+@pytest.mark.parametrize("marked_first", [False, True])
+async def test_a_request_answered_moving_lets_the_actuators_stop_free_the_gateway(calibration, marked_first):
+    """A request during the run, answered 'moving' (on both sessions), then the cancel: the real stop, still within the
+    reply time of the request, is not taken for its reply."""
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    cal.clock[0] += 3
+    await asked(cal)
+    cal.clock[0] += .1
+    if marked_first:
+        status_reply(cal, "*2*1*11##")
+    bus(cal, "*2*1*11##")  # The reply as the monitor session reads it.
+    if not marked_first:
+        status_reply(cal, "*2*1*11##")
+    assert session.active and session.reservation.pending
+    await act(cal, "cancel")
+    stop_guard = cal.queue[-1][1]
+    assert stop_guard()
+    cal.clock[0] += .3
+    bus(cal, "*2*0*11##")  # The actuator's own stop, 0.4 s after the request.
+    assert not session.reservation.pending and session.store.calibration is None
+    assert cal.cover._calibration is None and not stop_guard()
+
+
+async def test_two_requests_each_answered_moving_let_the_actuators_stop_free_the_gateway(calibration):
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    cal.clock[0] += 3
+    await asked(cal)
+    cal.clock[0] += .05
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, "*2*1*11##")
+    bus(cal, "*2*1*11##")
+    await act(cal, "cancel")
+    cal.clock[0] += .2
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None
+
+
+async def test_two_requests_one_reply_so_far_keep_the_gateway_for_the_next_stop(calibration):
+    """The stop may be the second reply: the actuator's next stop, or the guard, frees the gateway."""
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    cal.clock[0] += 3
+    await asked(cal)
+    cal.clock[0] += .05
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, "*2*1*11##")  # The reply to the first.
+    await act(cal, "cancel")
+    cal.clock[0] += .2
+    bus(cal, "*2*0*11##")
+    assert session.reservation.pending and session.store.calibration is session
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None
+
+
+async def test_a_request_after_the_cancel_still_has_its_reply_awaited(calibration):
+    cal, session = calibration, calibration.session
+    await dispatch(cal)
+    await act(cal, "cancel")
+    cal.clock[0] += .1
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, "*2*0*11##")  # The reply to the request sent after the cancel.
+    assert session.reservation.pending and session.store.calibration is session
+    cal.clock[0] += 2
+    bus(cal, "*2*0*11##")
+    assert not session.reservation.pending and session.store.calibration is None

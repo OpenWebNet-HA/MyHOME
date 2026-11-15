@@ -103,6 +103,12 @@ TIMER_STOP_WINDOWS = ((59.0, 65.0), (119.0, 125.0))
 # after the write, the movement at 0.56-0.67 s), and no full run of a shutter lasts 2 s (the shortest measured: about
 # 12 s); an evolved actuator reports its stop 0.3 s after the motor stops.
 ALREADY_THERE_SECONDS = 2.0
+# How long after one of our status requests (`*#2*WHERE##`, a general or area one, written by the integration: the
+# poll after the startup sweep, an entity update) the actuator's reply may still arrive. A request sent before the
+# run's anchor can be answered "stopped" after it (the actuator answered before its motor started):
+# that stop is the reply, and says nothing of the motor now. Replies come in tenths of a second; the margin covers the
+# time Home Assistant takes to hand the frame over.
+STATUS_REPLY_SECONDS = 1.0
 
 
 @dataclass(eq=False)
@@ -197,7 +203,14 @@ class CalibrationSession:
         self.lease: asyncio.TimerHandle | None = None
         self.deadline: asyncio.TimerHandle | None = None
         self.settle: asyncio.TimerHandle | None = None
-        self.reservation = CalibrationReservation(self)
+        self.reservation = CalibrationReservation(self, lambda: monotonic(), STATUS_REPLY_SECONDS)
+        # When our status requests reaching this cover were sent, and when the session learnt of the run's movement
+        # (see `answers_status_request`).
+        self.status_asked: list[float] = []
+        self.movement_seen: float | None = None
+        listeners = getattr(cover._gateway_handler, "automation_status_listeners", None)
+        if isinstance(listeners, set):
+            listeners.add(self.status_requested)
         self.shutdown = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._on_shutdown)
         self.touch()
 
@@ -511,6 +524,9 @@ class CalibrationSession:
 
     def release(self) -> None:
         """Release a closed client only after its outstanding movement is bounded."""
+        listeners = getattr(self.cover._gateway_handler, "automation_status_listeners", None)
+        if isinstance(listeners, set):
+            listeners.discard(self.status_requested)
         if self.shutdown is not None:
             unsubscribe, self.shutdown = self.shutdown, None
             unsubscribe()
@@ -601,6 +617,8 @@ class CalibrationSession:
                 # A command translation standing for a missing status dates the run on its arrival.
                 self.started_at = monotonic() - event_age(event)
                 self.arm_deadline(self.travel_seconds, self.travel_reason)
+                # When the session learnt of the movement; the anchor itself may be dated earlier.
+                self.movement_seen = monotonic()
                 self.emit()
             elif expected or opposite:
                 self.interrupt("unexpected_movement")
@@ -609,10 +627,10 @@ class CalibrationSession:
             # either direction (a wall switch, a scenario) leaves its dated stop meaningless.
             self.interrupt("unexpected_movement")
         elif not expected:
-            if event.state == 0 and getattr(event, "myhome_status_reply", False) is True:
-                # The actuator's answer to a status request, read on the command session: the state when it
-                # answered, possibly before its motor started, and a copy of a frame the monitor session brings
-                # in its bus order. Not the motor stopping: neither "already at the end stop" nor the end.
+            if event.state == 0 and (getattr(event, "myhome_status_reply", False) is True or self.answers_status_request()):
+                # The reply to a status request: as read on the command session (the gateway marks it; its copy on
+                # the monitor session comes too), or one of ours sent before the run's start (the actuator answered
+                # before its motor started). Not its stop: neither "already at the end stop" nor the end.
                 return
             if event.state == 0 and self.basic_run() and monotonic() - cast(float, self.started_at) < ALREADY_THERE_SECONDS:
                 self.already_there()
@@ -627,6 +645,36 @@ class CalibrationSession:
                     self.motor_stop()
             else:
                 self.interrupt("unexpected_stop")
+
+    def status_requested(self, message: Any) -> None:
+        """A status request of ours (WHO 2) is queued for the gateway: it counts from now (never after its write, which
+        the gateway reports only once answered) if it reaches this cover's actuator: its own point, the general address,
+        its area, or a group (whose members are not known here)."""
+        where = str(getattr(message, "where", ""))
+        point = str(self.cover._where)
+        if (where in {point, "0", "00"} or where.startswith("#")
+                or (len(where) == 1 and len(point) == 2 and point[0] == where)):
+            # The reservation counts every one until the gateway is released, even after the session closes.
+            self.reservation.asked()
+            if not self.closed:
+                self.status_asked.append(monotonic())
+
+    def answers_status_request(self) -> bool:
+        """A stop status in a run is the reply to one of our status requests, sent before the session learnt of the
+        run's movement (the bus's movement status; a movement dated earlier, as a command translation standing for a
+        status never relayed, still counts from when it was learnt) and not answered yet: the actuator may have
+        answered "stopped" before its motor started. Each request answers once: the actuator's own stop after it (at
+        the end stop it already stood at, or at the arrival) still counts. A request sent after that is answered
+        with what the motor does then: its reply is the truth and counts as any stop status. Since the reply can come at
+        most STATUS_REPLY_SECONDS after the request, an older one is forgotten."""
+        now = monotonic()
+        self.status_asked = [asked for asked in self.status_asked if now - asked <= STATUS_REPLY_SECONDS]
+        seen = self.movement_seen if self.movement_seen is not None else self.started_at
+        for asked in self.status_asked:
+            if asked <= cast(float, seen):
+                self.status_asked.remove(asked)
+                return True
+        return False
 
     def stop_awaits_endpoint(self) -> bool:
         """The run ends with a motor stop that the operator then confirms with `endpoint`.
@@ -971,8 +1019,8 @@ class CalibrationSession:
         direction is foreign, and a stop status ends it, unless it is the gateway's echo of our own
         command (ECHO_WINDOW). In the basic calibration (the close to the rest before the ascent, and the runs back
         of a repeat) a stop within ALREADY_THERE_SECONDS of the movement is the actuator stopping at the end stop the
-        cover already stood at, as in the full runs: the run back is over at once. A reply to a status request
-        (marked by the gateway) is not that stop.
+        cover already stood at, as in the full runs: the run back is over at once. A reply to one of our status
+        requests (`answers_status_request`) is not that stop.
         """
         opening = self.phase == "reopening"
         expected = event.is_opening if opening else event.is_closing
@@ -980,7 +1028,8 @@ class CalibrationSession:
         if expected:
             if self.back_stage == "starting" and self.armed:
                 self.back_stage = "running"
-                self.started_at = monotonic()
+                # The movement learnt now: our status requests sent before it may still be answered "stopped".
+                self.started_at = self.movement_seen = monotonic()
                 cast(asyncio.TimerHandle, self.deadline).cancel()
                 self.deadline = self.hass.loop.call_later(self.back_seconds(), self.back_done)
                 self.emit()
@@ -994,8 +1043,8 @@ class CalibrationSession:
                 return
             elif elapsed >= ECHO_WINDOW:
                 self.back_done()
-            elif self.basic_session() and elapsed < ALREADY_THERE_SECONDS and getattr(
-                    event, "myhome_status_reply", False) is not True:
+            elif self.basic_session() and elapsed < ALREADY_THERE_SECONDS and not (
+                    getattr(event, "myhome_status_reply", False) is True or self.answers_status_request()):
                 self.back_done()
 
     def back_done(self) -> None:

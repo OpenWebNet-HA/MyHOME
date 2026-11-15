@@ -7,7 +7,7 @@ import asyncio
 import copy
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from OWNd.message import OWNMessage
@@ -296,6 +296,28 @@ async def test_repeat_from_review_closes_back_and_waits_for_the_lift_run(base):
     result = await act(cal, "lift")
     assert (result["phase"], result["samples"]) == ("review", {"lift": 2.5})
     assert cal.session.values == {"opening_time": 21.8, "closing_time": 21.21}
+
+
+async def test_the_lift_runs_own_statuses_and_a_status_reply_change_nothing_in_the_close_back(base):
+    cal = base
+    await basic(cal)
+    await act(cal, "repeat")
+    bus(cal, RISE)  # Before the close back starts: the lift run's own statuses.
+    bus(cal, STOP)
+    assert written(cal) == STOP
+    await asyncio.sleep(0)
+    fire(cal.session.settle)
+    assert written(cal) == LOWER
+    bus(cal, STOP)
+    await asked(cal)
+    cal.clock[0] += .6
+    bus(cal, LOWER)
+    cal.clock[0] += .1
+    bus(cal, STOP)  # The reply to our status request sent before the movement: no end yet.
+    assert (cal.session.phase, cal.session.back_stage) == ("reclosing", "running")
+    cal.clock[0] += 2.9
+    bus(cal, STOP)
+    assert (cal.session.phase, cal.session.back_stage) == ("confirm_lift", None)
 
 
 async def test_repeat_before_the_lift_offs_stop_is_written(base):
@@ -1237,6 +1259,30 @@ async def test_the_close_to_the_rest_on_a_cover_already_closed_ends_at_the_actua
 
 
 @pytest.mark.parametrize("base", [{"slats": True, "home": True}], indirect=True)
+async def test_a_reply_to_our_status_request_does_not_end_the_close_to_the_rest(base):
+    """The reply to a status request of ours sent before the movement (marked by the gateway, and its copy on the
+    monitor session) is not the actuator's stop: the close goes on, to the actuator's own stop (here 0.3 s later) or
+    its limit."""
+    cal = base
+    assert written(cal) == STOP
+    await asyncio.sleep(0)
+    fire(cal.session.settle)
+    assert written(cal) == LOWER
+    await asked(cal)
+    cal.clock[0] += .05
+    bus(cal, LOWER)
+    cal.clock[0] += .03
+    marked = OWNMessage.parse(STOP)
+    marked.myhome_status_reply = True
+    cal.cover.handle_event(marked)
+    bus(cal, STOP)
+    assert (cal.session.phase, cal.session.back_stage) == ("rehoming", "running")
+    cal.clock[0] += .27
+    bus(cal, STOP)
+    assert cal.session.phase == "confirm_closed"
+
+
+@pytest.mark.parametrize("base", [{"slats": True, "home": True}], indirect=True)
 async def test_a_timer_actuator_still_ends_the_close_to_the_rest_at_its_limit(base):
     """A timer actuator reports no stop at the bottom: the close lasts the closing time in use and its margin, as before."""
     cal = base
@@ -1296,6 +1342,123 @@ async def test_home_is_for_the_basic_calibration_only(hass, plant):
     with pytest.raises(ProfileError, match="invalid_profile"):
         await begin(hass, MagicMock(subscriptions={}), {"id": 1, "entry_id": plant.entries[0].entry_id,
                                                         "entity_id": plant.records[0].entity_id, "revision": 0, "home": True})
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A stop that answers a status request of ours is not the actuator's stop.
+# ---------------------------------------------------------------------------------------------------------------------
+async def asked(cal, where="11"):
+    """A status request of ours for `where`, queued now (session clock)."""
+    from OWNd.message import OWNAutomationCommand
+
+    cal.session.status_requested(OWNAutomationCommand.status(where))
+
+
+@pytest.mark.parametrize("base", [{"slats": False}], indirect=True)
+@pytest.mark.parametrize("then", ["arrival", "already_there"])
+async def test_a_stop_answering_our_status_request_before_the_start_ends_nothing(base, then):
+    """Our request sent between the command and the run's anchor, answered 'stopped' (the motor had not started yet)
+    after the anchor, read twice (on the command session, marked, and on the monitor session): the run goes on. The
+    actuator's own stop still ends it: at the arrival, or right after the start when the cover stood at the end stop
+    already (two stops, the reply and the actuator's)."""
+    cal = base
+    await act(cal, "open")
+    assert cal.queue[-1][1]()
+    cal.clock[0] += .5
+    bus(cal, STOP)  # Before the anchor (here the gateway's interlock): nothing.
+    assert cal.session.phase == "starting_open"
+    await asked(cal)
+    cal.clock[0] += .05
+    bus(cal, RISE)  # The anchor.
+    cal.clock[0] += .03
+    marked = OWNMessage.parse(STOP)
+    marked.myhome_status_reply = True
+    cal.cover.handle_event(marked)  # The reply as read on the command session, marked by the gateway…
+    bus(cal, STOP)  # …and its copy on the monitor session, 0.08 s after the request.
+    view = cal.session.view()
+    assert (view["phase"], view["reason"], view["motor_stopped"]) == ("opening", None, False)
+    if then == "arrival":
+        cal.clock[0] += 18.27
+        bus(cal, STOP)
+        assert (cal.session.phase, cal.session.values) == ("confirm_open", {"opening_time": 18.3})
+    else:
+        cal.clock[0] += .27
+        bus(cal, STOP)
+        assert (cal.session.phase, cal.session.reason) == ("confirm_closed", "already_at_end")
+
+
+@pytest.mark.parametrize("base", [{"slats": False}], indirect=True)
+async def test_a_movement_dated_before_it_was_learnt_still_takes_the_reply_for_a_reply(base):
+    """The run's anchor may be dated before the session learns of the movement (a command translation standing for a
+    status never relayed, dated from its arrival): a request sent in between is still answered as before the start."""
+    cal = base
+    await act(cal, "open")
+    assert cal.queue[-1][1]()
+    cal.clock[0] += 1
+    await asked(cal)
+    cal.clock[0] += .05
+    bus(cal, RISE)
+    cal.session.started_at -= .9  # Dated from the translation's arrival, before the request.
+    cal.clock[0] += .03
+    bus(cal, STOP)
+    assert (cal.session.phase, cal.session.reason) == ("opening", None)
+    cal.clock[0] += 18
+    bus(cal, STOP)
+    assert cal.session.phase == "confirm_open"
+
+
+@pytest.mark.parametrize("base", [{"slats": False}], indirect=True)
+@pytest.mark.parametrize("request_", ["after_the_anchor", "another_cover", "too_old"])
+async def test_other_stops_near_a_status_request_still_refuse_a_start_at_the_end_stop(base, request_):
+    """Only a reply to our request written before the anchor, within STATUS_REPLY_SECONDS: a request written after
+    the anchor is answered with what the motor does (stopped: the truth), one for another cover gets no reply from this
+    one, and one answered long ago is forgotten."""
+    cal = base
+    await act(cal, "open")
+    assert cal.queue[-1][1]()
+    if request_ == "another_cover":
+        await asked(cal, where="12")
+    elif request_ == "too_old":
+        await asked(cal)
+        cal.clock[0] += 1.2
+    cal.clock[0] += .5
+    bus(cal, RISE)
+    if request_ == "after_the_anchor":
+        cal.clock[0] += .1
+        await asked(cal)
+    cal.clock[0] += .2
+    bus(cal, STOP)
+    assert (cal.session.phase, cal.session.reason) == ("confirm_closed", "already_at_end")
+
+
+async def test_the_session_listens_to_the_status_requests_while_it_lasts(hass, plant):
+    """The session hears of our WHO 2 status requests from its cover's gateway handler until it is released."""
+    gateway = plant.gateways[0]
+    gateway.automation_status_listeners = listeners = set()
+    gateway.async_queue_calibration = MagicMock()
+    session = await begin(hass, MagicMock(subscriptions={}), {
+        "id": 9, "entry_id": plant.entries[0].entry_id, "entity_id": plant.records[0].entity_id, "revision": 0})
+    assert listeners == {session.status_requested}
+    session.close()
+    session.reservation.completed()
+    assert listeners == set()
+
+
+async def test_the_gateway_tells_its_listeners_of_each_automation_status_request(hass):
+    """Every WHO 2 status request sent through the handler (a point, the general address), once queued; no other WHO."""
+    from OWNd.message import OWNAutomationCommand, OWNLightingCommand
+
+    from tests.test_sweep_pacing import _make_gateway
+
+    gateway = _make_gateway(hass)
+    heard = []
+    gateway.automation_status_listeners.add(lambda message: heard.append(str(message)))
+    future = hass.loop.create_future()
+    with patch.object(gateway._command_pool, "send_status_request", AsyncMock(return_value=future)):
+        for message in (OWNAutomationCommand.status("11"), OWNAutomationCommand.status("0"),
+                        OWNLightingCommand.status("11")):
+            assert await gateway.send_status_request(message) is future
+    assert heard == ["*#2*11##", "*#2*0##"]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
