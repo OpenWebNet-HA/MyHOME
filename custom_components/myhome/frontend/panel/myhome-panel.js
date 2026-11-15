@@ -273,6 +273,7 @@ class MyHomePanel extends HTMLElement {
     const t = (key) => escapeHtml(this._t(key));
     this.shadowRoot.innerHTML = `
       <link rel="stylesheet" href="${escapeHtml(assetUrl("myhome-panel.css"))}">
+      <link rel="stylesheet" href="${escapeHtml(assetUrl("panel-calibration.css"))}">
       <header class="topbar"><ha-menu-button></ha-menu-button>
         <div class="brand-group"><div class="brand-mark" aria-hidden="true"><ha-icon icon="mdi:home-lightning-bolt"></ha-icon></div>
           <div class="brand-text"><div class="brand">My<span>HOME</span></div>

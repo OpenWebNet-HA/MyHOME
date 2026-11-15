@@ -3,6 +3,7 @@ import { after, afterEach, test } from "node:test";
 import { JSDOM } from "jsdom";
 
 import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
+import { PANEL_CSS_FILES, panelCss } from "./panel-css.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://localhost/", pretendToBeVisual: true });
 for (const key of ["window", "document", "HTMLElement", "customElements", "CustomEvent", "Event", "KeyboardEvent", "MouseEvent", "history"]) {
@@ -343,14 +344,14 @@ test("Assign profile lists the saved profiles as B-01 does and assigns with the 
 });
 
 test("L-127: a note is one recipe: light a box (tone 12 %, border 45 % on three sides, 2 px bar), dark the bar only; A-01's chosen row is neutral", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /:is\(\.cal-note, \.cal-tab \.notice, dialog\.cal-dialog \.notice\) \{ --note-tone: var\(--panel-accent\); --note-text: var\(--panel-accent\);[^}]*font-size: 13px;[^}]*background: color-mix\(in srgb, var\(--note-tone\) 12%, transparent\); border: 1px solid color-mix\(in srgb, var\(--note-tone\) 45%, transparent\);\s*border-inline-start: 2px solid var\(--note-tone\);/, "light: the box");
   assert.match(css, /\[data-theme="dark"\] :is\(\.cal-note, \.cal-tab \.notice, dialog\.cal-dialog \.notice\) \{ background: none; border: 0 solid transparent; border-inline-start: 2px solid var\(--note-tone\);/, "dark: the bar only");
   assert.match(css, /\.wiz-pick-row\.is-selected \{ background: color-mix\(in srgb, var\(--primary-text-color, #182b37\) 4%, var\(--panel-surface\)\); \}/, "the grey row stays");
 });
 
 test("a cover in progress keeps yellow tints in every state of its row", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   for (const selector of [".cal-row.is-running .cal-row-main:hover", ".cal-row.is-running.is-expanded .cal-row-main",
     ".cal-row.is-running.is-expanded .cal-row-main:hover", ".cal-row.is-running.is-expanded .cal-row-details"]) {
     // L-7: the pointer's tints sit inside `@media (hover: hover)`.
@@ -392,7 +393,7 @@ test("Assign profile waits while a calibration is open on the gateway, and after
 });
 
 test("every radio of the Assign dialog is the same circle, No profile included", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-radio input \{ flex: none; width: 16px; height: 16px;/, "never shrunk by a long description");
   assert.doesNotMatch(css, /\.cal-assign-none input/, "No profile has no circle of its own");
   // Centred on the first line (checked at 1× and 2× in a browser: within half a pixel).
@@ -612,7 +613,7 @@ test("choosing covers patches the sequence view in place: the rows, the spacer a
   assert.deepEqual(places(tab).map(([, place]) => place), ["1", "2", "", ""]);
   assert.equal(tab.querySelector(".cal-batch-summary").textContent, "2 tapparelle selezionate");
   assert.equal(tab.querySelector('[data-action="cal-tab-batch-start"]').disabled, false);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /#items:has\(\.cal-tab\) ~ #discovery-help \{ display: none; \}/, "the Devices note is not shown in the Calibration tab");
 });
 
@@ -725,7 +726,7 @@ test("each row names its room and bus address as the device cards do", async () 
   // Responsive map §3.3: units that wrap only between them, the «·» with the unit before it; no «…» anywhere.
   assert.deepEqual([...row(tab, "cover.living_one").querySelectorAll(".cal-row-name > .muted > span")].map((unit) => [unit.className, unit.textContent.replace(/\u00a0/g, " ")]),
     [["cal-row-unit", "Living room ·"], ["cal-row-address", "Indirizzo: 91 · A: 9 · PL: 1"]]);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-row-address \{ white-space: nowrap; \}/);
   assert.doesNotMatch(css, /\.cal-row-name > \.muted \{[^}]*ellipsis/);
   assert.deepEqual([...address.querySelectorAll(".cal-row-address-label")].map((item) => item.textContent), ["Indirizzo:", "A:", "PL:"]);
@@ -959,7 +960,7 @@ test("a cover's details open in place outside the phone layout, a landscape phon
       tab.querySelector(".cal-page-close")?.click(); await tick();
     }
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /@media \(min-width: 720px\), \(max-height: 499px\) and \(orientation: landscape\) \{ \.cal-page \{ display: none; \} \}/, "never a page over the sidebar");
   assert.match(css, /@container caltab \(min-width: 700px\) and \(max-width: 1015px\) \{\s*\.cal-details-grid \{ grid-template-columns: repeat\(3, minmax\(0, 1fr\)\); \}/,
     "cards from 700 px of content: the three blocks in one row, equal (Q-3)");
@@ -1071,7 +1072,7 @@ test("the tab's dialogs are centred from 720 × 500 px of window and sheets belo
       document.documentElement.style.overflow = "";
     }
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /@media \(max-width: 719px\), \(max-height: 499px\) \{\s*\/\*[^*]*\*\/\s*dialog\.cal-dialog \{ width: 100%;/, "one rule for the sheets");
   assert.match(css, /@media \(max-height: 499px\) and \(orientation: landscape\) \{\s*dialog\.cal-dialog \{ max-height: calc\(100vh - 16px\); max-height: calc\(100dvh - 16px\); \}/);
   assert.doesNotMatch(css.slice(css.indexOf("/* ---------- WHO 2 · Calibration tab ---------- */")), /1023px|1024px/, "no window rule left at 1024 px");
@@ -1151,12 +1152,12 @@ test("on phones the sequence view has a native «Select ⌄» menu of actions an
   batchPick(tab, "none");
   batchPick(tab, "all");
   assert.deepEqual(fromMenu, ticked(), "the same action as the desktop shortcut");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-batch-lead input \{ appearance: none;[^}]*border-radius: 50%/);
 });
 
 test("focus rings are for the keyboard only; a touch choice lets the drop-down go (M4-3)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /-webkit-tap-highlight-color: transparent/);
   assert.match(css, /\.cal-compact-sort:has\(select:focus-visible\)[^{]*\{ outline: 2px solid var\(--panel-accent\)/);
   assert.match(css, /\.cal-compact-sort select:focus,[^{]*\{ outline: none; box-shadow: none;/);
@@ -1187,7 +1188,7 @@ test("the scripts use the stylesheet's rules: full screen, page and sheets by wi
       assert.equal(document.documentElement.style.overflow, "");
     }
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const { SHORT, PHONE, FULL_SCREEN, SHEETS } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-layout.js");
   for (const query of [SHORT, PHONE, FULL_SCREEN, SHEETS]) assert.ok(css.includes(`@media ${query} {`), `the stylesheet spells ${query}`);
 });
@@ -1210,7 +1211,7 @@ test("on phones the full-screen wizard holds the page under it and lets it go wh
 });
 
 test("cards: icon and texts, chips side by side when they fit, action and ⋮; the line under the name always whole (M4-6, Q-13, Q-15)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-row-main \{ grid-template-columns: minmax\(0, 1fr\) auto auto; grid-template-areas: "cover cover menu" "chips action action";/);
   assert.match(css, /\.cal-row-chips \{ grid-area: chips; display: flex; flex-wrap: wrap;/, "one wrapping row of chips");
   assert.match(css, /\.cal-batch-chips \{ grid-area: status; display: flex; flex-wrap: wrap;/, "the same in A-01 and the sequence");
@@ -1235,15 +1236,19 @@ test("cards: icon and texts, chips side by side when they fit, action and ⋮; t
 });
 
 test("the stylesheet's braces balance (a stray one silently drops every rule after it)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/"[^"\n]*"/g, '""');
-  let depth = 0;
-  for (const char of css) { if (char === "{") depth += 1; else if (char === "}") { depth -= 1; assert.ok(depth >= 0, "no closing brace without its opening one"); } }
-  assert.equal(depth, 0);
+  // Each file on its own: a brace left open in the shell's would swallow the calibration's first rules.
+  const { readFileSync } = await import("node:fs");
+  for (const name of PANEL_CSS_FILES) {
+    const css = readFileSync(new URL(`../../custom_components/myhome/frontend/panel/${name}`, import.meta.url), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/"[^"\n]*"/g, '""');
+    let depth = 0;
+    for (const char of css) { if (char === "{") depth += 1; else if (char === "}") { depth -= 1; assert.ok(depth >= 0, `${name}: no closing brace without its opening one`); } }
+    assert.equal(depth, 0, name);
+  }
 });
 
 test("the list's bands by content width (1200/1016/700) and the wizard's layouts, no ad-hoc breakpoints (M5-1, Q-3)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const calibration = css.slice(css.indexOf("/* ---------- WHO 2 · Calibration tab ---------- */"));
   assert.match(calibration, /#cover-calibration-tab \{ container: caltab \/ inline-size; \}/, "the tab's width decides, not the window's");
   const widths = [...calibration.matchAll(/@(media|container caltab|container wizbar|container calblock|container calcards) ([^{]+)\{/g)].flatMap(([, kind, query]) =>
@@ -1273,7 +1278,7 @@ test("the list's bands by content width (1200/1016/700) and the wizard's layouts
 });
 
 test("the sequence's status and Start stay in view while the list scrolls; on cards the place sits at the row's edge (M5-2)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz\.cal-batch-wiz \{ overflow: clip; \}/, "not a scroll box of its own, or sticky would not stick");
   assert.match(css, /@media \(min-width: 720px\) \{\s*\.cal-batch-sticky \{ position: sticky; top: 76px; \}/);
   assert.match(css, /\.cal-batch-wiz \.cal-batch-order \{ position: absolute; inset-inline-end: 12px;/);
@@ -1300,7 +1305,7 @@ test("on phones the full-screen views slide down before the list comes back, at 
     panel._calibrationTab._backToList();
     assert.equal(panel._calibrationTab._mode.kind, "list", "reduced motion: at once");
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-tab > \.wiz, \.cal-page \{ animation: wiz-sheet-in 220ms/);
 });
 
@@ -1316,7 +1321,7 @@ test("the sequence's Steps sheet closes on a tap outside its card (M6-1, R7-7)",
 });
 
 test("the full-screen views, their bars and the sheets keep clear of the iOS safe areas (M6-2)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /:host \{ --cal-safe-top: env\(safe-area-inset-top, 0px\); --cal-safe-right: env\(safe-area-inset-right, 0px\);\s*--cal-safe-bottom: env\(safe-area-inset-bottom, 0px\); --cal-safe-left: env\(safe-area-inset-left, 0px\);[^}]*\}/);
   for (const rule of [/\.wiz-head \{ padding: calc\(12px \+ var\(--cal-safe-top\)\) calc\(16px \+ var\(--cal-safe-right\)\) 12px calc\(16px \+ var\(--cal-safe-left\)\); \}/,
     /\.wiz-actions \{ padding: 12px calc\(16px \+ var\(--cal-safe-right\)\) calc\(12px \+ var\(--cal-safe-bottom\)\) calc\(16px \+ var\(--cal-safe-left\)\);/,
@@ -1346,7 +1351,7 @@ test("one filter and order bar for the list, A-01 and the sequence: chips and «
   assert.ok([...seq.querySelectorAll(".cal-batch-row input")].filter((input) => !input.disabled).every((input) => input.checked), "the chip ticks them all");
   seq.querySelector('.cal-batch-filterbar .cal-chip[data-id="none"]').click(); await tick();
   assert.equal(seq.querySelectorAll(".cal-batch-row input:checked").length, 0);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   // Q-24: the state is measured (`is-chips`), not a container query; the drop-downs are equal unless the order needs more.
   assert.doesNotMatch(css, /container: calbar/);
   assert.match(css, /\.cal-filterbar\.is-chips \.cal-tab-summary \{ display: none; \}\s*\.cal-filterbar\.is-chips \.cal-filterbar-row \{ display: flex; align-items: center; justify-content: space-between;/,
@@ -1422,7 +1427,7 @@ test("the details' pairs are compact: labels in one column, the value 26 px afte
   row(tab, "cover.living_one").querySelector(".cal-row-toggle").click(); await tick();
   const values = row(tab, "cover.living_one").querySelector(".cal-details-grid > section .cal-facts");
   assert.deepEqual([...values.querySelectorAll(":scope > dl.cal-facts-col")].map((half) => half.querySelectorAll("dt").length), [3, 3], "six pairs in two halves of three");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-facts \{ display: grid; grid-template-columns: max-content minmax\(0, 1fr\); column-gap: 26px;/);
   // Q-9: titles as the shell's device names (15 px semibold), pairs at 14 px, the phone's page included.
   assert.match(css, /\.cal-details-grid h4 \{[^}]*font-size: 15px; font-weight: 600;/);
@@ -1434,7 +1439,7 @@ test("the details' pairs are compact: labels in one column, the value 26 px afte
 });
 
 test("an open card with stacked blocks shares one edge between its chips and the pairs' second half (Q-14)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /@container caltab \(max-width: 699px\) \{\s*\.cal-row\.is-aligned \.cal-row-toggle \{ flex: 0 0 calc\(var\(--cal-col2\) - 16px\); \}\s*\.cal-row\.is-aligned \.cal-facts \{ grid-template-columns: calc\(var\(--cal-col2\) - 32px\) minmax\(0, 1fr\); column-gap: 32px; \}/);
   // Without a layout (no width) nothing is measured nor set.
   const { tab, panel } = await mount();
@@ -1446,13 +1451,13 @@ test("an open card with stacked blocks shares one edge between its chips and the
 });
 
 test("L-17/L-127: the success note is green: its tone for fill, border and bar, its text in the colour (a lighter tint on dark themes)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /:is\(\.cal-note\.is-success, :is\(\.cal-tab, dialog\.cal-dialog\) \.notice:is\(\.cal-tab-done, \[data-tone="success"\]\)\) \{ --note-tone: var\(--panel-success\); --note-text: var\(--panel-success\); \}/);
   assert.match(css, /\[data-theme="dark"\] :is\(\.cal-note\.is-success, [^{]*\) \{ --note-text: color-mix\(in srgb, var\(--panel-success\) 70%/);
 });
 
 test("L-2: the cards that open in place keep the rows' chevron; only the phone, where a card opens its page, has none", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.doesNotMatch(css, /@container caltab \(max-width: 1015px\) \{ \.cal-row-chevron \{ display: none; \} \}/);
   assert.match(css, /@media \(max-width: 719px\) and \(min-height: 500px\), \(max-width: 719px\) and \(orientation: portrait\) \{ \.cal-row-chevron \{ display: none; \} \}/,
     "the phone layout's own query (layout.PHONE)");
@@ -1460,13 +1465,13 @@ test("L-2: the cards that open in place keep the rows' chevron; only the phone, 
 });
 
 test("every row and card shows the same 40 px cover icon, the sequence's too (Q-11)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-row-icon \{ display: inline-grid; place-items: center; width: 40px; height: 40px;/);
   assert.doesNotMatch(css, /\.cal-batch-lead \.cal-row-icon \{/, "no smaller icon in the wizard's lists");
 });
 
 test("status, profile and filter chips share one shape: 24 px, 12 px text, their colour at 12 % with a 20 % border (Q-12)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const rule = css.match(/\.cal-chip, \.cal-badge, \.cal-profile-chip \{([^}]*)\}/)?.[1] || "";
   for (const part of ["min-height: 24px", "padding: 3px 10px", "border: 1px solid color-mix(in srgb, var(--cal-chip) 20%, transparent)",
     "background: color-mix(in srgb, var(--cal-chip) 12%, transparent)", "font-size: 12px", "line-height: 16px"]) assert.ok(rule.includes(part), part);
@@ -1482,7 +1487,7 @@ test("a profile chip is cut at 180 px with its whole name in the tooltip, whole 
   const chip = row(tab, "cover.kitchen_two").querySelector(".cal-row-profile .cal-profile-chip");
   assert.equal(chip.getAttribute("title"), "tall_two_leaf");
   assert.equal(chip.querySelector(".cal-chip-text").textContent, "tall_two_leaf");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-profile-chip \{ --cal-chip: var\(--panel-accent\); max-width: 180px; \}/);
   assert.match(css, /\.cal-chip-text \{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; \}/);
   assert.match(css, /\.cal-details-grid \.cal-chip-text \{ white-space: normal; overflow-wrap: break-word; \}/, "whole, wrapping after «_» (D-06)");
@@ -1491,7 +1496,7 @@ test("a profile chip is cut at 180 px with its whole name in the tooltip, whole 
 test("the lists in the wizard are cards, with the bar's counts above its drop-downs (R-6)", async () => {
   const { tab } = await openBatch();
   assert.match(tab.querySelector(".cal-batch-filterbar > .cal-tab-summary").textContent, /^\d+ tapparell[ae] · /);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-batch-rows \{ display: grid; gap: 12px; \}/, "D-40: no fixed width any more");
   assert.match(css, /\.cal-batch-row \{[^}]*border: 1px solid var\(--panel-border\); border-radius: var\(--cal-btn-radius\); background: var\(--panel-surface\);/);
   assert.match(css, /\.cal-batch-row\.is-beside \{ grid-template-columns: auto minmax\(0, 1fr\) auto; grid-template-areas: "lead name status"; \}/);
@@ -1513,7 +1518,7 @@ test("the tab's head: title, «Come funziona ›» under it, «Calibra una tappa
   assert.equal(tab.querySelector(".cal-tab-intro"), null, "no intro paragraph");
   assert.deepEqual([...head.querySelectorAll(".cal-tab-actions > button")].map((button) => [button.dataset.action, button.className, button.textContent.trim()]),
     [["cal-tab-measure", "primary", "Calibra una tapparella"], ["cal-tab-batch", "", "Calibra in sequenza"]]);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-tab-how-text \{ max-width: 720px; margin: 0; font-size: 14px;/, "U-3");
   assert.match(css, /\.cal-tab-top \{[^}]*margin: 22px 0 18px; \}/, "32 px above (after the views bar) and below (with the tab's 14 px gap); 24 on the phone");
   // Q-32: the panel's one disclosure: a chevron-down that turns when open, underline only from hover or the keyboard.
@@ -1544,8 +1549,7 @@ test("a dialog opened from a row's ⋮ menu closes that menu (U-4)", async () =>
 
 
 test("D-01: in a landscape sheet the maintainer's view keeps its body: compact bars, no second «Chiudi» under Stop", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const short = css.slice(css.indexOf("@media (max-height: 499px) and (orientation: landscape) {\n  dialog.cal-dialog { max-height"));
   const block = short.slice(0, short.indexOf("\n}\n"));
   assert.match(css, /dialog\.cal-dialog \.cal-resume-entity \{ display: none; \}/, "D-18");
@@ -1564,14 +1568,12 @@ test("D-08: an overview that cannot be read shows its error, not an empty filter
   assert.ok(tab.querySelector('[data-action="cal-tab-refresh"]'), "and a way to read it again");
   assert.equal(tab.querySelector(".cal-tab-filters"), null, "no filter bar with zero counts");
   assert.equal(tab.querySelector(".cal-tab-no-match"), null, "no «nothing matches the filter»");
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-tab \[data-action="cal-tab-refresh"\] \{ justify-self: start; width: fit-content; \}/, "N-08: «Aggiorna» at its own width");
 });
 
 test("D-03: from 1016 to 1199 the profile chip keeps clear of the CTA and ⋮ sharing its column", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const table = css.slice(css.indexOf("@container caltab (min-width: 1016px) {\n  /* One grid"));
   assert.match(table, /\.cal-row-profile \{ min-width: 0; max-width: calc\(100% - max\(158px, var\(--cal-actions-w, 158px\)\) - 12px\); \}\s*\.cal-row-profile \.cal-profile-chip \{ max-width: min\(180px, 100%\); \}/);
   const wide = css.slice(css.indexOf("@container caltab (min-width: 1200px) {"));
@@ -1585,14 +1587,12 @@ test("D-13: the tab's dialogs follow its theme; a head action off while the list
 });
 
 test("D-14: native radios and drop-downs follow the theme (color-scheme)", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\[data-theme="dark"\] \{ color-scheme: dark; \}\s*\[data-theme="light"\] \{ color-scheme: light; \}/);
 });
 
 test("D-05/D-06: a long profile name stays inside its note, and the details' chip wraps only after «_», «-» or «.»", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-note \{ overflow-wrap: anywhere; \}/);
   assert.match(css, /\.cal-details-grid \.cal-chip-text \{ white-space: normal; overflow-wrap: break-word; \}/);
   const data = overview();
@@ -1607,21 +1607,18 @@ test("D-05/D-06: a long profile name stays inside its note, and the details' chi
 });
 
 test("D-19: «In corso · …» is one line like every chip, its text darkened to read on its fill", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-badge\[data-status="running"\] \{ --cal-chip: var\(--panel-warning\); white-space: nowrap; color: color-mix\(in srgb, var\(--panel-warning\) 55%, #000\); \}/);
   assert.match(css, /\[data-theme="dark"\] \.cal-badge\[data-status="running"\] \{ color: var\(--panel-warning\); border-color: var\(--panel-warning\); \}/, "L-63: the full warning colour on a dark theme");
 });
 
 test("D-38: the active filter chip's number is the accent mixed towards the text, as on the tabs", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-chip\[aria-pressed="true"\] \.count \{ color: color-mix\(in srgb, var\(--panel-accent\) 70%, var\(--primary-text-color, #182b37\)\); \}/);
 });
 
 test("D-07/D-39: one card layout: never wider than the list, the name's column never narrower than a word, the chips end 16 px before the action", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-list-rows \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: 12px; \}/);
   assert.match(css, /\.cal-row-toggle \{ flex: 1 1 200px; min-width: min-content; padding: 0; \}/);
   assert.match(css, /\.cal-row-main \.cal-row-profile \{ max-width: 180px; \}/, "the cap as a length on the cell");
@@ -1667,8 +1664,7 @@ test("D-40: a wizard list's chips sit beside the name while it keeps 200 px, sid
 });
 
 test("X-1: where the head stacks (phone), «Come funziona» opens right under its link, before the two buttons", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const phone = css.slice(css.indexOf("@media (max-width: 719px) and (min-height: 500px), (max-width: 719px) and (orientation: portrait) {\n  .cal-tab-top"));
   const block = phone.slice(0, phone.indexOf("\n}\n"));
   assert.match(block, /\.cal-tab-head \{ display: contents; \}\s*\.cal-tab-heading \{ order: 1; \}\s*\.cal-tab-how-text \{ order: 2; font-size: 13px; \}\s*\.cal-tab-actions \{ order: 3; \}/);
@@ -1704,8 +1700,7 @@ test("X-3: choosing a cover in A-01 scrolls nothing: the row only shows as selec
 });
 
 test("X-6: a sheet opened by a tap focuses its own box (no ring on its ✕); by a key, the browser's choice stays", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /:is\(dialog\.cal-dialog, \.wiz-dialog-card, \.wiz-sheet-card\):focus \{ outline: none; \}/);
   assert.match(css, /dialog\.cal-dialog :is\(button, select, input\):focus:not\(:focus-visible\) \{ outline: none; \}/);
   const { root, tab } = await mount();
@@ -1719,8 +1714,7 @@ test("X-6: a sheet opened by a tap focuses its own box (no ring on its ✕); by 
 });
 
 test("X-7: a sheet's fade above its buttons is the wizard bars' fade, anchored into the band with no gap", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const sheet = css.match(/dialog\.cal-dialog \.dialog-foot::before \{([^}]*)\}/)?.[1] || "";
   const bar = css.match(/\.wiz-actions::before \{ content: ""; position: absolute; inset-inline: 0; bottom: calc\(100% \+ 1px\);([^}]*)\}/)?.[1] || "";
   assert.match(sheet, /bottom: calc\(100% - 1px\); height: 40px;/);
@@ -1729,8 +1723,7 @@ test("X-7: a sheet's fade above its buttons is the wizard bars' fade, anchored i
 });
 
 test("N-04: a centred dialog with a long list scrolls only its body: title row and buttons stay in view", async () => {
-  const { readFileSync } = await import("node:fs");
-  const css = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const outside = css.slice(0, css.indexOf("@media (max-width: 719px), (max-height: 499px) {"));
   const rest = css.slice(css.indexOf("/* N-04:"));
   assert.ok(css.indexOf("/* N-04:") > 0);
@@ -1785,7 +1778,7 @@ test("L-105/L-110: on a cover with its session open «Change profile» / «Assig
   assert.equal(calls.filter((message) => message.type === "myhome/cover_profiles/write").length, 0);
   // Another cover keeps it enabled (its dialog says the gateway is reserved and waits, as before).
   assert.equal(menu("cover.living_two").querySelector('[data-action="cal-tab-assign"]').disabled, false);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-menu button:disabled, \.cal-menu button:disabled:hover \{ background: transparent; cursor: not-allowed; \}/);
 });
 test("L-107: a session started, moved on or ended elsewhere reaches the list at once: a burst makes one read", async () => {
@@ -1811,7 +1804,7 @@ test("L-109: the table's actions column is as wide as its widest row (158 px at 
   fitActions(host);
   assert.equal(host.querySelector(".cal-list").style.getPropertyValue("--cal-actions-w"), "166px", "118 + 8 + 40");
   host.remove();
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-list \{ --cal-cols: repeat\(3, minmax\(0, 1fr\)\) max\(158px, var\(--cal-actions-w, 158px\)\); \}/);
   assert.match(css, /\.cal-row-action \{[^}]*white-space: nowrap;/);
   assert.match(css, /\.cal-row-profile \{ min-width: 0; max-width: calc\(100% - max\(158px, var\(--cal-actions-w, 158px\)\) - 12px\); \}/, "1016–1199: the profile keeps clear of the same width");

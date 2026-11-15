@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 
 import { effectiveArea, filterItems, registryChanges, scopedInventory } from "../../custom_components/myhome/frontend/panel/panel-model.js";
 import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
+import { PANEL_CSS_FILES, panelCss } from "./panel-css.mjs";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: "http://localhost/", pretendToBeVisual: true, runScripts: "outside-only",
@@ -1820,11 +1821,23 @@ test("a tab's leave guard is asked before the panel moves away, and can keep it 
 });
 
 test("an empty message area takes no room under the page", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /#toast:empty \{ display: none; \}/);
 });
 
 test("the panel keeps its text sizes on a landscape iPhone (text-size-adjust)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css.match(/^:host \{[^}]*\}/m)[0], /-webkit-text-size-adjust: 100%; text-size-adjust: 100%;/);
+});
+
+test("the calibration's styles are a stylesheet of their own, linked right after the shell's", async () => {
+  const { readFileSync } = await import("node:fs");
+  const read = (name) => readFileSync(new URL(`../../custom_components/myhome/frontend/panel/${name}`, import.meta.url), "utf8");
+  const shell = read("myhome-panel.css"), calibration = read("panel-calibration.css");
+  assert.ok(!shell.includes("/* ---------- WHO 2 · Calibration tab ---------- */"), "the tab's section left the shell's stylesheet");
+  assert.ok(calibration.includes("/* ---------- WHO 2 · Calibration tab ---------- */"));
+  const links = [...read("myhome-panel.js").matchAll(/<link rel="stylesheet" href="\$\{escapeHtml\(assetUrl\("([^"]+)"\)\)\}">/g)].map(([, name]) => name);
+  assert.deepEqual(links, PANEL_CSS_FILES, "the shell's first, then the calibration's: its rules come later in the cascade, as before");
+  const { root } = await mount();
+  assert.deepEqual([...root.querySelectorAll('link[rel="stylesheet"]')].map((link) => new URL(link.href).pathname.split("/").pop()), PANEL_CSS_FILES);
 });

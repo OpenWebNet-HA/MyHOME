@@ -5,6 +5,7 @@ import { after, afterEach, test } from "node:test";
 import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
 import { sampleOverview } from "./fake-calibration.mjs";
 import { dom, mount, move, reset, settle, tick } from "./wizard-harness.mjs";
+import { panelCss } from "./panel-css.mjs";
 
 const { parseReading } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-wizard.js");
 const { buildScreen, phasesFor, slug } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-screens.js");
@@ -704,12 +705,12 @@ test("L-44b: a check stopped is done again: A-21v with its notice, Stop in both 
 });
 
 test("L-51: a state line under the actions is a caption the whole width of the bar", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-actions \.wiz-action\.status \{ width: 100%; max-width: none; min-height: 0; padding: 6px 0; font-size: 13px; line-height: 18px; text-align: center; \}/);
 });
 
 test("L-53: a leg's label stays on one line; its «— about N s» goes in a narrow box", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-stage-label \{ flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; \}/);
   assert.match(css, /@container wizwait \(max-width: 479px\) \{ \.wiz-stage-time \{ display: none; \} \}/);
   const source = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/panel-calibration-wizard.js", import.meta.url), "utf8");
@@ -746,25 +747,25 @@ test("L-55: the precision tile's note is green within the threshold, yellow beyo
 });
 
 test("L-56: the header's «Abandon the calibration» is 44 px high, its label centred, centred in the header", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-discard \{ display: inline-flex; align-items: center; justify-content: center; align-self: center; box-sizing: border-box; min-height: 44px; padding: 0 16px;/);
 });
 
 test("L-57: a red button keeps its red border under the pointer, pressed and focused; no accent", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /:is\(\.wiz-discard, \.wiz-leave, \.wiz-action\.stop, \.wiz-action\.danger-outline, \.wiz-action\.danger, \.cal-abort-confirm\):is\(:hover, :active, :focus, :focus-visible\) \{ border-color: var\(--panel-error\); \}/);
   assert.match(css, /:focus-visible \{ outline-color: var\(--panel-error\); \}/);
 });
 
 test("L-59/L-81: the check note beside the «Precision» tile, about 280 px wide, centred on the tile at its own height", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-result-row \{ display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch;/);
   assert.match(css, /\.wiz-result-note \{ flex: 0 1 280px; min-width: 200px; max-width: 280px; align-self: center; box-sizing: border-box; \}/, "L-81: its own height, centred on the tile");
   assert.match(css, /@container wiz-result-row \(max-width: 479px\) \{ \.wiz-result-note \{ flex: 1 1 100%; max-width: none; \} \}/, "stacked: full width");
   assert.doesNotMatch(css, /\.wiz-result-note \{[^}]*align-self: stretch/);
 });
 
-const cascadeCss = readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8")
+const cascadeCss = panelCss
 .replace(/\/\*[\s\S]*?\*\//g, "");
 /** L-60/L-62: the CSS cascade, resolved by hand (jsdom computes no styles): selector weight, then order. */
 const weight = (selector) => {
@@ -1354,7 +1355,7 @@ test("L-106: our texts never speak in the first person plural (Italian and Engli
 });
 
 test("L-112: the calibration's buttons ease their paint (200 ms, ease-out) between states, never their size; instant with reduced motion", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const scope = ":is(.wiz-actions, .wiz-head, .cal-tab-top, .cal-row-actions, .cal-block-action, .cal-page-session) button";
   const eased = css.match(/@media \(prefers-reduced-motion: no-preference\) \{\s*([^{]+)\{\s*transition: ([^;]+);\s*\}\s*\}/);
   assert.ok(eased, "behind the no-preference guard");
@@ -1369,7 +1370,7 @@ test("L-112: the calibration's buttons ease their paint (200 ms, ease-out) betwe
 });
 
 test("L-116: an emergency Stop is the last action, always drawn with the ①/② pair, 85 % of an action's height and a hairline after the action before it", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   // L-116b/c: the space before Stop is 85 % of an action's height (the bar's 12 px gap plus the rest), the hairline in its middle.
   assert.match(css, /\.wiz-actions \{ --wiz-action-height: 44px; --cal-stop-gap: calc\(0\.85 \* var\(--wiz-action-height\)\); \}/, "0.85 × the action's height");
   assert.match(css, /\.wiz-action \{ width: 100%; min-height: 44px;/, "the action's height it is computed from");
@@ -1631,7 +1632,7 @@ test("A-34 offers fine-tuning once the calibration is saved: path C on the same 
   assert.deepEqual([toggle.textContent.trim(), toggle.getAttribute("aria-expanded")], ["Other options", "false"]);
   toggle.click(); await tick();
   assert.deepEqual([wiz().querySelector(".wiz-more").classList.contains("is-open"), wiz().querySelector(".wiz-more-toggle").getAttribute("aria-expanded")], [true, "true"]);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.equal((css.match(/\.wiz-more:not\(\.is-open\) > \.wiz-more-list \{ display: none; \}/g) || []).length, 2, "hidden behind the toggle in both bars");
   assert.match(css, /\.wiz-more-toggle \{ display: none; \}\n\.wiz-more-list \{ display: grid;/, "all shown, as buttons, in the columns");
   assert.equal(wiz().querySelector('[data-wiz="refine"]').textContent, "Continue with fine-tuning");
@@ -1947,7 +1948,7 @@ test("every drawing a screen can pick is a themed inline SVG, and A-09 has none"
 });
 
 test("the profile switch is a 36×20 track with a 16 px thumb 2 px from every edge, in both states", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const track = css.match(/\.wiz-switch input \{([^}]*)\}/)[1], thumb = css.match(/\.wiz-switch input::after \{([^}]*)\}/)[1];
   for (const rule of ["box-sizing: border-box", "width: 36px", "height: 20px", "border: 0", "margin: 0", "padding: 0"]) assert.ok(track.includes(rule), rule);
   for (const rule of ["top: 2px", "left: 2px", "width: 16px", "height: 16px"]) assert.ok(thumb.includes(rule), rule);
@@ -1968,7 +1969,7 @@ test("on the phone the confirmations are sheets that slide down before they hide
     await new Promise((resolve) => setTimeout(resolve, 260));
     assert.equal(exit.hidden, true);
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-dialog, \.wiz-sheet \{ background: rgb\(0 0 0 \/ 55%\); -webkit-backdrop-filter: blur\(8px\); backdrop-filter: blur\(8px\); \}/);
   assert.match(css, /\.wiz-dialog \.actions \{ flex-direction: column-reverse; align-items: stretch;/, "stacked, primary first");
   assert.match(css, /dialog\.cal-dialog \{ width: 100%; max-width: none; max-height: 90vh; margin: auto 0 0; border-radius: 18px 18px 0 0;/, "the tab's dialogs too");
@@ -1992,7 +1993,7 @@ test("the Steps sheet slides down before it hides, at once with reduced motion",
     wiz().querySelector('[data-wiz="steps-close"]').click(); await tick();
     assert.equal(sheet.hidden, true, "reduced motion: at once");
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-sheet:not\(\[hidden\]\) \.wiz-sheet-card \{ animation: wiz-sheet-in 220ms/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.wiz-sheet, \.wiz-sheet \.wiz-sheet-card \{ animation: none !important; \} \}/);
 });
@@ -2007,12 +2008,12 @@ test("the fade over the phone's action bar shows only while content is hidden be
   assert.equal(actions.classList.contains("has-more"), true, "more below");
   main.scrollTop = 500; main.dispatchEvent(new Event("scroll"));
   assert.equal(actions.classList.contains("has-more"), false, "at the end of the scroll it goes");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-actions\.has-more::before \{ opacity: 1; \}/);
 });
 
 test("on the phone the run's ① and ② stack, never side by side", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.doesNotMatch(css, /\.wiz-actions:has\(\.wiz-action:nth-of-type\(2\)\.primary\)/, "no two-column rule for two primaries");
   assert.match(css, /\.wiz-actions \{ display: grid; grid-template-columns: minmax\(0, 1fr\);/, "one column");
   assert.match(css, /@media \(hover: hover\) \{ :is\(\.wiz-action\.stop, \.wiz-action\.danger-outline, \.wiz-action\.danger\):hover:not\(:disabled\) \{/, "a tap leaves no tint on Stop");
@@ -2022,13 +2023,13 @@ test("on the phone the run's ① and ② stack, never side by side", async () =>
 });
 
 test("1 px dividers separate the side columns from the centre on the wide layout only", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const wide = css.slice(css.indexOf("@container caltab (min-width: 1000px) {\n  .wiz-columns"));
   assert.match(wide.slice(0, wide.indexOf("\n}")), /\.wiz-steps \{ border-inline-end: 1px solid var\(--panel-border\); \}[\s\S]*\.wiz-actions \{ border-inline-start: 1px solid var\(--panel-border\); \}/);
 });
 
 test("the wizard's side columns take the page colour, slightly shaded", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz \{ --wiz-side: color-mix\(in srgb, var\(--primary-text-color, #182b37\) 4%, var\(--primary-background-color, #fafafa\)\);/);
 });
 
@@ -2040,7 +2041,7 @@ test("the drawings' palette follows Home Assistant's dark mode", async () => {
   assert.equal(wiz().dataset.theme, "dark");
   panel.hass = { ...backend.hass, themes: { darkMode: false } }; await tick();
   assert.equal(wiz().dataset.theme, "light");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz\[data-theme="dark"\] \{[^}]*--wiz-ill-cover-border: #606060/);
 });
 
@@ -2127,7 +2128,7 @@ test("Stop alone in a wait is the red filled button; beside a step's buttons it 
 });
 
 test("radios are plain rows, the advice badge is accent blue; L-47: red text closes, red outlined stops or discards", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const rule = (selector) => css.match(new RegExp(`^${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{([^}]*)\\}`, "m"))?.[1] ?? "";
   assert.doesNotMatch(rule(".wiz-radio"), /border|background/, "no card around a radio");
   assert.doesNotMatch(css, /\.wiz-radio:has\(input:checked\)/, "no tint on the chosen radio");
@@ -3216,7 +3217,7 @@ test("leaving the tab with a live session open asks: continue, leave and resume 
 });
 
 test("a landscape phone has the wizard full screen in two columns, Stop at the top of the actions (responsive map §3.2, D11, D12)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const short = css.slice(css.lastIndexOf("@media (max-height: 499px) and (orientation: landscape) {"));
   assert.match(short, /\.wiz \{ position: fixed; inset: 0;/, "full screen at any width");
   assert.match(short, /\.wiz-head \{ box-sizing: border-box; min-height: 44px;/, "a 44 px header");
@@ -3228,7 +3229,7 @@ test("a landscape phone has the wizard full screen in two columns, Stop at the t
 });
 
 test("the Calibration in progress dialog is 592 px wide when centred, its three buttons on one row", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-nav-dialog \.wiz-dialog-card \{ width: min\(100%, 592px\);/);
   assert.match(css, /@media \(min-width: 720px\) and \(min-height: 500px\) \{ \.wiz-nav-dialog \.wiz-dialog-card \.actions \{ flex-wrap: nowrap; \} \}/, "wherever it is centred");
 });
@@ -3583,7 +3584,7 @@ test("L-115/L-124: why an option cannot be chosen is right under its title: a bl
     assert.deepEqual(parts.slice(0, 2), ["wiz-radio-label", kind.split(" ").pop()], `${value}: under the title, before what it does (${parts})`);
     assert.equal(label.classList.contains("is-disabled"), true);
   }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-radio\.is-disabled \{ cursor: not-allowed; \}/, "the option itself is not faded as a whole…");
   assert.match(css, /\.wiz-radio\.is-disabled > input, \.wiz-radio\.is-disabled \.wiz-radio-text > :not\(\.wiz-radio-notice, \.wiz-radio-warning\) \{ opacity: \.6; \}/,
     "…only its parts, never the yellow note");
@@ -3776,7 +3777,7 @@ test("A-07 carries its phone drawing beside the wide one; the stylesheet shows o
   assert.doesNotMatch(SVG["lift-sequence-mobile"], /#(?:009AC7|BDBDBD|2E2E2E)"/i, "no raw paint colour left");
   host.innerHTML = illustrationMarkup("lift-zoom", "Step diagram", (value) => value);
   assert.equal(host.querySelectorAll("svg").length, 1, "other drawings are one SVG");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /@media \(max-width: 719px\) and \(min-height: 500px\), \(max-width: 719px\) and \(orientation: portrait\) \{\s*\.wiz-illustration\.wiz-ill-wide \{ display: none; \}/,
     "the phone's drawing in portrait only; a landscape phone keeps the wide one");
 });
@@ -4069,7 +4070,7 @@ test("a value the field refuses says why under it, never a silent red (G3-4)", a
   // A word typed from scratch says what is expected.
   await type("due");
   assert.equal(error().textContent, "Scrivi un numero di centimetri, con la virgola o il punto per i decimali.");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.doesNotMatch(css, /\.wiz-field:has\(input\[aria-invalid="true"\]\) \.muted/, "Z-2: the help line stays grey");
 });
 
@@ -4086,7 +4087,7 @@ test("A-08b advises repeating: «Repeat the run» is the primary, «Ignore and c
   assert.equal(wiz().querySelector(".wiz-title").textContent, "Repeat the lift-off run?");
   assert.match(wiz().querySelector(".wiz-body").textContent, /^The reading is recorded/);
   assert.equal(wiz().querySelector(".wiz-illustration"), null, "no drawing of the reading");
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\[data-theme="dark"\] :is\(\.cal-note\.is-warning, :is\(\.cal-tab, dialog\.cal-dialog\) \.notice:is\(\.cal-tab-busy, \[data-tone="warning"\]\)\) \{ --note-text: color-mix\(in srgb, var\(--panel-warning\) 70%/);
 });
 
@@ -4128,7 +4129,7 @@ test("a tap on the Steps sheet's backdrop closes it, as every sheet and dialog (
 });
 
 test("the wizard's actions, Take control and PASSI take the shell's 8 px radius (Q-18); the compact order is round (Q-26)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /--cal-btn-radius: 8px; \}/);
   for (const rule of [/\.wiz-action \{[^}]*border-radius: var\(--cal-btn-radius\);/, /\.wiz-take \{[^}]*border-radius: var\(--cal-btn-radius\);/]) assert.match(css, rule);
   assert.match(css, /\.cal-filterbar\.is-chips \.cal-filterbar-sort \{[^}]*border-radius: 999px;/, "Q-26: the compact order is drawn as a chip, round");
@@ -4136,7 +4137,7 @@ test("the wizard's actions, Take control and PASSI take the shell's 8 px radius 
 });
 
 test("the wizard's layouts follow the content width as the layout module says, buttons 44 px (R-1)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const { WIZARD_BANDS, wizardBand, SHORT } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-layout.js");
   assert.match(css, new RegExp(`@container caltab \\(min-width: ${WIZARD_BANDS.threeColumns}px\\) \\{\\s*\\.wiz-columns \\{ grid-template-columns: 240px minmax\\(0, 1fr\\) clamp\\(240px, 30%, 320px\\);`));
   assert.match(css, new RegExp(`@container caltab \\(min-width: ${WIZARD_BANDS.intermediate}px\\) and \\(max-width: ${WIZARD_BANDS.threeColumns - 1}px\\) \\{\\s*\\.wiz-columns \\{ grid-template-columns: minmax\\(0, 1fr\\) clamp\\(240px, 30%, 320px\\);`));
@@ -4151,7 +4152,7 @@ test("the wizard's layouts follow the content width as the layout module says, b
 });
 
 test("a 40 px fade of the surface under every fixed or sticky action bar and at the landscape centre's edge (R-2)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const fades = css.match(/\.wiz-actions::before \{ content: ""; position: absolute; inset-inline: 0; bottom: calc\(100% \+ 1px\); height: 40px;/g) || [];
   assert.equal(fades.length, 2, "the phone's fixed bar and the single column's sticky bar");
   assert.match(css, /\.wiz-main::after \{ content: ""; flex: none; position: sticky;[^}]*height: 40px;/);
@@ -4164,7 +4165,7 @@ test("«Passi» has its title and ✕: a centred card, a sheet from the bottom, 
   const head = wiz().querySelector(".wiz-sheet .wiz-sheet-head");
   assert.equal(head.querySelector(".wiz-sheet-title").textContent, "Steps");
   assert.ok(head.querySelector('.wiz-sheet-close[data-wiz="steps-close"]'));
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-sheet-card \{[^}]*width: min\(100%, 360px\);/);
   const short = css.slice(css.lastIndexOf("@media (max-height: 499px) and (orientation: landscape) {"));
   assert.match(short, /\.wiz-sheet \.wiz-sheet-card \{ width: calc\(320px \+ var\(--cal-safe-right\)\); height: 100%; max-height: none; border-radius: 0;/);
@@ -4172,7 +4173,7 @@ test("«Passi» has its title and ✕: a centred card, a sheet from the bottom, 
 });
 
 test("every wizard, block and dialog button centres its label and takes the shell's radius (R-4)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-action, \.wiz-take, \.wiz-dialog-card \.actions button, dialog\.cal-dialog \.dialog-foot button, \.cal-block-action > button \{\s*justify-content: center; text-align: center; border-radius: var\(--cal-btn-radius\); \}/);
 });
 
@@ -4190,14 +4191,14 @@ test("dialogs are 560 px centred cards, and sheets with a ✕ that keeps the cal
     await new Promise((resolve) => setTimeout(resolve, 260));
     assert.equal(exit.hidden, true, "✕ keeps the calibration");
   } finally { globalThis.matchMedia = original; }
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-dialog-card \{ box-sizing: border-box; width: min\(100%, 560px\); padding: 24px;/);
   assert.doesNotMatch(css, /width: 40px; height: 4px; border-radius: 2px;/, "X-5: no drag handle (there is no drag-to-close)");
   assert.match(css, /dialog\.cal-dialog \{ width: min\(100%, 560px\); margin: auto auto 0; \}/, "landscape: a 560 px sheet, centred");
 });
 
 test("a gated primary stays a primary, disabled: A-01's Continue before a choice, the sequence's Start with nothing ticked (Q-29)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   // D-13 (decided 8 Oct): waiting for the user it is neutral; Q-29's light primary is the passing state (`is-settling`).
   const rule = css.match(/:is\(\.wiz-action\.primary, button\.primary\):disabled, :is\(\.wiz-action\.primary, button\.primary\):disabled:hover \{([^}]*)\}/)?.[1] || "";
   assert.match(rule, /background: color-mix\(in srgb, var\(--primary-text-color, #182b37\) 12%, var\(--panel-surface\)\)/);
@@ -4220,7 +4221,7 @@ test("a gated primary stays a primary, disabled: A-01's Continue before a choice
 });
 
 test("in the one-column layout the action bar is docked to the window's bottom (Home Assistant scrolls <html>) (U-1)", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz\.is-docked > \.wiz-frame > \.wiz-columns > \.wiz-actions \{ position: fixed; z-index: 7; inset-inline-start: var\(--dock-left\); bottom: 0;/);
   assert.match(css, /\.wiz\.is-docked > \.wiz-frame > \.wiz-columns \{ padding-bottom: var\(--dock-height\); \}/, "the wizard keeps the bar's room");
   const { dockBar } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-layout.js");
@@ -4276,7 +4277,7 @@ test("D-21: on A-02 the stepper shows the steps of the path ticked so far", asyn
 });
 
 test("D-22: from a 560 px bar every action is centred at 480, a red Stop alone included", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /@container wizbar \(min-width: 560px\) \{ \.wiz-actions > \*, \.wiz-actions > button\.danger \{ box-sizing: border-box; width: 100%; max-width: 480px; justify-self: center; \} \}/);
   assert.match(css, /button\.danger \{ color: var\(--panel-error\); justify-self: start; \}/, "the shell's rule it outweighs");
 });
@@ -4287,24 +4288,24 @@ test("D-23/D-36: a number and its unit are held on one line in bodies, notices, 
   assert.equal(units("circa 30 s) · 600 secondi · 12 %"), 'circa <span class="cal-nb">30 s</span>) · <span class="cal-nb">600 secondi</span> · <span class="cal-nb">12 %</span>');
   assert.equal(units("3 scatti, 2 sere"), "3 scatti, 2 sere", "only units");
   assert.match(inline("**21 s** o 20 s"), /<strong><span class="cal-nb">21 s<\/span><\/strong> o <span class="cal-nb">20 s<\/span>/);
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.cal-nb \{ white-space: nowrap; \}/);
 });
 
 test("D-24: the progress track is seen at 0 % on light and dark boxes", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-progress \{ height: 6px; border-radius: 999px; background: color-mix\(in srgb, var\(--primary-text-color, #182b37\) 14%, transparent\); overflow: hidden; \}/);
 });
 
 test("D-26/X-5: the side Steps panel reaches the right edge; no sheet draws a drag handle", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.doesNotMatch(css, /dialog\.cal-dialog::before|\.wiz-dialog-card::before|\.wiz-sheet-head::before/);
   assert.match(css, /\.wiz-sheet \.wiz-sheet-card \{ width: calc\(320px \+ var\(--cal-safe-right\)\); height: 100%; max-height: none; border-radius: 0; padding: 0; \}/);
   assert.match(css, /\.wiz-sheet \.wiz-sheet-head \{ padding-top: 4px; padding-inline-end: calc\(8px \+ var\(--cal-safe-right\)\); \}/);
 });
 
 test("D-30: in a landscape sheet the buttons sit side by side only while their labels fit on one line", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /dialog\.cal-dialog \.dialog-foot, \.wiz-dialog \.actions \{ flex-direction: row; flex-wrap: wrap; justify-content: end; \}/);
   assert.match(css, /dialog\.cal-dialog \.dialog-foot button, \.wiz-dialog \.actions button \{ flex: 1 1 auto; width: auto; min-width: 0; white-space: nowrap; \}/);
 });
@@ -4352,7 +4353,7 @@ test("D-37: the filter bars are fitted in the next frame, never inside the resiz
 });
 
 test("D-43: in one column the fade over the bar shows only while the bar is docked over the content", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /background: linear-gradient\(to top, var\(--panel-surface\), transparent\); opacity: 0; \}\s*\.wiz\.is-docked > \.wiz-frame > \.wiz-columns > \.wiz-actions::before \{ opacity: 1; \}/);
 });
 
@@ -4378,7 +4379,7 @@ test("D-13: a button off while the motor starts or a request is pending is a pas
 });
 
 test("X-4: notes and notices are plain flow text, never flex or grid: an inline «10 cm» or bold run stays in the sentence", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const offenders = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, selector, body]) => /display:\s*(inline-)?(flex|grid)/.test(body))
     .flatMap(([, selector]) => selector.split(",").map((part) => part.trim()))
     .filter((part) => /\.(cal-note|wiz-notice|notice)(?![\w-])/.test(part) && !/::before|:has\(> ha-icon\)|^\.notice\.muted$/.test(part));
@@ -4396,7 +4397,7 @@ test("X-4: notes and notices are plain flow text, never flex or grid: an inline 
 });
 
 test("N-05: A-21's switch label takes the block's width; only the name field keeps 420 px", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-profile-block label:not\(\.wiz-switch\) \{ max-width: 420px; \}/);
   assert.doesNotMatch(css, /\.wiz-profile-block label \{ max-width/);
 });
@@ -4455,12 +4456,12 @@ test("N-12: while the motor runs the step's text says what to watch for, not how
 });
 
 test("Z-9: in landscape a two-line action grows to fit (54 px) instead of squeezing into 44 px", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-actions \{ grid-auto-rows: max-content; \}\s*\.wiz-actions > \.wiz-action \{ height: auto; flex: none; \}/);
 });
 
 test("Z-7: on a dark theme the passing disabled primary is a faint tint with the neutral disabled label", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   const rule = css.match(/\[data-theme="dark"\] :is\(\.wiz-action\.primary, button\.primary\)\.is-settling:disabled, [^{]*\{([^}]*)\}/)?.[1] || "";
   assert.match(rule, /background: color-mix\(in srgb, var\(--panel-accent\) 14%, var\(--panel-surface\)\)/);
   assert.match(rule, /color: color-mix\(in srgb, var\(--primary-text-color, #fff\) 45%, transparent\)/);
@@ -4506,7 +4507,7 @@ test("L-123: after a real save the stepper line names the last step completed, a
 });
 
 test("L-126: in the steps only the current label is in the text colour, semibold; done and future ones grey, regular", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   // The list's own rule (0,1,2) used to outweigh the state's (0,1,1): the current label was grey as well.
   assert.match(css, /\.wiz-steps ol > li, \.wiz-sheet-steps ol > li \{[^}]*color: var\(--panel-text-2\); \}/, "the list's grey");
   assert.match(css, /:is\(\.wiz-steps, \.wiz-sheet-steps\) ol > li\[data-step-state="current"\] \{ color: var\(--primary-text-color, #182b37\); \}/, "the current label, at the list's weight");
