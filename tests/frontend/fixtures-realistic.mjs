@@ -62,7 +62,7 @@ export function realisticOverview() {
     covers: [
       // Calibrated with slats (times and rolls), source of «tall_four_leaf».
       { entity_id: "cover.lounge_1", name: "Lounge Shutter 1", profile_id: "tall4", travel_cm: 208, available: true, advanced: false, overrides: {},
-        // L-73: its check kept at the save, 2 cm: «Verificata · 2 cm» in green.
+        // its check kept at the save, 2 cm: «Calibrata · 2 cm» in green.
         check_cm: 2, check_measured_cm: 101, check_expected_cm: 103.4, check_at: "2026-09-12T10:20:00+00:00",
         effective: { opening: value(24.6, lounge, "profile"), closing: value(23.9, lounge, "profile"), slat_time_s: value(4.4, lounge, "profile"),
           opening_roll: value(1.83, lounge, "profile"), closing_roll: value(1.91, lounge, "profile") } },
@@ -79,7 +79,7 @@ export function realisticOverview() {
         effective: { opening: value(16.8, evidence("guided", oct2)), closing: value(16.1, evidence("guided", oct2)) } },
       // Calibrated without slats, source of the long profile.
       { entity_id: "cover.bedroom_garden", name: "Main Bedroom Shutter Garden Side", profile_id: "garden", travel_cm: 240, available: true, advanced: false, overrides: {},
-        // L-73: a check beyond the 4 cm threshold: «Verificata · 6 cm» in yellow.
+        // a check beyond the 4 cm threshold: «Calibrata · 6 cm» in yellow.
         check_cm: 6, check_measured_cm: 126, check_expected_cm: 120.2, check_at: "2026-09-20T18:05:00+00:00",
         effective: { opening: value(27.1, gardenSide, "profile"), closing: value(26.4, gardenSide, "profile"), slat_time_s: value(0, gardenSide, "profile"),
           opening_roll: value(2.07, gardenSide, "profile"), closing_roll: value(2.12, gardenSide, "profile") } },

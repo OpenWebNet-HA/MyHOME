@@ -17,16 +17,16 @@ const asset = (name) => { const url = new URL(name, import.meta.url); url.search
 const { CoverCalibration, calibrationClient, checkedCalibrationClient } = await import(asset("panel-cover-calibration.js"));
 
 const RESUME = "myhome/cover_calibration/resume", ACTION = "myhome/cover_calibration/action";
-/** L-58b: how long «Conferma presa di controllo» waits before it goes back to «Prendi il controllo». */
+/** How long «Conferma presa di controllo» waits before it goes back to «Prendi il controllo». */
 export const CONFIRM_TAKE_MS = 10000;
-/** L-77: the verbs that start a movement (Stop is shown from the moment one is sent). */
+/** The verbs that start a movement (Stop is shown from the moment one is sent). */
 const STARTS = ["next", "lift", "run", "open", "close", "repeat", "check", "restart"];
 /** The step a reader is looking at: what the owner shows (its screen) and Home Assistant's step and phase. */
 const armKey = (state) => JSON.stringify([state?.step ?? null, state?.phase ?? null, state?.screen?.code ?? null]);
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * L-10: cancel the gateway's session from the list (the row's ⋮ menu), whoever guides it: this tab takes control
+ * Cancel the gateway's session from the list (the row's ⋮ menu), whoever guides it: this tab takes control
  * (a claim against the sequence it read) and cancels; Home Assistant then frees the cover once nothing moves. Rejects
  * with Home Assistant's error, or `calibration_owned` when the claim did not take (the session moved on meanwhile).
  */
@@ -45,6 +45,41 @@ export async function cancelSession(hass, session) {
   }
 }
 
+/**
+ * «Esci senza salvare» refused by Home Assistant (every command refused, the cancel too). The wizard
+ * closes all the same and the cancel waits here, as `calCancelFailed` says: each time the connection returns (`ready`)
+ * the session is read again and, still open, cancelled (`cancelSession`); dropped once it went through or the session is
+ * over. Meanwhile Home Assistant hands the cover back by itself (the session's inactivity lease).
+ */
+const queuedCancels = new WeakMap();
+export function cancelWhenBack(hass, session) {
+  const connection = hass?.connection, id = session?.session_id;
+  if (!id || !session.entry_id || !session.entity_id || typeof connection?.addEventListener !== "function") return false;
+  const queued = queuedCancels.get(connection) ?? queuedCancels.set(connection, new Set()).get(connection);
+  if (queued.has(id)) return false;
+  let sending = false;
+  const drop = () => { connection.removeEventListener?.("ready", send); queued.delete(id); };
+  async function send() {
+    if (sending) return;
+    sending = true;
+    try {
+      const client_id = calibrationClient() || await checkedCalibrationClient();
+      const live = (await hass.callWS({ type: "myhome/cover_profiles/read", entry_id: session.entry_id, entity_id: session.entity_id, client_id }))?.calibration;
+      const open = live?.session_id === id && !["saved", "cancelled", "expired"].includes(live.phase) && (live.phase !== "interrupted" || live.recoverable);
+      if (open) await cancelSession(hass, live);
+      drop();
+    } catch (error) {
+      // Refused for good (the session gone, or now guided by another device): nothing left to cancel from here.
+      if (["calibration_expired", "calibration_owned"].includes(error?.code)) drop();
+    } finally {
+      sending = false;
+    }
+  }
+  connection.addEventListener("ready", send);
+  queued.add(id);
+  return true;
+}
+
 /** The existing engine, with its DOM replaced by notifications to the wizard. */
 class WizardSession extends CoverCalibration {
   constructor(listener) {
@@ -58,7 +93,7 @@ class WizardSession extends CoverCalibration {
   // The reading that was refused travels with the error, to name it beside the accepted range.
   _error(error, extra = {}) {
     if (this._beats.has(extra)) {
-      // M3-1: a heartbeat refused as `calibration_expired` may only mean that its token died with the socket (Safari
+      // A heartbeat refused as `calibration_expired` may only mean that its token died with the socket (Safari
       // suspends the page, Home Assistant reconnects on a new one). It is not an end until Home Assistant says so.
       if (this._expired) { this._expired = false; this.onBeatExpired?.(); }
       this.connection = "interrupted"; this._listener("view"); return;
@@ -67,9 +102,9 @@ class WizardSession extends CoverCalibration {
   }
   _accept(state) {
     const claiming = this._claiming;
-    // L-78: «the measurement state changed» for a command the session has moved past: the new view says it all.
+    // The refusal «the measurement state changed» for a command the session has moved past: the new view says it all.
     if (this.error?.code === "calibration_step" && this.error.sequence != null && state?.sequence !== this.error.sequence) this.error = null;
-    // L-26: the last view stays readable after the engine closes on «saved».
+    // The last view stays readable after the engine closes on «saved».
     this.lastView = state;
     super._accept(state);
     this.onAccept?.(state);
@@ -79,7 +114,7 @@ class WizardSession extends CoverCalibration {
     if (claiming && state.read_only) { this.notice = "calClaimStale"; this._listener("view"); }
   }
   _perform(action, extra) {
-    // L-78: the sequence a command was sent against, to recognise a refusal the session has since moved past.
+    // The sequence a command was sent against, to recognise a refusal the session has since moved past.
     if (action !== "heartbeat") { this.error = null; this.notice = null; this._sentSequence = this._state?.sequence ?? null; return super._perform(action, extra); }
     const beat = {};
     this._beats.add(beat);
@@ -88,15 +123,15 @@ class WizardSession extends CoverCalibration {
 }
 
 /**
- * L-4: a session the wizard starts says so (`origin: "wizard"` in its view), so a second tab opens it in the wizard's
+ * A session the wizard starts says so (`origin: "wizard"` in its view), so a second tab opens it in the wizard's
  * reader view, guided «solo tempi» included; sessions started from Devices keep the maintainer's dialog. Only the
  * start message is marked: the maintainer's engine builds it, so the wizard hands it a Home Assistant that adds the field.
  */
 const START = "myhome/cover_calibration/start";
-export function wizardHass(hass) {
+export function wizardHass(hass, extra = {}) {
   const bound = (target, key) => { const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value; };
   const connection = new Proxy(hass.connection, { get: (target, key) => key === "subscribeMessage"
-    ? (callback, message, ...rest) => target.subscribeMessage(callback, message?.type === START ? { ...message, origin: "wizard" } : message, ...rest)
+    ? (callback, message, ...rest) => target.subscribeMessage(callback, message?.type === START ? { ...message, ...extra, origin: "wizard" } : message, ...rest)
     : bound(target, key) });
   return new Proxy(hass, { get: (target, key) => key === "connection" ? connection : bound(target, key) });
 }
@@ -111,7 +146,7 @@ export class LiveCalibrationGateway {
     this._onChange = onChange;
     this._engine = new WizardSession((kind) => this._onChange?.(kind));
     this._engine.onBeatExpired = () => this._verify();
-    // L-58b: an armed «Conferma presa di controllo» goes back when the owner shows another step.
+    // An armed «Conferma presa di controllo» goes back when the owner shows another step.
     this._engine.onAccept = (state) => {
       if (this._armed && armKey(state) !== this._armed.key) this._disarm();
       // A change of owner (this tab taking control, or losing it): what this tab published before is no longer the
@@ -121,7 +156,7 @@ export class LiveCalibrationGateway {
     };
   }
 
-  /** L-58b: «Conferma presa di controllo» armed: back to «Prendi il controllo» after CONFIRM_TAKE_MS, counting down. */
+  /** «Conferma presa di controllo» armed: back to «Prendi il controllo» after CONFIRM_TAKE_MS, counting down. */
   _arm() {
     const engine = this._engine;
     this._disarm(false);
@@ -184,9 +219,14 @@ export class LiveCalibrationGateway {
     return elapsed ? elapsed.value + (performance.now() - elapsed.since) / 1000 : null;
   }
 
-  /** `mode` is "geometry" (paths A and C, times and rolls) or "guided" (path C, times only). */
-  start({ host, hass, t, entity, revision, mode, slats, onSaved, onCancel }) {
-    this._base = { host, hass: wizardHass(hass), t, entity, revision, onSaved, onCancel };
+  /**
+   * `mode` is "geometry" (fine-tuning with the tape, path A) or "guided" (the basic calibration). The guided start
+   * says `mode: "guided"` and `slats` (true: the ascent takes the tap at the lift-off).
+   */
+  start({ host, hass, t, entity, revision, mode, slats, keepTimes = false, home = false, onSaved, onCancel }) {
+    // The fine-tuning with the tape on the times already saved (`keep_times`). The basic calibration's session closes
+    // the cover itself first (`home`).
+    this._base = { host, hass: wizardHass(hass, mode === "guided" ? { mode: "guided", slats: !!slats, ...(home ? { home: true } : {}) } : keepTimes ? { keep_times: true } : {}), t, entity, revision, onSaved, onCancel };
     return this._engine.open({ ...this._base, mode, ...(mode === "geometry" ? { slats } : {}) });
   }
 
@@ -211,7 +251,7 @@ export class LiveCalibrationGateway {
   }
 
   act(action, extra = {}) {
-    // L-77: a start just sent shows Stop at once, before the session's answer (cleared with the answer or the refusal).
+    // A start just sent shows Stop at once, before the session's answer (cleared with the answer or the refusal).
     const starting = STARTS.includes(action);
     if (starting) this._starting = true;
     const sent = this._engine._perform(action, extra);
@@ -220,7 +260,7 @@ export class LiveCalibrationGateway {
   }
 
   /**
-   * L-25: publish this tab's screen to the session's readers (Home Assistant's `show`): outside the engine's queue of
+   * Publish this tab's screen to the session's readers (Home Assistant's `show`): outside the engine's queue of
    * verbs (no busy state, nothing held back), only while this tab owns the session, and never twice the same.
    */
   show(screen) {
@@ -236,7 +276,7 @@ export class LiveCalibrationGateway {
   cancel() { return this._engine._cancel(this._engine._generation); }
 
   /**
-   * L-10: cancel the session for good, also from a tab that only reads it (a Stop sent from another tab or device
+   * Cancel the session for good, also from a tab that only reads it (a Stop sent from another tab or device
    * leaves the session interrupted, owned by a tab that may be gone): control is taken first, without the question of
    * Take control, then Cancel is sent. A claim that does not take leaves the error `calibration_owned`.
    */
@@ -257,12 +297,26 @@ export class LiveCalibrationGateway {
 
   supports(target) {
     const modes = this.view?.save_modes || [];
-    return target === "profile_new" ? modes.includes("new") : target === "cover_only" ? modes.includes("cover") : false;
+    // «Aggiorna il profilo» is Home Assistant's `shared`, for the timing session and the tape alike.
+    return target === "profile_new" ? modes.includes("new") : target === "cover_only" ? modes.includes("cover")
+      : target === "profile_update" ? modes.includes("shared") : false;
   }
 
-  /** The unified Save of the screens, mapped on the existing `save_mode`s (L5a will accept `target`). */
+  /**
+   * What updating the profile followed would do (`preview_save` with `save_mode: "shared"`): the profile
+   * before and after and every cover that follows it, with the confirmation Save then carries. Null when refused.
+   */
+  async previewShared() {
+    this.savePreview = null;
+    await this._engine._perform("preview_save", { save_mode: "shared" });
+    this.savePreview = this._engine.lastView?.save_preview ?? null;
+    return this.savePreview;
+  }
+
+  /** The unified Save of the screens, mapped on the `save_mode`s: new, cover, shared (with its preview's confirmation). */
   save({ target, name }) {
     if (!this.supports(target)) return Promise.resolve();
+    if (target === "profile_update") return this._engine._perform("save", { save_mode: "shared", confirmation: this.savePreview?.confirmation });
     return this._engine._perform("save", target === "profile_new" ? { save_mode: "new", name } : { save_mode: "cover" });
   }
 
@@ -275,7 +329,7 @@ export const CHECK_THRESHOLD_CM = 4;
 
 /**
  * A rough height model for the preview only: the slat phase lifts nothing, then the edge moves
- * in proportion to time. The real fit belongs to the backend (L5c); these numbers only fill the
+ * in proportion to time. The real fit belongs to the backend; these numbers only fill the
  * screens so they can be tried.
  */
 export function previewHeight(values, direction, fraction) {
@@ -296,7 +350,7 @@ const READINGS = [
 const CHECK = { step: "check", direction: "down", fraction: 0.4, back: "up" };
 
 /**
- * Simulated sessions with the shape the backend will publish (L5b/L5c): `phase`, `step`,
+ * Simulated sessions with the shape the backend will publish: `phase`, `step`,
  * `stages`, `expected_cm`, `readings`, `check`, `values`. Plans: "refine" (fine-tuning after a
  * calibration, path A and C), "rolls" (path C, tape readings only) and "profile" (path B).
  */
@@ -394,7 +448,7 @@ export class PreviewCalibrationGateway {
     const view = this._view;
     this._error = null;
     if (!view) return Promise.resolve();
-    // Y-b: nothing moves in a preview, so its positioning can be passed at once («Continua»).
+    // Nothing moves in a preview, so its positioning can be passed at once («Continua»).
     if (action === "skip" && view.phase === "positioning") {
       this._clear();
       this._emit({ phase: "reading", step: this._pendingReading, stages: [], stage_index: null, expected_cm: this._expected(this._pendingReading) });

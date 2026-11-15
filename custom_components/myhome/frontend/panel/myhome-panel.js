@@ -19,7 +19,7 @@ export const MODULE_LAYERS = [
    "panel-calibration-layout.js", "panel-calibration-morph.js", "panel-calibration-illustrations-svg.js"],
   ["panel-cover-calibration.js", "panel-calibration-text.js", "panel-cover-geometry.js", "panel-profile-presentation.js",
    "panel-calibration-illustration.js"],
-  ["panel-calibration-gateway.js", "panel-calibration-screens.js", "panel-cover-profiles.js",
+  ["panel-calibration-gateway.js", "panel-calibration-screens.js", "panel-profile-assign.js", "panel-cover-profiles.js",
    "panel-cover-profile-list.js", "panel-bus-monitor.js"],
   ["panel-calibration-wizard.js", "panel-profile-catalogue-editor.js"],
   ["panel-calibration-tab.js"],

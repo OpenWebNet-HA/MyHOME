@@ -10,7 +10,7 @@ afterEach(reset);
 after(() => dom.window.close());
 
 /*
- * L-119 «same step, same bar»: the set and order of the actions in the bar are decided when a step is entered and never
+ * «Same step, same bar»: the set and order of the actions in the bar are decided when a step is entered and never
  * change while the user stays on that step. Automatic events (the motor starting or stopping, the clock, a new view
  * from Home Assistant, the settling hold) only turn existing actions on or off. The one substitution allowed is Stop
  * replaced in place by the state line «La corsa è finita: la tapparella è ferma» (and back, when a new leg moves).
@@ -59,12 +59,12 @@ export const FAMILIES = {
     ["motor stopped", { view: { step: "reset", phase: "closing", motor_stopped: true, stopped_elapsed: 19, ...timed, values: {} }, local: { ackLift: true, autoStart: "reset" }, elapsed: 20 }],
     ["Stop pressed", { view: { step: "reset", phase: "geometry_wait_stop", ...timed, values: {} }, local: { ackLift: true, autoStart: "reset" }, elapsed: 4 }],
   ],
-  // The same return on a session reopened at its briefing: its start goes first and stays, off, once pressed.
+  // The same return on a session reopened at its briefing: its start goes first (gone once the run starts, the
+  // bar then the one of a run started by itself).
   "A-09/A-10 return to the rest, started from its button": [
-    ["reopened", { view: { step: "reset", phase: "briefing", ...timed, values: {} }, local: { ackLift: true } }],
-    ["start pressed", { view: { step: "reset", phase: "starting_close", ...timed, values: {} }, local: { ackLift: true, manualStart: "reset" }, elapsed: 0 }],
-    ["closing", { view: { step: "reset", phase: "closing", ...timed, values: {} }, local: { ackLift: true, manualStart: "reset" }, elapsed: 3 }],
-    ["motor stopped", { view: { step: "reset", phase: "closing", motor_stopped: true, stopped_elapsed: 19, ...timed, values: {} }, local: { ackLift: true, manualStart: "reset" }, elapsed: 20 }],
+    ["start pressed", { view: { step: "reset", phase: "starting_close", ...timed, values: {} }, local: { ackLift: true }, elapsed: 0 }],
+    ["closing", { view: { step: "reset", phase: "closing", ...timed, values: {} }, local: { ackLift: true }, elapsed: 3 }],
+    ["motor stopped", { view: { step: "reset", phase: "closing", motor_stopped: true, stopped_elapsed: 19, ...timed, values: {} }, local: { ackLift: true }, elapsed: 20 }],
   ],
   // A-09 (top): the return to the top before a repeated descent.
   "A-09 return to the top": [
@@ -83,10 +83,9 @@ export const FAMILIES = {
     ["stopping", { view: { step: "half_open", phase: "geometry_wait_stop", ...timed }, local: { ...acks, autoStart: "half_open" }, elapsed: 11 }],
   ],
   "A-17 started from its button": [
-    ["reopened", { view: { step: "half_open", phase: "briefing", ...timed }, local: acks }],
-    ["start pressed", { view: { step: "half_open", phase: "starting_open", ...timed }, local: { ...acks, manualStart: "half_open" }, elapsed: 0 }],
-    ["moving", { view: { step: "half_open", phase: "opening", ...timed }, local: { ...acks, manualStart: "half_open" }, elapsed: 5 }],
-    ["stopping", { view: { step: "half_open", phase: "geometry_wait_stop", ...timed }, local: { ...acks, manualStart: "half_open" }, elapsed: 11 }],
+    ["start pressed", { view: { step: "half_open", phase: "starting_open", ...timed }, local: acks, elapsed: 0 }],
+    ["moving", { view: { step: "half_open", phase: "opening", ...timed }, local: acks, elapsed: 5 }],
+    ["stopping", { view: { step: "half_open", phase: "geometry_wait_stop", ...timed }, local: acks, elapsed: 11 }],
   ],
   // A-19: the readings' two legs (to the top, confirmed; then down to half), one card, one bar.
   "A-19 to the top, then down to half": [
@@ -110,7 +109,7 @@ export const FAMILIES = {
     ["to its target", { view: { step: "check", phase: "closing", ...halfRead, check: { direction: "closing", planned_seconds: 9 } }, local: { ...acks, autoStart: "check" }, elapsed: 3 }],
     ["stopping", { view: { step: "check", phase: "geometry_wait_stop", ...halfRead, check: { direction: "closing", planned_seconds: 9 } }, local: { ...acks, autoStart: "check" }, elapsed: 9 }],
   ],
-  // A-07, A-11, A-14: ① · ② · Stop from the briefing to the stop that follows ② (G2-10's wait included).
+  // A-07, A-11, A-14: ① · ② · Stop from the briefing to the stop that follows ② (the wait for the motor's stop included).
   "A-07 lift-off run": [
     ["briefing", { view: { step: "lift", phase: "briefing" }, local: { ackLift: true } }],
     ["① sent", { view: { step: "lift", phase: "briefing" }, local: { ackLift: true }, status: { starting: true } }],
@@ -172,13 +171,13 @@ export function assertOneBar(name, states) {
 }
 
 for (const [name, states] of Object.entries(FAMILIES)) {
-  test(`L-119: ${name} keeps one bar for the guide and for a reader`, () => {
+  test(`${name} keeps one bar for the guide and for a reader`, () => {
     assertOneBar(name, states);
     assertOneBar(`${name} (reader)`, states.map(([label, state]) => [label, asReader(state)]));
   });
 }
 
-test("L-119: the walk tells a bar that changes from one that only turns actions on or off", () => {
+test("the walk tells a bar that changes from one that only turns actions on or off", () => {
   const states = FAMILIES["C-11 guided ascent"];
   const screens = assertOneBar("C-11", states);
   assert.ok(screens.some(([, screen]) => screen.actions.some((action) => action.disabled)) && screens.some(([, screen]) => screen.actions.every((action) => action.id !== "run:open" || !action.disabled)),
@@ -187,7 +186,7 @@ test("L-119: the walk tells a bar that changes from one that only turns actions 
     ["b", { view: { step: "lift", phase: "reading" }, local: { ackLift: true } }]]), /changes the bar/);
 });
 
-test("L-119: A-03 → A-05 in the page: the bar drawn when the closing starts is the bar at its end stop", async () => {
+test("A-03 → A-05 in the page: the bar drawn when the closing starts is the bar at its end stop", async () => {
   const { backend, wiz, code, press, startFor } = await mount();
   const drawn = () => [...wiz().querySelectorAll(".wiz-actions [data-wiz]")].map((item) => item.dataset.wiz).map((id) => (id === "stopped" ? "stop" : id));
   const state = (id) => wiz().querySelector(`.wiz-actions [data-wiz="${id}"]`);
@@ -207,12 +206,13 @@ test("L-119: A-03 → A-05 in the page: the bar drawn when the closing starts is
   assert.equal(state("endpoint").disabled, false);
   backend.session.motor_stopped = true; backend.emit(); await tick();
   bars.push([code(), drawn()]);
-  assert.equal(state("stopped").tagName, "P", "the finished line in Stop's slot");
+  assert.deepEqual([state("stopped").tagName, state("stopped").disabled], ["BUTTON", true], "the red button, off, in Stop's slot (the trial)");
+  assert.ok([translations.it.wiz_T028, translations.en.wiz_T028].includes(state("stopped").textContent), "Stop's own label");
   assert.match(wiz().querySelector(".wiz-body").textContent, /si è chiusa completamente|has closed fully/);
   for (const [at, bar] of bars) assert.deepEqual(bar, ["endpoint", "misbehaved", "stop"], `the same bar on ${at}`);
 });
 
-test("L-119: every bar drawn from the lift-off reading to A-10 is the same one, the start by itself included", async () => {
+test("every bar drawn from the lift-off reading to A-10 is the same one, the start by itself included", async () => {
   const { backend, wiz, code, press, type, startFor } = await mount();
   await startFor("cover.living_one");
   await press("begin"); backend.started(); backend.tick(25); backend.emit(); await tick();
@@ -237,7 +237,7 @@ test("L-119: every bar drawn from the lift-off reading to A-10 is the same one, 
   assert.deepEqual([...new Set(after.map((bar) => bar.replace(/^\S+ /, "").replace("stopped", "stop")))], ["endpoint · stop"], after.join("\n"));
 });
 
-test("L-119: a return reopened at its briefing keeps its own start, off, once pressed", async () => {
+test("a return reopened at its briefing has its own start, gone once the run starts", async () => {
   const { backend, wiz, press, panel, startFor } = await mount();
   await startFor("cover.living_one");
   await press("begin"); backend.started(); backend.tick(25); backend.emit(); await tick();
@@ -256,12 +256,13 @@ test("L-119: a return reopened at its briefing keeps its own start, off, once pr
   assert.deepEqual(bar(), [["next", false], ["endpoint", true], ["stop", true]]);
   await press("next");
   backend.started(); backend.tick(3); backend.emit(); await tick();
-  assert.deepEqual(bar(), [["next", true], ["endpoint", true], ["stop", false]], "L-120: the end stop waits for the cover to arrive");
-  backend.tick(19); backend.emit(); await tick();
-  assert.deepEqual(bar(), [["next", true], ["endpoint", false], ["stop", false]]);
+  assert.deepEqual(bar(), [["endpoint", true], ["stop", false]], "the end stop waits for the cover to arrive");
+  // The return lasts the lift-off run (4 s, the closing/opening ratio applied) and its 2 s margin.
+  backend.tick(3); backend.emit(); await tick();
+  assert.deepEqual(bar(), [["endpoint", false], ["stop", false]]);
 });
 
-test("L-119b: Stop and the finished line are one slot of the bar: the same node, its class toggled, the other actions untouched", async () => {
+test("Stop and the finished line are one slot of the bar: the same node, its class toggled, the other actions untouched", async () => {
   const { backend, wiz, code, press, startFor } = await mount();
   await startFor("cover.living_one");
   await press("begin");
@@ -274,30 +275,36 @@ test("L-119b: Stop and the finished line are one slot of the bar: the same node,
   backend.session.motor_stopped = true; backend.emit(); await tick();
   assert.equal(code(), "A-05");
   assert.equal(column.querySelector(":scope > .wiz-stop-slot"), slot, "the same slot node");
-  assert.deepEqual([slot.className, slot.children.length, slot.firstElementChild.dataset.wiz, slot.firstElementChild.getAttribute("role")], ["wiz-stop-slot is-finished", 1, "stopped", "status"]);
+  // The trial: the red button stays in the slot, off, saying the run has ended (no empty box).
+  assert.deepEqual([slot.className, slot.children.length, slot.firstElementChild.dataset.wiz, slot.firstElementChild.className, slot.firstElementChild.disabled],
+    ["wiz-stop-slot is-finished", 1, "stopped", "wiz-action stop is-finished", true]);
+  assert.equal(slot.firstElementChild.textContent, "Stop the cover", "Stop's own label, off: no line about the run");
   assert.deepEqual([...column.children].filter((item) => item !== slot), ctas, "the actions above are the same nodes, in the same places");
   // A reader keeps the slot too.
   const view = backend.view;
   backend.view = (extra = {}) => view({ owner: false, read_only: true, ...extra });
   backend.emit(); await tick();
   const reader = wiz().querySelector(".wiz-actions > .wiz-stop-slot");
-  assert.deepEqual([reader.className, reader.firstElementChild.dataset.wiz, reader.previousElementSibling.className], ["wiz-stop-slot is-finished", "stopped", "wiz-readonly"]);
+  // The reader's footer is Take control (grouped on the right) and the slot; its note is in the content.
+  assert.deepEqual([reader.className, reader.firstElementChild.dataset.wiz, reader.previousElementSibling.className], ["wiz-stop-slot is-finished", "stopped", "wiz-footer-main"]);
   backend.session.motor_stopped = false; backend.session._started = null; backend.started(); backend.tick(1); backend.emit(); await tick();
   assert.equal(wiz().querySelector(".wiz-actions > .wiz-stop-slot"), reader, "back to Stop in the same slot");
   assert.deepEqual([reader.className, reader.firstElementChild.dataset.wiz], ["wiz-stop-slot", "stop"]);
 });
 
-test("L-120: every «arrived» confirm comes on at the earliest of the stop status and the estimated run, no margin, as its bar ends", () => {
-  // [screen, path, view, local, estimate (s)]: the first closing and the returns use the times known at that point (the
-  // closing time in use before anything is measured; the measured ascent afterwards); A-19 starts where the half-ascent
-  // run stopped: 22.2 − (4.4 + 22.2) / 2 = 8.9 s.
+test("every «arrived» confirm comes on at the earliest of the stop status and the estimated run, as its bar ends", () => {
+  // [screen, path, view, local, estimate (s)]: the first closing uses the closing time in use; the
+  // returns inside the session last what the session measured with a margin of max(2 s, 25 %), never longer than the
+  // whole run they replace: the return to the bottom after the lift-off 4.4 × 21.7 / 22.4 + 2 s; before a repeated
+  // descent the measured ascent (22.2 s: with the margin it would be longer); A-19 from where the half-ascent run
+  // stopped, 22.2 − (4.4 + 22.2) / 2 = 8.9 s, + 2.225 s.
   const cases = [
     ["A-04/A-05", "A", { step: "home", phase: "closing" }, {}, 21.7],
     ["C-04/C-05", "C", { step: "home", phase: "closing" }, {}, 21.7],
-    ["A-09/A-10", "A", { step: "reset", phase: "closing", ...timed, values: {} }, { ackLift: true }, 21.7],
+    ["A-09/A-10", "A", { step: "reset", phase: "closing", ...timed, values: {} }, { ackLift: true }, 4.4 * 21.7 / 22.4 + 2],
     ["A-09 to the top", "A", { step: "top", phase: "opening", ...timed }, { ackLift: true, ackAscent: true }, 22.2],
-    ["A-19 first leg", "A", { step: "top", phase: "opening", ...halfRead }, acks, 8.9],
-    ["C-19 first leg", "C", { step: "top", phase: "opening", ...halfRead }, acks, 8.9],
+    ["A-19 first leg", "A", { step: "top", phase: "opening", ...halfRead }, acks, 8.9 + 2.225],
+    ["C-19 first leg", "C", { step: "top", phase: "opening", ...halfRead }, acks, 8.9 + 2.225],
     ["A-30 first leg", "A", { step: "top", phase: "opening", ...halfRead, check: { direction: "closing", planned_seconds: 9 } }, acks, 22.2],
   ];
   for (const [name, path, view, local, estimate] of cases) {
@@ -306,7 +313,7 @@ test("L-120: every «arrived» confirm comes on at the earliest of the stop stat
     const before = at(estimate - 0.05), on = at(estimate);
     assert.equal(endpoint(before).disabled, true, `${name}: off before the estimate`);
     assert.ok(before.wait.progress.value < 1 && before.wait.progress.remaining >= 1, `${name}: the bar still runs`);
-    assert.equal(!!endpoint(on).disabled, false, `${name}: on at ${estimate} s, no margin`);
+    assert.equal(!!endpoint(on).disabled, false, `${name}: on at ${estimate} s`);
     assert.ok(!on.wait || (on.wait.progress.value === 1 && on.wait.progress.remaining == null), `${name}: the bar has ended at that instant`);
     // The stop status ends it earlier: on at once, the bar complete.
     const stopped = at(3, { motor_stopped: true, stopped_elapsed: 3 });
@@ -320,7 +327,7 @@ test("L-120: every «arrived» confirm comes on at the earliest of the stop stat
   assert.equal(!!running.actions.find((action) => action.id === "endpoint").disabled, false, "② on at once while the motor runs");
 });
 
-test("L-121: A-04/A-05 with a position Home Assistant does not know, or shows 0 on an open cover: the end stop at the full closing time", async () => {
+test("A-04/A-05 with a position Home Assistant does not know, or shows 0 on an open cover: the end stop at the full closing time", async () => {
   for (const [label, entity, at, expected] of [["position 0 on an open cover", { state: "open", attributes: { current_position: 0 } }, 21.6, 21.7],
     ["no position", { state: "open", attributes: { current_position: null } }, 21.6, 21.7], ["position 50", { state: "open", attributes: { current_position: 50 } }, 10.8, 10.85]]) {
     reset();
@@ -334,4 +341,35 @@ test("L-121: A-04/A-05 with a position Home Assistant does not know, or shows 0 
     backend.tick(expected - at + 0.05); backend.emit(); await tick();
     assert.equal(wiz().querySelector('[data-wiz="endpoint"]').disabled, false, `${label}: on at ${expected} s`);
   }
+});
+
+test("while the bus confirms a Stop the screen the user was on stays, its actions off, no positioning's bar; «Arresto in corso…» only after 500 ms", () => {
+  const stopNote = (screen) => screen.notices.some((notice) => notice.text === t("wiz_T459"));
+  // A-05 → «È chiusa completamente, avanti» → the session writes Stop and waits: still A-05, its buttons off.
+  const confirm = screenAt({ view: { step: "home", phase: "closing" }, elapsed: 30 });
+  assert.equal(confirm.code, "A-05");
+  const waiting = screenAt({ view: { step: "home", phase: "geometry_wait_stop" }, elapsed: 30, local: { waitStopAt: Date.now() } });
+  assert.deepEqual([waiting.code, waiting.title, waiting.wait], [confirm.code, confirm.title, null], "the same screen, no bar");
+  assert.ok(waiting.actions.filter((action) => !["stop", "stopped"].includes(action.id)).every((action) => action.disabled), "its buttons off");
+  assert.equal(stopNote(waiting), false, "no note at once");
+  assert.equal(stopNote(screenAt({ view: { step: "home", phase: "geometry_wait_stop" }, elapsed: 30, local: { waitStopAt: Date.now() - 600 } })), true, "once it lasts");
+  // A-10 the same; a positioning's bar stays full while it waits (never back to empty).
+  const reset = screenAt({ view: { step: "reset", phase: "geometry_wait_stop", ...timed, values: {} }, local: { ackLift: true, waitStopAt: Date.now() }, elapsed: 30 });
+  assert.equal(reset.code, "A-10");
+  const top = screenAt({ view: { step: "top", phase: "geometry_wait_stop", ...timed }, local: { ackLift: true, ackAscent: true, waitStopAt: Date.now() }, elapsed: 30 });
+  assert.deepEqual([top.code, top.wait.progress.value], ["A-09", 1]);
+});
+
+test("a return to the bottom after a repeated ascent keeps the whole closing; one after the lift-off lasts the lift-off (frozen when the view drops it)", () => {
+  const endpointOn = (screen) => !screen.actions.find((action) => action.id === "endpoint").disabled;
+  const lifted = (elapsed, extra = {}, local = {}) => screenAt({ view: { step: "reset", phase: "closing", ...timed, values: {}, ...extra }, local: { ackLift: true, ...local }, elapsed });
+  const estimate = 4.4 * 21.7 / 22.4 + 2;
+  assert.equal(endpointOn(lifted(estimate - 0.1)), false);
+  assert.equal(endpointOn(lifted(estimate)), true, "the lift-off run and its margin");
+  // A repeat drops the sample from the view: the wizard's frozen value plans it.
+  assert.equal(endpointOn(lifted(estimate, { samples: {} }, { liftRun: 4.4 })), true);
+  assert.equal(endpointOn(lifted(estimate, { samples: {} })), false, "nothing known: the whole closing");
+  // The ascent measured (a repeated ascent): the cover may be at the top: the whole closing, as before.
+  assert.equal(endpointOn(lifted(estimate, { values: { opening_time: 22.2 } })), false);
+  assert.equal(endpointOn(lifted(21.7, { values: { opening_time: 22.2 } })), true);
 });
