@@ -3,6 +3,7 @@ import { after, afterEach, test } from "node:test";
 
 import { translations } from "../../custom_components/myhome/frontend/panel/panel-translations.js";
 import { dom, mount, move, reset, settle, tick } from "./wizard-harness.mjs";
+import { panelCss } from "./panel-css.mjs";
 
 afterEach(reset);
 after(() => dom.window.close());
@@ -417,6 +418,6 @@ test("D-21: before a case or path is confirmed the stepper follows the one chose
 });
 
 test("N-14: C-01's «Currently in use» box stands out from the page in both themes", async () => {
-  const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/myhome-panel.css", import.meta.url), "utf8");
+  const css = panelCss;
   assert.match(css, /\.wiz-box \{ display: grid; gap: 4px; padding: 12px 14px; border-radius: var\(--cal-btn-radius\); border: 1px solid var\(--panel-border\);\s*background: color-mix\(in srgb, var\(--primary-text-color, #182b37\) 6%, var\(--panel-surface\)\); \}/);
 });
