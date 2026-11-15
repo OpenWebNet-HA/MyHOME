@@ -185,6 +185,68 @@ test("filters keep their counts, explain covers to measure and follow the panel 
   assert.deepEqual(rows(root.getElementById("cover-calibration-tab")).map((item) => item.dataset.entity), ["cover.kitchen_two", "cover.living_two"]);
 });
 
+test("a row opens the cover's details over the list, on every window: the values in use, the last measurement and the profile", async () => {
+  const { tab } = await mount();
+  const toggle = row(tab, "cover.living_two").querySelector('[data-action="cal-tab-toggle"]');
+  assert.equal(toggle.getAttribute("aria-haspopup"), "dialog", "a row opens a dialog, no band in place");
+  assert.equal(row(tab, "cover.living_two").querySelector(".cal-row-details, .cal-row-chevron"), null, "no accordion, no chevron");
+  const details = await openDetails(tab, "cover.living_two");
+  assert.ok(details, "the details' dialog over the list");
+  assert.equal(details.closest(".cal-flow-box").dataset.kind, "page", "the overlay's frame, as high as its content");
+  assert.ok(rows(tab).length > 1, "the list stays under it");
+  // Values keep their unit and dates their year with no-break spaces; the times are the status card's «Misure».
+  const nb = "\u00a0";
+  // The three times in one row, the slat time the third.
+  assert.deepEqual([...details.querySelectorAll(".cal-page-status .cal-measure")].map((item) => [item.querySelector(".cal-label-long").textContent,
+    item.querySelector(".cal-measure-value").textContent.replace(/\s+/g, " ").trim()]), [["Opening time", "22.4 s"], ["Closing time", "21.9 s"], ["Slat time", "4.4 s"]]);
+  // «Panoramica», «Caratteristiche»: the travel and the slats under the times, a follower's own travel «· set
+  // here»; no coefficients (they are in «Dettagli»).
+  assert.deepEqual(pairsOf(details), { "Curtain travel": `196${nb}cm · set here`, Slats: "Not said" });
+  assert.deepEqual(Object.keys(pairsOf(details.querySelector(".cal-page-traits"))), ["Curtain travel", "Slats"]);
+  // «Dettagli»: «Ultima calibrazione» (the date, «Come»), «Ultima verifica», who else uses the profile.
+  await showTab(tab, "details");
+  const facts = pairsOf(detailsOf(tab).querySelector(".cal-page-last"));
+  // A follower has no date of its own, «Come» only.
+  assert.deepEqual(facts, { How: "Linked to the profile" }, "«Come» in plain words");
+  assert.deepEqual([...detailsOf(tab).querySelectorAll(".cal-page-users .cal-user")].map((user) => user.textContent), ["Kitchen shutter 2follows the profile"]);
+  // A profile without a reference travel: the travel only gives positions in cm.
+  assert.equal(detailsOf(tab).querySelector(".cal-page-values .cal-card-tail").textContent, translations.en.calTabTravelNoReference, "the follower's one tail");
+  await showTab(tab, "overview");
+  // The date with its time is checked on «Ultima calibrazione» of a cover with a date of its own: a follower has none.
+  // No footer any more. «Posizionamento» holds the main action with its caption (Perfeziona on a calibrated
+  // cover without a profile, Calibra and Assegna profilo on one never calibrated, none on a follower); «Cambia profilo» is
+  // in «Collegamento al profilo»; Ricalibra comes from the procedure (and the row's ⋮).
+  const actionsOf = async (entity) => {
+    tab.querySelector(".cal-page-close")?.click(); await tick();
+    const page = await openDetails(tab, entity);
+    return [...page.querySelectorAll(".cal-cta button")].map((button) => [button.dataset.action, button.textContent.trim(), button.className]);
+  };
+  assert.equal(detailsOf(tab).querySelector(".cal-page-actions"), null, "no footer on «Profilo e valori»");
+  // One button, the unlinking in its window.
+  assert.deepEqual([...detailsOf(tab).querySelectorAll(".cal-page-link button")].map((button) => [button.dataset.action, button.textContent]),
+    [["cal-tab-assign", "Change profile"]], "the follower's connection: change (unlink in its window)");
+  assert.deepEqual(await actionsOf("cover.living_two"), [], "a follower: no main action");
+  assert.deepEqual(await actionsOf("cover.living_one"), [["cal-tab-refine", "Fine-tune", "primary"]], "Perfeziona without measured rolls too («Fine-tune»)");
+  assert.equal(detailsOf(tab).querySelector(".cal-page-actions"), null);
+  // A cover never calibrated: «Come vuoi calibrarla?», two rows, at every width.
+  assert.deepEqual(await actionsOf("cover.bedroom"), [], "a cover never calibrated: no button");
+  assert.deepEqual([...detailsOf(tab).querySelectorAll(".cal-pos-how .cal-choice")].map((button) => [button.dataset.action, button.querySelector(".cal-choice-title").textContent]),
+    [["cal-tab-measure-cover", "Record movement times"], ["cal-tab-assign", "Use a profile"]], "a cover never calibrated: Calibra, or a profile");
+  // The stopwatch for Calibra and Ricalibra alike, the ruler for Perfeziona (the rows of «Come vuoi calibrarla?» carry
+  // only their ›).
+  assert.equal(row(tab, "cover.bedroom").querySelector('.cal-row-action[data-action="cal-tab-calibrate"] ha-icon').getAttribute("icon"), "mdi:timer-outline", "Calibrate: the stopwatch");
+  await actionsOf("cover.living_one");
+  assert.equal(detailsOf(tab).querySelector('[data-action="cal-tab-refine"] ha-icon').getAttribute("icon"), "mdi:arrow-expand-vertical", "the upright arrows");
+  tab.querySelector(".cal-page-close").click(); await tick();
+  const menuLabel = (id) => row(tab, id).querySelector('.cal-menu [data-action="cal-tab-assign"]').textContent.trim();
+  assert.deepEqual([menuLabel("cover.living_two"), menuLabel("cover.bedroom")], ["Change profile", "Assign profile"], "the ⋮ menu says the same");
+  assert.ok([...tab.querySelectorAll('[data-action="cal-tab-assign"] ha-icon')].every((icon) => icon.getAttribute("icon") === "mdi:link-variant"),
+    "Assign profile shows the link of the profile's covers, not a pencil");
+  assert.equal(tab.querySelector('[data-action="cal-tab-measure"] ha-icon').getAttribute("icon"), "mdi:timer-outline", "the tab's Calibrate a cover too");
+  assert.equal(row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-measure-cover"] ha-icon').getAttribute("icon"), "mdi:timer-outline", "Recalibrate in ⋮: the stopwatch");
+  assert.equal(detailsOf(tab), null, "closed by its ✕");
+});
+
 test("every text key the calibration screens use exists in English and Italian", async () => {
   const { readFileSync } = await import("node:fs");
   const base = new URL("../../custom_components/myhome/frontend/panel/", import.meta.url);
@@ -205,6 +267,41 @@ test("every text key the calibration screens use exists in English and Italian",
   for (const key of keys) {
     assert.ok(translations.en[key], `en ${key}`);
     assert.ok(translations.it[key], `it ${key}`);
+  }
+});
+
+test("row menu items move with the arrow keys", async () => {
+  const { root, tab } = await mount();
+  row(tab, "cover.bedroom").querySelector('[data-action="cal-tab-menu"]').click();
+  const items = [...row(tab, "cover.bedroom").querySelectorAll('[role="menuitem"]')];
+  assert.equal(root.activeElement, items[0]);
+  items[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  assert.equal(root.activeElement, items[1]);
+  items[1].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+  assert.equal(root.activeElement, items[0]);
+  items[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+  assert.equal(root.activeElement, items.at(-1), "the arrows wrap");
+  items.at(-1).dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+  assert.equal(root.activeElement, items[0]);
+});
+
+test("the menu's focus and arrows skip disabled items, on a cover in progress and on a gateway busy with another", async () => {
+  const session = { entry_id: "one", entity_id: "cover.bedroom", session_id: "s1", mode: "geometry", phase: "briefing", step: "home", sequence: 2, values: {},
+    recoverable: true, attached: false, owner_present: true };
+  const { root, tab } = await mount({ session });
+  for (const id of ["cover.bedroom", "cover.living_two"]) {
+    row(tab, id).querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    const all = [...row(tab, id).querySelectorAll('[role="menuitem"]')], items = all.filter((item) => !item.disabled);
+    assert.ok(all.some((item) => item.disabled), `${id}: has a disabled item`);
+    assert.ok(items.length >= 1);
+    assert.equal(root.activeElement, items[0], `${id}: the focus opens on the first usable item`);
+    for (let i = 1; i <= items.length; i++) {
+      root.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      assert.equal(root.activeElement, items[i % items.length], `${id}: ArrowDown never stops on a disabled item`);
+    }
+    root.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    assert.equal(root.activeElement, items.at(-1), `${id}: ArrowUp wraps to the last usable item`);
+    root.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await tick();
   }
 });
 
@@ -243,6 +340,46 @@ test("the page does not pull to refresh while the wizard is shown", async () => 
   assert.equal(value(), "", "back to the list: as before");
 });
 
+test("Assign profile lists the saved profiles as B-01 does and assigns with the existing write, never through the profile dialog", async () => {
+  const data = overview();
+  // As Home Assistant publishes it for a cover named by its device: the registry name is only the entity id.
+  Object.assign(data.profiles[0].provenance.opening, { origin_entity_id: "cover.living_one", origin_name: "cover.living_one" });
+  data.profiles[0].reference_travel_cm = 198;
+  data.profiles[0].geometry = { slat_time_s: 4.4, opening_roll: 1.83, closing_roll: 1.91 };
+  data.profiles.push({ id: "low", name: "low_one_leaf", opening_time: 12, closing_time: 11, assigned_to: [], provenance: {} });
+  const { root, tab, calls } = await mount({ data, callWS: (message) => message.type === "myhome/cover_profiles/write" ? { revision: 8 } : undefined });
+  row(tab, "cover.bedroom").querySelector('[data-action="cal-tab-menu"]').click();
+  row(tab, "cover.bedroom").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+  assert.equal(root.querySelector(".cover-profile-dialog:not(.cal-dialog)"), null, "not the maintainer's Travel profile dialog");
+  assert.equal(root.querySelector("#dialog-host dialog"), null, "in the tab's frame, not a dialog of its own");
+  const dialog = sheetOf(tab);
+  // The cover named in the title, its room and address under it, then what assigning does.
+  assert.equal(dialog.querySelector("h2").textContent, 'Assign a profile to the cover Bedroom');
+  assert.equal(dialog.querySelector(".cal-page-head .muted").textContent.replace(/\u00a0/g, " "), "Bedroom · Address: 91 · A: 9 · PL: 1", "the room and the address, as the other headers");
+  assert.equal(dialog.querySelector(".cal-assign-body > .cal-assign-intro").textContent,
+    "This cover will use the times of the profile you choose. If the profile has a reference travel and this cover's curtain is taller or shorter, you can enter its measurement on its card afterwards, and the times will adapt.");
+  assert.equal(dialog.querySelector(".cal-assign-list > legend").textContent, "Profile", "the section «Profilo»");
+  const options = [...dialog.querySelectorAll(".wiz-radio")].map((label) => [...label.querySelectorAll("strong, small")].map((item) => item.textContent));
+  assert.deepEqual(options, [
+    // A profile that says nothing of slats has no slats note («Solo tempi» retired).
+    ["low_one_leaf", "No cover follows it"],
+    ["tall_two_leaf", "With slats · Reference travel 198 cm", `Measured on the cover Living room shutter 1 · ${dateTimeText("2026-09-29T10:00:00+00:00", "en")}`, "Living room shutter 1", "Followed by the covers Living room shutter\u00a02 and Kitchen shutter\u00a02"]],
+    "who follows each profile, by name");
+  const assign = dialog.querySelector("[data-assign]");
+  assert.equal(assign.disabled, true);
+  assert.deepEqual([...dialog.querySelectorAll(".cal-page-actions button")].map((button) => button.textContent), ["Assign", "Cancel"],
+    "Assign first in the phone's column (the medium row lays Cancel before it)");
+  const tall = dialog.querySelector('input[value="tall"]');
+  tall.checked = true; tall.dispatchEvent(new Event("change", { bubbles: true }));
+  assert.equal(assign.disabled, false);
+  assign.click(); await tick(4);
+  const write = calls.find((message) => message.type === "myhome/cover_profiles/write");
+  assert.deepEqual(write, { type: "myhome/cover_profiles/write", entry_id: "one", entity_id: "cover.bedroom", revision: 7, action: "assign", profile_id: "tall" });
+  assert.equal(frameOf(tab), null, "opened from the list: back to the list");
+  await tick(4);
+  assert.match(tab.querySelector(".cal-tab-done").textContent.trim(), /now follows the profile "/, "confirmed as an unlinking is");
+});
+
 test("a note is one recipe: light a box (tone 12 %, border 45 % on three sides, 2 px bar), dark the bar only; A-01's chosen row is neutral", async () => {
   const css = panelCss;
   assert.match(css, /:is\(\.cal-note, \.cal-tab \.notice, dialog\.cal-dialog \.notice\) \{ --note-tone: var\(--panel-accent\); --note-text: var\(--panel-accent\);[^}]*border-radius: var\(--cal-r-8\); box-shadow: none; font-size: var\(--cal-fs-14\);[^}]*background: color-mix\(in srgb, var\(--note-tone\) 12%, transparent\);\s*border: 1px solid color-mix\(in srgb, var\(--note-tone\) 45%, transparent\);/, "light: the box, 8 px, 1 px on every side (the trial)");
@@ -262,6 +399,36 @@ test("a cover in progress keeps yellow tints in every state of its row (no open 
   }
 });
 
+test("Assign profile waits while a calibration is open on the gateway, and after a refusal", async () => {
+  const session = { entry_id: "one", entity_id: "cover.living_one", session_id: "s", mode: "geometry", phase: "briefing", step: "lift", sequence: 3,
+    values: {}, recoverable: true, attached: true, owner_present: true };
+  const busy = await mount({ session });
+  const open = (tab, id) => { row(tab, id).querySelector('[data-action="cal-tab-menu"]').click(); row(tab, id).querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); };
+  open(busy.tab, "cover.bedroom"); await tick();
+  let dialog = sheetOf(busy.tab);
+  const note = dialog.querySelector(".cal-assign-busy");
+  assert.equal(note.textContent, "A calibration is in progress: finish or cancel it before assigning a profile.");
+  assert.ok(note.classList.contains("cal-note") && !note.classList.contains("error"), "an information, not an error");
+  const tall = dialog.querySelector('input[value="tall"]');
+  tall.checked = true; tall.dispatchEvent(new Event("change", { bubbles: true }));
+  assert.equal(dialog.querySelector("[data-assign]").disabled, true, "Assign waits");
+  // Without a session, a refusal turns Assign off too.
+  const refusing = await mount({ callWS: (message) => { if (message.type === "myhome/cover_profiles/write") throw Object.assign(new Error("busy"), { code: "calibration_busy" }); } });
+  open(refusing.tab, "cover.bedroom"); await tick();
+  dialog = sheetOf(refusing.tab);
+  assert.equal(dialog.querySelector(".cal-assign-busy"), null);
+  const choice = dialog.querySelector('input[value="tall"]');
+  choice.checked = true; choice.dispatchEvent(new Event("change", { bubbles: true }));
+  dialog.querySelector("[data-assign]").click(); await tick(4);
+  const refusal = dialog.querySelector(".cal-assign-error");
+  assert.equal(refusal.hidden, false);
+  assert.ok(refusal.classList.contains("notice"), "an error notice, not bare red text");
+  assert.equal(refusal.nextElementSibling.nextElementSibling, dialog.querySelector(".cal-assign-list"), "above the choices, in view (the introduction between)");
+  assert.equal(dialog.querySelector("[data-assign]").disabled, true, "off after the refusal");
+  choice.dispatchEvent(new Event("change", { bubbles: true }));
+  assert.equal(dialog.querySelector("[data-assign]").disabled, true, "and stays off");
+});
+
 test("every radio of the Assign dialog is the same circle, No profile included", async () => {
   const css = panelCss;
   // The trial: 20 px, drawn by the panel, centred on the first line (14/20).
@@ -272,6 +439,67 @@ test("every radio of the Assign dialog is the same circle, No profile included",
   assert.match(css, /\.wiz-radio input \{[^}]*margin: -1px 0 0; padding: 0;\s*appearance: none;/, "the second trial: 1 px up, as seen on the phone");
   assert.match(css, /\.wiz-radio \{ display: flex; gap: 10px; align-items: start; padding: 6px 0; font-size: var\(--cal-fs-14\); line-height: 20px;/, "a 20 px first line");
   assert.match(css, /\.cal-assign-none strong \{ display: flex; align-items: center; gap: 6px; height: 20px; \}/);
+});
+
+test("a press on the backdrop closes the sheet only while closing costs nothing (no new choice), applying nothing", async () => {
+  const { tab, calls } = await mount();
+  row(tab, "cover.bedroom").querySelector('[data-action="cal-tab-menu"]').click();
+  row(tab, "cover.bedroom").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+  // The sheet is the content of the tab's frame: the scrim is the frame's.
+  const dialog = frameOf(tab), sheet = sheetOf(tab);
+  const scrim = () => { dialog.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })); dialog.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 1, clientY: 1 })); };
+  const tall = sheet.querySelector('input[value="tall"]');
+  tall.checked = true; tall.dispatchEvent(new Event("change", { bubbles: true }));
+  assert.equal(sheet.hasAttribute("data-closable"), false, "a new choice made: closing would lose it");
+  sheet.querySelector(".wiz-radio").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  assert.ok(frameOf(tab), "a click inside does not close it");
+  scrim();
+  assert.ok(frameOf(tab), "with a choice made the scrim does nothing");
+  // A press that began inside the box and ended on the scrim (a text selection) is not a press on the scrim.
+  tall.checked = false; sheet.querySelector(".cal-assign-list").dispatchEvent(new Event("change", { bubbles: true }));
+  assert.ok(sheet.hasAttribute("data-closable"), "no choice any more: closing costs nothing");
+  sheet.querySelector(".wiz-radio").dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+  dialog.dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 1, clientY: 1 }));
+  assert.ok(frameOf(tab), "begun inside the box: not a press on the scrim");
+  scrim();
+  assert.equal(frameOf(tab), null, "the backdrop closes it");
+  assert.equal(calls.some((message) => message.type === "myhome/cover_profiles/write"), false, "nothing applied");
+});
+
+test("Assign profile offers No profile to unlink the followed profile, never on the cover it was measured on", async () => {
+  const data = overview();
+  Object.assign(data.profiles[0].provenance.opening, { origin_entity_id: "cover.living_two", origin_name: "cover.living_two" });
+  const { root, tab, calls } = await mount({ data, callWS: (message) => message.type === "myhome/cover_profiles/write" ? { revision: 8 } : undefined });
+  const open = (id) => { row(tab, id).querySelector('[data-action="cal-tab-menu"]').click(); row(tab, id).querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); };
+  open("cover.bedroom"); await tick();
+  let dialog = sheetOf(tab);
+  assert.equal(dialog.querySelector('input[value="__no_profile__"]'), null, "a cover without a profile has nothing to unlink");
+  dialog.querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+  open("cover.living_two"); await tick();
+  dialog = sheetOf(tab);
+  const sourceNone = dialog.querySelector('input[value="__no_profile__"]');
+  assert.equal(sourceNone.disabled, true, "the profile's source cover: shown, but disabled");
+  assert.equal(sourceNone.closest(".wiz-radio").querySelector("small").textContent,
+    'This cover is the source of the profile "tall_two_leaf": the link cannot be removed for now. A coming version will allow it; the measured values will stay with it.');
+  dialog.querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+  open("cover.kitchen_two"); await tick();
+  dialog = sheetOf(tab);
+  assert.equal(dialog.querySelector("h2").textContent, 'Change the profile of the cover Kitchen shutter 2', "a cover that follows a profile changes it");
+  const none = dialog.querySelector('input[value="__no_profile__"]');
+  assert.ok(none, "a follower can unlink");
+  assert.equal(none.closest(".wiz-radio"), dialog.querySelector(".wiz-radio"), "first in the list");
+  assert.equal(none.closest(".wiz-radio").querySelector("ha-icon").getAttribute("icon"), "mdi:link-variant-off");
+  assert.deepEqual([...none.closest(".wiz-radio").querySelectorAll("strong, small")].map((item) => item.textContent),
+    ["Unlink profile", translations.en.wiz_T405.replace("{cover}", "Kitchen shutter 2").replace("{profile}", "tall_two_leaf")]);
+  const button = dialog.querySelector("[data-assign]");
+  none.checked = true; none.dispatchEvent(new Event("change", { bubbles: true }));
+  assert.equal(button.textContent, "Unlink profile");
+  assert.equal(button.querySelector("ha-icon").getAttribute("icon"), "mdi:link-variant-off");
+  button.click(); await tick(6);
+  const write = calls.filter((message) => message.type === "myhome/cover_profiles/write").at(-1);
+  assert.deepEqual(write, { type: "myhome/cover_profiles/write", entry_id: "one", entity_id: "cover.kitchen_two", revision: 7, action: "assign", profile_id: null });
+  assert.equal(frameOf(tab), null);
+  assert.equal(tab.querySelector(".cal-tab-done").textContent.trim(), 'Profile unlinked from the cover Kitchen shutter 2.');
 });
 
 test("a session in progress marks its cover, blocks new measurements and opens a sequence in the existing view, in its own dialog", async () => {
@@ -437,6 +665,25 @@ test("each row names its room and bus address as the device cards do", async () 
   assert.match(row(tab, "cover.living_one").querySelector(".cal-row-name .muted").textContent, /^Living room\u00a0· Indirizzo/, "the «·» held to the word before it");
 });
 
+test("the row menu holds only what the row does not show, never the row's own action again", async () => {
+  const { tab } = await mount();
+  const inRow = (id) => [...row(tab, id).querySelectorAll(".cal-row-ctas > .cal-row-action")].map((item) => item.dataset.action);
+  const menuActions = (id) => [...row(tab, id).querySelectorAll(".cal-menu [role=menuitem]")].map((item) => item.dataset.action);
+  // Outside the table's band (jsdom lays nothing out): one action and ⋮ with the rest.
+  // Nothing in view where there is nothing to do: a follower without a check,
+  // a cover without a profile whose check (2 cm) is within the threshold (Fine-tune first in ⋮ then, Recalibrate after
+  // it); Calibrate on a cover never calibrated (a profile in the catalogue: it opens the card).
+  assert.deepEqual([inRow("cover.living_two"), menuActions("cover.living_two")], [[], ["cal-tab-measure-cover", "cal-tab-assign", "cal-tab-toggle"]]);
+  assert.deepEqual([inRow("cover.living_one"), menuActions("cover.living_one")], [[], ["cal-tab-refine", "cal-tab-measure-cover", "cal-tab-assign", "cal-tab-toggle"]]);
+  assert.match(row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-refine"]').textContent, /Fine-tune/, "checked within the threshold: Fine-tune in ⋮");
+  assert.match(row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-measure-cover"]').textContent, /Recalibrate/, "Recalibrate in ⋮");
+  assert.match(row(tab, "cover.bedroom").querySelector('.cal-row-action[data-action="cal-tab-calibrate"]').textContent, /Calibrate/);
+  for (const id of ["cover.living_one", "cover.living_two", "cover.bedroom"]) {
+    assert.equal(inRow(id).filter((action) => menuActions(id).includes(action)).length, 0, `${id}: no action twice`);
+  }
+});
+
+
 test("every explanatory note of the tab shares one style; the details' notes are their cards' tails", async () => {
   const { tab } = await mount();
   const page = await openDetails(tab, "cover.living_two", "details");
@@ -568,6 +815,58 @@ test("the column headers are buttons reached from the keyboard", async () => {
   assert.ok([...head.querySelectorAll(".cal-sort")].every((button) => button.tagName === "BUTTON" && button.type === "button"));
 });
 
+test("on phones a cover's details open as a page over the list, closed by its ✕ or Escape", async () => {
+  const original = globalThis.matchMedia;
+  // Reduced motion: the sheet's slide would only delay the checks.
+  globalThis.matchMedia = (query) => ({ matches: query.includes("max-width") || query.includes("reduced-motion") });
+  try {
+    const { tab, root } = await mount({ language: "it" });
+    const toggle = () => row(tab, "cover.living_one").querySelector(".cal-row-toggle");
+    toggle().click(); await tick();
+    // Nothing looks focused: the focus rests on the dialog's own box (no ring), not on the ✕.
+    const box = tab.querySelector(".cal-page").closest(".cal-flow-box");
+    assert.equal(root.activeElement, box, "the focus rests on the box");
+    const page = tab.querySelector(".cal-page");
+    assert.ok(page, "the page opens");
+    assert.equal(row(tab, "cover.living_one").querySelector(".cal-row-details"), null, "the row itself stays as it is");
+    // The overlay's <dialog> is the modal, named by the cover.
+    assert.deepEqual([page.closest("dialog")?.getAttribute("aria-modal"), page.closest("dialog")?.getAttribute("aria-labelledby")], ["true", "cal-page-name"]);
+    assert.equal(page.querySelector("#cal-page-name").textContent, "Living room shutter 1");
+    // «Panoramica» in one column, each block a title over its card: «Stato» (its
+    // chip under the text), «Caratteristiche» (the three times as «Misure», the travel, the slats), «Profilo»; then
+    // «Dettagli»: the table, «Ultima calibrazione» (date and «Come»), «Ultima verifica», who else uses the profile.
+    const status = page.querySelector(".cal-page-traits > .cal-section-title + .cal-card.cal-page-status");
+    assert.ok(status, "the status card right under its title");
+    // The slat time only where the cover has slats (here not known: two times).
+    assert.deepEqual([...status.querySelectorAll(".cal-label-long")].map((label) => label.textContent), ["Tempo di salita", "Tempo di discesa"]);
+    assert.deepEqual([...status.querySelectorAll(".cal-label-short")].map((label) => label.textContent), ["Salita", "Discesa"], "the short labels, for a narrow card");
+    assert.ok(page.querySelector(".cal-pos-state > .cal-pos-state-chip:last-child .cal-badge"), "the chip under the text");
+    assert.deepEqual([...page.querySelectorAll(".cal-section > .cal-section-title")].map((h) => h.textContent), ["Stato", "Caratteristiche", "Profilo"]);
+    assert.equal(page.querySelector(".cal-page-column"), null, "one column on the phone");
+    assert.ok([...page.querySelectorAll(".cal-section")].every((section) => section.querySelector(":scope > .cal-card")), "each title over its card");
+    // No footer; «Cambia profilo» in the card «Profilo» (without a profile: «Assegna profilo»).
+    assert.equal(page.querySelector(".cal-page-actions"), null);
+    assert.deepEqual([...page.querySelectorAll(".cal-page-link button")].map((button) => button.dataset.action), ["cal-tab-assign"], "one button");
+    await showTab(tab, "details");
+    assert.deepEqual([...tab.querySelectorAll(".cal-page .cal-section > .cal-section-title")].map((h) => h.textContent), ["Valori di questa tapparella", "Ultima calibrazione", "Ultima verifica"], "without a profile: its own values, nobody else");
+    assert.deepEqual([...tab.querySelectorAll(".cal-page .cal-page-last .cal-pairs dt")].map((dt) => dt.textContent), ["Data", "Come"]);
+    const close = tab.querySelector(".cal-page .cal-page-head > .cal-page-close:first-child");
+    assert.equal(close.getAttribute("aria-label"), "Chiudi");
+    assert.equal(close.querySelector("ha-icon").getAttribute("icon"), "mdi:close");
+    assert.equal(box.getAttribute("tabindex"), "-1");
+    assert.ok(rows(tab).length > 1, "the list stays under the page");
+    close.click(); await tick();
+    assert.equal(tab.querySelector(".cal-page"), null);
+    assert.equal(root.activeElement, toggle(), "back on the row that opened it");
+    // The menu's Details opens it too; Escape closes it.
+    row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-toggle"]').click(); await tick();
+    assert.ok(tab.querySelector(".cal-page"));
+    tab.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true })); await tick();
+    assert.equal(tab.querySelector(".cal-page"), null);
+  } finally { globalThis.matchMedia = original; }
+});
+
 /** A `matchMedia` for a window of `width` × `height` (lists of width, height and orientation features; reduced motion). */
 function viewport(width, height, { reduce = true } = {}) {
   const feature = (text) => {
@@ -614,6 +913,52 @@ test("a rotation keeps the cover's details open, the same dialog, whatever the l
     assert.equal(detailsOf(tab), null);
     assert.equal(tab.querySelectorAll(".cal-row.is-expanded").length, 0, "nothing left open in place");
   } finally { globalThis.matchMedia = original; }
+});
+
+test("the tab's dialogs are centred from 512 px of window and sheets below, by width alone", async () => {
+  const original = globalThis.matchMedia;
+  try {
+    // A landscape phone (844 × 390) is in the 512–1023 band: centred; the tendina up to 511 px.
+    for (const [width, height, sheet] of [[1100, 900, false], [900, 700, false], [720, 500, false], [844, 390, false], [512, 800, false], [511, 800, true], [390, 844, true]]) {
+      globalThis.matchMedia = viewport(width, height);
+      const { tab, panel } = await mount();
+      row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+      row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+      assert.ok(frameOf(tab)?.open);
+      // The page is held under every overlay, on every window, without moving it.
+      assert.equal(document.documentElement.style.overflow, "hidden", `${width}×${height}: held (${sheet ? "a sheet" : "centred"})`);
+      sheetOf(tab).querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+      void panel;
+      document.documentElement.style.overflow = "";
+    }
+  } finally { globalThis.matchMedia = original; }
+  const css = panelCss;
+  assert.match(css, /@media \(max-width: 511px\) \{\s*\/\*[^*]*\*\/\s*dialog\.cal-dialog \{ width: 100%;/, "one rule for the sheets");
+  assert.match(css, /@media \(max-height: 499px\) \{\s*dialog\.cal-dialog \{ max-height: calc\(100vh - 16px\); max-height: calc\(100dvh - 16px\); \}/, "a short window: within it less 16 px");
+  // 1023/1024 px only as the layout module's own rules (NARROW, MEDIUM).
+  const { MEDIUM, NARROW } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-layout.js");
+  const calibration = css.slice(css.indexOf("/* ---------- WHO 2 · Calibration tab ---------- */"));
+  assert.doesNotMatch(calibration.split(`@media ${MEDIUM} {`).join("").split(`@media ${NARROW} {`).join(""), /1023px|1024px/, "no other window rule at 1024 px");
+});
+
+test("on phones an open sheet holds the page under it and lets it go when it closes", async () => {
+  const original = globalThis.matchMedia;
+  globalThis.matchMedia = (query) => ({ matches: query.includes("max-width") || query.includes("reduced-motion") });
+  try {
+    const { tab, panel } = await mount();
+    document.documentElement.style.overflow = "clip";
+    row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+    assert.ok(frameOf(tab)?.open);
+    // Only the box that scrolls is held (here, without the panel's stylesheet, the document's).
+    assert.equal(document.documentElement.style.overflow, "hidden");
+    assert.equal(document.body.style.overflow, "", "nothing else is touched");
+    sheetOf(tab).querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+    assert.equal(frameOf(tab), null);
+    assert.equal(document.documentElement.style.overflow, "clip", "the page's own value comes back");
+    assert.equal(document.body.style.overflow, "");
+    void panel;
+  } finally { globalThis.matchMedia = original; document.documentElement.style.overflow = ""; }
 });
 
 test("no update rebuilds what is on screen: filters, order, refreshes and the details page are patched in place", async () => {
@@ -981,6 +1326,18 @@ test("the head holds the primary alone, with no way into a sequence; without the
   assert.ok(tab.querySelector(".cal-tab-head > .cal-tab-heading > .cal-tab-how"), "the title and «Come funziona» stay");
 });
 
+test("a dialog opened from a row's ⋮ menu closes that menu", async () => {
+  const { tab, panel } = await mount();
+  row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+  assert.equal(row(tab, "cover.living_one").querySelector(".cal-menu").hidden, false);
+  row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+  assert.ok(frameOf(tab)?.open);
+  assert.equal(row(tab, "cover.living_one").querySelector(".cal-menu").hidden, true);
+  sheetOf(tab).querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+  void panel;
+});
+
+
 test("in a landscape sheet the maintainer's view keeps its body: compact bars, no second «Chiudi» under Stop", async () => {
   const { readFileSync } = await import("node:fs");
   const css = panelCss;
@@ -1125,6 +1482,26 @@ test("choosing a cover in A-01 scrolls nothing: the row only shows as selected",
   assert.match(source, /column\.querySelector\(`\[data-wiz="\$\{focused\}"\]`\)\?\.focus\(\{ preventScroll: true \}\)/, "the actions' focus comes back without scrolling");
 });
 
+test("a sheet opened by a tap focuses its own box (no ring on its ✕); by a key, the browser's choice stays", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = panelCss;
+  assert.match(css, /:is\(dialog\.cal-dialog, \.wiz-dialog-card, \.wiz-sheet-card\):focus \{ outline: none; \}/);
+  assert.match(css, /dialog\.cal-dialog :is\(button, select, input\):focus:not\(:focus-visible\) \{ outline: none; \}/);
+  const { root, tab } = await mount();
+  const open = () => { tab.querySelector('[data-action="cal-tab-menu"]').click(); tab.querySelector('.cal-menu:not([hidden]) [data-action="cal-tab-assign"]').click(); };
+  window.dispatchEvent(new Event("pointerdown"));
+  open(); await tick();
+  // In the tab's frame: its box takes the focus (no ring), as for the details.
+  const box = frameOf(tab).querySelector(".cal-flow-box");
+  assert.equal(box.getAttribute("tabindex"), "-1");
+  assert.equal(root.activeElement, box, "after a tap: the sheet itself");
+  sheetOf(tab).querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+  // Back on the row's ⋮ (its menu item went with the menu), quietly after a tap.
+  const menu = tab.querySelector('[data-action="cal-tab-menu"]');
+  assert.equal(root.activeElement, menu);
+  assert.ok(menu.hasAttribute("data-quiet-focus"));
+});
+
 test("a sheet's fade above its buttons is the wizard bars' fade, anchored into the band with no gap", async () => {
   const { readFileSync } = await import("node:fs");
   const css = panelCss;
@@ -1177,6 +1554,28 @@ test("the session's action says what it does: «Follow» for another tab's, «Re
   }
 });
 
+test("on a cover with its session open «Change profile» / «Assign profile» stays, disabled, in its menu and its details", async () => {
+  const session = { entry_id: "one", entity_id: "cover.bedroom", session_id: "s1", mode: "geometry", phase: "briefing", step: "home", sequence: 2, values: {},
+    recoverable: true, attached: false, owner_present: true };
+  const { tab, root, calls } = await mount({ session });
+  const menu = (id) => { row(tab, id).querySelector('[data-action="cal-tab-menu"]').click(); return row(tab, id).querySelector(".cal-menu"); };
+  const item = menu("cover.bedroom").querySelector('[data-action="cal-tab-assign"]');
+  assert.ok(item, "still in the menu of the cover in progress");
+  assert.equal(item.disabled, true, "but off");
+  assert.ok(menu("cover.bedroom").querySelector('[data-action="cal-tab-abort"]'), "its cancel is still there");
+  tab.querySelector(".cal-menu:not([hidden])") && row(tab, "cover.living_two").querySelector('[data-action="cal-tab-menu"]').click();
+  // A cover never calibrated offers it in «Come vuoi calibrarla?» («Usa un profilo»).
+  const block = (await openDetails(tab, "cover.bedroom")).querySelector('.cal-pos-how [data-action="cal-tab-assign"]');
+  assert.equal(block?.disabled, true, "in its details too, off as Refine is");
+  // Even a click that reaches it opens nothing.
+  block.disabled = false; block.click(); await tick();
+  assert.equal(root.querySelector("#dialog-host dialog"), null);
+  assert.equal(calls.filter((message) => message.type === "myhome/cover_profiles/write").length, 0);
+  // Another cover keeps it enabled (its dialog says the gateway is reserved and waits, as before).
+  assert.equal(menu("cover.living_two").querySelector('[data-action="cal-tab-assign"]').disabled, false);
+  const css = panelCss;
+  assert.match(css, /\.cal-menu button:disabled, \.cal-menu button:disabled:hover \{ background: transparent; cursor: not-allowed; \}/);
+});
 test("a session started, moved on or ended elsewhere reaches the list at once: a burst makes one read", async () => {
   const { subscriptions, calls } = await mount();
   const subscription = subscriptions.find((item) => item.request.type === "myhome/cover_profiles/subscribe" && item.request.entry_id === "one");
@@ -1193,6 +1592,26 @@ test("the details' times carry one decimal, as the wizard's", async () => {
   const { tab } = await mount({ data });
   const page = await openDetails(tab, data.covers[0].entity_id);
   assert.equal(page.querySelector(".cal-page-status .cal-measure-number").textContent, "22.0", "the details' times as «Misure», one decimal");
+});
+
+test("the Assign sheet's choices are the rows of one card on the phone, a neutral box elsewhere", async () => {
+  const { tab, root } = await mount({ language: "it" });
+  row(tab, "cover.kitchen_two").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+  row(tab, "cover.kitchen_two").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+  const dialog = sheetOf(tab);
+  void root;
+  const rows = dialog.querySelector(".cal-assign-list > legend + .cal-assign-rows");
+  assert.ok(rows, "the choices in their own box, after the legend");
+  assert.ok([...rows.children].every((choice) => choice.matches("label.wiz-radio")));
+  const css = panelCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.match(css, /\.cal-assign-rows \{ display: contents; \}/, "outside the phone the list is as before");
+  assert.match(css, /dialog\.cal-dialog \{ border: 0; border-top: var\(--cal-sp-8\) solid var\(--panel-surface\); background: var\(--primary-background-color\); \}/, "8 px of white above the bar");
+  assert.match(css, /dialog\.cal-dialog \.dialog-head \.cal-dialog-x \{ order: -1; margin: 0; \}/, "✕ on the left");
+  assert.match(css, /dialog\.cal-dialog \.cal-assign-rows > \.wiz-radio \+ \.wiz-radio \{ border-top: 1px solid var\(--panel-border\); \}/);
+  assert.match(css, /dialog\.cal-dialog \.cal-dialog-cancel \{ border-color: var\(--panel-accent\); color: var\(--panel-accent\); \}/, "«Annulla» outlined");
+  // The same rows in the tab's frame.
+  assert.match(css, /\.cal-assign-page \.cal-assign-rows > \.wiz-radio \+ \.wiz-radio \{ border-top: 1px solid var\(--panel-border\); \}/);
+  assert.match(css, /\.cal-assign-page \.cal-page-actions \.cal-dialog-cancel \{ border-color: var\(--panel-accent\); color: var\(--panel-accent\); \}/);
 });
 
 test("«Torna all'elenco» always opens the list, even for a wizard opened from a cover's page", async () => {
@@ -1224,6 +1643,37 @@ test("no room under the tab nor page scroll for the wizard: --wiz-room and revea
   for (const name of ["panel-calibration-layout.js", "panel-calibration-tab.js", "panel-calibration-wizard.js", "panel-calibration.css"]) {
     assert.doesNotMatch(read(name), /--wiz-room|revealHead|dockBar|is-docked/, name);
   }
+});
+
+test("«Cambia profilo»: a tap on the choice already made takes it back (no choice, Assign off), «Nessun profilo» too; Space keeps the radio", async () => {
+  const { root, tab } = await mount({ language: "it" });
+  const open = async (entity) => {
+    row(tab, entity).querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(tab, entity).querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+    void root;
+    return sheetOf(tab);
+  };
+  const tap = (input) => { input.closest("label").dispatchEvent(new Event("pointerdown", { bubbles: true })); input.closest("label").click(); };
+  // Change profile: the profile followed is chosen at first.
+  const dialog = await open("cover.kitchen_two");
+  const assign = dialog.querySelector("[data-assign]"), checked = () => dialog.querySelector('input[name="assign_profile"]:checked');
+  const current = checked();
+  assert.ok(current, "the profile followed, chosen");
+  tap(current);
+  assert.equal(checked(), null, "a tap on it: no choice");
+  assert.equal(assign.disabled, true, "Assign off");
+  const none = dialog.querySelector('.cal-assign-none input');
+  if (!none.disabled) {
+    tap(none);
+    assert.equal(checked(), none, "a first tap chooses «Nessun profilo»");
+    assert.equal(assign.disabled, false);
+    tap(none);
+    assert.deepEqual([checked(), assign.disabled], [null, true], "a second tap takes it back");
+  }
+  // Without a pointer (Space, or a script) the radio keeps its own behaviour: chosen, it stays chosen.
+  const other = [...dialog.querySelectorAll('input[name="assign_profile"]')].find((input) => !input.disabled);
+  other.click(); other.click();
+  assert.equal(checked(), other);
 });
 
 test("long names: the bus address goes to the next line whole, before «Indirizzo», and a pair never parts", async () => {

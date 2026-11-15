@@ -34,6 +34,54 @@ describe("the card's blocks", async () => {
   });
 });
 
+describe("a basic estimate", async () => {
+  const { sampleOverview } = await import("./fake-calibration.mjs");
+  const rowOf = (tab, id) => tab().querySelector(`.cal-row[data-entity="${id}"]`);
+  /** Living room shutter 3 after a basic calibration with slats (the tap's slat time, neutral rolls unknown). */
+  function basicOverview(extra = {}) {
+    const overview = sampleOverview();
+    const three = overview.covers.find((cover) => cover.entity_id === "cover.living_three");
+    const guided = { source: "guided", recorded_at: "2026-11-02T08:00:00+00:00", origin_entity_id: null, origin_name: null, inherited: false };
+    const unknown = { source: "unknown", recorded_at: null, origin_entity_id: null, origin_name: null, inherited: false };
+    Object.assign(three, { profile_id: null, precision: "basic", ...extra });
+    Object.assign(three.effective, { opening: { value: 14.26, origin: "override", provenance: guided, scaled: false }, closing: { value: 14.03, origin: "override", provenance: guided, scaled: false },
+      slat_time_s: { value: 2.7, origin: "override", provenance: guided, scaled: false }, opening_roll: { value: 1, origin: "override", provenance: unknown, scaled: false },
+      closing_roll: { value: 1, origin: "override", provenance: unknown, scaled: false } });
+    overview.profiles[0].assigned_to = ["cover.kitchen_two"];
+    return overview;
+  }
+
+  test("the details of a basic estimate: «Come · Procedura guidata», no coefficients on «Panoramica», the chip under the text, «Perfeziona» opens fine-tuning with the tape", async () => {
+    const { tab, wiz, code } = await mount({ language: "it", overview: basicOverview() });
+    rowOf(tab, "cover.living_three").querySelector(".cal-row-toggle").click(); await tick();
+    let page = tab().querySelector(".cal-page");
+    // The slat time is the third «Misura» of «Caratteristiche».
+    assert.deepEqual([...page.querySelectorAll(".cal-page-times .cal-measure")].map((item) => [item.querySelector(".cal-label-long").textContent, item.querySelector(".cal-measure-number").textContent]),
+      [["Tempo di salita", "14,3"], ["Tempo di discesa", "14,0"], ["Tempo lamelle", "2,7"]]);
+    assert.doesNotMatch(page.textContent, /Coefficiente/, "no coefficients on «Panoramica»");
+    const chip = page.querySelector(".cal-pos-state-chip");
+    assert.deepEqual([...chip.children].map((child) => child.className), ["badge cal-badge"], "the chip alone");
+    assert.equal(chip.textContent, "Stima di base");
+    // No footer; «Assegna profilo» in the card «Profilo», Perfeziona the main action.
+    // One button.
+    assert.deepEqual([...page.querySelectorAll(".cal-page-link button")].map((button) => [button.dataset.action, button.textContent]),
+      [["cal-tab-assign", "Assegna profilo"]]);
+    await pageTab(tab, "details");
+    page = tab().querySelector(".cal-page");
+    const pairs = Object.fromEntries([...page.querySelectorAll(".cal-page-last .cal-pairs > div")].map((item) => [item.querySelector("dt").textContent, item.querySelector("dd").textContent]));
+    assert.equal(pairs.Come, "Procedura guidata");
+    assert.match(pairs.Data, /2026/, "the date is the «Data» row");
+    await pageTab(tab, "overview");
+    tab().querySelector('.cal-page .cal-cta [data-action="cal-tab-refine"]').click(); await tick();
+    assert.equal(code(), "A-03");
+    assert.equal(wiz().querySelector(".wiz-head-phase").textContent, "Perfeziona · Preparazione · 1 di 4");
+    // A times-only basic estimate (no slats): «tempi misurati»; a cover never calibrated keeps «—».
+    const { coverStatus } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-tab.js");
+    const timesOnly = sampleOverview().covers.find((cover) => cover.entity_id === "cover.living_three");
+    assert.deepEqual([coverStatus(timesOnly).status, coverStatus(timesOnly).detail], ["basic", "times"]);
+  });
+});
+
 describe("source, follower, no profile", async () => {
   const { translations } = await import("../../custom_components/myhome/frontend/panel/panel-translations.js");
   const { dateTimeText } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-text.js");
@@ -72,6 +120,28 @@ describe("source, follower, no profile", async () => {
   const usersOf = (page) => [...page.querySelectorAll(".cal-page-users .cal-user")].map((user) => user.querySelector(".cal-user-link, .cal-user-name").textContent);
   // «Cambia profilo» names the profile in what it does: not counted.
   const count = (page, name) => { const body = page.querySelector(".cal-page-body").cloneNode(true); body.querySelector(".cal-page-link")?.remove(); return body.textContent.split(name).length - 1; };
+
+  test("the details of the profile's source: «Stato» with its chip, «Caratteristiche» with the three times in a row, «Profilo» with its name and «Misurato su questa tapparella»; «Dettagli»: who follows it, the source's one tail; the profile named once", async () => {
+    const { page, more } = await details("cover.living_one");
+    assert.deepEqual([...page.querySelectorAll(".cal-page-body section > .cal-section-title")].map((title) => title.textContent),
+      ["Stato", "Caratteristiche", "Profilo"], "the phone's order");
+    assert.deepEqual(timesOf(page), [["Tempo di salita", "22,3", ""], ["Tempo di discesa", "21,6", ""], ["Tempo lamelle", "4,3", ""]]);
+    assert.equal(page.querySelector(".cal-page-times-note"), null, "measured here: no «dal profilo»");
+    assert.equal(page.querySelector(".cal-pos-state-chip .cal-badge").textContent, "Calibrata · 0,3 cm");
+    const head = page.querySelector(".cal-page-profile .cal-page-profile-head");
+    assert.deepEqual([head.querySelector(".cal-profile-name").textContent, head.querySelector(".cal-page-role").textContent], ["tall_two_leaf", `Tempi misurati su questa tapparella · ${dateTimeText("2026-10-31T11:18:00+00:00", "it")}`]);
+    assert.equal(head.querySelector(".cal-page-role strong").textContent, "questa tapparella", "the cover in evidence, on the source too");
+    assert.deepEqual(rowsOf(page), [["Corsa del telo", "197 cm"], ["Lamelle", "Non indicato"]], "no label on the source: everything is measured here");
+    assert.equal(count(page, "tall_two_leaf"), 1, "the profile's name once, in «Profilo»");
+    // No footer; the source's connection is «Cambia profilo» only (no «Scollega» on the source).
+    assert.equal(page.querySelector(".cal-page-actions"), null);
+    // One button, no rows.
+    assert.deepEqual([...page.querySelectorAll(".cal-page-profile .cal-page-link button")].map((button) => button.dataset.action), ["cal-tab-assign"]);
+    const details_ = await more();
+    assert.deepEqual(usersOf(details_), ["Kitchen shutter 2", "Living room shutter 3"]);
+    assert.deepEqual([...details_.querySelectorAll(".cal-card-tail")].map((tail) => tail.textContent), [it.calTabNoteSource], "ONE tail");
+    assert.deepEqual([...details_.querySelectorAll(".cal-page-last .cal-pairs dt")].map((dt) => dt.textContent), ["Data", "Come"]);
+  });
 
   test("the details of a follower: nothing under the times, «Misurato su {cover} · {data ora}», «· impostata qui» on its own travel, «Profilo usato anche da» and the follower's one tail in «Dettagli»", async () => {
     const { page, more } = await details("cover.kitchen_two");
@@ -349,6 +419,46 @@ describe("tabs and «Stato»", async () => {
     assert.equal(card(context).querySelector(".cal-page-body").dataset.tab, "overview");
   });
 
+  test("the tab chosen stays while the card is open (the 15 s reads, «Cambia profilo» and back, a flow cancelled back to the card); closed and opened again, «Panoramica»", async () => {
+    const context = await mount({ language: "it", overview: family() });
+    await open(context, "cover.living_one");
+    await pageTab(context.tab, "details");
+    for (let i = 0; i < 2; i++) { context.panel._calibrationTab.refresh(); await tick(8); }
+    assert.equal(card(context).querySelector(".cal-page-body").dataset.tab, "details", "the reads redraw it on its tab");
+    // «Cambia profilo» from the card «Profilo» (on «Panoramica») and «Annulla»: back there, the focus on «Cambia profilo».
+    await pageTab(context.tab, "overview");
+    card(context).querySelector('.cal-page-profile .cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    assert.ok(context.tab().querySelector(".cal-assign-page"));
+    context.tab().querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick(6);
+    assert.equal(card(context).querySelector(".cal-page-body").dataset.tab, "overview");
+    assert.equal(context.root.activeElement, card(context).querySelector('.cal-page-link [data-action="cal-tab-assign"]'));
+    // A flow from the card, cancelled on its first screen: the card on its tab.
+    await click(context, "cal-tab-refine");
+    assert.ok(context.wiz(), "Perfeziona");
+    await context.press("cancel-flow"); await tick(8);
+    assert.equal(card(context)?.querySelector(".cal-page-body").dataset.tab, "overview");
+    await pageTab(context.tab, "details");
+    card(context).querySelector(".cal-page-close").click(); await tick(8);
+    const again = await open(context, "cover.living_one");
+    assert.equal(again.querySelector(".cal-page-body").dataset.tab, "overview", "opened again: «Panoramica»");
+  });
+
+  test("a cover never calibrated: no tabs; the chip «Da calibrare» over its sentence, «Come vuoi calibrarla?» with Misura i tempi and Usa un profilo, its characteristics; no procedure", async () => {
+    const context = await mount({ language: "it" });
+    const page = await open(context, "cover.living_one");
+    assert.equal(page.querySelector(".cal-page-tabs"), null, "no tabs");
+    assert.deepEqual(state(page), [null, it.cal_POS_none_text]);
+    assert.deepEqual([...page.querySelector(".cal-pos-state").children].map((child) => child.className), ["cal-pos-state-chip", "cal-pos-state-desc"], "the chip first");
+    assert.equal(page.querySelector(".cal-pos-state-chip .cal-badge").textContent, "Da calibrare");
+    assert.deepEqual(ctas(page), [], "no buttons");
+    assert.equal(page.querySelector(".cal-pos-how > .cal-section-title").textContent, "Come vuoi calibrarla?");
+    assert.deepEqual([...page.querySelectorAll(".cal-pos-how .cal-choice")].map((choice) => [choice.dataset.action, choice.querySelector(".cal-choice-title").textContent, choice.querySelector(".cal-choice-desc").textContent]),
+      [["cal-tab-measure-cover", "Misura i tempi", it.cal_POS_none_measure_caption], ["cal-tab-assign", "Usa un profilo", it.cal_POS_none_assign_caption]]);
+    assert.equal(page.querySelector(".cal-pos-help"), null, "no «Qualcosa non va?»");
+    assert.ok(page.querySelector(".cal-page-traits .cal-page-times"), "its characteristics");
+    assert.equal(page.querySelector(".cal-page-profile"), null, "no card «Profilo»: «Usa un profilo» is the way");
+  });
+
   test("the profile's source: basic «Tempi di movimento misurati» with Perfeziona; fine-tuned «Tempi e altezze misurati»; the check's sentence after the text, its data in «Ultima verifica»", async () => {
     const basic = await mount({ language: "it", overview: family() });
     let page = await open(basic, "cover.living_one");
@@ -403,6 +513,41 @@ describe("tabs and «Stato»", async () => {
     assert.deepEqual([...page.querySelector(".cal-page-body").children].map((child) => child.classList[child.classList.length - 1]), ["cal-pos-current", "cal-page-traits", "cal-page-profile"], "no Perfeziona");
   });
 
+  test("«Cambia profilo» on every cover, one secondary button with its short line under it, at the bottom of the card «Profilo»; Scollega in its window, on a follower, its consequences said there before the confirmation", async () => {
+    const data = family();
+    data.covers[2].effective.opening = timing(15, "override"); data.covers[2].effective.closing = timing(14, "override");
+    data.covers[2].overrides = { opening: data.covers[2].effective.opening, closing: data.covers[2].effective.closing };
+    const context = await mount({ language: "it", overview: data });
+    const lines = () => [...card(context).querySelectorAll(".cal-page-link button")].map((button) => [button.dataset.action, button.textContent, button.className,
+      plain(button.nextElementSibling?.textContent)]);
+    await open(context, "cover.living_one");
+    assert.equal(card(context).querySelector("details.cal-link, .cal-page-body > .cal-page-link"), null, "no group of its own");
+    // The card «Profilo» of «Panoramica»: its head, then the action (who else uses it is in «Dettagli»).
+    assert.ok(card(context).querySelector(".cal-page-profile .cal-page-profile-card > .cal-page-profile-head + .cal-page-link:last-child"),
+      "the profile's head, then the action at the bottom of the card");
+    assert.doesNotMatch(card(context).textContent, /Collegamento al profilo/);
+    assert.deepEqual(lines(), [["cal-tab-assign", "Cambia profilo", "cal-outlined", "Usa un altro profilo. La corsa del telo resta."]]);
+    assert.equal(card(context).querySelector(".cal-page-link .cal-choice"), null, "no row with ›");
+    assert.doesNotMatch(card(context).textContent, /Rendi indipendente/);
+    card(context).querySelector(".cal-page-close").click(); await tick(8);
+    await open(context, "cover.living_three");
+    assert.deepEqual(lines(), [["cal-tab-assign", "Cambia profilo", "cal-outlined", "Usa un altro profilo. La corsa del telo resta."]], "a follower: the same, no Scollega in the card");
+    assert.doesNotMatch(card(context).textContent, /Scollega/);
+    // The window offers «Scollega il profilo», not chosen, its consequences under it (wiz_T405); chosen, its button.
+    card(context).querySelector('.cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    const sheet = context.tab().querySelector(".cal-assign-page");
+    const none = sheet.querySelector('input[value="__no_profile__"]');
+    assert.deepEqual([none.checked, none.disabled], [false, false]);
+    assert.match(sheet.querySelector(".cal-assign-none small").textContent, /^Questa tapparella verrà scollegata dal profilo «tall_two_leaf»\. Restano gli eventuali tempi impostati su questa tapparella/);
+    none.click(); await tick(2);
+    assert.equal(sheet.querySelector("[data-assign]").disabled, false);
+    assert.equal(sheet.querySelector("[data-assign]").textContent, "Scollega il profilo");
+    assert.equal(context.backend.calls.filter((message) => message.type === "myhome/cover_profiles/write").length, 0, "nothing written until confirmed");
+    reset();
+    const english = await mount({ language: "en", overview: family() });
+    await open(english, "cover.living_three");
+    assert.deepEqual([...card(english).querySelectorAll(".cal-page-link .cal-caption")].map((caption) => plain(caption.textContent)), ["Use another profile. The curtain travel stays."]);
+  });
 });
 
 describe("two columns and the card «Profilo»", async () => {
@@ -521,6 +666,50 @@ describe("two columns and the card «Profilo»", async () => {
     assert.doesNotMatch(cascadeCss.replace(/@media \(min-width: 1024px\) \{[\s\S]*?\n\}/g, ""), /\.is-wide:not\(\.cal-check\) \{|cal-check\.is-wide/, "nothing of it under 1024 px");
   });
 
+  test("no group «Collegamento al profilo»; «Cambia profilo» (every cover, one button: Scollega is in its window) closes the card «Profilo» of «Panoramica»; Stato, Caratteristiche, Profilo in this order on every window", async () => {
+    for (const rules of [null, windowOf(1280)]) {
+      globalThis.matchMedia = rules || original;
+      const context = await mount({ language: "it", overview: family() });
+      for (const [entity, actions] of [["cover.living_one", ["cal-tab-assign"]], ["cover.kitchen_two", ["cal-tab-assign"]]]) {
+        await open(context, entity);
+        const page = card(context);
+        assert.deepEqual([...page.querySelectorAll(".cal-page-body section")].map((section) => section.classList[1]), ["cal-pos-current", "cal-page-traits", "cal-page-profile"]);
+        assert.equal(page.querySelector("details.cal-link"), null);
+        assert.doesNotMatch(page.textContent, /Collegamento al profilo/);
+        const profileCard = page.querySelector(".cal-page-profile > .cal-card");
+        assert.deepEqual([...profileCard.children].map((child) => child.classList[child.classList.length - 1]), ["cal-page-profile-head", "cal-page-link"],
+          "the profile's symbol, name and «Misurato su…», then the actions");
+        assert.deepEqual([...profileCard.querySelectorAll(".cal-page-link > button")].map((button) => button.dataset.action), actions);
+        assert.equal(profileCard.querySelector(".cal-page-link > button").textContent, it.cal_LINK_change);
+        page.querySelector(".cal-page-close").click(); await tick(8);
+      }
+      reset();
+    }
+    assert.equal(it.cal_LINK_title, undefined, "its title is gone");
+    assert.equal(en.cal_LINK_title, undefined);
+  });
+
+  test("the same destinations: «Cambia profilo» and «Annulla» back on «Panoramica» with the focus on it; «Scollega il profilo» chosen in it; without a profile «Usa un profilo»", async () => {
+    const context = await mount({ language: "it", overview: family() });
+    await open(context, "cover.kitchen_two");
+    await click(context, '.cal-page-profile .cal-page-link [data-action="cal-tab-assign"]');
+    assert.ok(context.tab().querySelector(".cal-assign-page"));
+    context.tab().querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick(6);
+    assert.equal(body(context).dataset.tab, "overview");
+    assert.equal(context.root.activeElement, card(context).querySelector('.cal-page-link [data-action="cal-tab-assign"]'));
+    await click(context, '.cal-page-profile .cal-page-link [data-action="cal-tab-assign"]');
+    const sheet = context.tab().querySelector(".cal-assign-page");
+    sheet.querySelector('input[value="__no_profile__"]').click(); await tick(2);
+    assert.equal(sheet.querySelector("[data-assign]").textContent, "Scollega il profilo");
+    assert.equal(context.backend.calls.filter((message) => message.type === "myhome/cover_profiles/write").length, 0);
+    reset();
+    // A cover never calibrated: «Come vuoi calibrarla?» › «Usa un profilo» (no card «Profilo»).
+    const fresh = await mount({ language: "it" });
+    await open(fresh, "cover.living_one");
+    assert.equal(card(fresh).querySelector(".cal-page-profile"), null);
+    assert.deepEqual([...card(fresh).querySelectorAll('.cal-pos-how [data-action="cal-tab-assign"]')].map((choice) => choice.querySelector(".cal-choice-title").textContent), [it.cal_POS_none_how_assign]);
+  });
+
   test("the stylesheet: a hairline over the actions of the card «Profilo»; no rules left for the group", () => {
     assert.match(cascadeCss, /\.cal-page-profile-head \+ \.cal-page-link \{ border-top: 1px solid var\(--panel-border\); \}/);
     assert.doesNotMatch(cascadeCss, /\.cal-link\b|grid-area: link/);
@@ -570,6 +759,114 @@ describe("a cover never calibrated, the columns", async () => {
   const classes = (element) => [...element.children].map((child) => child.classList[child.classList.length - 1]);
   /** The rules of the 1024 px block that holds `marker`. */
   const wideCss = (marker) => { const start = cascadeCss.indexOf(marker); return block("@media (min-width: 1024px)", cascadeCss.slice(cascadeCss.lastIndexOf("@media (min-width: 1024px)", start))); };
+
+  test("from 1024 px a cover never calibrated has «Stato» and «Come vuoi calibrarla?» on the left, «Caratteristiche» on the right: «Misura i tempi» → Calibra, «Usa un profilo» → Assegna profilo, rows as the answers", async () => {
+    desktop();
+    const context = await mount({ language: "it" });
+    const opened = [];
+    context.panel._calibrationTab._openWizard = (options) => opened.push([options.start, options.item?.cover.entity_id]);
+    const page = await open(context, "cover.living_one");
+    // No tabs. «Stato» (its title over the card) and «Come vuoi calibrarla?» on the left, «Caratteristiche» on the
+    // right, as on the other covers.
+    assert.ok(body(context).matches(".is-wide[data-tab=\"overview\"]"));
+    assert.deepEqual([...body(context).children].map((child) => child.className), ["cal-page-column", "cal-page-column"]);
+    const main = body(context).children[0];
+    assert.deepEqual(classes(main), ["cal-pos-current", "cal-pos-how"], "«Stato» and «Come vuoi calibrarla?» on the left: no buttons");
+    assert.deepEqual(classes(body(context).children[1]), ["cal-page-traits"], "«Caratteristiche» on the right");
+    assert.equal(main.querySelector(".cal-pos-current > .cal-section-title").textContent, "Stato");
+    assert.equal(main.querySelector(".cal-pos-state-title"), null);
+    assert.equal(main.querySelector(".cal-pos-state-chip").textContent, "Da calibrare");
+    assert.equal(main.querySelector(".cal-pos-state-desc").textContent, it.cal_POS_none_text);
+    const how = page.querySelector(".cal-pos-how");
+    assert.equal(how.querySelector(":scope > .cal-section-title").textContent, "Come vuoi calibrarla?");
+    const rows = [...how.querySelectorAll(":scope > .cal-card.cal-rows > button.cal-choice")];
+    assert.deepEqual(rows.map((choice) => [choice.dataset.action, choice.querySelector(".cal-choice-title").textContent, choice.querySelector(".cal-choice-desc").textContent,
+      choice.querySelector(":scope > ha-icon").getAttribute("icon")]), [
+      ["cal-tab-measure-cover", "Misura i tempi", "Misuriamo quanto impiega la tapparella ad aprirsi e a chiudersi del tutto.", "mdi:chevron-right"],
+      ["cal-tab-assign", "Usa un profilo", "Usa un profilo con i tempi già misurati su una tapparella simile.", "mdi:chevron-right"]]);
+    assert.equal(page.querySelector('[data-action="cal-tab-check-answer"], [data-action="cal-tab-check-start"]'), null, "no procedure");
+    rows[0].click(); await tick(6);
+    assert.deepEqual(opened, [["path", "cover.living_one"]], "Calibra");
+    reset();
+    const again = await mount({ language: "it" });
+    await open(again, "cover.living_one");
+    await click(again, '.cal-pos-how [data-action="cal-tab-assign"]');
+    assert.ok(again.tab().querySelector(".cal-assign-page"), "Assegna profilo");
+  });
+
+  test("a cover never calibrated in English; on the phone (and in jsdom without window rules) the same two rows, one column", async () => {
+    assert.deepEqual([en.cal_POS_none_how, en.cal_POS_none_how_measure, en.cal_POS_none_how_assign], ["How do you want to calibrate it?", "Record movement times", "Use a profile"]);
+    assert.deepEqual([it.cal_POS_none_how, it.cal_POS_none_how_measure, it.cal_POS_none_how_assign], ["Come vuoi calibrarla?", "Misura i tempi", "Usa un profilo"]);
+    desktop();
+    const english = await mount({ language: "en" });
+    await open(english, "cover.living_one");
+    assert.deepEqual([...card(english).querySelectorAll(".cal-pos-how .cal-choice-title")].map((title) => title.textContent), ["Record movement times", "Use a profile"]);
+    reset();
+    for (const rules of [null, windowOf(1023), windowOf(390)]) {
+      globalThis.matchMedia = rules || original;
+      const context = await mount({ language: "it" });
+      const page = await open(context, "cover.living_one");
+      assert.equal(body(context).classList.contains("is-wide"), false);
+      assert.equal(page.querySelector(".cal-page-column, .cal-cta"), null);
+      assert.deepEqual(classes(body(context)), ["cal-pos-current", "cal-pos-how", "cal-page-traits"], "«Stato» (its title), the two rows, the characteristics");
+      assert.deepEqual([...page.querySelectorAll(".cal-pos-how .cal-choice")].map((button) => button.dataset.action), ["cal-tab-measure-cover", "cal-tab-assign"], "the two rows");
+      reset();
+    }
+  });
+
+  test("«Panoramica» in two columns: «Stato» and Perfeziona; «Caratteristiche» (the times, then the travel and the slats) and «Profilo» (its symbol, name, «Misurato su…», the actions at the bottom); «Dettagli»: the table with its tail; the same order on the phone", async () => {
+    for (const rules of [null, windowOf(1280)]) {
+      globalThis.matchMedia = rules || original;
+      const context = await mount({ language: "it", overview: family() });
+      // One button on every cover, Scollega in its window.
+      for (const [entity, actions] of [["cover.living_one", ["cal-tab-assign"]], ["cover.kitchen_two", ["cal-tab-assign"]]]) {
+        await open(context, entity);
+        const page = card(context), wide = !!rules;
+        const sections = () => [...body(context).querySelectorAll("section")].map((section) => section.classList[1]);
+        if (wide) assert.deepEqual([...body(context).children].map((child) => child.className), ["cal-page-column", "cal-page-column"], `${entity}: two columns of their own`);
+        assert.deepEqual(sections(), ["cal-pos-current", "cal-page-traits", "cal-page-profile"]);
+        const traits = page.querySelector(".cal-page-traits");
+        assert.deepEqual(classes(traits.querySelector(".cal-card")), ["cal-page-times", "cal-pairs"], "the times, then this cover's values");
+        assert.deepEqual([...traits.querySelectorAll(".cal-pairs > div > dt")].map((dt) => dt.textContent), ["Corsa del telo", "Lamelle"], "no coefficients here");
+        assert.ok(traits.querySelector('[data-action="cal-tab-travel-edit"]'), "the travel's pencil");
+        const profileCard = page.querySelector(".cal-page-profile .cal-page-profile-card");
+        assert.deepEqual(classes(profileCard), ["cal-page-profile-head", "cal-page-link"], "the profile, then the actions");
+        assert.equal(profileCard.querySelector(".cal-profile-icon ha-icon").getAttribute("icon"), "mdi:clipboard-text-outline", "the profile's own symbol, the same on every cover");
+        assert.deepEqual([...profileCard.querySelectorAll(".cal-page-link > button")].map((button) => button.dataset.action), actions);
+        await pageTab(context.tab, "details");
+        const compare = card(context).querySelector(".cal-page-values .cal-page-compare");
+        assert.deepEqual(classes(compare), ["cal-compare", "cal-card-tail"], "the box, then its tail");
+        assert.equal(card(context).querySelector(".cal-page-values > .cal-section-title").textContent, it.calTabCompare, "its title over the card, always open");
+        assert.equal(card(context).querySelector("details.cal-compare, .cal-compare-title"), null);
+        assert.equal(compare.querySelector(".cal-card-tail").textContent, entity === "cover.living_one" ? it.calTabNoteSource : it.calTabNoteFollower);
+        assert.equal(card(context).querySelectorAll(".cal-card-tail").length, 1, `${wide ? "desktop" : "phone"}: one tail`);
+        card(context).querySelector(".cal-page-close").click(); await tick(8);
+      }
+      reset();
+    }
+  });
+
+  test("«Cambia profilo» says one short line on every cover (IT, EN); the old lines are gone; without a profile «Usa un profilo»", async () => {
+    assert.equal(it.cal_LINK_change_desc, "Usa un altro profilo. La corsa del telo resta.");
+    assert.equal(en.cal_LINK_change_desc, "Use another profile. The curtain travel stays.");
+    for (const key of ["cal_LINK_change_desc_personal", "cal_LINK_change_desc_source", "cal_LINK_change_desc_source_one"]) assert.equal(it[key] ?? en[key], undefined, key);
+    const data = family();
+    data.covers[1].effective.opening = timing(15, "override");
+    data.covers[1].overrides = { opening: data.covers[1].effective.opening };
+    const context = await mount({ language: "it", overview: data });
+    for (const entity of ["cover.living_one", "cover.kitchen_two", "cover.living_three"]) {
+      await open(context, entity);
+      // The line under the button.
+      assert.equal(card(context).querySelector('.cal-page-link > [data-action="cal-tab-assign"] + .cal-caption').textContent, it.cal_LINK_change_desc, entity);
+      card(context).querySelector(".cal-page-close").click(); await tick(8);
+    }
+    reset();
+    // Never calibrated, no profile: the default times' tail under its characteristics; «Usa un profilo».
+    const fresh = await mount({ language: "it" });
+    await open(fresh, "cover.living_one");
+    assert.equal(card(fresh).querySelector(".cal-page-compare, .cal-page-profile"), null, "no box, no card «Profilo»");
+    assert.deepEqual(classes(card(fresh).querySelector(".cal-page-traits .cal-card")), ["cal-page-times", "cal-pairs"], "its times (here not from the default nor YAML: no tail), the travel, the slats");
+  });
 
   test("the stylesheet: the two columns side by side from 1024 px with no area spanning rows; the columns' blocks 32 px apart; a second card 16 px under the first; a hairline over the actions; the box's first line without one", () => {
     const css = wideCss(".cal-page-body.is-wide:not(.cal-check) { display: grid");
@@ -869,6 +1166,20 @@ describe("«Stato», «Caratteristiche», «Profilo»", async () => {
     assert.deepEqual([...page.querySelectorAll(".cal-page-traits .cal-inline-icon")].map((icon) => icon.dataset.action), ["cal-tab-travel-edit", "cal-tab-travel-unlink"], "the pencil and the chain");
   });
 
+  test("«Profilo»: the profile's own symbol on every cover, its name, «Misurato su…», «Cambia profilo» (one button, Scollega in its window)", async () => {
+    phone();
+    const context = await mount({ language: "it", overview: family() });
+    for (const [entity, measuredOn, actions] of [["cover.living_one", "Tempi misurati su questa tapparella", ["cal-tab-assign"]], ["cover.kitchen_two", "Tempi misurati sulla tapparella Living room shutter 1", ["cal-tab-assign"]]]) {
+      const page = await open(context, entity);
+      const head = page.querySelector(".cal-page-profile .cal-page-profile-head");
+      assert.equal(head.querySelector(".cal-profile-icon ha-icon").getAttribute("icon"), "mdi:clipboard-text-outline");
+      assert.equal(head.querySelector(".cal-profile-icon").title, "Profilo");
+      assert.equal(head.querySelector(".cal-profile-name").textContent, "tall_two_leaf");
+      assert.ok(head.querySelector(".cal-page-role").textContent.startsWith(measuredOn));
+      assert.deepEqual([...page.querySelectorAll(".cal-page-profile .cal-page-link button")].map((button) => button.dataset.action), actions);
+      card(context).querySelector(".cal-page-close").click(); await tick(8);
+    }
+  });
 });
 
 describe("sentences and dates", async () => {
@@ -1080,4 +1391,23 @@ describe("a cover never calibrated, «Cambia profilo»", async () => {
     assert.deepEqual([...page.querySelectorAll(".cal-section > .cal-section-title")].map((title) => title.textContent), ["Stato", "Come vuoi calibrarla?", "Caratteristiche"]);
   });
 
+  test("«Cambia profilo» (without a profile «Assegna profilo») is one secondary button with its caption under it; no row with › in the card", async () => {
+    phone();
+    const context = await mount({ language: "it", overview: world({ alone: "basic" }) });
+    const link = async (entity) => {
+      const page = await open(context, entity);
+      const group = page.querySelector(".cal-page-profile .cal-page-profile-card > .cal-page-profile-head + .cal-page-link:last-child");
+      const shape = [[...group.children].map((child) => `${child.tagName.toLowerCase()}.${child.className}`), group.querySelector("button").textContent,
+        group.querySelector("button").dataset.action, group.querySelector(".cal-caption").textContent, !!group.querySelector(".cal-choice")];
+      await close(context);
+      return shape;
+    };
+    const change = [["button.cal-outlined", "p.cal-caption"], "Cambia profilo", "cal-tab-assign", it.cal_LINK_change_desc, false];
+    assert.deepEqual(await link("cover.kitchen_two"), change, "the source");
+    assert.deepEqual(await link("cover.living_three"), change, "a follower: no Scollega in the card");
+    assert.deepEqual(await link("cover.living_one"), [["button.cal-outlined", "p.cal-caption"], "Assegna profilo", "cal-tab-assign", it.cal_POS_none_assign_caption, false], "without a profile");
+    assert.match(css, /\.cal-page-link > button \{ min-height: var\(--cal-target\); justify-content: center; font-size: var\(--cal-fs-16\); line-height: var\(--cal-lh-16\); \}/, "sized as Perfeziona's");
+    assert.doesNotMatch(source, /cal-tab-unlink|cal_LINK_unlink/, "the card's Scollega is gone");
+    for (const key of ["cal_LINK_unlink", "cal_LINK_unlink_desc_none", "cal_LINK_unlink_desc_one", "cal_LINK_unlink_desc_personal"]) assert.deepEqual([it[key], en[key]], [undefined, undefined], key);
+  });
 });

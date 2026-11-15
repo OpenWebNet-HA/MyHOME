@@ -73,6 +73,49 @@ describe("bands, sheets and menus", async () => {
     assert.equal(code(), "A-34", "and «Torna all'elenco» was not pressed");
   });
 
+  test("a cover's details are an overlay on every window: Escape and Back close them; «Perfeziona» replaces them with the wizard; «Cambia profilo» opens over them", async () => {
+    const { tab, root, wiz, backend } = await mount({ language: "it" });
+    const row = (id) => [...tab().querySelectorAll(".cal-row")].find((item) => item.dataset.entity === id);
+    const details = () => tab().querySelector("dialog.cal-page-dialog[open] .cal-page:not(.cal-assign-page)");
+    row("cover.kitchen_two").querySelector(".cal-row-toggle").click(); await tick();
+    assert.ok(details()?.hasAttribute("data-closable"), "open, closing it costs nothing (the handle, the drag)");
+    assert.ok(Number.isInteger(window.history.state?.myhomeCalibration), "an entry for the browser's Back");
+    details().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true })); await tick();
+    assert.equal(details(), null, "Escape closes them");
+    row("cover.kitchen_two").querySelector(".cal-row-toggle").click(); await tick();
+    window.history.back();
+    for (let i = 0; i < 40 && details(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal(details(), null, "Back closes them");
+    // «Cambia profilo» takes their place in the same frame (never a dialog over them); «Annulla» brings them back.
+    row("cover.kitchen_two").querySelector(".cal-row-toggle").click(); await tick();
+    const frame = tab().querySelector("dialog.cal-flow");
+    details().querySelector('[data-action="cal-tab-assign"]').click(); await tick();
+    assert.equal(root.querySelector("#dialog-host dialog"), null, "no dialog over the details");
+    assert.equal(tab().querySelectorAll("dialog").length, 1, "one frame");
+    assert.ok(frame.querySelector(".cal-assign-page") && frame.open, "the sheet in the details' frame");
+    assert.equal(details(), null, "in their place");
+    frame.querySelector('.cal-assign-page [data-action="cal-tab-assign-cancel"]').click(); await tick();
+    assert.ok(details(), "«Annulla»: the details again");
+    assert.equal(tab().querySelector("dialog.cal-flow"), frame, "in the same frame");
+    // «Perfeziona» replaces them at once with the wizard, which keeps their history entry; its ✕ leads to the list.
+    // On a cover without a profile (a follower has no Perfeziona yet).
+    details().querySelector(".cal-page-close").click(); await tick();
+    backend.overview.covers.find((cover) => cover.entity_id === "cover.living_three").profile_id = null;
+    backend.overview.profiles[0].assigned_to = ["cover.kitchen_two"];
+    backend.publishOverview(); await tick(8);
+    row("cover.living_three").querySelector(".cal-row-toggle").click(); await tick();
+    const entry = window.history.state?.myhomeCalibration;
+    details().querySelector('[data-action="cal-tab-refine"]').click(); await tick();
+    assert.equal(tab().querySelector("dialog.cal-page-dialog"), null, "the details are gone");
+    assert.ok(wiz(), "the wizard over the list");
+    assert.equal(window.history.state?.myhomeCalibration, entry, "one entry, the same");
+    wiz().querySelector(".wiz-head .wiz-x").click(); await tick();
+    assert.equal(details(), null, "the ✕ leads to the list, never back to the details");
+    // From 1024 px the four blocks two by two, 880 px wide.
+    assert.match(cascadeCss, /@media \(min-width: 1024px\) \{\s*\.cal-flow-box \{ width: min\(100%, 880px\); \}/);
+    assert.match(cascadeCss, /@media \(min-width: 1024px\) \{\s*\.cal-page-body \{ padding: 24px; \}[\s\S]*?\.cal-page-body\.is-wide:not\(\.cal-check\) \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+    assert.equal([...tab().querySelectorAll(".cal-row")].length > 0, true);
+  });
 });
 
 describe("headers, focus and the scrim", async () => {
@@ -174,6 +217,27 @@ describe("headers, focus and the scrim", async () => {
     assert.match(cascadeCss, /@media \(prefers-reduced-motion: reduce\) \{ :is\(\.cal-flow-box, dialog\.cal-dialog\)\.is-nudged \{ animation: none; \} \}/);
   });
 
+  test("the secondary dialogs use the flows' footer button (44 px, 16/500, the 8 px radius); «Assegna» carries the link of «Cambia profilo»", async () => {
+    const host = html(`<div class="cal-tab"><dialog class="cover-profile-dialog cal-dialog cal-sheet"><footer class="dialog-foot"><button class="cal-dialog-close cal-dialog-cancel">Annulla</button>
+    <button class="primary">Assegna</button></footer></dialog></div><div class="wiz"><div class="wiz-actions"><button class="wiz-action primary">Avanti</button></div>
+    <div class="wiz-dialog"><div class="wiz-dialog-card"><div class="actions"><button class="wiz-leave">Esci</button><button class="primary">Continua</button></div></div></div></div>`);
+    const flow = host.querySelector(".wiz-actions .wiz-action");
+    for (const button of host.querySelectorAll(".dialog-foot button, .wiz-dialog-card .actions button")) {
+      assert.equal(winner(button, "font-size"), winner(flow, "font-size"), button.textContent);
+      assert.equal(winner(button, "font-size"), "var(--cal-fs-16)");
+      assert.equal(winner(button, "min-height"), "var(--cal-target)");
+      assert.equal(winner(button, "border-radius"), "var(--cal-btn-radius)");
+      assert.equal(winner(button, "line-height"), "1.2");
+    }
+    host.remove();
+    const { tab, root } = await mount({ language: "it" });
+    row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+    void root;
+    const assign = tab().querySelector("dialog.cal-flow .cal-assign-page [data-assign]");
+    assert.equal(assign.querySelector("ha-icon").getAttribute("icon"), "mdi:link-variant");
+    assert.equal(assign.textContent.trim(), "Assegna");
+  });
 });
 
 describe("one frame at a time", async () => {
@@ -207,6 +271,66 @@ describe("one frame at a time", async () => {
     await move(backend, { auto: true, stop: true }); check(); await type("101"); check(); await press("check-start"); check();
     await press("save"); check();
   }
+
+  test("from a cover's details «Cambia profilo» takes their place in the same frame; «Annulla» brings them back, ✕ leads to the list", async () => {
+    const { tab, panel, root } = await mount({ language: "it" });
+    row(tab, "cover.kitchen_two").querySelector(".cal-row-toggle").click(); await tick();
+    const box = frame(tab);
+    assert.ok(details(tab));
+    details(tab).querySelector('[data-action="cal-tab-assign"]').click(); await tick();
+    assert.equal(frame(tab), box, "the same <dialog>, its content swapped");
+    assert.deepEqual(openDialogs(panel), [box], "never a dialog over a dialog");
+    assert.equal(details(tab), null, "the details are not under it: it is in their place");
+    assert.equal(sheet(tab).querySelector("#cal-assign-name").textContent, "Cambia il profilo della tapparella Kitchen shutter 2");
+    assert.equal(box.getAttribute("aria-labelledby"), "cal-assign-name");
+    assert.equal(root.activeElement, box.querySelector(".cal-flow-box"), "nothing looks focused");
+    // «Annulla»: the details again, the focus on their «Cambia profilo» (quietly after a tap).
+    tap();
+    sheet(tab).querySelector('[data-action="cal-tab-assign-cancel"]').click(); await tick();
+    assert.equal(frame(tab), box);
+    assert.ok(details(tab), "back on the details");
+    assert.equal(box.getAttribute("aria-labelledby"), "cal-page-name");
+    const change = details(tab).querySelector('[data-action="cal-tab-assign"]');
+    assert.equal(root.activeElement, change);
+    assert.ok(change.hasAttribute("data-quiet-focus"), "no ring after a tap");
+    // ✕ of «Cambia profilo» (and Escape): the list, never the details.
+    change.click(); await tick();
+    sheet(tab).querySelector(".cal-page-head .cal-page-close").click(); await tick();
+    assert.equal(frame(tab), null, "the list");
+    assert.equal(root.activeElement, row(tab, "cover.kitchen_two").querySelector(".cal-row-toggle"), "back on the row");
+    row(tab, "cover.kitchen_two").querySelector(".cal-row-toggle").click(); await tick();
+    details(tab).querySelector('[data-action="cal-tab-assign"]').click(); await tick();
+    tab().dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true })); await tick();
+    assert.equal(frame(tab), null, "Escape is the ✕: the list");
+  });
+
+  test("«Assegna» from the details leads back to them with the confirmation on top (and on top of the list); from the list, back to the list", async () => {
+    const { tab, panel, backend, root } = await mount({ language: "it" });
+    accepting(backend);
+    row(tab, "cover.living_three").querySelector(".cal-row-toggle").click(); await tick();
+    details(tab).querySelector('[data-action="cal-tab-assign"]').click(); await tick();
+    const none = sheet(tab).querySelector('input[value="__no_profile__"]');
+    none.checked = true; none.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    assert.equal(sheet(tab).hasAttribute("data-closable"), false, "a choice made: no scrim, no handle");
+    sheet(tab).querySelector("[data-assign]").click(); await tick(8);
+    assert.ok(details(tab), "back on the details");
+    assert.deepEqual(openDialogs(panel).length, 1);
+    assert.equal(details(tab).querySelector(".cal-page-body > .cal-page-notice:first-child").textContent, "Profilo scollegato da questa tapparella.", "on the card, its name in the title");
+    assert.equal(tab().querySelector(".cal-tab-done").textContent.trim(), "Profilo scollegato dalla tapparella Living room shutter 3.", "the list's notice too");
+    details(tab).querySelector(".cal-page-close").click(); await tick();
+    assert.equal(frame(tab), null);
+    // From the list (the row's ⋮): every way out leads to the list, the confirmation on top of it, the focus on the ⋮.
+    tap();
+    row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+    assert.deepEqual(openDialogs(panel), [frame(tab)], "the frame itself, not a dialog of the host");
+    const tall = sheet(tab).querySelector('input[value="tall"]');
+    tall.checked = true; tall.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    sheet(tab).querySelector("[data-assign]").click(); await tick(8);
+    assert.equal(frame(tab), null);
+    assert.match(tab().querySelector(".cal-tab-done").textContent, /ora segue il profilo «tall_two_leaf»/);
+    assert.equal(root.activeElement, row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]'), "back on the row's ⋮");
+  });
 
   test("«Ricalibra» and «Perfeziona» replace the details with the flow in the same frame, one history entry; A-34's «Apri la scheda» the other way round", async () => {
     const context = await mount({ language: "it" });
@@ -254,6 +378,43 @@ describe("one frame at a time", async () => {
     assert.doesNotMatch(source, /_openFlowDialog\(\)[^}]*_closePageDialog/, "the flow never closes the details to open its own dialog");
   });
 
+  test("the page is held by the box that really scrolls (the panel itself in Home Assistant): overflow hidden there, nothing moved, nothing put back", async () => {
+    const { tab, panel } = await mount({ language: "it" });
+    // As in Home Assistant: the panel's element scrolls (`:host { overflow: auto }`), the document does not.
+    panel.style.overflowY = "auto";
+    assert.equal(layout.scrollContainer(tab()), panel, "found through the shadow root");
+    const writes = [];
+    const descriptor = Object.getOwnPropertyDescriptor(dom.window.Element.prototype, "scrollTop");
+    Object.defineProperty(dom.window.Element.prototype, "scrollTop", { configurable: true, get() { return descriptor.get.call(this); },
+      set(value) { writes.push([this.localName, value]); descriptor.set.call(this, value); } });
+    try {
+      row(tab, "cover.kitchen_two").querySelector(".cal-row-toggle").click(); await tick();
+      assert.equal(panel.style.overflow, "hidden", "held");
+      assert.equal(document.documentElement.style.overflow, "", "the document is not touched");
+      assert.equal(document.body.style.overflow, "");
+      details(tab).querySelector('[data-action="cal-tab-assign"]').click(); await tick();
+      assert.equal(panel.style.overflow, "hidden", "still held under «Cambia profilo»");
+      sheet(tab).querySelector(".cal-page-head .cal-page-close").click(); await tick();
+      assert.equal(panel.style.overflow, "", "let go: its own value back");
+      assert.equal(panel.getAttribute("style"), "overflow-y: auto;", "nothing left behind");
+      assert.deepEqual(writes, [], "no scroll offset saved nor put back");
+    } finally { Object.defineProperty(dom.window.Element.prototype, "scrollTop", descriptor); }
+    // Two holders: the box goes free with the last one.
+    const one = layout.lockScroll(tab()), two = layout.lockScroll(tab());
+    one(); assert.equal(panel.style.overflow, "hidden");
+    one(); assert.equal(panel.style.overflow, "hidden", "a holder lets go once");
+    two(); assert.equal(panel.style.overflow, "");
+    // The box keeps its scrollbar's room in both states; the overlays keep their scroll; nothing fixed in place.
+    assert.match(cascadeCss, /:host \{ scrollbar-gutter: stable; \}/);
+    assert.match(cascadeCss, /:is\(dialog\.cal-flow, dialog\.cal-dialog\) \{ overscroll-behavior: contain; \}/);
+    assert.equal(layout.holdScroll, undefined, "the old hold (overflow on every ancestor, scroll put back) is gone");
+    const { readFileSync } = await import("node:fs");
+    for (const name of ["panel-calibration-layout.js", "panel-calibration-tab.js", "panel-profile-assign.js"]) {
+      const source = readFileSync(new URL(`../../custom_components/myhome/frontend/panel/${name}`, import.meta.url), "utf8");
+      assert.doesNotMatch(source, /holdScroll|style\.position = "fixed"|\.style\.top = `-/, name);
+    }
+  });
+
   test("a closed overlay gives the focus back to what opened it, without scrolling; its ring only when the last input was the keyboard", async () => {
     const { tab, root } = await mount({ language: "it" });
     const options = [];
@@ -298,6 +459,46 @@ describe("one frame at a time", async () => {
     assert.equal(frame(context.tab), null, "their ✕: the list");
   });
 
+  test("our flows never write in the shell's toast: calibrate and give the profile from A-35, close; «Cambia profilo» from the details and from the list", async () => {
+    const context = await mount({ language: "it", persist: true });
+    const toast = context.root.getElementById("toast"), writes = [];
+    new dom.window.MutationObserver(() => writes.push(toast.textContent)).observe(toast, { childList: true, characterData: true, subtree: true });
+    await walk(context, () => {});
+    assert.equal(context.code(), "A-34");
+    await context.press("assign-profile"); await settle();
+    assert.equal(context.code(), "A-35");
+    const box = context.wiz().querySelector('.cal-assign-live input[name="assign_cover"]:not(:disabled)');
+    box.checked = true; box.dispatchEvent(new dom.window.Event("change", { bubbles: true })); await tick();
+    await context.press("assign-submit"); await settle();
+    assert.equal(context.code(), "A-34");
+    assert.match(context.wiz().querySelector(".wiz-result-notices").textContent, /^Profilo assegnato a 1 tapparella$/, "the confirmation in A-34");
+    await context.press("close"); await settle();
+    assert.equal(frame(context.tab), null, "the list");
+    accepting(context.backend);
+    row(context.tab, "cover.living_three").querySelector(".cal-row-toggle").click(); await tick();
+    details(context.tab).querySelector('[data-action="cal-tab-assign"]').click(); await tick();
+    const none = sheet(context.tab).querySelector('input[value="__no_profile__"]');
+    none.checked = true; none.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    sheet(context.tab).querySelector("[data-assign]").click(); await tick(8);
+    details(context.tab).querySelector(".cal-page-close").click(); await tick();
+    row(context.tab, "cover.kitchen_two").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(context.tab, "cover.kitchen_two").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+    const unlink = sheet(context.tab).querySelector('input[value="__no_profile__"]:not(:disabled)') || sheet(context.tab).querySelector('input[name="assign_profile"]:not(:checked):not(:disabled)');
+    unlink.checked = true; unlink.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    sheet(context.tab).querySelector("[data-assign]").click(); await tick(8);
+    assert.ok(context.tab().querySelector(".cal-tab-done"), "the confirmation on top of the list");
+    assert.deepEqual(writes, [], "nothing ever written in #toast");
+    assert.equal(toast.textContent, "");
+    // The source: the calibration's modules never touch it; in the shell only its own editors do (the cover's profile
+    // dialog, the catalogue's edit and delete, the registry editor), never a sheet of ours.
+    const { readFileSync } = await import("node:fs");
+    const read = (name) => readFileSync(new URL(`../../custom_components/myhome/frontend/panel/${name}`, import.meta.url), "utf8");
+    for (const name of ["panel-calibration-tab.js", "panel-calibration-wizard.js", "panel-calibration-screens.js", "panel-calibration-layout.js", "panel-profile-assign.js"]) {
+      assert.doesNotMatch(read(name), /toast/i, name);
+    }
+    const shell = read("myhome-panel.js");
+    assert.equal((shell.match(/getElementById\("toast"\)\.textContent = /g) || []).length, 3, "the profile editor, the catalogue editor, the registry editor");
+  });
 });
 
 describe("closing the wizard", async () => {
@@ -661,7 +862,7 @@ describe("the first tap after a menu", async () => {
     });
   }
 
-  for (const [action, close] of [["cal-tab-toggle", "cal-tab-page-close"]]) {
+  for (const [action, close] of [["cal-tab-assign", "cal-tab-assign-cancel"], ["cal-tab-toggle", "cal-tab-page-close"]]) {
     test(`⋮ › ${action}, the first tap in the window opened reaches it`, async () => {
       const { row, tab, panel } = await world();
       await choose(row, action);

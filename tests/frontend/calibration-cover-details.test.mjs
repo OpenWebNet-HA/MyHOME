@@ -809,6 +809,29 @@ describe("dating a profile's times", async () => {
     assert.equal(profileTimesDate({ provenance: {} }, one), null);
   });
 
+  test("on the page the source's and the follower's «Tempi misurati…», «Misurato…» in «Cambia profilo» of both and in «Assegna»: one time", async () => {
+    phone();
+    const context = await mount({ language: "it", overview: family() });
+    const when = plain(text.dateTimeText(AT(1), "it"));
+    assert.notEqual(when, plain(text.dateTimeText(AT(0), "it")));
+    const role = async (entity) => {
+      const value = plain((await open(context, entity)).querySelector(".cal-page-profile-head .cal-page-role").textContent);
+      return value;
+    };
+    const measured = async () => {
+      card(context).querySelector('[data-action="cal-tab-assign"]').click(); await tick(6);
+      const value = plain(sheet(context).querySelector('input[value="tall"]').closest(".wiz-radio").querySelector(".cal-assign-measured").textContent);
+      context.tab().querySelector('[data-action="cal-tab-assign-close"]').click(); await tick(6);
+      if (card(context)) await close(context);
+      return value;
+    };
+    assert.equal(await role("cover.living_one"), `Tempi misurati su questa tapparella · ${when}`);
+    assert.equal(await measured(), `Misurato su questa tapparella · ${when}`, "«Cambia profilo» of the source");
+    assert.equal(await role("cover.kitchen_two"), `Tempi misurati sulla tapparella Living room shutter 1 · ${when}`, "the follower's Panoramica");
+    assert.equal(await measured(), `Misurato sulla tapparella Living room shutter 1 · ${when}`, "«Cambia profilo» of the follower");
+    await open(context, "cover.living_three");
+    assert.equal(await measured(), `Misurato sulla tapparella Living room shutter 1 · ${when}`, "«Assegna» of a cover without a profile");
+  });
 });
 
 describe("the marks", async () => {

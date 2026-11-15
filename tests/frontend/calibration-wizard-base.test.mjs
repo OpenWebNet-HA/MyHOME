@@ -844,6 +844,48 @@ describe("runs, end stops and the summary", async () => {
     assert.deepEqual([field.kind, field.min, field.max], ["travel", 10, 1000]);
   });
 
+  test("the cover a profile was measured on is never «una tapparella che segue»: its summary, the «Aggiorna» option, the confirmation, «Seguito da»", async () => {
+    // Kitchen shutter 2 follows «tall_two_leaf», measured on Living room shutter 1 (assigned too) and followed by Living room shutter 3.
+    let context = await mount({ overview: sourceData(), language: "it" });
+    let { backend, wiz, code, press } = context;
+    backend.hass.states["cover.kitchen_two"] = { state: "closed", attributes: { current_position: 0 } };
+    await context.startFor("cover.kitchen_two", "base");
+    let no = wiz().querySelector('input[name="slats"][value="no"]'); if (no) { no.checked = true; no.dispatchEvent(new Event("change", { bubbles: true })); await tick(); }
+    await press("begin");
+    await bothRuns(context);
+    await press("ack:descent");
+    assert.equal(code(), "A-21b");
+    // A cover that follows a profile measured elsewhere does not update it: no choice, a profile of its own.
+    assert.equal(wiz().querySelector('[name="save_choice"]'), null);
+    const follower = wiz().querySelector(".wiz-frame").textContent.replace(/\u00a0/g, " ");
+    assert.match(follower, /Questa tapparella ora usa un profilo suo; le altre restano sul profilo «tall_two_leaf»\./);
+    assert.doesNotMatch(follower, /Questa tapparella segue il profilo|che lo segu/);
+    await reset();
+
+    // On the source itself: «Il profilo … è stato misurato su questa tapparella», never «Questa tapparella segue il profilo».
+    context = await mount({ overview: sourceData(), language: "it" });
+    ({ backend, wiz, code, press } = context);
+    backend.hass.states["cover.living_one"] = { state: "closed", attributes: { current_position: 0 } };
+    await context.startFor("cover.living_one", "base");
+    no = wiz().querySelector('input[name="slats"][value="no"]'); if (no) { no.checked = true; no.dispatchEvent(new Event("change", { bubbles: true })); await tick(); }
+    await press("begin");
+    await bothRuns(context);
+    await press("ack:descent");
+    const text = wiz().querySelector(".wiz-frame").textContent.replace(/\u00a0/g, " ");
+    assert.match(text, /Il profilo «tall_two_leaf» è stato misurato su questa tapparella/);
+    assert.doesNotMatch(text, /Questa tapparella segue il profilo/);
+    await reset();
+
+    // «Cambia profilo»: «Seguito da» lists the followers only.
+    context = await mount({ overview: sourceData(), language: "it" });
+    const shown = await page(context, "cover.living_three");
+    shown.querySelector('.cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    const sheet = context.tab().querySelector(".cal-assign-page");
+    const row = sheet.querySelector('input[name="assign_profile"][value="tall"]').closest("label");
+    assert.equal(row.querySelector(".cal-assign-followers").textContent.replace(/\u00a0/g, " "), "Seguito da questa tapparella e dalla tapparella Kitchen shutter 2", "the sheet's own cover is «questa tapparella»");
+    assert.equal(i18n.en.wiz_T702, "The profile \"{profile}\" was measured on this cover: the values measured can update it, or become a new profile.");
+  });
+
   test("«Aggiorna»'s confirmation names the covers as the panel shows them, never by entity id", async () => {
     // From the source, the only cover that updates its profile.
     const context = await mount({ overview: sourceData(), language: "it" });

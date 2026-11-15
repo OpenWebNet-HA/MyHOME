@@ -19,6 +19,64 @@ describe("rows and actions", async () => {
   const html = (markup) => { const host = dom.window.document.createElement("div"); host.innerHTML = markup; dom.window.document.body.append(host); return host; };
   const row = (tab, id) => [...tab().querySelectorAll(".cal-row")].find((item) => item.dataset.entity === id);
 
+  test("after a change of profile the row is brought into view only if its new place left it out of view, gently and to the nearest edge", async () => {
+    const { tab, root, backend } = await mount({ language: "it" });
+    backend.hass.callWS = ((original) => async (message) => message.type === "myhome/cover_profiles/write" ? { revision: 8 } : original(message))(backend.hass.callWS);
+    const scrolled = [];
+    const proto = dom.window.HTMLElement.prototype;
+    const rect = proto.getBoundingClientRect, into = proto.scrollIntoView;
+    let place = { top: 2000, bottom: 2060 };
+    proto.getBoundingClientRect = function () {
+      return this.classList?.contains("cal-row") && this.dataset.entity === "cover.living_one" ? { ...place, left: 0, right: 300, width: 300, height: 60 } : rect.call(this);
+    };
+    proto.scrollIntoView = function (option) { scrolled.push([this.dataset.entity, option]); };
+    try {
+      const assign = async () => {
+        row(tab, "cover.living_one").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+        row(tab, "cover.living_one").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick();
+        // In the tab's frame.
+        const dialog = tab().querySelector("dialog.cal-flow .cal-assign-page");
+        void root;
+        const tall = dialog.querySelector('input[value="tall"]');
+        tall.checked = true; tall.dispatchEvent(new Event("change", { bubbles: true }));
+        dialog.querySelector("[data-assign]").click(); await tick(8);
+      };
+      place = { top: 100, bottom: 160 };
+      await assign();
+      assert.deepEqual(scrolled, [], "still in view: the list does not move at all");
+      place = { top: 2000, bottom: 2060 };
+      await assign();
+      assert.deepEqual(scrolled, [["cover.living_one", { block: "nearest", behavior: "smooth" }]], "out of view: to it, gently");
+    } finally { proto.getBoundingClientRect = rect; proto.scrollIntoView = into; }
+  });
+
+  test("row actions without duplicates: at most one in the row and ⋮ with the others, in every band; never a menu of one", async () => {
+    const { tab, panel } = await mount({ language: "it" });
+    const inRow = (id) => [...row(tab, id).querySelectorAll(".cal-row-ctas > .cal-row-action")].map((button) => [button.dataset.action, button.querySelector("ha-icon")?.getAttribute("icon")]);
+    const menu = (id) => [...row(tab, id).querySelectorAll(".cal-menu [role=menuitem]")].map((item) => item.dataset.action);
+    // The same in the table's band as elsewhere («up to three» is the footers' rule).
+    for (const band of ["cards", "rows", "table"]) {
+      tab().dataset.band = band;
+      panel._calibrationTab._render(); await tick();
+      // A follower without a check has nothing in view (no «Controlla»), Ricalibra first in ⋮; Calibra on a cover never
+      // calibrated (profiles in the catalogue: it opens the card).
+      // The stopwatch for Calibra / Ricalibra.
+      assert.deepEqual(inRow("cover.kitchen_two"), [], band);
+      assert.deepEqual(menu("cover.kitchen_two"), ["cal-tab-measure-cover", "cal-tab-assign", "cal-tab-toggle"], `${band}: the others, never the one in view`);
+      assert.deepEqual(inRow("cover.living_one"), [["cal-tab-calibrate", "mdi:timer-outline"]], band);
+      assert.deepEqual(menu("cover.living_one"), ["cal-tab-assign", "cal-tab-toggle"], "never calibrated: no Perfeziona");
+      for (const element of tab().querySelectorAll(".cal-row")) {
+        const shown = [...element.querySelectorAll(".cal-row-action")].map((button) => button.dataset.action);
+        const folded = [...element.querySelectorAll(".cal-menu [role=menuitem]")].map((item) => item.dataset.action);
+        assert.ok(shown.length <= 1, `${band}: at most one action in the row`);
+        assert.ok(folded.length >= 2, "never a menu of one");
+        assert.ok(shown.every((action) => !folded.includes(action)), "never twice");
+      }
+    }
+    // Icons in the table's band only; the middle band's rows keep the text alone.
+    assert.match(cascadeCss, /\.cal-row-action > ha-icon \{ display: none; \}\s*@container caltab \(min-width: 1016px\) \{ \.cal-row-action > ha-icon \{ display: inline-flex; \} \}/);
+  });
+
   test("on a selected or tinted row a chip keeps its colour on the card's surface (light); dark keeps the tint", () => {
     for (const theme of ["light", "dark"]) {
       const host = html(`<div class="wiz" data-theme="${theme}"><div class="cal-batch-rows"><label class="cal-batch-row wiz-pick-row is-selected"><span class="cal-batch-chips">
@@ -257,6 +315,96 @@ describe("the empty list", async () => {
     context.panel._calibrationTab.refresh();
     await tick(8);
     assert.equal(how().open, true);
+  });
+});
+
+describe("the action in view", async () => {
+  const { translations } = await import("../../custom_components/myhome/frontend/panel/panel-translations.js");
+  const it = translations.it, en = translations.en;
+  const MEASURED_AT = "2026-11-01T16:09:00+00:00";
+  const measured = { source: "guided", recorded_at: MEASURED_AT, origin_entity_id: null, origin_name: null, inherited: false };
+  const timing = (value, origin = "profile", scaled = false) => ({ value, origin, provenance: measured, scaled });
+  /**
+   * The render's family on the fake backend's covers: «tall» measured on Living room shutter 1 (the source), followed by
+   * Kitchen shutter 2 (a travel of its own, 130 cm, slats) and Living room shutter 3 (no travel of its own, no slats).
+   * `reference`: the profile's travel (null: unknown); `rolls`: the source fine-tuned with the tape; `check`: who keeps one.
+   */
+  function family({ reference = 110, rolls = false, check = [], half = true } = {}) {
+    const data = sampleOverview();
+    const profile = data.profiles[0];
+    profile.reference_travel_cm = reference;
+    profile.assigned_to = ["cover.living_one", "cover.kitchen_two", "cover.living_three"];
+    profile.provenance.opening.recorded_at = MEASURED_AT;
+    const [one, two, three] = data.covers;
+    const roll = (value) => rolls ? { opening_roll: timing(value), closing_roll: timing(value + 0.1) } : {};
+    Object.assign(one, { profile_id: "tall", travel_cm: reference, precision: rolls ? "refined" : "basic", slats_state: "yes_measured",
+      effective: { opening: timing(21.8), closing: timing(20.4), slat_time_s: timing(1.4), ...roll(1.9) } });
+    if (reference == null) delete one.travel_cm;
+    Object.assign(two, { profile_id: "tall", travel_cm: 130, precision: rolls ? "refined" : "basic", slats_state: "yes_profile",
+      effective: { opening: timing(24.6, "profile", reference != null), closing: timing(23.1, "profile", reference != null), slat_time_s: timing(1.4), ...roll(1.9) } });
+    Object.assign(three, { profile_id: "tall", precision: "basic", slats_state: "no_profile", effective: { opening: timing(21.8), closing: timing(20.4) } });
+    delete three.travel_cm;
+    for (const cover of data.covers) {
+      if (!check.includes(cover.entity_id)) continue;
+      const travel = cover.travel_cm ?? reference ?? 100;
+      Object.assign(cover, { check_cm: 1, check_measured_cm: travel * (half ? 0.5 : 0.75) + 1, check_expected_cm: travel * (half ? 0.5 : 0.75), check_at: "2026-11-04T09:30:00+00:00" });
+      if (cover.precision !== "refined") cover.precision = "verified";
+    }
+    return data;
+  }
+  const row = (context, entity) => context.tab().querySelector(`.cal-row[data-entity="${entity}"]`);
+  const card = (context) => context.tab().querySelector(".cal-flow .cal-page:not(.cal-assign-page)");
+  async function open(context, entity) {
+    row(context, entity).querySelector('[data-action="cal-tab-toggle"]').click();
+    await tick(6);
+    return card(context);
+  }
+  const click = async (context, action, id = null) => {
+    const button = card(context).querySelector(`[data-action="${action}"]${id ? `[data-id="${id}"]` : ""}`);
+    assert.ok(button, `${action} ${id ?? ""}`);
+    button.click();
+    await tick(6);
+  };
+
+  test("no «Controlla» in the list; a follower without a check has no action in view, ⋮ as before", async () => {
+    const context = await mount({ language: "it", overview: family() });
+    assert.equal(context.tab().querySelector('[data-action="cal-tab-fix"]'), null);
+    assert.equal(row(context, "cover.kitchen_two").querySelector(".cal-row-action"), null);
+    assert.deepEqual([...row(context, "cover.kitchen_two").querySelectorAll(".cal-menu [role=menuitem]")].map((item) => item.textContent.trim()), ["Ricalibra", "Cambia profilo", "Dettagli"]);
+    assert.equal(it.calTabActionCheck, undefined);
+    assert.equal(it.cal_S1_list_fix, undefined);
+  });
+
+  test("«Perfeziona» in view where the card offers it (the source, a cover without a profile), never in ⋮ then; never on a follower nor on a cover never calibrated; it opens the card's own flow", async () => {
+    const data = family();
+    data.covers[2].profile_id = null;
+    data.profiles[0].assigned_to = ["cover.living_one", "cover.kitchen_two"];
+    const context = await mount({ language: "it", overview: data });
+    const menu = (entity) => [...row(context, entity).querySelectorAll(".cal-menu [role=menuitem]")].map((item) => [item.dataset.action, item.textContent.trim()]);
+    const inView = (entity) => [...row(context, entity).querySelectorAll(".cal-row-action")].map((item) => [item.dataset.action, item.textContent.trim()]);
+    const refine = ["cal-tab-refine", "Perfeziona"];
+    assert.deepEqual([inView("cover.living_one"), menu("cover.living_one")], [[refine], [["cal-tab-measure-cover", "Ricalibra"], ["cal-tab-assign", "Cambia profilo"], ["cal-tab-toggle", "Dettagli"]]], "the source");
+    assert.deepEqual([inView("cover.living_three"), menu("cover.living_three")], [[refine], [["cal-tab-measure-cover", "Ricalibra"], ["cal-tab-assign", "Assegna profilo"], ["cal-tab-toggle", "Dettagli"]]], "without a profile");
+    assert.deepEqual([inView("cover.kitchen_two"), menu("cover.kitchen_two")], [[], [["cal-tab-measure-cover", "Ricalibra"], ["cal-tab-assign", "Cambia profilo"], ["cal-tab-toggle", "Dettagli"]]], "a follower: none");
+    assert.equal(row(context, "cover.living_one").querySelector('.cal-row-action[data-action="cal-tab-refine"] ha-icon').getAttribute("icon"), "mdi:arrow-expand-vertical", "the straight ruler");
+    // The same flow as the card's Perfeziona.
+    await open(context, "cover.living_one");
+    await click(context, "cal-tab-refine");
+    const fromCard = context.code();
+    context.wiz().querySelector(".wiz-head .wiz-x").click(); await tick(8);
+    if (card(context)) { card(context).querySelector(".cal-page-close").click(); await tick(8); }
+    const inRow = row(context, "cover.living_one").querySelector('.cal-row-action[data-action="cal-tab-refine"]');
+    inRow.focus(); inRow.click(); await tick(8);
+    assert.ok(context.wiz(), "the wizard");
+    assert.equal(context.code(), fromCard, "the card's Perfeziona");
+    assert.equal(context.tab().querySelector(".cal-flow .cal-page:not(.cal-assign-page)"), null, "straight to the flow, no card");
+    context.wiz().querySelector(".wiz-head .wiz-x").click(); await tick(8);
+    assert.equal(context.root.activeElement, row(context, "cover.living_one").querySelector('.cal-row-action[data-action="cal-tab-refine"]'), "back on its row's Perfeziona");
+    reset();
+    // Never calibrated: Calibra in view (profiles in the catalogue: it opens the card), no Perfeziona in ⋮.
+    const fresh = await mount({ language: "it" });
+    assert.equal(fresh.tab().querySelector('.cal-row[data-entity="cover.living_one"] .cal-menu [data-action="cal-tab-refine"]'), null);
+    assert.equal(fresh.tab().querySelector('.cal-row[data-entity="cover.living_one"] .cal-row-action').dataset.action, "cal-tab-calibrate");
   });
 });
 
@@ -697,6 +845,71 @@ describe("one action in view, ⋮ for the rest", async () => {
     return data;
   }
 
+  test("one action in view, only where a step is advised; ⋮ holds the rest, in a fixed order", async () => {
+    const cases = [
+      // [world, entity, in view, ⋮]
+      [{ source: "basic" }, "cover.kitchen_two", ["Perfeziona"], ["Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ alone: "basic" }, "cover.living_one", ["Perfeziona"], ["Ricalibra", "Assegna profilo", "Dettagli"]],
+      [{ source: "refined" }, "cover.kitchen_two", ["Perfeziona"], ["Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ sourceGap: 1 }, "cover.kitchen_two", [], ["Perfeziona", "Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ sourceGap: 4 }, "cover.kitchen_two", [], ["Perfeziona", "Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ sourceGap: 6 }, "cover.kitchen_two", ["Perfeziona"], ["Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ alone: "basic", aloneGap: 6 }, "cover.living_one", ["Perfeziona"], ["Ricalibra", "Assegna profilo", "Dettagli"]],
+      [{}, "cover.living_three", [], ["Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ followerGap: 1 }, "cover.living_three", [], ["Ricalibra", "Cambia profilo", "Dettagli"]],
+      [{ followerGap: 6 }, "cover.living_three", ["Ricalibra"], ["Cambia profilo", "Dettagli"]],
+    ];
+    for (const [options, entity, shown, menu] of cases) {
+      const context = await mount({ language: "it", overview: world(options) });
+      assert.deepEqual(actionsOf(context, entity), [shown, menu], `${JSON.stringify(options)} ${entity}`);
+      reset();
+    }
+    // «Controlla» is gone: no action, no key.
+    assert.doesNotMatch(source, /cal-tab-fix|calTabActionCheck|cal_S1_list_fix/);
+    for (const table of [it, en]) assert.deepEqual([table.calTabActionCheck, table.cal_S1_list_fix], [undefined, undefined]);
+  });
+
+  test("a cover never calibrated: Calibra opens the wizard without a profile in the catalogue; with one, the card on «Come vuoi calibrarla?», its first choice focused; ⋮ Assegna profilo · Dettagli", async () => {
+    const bare = await mount({ language: "it", overview: world({ profiles: false }) });
+    assert.deepEqual(actionsOf(bare, "cover.living_one"), [["Calibra"], ["Assegna profilo", "Dettagli"]]);
+    row(bare, "cover.living_one").querySelector('.cal-row-action[data-action="cal-tab-measure-cover"]').click(); await tick(6);
+    assert.equal(bare.code(), "C-35", "the wizard, on this cover");
+    assert.equal(card(bare), null, "no card");
+    reset();
+    for (const width of [390, 1280]) {
+      globalThis.matchMedia = windowOf(width);
+      const context = await mount({ language: "it", overview: world() });
+      assert.deepEqual(actionsOf(context, "cover.living_one"), [["Calibra"], ["Assegna profilo", "Dettagli"]]);
+      const calibrate = row(context, "cover.living_one").querySelector('.cal-row-action[data-action="cal-tab-calibrate"]');
+      assert.equal(calibrate.querySelector("ha-icon").getAttribute("icon"), "mdi:timer-outline", "Calibra's stopwatch");
+      calibrate.click(); await tick(6);
+      assert.equal(context.wiz(), null, `${width}: no wizard`);
+      const page = card(context);
+      assert.equal(page.querySelector(".cal-page-body").dataset.tab, "overview");
+      const first = page.querySelector(".cal-pos-how .cal-choice");
+      assert.equal(first.dataset.action, "cal-tab-measure-cover");
+      assert.equal(context.root.activeElement, first, `${width}: the focus on «Misura i tempi»`);
+      reset();
+    }
+  });
+
+  test("without the wizard no Calibra, Ricalibra nor Perfeziona: no action where none is left; a session's row as before", async () => {
+    const context = await mount({ language: "it", overview: world({ source: "basic", followerGap: 6 }) });
+    context.panel._calibrationTab.useWizard(null); context.panel._calibrationTab._render(); await tick();
+    assert.deepEqual(actionsOf(context, "cover.kitchen_two"), [[], ["Cambia profilo", "Dettagli"]]);
+    assert.deepEqual(actionsOf(context, "cover.living_three"), [[], ["Cambia profilo", "Dettagli"]]);
+    assert.deepEqual(actionsOf(context, "cover.living_one"), [[], ["Assegna profilo", "Dettagli"]]);
+    reset();
+    const session = { entry_id: "one", entity_id: "cover.living_one", session_id: "session-1", sequence: 9, revision: 7, mode: "geometry", phase: "opening", step: "opening",
+      reason: null, values: {}, samples: { lift: 4 }, readings: { gap: 3 }, geometry: {}, travel_cm: null, stop_requested: false, slats: true, lift_attempts: 1,
+      still_resting: false, gap_warning: false, touching_cm: 1, max_gap_cm: 20, gap_warn_cm: 10, saved_travel_cm: 195, expected_cm: null, can_repeat: true, save_modes: ["new"] };
+    const running = await mount({ language: "it", session, owner: false });
+    const line = row(running, "cover.living_one");
+    assert.deepEqual([...line.querySelectorAll(".cal-row-action")].map((button) => button.dataset.action), ["cal-tab-session"], "Segui, as today");
+    assert.deepEqual([...line.querySelectorAll(".cal-menu [role=menuitem]")].map((item) => [item.dataset.action, item.disabled]),
+      [["cal-tab-assign", true], ["cal-tab-toggle", false], ["cal-tab-abort", false]], "⋮ as today, the profile's action off");
+  });
+
   test("without an action the row keeps its place: the actions' column (empty) in the table, ⋮ at the right on the phone's card", async () => {
     const context = await mount({ language: "it", overview: world() });
     const line = row(context, "cover.living_three");
@@ -814,6 +1027,20 @@ describe("bands, columns and rhythm", async () => {
     // The labels the action can show, each a single word: none longer than «Perfeziona» / «Fine-tune» decides the widths.
     // («Controlla», calTabActionCheck, left the list.)
     for (const language of ["it", "en"]) for (const key of ["calTabActionMeasure", "calTabActionRefine", "calTabRowFollow", "calTabRowResume"]) assert.doesNotMatch(translations[language][key], /\s/, `${language} ${key}: one word`);
+  });
+
+  test("the action in view is «Calibra» on a cover never calibrated; a follower without a check has none; «Ricalibra» in ⋮", async () => {
+    const { tab } = await mount({ language: "it" });
+    for (const element of rows(tab)) {
+      const action = element.querySelector(".cal-row-action"), menu = [...element.querySelectorAll(".cal-menu [role=menuitem]")].map((item) => item.dataset.action);
+      const status = element.querySelector(".cal-badge").dataset.status;
+      if (status === "to_measure") { assert.deepEqual([action.dataset.action, action.textContent], ["cal-tab-calibrate", "Calibra"]); assert.ok(!menu.includes("cal-tab-refine")); }
+      else {
+        assert.equal(action, null, element.dataset.entity);
+        assert.deepEqual(menu, ["cal-tab-measure-cover", "cal-tab-assign", "cal-tab-toggle"], "⋮ as before: Ricalibra first");
+      }
+    }
+    assert.equal(tab().querySelector('[data-action="cal-tab-fix"]'), null);
   });
 
   test("nothing in the list is measured by a script (no actions' width, no chips' box, no per-row class or inline size)", async () => {

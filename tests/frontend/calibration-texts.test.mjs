@@ -300,6 +300,27 @@ describe("names with their type", async () => {
     assert.equal(it.calTabStatus_profile, "Dal profilo");
   });
 
+  test("the reworded texts on the page: a follower's sentence, the source's procedure titles, «Cambia profilo»'s title and introduction", async () => {
+    phone();
+    const context = await mount({ language: "it", overview: family({ travel: 110 }) });
+    let page = await open(context, "cover.kitchen_two");
+    assert.equal(plain(page.querySelector(".cal-pos-state").textContent).includes("Usa senza modifiche i tempi misurati sulla tapparella Living room shutter 1."), true);
+    assert.equal(page.querySelector('.cal-page-link [data-action="cal-tab-unlink"]'), null);
+    page.querySelector('.cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    const sheet = context.tab().querySelector(".cal-assign-page");
+    assert.match(sheet.querySelector(".cal-assign-none small").textContent, /^Questa tapparella verrà scollegata dal profilo «tall_two_leaf»\./);
+    assert.deepEqual([sheet.querySelector("h2").textContent, sheet.querySelector(".cal-assign-intro").textContent.split(".")[0]],
+      ["Cambia il profilo della tapparella Kitchen shutter 2", "Questa tapparella userà i tempi del profilo che scegli"]);
+    context.tab().querySelector('[data-action="cal-tab-assign-close"]').click(); await tick(6);
+    if (card(context)) await close(context);
+    page = await open(context, "cover.living_one");
+    page.querySelector('.cal-pos-help [data-action="cal-tab-check-start"]').click(); await tick(6);
+    card(context).querySelector('[data-action="cal-tab-check-answer"][data-id="middle"]').click(); await tick(6);
+    page = card(context);
+    assert.deepEqual([page.querySelector("#cal-page-name").textContent, page.querySelector(".cal-step-title").textContent],
+      ["Living room shutter 1", "Perfezioniamo le posizioni intermedie di questa tapparella"], "the name in the bar, «questa tapparella» under it");
+    assert.equal(plain(page.querySelector(".cal-note.is-warning").textContent).startsWith("Se aggiorni il profilo attuale, anche la tapparella Kitchen shutter 2 userà"), true);
+  });
 });
 
 describe("«questa tapparella»", async () => {
@@ -370,6 +391,50 @@ describe("«questa tapparella»", async () => {
     }
   });
 
+  test("on the page the Scollega line and «Cambia profilo»'s source line say «questa tapparella»; after Assegna and Scollega on the card «questa tapparella», on the list the name", async () => {
+    phone();
+    const context = await mount({ language: "it", overview: family() });
+    accepting(context.backend);
+    let page = await open(context, "cover.kitchen_two");
+    assert.equal(page.querySelector("#cal-page-name").textContent, "Kitchen shutter 2", "the name in the title above");
+    page.querySelector('.cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    assert.match(sheet(context).querySelector('input[value="__no_profile__"]').closest(".wiz-radio").querySelector("small").textContent,
+      /^Questa tapparella verrà scollegata dal profilo «tall_two_leaf»\. Restano gli eventuali tempi impostati su questa tapparella/);
+    context.tab().querySelector('[data-action="cal-tab-assign-close"]').click(); await tick(6);
+    if (card(context)) await close(context);
+    page = await open(context, "cover.living_one");
+    page.querySelector('.cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    assert.equal(sheet(context).querySelector("h2").textContent, "Cambia il profilo della tapparella Living room shutter 1");
+    const line = sheet(context).querySelector('input[value="__no_profile__"]').closest(".wiz-radio").querySelector("small").textContent;
+    assert.match(line, /^Questa tapparella è la sorgente del profilo «tall_two_leaf»: .*resteranno a lei\.$/, "one form in the sentence");
+    context.tab().querySelector('[data-action="cal-tab-assign-close"]').click(); await tick(6);
+    if (card(context)) await close(context);
+    // Assegna from the card: the card says «questa tapparella», the list behind it the name.
+    page = await open(context, "cover.living_three");
+    page.querySelector('[data-action="cal-tab-assign"]').click(); await tick(6);
+    const choice = sheet(context).querySelector('input[value="tall"]');
+    choice.checked = true; choice.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    sheet(context).querySelector("[data-assign]").click(); await tick(8);
+    assert.equal(card(context).querySelector(".cal-page-notice").textContent, "Questa tapparella ora segue il profilo «tall_two_leaf».");
+    assert.equal(context.tab().querySelector(".cal-tab-done").textContent.trim(), "La tapparella Living room shutter 3 ora segue il profilo «tall_two_leaf».");
+    await close(context);
+    // Scollega from the card of a follower: the same.
+    page = await open(context, "cover.kitchen_two");
+    page.querySelector('.cal-page-link [data-action="cal-tab-assign"]').click(); await tick(6);
+    sheet(context).querySelector('input[value="__no_profile__"]').click(); await tick(2);
+    sheet(context).querySelector("[data-assign]").click(); await tick(8);
+    assert.equal(card(context).querySelector(".cal-page-notice").textContent, "Profilo scollegato da questa tapparella.");
+    assert.equal(context.tab().querySelector(".cal-tab-done").textContent.trim(), "Profilo scollegato dalla tapparella Kitchen shutter 2.");
+    await close(context);
+    // From the list's ⋮ (no name in a title on the list): the list's notice, named.
+    row(context, "cover.living_three").querySelector('[data-action="cal-tab-menu"]').click(); await tick();
+    row(context, "cover.living_three").querySelector('.cal-menu [data-action="cal-tab-assign"]').click(); await tick(6);
+    const again = sheet(context).querySelector('input[value="tall"]');
+    again.checked = true; again.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    sheet(context).querySelector("[data-assign]").click(); await tick(8);
+    assert.equal(card(context), null, "back on the list");
+    assert.equal(context.tab().querySelector(".cal-tab-done").textContent.trim(), "La tapparella Living room shutter 3 ora segue il profilo «tall_two_leaf».");
+  });
 });
 
 describe("the source in «Profilo usato anche da»", async () => {

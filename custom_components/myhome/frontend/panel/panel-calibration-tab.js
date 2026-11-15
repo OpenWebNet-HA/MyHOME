@@ -1,6 +1,6 @@
 /** WHO 2 "Calibration" view: what each timed cover uses, its measurement state and the ways to measure it. */
 const asset = (name) => { const url = new URL(name, import.meta.url); url.search = new URL(import.meta.url).search; return url.href; };
-const [{ escapeHtml: esc }, model, text, { CoverCalibration, checkedCalibrationClient }, { CalibrationWizard }, { morph }, { layout, SHEETS, NARROW, PHONE, SHORT, dragOverlay, listBand, contentWidth, fitBars, fitRows, keepScrollOnPick, focusOnOpen, watchEdges, slideBlock, slideDetails, slideHeight, untickOnSecondTap, hiddenByStyle, closeOnOutsidePress, releaseFocus, closeOnScrim, holdScrimScroll, lockScroll, returnFocus, revealOpened, followKeyboard, markCutChips, followCutChips, fitStatus }, { cancelSession, CHECK_THRESHOLD_CM }, { travelText }, { sublineMarkup }] = await Promise.all([
+const [{ escapeHtml: esc }, model, text, { CoverCalibration, checkedCalibrationClient }, { CalibrationWizard }, { morph }, { layout, SHEETS, NARROW, PHONE, SHORT, dragOverlay, listBand, contentWidth, fitBars, fitRows, keepScrollOnPick, focusOnOpen, watchEdges, slideBlock, slideDetails, slideHeight, untickOnSecondTap, hiddenByStyle, closeOnOutsidePress, releaseFocus, closeOnScrim, holdScrimScroll, lockScroll, returnFocus, revealOpened, followKeyboard, markCutChips, followCutChips, fitStatus }, { cancelSession, CHECK_THRESHOLD_CM }, { travelText }, { sublineMarkup, errorText: assignError }] = await Promise.all([
   import(asset("panel-dom.js")), import(asset("panel-model.js")), import(asset("panel-calibration-text.js")),
   import(asset("panel-cover-calibration.js")), import(asset("panel-calibration-wizard.js")),
   import(asset("panel-calibration-morph.js")), import(asset("panel-calibration-layout.js")), import(asset("panel-calibration-gateway.js")),
@@ -32,6 +32,8 @@ const SESSION_PROBES = 3;
 /** A burst of session transitions within this time makes one read of the list. */
 export const SESSION_READ_MS = 250;
 export const SORT_KEYS = ["cover", "status", "profile"];
+/** The Assign profile dialog's "No profile" entry (a profile id is never this). */
+const NO_PROFILE = "__no_profile__";
 export const DEFAULT_SORT = Object.freeze({ key: "cover", dir: "asc" });
 export const SORT_STORAGE_KEY = "myhome-panel-calibration-sort-v1";
 // Status from what needs attention first; a running cover is always on top, whatever the order.
@@ -302,7 +304,8 @@ export class CalibrationTab {
    */
   _syncHold() {
     const mode = this.__mode;
-    const full = mode?.kind === "wizard", page = mode?.kind === "list" && !!this._page;
+    // «Cambia profilo» opened from the list holds the same frame as the details.
+    const full = mode?.kind === "wizard", page = mode?.kind === "list" && (!!this._page || !!this._assign);
     const hold = full || page, roots = [document.documentElement, document.body].filter(Boolean);
     if (hold && !this._overscroll) {
       this._overscroll = roots.map((element) => [element, element.style.overscrollBehaviorY]);
@@ -336,7 +339,7 @@ export class CalibrationTab {
       if (this._mode.kind !== "list") return;
       this._band();
       // A card open while the window crosses 1024 px takes the other layout (one column, or two).
-      if (this._page) this._render();
+      if (this._page && !this._assign) this._render();
     };
     const frame = globalThis.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
     // The bands of the overlays too (the tendina, the medium dialog's footer).
@@ -379,6 +382,7 @@ export class CalibrationTab {
     this._wizard?.close();
     this._rows.clear();
     this._page = null;
+    this._assign = null;
     this._closePageDialog();
     this._mode = { kind: "list" };
     this._dropMenu();
@@ -548,6 +552,8 @@ export class CalibrationTab {
         this._render();
         // A wizard giving a profile to other covers (A-35) shows the data just read.
         if (this._mode.kind === "wizard") this._wizard?.dataChanged?.();
+        // And «Cambia profilo» refused for another change saved meanwhile.
+        this._assignAgain(entryId);
         if (row.again) { row.again = false; this._read(entryId, generation); }
       }
     }
@@ -729,7 +735,7 @@ export class CalibrationTab {
     if (this._openPendingCover()) return;
     this._drawList();
     // A card opened by another tab, closed (with what opened from it) back to the list: its way back.
-    if (this._coverReturn && !this._page) {
+    if (this._coverReturn && !this._page && !this._assign) {
       const back = this._coverReturn;
       this._coverReturn = null;
       queueMicrotask(() => { try { back(); } catch (error) { console.error(error); } });
@@ -828,7 +834,7 @@ export class CalibrationTab {
 
   _revealRow() {
     const reveal = this._reveal, host = this._context?.host;
-    if (!reveal || !host || this._mode.kind !== "list" || this._page) return;
+    if (!reveal || !host || this._mode.kind !== "list" || this._page || this._assign) return;
     const [entryId, entityId] = JSON.parse(reveal.key);
     const fresh = (this._rows.get(entryId)?.data?.revision ?? -1) > reveal.revision;
     if (Date.now() > reveal.until || (reveal.drawn && !fresh)) { if (Date.now() > reveal.until) this._reveal = null; return; }
@@ -994,12 +1000,13 @@ export class CalibrationTab {
   _rowActions(item, session, busy) {
     const { t } = this._context;
     const key = JSON.stringify([item.entry.entry_id, item.cover.entity_id]);
+    const assign = { action: "cal-tab-assign", id: key, icon: "mdi:link-variant", label: t(item.profile ? "wiz_T427" : "calTabAssign"), disabled: !!session };
     const details = { action: "cal-tab-toggle", id: key, icon: "mdi:information-outline", label: t("calTabDetails") };
     if (session) {
       const open = !(session.waiting_for_stop || session.recoverable === false);
       const follow = open ? [{ action: "cal-tab-session", id: item.entry.entry_id, label: t(sessionShort(session)), title: t(sessionLabel(session)) }] : [];
       const abort = open ? [{ action: "cal-tab-abort", id: item.entry.entry_id, icon: "mdi:close-octagon-outline", label: t("wiz_T534"), danger: true }] : [];
-      return { shown: follow, menu: [details, ...abort] };
+      return { shown: follow, menu: [assign, details, ...abort] };
     }
     const measure = { action: "cal-tab-measure-cover", id: key, icon: ICON.calibrate,
       label: t(item.status === "to_measure" ? "calTabActionMeasure" : "calTabActionRemeasure"), disabled: !!busy };
@@ -1011,16 +1018,16 @@ export class CalibrationTab {
       // With a profile in the catalogue, Calibra opens the card on «Come vuoi calibrarla?» (measure or use a profile).
       const profiles = this._rows.get(item.entry.entry_id)?.data?.profiles?.length > 0;
       const calibrate = profiles ? { ...measure, action: "cal-tab-calibrate" } : measure;
-      return { shown: wizard(calibrate), menu: [details] };
+      return { shown: wizard(calibrate), menu: [assign, details] };
     }
     // The advised step comes from `advisedStep`, the rule A-02 follows too.
     const { role } = this._checkContext(item), { shown } = text.advisedStep({ status: item.status, role, check: item.check }, CHECK_THRESHOLD_CM);
     // A follower (no Perfeziona): Ricalibra in view only after a check beyond the threshold.
-    if (role !== "source" && role !== "alone") return shown === "remeasure" ? { shown: wizard(measure), menu: [details] } : { shown: [], menu: [...wizard(measure), details] };
+    if (role !== "source" && role !== "alone") return shown === "remeasure" ? { shown: wizard(measure), menu: [assign, details] } : { shown: [], menu: [...wizard(measure), assign, details] };
     // The profile's source, a cover without a profile: Perfeziona in view, unless a check within the threshold says it is fine.
     const refine = { action: "cal-tab-refine", id: key, icon: ICON.refine, label: t("cal_D1_button"), disabled: !!busy };
-    if (!shown) return { shown: [], menu: [...wizard(refine), ...wizard(measure), details] };
-    return { shown: wizard(refine), menu: [...wizard(measure), details] };
+    if (!shown) return { shown: [], menu: [...wizard(refine), ...wizard(measure), assign, details] };
+    return { shown: wizard(refine), menu: [...wizard(measure), assign, details] };
   }
 
   /**
@@ -1134,9 +1141,10 @@ export class CalibrationTab {
     const button = (action, kind, icon, label, off) => `<button type="button" class="${kind}" data-action="${action}" data-id="${esc(key)}"${off ? " disabled" : ""}>${text.iconMarkup(icon)}${esc(label)}</button>`;
     const column = (inner) => `<div class="cal-page-column">${inner}</div>`;
     if (ctx.role === "none") {
-      // «Come vuoi calibrarla?»: Calibra, with its caption, at every width.
+      // «Come vuoi calibrarla?», two rows, Calibra and Assegna profilo, each with
+      // its caption, at every width.
       const choice = (action, title_, caption, off) => `<button type="button" class="cal-choice" data-action="${action}" data-id="${esc(key)}"${off ? " disabled" : ""}><span class="cal-choice-text"><span class="cal-choice-title">${esc(title_)}</span><span class="cal-choice-desc">${esc(caption)}</span></span><ha-icon icon="mdi:chevron-right" aria-hidden="true"></ha-icon></button>`;
-      const rows = `${this._wizard ? choice("cal-tab-measure-cover", t("cal_POS_none_how_measure"), t("cal_POS_none_measure_caption"), !!busy) : ""}`;
+      const rows = `${this._wizard ? choice("cal-tab-measure-cover", t("cal_POS_none_how_measure"), t("cal_POS_none_measure_caption"), !!busy) : ""}${choice("cal-tab-assign", t("cal_POS_none_how_assign"), t("cal_POS_none_assign_caption"), this._running(item))}`;
       // As on the other covers, the card under its title «Stato»; from 1024 px «Stato» and «Come vuoi
       // calibrarla?» on the left, «Caratteristiche» on the right; the phone in the same order, one under the other.
       const status = `<section class="cal-section cal-pos-current"><h4 class="cal-section-title">${esc(t("calTabStateSection"))}</h4><div class="cal-card cal-pos-status">${state}</div></section>`;
@@ -1186,8 +1194,8 @@ export class CalibrationTab {
 
   /**
    * «Profilo»: the profile's own symbol, the same on every cover (a «scheda tecnica»), its name
-   * whole, «Misurato su {cover} · {date}» (or «su questa tapparella»).
-   * Without a profile: «Nessun profilo».
+   * whole, «Misurato su {cover} · {date}» (or «su questa tapparella»), then «Cambia profilo» (`_linkMarkup`:
+   * the unlinking in its window). Without a profile: «Nessun profilo» and «Assegna profilo».
    */
   _profileMarkup(item, ctx, language) {
     const { t } = this._context, profile = item.profile;
@@ -1204,7 +1212,20 @@ export class CalibrationTab {
       // Shown whole, a long name may wrap only after its «_», «-» or «.», not mid-word.
       head = `<div class="cal-card-body cal-page-profile-head"><span class="cal-profile-icon" title="${esc(t("calTabProfileSection"))}"><ha-icon icon="mdi:clipboard-text-outline" aria-hidden="true"></ha-icon></span><span class="cal-profile-text"><span class="cal-profile-name">${esc(profile.name).replace(/([_.-])/g, "$1<wbr>")}</span>${measuredOn ? `<span class="cal-page-role">${measuredOn}</span>` : ""}</span></div>`;
     }
-    return `<section class="cal-section cal-page-profile"><h4 class="cal-section-title">${esc(t("calTabProfileSection"))}</h4><div class="cal-card cal-page-profile-card">${head}</div></section>`;
+    return `<section class="cal-section cal-page-profile"><h4 class="cal-section-title">${esc(t("calTabProfileSection"))}</h4><div class="cal-card cal-page-profile-card">${head}${this._linkMarkup(item)}</div></section>`;
+  }
+
+  /**
+   * «Cambia profilo» on every cover with a profile («Assegna profilo» without one). No
+   * «Rendi indipendente» yet. It sits in the card «Profilo», under the profile's name and «Misurato su…»
+   * (`_profileMarkup`). One secondary button, its caption under it as Perfeziona's; the
+   * unlinking is chosen in the window it opens («Scollega il profilo», its consequences under it: wiz_T405, or wiz_T430
+   * off on the profile's source), no row of its own any more.
+   */
+  _linkMarkup(item) {
+    const { t } = this._context, key = JSON.stringify([item.entry.entry_id, item.cover.entity_id]), running = this._running(item);
+    const [label, caption] = item.profile ? [t("cal_LINK_change"), t("cal_LINK_change_desc")] : [t("calTabAssign"), t("cal_POS_none_assign_caption")];
+    return `<div class="cal-card-body cal-page-link"><button type="button" class="cal-outlined" data-action="cal-tab-assign" data-id="${esc(key)}"${running ? " disabled" : ""}>${text.iconMarkup("mdi:link-variant")}${esc(label)}</button><p class="cal-caption">${esc(caption)}</p></div>`;
   }
 
   /**
@@ -1575,7 +1596,7 @@ export class CalibrationTab {
    * A cover's details in the overlay's dialog over the list, on every window: the tendina up to
    * 511 px, 480 px centred up to 1023 px, 880 px from 1024 px. Its markup is patched on every drawing of the list (the
    * data changes under it); Escape, its ✕, a drag of the tendina and the browser's Back close it. What it
-   * leads to takes its place in the same frame: a flow (Refine, Recalibrate).
+   * leads to takes its place in the same frame: «Cambia profilo» (`_assignProfile`), a flow (Refine, Recalibrate).
    */
   _openPage(key, { how = false } = {}) {
     // What opened the details gets the focus back when they close.
@@ -1687,8 +1708,8 @@ export class CalibrationTab {
   }
 
   /**
-   * ONE frame for everything that opens over the list: a cover's details, a flow. A modal
-   * <dialog> in the tab's element (`cal-flow`); what it holds (`data-holds` on its body: page, flow) is swapped
+   * ONE frame for everything that opens over the list: a cover's details, «Cambia profilo», a flow. A modal
+   * <dialog> in the tab's element (`cal-flow`); what it holds (`data-holds` on its body: page, assign, flow) is swapped
    * inside it, never a dialog over a dialog. Its Escape, the browser's Back, a press on its scrim and the tendina's drag
    * ask `_overlayExit`, the ✕ of what it holds (the scrim and the drag only while closing costs nothing: the content's
    * `data-closable`).
@@ -1705,7 +1726,7 @@ export class CalibrationTab {
     const closable = () => !!body.querySelector(":scope > [data-closable]");
     const undrag = dragOverlay(box, { closable, onClose: () => this._overlayExit() });
     const unscrim = closeOnScrim(dialog, { closable, box, onClose: () => this._overlayExit() });
-    // The wheel on the scrim never scrolls the list under it (the details, the wizard).
+    // The wheel on the scrim never scrolls the list under it (the details, «Cambia profilo», the wizard).
     const unwheel = holdScrimScroll(dialog);
     this._undragOverlay = () => { undrag(); unscrim(); unwheel(); };
     // Escape reaches the tab's keydown first; any other close request (Android's back) is the ✕ too.
@@ -1717,24 +1738,28 @@ export class CalibrationTab {
     return dialog;
   }
 
-  /** The frame's body, set to hold `holds` (page, flow): emptied when it held something else. */
+  /** The frame's body, set to hold `holds` (page, assign, flow): emptied when it held something else. */
   _frameBody(dialog, holds, labelledBy) {
     const box = dialog.querySelector(".cal-flow-box"), body = box.querySelector(".cal-flow-body");
     box.dataset.kind = holds === "flow" ? "flow" : "page";
     if (body.dataset.holds !== holds) { body.replaceChildren(); body.dataset.holds = holds; }
     dialog.classList.toggle("cal-page-dialog", holds !== "flow");
+    // «Cambia profilo» is one column: from 1024 px its frame is as wide as its content, not the details'.
+    dialog.classList.toggle("cal-assign-dialog", holds === "assign");
     dialog.classList.remove("is-leaving");
     if (labelledBy) dialog.setAttribute("aria-labelledby", labelledBy);
     return body;
   }
 
-  /** The ✕ of what the frame holds: the flow's exit, the details' close. */
+  /** The ✕ of what the frame holds: the flow's exit, «Cambia profilo»'s (to the list), the details' close. */
   _overlayExit() {
     if (this._mode.kind === "wizard") { this._flowExit(); return; }
-    if (this._page) this._closePage();
+    if (this._page || this._assign) this._closePage();
   }
 
   _syncPage(busy, language) {
+    // «Cambia profilo» holds the frame: the details wait under it, untouched.
+    if (this._assign) { if (!this._pageDialog?.isConnected) this._assign = null; else return; }
     const item = this._page ? this._item(this._page) : null;
     if (!item) { this._page = null; this._closePageDialog(); return; }
     if (!this._pageDialog?.isConnected) { this._pageDialog = this._overlayDialog(); this._flow = null; }
@@ -1745,7 +1770,7 @@ export class CalibrationTab {
     if (page) watchEdges(page.querySelector(".cal-page-body"), { top: page.querySelector(".cal-page-head"), bottom: page.querySelector(".cal-page-actions") })();
   }
 
-  /** The frame goes at once, whatever it holds (a flow, the details). */
+  /** The frame goes at once, whatever it holds (a flow, the details, «Cambia profilo»). */
   _dropOverlay() {
     const dialog = this._flow || this._pageDialog;
     this._flow = null;
@@ -1761,7 +1786,7 @@ export class CalibrationTab {
   _closePageDialog() { if (this._pageDialog) this._dropOverlay(); }
 
   _closePage() {
-    const key = this._page, dialog = this._pageDialog;
+    const key = this._page || this._assign?.key, dialog = this._pageDialog;
     if (!key) return;
     // The tendina slides down, the dialog fades (none with reduced motion); its entry in the browser's history goes.
     if (dialog && layout.animates() && !dialog.classList.contains("is-leaving")) {
@@ -1770,15 +1795,16 @@ export class CalibrationTab {
       return;
     }
     // Back to what opened what was shown (the row, its ⋮), quietly after a tap.
-    const opener = this._pageOpener;
+    const fromList = !!this._assign && !this._assign.fromPage, opener = fromList ? this._assign.opener : this._pageOpener;
     this._page = null;
     this._pageView = null;
+    this._assign = null;
     this._pageNotice = "";
     this._travelEdit = null;
     this._slatsEdit = null;
     this._layerPop();
     this._render();
-    this._returnTo(opener, key, "cal-tab-toggle");
+    this._returnTo(opener, key, fromList ? "cal-tab-menu" : "cal-tab-toggle");
   }
 
   /** The control that has the focus now, as an action and its id (the list is redrawn under it). */
@@ -1849,8 +1875,8 @@ export class CalibrationTab {
       return;
     }
     if (event.key === "Escape") { this._escaped = true; setTimeout(() => { this._escaped = false; }, 0); }
-    // Escape is the ✕ of what the frame holds: the details.
-    if (this._page && this._menu === null && this._mode.kind === "list" && event.key === "Escape") { event.preventDefault(); this._closePage(); return; }
+    // Escape is the ✕ of what the frame holds: the details, «Cambia profilo» (to the list).
+    if ((this._page || this._assign) && this._menu === null && this._mode.kind === "list" && event.key === "Escape") { event.preventDefault(); this._closePage(); return; }
     if (this._menu === null || this._mode.kind !== "list") return;
     if (["ArrowDown", "ArrowUp"].includes(event.key)) {
       // Menu items move with the arrows and wrap, as in Home Assistant's own menus; a disabled one is skipped (
@@ -1903,7 +1929,9 @@ export class CalibrationTab {
     else if (action === "cal-tab-page-close") {
       this._closePage();
     }
-    else if (action === "cal-tab-menu") {
+    // «Cambia profilo»'s ✕ leads to the list, its «Annulla» back to what it replaced.
+    else if (action === "cal-tab-assign-close") this._closePage();
+    else if (action === "cal-tab-assign-cancel") this._assignBack(); else if (action === "cal-tab-menu") {
       this._menu = this._menu === id ? null : id;
       this._render();
       // The focus moves into the menu, the page never scrolls for it.
@@ -1914,6 +1942,7 @@ export class CalibrationTab {
     else if (action === "cal-tab-measure") this._openWizard({ start: "choose" });
     else if (action === "cal-tab-measure-cover") { const item = this._item(id); if (item) this._openWizard({ start: "path", item }); }
     else if (action === "cal-tab-refine") { const item = this._item(id); if (item) this._openWizard({ start: "refine", item }); }
+    else if (action === "cal-tab-assign") { const item = this._item(id); if (item && !this._running(item)) this._assignProfile(item); }
     // The list's Calibra, with profiles in the catalogue, opens the card on «Come vuoi calibrarla?».
     else if (action === "cal-tab-calibrate") { if (this._item(id)) this._openPage(id, { how: true }); }
     // The card's tabs, the procedure and where its outcomes lead.
@@ -1939,11 +1968,11 @@ export class CalibrationTab {
   /**
    * Another tab (Profiles, Devices; docs/panel-calibration-open-cover.md) opens a cover's card
    * here, as soon as the list knows the cover. `returnTo`, when given, is called once when the card, and whatever was
-   * opened from it (a flow), closes back to the list. Refused (false) while a wizard, a
-   * session or a card is open: never queued behind it to open by surprise. Nothing else changes.
+   * opened from it (Cambia profilo, a flow), closes back to the list. Refused (false) while a wizard, a
+   * session, a card or Cambia profilo is open: never queued behind it to open by surprise. Nothing else changes.
    */
   requestCover(entryId, entityId, { returnTo = null } = {}) {
-    if (this._mode.kind !== "list" || this._page) return false;
+    if (this._mode.kind !== "list" || this._page || this._assign) return false;
     this._pendingCover = { entryId, entityId, returnTo: typeof returnTo === "function" ? returnTo : null };
     if (this._context) this._render();
     return true;
@@ -2029,6 +2058,7 @@ export class CalibrationTab {
     if (this._flow?.isConnected) return this._flow.querySelector(".cal-flow-body");
     const dialog = this._overlayDialog();
     this._pageDialog = null;
+    this._assign = null;
     this._flow = dialog;
     const body = this._frameBody(dialog, "flow");
     this._syncHold();
@@ -2106,7 +2136,7 @@ export class CalibrationTab {
       this._flowExit();
       // Still open (the wizard asks «Esci senza salvare?»): it keeps an entry for the next Back (not while it fades out).
       if (this._mode.kind !== "list" && !this._flow?.classList.contains("is-leaving")) this._layerPush();
-    } else if (this._page) this._closePage();
+    } else if (this._page || this._assign) this._closePage();
   }
 
   /** Back on the list, the focus returns to the control that opened the wizard (a menu item: its row's ⋮). */
@@ -2164,7 +2194,7 @@ export class CalibrationTab {
     // The wizard needs the cover in the list (name, gateway); otherwise the existing view opens it.
     if (item && this._wizard?.handles?.(session)) { this._openWizard({ start: "resume", session, item }); return; }
     // Never a dialog over the details: the maintainer's view (in its own dialog for now) replaces them.
-    if (this._page) { this._page = null; this._closePageDialog(); this._layerPop(); }
+    if (this._page || this._assign) { this._page = null; this._assign = null; this._closePageDialog(); this._layerPop(); }
     const { hass, t } = this._context;
     const body = this._openDialog({ title: t(session.batch ? "wiz_T364" : "calTitle"), subtitle: session.batch ? "" : item?.name || session.entity_id,
       icon: session.batch ? "mdi:format-list-numbered" : "mdi:timer-outline", hosted: true });
@@ -2177,7 +2207,7 @@ export class CalibrationTab {
    * session as closing the profile dialog does: the session keeps running in Home Assistant.
    * `hosted`: the dialog hosts the maintainer's view, which has its own Stop and Cancel/Close bar: the dialog's own
    * «Chiudi» is left out and its ✕ shown at every size, so there is one way to close and one bar.
-   * `sheet`: the tab's own sheets (the cancel confirmation) take the flows' frame
+   * `sheet`: the tab's own sheets (Assegna / Cambia profilo, the cancel confirmation) take the flows' frame
    * (`cal-sheet`): the ✕ always on the left of the header, the tendina's handle and drag up to 511 px, 480 px centred
    * from 512 px, the footer by the bars' rules. The maintainer's hosted views keep the old dialog for now.
    */
@@ -2201,7 +2231,7 @@ export class CalibrationTab {
     dialog.querySelector(".cal-dialog-x").onclick = () => this._dialogDone();
     dialog.oncancel = (event) => { event.preventDefault(); this._dialogDone(); };
     // A sheet of ours closes on its scrim only while closing costs nothing (`data-closable`, the same
-    // predicate as its handle and its drag). The maintainer's hosted views keep
+    // predicate as its handle and its drag: «Cambia profilo» with no new choice made). The maintainer's hosted views keep
     // their own rule: a click on the backdrop (outside the dialog's box) closes them as Escape does, applying nothing.
     const closable = () => dialog.hasAttribute("data-closable");
     if (sheet) this._unscrimDialog = closeOnScrim(dialog, { closable, onClose: () => this._dialogDone() });
@@ -2366,5 +2396,215 @@ export class CalibrationTab {
         confirm.disabled = false;
       }
     };
+  }
+
+  /**
+   * «Cambia profilo», «Assegna un profilo» / «Cambia profilo». Never a dialog over a dialog: it takes the
+   * place of what the frame shows. From a cover's details it replaces them in the same window or tendina: «Annulla» leads
+   * back to the details, «Assegna» back to them with the confirmation on top, ✕ (Escape, Back) to the list. From the
+   * list (the row's ⋮) it opens the frame itself, and every way out leads to the list, the confirmation on top of it.
+   * The header names the cover («Assegna un profilo a «…»», «Cambia il profilo di «…»»)
+   * with its room and address under it.
+   * `again` draws it once more in its own frame on the data just read, the choice kept where it still exists
+   * and the refusal (`message`) above the choices (after a `revision_conflict`, as A-35).
+   */
+  _assignProfile(item, { again = null } = {}) {
+    const { hass, t, gateways } = this._context, language = hass.language || "en";
+    const data = this._rows.get(item.entry.entry_id)?.data;
+    if (!data) return;
+    // Closed, it leads back to the card's tab, not to the procedure that led here.
+    if (this._pageView) this._pageView.check = null;
+    const key = JSON.stringify([item.entry.entry_id, item.cover.entity_id]);
+    const prior = again ? this._assign : null;
+    const fromPage = prior ? prior.fromPage : !!this._page && !!this._pageDialog?.isConnected;
+    const opener = prior ? prior.opener : this._openerOf();
+    // A row's ⋮ menu that opened it closes with it, not at the next redraw.
+    const menuOpen = !prior && (this._menu !== null || !!this._context.host.querySelector(".cal-menu:not([hidden])"));
+    if (!prior) {
+      this._dropMenu();
+      this._done = "";
+      this._pageNotice = "";
+    }
+    if (!fromPage && !prior) { this._layerPush(); this._pageDialog = this._overlayDialog(); this._flow = null; }
+    const dialog = this._pageDialog, generation = this._generation;
+    const state = this._assign = { key, fromPage, opener };
+    const body = this._frameBody(dialog, "assign", "cal-assign-name");
+    const box = dialog.querySelector(".cal-flow-box");
+    const profiles = [...data.profiles].sort((a, b) => a.name.localeCompare(b.name));
+    // Who follows each profile, by name, to recognise a similar cover.
+    // «Seguito da» without the cover the profile was measured on (it follows nothing).
+    // This cover among them is «questa tapparella» (its name is the sheet's title), never by name.
+    const followers = (profile) => {
+      const ids = profile.assigned_to.filter((id) => id && id !== profile.provenance?.opening?.origin_entity_id);
+      return followedBy(t, ids.filter((id) => id !== item.cover.entity_id).map((id) => this._coverName(id)), language, ids.includes(item.cover.entity_id));
+    };
+    const describe = (profile) => {
+      // «Con lamelle» / «Senza lamelle» from the profile's mark (or its geometry); nothing when not said.
+      const slats = text.profileSlats(profile);
+      const origin = profile.provenance?.opening;
+      return [
+        [slats == null ? "" : t(slats ? "wiz_T368" : "wiz_T369"),
+          profile.reference_travel_cm != null ? fill(t("wiz_T372"), { cm: number(profile.reference_travel_cm, language) }) : ""].filter(Boolean).join(" · "),
+        // The same line as the details' (markup: the cover in evidence), «questa tapparella» on its source.
+        !origin?.recorded_at || !(origin.origin_entity_id || origin.origin_name) ? ""
+          // The same time as on the source's own page (`profileTimesDate`).
+          : origin.origin_entity_id === item.cover.entity_id ? text.inline(t("calAssignRoleSource"), { date: text.dateTimeText(this._timesDate(profile), language) })
+            : fill(esc(t("wiz_T371")), { cover: `<strong>${esc(this._originName(origin))}</strong>`, date: esc(text.dateTimeText(this._timesDate(profile), language)) }),
+        followers(profile),
+      ];
+    };
+    // «Scollega il profilo» unlinks the profile the cover follows (an action says its verb; «Nessun profilo» is
+    // only a state, in the list and the chips; «Non usare un profilo», wiz_T404, would be the verb of a cover without one,
+    // and the sheet offers nothing to unlink there). On the cover the profile was measured on it is shown disabled: its
+    // values live only in the profile until Home Assistant copies them on unlinking (not done yet).
+    const followed = data.profiles.find((profile) => profile.id === item.cover.profile_id);
+    const source = followed?.provenance?.opening?.origin_entity_id === item.cover.entity_id;
+    const none = followed ? `<label class="wiz-radio cal-assign-none${source ? " is-disabled" : ""}"><input type="radio" name="assign_profile" value="${NO_PROFILE}"${source ? " disabled" : ""}>
+        <span><strong><ha-icon icon="mdi:link-variant-off" aria-hidden="true"></ha-icon>${esc(t("wiz_T406"))}</strong><small class="muted">${esc(fill(t(source ? "wiz_T430" : "wiz_T405"), { profile: followed.name, cover: item.name }))}</small></span></label>` : "";
+    // A calibration open on the gateway reserves it: Home Assistant would refuse, so the sheet says so and waits.
+    const row = this._rows.get(item.entry.entry_id), reserved = !!(row?.session || row?.reserved);
+    // A refusal is an error notice above the choices. The choices
+    // are the rows of one card (`.cal-assign-rows`), the chosen one tinted; what assigning does under the header.
+    // With the cover's slats known, the profiles that fit (or say nothing) first, the others under «Altri
+    // profili (N)», open when the profile followed now is among them; nothing is left out.
+    const groups = text.bySlats(profiles, text.coverSlats(item.cover), text.profileSlats);
+    // Assigning keeps the cover's personal times (Home Assistant's overrides): said here.
+    const personal = Object.keys(item.cover.overrides || {}).length > 0
+      || ["opening", "closing"].some((direction) => item.cover.effective?.[direction]?.origin === "override");
+    const radio = (profile) => {
+      const [type, measured, list] = describe(profile);
+      // The profile followed now says so («Profilo attuale»); the notes under the name are one block (12/16,
+      // no space between them), 7 px under the name.
+      const current = profile.id === item.cover.profile_id ? `<span class="cal-chip cal-current-chip">${esc(t("calTabCurrentProfile"))}</span>` : "";
+      return `<label class="wiz-radio"><input type="radio" name="assign_profile" value="${esc(profile.id)}" ${profile.id === item.cover.profile_id ? "checked" : ""}>
+        <span><span class="cal-assign-name"><strong>${esc(profile.name)}</strong>${current}</span><span class="cal-assign-notes">${type ? `<small class="muted">${esc(type)}</small>` : ""}${measured ? `<small class="muted cal-assign-measured">${measured}</small>` : ""}<small class="muted cal-assign-followers">${esc(list)}</small></span></span></label>`;
+    };
+    const others = groups.other.length ? `<details class="cal-disclosure cal-assign-more"${groups.other.some((profile) => profile.id === item.cover.profile_id) ? " open" : ""}><summary><span class="cal-disclosure-label">${esc(fill(t("calTabOtherProfiles"), { count: groups.other.length }))}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>
+      <div class="cal-assign-rows">${groups.other.map(radio).join("")}</div></details>` : "";
+    const content = profiles.length ? `${reserved ? `<p class="cal-note cal-assign-busy" role="status">${esc(t("wiz_T412"))}</p>` : ""}<p class="notice error cal-assign-error" role="alert" hidden></p><p class="cal-assign-intro">${esc(fill(t("wiz_T609"), { cover: item.name }))}</p>${personal ? `<p class="cal-note cal-assign-personal">${esc(t("calTabAssignKeepsPersonal"))}</p>` : ""}<fieldset class="wiz-radios cal-assign-list"><legend>${esc(t("calTabColProfile"))}</legend>${none || groups.head.length ? `<div class="cal-assign-rows">${none}${groups.head.map(radio).join("")}</div>` : ""}${others}</fieldset><div class="cal-assign-confirm" role="group" hidden></div>`
+      : `<p class="muted">${esc(t("profileListEmpty"))}</p>`;
+    // «Assegna» with the link, as «Cambia profilo»; «Annulla» outlined beside it (the primary first in the
+    // phone's column, at the right in the medium dialog's row).
+    const assignLabel = `<ha-icon icon="mdi:link-variant" aria-hidden="true"></ha-icon><span>${esc(t("wiz_T373"))}</span>`;
+    const actions = profiles.length ? `<button type="button" class="primary" data-assign disabled>${assignLabel}</button><button type="button" class="cal-outlined cal-dialog-cancel" data-action="cal-tab-assign-cancel">${esc(t("wiz_T025"))}</button>`
+      : `<button type="button" class="cal-outlined cal-dialog-cancel" data-action="cal-tab-assign-cancel">${esc(t("close"))}</button>`;
+    body.innerHTML = `<div class="cal-page cal-assign-page" data-entity="${esc(item.cover.entity_id)}" data-closable="">
+        <div class="cal-page-head"><button type="button" class="icon-button cal-page-close" data-action="cal-tab-assign-close" aria-label="${esc(t("close"))}" title="${esc(t("close"))}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
+          <div class="cal-page-head-text"><h2 id="cal-assign-name">${esc(fill(t(item.profile ? "wiz_T608" : "wiz_T607"), { cover: item.name }))}</h2>
+          <p class="muted">${this._subline([this._area(item), gateways.length > 1 ? item.entry.title : ""], item.entity)}</p></div></div>
+        <div class="cal-page-body cal-assign-body">${content}</div>
+        <div class="cal-page-actions cal-assign-actions">${actions}</div></div>`;
+    const page = body.querySelector(".cal-assign-page"), list = body.querySelector(".cal-assign-body");
+    watchEdges(list, { top: page.querySelector(".cal-page-head"), bottom: page.querySelector(".cal-page-actions") })();
+    if (menuOpen) this._render();
+    // The page under it held still, as under the details.
+    this._syncHold();
+    // Nothing looks focused when it opens: the focus rests on the frame's own box.
+    box.focus({ preventScroll: true });
+    if (!profiles.length) return;
+    const button = page.querySelector("[data-assign]");
+    const chosen = () => list.querySelector('input[name="assign_profile"]:checked')?.value;
+    // Assign stays off while the gateway is reserved, and after Home Assistant has refused once.
+    let refused = false;
+    // A tap or click on the choice already made takes it back (no choice, Assign off), «Nessun
+    // profilo» too: A-01's own behaviour, one shared function; the keyboard keeps the radios' (Space never unticks).
+    untickOnSecondTap(list, 'input[name="assign_profile"]', () => list.onchange());
+    // A profile whose slats contradict what this cover says of its own is asked first (Annulla / Assegna).
+    const ask = list.querySelector(".cal-assign-confirm");
+    // While the question is open its own Annulla / Assegna are the only pair: the footer's hide.
+    const foot = page.querySelector(".cal-assign-actions");
+    let confirmed = null;
+    const unask = () => { ask.hidden = true; ask.replaceChildren(); confirmed = null; foot.hidden = false; };
+    list.onchange = () => {
+      unask();
+      button.disabled = reserved || refused || !chosen() || chosen() === item.cover.profile_id;
+      // Unlinking is said as such on the button, with the broken link.
+      button.innerHTML = chosen() === NO_PROFILE ? `<ha-icon icon="mdi:link-variant-off" aria-hidden="true"></ha-icon><span>${esc(t("wiz_T406"))}</span>` : assignLabel;
+      // A new choice made is something closing would lose: no scrim close, no handle, no drag.
+      page.toggleAttribute("data-closable", !chosen() || chosen() === item.cover.profile_id);
+    };
+    if (again) {
+      const kept = [...list.querySelectorAll('input[name="assign_profile"]')].find((input) => input.value === again.choice && !input.disabled);
+      if (kept) kept.checked = true;
+      list.onchange();
+      const notice = list.querySelector(".cal-assign-error");
+      notice.textContent = again.message;
+      notice.hidden = false;
+      notice.scrollIntoView?.({ block: "nearest" });
+    }
+    button.onclick = async () => {
+      const choice = chosen();
+      if (!choice || button.disabled || reserved || refused) return;
+      const profileId = choice === NO_PROFILE ? null : choice;
+      const conflict = profileId === null ? "" : text.slatsConflict(t, [item.cover], profiles.find((profile) => profile.id === profileId));
+      if (conflict && confirmed !== profileId) {
+        ask.innerHTML = `<p class="cal-travel-confirm">${esc(conflict)}</p><span class="cal-travel-buttons"><button type="button" class="cal-outlined" data-assign-ask="cancel">${esc(t("wiz_T025"))}</button><button type="button" class="primary" data-assign-ask="assign">${esc(t("wiz_T373"))}</button></span>`;
+        ask.hidden = false;
+        foot.hidden = true;
+        button.disabled = true;
+        ask.querySelector('[data-assign-ask="cancel"]').onclick = () => { unask(); button.disabled = false; button.focus({ preventScroll: true }); };
+        ask.querySelector('[data-assign-ask="assign"]').onclick = () => { confirmed = profileId; ask.hidden = true; ask.replaceChildren(); foot.hidden = false; button.disabled = false; button.onclick(); };
+        ask.scrollIntoView?.({ block: "nearest" });
+        ask.querySelector("button").focus({ preventScroll: true });
+        return;
+      }
+      button.disabled = true;
+      const box = list.querySelector(".cal-assign-error");
+      box.hidden = true;
+      const current = () => generation === this._generation && this._assign === state;
+      try {
+        await hass.callWS({ type: "myhome/cover_profiles/write", entry_id: item.entry.entry_id, entity_id: item.cover.entity_id,
+          revision: data.revision, action: "assign", profile_id: profileId });
+        if (!current()) return;
+        // An assignment is confirmed as an unlinking is: on top of the details it leads back to, and of the list.
+        const done = profileId === null ? fill(t("wiz_T407"), { cover: item.name })
+          : fill(t("wiz_T511"), { cover: item.name, profile: profiles.find((profile) => profile.id === profileId)?.name ?? "" });
+        this._done = done;
+        this._touched(key);
+        // On the cover's own card, its name in the title above: «questa tapparella»; on the list, named.
+        const here = profileId === null ? t("wiz_T407_here")
+          : fill(t("wiz_T511_here"), { profile: profiles.find((profile) => profile.id === profileId)?.name ?? "" });
+        if (state.fromPage) { this._assign = null; this._pageNotice = here; this._render(); this._pageFocus(); }
+        else this._closePage();
+        this.refresh();
+      } catch (error) {
+        if (!current()) return;
+        box.textContent = assignError(t, error);
+        box.hidden = false;
+        box.scrollIntoView?.({ block: "nearest" });
+        refused = true;
+        // Another change saved meanwhile: as A-35, the data are read again and the window drawn on them, the
+        // choice kept, Assign on again (wiz_T627); until then Assign stays off.
+        if (error?.code === "revision_conflict") {
+          state.retry = { entryId: item.entry.entry_id, revision: data.revision, choice, message: box.textContent };
+          this._read(item.entry.entry_id, generation);
+        }
+      }
+    };
+  }
+
+  /** «Cambia profilo» refused by a `revision_conflict`, drawn again once the tab has read newer data. */
+  _assignAgain(entryId) {
+    const state = this._assign, retry = state?.retry, data = this._rows.get(entryId)?.data;
+    if (!retry || retry.entryId !== entryId || !data || data.revision <= retry.revision || !this._pageDialog?.isConnected) return;
+    state.retry = null;
+    const item = this._item(state.key);
+    if (item) this._assignProfile(item, { again: retry });
+  }
+
+  /** «Annulla» in «Cambia profilo»: back to the details it replaced, or to the list when it was opened from there. */
+  _assignBack() {
+    const state = this._assign;
+    if (!state) return;
+    if (!state.fromPage) { this._closePage(); return; }
+    this._assign = null;
+    this._render();
+    this._pageFocus();
+  }
+
+  /** Back on the details from «Cambia profilo»: the focus on their «Cambia profilo», quietly after a tap. */
+  _pageFocus() {
+    const button = this._pageDialog?.querySelector('.cal-page [data-action="cal-tab-assign"]');
+    if (!returnFocus(button)) this._pageDialog?.querySelector(".cal-flow-box")?.focus({ preventScroll: true });
   }
 }
