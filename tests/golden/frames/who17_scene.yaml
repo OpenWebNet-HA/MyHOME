@@ -189,7 +189,7 @@
   where: "0"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "MH200N Scene (WHO 17): General scene status request WHERE=0 (F461 live capture)"
+  mcp_notes: "MH200N Scene (WHO 17): General scene status request WHERE=0 (*#17*<where>## in the WHO 17 PDF §3.2.1; sent to an MH200 (FW 2.0.0) it is followed 100 to 250 ms later by *17*2*137##, *17*3*137##, *17*2*30## and *17*3*30##, MyHOME trace issue_466, MH200 all, 2026-09-26; an F461 (FW 2.0.11) answers NACK, MyHOME traces f461_live_2026-10-15 and f461_live_2026-10-23)"
   roundtrip: true
   builder:
     class: OWNSceneCommand
@@ -204,7 +204,7 @@
   where: "1"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "MH200N Scene (WHO 17): Scene 1 status request (F461 live capture)"
+  mcp_notes: "MH200N Scene (WHO 17): Scene 1 status request (*#17*<where>## in the WHO 17 PDF §3.2.1; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
   roundtrip: true
   builder:
     class: OWNSceneCommand

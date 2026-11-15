@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """OpenWebNet Trace-to-Golden Corpus Structural Shape Coverage Gate.
 
-Bridges physical bus trace fixtures (`tests/fixtures/**/*.json` and optional
-`../OpenWebNet-Encyclopedia/evidence/*/frames.jsonl`) with the declarative
-Golden Corpus (`tests/golden/corpus.json`).
+Bridges physical bus trace fixtures (`tests/fixtures/**/*.json` and, only with
+`--encyclopedia-evidence <dir>`, the `<dir>/*/frames.jsonl` files of an
+OpenWebNet-Encyclopedia checkout) with the declarative Golden Corpus
+(`tests/golden/corpus.json`).
 
 Enforces three invariants in CI:
 1. Zero new uncovered protocol shapes: every valid frame shape in any trace/plant
    fixture must either exist in `tests/golden/corpus.json`, match a documented
-   self-cleaning allowlist, or belong to the monotonically shrinking legacy
-   ratchet `tests/golden/uncovered_trace_shapes_baseline.json`.
+   self-cleaning allowlist, or belong to the legacy baseline
+   `tests/golden/uncovered_trace_shapes_baseline.json`.
 2. Monotonic ratchet shrinkage: if any shape in `uncovered_trace_shapes_baseline.json`
    becomes covered by `tests/golden/corpus.json` (or disappears from `tests/fixtures/`),
    CI fails until `--write-baseline` shrinks the baseline.
@@ -35,9 +36,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GOLDEN_CORPUS_JSON = REPO_ROOT / "tests" / "golden" / "corpus.json"
 BASELINE_JSON = REPO_ROOT / "tests" / "golden" / "uncovered_trace_shapes_baseline.json"
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-DEFAULT_ENCYCLOPEDIA_EVIDENCE_DIR = (
-    REPO_ROOT.parent / "OpenWebNet-Encyclopedia" / "evidence"
-)
+# Opt-in (`--encyclopedia-evidence`): CI has no Encyclopedia checkout, so the default
+# result must not depend on a sibling folder.
+DEFAULT_ENCYCLOPEDIA_EVIDENCE_DIR: Path | None = None
 
 ShapeKey = tuple[
     str,  # kind
@@ -224,7 +225,12 @@ def is_session_or_auth_frame(raw: str) -> bool:
     return any(pat.match(raw) for pat in SESSION_AND_AUTH_PATTERNS)
 
 
-def extract_frames_from_json_file(json_path: Path, repo_root: Path = REPO_ROOT) -> list[tuple[str, str]]:
+def extract_frames_from_json_file(
+    json_path: Path,
+    repo_root: Path = REPO_ROOT,
+    *,
+    directions: tuple[str, ...] = ("tx", "rx"),
+) -> list[tuple[str, str]]:
     """Return `(source_label, raw_frame)` pairs from a structured trace or plant JSON file."""
     try:
         payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -251,7 +257,7 @@ def extract_frames_from_json_file(json_path: Path, repo_root: Path = REPO_ROOT) 
             if isinstance(entry, dict):
                 direction = entry.get("direction")
                 raw = entry.get("raw")
-                if raw and direction in ("tx", "rx"):
+                if raw and direction in directions:
                     out.append((rel_label, str(raw)))
 
     archive_rows = payload.get("rows")
@@ -260,7 +266,7 @@ def extract_frames_from_json_file(json_path: Path, repo_root: Path = REPO_ROOT) 
             if isinstance(row, dict):
                 direction = row.get("dir")
                 raw = row.get("frame")
-                if raw and direction in ("tx", "rx"):
+                if raw and direction in directions:
                     out.append((rel_label, str(raw)))
 
     return out
@@ -461,6 +467,23 @@ def suggest_for_trace(trace_path: Path) -> int:
 
     golden_shapes = load_golden_shapes()
     pairs = extract_frames_from_json_file(trace_path)
+    rx_pairs = extract_frames_from_json_file(trace_path, directions=("rx",))
+    received = {raw for _src, raw in rx_pairs}
+    rx_by_shape: dict[ShapeKey, str] = {}
+    for _src, rx_raw in rx_pairs:
+        if (
+            is_session_or_auth_frame(rx_raw)
+            or BARE_WHO22_CRASH_PATTERN.match(rx_raw)
+            or rx_raw in KNOWN_INVALID_OR_ADVERSARIAL_FRAMES
+        ):
+            continue
+        try:
+            rx_parsed = OWNMessage.parse(rx_raw)
+        except Exception:  # noqa: BLE001
+            continue
+        if rx_parsed is None or isinstance(rx_parsed, OWNSignaling):
+            continue
+        rx_by_shape.setdefault(message_shape_key(rx_parsed), rx_raw)
     suggestions: list[dict[str, Any]] = []
     seen_shapes: set[ShapeKey] = set()
 
@@ -482,9 +505,17 @@ def suggest_for_trace(trace_path: Path) -> int:
             continue
         seen_shapes.add(sk)
 
+        if sk in rx_by_shape and raw not in received:
+            raw = rx_by_shape[sk]
+            reparsed = OWNMessage.parse(raw)
+            if reparsed is None or isinstance(reparsed, OWNSignaling):
+                continue
+            parsed = reparsed
+
+        is_received = raw in received
         direction = sk[0]
         if direction == "command_or_event":
-            direction = "event"
+            direction = "event" if is_received else "command"
         if parsed.what is None:
             what_val: int | str | None = None
         elif parsed.what_param:
@@ -514,7 +545,11 @@ def suggest_for_trace(trace_path: Path) -> int:
                 rec["dimension_values"] = parsed.dimension_value
         rec["source"] = "community-plant-capture"
         rec["mcp_valid"] = True
-        rec["mcp_notes"] = f"Captured in {trace_path.name}"
+        rec["mcp_notes"] = (
+            f"Captured in {trace_path.name}"
+            if is_received
+            else f"Probe only: sent in {trace_path.name}, not received there (add the reply: ACK or NACK)"
+        )
         rec["roundtrip"] = True
         suggestions.append(rec)
 
@@ -592,6 +627,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Print YAML Golden Corpus stubs for any uncovered shapes in a trace JSON file.",
     )
+    parser.add_argument(
+        "--encyclopedia-evidence",
+        type=Path,
+        default=None,
+        help="Also check the frames.jsonl files of an OpenWebNet-Encyclopedia evidence/ folder.",
+    )
     args = parser.parse_args(argv)
 
     if args.suggest is not None:
@@ -599,7 +640,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.write_baseline:
         return write_baseline()
 
-    audit = evaluate_trace_shape_coverage()
+    audit = evaluate_trace_shape_coverage(encyclopedia_evidence_dir=args.encyclopedia_evidence)
     if not audit.ok:
         print(format_audit_failures(audit))
         return 1

@@ -46,7 +46,8 @@ MAX_RATCHETED_LEGACY_SHAPES = 259
 
 
 def test_live_trace_shape_coverage_ratchet_passes() -> None:
-    """All trace fixtures and Encyclopedia evidence must satisfy the Golden Corpus gate."""
+    """All JSON trace fixtures must satisfy the Golden Corpus gate."""
+    assert shape_gate.DEFAULT_ENCYCLOPEDIA_EVIDENCE_DIR is None
     audit = shape_gate.evaluate_trace_shape_coverage()
     assert audit.ok, shape_gate.format_audit_failures(audit)
     assert not audit.new_uncovered_shapes
@@ -62,10 +63,28 @@ def test_live_trace_shape_coverage_ratchet_passes() -> None:
     assert len(shapes) <= MAX_RATCHETED_LEGACY_SHAPES
 
 
-def test_single_repo_ci_without_encyclopedia_sibling_passes() -> None:
-    """GitHub Actions single-repo checkouts without ../OpenWebNet-Encyclopedia must pass."""
+def test_single_repo_ci_without_encyclopedia_sibling_passes(tmp_path: Path) -> None:
+    """Encyclopedia evidence is opt-in; CI without a sibling passes and --encyclopedia-evidence enforces it."""
     audit = shape_gate.evaluate_trace_shape_coverage(encyclopedia_evidence_dir=None)
     assert audit.ok, shape_gate.format_audit_failures(audit)
+
+    ev_dir = tmp_path / "evidence" / "EVID-TEST"
+    ev_dir.mkdir(parents=True)
+    (ev_dir / "manifest.json").write_text(
+        json.dumps({"evidence_id": "EVID-TEST"}), encoding="utf-8"
+    )
+    (ev_dir / "frames.jsonl").write_text(
+        json.dumps({"dir": "rx", "raw": "*1*1#2#3#4*11#4#01##"}) + "\n",
+        encoding="utf-8",
+    )
+    opt_in_audit = shape_gate.evaluate_trace_shape_coverage(
+        encyclopedia_evidence_dir=tmp_path / "evidence"
+    )
+    assert not opt_in_audit.ok
+    assert "OpenWebNet-Encyclopedia/evidence/EVID-TEST" in shape_gate.format_audit_failures(
+        opt_in_audit
+    )
+    assert shape_gate.main(["--encyclopedia-evidence", str(tmp_path / "evidence")]) == 1
 
 
 def test_negative_gate_catches_missing_hl4684_who3_shape() -> None:
@@ -148,10 +167,12 @@ def test_suggest_cli_for_covered_and_uncovered_traces(
         json.dumps(
             {
                 "frames": [
+                    {"direction": "tx", "raw": "*1*1#2#3#4*11#4#01##"},
                     {"direction": "rx", "raw": "*#*1##"},
+                    {"direction": "rx", "raw": "*#*0##"},
                     {"direction": "rx", "raw": "*#13**#0*22*46*45*9999##"},
                     {"direction": "rx", "raw": "*not_openwebnet*"},
-                    {"direction": "rx", "raw": "*1*1#2#3#4*11#4#01##"},
+                    {"direction": "tx", "raw": "*#1*11#4#01*77##"},
                     {"direction": "rx", "raw": "*1*1000#1#2*11#4#02##"},
                 ]
             }
@@ -161,19 +182,57 @@ def test_suggest_cli_for_covered_and_uncovered_traces(
     rc2 = shape_gate.suggest_for_trace(novel_trace)
     assert rc2 == 0
     out2 = capsys.readouterr().out
-    assert "2 uncovered shape(s)" in out2
+    assert "3 uncovered shape(s)" in out2
     parsed_yaml = yaml.safe_load(
         "\n".join(line for line in out2.splitlines() if not line.startswith("#"))
     )
     assert parsed_yaml[0]["frame"] == "*1*1#2#3#4*11#4#01##"
+    assert parsed_yaml[0]["direction"] == "command"
     assert parsed_yaml[0]["what"] == "1#2#3#4"
     assert parsed_yaml[0]["interface"] == "01"
     assert "is_translation" not in parsed_yaml[0]
+    assert (
+        parsed_yaml[0]["mcp_notes"]
+        == "Probe only: sent in novel.json, not received there (add the reply: ACK or NACK)"
+    )
 
-    assert parsed_yaml[1]["frame"] == "*1*1000#1#2*11#4#02##"
-    assert parsed_yaml[1]["what"] == "1000#1#2"
-    assert parsed_yaml[1]["interface"] == "02"
-    assert parsed_yaml[1]["is_translation"] is True
+    assert parsed_yaml[1]["frame"] == "*#1*11#4#01*77##"
+    assert parsed_yaml[1]["direction"] == "dimension_request"
+    assert parsed_yaml[1]["dimension"] == 77
+    assert (
+        parsed_yaml[1]["mcp_notes"]
+        == "Probe only: sent in novel.json, not received there (add the reply: ACK or NACK)"
+    )
+
+    assert parsed_yaml[2]["frame"] == "*1*1000#1#2*11#4#02##"
+    assert parsed_yaml[2]["direction"] == "event"
+    assert parsed_yaml[2]["what"] == "1000#1#2"
+    assert parsed_yaml[2]["interface"] == "02"
+    assert parsed_yaml[2]["is_translation"] is True
+    assert parsed_yaml[2]["mcp_notes"] == "Captured in novel.json"
+
+    mixed_trace = tmp_path / "mixed.json"
+    mixed_trace.write_text(
+        json.dumps(
+            {
+                "frames": [
+                    {"direction": "tx", "raw": "*1*1#2#3#4*11#4#01##"},
+                    {"direction": "rx", "raw": "*1*1#2#3#4*12#4#01##"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    rc3 = shape_gate.suggest_for_trace(mixed_trace)
+    assert rc3 == 0
+    out3 = capsys.readouterr().out
+    parsed_mixed = yaml.safe_load(
+        "\n".join(line for line in out3.splitlines() if not line.startswith("#"))
+    )
+    assert len(parsed_mixed) == 1
+    assert parsed_mixed[0]["frame"] == "*1*1#2#3#4*12#4#01##"
+    assert parsed_mixed[0]["direction"] == "event"
+    assert parsed_mixed[0]["mcp_notes"] == "Captured in mixed.json"
 
 
 def test_who4_dim_7_19_20_discrete_bucketing_and_continuous_collapse() -> None:
@@ -290,10 +349,40 @@ def test_sync_golden_corpus_live_and_staged_superset_contracts(tmp_path: Path) -
     assert any("raw-frame ID collision" in m for m in msgs_col)
 
     # 5. sync_from_ownd pulls OWNd updates while preserving staged MyHOME-only rec_b,
-    #    and sync_to_ownd promotes rec_b upstream with LF line endings and deletes stale YAML files.
+    #    OWNd's comments/quoting, and MyHOME's SOURCE.yaml, and sync_to_ownd promotes rec_b
+    #    upstream with LF line endings and deletes stale YAML files.
     _seed_mini_repo(ow_dir, [rec_a])
+    ow_who01 = ow_dir / "tests" / "golden" / "frames" / "who01_lighting.yaml"
+    ow_who01_text = (
+        "# Canonical WHO=1 header comment\n\n"
+        + ow_who01.read_text(encoding="utf-8").replace("where: '11'", 'where: "11"')
+    )
+    ow_who01.write_text(ow_who01_text, encoding="utf-8", newline="\n")
+    assert sync_corpus._run_validate_corpus(ow_dir, check_only=False) == 0
+
     _seed_mini_repo(mh_dir, [rec_b])
+    mh_source = mh_dir / "tests" / "golden" / "SOURCE.yaml"
+    mh_source.write_text(
+        mh_source.read_text(encoding="utf-8") + "\n# staged-myhome-provenance\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
     assert sync_corpus.sync_from_ownd(mh_dir, ow_dir) == 0
+    mh_who01_text = (mh_dir / "tests" / "golden" / "frames" / "who01_lighting.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert mh_who01_text.startswith(ow_who01_text.rstrip("\n") + "\n\n")
+    assert "# staged-myhome-provenance" in mh_source.read_text(encoding="utf-8")
+
+    # A second sync_from_ownd run is idempotent.
+    mh_source_before = mh_source.read_text(encoding="utf-8")
+    assert sync_corpus.sync_from_ownd(mh_dir, ow_dir) == 0
+    assert (mh_dir / "tests" / "golden" / "frames" / "who01_lighting.yaml").read_text(
+        encoding="utf-8"
+    ) == mh_who01_text
+    assert mh_source.read_text(encoding="utf-8") == mh_source_before
+
     ok_after_pull, _ = sync_corpus.check_staged_superset(mh_dir, ow_dir, require_ownd=True)
     assert ok_after_pull
 

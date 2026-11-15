@@ -2798,7 +2798,7 @@
     "where": "#1",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request status of priority #1 load (F461 live capture)",
+    "mcp_notes": "Load Control: Request status of priority #1 load (priority status request, WHO 3 PDF \u00a71.4.3; probe only: sent 3 times to an F461 (FW 2.0.11), answered NACK each time, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNLoadCommand",
@@ -2818,7 +2818,7 @@
     "where": "0",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request general status of all controlled loads (WHERE 0; F461 live capture)",
+    "mcp_notes": "Load Control: Request general status of all controlled loads (WHERE 0; the WHO 3 PDF prints the general request as *#3##, \u00a71.4.2; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME traces f461_live_2026-10-15 and f461_live_2026-10-23)",
     "roundtrip": true,
     "_file": "who03_load_control.yaml"
   },
@@ -2832,7 +2832,7 @@
     "dimension": 0,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request all electrical measurements (Dimension 0) from central load control unit 10 (F461 live capture)",
+    "mcp_notes": "Load Control: Request all electrical measurements (Dimension 0) from central load control unit 10 (WHO 3 PDF \u00a71.4.4; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNLoadCommand",
@@ -2853,7 +2853,7 @@
     "dimension": 1,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request voltage (Dimension 1) from central load control unit 10 (F461 live capture)",
+    "mcp_notes": "Load Control: Request voltage (Dimension 1) from central load control unit 10 (WHO 3 PDF \u00a71.4.5 to \u00a71.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNLoadCommand",
@@ -2874,7 +2874,7 @@
     "dimension": 2,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request current (Dimension 2) from central load control unit 10 (F461 live capture)",
+    "mcp_notes": "Load Control: Request current (Dimension 2) from central load control unit 10 (WHO 3 PDF \u00a71.4.5 to \u00a71.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNLoadCommand",
@@ -2895,7 +2895,7 @@
     "dimension": 3,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request active power (Dimension 3) from central load control unit 10 (F461 live capture)",
+    "mcp_notes": "Load Control: Request active power (Dimension 3) from central load control unit 10 (WHO 3 PDF \u00a71.4.5 to \u00a71.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNLoadCommand",
@@ -2916,7 +2916,7 @@
     "dimension": 4,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Load Control: Request energy totalizer (Dimension 4) from central load control unit 10 (F461 live capture)",
+    "mcp_notes": "Load Control: Request energy totalizer (Dimension 4) from central load control unit 10 (WHO 3 PDF \u00a71.4.5 to \u00a71.4.8; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNLoadCommand",
@@ -3816,7 +3816,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "MyHomeServer1 (2.87.13) spontaneous #20 write form preceding *#4*1#3*20*100## by ~45 ms for Zone 1 actuator 3 (Sabiana 0-10 V fan coil via F459 interface at 0% OFF, MyHOME#908)",
+    "mcp_notes": "MyHomeServer1 (2.87.13) spontaneous #20 write form preceding *#4*1#3*20*100## by 282.8 ms for Zone 1 actuator 3 (Sabiana 0-10 V fan coil via F459 interface at 0% OFF, MyHOME#908)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -3856,7 +3856,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "MyHomeServer1 (2.87.13) spontaneous #20 write form preceding *#4*2#3*20*100## by ~45 ms for Zone 2 actuator 3 at 100 (0% 0-10 V OFF, MyHOME#908)",
+    "mcp_notes": "MyHomeServer1 (2.87.13) spontaneous #20 write form preceding *#4*2#3*20*100## by 24.2 ms for Zone 2 actuator 3 at 100 (0% 0-10 V OFF, MyHOME#908)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -3896,7 +3896,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "MyHomeServer1 (2.87.13) spontaneous #20 write form preceding *#4*2#1*20*0## by 49 ms when Zone 2 floor-heating valve #1 closes (MyHOME#908)",
+    "mcp_notes": "MyHomeServer1 (2.87.13) spontaneous #20 write form preceding *#4*2#1*20*0## by 17.3 ms when Zone 2 floor-heating valve #1 closes (MyHOME#908)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -3912,7 +3912,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Circulation pump 0#1 demand-release frame naming Zone 2 (WHAT=4002#2, WHERE=0#1), emitted ~1.2 s before Zone 2 valve #1 reports OFF (MyHomeServer1 2.87.13 capture, MyHOME#908; openwebnet-mcp accepts grammar and warns 4002#2 is non-standard)",
+    "mcp_notes": "Circulation pump 0#1 demand-release frame naming Zone 2 (WHAT=4002#2, WHERE=0#1), emitted 2110.8 ms before Zone 2 valve #1 reports OFF (*#4*2#1*20*0##) (MyHomeServer1 2.87.13 capture, MyHOME#908; openwebnet-mcp accepts grammar and warns 4002#2 is non-standard)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -3925,7 +3925,7 @@
     "where": "2",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Zone 2 circulation-pump demand release (WHAT=4002, WHERE=2), emitted 59 ms after *4*4002#2*0#1## (MyHomeServer1 2.87.13 capture, MyHOME#908)",
+    "mcp_notes": "Zone 2 circulation-pump demand release (WHAT=4002, WHERE=2), emitted 28.2 ms after *4*4002#2*0#1## (MyHomeServer1 2.87.13 capture, MyHOME#908)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -3974,7 +3974,7 @@
     "dimension": 13,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Startup local knob offset poll (Dimension 13) on zone 88; answered in 83-92 ms on H/L4684 FW 6.0.11 (@andrea-mag, MyHOME#466 comment 6846511850)",
+    "mcp_notes": "Thermoregulation: Startup local knob offset poll (Dimension 13) on zone 88; answered in 92 ms (the four zone polls of that trace: 83 to 92 ms) on H/L4684 FW 6.0.11 (@andrea-mag, MyHOME#466 comment 6846511850)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -4029,7 +4029,7 @@
     "_file": "who04_thermo.yaml"
   },
   {
-    "id": "thermo.capture.actuator.status.valve_off_5.zone33.act1",
+    "id": "thermo.capture.actuator.status.fancoil_off_5.zone33.act1",
     "frame": "*#4*33#1*20*5##",
     "direction": "dimension_response",
     "who": 4,
@@ -4044,12 +4044,12 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Zone 33 actuator 1 status OFF_5 (Dimension 20 = 5, closed/releasing) on H/L4684 FW 6.0.11 (@andrea-mag, MyHOME#466 comment 6846511850)",
+    "mcp_notes": "Thermoregulation: Zone 33 actuator 1 status 5 (Dimension 20 = 5, 'Off Fan Coil'; WHO 4 PDF dimension 20 table, p. 22) on H/L4684 FW 6.0.11 (@andrea-mag, MyHOME#466 comment 6846511850)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
   {
-    "id": "thermo.capture.resp.fan_coil_speed.auto.zone1",
+    "id": "thermo.capture.resp.dim5.local_control.zone1",
     "frame": "*#4*1*5*0##",
     "direction": "dimension_response",
     "who": 4,
@@ -4061,12 +4061,12 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Zone 1 fan-coil speed AUTO (Dimension 5 = 0) on MyHomeServer1 2.87.13 (@xmavgithub, MyHOME#908)",
+    "mcp_notes": "Thermoregulation: Zone 1 dimension 5 = 0 (local control, value meaning unpublished: dimension 5 is not in the WHO 4 PDF dimension table, p. 7, where fan-coil speed is dimension 11) on MyHomeServer1 2.87.13 (@xmavgithub, MyHOME#908)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
   {
-    "id": "thermo.capture.dim20.write.valve_off_5.z2.act1",
+    "id": "thermo.capture.dim20.write.fancoil_off_5.z2.act1",
     "frame": "*#4*2#1*#20*5##",
     "direction": "dimension_write",
     "who": 4,
@@ -4081,12 +4081,12 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Paired #20 actuator status write OFF_5 (5) on zone 2 actuator 1 (F461 FW 2.0.11 + 3550 central unit capture, MyHOME#912)",
+    "mcp_notes": "Thermoregulation: Paired #20 actuator status write, value 5 = 'Off Fan Coil' (WHO 4 PDF dimension 20 table, p. 22) on zone 2 actuator 1 (F461 FW 2.0.11 + 3550 central unit capture, MyHOME#912)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
   {
-    "id": "thermo.capture.dim20.write.valve_open_8.z2.act1",
+    "id": "thermo.capture.dim20.write.fancoil_on_speed3.z2.act1",
     "frame": "*#4*2#1*#20*8##",
     "direction": "dimension_write",
     "who": 4,
@@ -4101,12 +4101,12 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Paired #20 actuator status write OPEN_8 (8, opening valve) on zone 2 actuator 1 (F461 FW 2.0.11 + 3550 central unit capture, MyHOME#912)",
+    "mcp_notes": "Thermoregulation: Paired #20 actuator status write, value 8 = 'ON Vel 3' (fan-coil ON at speed 3; WHO 4 PDF dimension 20 table, p. 22) on zone 2 actuator 1 (F461 FW 2.0.11 + 3550 central unit capture, MyHOME#912)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
   {
-    "id": "thermo.capture.dim20.status.valve_open_8.z2.act1",
+    "id": "thermo.capture.dim20.status.fancoil_on_speed3.z2.act1",
     "frame": "*#4*2#1*20*8##",
     "direction": "dimension_response",
     "who": 4,
@@ -4121,7 +4121,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Zone 2 actuator 1 status OPEN_8 (Dimension 20 = 8) on F455/F461 + 3550 central unit (MyHOME#912)",
+    "mcp_notes": "Thermoregulation: Zone 2 actuator 1 status 8 (Dimension 20 = 8, 'ON Vel 3' = fan-coil ON at speed 3; WHO 4 PDF dimension 20 table, p. 22) on F455/F461 + 3550 central unit (MyHOME#912)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -4207,7 +4207,7 @@
     "_file": "who04_thermo.yaml"
   },
   {
-    "id": "thermo.capture.central.thermal_protection.cu99",
+    "id": "thermo.capture.central.battery_ko.cu99",
     "frame": "*4*31*#0##",
     "direction": "event",
     "who": 4,
@@ -4215,7 +4215,7 @@
     "where": "#0",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: 99-zone central unit (#0) reports central unit thermal protection / status code 31 (F455/F461 + 3550 capture, MyHOME#912)",
+    "mcp_notes": "Thermoregulation: 99-zone central unit (#0) reports WHAT 31, 'Central Unit battery KO' in the WHO 4 PDF WHAT table (p. 5); received 16 times on each gateway (F455/F461 + 3550 capture, MyHOME#912)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -4241,7 +4241,7 @@
     "where": "#2",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Automatic generic mode broadcast (WHAT 311) on subordinate zone #2 (F455/F461 + 3550 capture, MyHOME#912)",
+    "mcp_notes": "Thermoregulation: Automatic generic mode broadcast (WHAT 311) on subordinate zone #2 (received on the F455 in the F455/F461 + 3550 capture, MyHOME#912)",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -4293,7 +4293,7 @@
     "where": "1",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Dimensionless zone 1 status request (*#4*1##; F459/F461 zone status sweep, MyHOME#908)",
+    "mcp_notes": "Thermoregulation: Dimensionless zone 1 status request (*#4*1##); on an F454 (FW 2.0) it is followed within 1.4 s by *#4*1*0*0227##, *#4*1*12*0220*3##, *4*1*1##, *#4*1*14*0200*3## and *#4*1*13*00## (MyHOME trace issue_866, 2026-11-04); an F461 (FW 2.0.11) answers NACK (MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNHeatingCommand",
@@ -4314,7 +4314,7 @@
     "dimension": 19,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Request Dimension 19 valve status on zone 1 (MyHOME#908)",
+    "mcp_notes": "Thermoregulation: Request Dimension 19 valve status on zone 1 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23; the MyHOME#908 trace that sends it is a synthetic firmware-oracle trace)",
     "roundtrip": true,
     "builder": {
       "class": "OWNHeatingCommand",
@@ -4335,7 +4335,7 @@
     "dimension": 20,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Request Dimension 20 actuator status on zone 1 (MyHOME#908)",
+    "mcp_notes": "Thermoregulation: Request Dimension 20 actuator status on zone 1; on an F454 (FW 2.0) it is followed 157 ms later by *#4*1#1*20*0## (MyHOME trace issue_866, 2026-11-04); an F461 (FW 2.0.11) answers NACK (MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNHeatingCommand",
@@ -4673,7 +4673,7 @@
     "where": "4000",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Release door lock on external unit 4000 (WHAT 10; F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: Release door lock on external unit 4000 (WHAT 10; received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNDoorEntryCommand",
@@ -4716,7 +4716,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Release door lock on external unit 4001 sub-relay 2 (F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: Release door lock on external unit 4001 sub-relay 2 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNDoorEntryCommand",
@@ -4736,7 +4736,7 @@
     "where": "4000",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Switch ON / receive video from external camera 4000 (WHAT 0; F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: Switch ON / receive video from external camera 4000 (WHAT 0; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNDoorEntryCommand",
@@ -4756,7 +4756,7 @@
     "where": "",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Free audio/video channel (WHAT 9 without WHERE; F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: Free audio/video channel (WHAT 9 without WHERE; received once on an MH200 (FW 2.1.0) bus, MyHOME trace issue_667, MH200 intercom bell gate, 2026-10-09; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNDoorEntryCommand",
@@ -4774,7 +4774,7 @@
     "where": "*",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Broadcast end-of-session / free channel with WHERE='*' (F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: Broadcast end-of-session / free channel with WHERE='*' (received on an MH202 bus, two MyHOME traces in mh202_sound_intercom_ducking; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "_file": "who06_door_entry.yaml"
   },
@@ -4787,7 +4787,7 @@
     "where": "4100",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Door-entry call / camera cycle on address 4100 (WHAT 6; F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: Incoming broadcast call (WHAT 6, WHERE 4100; 'Broadcast receiving call' in the WHO 6 L4686SDK PDF \u00a72.4, a received event). Never received in a stored trace: sent once as a probe to an F461 (FW 2.0.11) and answered NACK (MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "_file": "who06_door_entry.yaml"
   },
@@ -4800,7 +4800,7 @@
     "where": "1",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: Amplifier / floor call state WHAT 22 on address 1 (F461 impulse intercom capture)",
+    "mcp_notes": "Door Entry System: WHAT 22, 'Open Lock with EU in conversation' in the WHO 6 L4686SDK PDF (\u00a72.8, printed there with WHERE 4000 to 4095), here with WHERE 1 (received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "_file": "who06_door_entry.yaml"
   },
@@ -4859,7 +4859,7 @@
     "where": "0",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Door Entry System: General status request WHERE=0 (F461 live capture)",
+    "mcp_notes": "Door Entry System: General status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)",
     "roundtrip": true,
     "_file": "who06_door_entry.yaml"
   },
@@ -4870,9 +4870,9 @@
     "who": 7,
     "what": 0,
     "where": "4000",
-    "source": "openwebnet4j",
+    "source": "legrand-spec",
     "mcp_valid": true,
-    "mcp_notes": "Multimedia (WHO 7): Receive video stream from external camera 4000 (WHAT 0; OWNAVCommand.receive_video)",
+    "mcp_notes": "Multimedia (WHO 7): Receive video from camera 4000 (WHAT 0 'Receive Video'; OWNAVCommand.receive_video). The WHO 7 PDF frame tables print *7*0*WHERE*## with a trailing empty tag (\u00a73.1, p. 5); the three-tag form used here appears once, in its prose, as *7*0*where## (p. 11). No capture; not in openwebnet4j or in the pinned firmware oracle",
     "roundtrip": true,
     "builder": {
       "class": "OWNAVCommand",
@@ -4890,9 +4890,9 @@
     "who": 7,
     "what": 9,
     "where": "*",
-    "source": "openwebnet4j",
+    "source": "legrand-spec",
     "mcp_valid": true,
-    "mcp_notes": "Multimedia (WHO 7): Close active video stream (WHAT 9, WHERE '*'; OWNAVCommand.close_video)",
+    "mcp_notes": "Multimedia (WHO 7): Free audio/video resources (WHAT 9; OWNAVCommand.close_video), printed as *7*9**## in the WHO 7 PDF (\u00a73.2). No capture; not in openwebnet4j or in the pinned firmware oracle",
     "roundtrip": true,
     "builder": {
       "class": "OWNAVCommand",
@@ -4910,7 +4910,7 @@
     "where": "16",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Internal audio call from handset 11 to handset 16 (F461 impulse intercom capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Internal audio call from handset 11 to handset 16 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNIntercomCommand",
@@ -4931,7 +4931,7 @@
     "where": "16",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): External intercom audio call from 11 to 16 (F461 impulse intercom capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): External intercom audio call from 11 to 16 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNIntercomCommand",
@@ -4952,7 +4952,7 @@
     "where": "4",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Pager broadcast call from handset 11 to broadcast WHERE 4 (F461 impulse intercom capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Pager broadcast call from handset 11 to broadcast WHERE 4 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "builder": {
       "class": "OWNIntercomCommand",
@@ -4972,7 +4972,7 @@
     "where": "11",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): External panel 20 audio-video call to indoor station 11 (F461 impulse intercom capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): External panel 20 audio-video call to indoor station 11 (received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "_file": "who08_intercom.yaml"
   },
@@ -4985,12 +4985,12 @@
     "where": "74",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): External panel audio-video call without caller param to 74 (F461 impulse intercom capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): External panel audio-video call without caller param to 74 (received once on an MH200 (FW 2.1.0) bus, MyHOME trace issue_667, MH200 intercom bell gate, 2026-10-09; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)",
     "roundtrip": true,
     "_file": "who08_intercom.yaml"
   },
   {
-    "id": "intercom.capture.event.end_session.20",
+    "id": "intercom.capture.event.caller_address.20",
     "frame": "*8*9#1#4*20##",
     "direction": "event",
     "who": 8,
@@ -4998,7 +4998,7 @@
     "where": "20",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Audio-video session release WHAT 9#1#4 on panel 20 (F461 impulse intercom capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): WHAT 9#1#4 caller-address report naming 20 (*8*9#KIND#MMTYPE*CALLER##, Encyclopedia functional/who-8-video-door-entry-telephony; OWNd decodes it as a caller notification); received once on an MH202 bus (MyHOME trace mh202_sound_intercom_ducking, 2026-10-18) and once in the MyHomeServer1 full debug log of 2026-11-04 (MyHOME traces issue_466)",
     "roundtrip": true,
     "_file": "who08_intercom.yaml"
   },
@@ -5011,7 +5011,7 @@
     "where": "11",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Status request on intercom station 11 (F461 live capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Status request on intercom station 11 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNIntercomCommand",
@@ -5032,7 +5032,7 @@
     "dimension": 0,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Dimension 0 inquiry on intercom station 11 (F461 live capture)",
+    "mcp_notes": "Video Door Entry / Intercom (WHO 8): Dimension 0 inquiry on intercom station 11 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "_file": "who08_intercom.yaml"
   },
@@ -5122,7 +5122,7 @@
     ],
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Lighting/Automation Diagnostic (WHO 1001): Actuator 74 Dimension 11 diagnostic bitmask reply (emitted on MH200N / F453AV plants; openwebnet-mcp catalog stub warns on WHO 1001)",
+    "mcp_notes": "Lighting/Automation Diagnostic (WHO 1001): Actuator 74 Dimension 11 diagnostic bitmask reply (received on MH200 plants, MyHOME traces issue_466 MH200 all 2026-09-26, issue_733 and mh200_sound_f441m; openwebnet-mcp catalog stub warns on WHO 1001)",
     "roundtrip": true,
     "_file": "who1001_lighting_diag.yaml"
   },
@@ -5225,7 +5225,7 @@
     "where": "0",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Lighting/Automation Diagnostic (WHO 1001): General diagnostic status request WHERE=0 (F461 live capture)",
+    "mcp_notes": "Lighting/Automation Diagnostic (WHO 1001): General diagnostic status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)",
     "roundtrip": true,
     "_file": "who1001_lighting_diag.yaml"
   },
@@ -5289,7 +5289,7 @@
     "where": "2",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation Diagnostic (WHO 1004): Diagnostic status inquiry on zone 2 (F461 live capture)",
+    "mcp_notes": "Thermoregulation Diagnostic (WHO 1004): Diagnostic status inquiry on zone 2 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)",
     "roundtrip": true,
     "_file": "who1004_thermo_diag.yaml"
   },
@@ -7095,7 +7095,7 @@
     "where": "0",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "MH200N Scene (WHO 17): General scene status request WHERE=0 (F461 live capture)",
+    "mcp_notes": "MH200N Scene (WHO 17): General scene status request WHERE=0 (*#17*<where>## in the WHO 17 PDF \u00a73.2.1; sent to an MH200 (FW 2.0.0) it is followed 100 to 250 ms later by *17*2*137##, *17*3*137##, *17*2*30## and *17*3*30##, MyHOME trace issue_466, MH200 all, 2026-09-26; an F461 (FW 2.0.11) answers NACK, MyHOME traces f461_live_2026-10-15 and f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNSceneCommand",
@@ -7115,7 +7115,7 @@
     "where": "1",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "MH200N Scene (WHO 17): Scene 1 status request (F461 live capture)",
+    "mcp_notes": "MH200N Scene (WHO 17): Scene 1 status request (*#17*<where>## in the WHO 17 PDF \u00a73.2.1; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNSceneCommand",
@@ -8006,7 +8006,7 @@
     "dimension": 5,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Sound Diffusion: Request tuner frequency (Dimension 5) on source 1 (WHERE 2#1; MH200N F500N tuner capture)",
+    "mcp_notes": "Sound Diffusion: Request tuner frequency (Dimension 5) on source 1 (WHERE 2#1; received twice on an H/L4684 (FW 6.0.11) bus, MyHOME trace issue_466, HL4684 all, 2026-11-01T11-48-15; an F461 (FW 2.0.11) answered the same request with NACK, MyHOME trace f461_live_2026-10-23)",
     "roundtrip": true,
     "builder": {
       "class": "OWNSoundDiffusionCommand",
@@ -8030,7 +8030,7 @@
     "dimension": 6,
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "Sound Diffusion: Request active station preset (Dimension 6) on source 1 (WHERE 2#1; MH200N F500N tuner capture)",
+    "mcp_notes": "Sound Diffusion: Request active station preset (Dimension 6) on source 1 (WHERE 2#1; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23; the oracle_who22_tuner trace that sends it is a synthetic firmware-oracle trace)",
     "roundtrip": true,
     "builder": {
       "class": "OWNSoundDiffusionCommand",
@@ -8290,7 +8290,7 @@
     "where": "21",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "CEN+ / Dry Contacts: Status request on WHO 25 address 21 (OpenWebNet-Encyclopedia cap-mh200-who25-boundary-20261009)",
+    "mcp_notes": "CEN+ / Dry Contacts: Status request on WHO 25 address 21 (probe only: sent 4 times to an F461 (FW 2.0.11), answered NACK each time, never received in a stored trace; MyHOME trace f461_live_2026-10-23; OpenWebNet-Encyclopedia cap-mh200-who25-boundary-20261022 records NACK on an MH200 (FW 2.1.0) as well)",
     "roundtrip": true,
     "builder": {
       "class": "OWNDryContactCommand",
@@ -8302,7 +8302,7 @@
     "_file": "who25_cen_plus.yaml"
   },
   {
-    "id": "cen_plus.capture.evt.rotary_cw.step0.11",
+    "id": "scenario_plus.capture.turn_on.11",
     "frame": "*25*11#0*11##",
     "direction": "event",
     "who": 25,
@@ -8310,7 +8310,7 @@
     "where": "11",
     "source": "community-plant-capture",
     "mcp_valid": true,
-    "mcp_notes": "CEN+ / Rotary Encoder: Clockwise rotary encoder event (WHAT 11#0) on boundary address 11 (OpenWebNet-Encyclopedia cap-mh200-who25-boundary-20261009)",
+    "mcp_notes": "Scenario Plus (WHO 25): Turn ON ScenarioPlus object 11 (WHAT 11#0; OWNScenarioPlusCommand.turn_on); sent by the MyHOME integration and received 83 ms later on the event session of a MyHomeServer1 2.87.13 (MyHOME trace issue_466, MyHomeServer1 who25 scenario plus). WHAT 11 is not in the CEN+ or dry-contact PDFs, where the rotary selector events are WHAT 25 to 28. OpenWebNet-Encyclopedia cap-mh200-who25-boundary-20261022 records NACK for this frame on an MH200 (FW 2.1.0)",
     "roundtrip": true,
     "builder": {
       "class": "OWNScenarioPlusCommand",

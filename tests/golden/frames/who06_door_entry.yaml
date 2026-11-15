@@ -8,7 +8,7 @@
   where: "4000"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Release door lock on external unit 4000 (WHAT 10; F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: Release door lock on external unit 4000 (WHAT 10; received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
   builder:
     class: OWNDoorEntryCommand
@@ -39,7 +39,7 @@
   where_param: ["2"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Release door lock on external unit 4001 sub-relay 2 (F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: Release door lock on external unit 4001 sub-relay 2 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
   builder:
     class: OWNDoorEntryCommand
@@ -54,7 +54,7 @@
   where: "4000"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Switch ON / receive video from external camera 4000 (WHAT 0; F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: Switch ON / receive video from external camera 4000 (WHAT 0; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
   builder:
     class: OWNDoorEntryCommand
@@ -69,7 +69,7 @@
   where: ""
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Free audio/video channel (WHAT 9 without WHERE; F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: Free audio/video channel (WHAT 9 without WHERE; received once on an MH200 (FW 2.1.0) bus, MyHOME trace issue_667, MH200 intercom bell gate, 2026-10-09; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
   builder:
     class: OWNDoorEntryCommand
@@ -84,7 +84,7 @@
   where: "*"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Broadcast end-of-session / free channel with WHERE='*' (F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: Broadcast end-of-session / free channel with WHERE='*' (received on an MH202 bus, two MyHOME traces in mh202_sound_intercom_ducking; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
 
 - id: door_entry.capture.call.4100
@@ -95,7 +95,7 @@
   where: "4100"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Door-entry call / camera cycle on address 4100 (WHAT 6; F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: Incoming broadcast call (WHAT 6, WHERE 4100; 'Broadcast receiving call' in the WHO 6 L4686SDK PDF §2.4, a received event). Never received in a stored trace: sent once as a probe to an F461 (FW 2.0.11) and answered NACK (MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
 
 - id: door_entry.capture.event.what22.1
@@ -106,7 +106,7 @@
   where: "1"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: Amplifier / floor call state WHAT 22 on address 1 (F461 impulse intercom capture)"
+  mcp_notes: "Door Entry System: WHAT 22, 'Open Lock with EU in conversation' in the WHO 6 L4686SDK PDF (§2.8, printed there with WHERE 4000 to 4095), here with WHERE 1 (received once on an MH202 bus, MyHOME trace mh202_sound_intercom_ducking, 2026-10-18; an F461 (FW 2.0.11) answered the same frame with NACK, MyHOME trace issue_667, 2026-10-19)"
   roundtrip: true
 
 - id: door_entry.capture.event.what23.4000
@@ -154,5 +154,5 @@
   where: "0"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Door Entry System: General status request WHERE=0 (F461 live capture)"
+  mcp_notes: "Door Entry System: General status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
   roundtrip: true

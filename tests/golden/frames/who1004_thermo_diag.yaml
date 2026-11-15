@@ -47,7 +47,7 @@
   where: "2"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Diagnostic status inquiry on zone 2 (F461 live capture)"
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Diagnostic status inquiry on zone 2 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
   roundtrip: true
 
 - id: thermo_diag.req.central.dim7

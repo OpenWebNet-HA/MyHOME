@@ -112,21 +112,26 @@ jobs:
                   refs_to_try = tag_refs
 
           cloned = False
+          rc = 1
           for candidate_ref in refs_to_try:
+              if ownd_dir.exists():
+                  shutil.rmtree(ownd_dir)
               res = subprocess.run(
                   ["git", "clone", "--depth", "1", "--branch", candidate_ref, repo_url, str(ownd_dir)],
                   check=False,
               )
-              if res.returncode == 0:
-                  cloned = True
+              if res.returncode != 0:
+                  continue
+              cloned = True
+              print(f"Checking Staged-Superset sync against {repo_url}@{candidate_ref}...")
+              rc = subprocess.run(
+                  [sys.executable, "scripts/sync_golden_corpus.py", "--check", "--ownd-dir", str(ownd_dir), "--require-ownd"],
+                  check=False,
+              ).returncode
+              if rc == 0:
                   break
           if not cloned:
               print(f"[ERROR] Unable to clone {repo_url} at any of {refs_to_try}", file=sys.stderr)
               sys.exit(1)
-
-          rc = subprocess.run(
-              [sys.executable, "scripts/sync_golden_corpus.py", "--check", "--ownd-dir", str(ownd_dir), "--require-ownd"],
-              check=False,
-          ).returncode
           sys.exit(rc)
           PY

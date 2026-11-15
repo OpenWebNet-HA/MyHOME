@@ -10,7 +10,7 @@
   dimension_values: ["111110111111111111110111"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Actuator 74 Dimension 11 diagnostic bitmask reply (emitted on MH200N / F453AV plants; openwebnet-mcp catalog stub warns on WHO 1001)"
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Actuator 74 Dimension 11 diagnostic bitmask reply (received on MH200 plants, MyHOME traces issue_466 MH200 all 2026-09-26, issue_733 and mh200_sound_f441m; openwebnet-mcp catalog stub warns on WHO 1001)"
   roundtrip: true
 
 - id: lighting_diag.capture.dim11.bitmask.0010
@@ -86,5 +86,5 @@
   where: "0"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): General diagnostic status request WHERE=0 (F461 live capture)"
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): General diagnostic status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
   roundtrip: true

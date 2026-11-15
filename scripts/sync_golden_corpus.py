@@ -220,10 +220,15 @@ def sync_from_ownd(myhome_root: Path = MYHOME_ROOT, ownd_root: Path = DEFAULT_OW
         if not staged_extras:
             planned_writes[mh_file] = (ownd_frames_dir / fname).read_text(encoding="utf-8")
         else:
-            merged = list(ownd_recs) + staged_extras
-            planned_writes[mh_file] = yaml.safe_dump(
-                merged, sort_keys=False, allow_unicode=True
-            )
+            # Keep OWNd's file text (comments, quoting) and append only the staged records.
+            staged_yaml = yaml.safe_dump(staged_extras, sort_keys=False, allow_unicode=True)
+            if ownd_recs:
+                ownd_text = _normalize_lf(
+                    (ownd_frames_dir / fname).read_text(encoding="utf-8")
+                )
+                planned_writes[mh_file] = ownd_text.rstrip("\n") + "\n\n" + staged_yaml
+            else:
+                planned_writes[mh_file] = staged_yaml
 
     if myhome_frames_dir.is_dir():
         for mh_only_file in sorted(myhome_frames_dir.glob("*.yaml")):
@@ -250,7 +255,7 @@ def sync_from_ownd(myhome_root: Path = MYHOME_ROOT, ownd_root: Path = DEFAULT_OW
                 )
 
     myhome_frames_dir.mkdir(parents=True, exist_ok=True)
-    for rel in (*LOCKSTEP_INFRA_RELPATHS, "tests/golden/SOURCE.yaml"):
+    for rel in LOCKSTEP_INFRA_RELPATHS:
         src = ownd_root / rel
         if src.is_file():
             _write_lf(myhome_root / rel, src.read_text(encoding="utf-8"))
@@ -261,10 +266,21 @@ def sync_from_ownd(myhome_root: Path = MYHOME_ROOT, ownd_root: Path = DEFAULT_OW
         stale_path.unlink()
 
     if total_staged_extras == 0:
-        for doc_rel in ("tests/golden/README.md", "docs/protocol_conformance_matrix.md"):
+        for doc_rel in (
+            "tests/golden/SOURCE.yaml",
+            "tests/golden/README.md",
+            "docs/protocol_conformance_matrix.md",
+        ):
             src_doc = ownd_root / doc_rel
             if src_doc.is_file():
                 _write_lf(myhome_root / doc_rel, src_doc.read_text(encoding="utf-8"))
+    elif not (myhome_root / "tests/golden/SOURCE.yaml").is_file():
+        src_source = ownd_root / "tests/golden/SOURCE.yaml"
+        if src_source.is_file():
+            _write_lf(
+                myhome_root / "tests/golden/SOURCE.yaml",
+                src_source.read_text(encoding="utf-8"),
+            )
 
     return _run_validate_corpus(myhome_root, check_only=False)
 

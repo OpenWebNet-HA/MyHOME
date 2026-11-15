@@ -166,7 +166,7 @@
   dimension: 5
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Sound Diffusion: Request tuner frequency (Dimension 5) on source 1 (WHERE 2#1; MH200N F500N tuner capture)"
+  mcp_notes: "Sound Diffusion: Request tuner frequency (Dimension 5) on source 1 (WHERE 2#1; received twice on an H/L4684 (FW 6.0.11) bus, MyHOME trace issue_466, HL4684 all, 2026-11-01T11-48-15; an F461 (FW 2.0.11) answered the same request with NACK, MyHOME trace f461_live_2026-10-23)"
   roundtrip: true
   builder:
     class: OWNSoundDiffusionCommand
@@ -183,7 +183,7 @@
   dimension: 6
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Sound Diffusion: Request active station preset (Dimension 6) on source 1 (WHERE 2#1; MH200N F500N tuner capture)"
+  mcp_notes: "Sound Diffusion: Request active station preset (Dimension 6) on source 1 (WHERE 2#1; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23; the oracle_who22_tuner trace that sends it is a synthetic firmware-oracle trace)"
   roundtrip: true
   builder:
     class: OWNSoundDiffusionCommand
