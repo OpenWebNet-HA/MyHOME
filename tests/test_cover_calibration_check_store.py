@@ -1,11 +1,13 @@
-"""L-73: the verified precision kept with the cover at save, and when it stops applying."""
+"""The verified precision kept with the cover at save, and when it stops applying."""
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
+from custom_components.myhome.cover_calibration_check import deviation_cm
 from custom_components.myhome.cover_profiles import get_store, write_profile
-from custom_components.myhome.cover_settings import CHECK_FIELDS, COVER_RECORD
+from custom_components.myhome.cover_settings import CHECK_FIELDS, COVER_RECORD, record_check
 from custom_components.myhome.cover_settings_api import overview
 from tests.test_cover_calibration_check import verdict
 from tests.test_cover_calibration_direction import quick as quick_fixture
@@ -51,14 +53,52 @@ async def listed(hass, plant, index=0):
 async def test_a_base_calibration_saved_with_its_check_keeps_the_gap_the_heights_and_the_date(hass, geometry):
     cal = geometry
     check = await verdict(cal, reading_offset=-5.4)
-    assert check["deviation_cm"] == -5
+    assert check["deviation_cm"] == -5.4
     with patch(CLOCK, return_value=SAVED):
         await act(cal, "save", name="Checked")
-    expected = {"check_cm": 5, "check_measured_cm": check["measured_cm"], "check_expected_cm": check["expected_cm"],
+    expected = {"check_cm": 5.4, "check_measured_cm": check["measured_cm"], "check_expected_cm": check["expected_cm"],
                 "check_at": "2026-10-10T12:00:00+00:00"}
     assert stored(hass, cal.plant) == expected
     assert COVER_RECORD(record(hass, cal.plant))  # What is stored is what the store loads back.
     assert await listed(hass, cal.plant) == expected
+
+
+async def test_a_gap_below_the_centimetre_is_saved_with_its_tenth(hass, geometry):
+    """A few millimetres above the expectation are kept as such, not as a whole 0."""
+    cal = geometry
+    check = await verdict(cal, reading_offset=.3)
+    assert check["deviation_cm"] == .3 and check["passed"] is True
+    await act(cal, "save", name="Close")
+    assert stored(hass, cal.plant)["check_cm"] == .3
+    assert (await listed(hass, cal.plant))["check_cm"] == .3
+
+
+def check_of(measured, expected):
+    return SimpleNamespace(measured_cm=measured, expected_cm=expected, deviation_cm=deviation_cm(measured, expected))
+
+
+@pytest.mark.parametrize(("measured", "expected", "gap"), [
+    (98.8, 98.5, .3), (98.5, 98.8, .3), (104.04, 100.0, 4.0), (95.9, 100.0, 4.1), (100.0, 100.0, 0.0)])
+def test_the_stored_gap_is_absolute_to_the_tenth(measured, expected, gap):
+    data = {"covers": {}}
+    with patch(CLOCK, return_value=SAVED):
+        record_check(data, "cover", check_of(measured, expected))
+    assert data["covers"]["cover"] == {"overrides": {}, "check_cm": gap, "check_measured_cm": measured,
+                                       "check_expected_cm": expected, "check_at": "2026-10-10T12:00:00+00:00"}
+    assert COVER_RECORD(data["covers"]["cover"])["check_cm"] == gap
+
+
+def test_a_whole_gap_is_stored_as_a_number_with_its_tenth():
+    data = {"covers": {}}
+    record_check(data, "cover", SimpleNamespace(measured_cm=97, expected_cm=100, deviation_cm=-3))
+    assert type(data["covers"]["cover"]["check_cm"]) is float and data["covers"]["cover"]["check_cm"] == 3.0
+
+
+@pytest.mark.parametrize("deviation", [None, True, float("nan"), float("inf"), "0.3"])
+def test_a_check_without_a_numeric_gap_clears_the_stored_one(deviation):
+    data = {"covers": {"cover": {"overrides": {}, **OLD}}}
+    record_check(data, "cover", SimpleNamespace(measured_cm=98.8, expected_cm=98.5, deviation_cm=deviation))
+    assert data["covers"] == {}
 
 
 async def test_a_base_calibration_saved_without_a_completed_check_clears_the_old_one(hass, geometry):
@@ -126,14 +166,22 @@ async def test_an_old_record_without_the_fields_has_no_check(hass, plant):
     assert await listed(hass, plant) == dict.fromkeys(CHECK_FIELDS)
 
 
-@pytest.mark.parametrize("bad", [{"check_cm": -1}, {"check_cm": 2.5}, {"check_measured_cm": -3}])
+def test_records_saved_with_a_whole_gap_still_load():
+    """Before the tenth, the gap was stored whole: such a record stays valid and keeps its value."""
+    loaded = COVER_RECORD({"overrides": {}, **OLD})
+    assert loaded["check_cm"] == 3 and type(loaded["check_cm"]) is float
+    assert COVER_RECORD({"overrides": {}, **OLD, "check_cm": 0})["check_cm"] == 0
+    assert COVER_RECORD({"overrides": {}, **OLD, "check_cm": .3})["check_cm"] == .3
+
+
+@pytest.mark.parametrize("bad", [{"check_cm": -1}, {"check_cm": -.1}, {"check_cm": "a few"}, {"check_measured_cm": -3}])
 def test_the_stored_check_is_validated(bad):
     with pytest.raises(Exception):
         COVER_RECORD({"overrides": {}, **OLD, **bad})
 
 
 # ---------------------------------------------------------------------------------
-# R-3: every cover whose times change through its profile loses its check.
+# Every cover whose times change through its profile loses its check.
 # ---------------------------------------------------------------------------------
 def followers(store, profile_id):
     return [unique for unique, assigned in store.data["assignments"].items() if assigned == profile_id]
@@ -198,7 +246,7 @@ async def test_an_assignment_in_bulk_clears_the_checks_of_the_covers_that_change
 
 
 # ---------------------------------------------------------------------------------
-# N-1: the reference travel scales the followers' times: changing it, or the travel of a cover that scales, clears.
+# The reference travel scales the followers' times: changing it, or the travel of a cover that scales, clears.
 # ---------------------------------------------------------------------------------
 SCALED = {"name": "Living room", "opening_time": 42.5, "closing_time": 42.5, "reference_travel_cm": 150}
 
@@ -238,8 +286,27 @@ async def test_a_new_travel_clears_the_check_only_when_the_profile_scales_the_ti
     assert stored(hass, plant) == dict.fromkeys(CHECK_FIELDS), "back to the reference times"
 
 
+
+@pytest.mark.parametrize("travel", [120.0, None])
+async def test_a_new_travel_or_none_on_the_source_clears_its_check(hass, plant, travel):
+    """The source's check gave the gap in cm on its travel (110): another travel, or none, leaves
+    it describing nothing; its times stay the profile's. A follower without a travel of its own keeps its check."""
+    store = get_store(hass, plant.records[0].config_entry_id)
+    source, follower = plant.covers[0].unique_id, plant.covers[1].unique_id
+    measured = {"source": "guided", "recorded_at": "2026-11-01T09:00:00+00:00", "origin_unique_id": source}
+    store.data["profiles"]["kitchen"] = {"name": "Kitchen", "opening_time": 20.0, "closing_time": 22.0, "reference_travel_cm": 110.0,
+                                         "provenance": {"opening": dict(measured), "closing": dict(measured)}}
+    store.data["assignments"].update({source: "kitchen", follower: "kitchen"})
+    store.data["covers"][source] = {"overrides": {}, "travel_cm": 110.0, **OLD}
+    store.data["covers"][follower] = {"overrides": {}, **OLD}
+    await write_profile(hass, message(plant, 0, action="manual_travel", travel_cm=110.0))
+    assert stored(hass, plant, 0) == OLD, "the same travel: the check stays"
+    await write_profile(hass, message(plant, 1, action="manual_travel", travel_cm=travel))
+    assert stored(hass, plant, 0) == dict.fromkeys(CHECK_FIELDS)
+    assert stored(hass, plant, 1) == OLD, "a follower at the reference: its times did not change"
+
 # ---------------------------------------------------------------------------------
-# R-4: a times-only save on the cover or on its shared profile re-anchors like a new profile (L-36).
+# A times-only save on the cover or on its shared profile re-anchors like a new profile.
 # ---------------------------------------------------------------------------------
 @pytest.mark.parametrize("mode", ["cover", "shared"])
 async def test_a_times_only_save_applies_the_new_times_at_once_and_keeps_the_end_stop(hass, quick, mode):

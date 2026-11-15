@@ -91,7 +91,7 @@ def geometry_impact(before: dict[str, Any], after: dict[str, Any]) -> dict[str, 
 def reference_timing(profile: dict[str, Any], travel: float, measured: float) -> float:
     """Undo profile scaling for a timing-only shared measurement, not its geometry."""
     ratio = travel / profile["reference_travel_cm"]
-    if "geometry" not in profile:
+    if profile.get("geometry") in (None, DEFAULT_GEOMETRY):  # No slats and rolls 1 is the linear model.
         return float(measured * profile["reference_travel_cm"] / travel)
     geometry = profile["geometry"]
     roll = geometry["closing_roll"]

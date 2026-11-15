@@ -53,6 +53,7 @@ async def export_profiles(hass: Any, entry_id: str) -> Any:
             covers.append({"id": ref, "registry_id": record.id if record else None,
                            **({"travel_cm": data["covers"][unique]["travel_cm"]}
                               if "travel_cm" in data["covers"].get(unique, {}) else {}),
+                           **({"slats": data["covers"][unique]["slats"]} if "slats" in data["covers"].get(unique, {}) else {}),
                            "entity_id": record.entity_id if record else None,
                            "name": (record.name or record.original_name or record.entity_id) if record else None})
         return {

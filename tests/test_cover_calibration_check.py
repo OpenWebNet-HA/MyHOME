@@ -1,5 +1,6 @@
 """The check: a timed run from an end stop towards a height, a tape reading and a verdict in whole centimetres."""
 import asyncio
+import math
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -85,20 +86,27 @@ async def checked(cal, *, late=0.0, **extra):
 # ---------------------------------------------------------------------------------
 # The verdict.
 # ---------------------------------------------------------------------------------
-@pytest.mark.parametrize(("gap", "whole", "passed"), [
-    (0, 0, True), (3.49, 3, True), (3.5, 4, True), (4.49, 4, True), (4.5, 5, False), (4.51, 5, False), (5, 5, False),
-    (-3.49, -3, True), (-3.5, -4, True), (-4.49, -4, True), (-4.5, -5, False), (-4.51, -5, False), (-5, -5, False)])
-def test_the_verdict_is_on_the_whole_centimetre_rounded_half_away_from_zero(gap, whole, passed):
+@pytest.mark.parametrize(("gap", "rounded", "passed"), [
+    (0, 0.0, True), (0.3, 0.3, True), (3.49, 3.5, True), (4.0, 4.0, True), (4.04, 4.0, True), (4.05, 4.1, False),
+    (4.49, 4.5, False), (4.5, 4.5, False), (5, 5.0, False),
+    (-0.3, -0.3, True), (-3.49, -3.5, True), (-4.0, -4.0, True), (-4.04, -4.0, True), (-4.05, -4.1, False),
+    (-4.49, -4.5, False), (-5, -5.0, False)])
+def test_the_gap_is_kept_to_the_tenth_rounded_half_away_from_zero_and_judged_on_it(gap, rounded, passed):
     measured = round(100.0 + gap, 2)
-    assert deviation_cm(measured, 100.0) == whole
-    assert passes(whole) is passed
+    deviation = deviation_cm(measured, 100.0)
+    assert type(deviation) is float and deviation == rounded
+    assert passes(deviation) is passed
     assert CHECK_THRESHOLD_CM == 4
 
 
-def test_the_verdict_never_rounds_half_to_even_nor_follows_binary_noise():
-    assert round(4.5) == 4 and deviation_cm(104.5, 100) == 5  # Python's round() would pass it.
-    assert 9.7 - 5.2 < 4.5 and round(9.7 - 5.2) == 4 and deviation_cm(9.7, 5.2) == 5
-    assert deviation_cm(97.5, 100) == -3 and deviation_cm(95.5, 100) == -5
+def test_the_gap_never_follows_binary_noise_nor_rounds_half_to_even():
+    # The case read on a real cover: 98,8 against 98,5 is 0,3, not 0 (whole) nor 0.29999999999999716.
+    assert 98.8 - 98.5 != .3 and deviation_cm(98.8, 98.5) == .3 and deviation_cm(98.5, 98.8) == -.3
+    assert round(104.05 - 100, 1) == 4.0 and deviation_cm(104.05, 100) == 4.1  # Python's round() would pass it.
+    assert 9.7 - 5.2 < 4.5 and deviation_cm(9.7, 5.2) == 4.5 and not passes(deviation_cm(9.7, 5.2))
+    assert deviation_cm(97.5, 100) == -2.5 and deviation_cm(95.95, 100) == -4.1
+    # A gap that rounds to nothing is 0.0, never -0.0.
+    assert math.copysign(1, deviation_cm(99.96, 100)) == 1 and deviation_cm(99.96, 100) == 0
     assert tenth(99.95) == 100.0 and tenth(-.05) == -.1 and tenth(108.60144) == 108.6
 
 
@@ -192,13 +200,13 @@ def test_the_window_of_the_twentieth_of_september_fails_going_up_and_passes_comi
     assert really == pytest.approx(108.6, abs=.2)
     up.read(round(really, 1))
     assert unplanned(up.view()) == {"direction": "opening", "target_cm": 99.0, "check_seconds": pytest.approx(15.43, abs=.05),
-                         "expected_cm": 99.0, "measured_cm": 108.6, "deviation_cm": 10, "passed": False}
+                         "expected_cm": 99.0, "measured_cm": 108.6, "deviation_cm": 9.6, "passed": False}
 
     down = CalibrationCheck.plan(inherited, 198, "closing")
     down.ran(down.planned_seconds)
     really = 198 * height_after(down.planned_seconds, opening=False, model=window)
     down.read(round(really, 1))
-    assert (down.expected_cm, down.deviation_cm, down.passed) == (99.0, 3, True)
+    assert (down.expected_cm, down.deviation_cm, down.passed) == (99.0, 3.3, True)
 
 
 # ---------------------------------------------------------------------------------
@@ -242,7 +250,7 @@ async def test_a_check_from_review_homes_runs_timed_and_returns_the_verdict(hass
     view = cal.session.view()
     assert (view["phase"], view["step"], view["can_repeat"]) == ("review", "half_close", True)
     assert unplanned(view["check"]) == {"direction": "opening", "target_cm": 150.0, "check_seconds": pytest.approx(planned + .5),
-                             "expected_cm": expected, "measured_cm": expected + 4.5, "deviation_cm": 5, "passed": False}
+                             "expected_cm": expected, "measured_cm": expected + 4.5, "deviation_cm": 4.5, "passed": False}
     assert commands(cal, sent) == [LOWER, STOP, RAISE, STOP]
     # The measurement is untouched and Save stays available whatever the verdict.
     assert cal.session.values == {"opening_time": 22, "closing_time": 20}
@@ -265,7 +273,7 @@ async def test_a_check_downwards_to_a_chosen_height_homes_at_the_top(hass, geome
     assert commands(cal, sent) == [RAISE, STOP, LOWER, STOP]
     assert cal.session.check.expected_cm == 50.0
     await act(cal, "reading", reading_cm=46.5)
-    assert cal.session.view()["check"]["deviation_cm"] == -4
+    assert cal.session.view()["check"]["deviation_cm"] == -3.5
     assert cal.session.view()["check"]["passed"] is True
 
 
@@ -280,7 +288,7 @@ async def test_the_reading_takes_decimals_and_refuses_values_outside_the_travel(
         assert cal.session.phase == "reading" and cal.session.view()["check"]["measured_cm"] is None
     # 99,5 typed in the panel arrives as 99.5.
     await act(cal, "reading", reading_cm=expected - .5)
-    assert cal.session.view()["check"]["deviation_cm"] == -1 and cal.session.check.passed
+    assert cal.session.view()["check"]["deviation_cm"] == -.5 and cal.session.check.passed
 
 
 async def test_repeat_on_the_reading_runs_the_same_check_again_from_its_end_stop(geometry):
