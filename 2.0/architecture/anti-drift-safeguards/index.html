@@ -2309,6 +2309,16 @@
 <td><code>scripts/verify_ha_standards.py</code></td>
 </tr>
 <tr>
+<td><strong>Canonical Golden Corpus &amp; Staged-Superset Sync</strong></td>
+<td><strong><code>MyHOME &gt;= OWNd</code></strong> (451+ schema-validated fixtures across 21 subsystems; 0 missing <code>OWNd</code> IDs, 0 divergent shared IDs, 0 raw-frame collisions, non-mutating <code>--check</code>)</td>
+<td><code>tools/golden/validate_corpus.py --check</code> &amp; <code>scripts/sync_golden_corpus.py --check</code></td>
+</tr>
+<tr>
+<td><strong>Trace-to-Golden Structural Shape Ratchet</strong></td>
+<td><strong>0 New Uncovered Trace Shapes</strong> (every frame shape in the JSON traces under <code>tests/fixtures/</code> is covered by <code>tests/golden/corpus.json</code> or listed in a legacy baseline capped at 259 entries; Encyclopedia evidence is checked only with <code>--encyclopedia-evidence</code>)</td>
+<td><code>tools/golden/check_trace_shape_coverage.py</code></td>
+</tr>
+<tr>
 <td><strong>Upstream Compatibility</strong></td>
 <td><code>dev</code>, <code>beta</code>, <code>stable</code></td>
 <td><code>.github/workflows/ha-upstream-compat.yml</code></td>
