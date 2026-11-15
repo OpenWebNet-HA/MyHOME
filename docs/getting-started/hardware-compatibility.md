@@ -41,7 +41,7 @@ The MyHOME integration supports official BTicino and Legrand OpenWebNet gateways
 | **Scenario Control (CEN)** | `15` | `device_trigger`, `event` | 3477, L4651/2, L4652/2 (Short / Long press) |
 | **Sound System** | `16` | `media_player`, `number`, `button` | F441, F441M (Audio matrix), L4561N / L4561, L4560, 3482, 3495 (Audio source interfaces & isolator), H4562, L4562, F502, 3484, 3487 (Room amplifiers), F500, F500N, F500COAX (FM RDS Tuners) |
 | **Energy Management** | `18` | `sensor` | F520, F521, F522, F523, 3522 |
-| **Sound Diffusion** | `22` | `media_player`, `number`, `button` | F500, F500N, F500COAX FM RDS tuners (`5#2#S` / `2#S`, including `WHO 22`-only gateways `MyHomeServer1`, `F459`, `F460`, `F461`) and active-source area tracking (`4#<area>`) |
+| **Sound Diffusion** | `22` | `media_player`, `number`, `button` | F500, F500N, F500COAX FM RDS tuners (`5#2#S` / `2#S`, including `WHO 22`-only gateways `MyHomeServer1`, `F461`) and active-source area tracking (`4#<area>`) |
 | **Scenario Control (CEN+)** | `25` | `device_trigger`, `event` | L4652/3, LN4652, H4652 (Rotary dials, pushbuttons) |
 
 > [!IMPORTANT]

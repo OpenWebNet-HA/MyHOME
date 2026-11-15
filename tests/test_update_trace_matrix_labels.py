@@ -118,3 +118,41 @@ def test_trace_matrix_excludes_tx_probes_and_oracle_fixtures(
     assert columns == ["WHO 1<br>Lights", "WHO 4<br>Climate"]
     f461_cells = [cell.strip() for cell in rows["**F461**"].split("|")[2:-1]]
     assert f461_cells == ["✅", "✅"]
+
+
+def test_who_labels_canonical_aux_and_cen_plus(trace_matrix, tmp_path, monkeypatch) -> None:
+    """WHO 9 and WHO 25 short labels must be canonical 'Aux' and 'CEN+', never 'Power' or 'Diag'."""
+    import json
+
+    assert trace_matrix.WHO_LABELS[9] == "Aux"
+    assert trace_matrix.WHO_LABELS[25] == "CEN+"
+    trace_matrix.validate_who_labels()
+
+    with pytest.raises(ValueError, match="WHO 9"):
+        trace_matrix.validate_who_labels({**trace_matrix.WHO_LABELS, 9: "Power"})
+    with pytest.raises(ValueError, match="WHO 25"):
+        trace_matrix.validate_who_labels({**trace_matrix.WHO_LABELS, 25: "Diag"})
+
+    traces = tmp_path / "traces"
+    traces.mkdir(parents=True)
+    (traces / "mh200n_diag.json").write_text(
+        json.dumps(
+            {
+                "data": {
+                    "gateway": {"model_name": "MH200N"},
+                    "bus_monitor": {
+                        "recent_frames": [
+                            {"direction": "rx", "raw": "*9*1*1##"},
+                            {"direction": "rx", "raw": "*25*21#1*21##"},
+                        ]
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(trace_matrix, "FIXTURES_DIR", tmp_path)
+    matrix = trace_matrix.build_matrix()
+    header_cols = [cell.strip() for cell in matrix.splitlines()[0].split("|")[2:-1]]
+    assert header_cols == ["WHO 9<br>Aux", "WHO 25<br>CEN+"]
+

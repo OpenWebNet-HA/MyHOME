@@ -976,7 +976,7 @@ def test_roadmap_tables_keyed_json_windows_concatenated_tcp_and_readme_model_ord
         encoding="utf-8",
     )
     (mh200n_dir / "capture.txt").write_text(
-        "[12:00:01.000] [RX] *25*11#0*11##\n",
+        "[12:00:01.000] [RX] *25*21#1*11##\n",
         encoding="utf-8",
     )
 
@@ -995,7 +995,7 @@ def test_roadmap_tables_keyed_json_windows_concatenated_tcp_and_readme_model_ord
 
     # Outbound tx '#0#1' frames and zero_rx frames were ignored
     assert sub_map["SUB_CU4695"].status_cell == "🔴 **Needed**"
-    # Concatenated TCP line & new subsystem regexes matched all 3 frames + CEN+ 11# + thermo zones + CU 3550 + WHO 16
+    # Concatenated TCP line & new subsystem regexes matched all 3 frames + CEN+ 21# + thermo zones + CU 3550 + WHO 16
     assert sub_map["SUB_LIGHT"].status_cell == "🟢 **Covered**"
     assert sub_map["SUB_COV_H"].status_cell == "🟢 **Covered**"
     assert sub_map["SUB_SCENARIOS"].status_cell == "🟢 **Covered**"
@@ -1003,5 +1003,174 @@ def test_roadmap_tables_keyed_json_windows_concatenated_tcp_and_readme_model_ord
     assert sub_map["SUB_THERMO_ZONES"].status_cell == "🟢 **Covered**"
     assert sub_map["SUB_CU3550"].status_cell == "🟢 **Covered**"
     assert sub_map["SUB_WHO16"].status_cell == "🟢 **Covered**"
+
+
+def test_roadmap_tables_deduplicates_identical_capture_sequences(tmp_path):
+    """Verify duplicate (gateway, is_oracle, rx_frames) files count once while distinct gateways/sequences count separately."""
+    import json
+
+    urt = _load_update_roadmap_tables()
+    fix_dir = tmp_path / "fixtures"
+
+    # Pair 1: Identical (F455, False, rx_frames) across plants/ and traces/ (.json + .log) -> counted once,
+    # while calibrated cover_travel_times on the duplicate bundle are still preserved.
+    plant_dir = fix_dir / "plants" / "dup_f455"
+    plant_dir.mkdir(parents=True)
+    (plant_dir / "diagnostic_summary.json").write_text(
+        json.dumps(
+            {
+                "data": {
+                    "gateway": {"model_name": "F455"},
+                    "config_entry": {
+                        "options": {
+                            "cover_travel_times": {
+                                "11": {"up": 18.0, "down": 17.0},
+                            }
+                        }
+                    },
+                    "bus_monitor": {
+                        "recent_frames": [
+                            {"direction": "rx", "raw": "*1*1*11##"},
+                            {"direction": "rx", "raw": "*2*0*11##"},
+                        ]
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    trace_dir = fix_dir / "traces" / "dup_f455"
+    trace_dir.mkdir(parents=True)
+    (trace_dir / "trace.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "F455"},
+                "frames": [
+                    {"direction": "rx", "raw": "*1*1*11##"},
+                    {"direction": "rx", "raw": "*2*0*11##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (trace_dir / "timeline.log").write_text(
+        "# Gateway: F455\n"
+        "[10:00:00.000] [RX] *1*1*11##\n"
+        "[10:00:01.000] [RX] *2*0*11##\n",
+        encoding="utf-8",
+    )
+
+    # Pair 2: Same rx_frames on a DIFFERENT gateway (F454) -> must still be counted!
+    diff_gw_dir = fix_dir / "traces" / "diff_gw_f454"
+    diff_gw_dir.mkdir(parents=True)
+    (diff_gw_dir / "trace.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "F454"},
+                "frames": [
+                    {"direction": "rx", "raw": "*1*1*11##"},
+                    {"direction": "rx", "raw": "*2*0*11##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Pair 3: Same gateway (F455) with DIFFERENT rx_frames -> must also be counted!
+    diff_seq_dir = fix_dir / "traces" / "diff_seq_f455"
+    diff_seq_dir.mkdir(parents=True)
+    (diff_seq_dir / "trace2.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "F455"},
+                "frames": [
+                    {"direction": "rx", "raw": "*1*0*11##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Pair 4: Synthetic/oracle capture with identical gateway & rx_frames does not collide with physical capture
+    oracle_dir = fix_dir / "traces" / "oracle_f455"
+    oracle_dir.mkdir(parents=True)
+    (oracle_dir / "oracle.json").write_text(
+        json.dumps(
+            {
+                "synthetic": True,
+                "gateway": {"model": "F455"},
+                "frames": [
+                    {"direction": "rx", "raw": "*1*0*11##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Pair 5: Multi-gateway interleaved .log deduplicates F454 group (matching diff_gw_f454)
+    # without suppressing MH202's interleaved frames in the same log file.
+    multi_dir = fix_dir / "traces" / "multi_interleaved"
+    multi_dir.mkdir(parents=True)
+    (multi_dir / "combined.log").write_text(
+        "2026-10-01 10:00:00 DEBUG [F454 gateway - 192.168.1.35] Message received: `*1*1*11##`\n"
+        "2026-10-01 10:00:01 DEBUG [MH202 gateway - 192.168.1.36] Message received: `*4*1*1##`\n"
+        "2026-10-01 10:00:02 DEBUG [F454 gateway - 192.168.1.35] Message received: `*2*0*11##`\n",
+        encoding="utf-8",
+    )
+
+    # Pair 6: Unattributed / Generic captures with identical frames are NOT falsely deduplicated
+    # as same-gateway captures, and Generic/Unknown do not inflate Table 2 gateway model counts.
+    unattr_a = fix_dir / "traces" / "unattr_a"
+    unattr_a.mkdir(parents=True)
+    (unattr_a / "a.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "Generic"},
+                "frames": [{"direction": "rx", "raw": "*14*0*11##"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    unattr_b = fix_dir / "traces" / "unattr_b"
+    unattr_b.mkdir(parents=True)
+    (unattr_b / "b.json").write_text(
+        json.dumps(
+            {
+                "gateway": {"model": "Generic"},
+                "frames": [{"direction": "rx", "raw": "*14*0*11##"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = urt.scan_fixture_corpus(fixtures_dir=fix_dir)
+    f455_stats = summary.by_model["F455"]
+    f454_stats = summary.by_model["F454"]
+    mh202_stats = summary.by_model["MH202"]
+
+    # F455 had 3 physical files (2 duplicates of len=2 + 1 distinct of len=1) -> 2 captures, 3 rx frames!
+    assert len(f455_stats.phys_files) == 2
+    assert f455_stats.phys_rx_frames == 3
+    # Canonical traces/ JSON won over plants/ and .log
+    assert "traces/dup_f455/trace.json" in f455_stats.phys_files
+    assert "traces/diff_seq_f455/trace2.json" in f455_stats.phys_files
+    # Oracle tracked separately without shadowing physical
+    assert len(f455_stats.oracle_files) == 1
+    assert f455_stats.oracle_rx_frames == 1
+    # F454 with identical rx sequence to F455 was counted once (combined.log F454 duplicate skipped)
+    assert len(f454_stats.phys_files) == 1
+    assert f454_stats.phys_rx_frames == 2
+    # MH202 interleaved inside combined.log was preserved independently
+    assert len(mh202_stats.phys_files) == 1
+    assert mh202_stats.phys_rx_frames == 1
+    assert "Generic" not in summary.by_model
+    # Both unattributed Generic captures kept, and Generic excluded from Table 2 gateway model count
+    sub_map = {r.mermaid_id: r for r in urt.evaluate_subsystem_rows(summary)}
+    assert "2 physical `rx` frames across 2 captures —" in sub_map["SUB_LOCK14"].evidence_cell
+    assert "gateway model" not in sub_map["SUB_LOCK14"].evidence_cell
+    # Calibrated cover_travel_times on the duplicate plants/ JSON was still preserved
+    assert summary.calibrated_cover_bundles == [("tests/fixtures/plants/dup_f455/", 1)]
+
 
 

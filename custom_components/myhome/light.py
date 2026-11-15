@@ -272,7 +272,9 @@ async def async_setup_entry(
         platform.async_register_entity_service(
             SERVICE_TURN_ON_TIMED,
             as_any({
-                vol.Optional("duration"): vol.Coerce(float),
+                vol.Optional("duration"): vol.All(
+                    vol.Coerce(float), vol.Range(min=0.5, max=918000)
+                ),
                 vol.Optional("hours", default=0): vol.All(
                     vol.Coerce(int), vol.Range(min=0, max=255)
                 ),
@@ -281,6 +283,12 @@ async def async_setup_entry(
                 ),
                 vol.Optional("seconds", default=0): vol.All(
                     vol.Coerce(float), vol.Range(min=0, max=59)
+                ),
+                vol.Optional("brightness"): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=255)
+                ),
+                vol.Optional("brightness_pct"): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=100)
                 ),
             }),
             "async_turn_on_timed",
@@ -889,19 +897,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
-
-        if "timer" in kwargs or "duration" in kwargs:
-            dur = kwargs.get("timer", kwargs.get("duration"))
-            await self.async_turn_on_timed(
-                duration=dur,
-                hours=kwargs.get("hours", 0),
-                minutes=kwargs.get("minutes", 0),
-                seconds=kwargs.get("seconds", 0),
-                brightness=kwargs.get(ATTR_BRIGHTNESS),
-                brightness_pct=kwargs.get(ATTR_BRIGHTNESS_PCT),
-            )
-            return
-
         if ATTR_FLASH in kwargs and self._attr_supported_features & LightEntityFeature.FLASH:
             if kwargs[ATTR_FLASH] == FLASH_SHORT:
                 await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 0.5))

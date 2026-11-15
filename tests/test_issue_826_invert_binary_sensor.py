@@ -332,17 +332,13 @@ async def test_invert_switch_rejects_timed_turn_on_and_resync_ignores_it(
     gateway = entry.runtime_data.gateway
     assert gateway._resync_manager.known_light_areas() == []
 
-    # 2. Calling async_turn_on_timed or async_turn_on(duration=...) raises HomeAssistantError
+    # 2. Calling async_turn_on_timed raises HomeAssistantError
     entity_comp = hass.data["entity_components"]["switch"]
     inv_entity = entity_comp.get_entity(sw_id)
     assert inv_entity is not None
     with pytest.raises(HomeAssistantError) as exc_info:
         await inv_entity.async_turn_on_timed(duration=5)
     assert exc_info.value.translation_key == "invert_switch_no_timer"
-
-    with pytest.raises(HomeAssistantError) as exc_info2:
-        await inv_entity.async_turn_on(duration=5)
-    assert exc_info2.value.translation_key == "invert_switch_no_timer"
 
 
 async def test_orphan_and_ignored_invert_switch_pruning_and_helpers(

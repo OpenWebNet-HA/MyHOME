@@ -152,7 +152,7 @@ GATEWAY_ROADMAP_ROWS: tuple[GatewayRoadmapRowSpec, ...] = (
         mermaid_id="GW_F459",
         mermaid_title="F459",
         models=("F459",),
-        covered_note="*None needed — WHO 1013 code 65 & WHO 4 / 22 profile active in CI.*",
+        covered_note="*None needed — WHO 1013 code 65 & WHO 4 capture active in CI.*",
         missing_target="**Production plant trace**: Capture from a BTicino F459 plant server.",
     ),
     GatewayRoadmapRowSpec(
@@ -271,7 +271,7 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**Lighting (WHO = 1) — Native DIN Timers**",
         mermaid_id="SUB_TIMER",
         mermaid_title="DIN Bus Timers (WHO 1)",
-        frame_regex=r"^(?:\*1\*(?:1[1-8]|2[0-8])\*[^*]+##|\*#1\*[^*]+\*#?2\*)",
+        frame_regex=r"^(?:\*1\*1[1-8]\*[^*]+##|\*#1\*[^*]+\*#?2\*)",
         covered_note=(
             "*Preset temporization & `Dimension 2` replies covered; optional mid-countdown "
             "`*#1*WHERE*2*H*M*S##` (`H/M/S > 0`) trace welcomed.*"
@@ -305,12 +305,12 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
     ),
     SubsystemRoadmapRowSpec(
         key="who2_dim10_tilt",
-        display_name="**Covers (WHO = 2) — Advanced Position & Venetian Tilt (`Dim 10 / 11`)**",
+        display_name="**Covers (WHO = 2) — Advanced Position (`Dim 10 / 11`)**",
         mermaid_id="SUB_COV_H",
-        mermaid_title="Covers Dim 10 / Tilt (WHO 2)",
+        mermaid_title="Covers Dim 10 / 11 (WHO 2)",
         frame_regex=r"^(?:\*#2\*[^*]+\*#?(?:10|11)(?:[#*])(?!\d+\*255\*)|\*2\*(?:1[012]#|1000#1[012]#)[^*]+\*[^*]+##$)",
-        covered_note="*Baseline covered (`F401` / `LN4661M2` percentage position & Venetian slat tilt).*",
-        missing_target="**Advanced shutter trace**: `Dimension 10` / `11` position and tilt feedback.",
+        covered_note="*Baseline covered (`F401` / `LN4661M2` percentage position; the slat angle is not on the bus).*",
+        missing_target="**Advanced shutter trace**: `Dimension 10` / `11` position feedback.",
     ),
     SubsystemRoadmapRowSpec(
         key="who2_uncalibrated_255",
@@ -366,11 +366,11 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
     ),
     SubsystemRoadmapRowSpec(
         key="who4_fancoil",
-        display_name="**Thermoregulation (WHO = 4) — Fancoils & 4-Pipe Actuators (`Dim 11 / 20`)**",
+        display_name="**Thermoregulation (WHO = 4) — Fancoils (`Dim 11 / 20`)**",
         mermaid_id="SUB_FANCOIL",
         mermaid_title="Fancoils Dim 11/20 (WHO 4)",
-        frame_regex=r"^\*#4\*[^*]+\*#?(?:11|20)\*",
-        covered_note="*Baseline covered (`Dimension 11` 3-speed fancoils & `Dimension 20` actuator states).*",
+        frame_regex=r"^\*#4\*[^*]+\*#?(?:11\*|20\*[5-8]##)",
+        covered_note="*Baseline covered (`Dimension 11` fan speeds & `Dimension 20` fan-coil states `5`–`8`).*",
         missing_target="**Fancoil trace**: `Dimension 11` fan speeds and `Dimension 20` 2-pipe/4-pipe states.",
     ),
     SubsystemRoadmapRowSpec(
@@ -405,8 +405,8 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**CEN / CEN+ Pushbuttons & Rotary Triggers (WHO = 15 / 25)**",
         mermaid_id="SUB_CEN",
         mermaid_title="CEN / CEN+ Triggers (WHO 15/25)",
-        frame_regex=r"^(?:\*#?15\*|\*#?25\*(?:11|2[0-9])#)",
-        covered_note="*Baseline covered (short, long-press, repeat, release & rotary bursts active in CI).*",
+        frame_regex=r"^(?:\*#?15\*|\*#?25\*2[1-8]#)",
+        covered_note="*Baseline covered (short, long-press, repeat & release active in CI); a `WHO = 25` rotary capture (`WHAT = 25..28`) is welcome.*",
         missing_target="**Pushbutton trace**: `WHO = 15` / `WHO = 25` `21#..25#` wall switch events.",
     ),
     SubsystemRoadmapRowSpec(
@@ -414,8 +414,8 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**Scenarios & Schedulers (WHO = 0 / 17)**",
         mermaid_id="SUB_SCENARIOS",
         mermaid_title="Scenarios (WHO 0/17)",
-        frame_regex=r"^\*#?(?:0|17)\*",
-        covered_note="*Baseline covered (MH200 / MH200N / MH201 / F420 scenario activation & scheduler frames).*",
+        frame_regex=r"^(?:\*0\*(?:[1-9]|1[0-9]|20)\*|\*#?17\*)",
+        covered_note="*Baseline covered (`WHO = 0` activation on an F454, `WHO = 17` frames on MH200 / MH200N).*",
         missing_target="**Scenario module trace**: `WHO = 0` / `WHO = 17` scenario activation frames.",
     ),
     SubsystemRoadmapRowSpec(
@@ -454,7 +454,7 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         mermaid_id="SUB_ENERGY",
         mermaid_title="Energy Metering (WHO 18)",
         frame_regex=r"^\*#?18\*",
-        covered_note="*Baseline covered (`F520` / `F521` / `3522` active power, totalizers & voltage/current).*",
+        covered_note="*Baseline covered (`F520` / `F521` / `3522` active power `W` and total/daily/monthly `kWh` energy counters).*",
         missing_target="**Energy meter trace**: `WHO = 18` power and cumulative energy frames.",
     ),
     SubsystemRoadmapRowSpec(
@@ -471,7 +471,7 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         display_name="**F422 Cross-Bus Router (`#4#<bus>`)**",
         mermaid_id="SUB_ROUTER",
         mermaid_title="F422 Cross-Bus (#4#bus)",
-        frame_regex=r"#4#\d+",
+        frame_regex=r"^\*#?[12]\*.*#4#\d+",
         covered_note="*None needed — physical F422 local-bus routing (`#4#01`, `#4#02`, ...) active in CI.*",
         missing_target="**Cross-bus router trace**: Frames routed across `#4#<bus>` F422 interfaces.",
     ),
@@ -650,6 +650,35 @@ def _infer_model_from_filename_or_readme(file_path: Path) -> str:
     return ""
 
 
+def _is_known_gateway(gateway: str) -> bool:
+    """Return True when gateway is a concrete model token rather than empty/Generic/Unknown."""
+    return bool(gateway) and gateway not in ("Generic", "Unknown")
+
+
+def _commit_rx_frame(summary: FixtureCorpusSummary, rec: FrameRecord) -> None:
+    """Commit a single deduplicated FrameRecord to summary and per-model statistics."""
+    summary.rx_frames.append(rec)
+    canon_gw = rec.gateway
+    if not _is_known_gateway(canon_gw):
+        return
+
+    stats = summary.by_model.setdefault(canon_gw, GatewayModelStats())
+    if rec.is_oracle:
+        stats.oracle_files.add(rec.file_rel)
+        stats.oracle_rx_frames += 1
+        stats.oracle_whos.add(rec.who)
+        stats.oracle_artifacts[rec.artifact_label] = (
+            stats.oracle_artifacts.get(rec.artifact_label, 0) + 1
+        )
+    else:
+        stats.phys_files.add(rec.file_rel)
+        stats.phys_rx_frames += 1
+        stats.phys_whos.add(rec.who)
+        stats.phys_artifacts[rec.artifact_label] = (
+            stats.phys_artifacts.get(rec.artifact_label, 0) + 1
+        )
+
+
 def _record_rx_frame(
     summary: FixtureCorpusSummary,
     *,
@@ -672,21 +701,7 @@ def _record_rx_frame(
         file_rel=file_rel,
         is_oracle=is_oracle,
     )
-    summary.rx_frames.append(rec)
-    if not canon_gw or canon_gw in ("Generic", "Unknown"):
-        return
-
-    stats = summary.by_model.setdefault(canon_gw, GatewayModelStats())
-    if is_oracle:
-        stats.oracle_files.add(file_rel)
-        stats.oracle_rx_frames += 1
-        stats.oracle_whos.add(who)
-        stats.oracle_artifacts[artifact_label] = stats.oracle_artifacts.get(artifact_label, 0) + 1
-    else:
-        stats.phys_files.add(file_rel)
-        stats.phys_rx_frames += 1
-        stats.phys_whos.add(who)
-        stats.phys_artifacts[artifact_label] = stats.phys_artifacts.get(artifact_label, 0) + 1
+    _commit_rx_frame(summary, rec)
 
 
 def _parse_json_fixture(
@@ -957,6 +972,14 @@ def _parse_text_or_log_fixture(
                 )
 
 
+def _fixture_scan_sort_key(file_path: Path, fixtures_dir: Path) -> tuple[int, int, str]:
+    """Order traces/ ahead of plants/ and .json/.jsonl ahead of .log/.txt for canonical citations."""
+    rel = file_path.relative_to(fixtures_dir).as_posix()
+    in_plants = 1 if rel.startswith("plants/") else 0
+    ext_rank = 0 if file_path.suffix.lower() in {".json", ".jsonl"} else 1
+    return (in_plants, ext_rank, rel)
+
+
 def scan_fixture_corpus(
     fixtures_dir: Path = FIXTURES_DIR,
     const_py: Path = CONST_PY,
@@ -967,8 +990,9 @@ def scan_fixture_corpus(
     if fixtures_dir.is_dir():
         all_files = sorted(
             (p for p in fixtures_dir.rglob("*") if p.is_file()),
-            key=lambda p: p.relative_to(fixtures_dir).as_posix(),
+            key=lambda p: _fixture_scan_sort_key(p, fixtures_dir),
         )
+        seen_sequences: set[tuple[str, bool, tuple[str, ...]]] = set()
         for file_path in all_files:
             suffix = file_path.suffix.lower()
             if suffix not in {".json", ".jsonl", ".txt", ".log"}:
@@ -977,14 +1001,37 @@ def scan_fixture_corpus(
             is_path_oracle = "oracle" in file_rel.lower()
             artifact_label = _artifact_label_for_file(file_path, fixtures_dir)
 
+            file_summary = FixtureCorpusSummary()
             if suffix == ".json":
-                _parse_json_fixture(file_path, file_rel, artifact_label, is_path_oracle, summary)
+                _parse_json_fixture(
+                    file_path, file_rel, artifact_label, is_path_oracle, file_summary
+                )
             elif suffix == ".jsonl":
-                _parse_jsonl_fixture(file_path, file_rel, artifact_label, is_path_oracle, summary)
+                _parse_jsonl_fixture(
+                    file_path, file_rel, artifact_label, is_path_oracle, file_summary
+                )
             else:
                 _parse_text_or_log_fixture(
-                    file_path, file_rel, artifact_label, is_path_oracle, summary
+                    file_path, file_rel, artifact_label, is_path_oracle, file_summary
                 )
+
+            if file_summary.calibrated_cover_bundles:
+                summary.calibrated_cover_bundles.extend(
+                    file_summary.calibrated_cover_bundles
+                )
+
+            grouped_recs: dict[tuple[str, bool], list[FrameRecord]] = {}
+            for rec in file_summary.rx_frames:
+                grouped_recs.setdefault((rec.gateway, rec.is_oracle), []).append(rec)
+
+            for (gw_key, is_oracle), group_recs in grouped_recs.items():
+                if _is_known_gateway(gw_key):
+                    seq_key = (gw_key, is_oracle, tuple(r.raw for r in group_recs))
+                    if seq_key in seen_sequences:
+                        continue
+                    seen_sequences.add(seq_key)
+                for rec in group_recs:
+                    _commit_rx_frame(summary, rec)
 
     if validate_models:
         mapped_models: set[str] = set()
@@ -1193,7 +1240,7 @@ def evaluate_subsystem_rows(summary: FixtureCorpusSummary) -> list[EvaluatedRow]
             else:
                 phys_files.add(rec.file_rel)
                 phys_rx += 1
-                if rec.gateway:
+                if _is_known_gateway(rec.gateway):
                     phys_gateways.add(rec.gateway)
                 phys_artifacts[rec.artifact_label] = (
                     phys_artifacts.get(rec.artifact_label, 0) + 1

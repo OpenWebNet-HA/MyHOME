@@ -1,6 +1,6 @@
 # Integration Quality Scale plan: MyHOME → 🏆 Platinum
 
-_Status on 2026-09-14 (`scripts/quality_scale_report.py`): **no tier reached yet** — 52/54 rules satisfied (Bronze 19/20, Silver 10/10, Gold 21/21, Platinum 2/3). Phases 0–4 are done; 🥉 Bronze is blocked only by `brands` (an external PR), Platinum by `strict-typing`. There is no "Diamond" tier in the official scale; the top is 🏆 Platinum. Tiers are formally awarded only by Home Assistant core review — this plan gets the self-audit there, which is the precondition for the upstream submission in ROADMAP Phase 5._
+_Status (`scripts/quality_scale_report.py --require platinum`): **🏆 Platinum self-audit reached — 54/54 rules satisfied/exempt** (🥉 Bronze 20/20, 🥈 Silver 10/10, 🥇 Gold 21/21, 🏆 Platinum 3/3) in `custom_components/myhome/quality_scale.yaml` and enforced on every push and PR in `.github/workflows/quality-scale.yml`. All Phases 0–5 below are complete. (Tiers are formally awarded only by Home Assistant Core review upon upstream submission; there is no "Diamond" tier in the official scale — the top tier is 🏆 Platinum.)_
 
 Reference: <https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/>  
 Manifest: [`custom_components/myhome/quality_scale.yaml`](https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/custom_components/myhome/quality_scale.yaml)
@@ -10,7 +10,7 @@ Manifest: [`custom_components/myhome/quality_scale.yaml`](https://github.com/Ope
 - Finish, test and merge `feat/cover-calibration` (`cover.py`, the bus-monitor card, `services.py`). It adds new services and ~10 new `HomeAssistantError` raises that Phases 2–4 must cover (`docs-actions`, `exception-translations`); doing quality work on an unmerged branch means doing it twice.
 - Fix the local crash in `scripts/quality_scale_report.py` (cp1252 `UnicodeEncodeError` on Windows — `sys.stdout.reconfigure(encoding="utf-8")`) so the report is runnable locally, not only in CI.
 
-## Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — 3 of 4 done (`brands` pending)
+## Phase 1 — 🥉 Bronze (4 rules → the tier appears on the badge) — ✅ done (4 of 4)
 
 | Rule | Work | Size |
 |---|---|---|

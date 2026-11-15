@@ -539,10 +539,12 @@ async def async_setup_entry(
         platform.async_register_entity_service(
             SERVICE_TURN_ON_TIMED,
             as_any({
-                vol.Optional("duration"): vol.Coerce(float),
+                vol.Optional("duration"): vol.All(vol.Coerce(float), vol.Range(min=0.5, max=918000)),
                 vol.Optional("hours", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
                 vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
                 vol.Optional("seconds", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=59)),
+                vol.Optional("brightness"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+                vol.Optional("brightness_pct"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
             }),
             "async_turn_on_timed",
         )
@@ -622,12 +624,14 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         """
         await self._gateway_handler.send_status_request(OWNLightingCommand.status(self._full_where))
 
-    async def async_turn_on_timed(
+    async def async_turn_on_timed(  # pylint: disable=unused-argument
         self,
         duration: float | None = None,
         hours: int = 0,
         minutes: int = 0,
         seconds: float = 0,
+        brightness: int | None = None,
+        brightness_pct: int | None = None,
     ) -> None:
         """Turn on switch with a hardware-offloaded bus timer."""
         cmd = build_timed_turn_on_command(
@@ -641,18 +645,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         self._attr_is_on = True
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the device on."""
-        if "timer" in kwargs or "duration" in kwargs:
-            raw_dur = kwargs.get("timer", kwargs.get("duration"))
-            dur = float(raw_dur) if raw_dur is not None else None
-            await self.async_turn_on_timed(
-                duration=dur,
-                hours=int(kwargs.get("hours", 0)),
-                minutes=int(kwargs.get("minutes", 0)),
-                seconds=float(kwargs.get("seconds", 0)),
-            )
-            return
         await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
@@ -814,12 +808,14 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         cmd = cast(OWNCommand, OWNCommand.parse(f"*#4*{self._full_where}*20##"))
         await self._gateway_handler.send_status_request(cmd)
 
-    async def async_turn_on_timed(
+    async def async_turn_on_timed(  # pylint: disable=unused-argument
         self,
         duration: float | None = None,
         hours: int = 0,
         minutes: int = 0,
         seconds: float = 0,
+        brightness: int | None = None,
+        brightness_pct: int | None = None,
     ) -> None:
         """Reject WHO=1 hardware timers on WHO=4 thermo actuators."""
         raise HomeAssistantError(
@@ -828,10 +824,8 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             translation_placeholders={"name": self._device_name},
         )
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the thermo actuator on via custom trigger or direct Dimension 20 write."""
-        if "timer" in kwargs or "duration" in kwargs:
-            await self.async_turn_on_timed()
         if self._turn_on_command:
             cmd = cast(OWNCommand, OWNCommand.parse(self._turn_on_command))
             await self._gateway_handler.send(cmd)
@@ -1005,22 +999,22 @@ class MyHOMEInvertSwitch(MyHOMEEntity, SwitchEntity):
         self._attr_is_on = inverted
         self._publish_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Enable state inversion for the companion binary sensor."""
-        if "timer" in kwargs or "duration" in kwargs:
-            await self.async_turn_on_timed()
         self._persist_and_apply(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Disable state inversion for the companion binary sensor."""
         self._persist_and_apply(False)
 
-    async def async_turn_on_timed(
+    async def async_turn_on_timed(  # pylint: disable=unused-argument
         self,
         duration: float | None = None,
         hours: int = 0,
         minutes: int = 0,
         seconds: float = 0,
+        brightness: int | None = None,
+        brightness_pct: int | None = None,
     ) -> None:
         """Reject WHO=1 hardware timers on binary sensor invert configuration switches."""
         raise HomeAssistantError(

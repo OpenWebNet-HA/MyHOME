@@ -84,14 +84,16 @@ From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplac
 
 For clean uninstallation steps, see [Removal & Clean Uninstall](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/removal/).
 
+Upgrading from the previous stable release? Follow the [upgrade guide](https://openwebnet-ha.github.io/MyHOME/latest/migration/upgrade-from-094/).
+
 ---
 
 ## Quick Start
 
 1. **Add Your Gateway**: Navigate to **Settings → Devices & Services → Add Integration → MyHOME**. Confirm an SSDP/UPnP-discovered gateway (**Configure**), or enter your gateway's IP address, port (default `20000`), and OpenWebNet / HMAC password manually.
 2. **Automatic Bus Discovery**: MyHOME establishes dedicated command (`*99*0##`) and event (`*99*1##`) sessions, identifies your gateway hardware profile, and automatically discovers devices from bus sweeps and live frames.
-3. **Fine-Tune in UI**: Click **Configure** on the MyHOME integration card to adjust command worker concurrency, dimmer transition mode (`software_stepped` or `native`), audio decoder pool mappings, exposed Home Assistant entities, probe-less thermo actuator switches, or ignored addresses.
-4. **Optional `myhome.yaml` Overlay**: Physical SCS lighting groups (`#1`–`#255`), `WHO=6` video door-entry locks, F500/F500N tuner sources, and DALI `lock_features` declarations can be placed in `/config/myhome.yaml` — see the [Configuration Overview](https://openwebnet-ha.github.io/MyHOME/latest/configuration/).
+3. **Fine-Tune in UI**: Click **Configure** on the MyHOME integration card to adjust command worker concurrency, dimmer transition mode (`software_stepped` or `native`), F500/F500N FM tuner source flags (`source_1_tuner`–`source_4_tuner`), audio decoder pool mappings, exposed Home Assistant entities, probe-less thermo actuator switches, or ignored addresses.
+4. **Optional `myhome.yaml` Overlay**: Physical SCS lighting groups (`#1`–`#255` under `light:`), `WHO=6` video door-entry locks, impulse covers, and DALI `lock_features` declarations can be placed in `/config/myhome.yaml` — see the [Configuration Overview](https://openwebnet-ha.github.io/MyHOME/latest/configuration/).
 
 ---
 
@@ -122,8 +124,8 @@ For clean uninstallation steps, see [Removal & Clean Uninstall](https://openwebn
 <!-- SUPPORTED_DOMAINS_START -->
 | Domain | WHO | Capabilities |
 |---|---|---|
-| **`light`** | WHO=1 | On/Off, Dimmers with brightness control & transitions (stepped & native), DALI DT8 Tunable White (Dimension 14, 2000K–6535K), HS/RGB colour, Hardware-offloaded bus timers (`myhome.turn_on_timed` / `timer` parameter) |
-| **`switch`** | WHO=1 | Relays, auxiliary switches, socket actuators (switch/outlet device classes), Hardware-offloaded bus timers (`myhome.turn_on_timed` / `timer` parameter) |
+| **`light`** | WHO=1 | On/Off, Dimmers with brightness control & transitions (stepped & native), DALI DT8 Tunable White (Dimension 14, 2000K–6535K), HS/RGB colour, Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`) |
+| **`switch`** | WHO=1 / 4 / 9 / 25 | Relays & socket actuators (`WHO=1`, switch/outlet device classes), thermoregulation zone/actuator power switches (`WHO=4`), auxiliary & CEN+ contact invert switches (`WHO=9 / 25`), Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`) |
 | **`cover`** | WHO=1 / WHO=2 | Motorized shutters, blinds, roll-ups with state tracking, position-reporting actuators & virtual travel-time positioning; impulse gates & garage doors (`WHO=1`) with sensor feedback and an optional multi-factor approval workflow |
 | **`lock`** | WHO=6 | Native video door entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN authentication and auto-relock |
 | **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
@@ -142,7 +144,7 @@ For clean uninstallation steps, see [Removal & Clean Uninstall](https://openwebn
 <summary><strong>📊 Hardware Trace Availability Matrix (Real-Plant CI Corpus)</strong></summary>
 
 <!-- TRACE_MATRIX_START -->
-| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 7<br>Video | WHO 8<br>Intercom | WHO 9<br>Power | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>Diag | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
+| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 7<br>Video | WHO 8<br>Intercom | WHO 9<br>Aux | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>CEN+ | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
 | :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
 | **067292** |  | ✅ |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
 | **F453** |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
@@ -205,7 +207,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### Code Coverage
 
-The integration maintains 5793 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+The integration maintains 5865 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
 
 <details>
 <summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>
@@ -214,77 +216,77 @@ The integration maintains 5793 automated unit tests (100% line coverage across a
 
 | Component / Module | Coverage | Notes |
 |---|:---:|---|
-| [`__init__.py`](custom_components/myhome/__init__.py) | **100%** | Setup lifecycle and zero-friction entity migration |
-| [`access_policy.py`](custom_components/myhome/access_policy.py) | **100%** | Core integration component |
-| [`alarm_control_panel.py`](custom_components/myhome/alarm_control_panel.py) | **100%** | Core integration component |
-| [`binary_sensor.py`](custom_components/myhome/binary_sensor.py) | **100%** | Magnetic contacts, door/window sensors, motion sensors |
-| [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra sockets) |
-| [`button.py`](custom_components/myhome/button.py) | **100%** | Scenario buttons and bus diagnostic pings |
-| [`climate.py`](custom_components/myhome/climate.py) | **100%** | Heating, cooling, 4-pipe systems, and thermostat controls |
-| [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Step handlers, user entry, reauth, and options flow |
-| [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Core integration component |
-| [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | Core integration component |
-| [`config_flow_expose.py`](custom_components/myhome/config_flow_expose.py) | **100%** | Core integration component |
-| [`config_flow_options.py`](custom_components/myhome/config_flow_options.py) | **100%** | Core integration component |
-| [`config_flow_thermo_switch.py`](custom_components/myhome/config_flow_thermo_switch.py) | **100%** | Core integration component |
-| [`config_flow_topology.py`](custom_components/myhome/config_flow_topology.py) | **100%** | Core integration component |
-| [`const.py`](custom_components/myhome/const.py) | **100%** | Protocol commands, dimensions, and integration constants |
-| [`cover.py`](custom_components/myhome/cover.py) | **100%** | Motorized shutters, blinds, roll-ups with state tracking |
-| [`cover_calibration.py`](custom_components/myhome/cover_calibration.py) | **100%** | Core integration component |
-| [`cover_motion.py`](custom_components/myhome/cover_motion.py) | **100%** | Core integration component |
-| [`cover_scope.py`](custom_components/myhome/cover_scope.py) | **100%** | Core integration component |
-| [`cover_strategies/__init__.py`](custom_components/myhome/cover_strategies/__init__.py) | **100%** | Core integration component |
-| [`cover_strategies/base.py`](custom_components/myhome/cover_strategies/base.py) | **100%** | Core integration component |
-| [`cover_strategies/native.py`](custom_components/myhome/cover_strategies/native.py) | **100%** | Core integration component |
-| [`cover_strategies/simple.py`](custom_components/myhome/cover_strategies/simple.py) | **100%** | Core integration component |
-| [`cover_strategies/timed.py`](custom_components/myhome/cover_strategies/timed.py) | **100%** | Core integration component |
-| [`cover_strategies/venetian.py`](custom_components/myhome/cover_strategies/venetian.py) | **100%** | Core integration component |
-| [`data.py`](custom_components/myhome/data.py) | **100%** | Core integration component |
-| [`decoder_allocation.py`](custom_components/myhome/decoder_allocation.py) | **100%** | Core integration component |
-| [`decoder_companion.py`](custom_components/myhome/decoder_companion.py) | **100%** | Core integration component |
-| [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Thread-safe streaming proxy audio pool |
-| [`device_health.py`](custom_components/myhome/device_health.py) | **100%** | Core integration component |
-| [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless CEN/CEN+ scenario device automation triggers |
-| [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Config entry diagnostics with sensitive data redaction |
-| [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Core integration component |
-| [`expose.py`](custom_components/myhome/expose.py) | **100%** | Core integration component |
-| [`gateway.py`](custom_components/myhome/gateway.py) | **100%** | Hardware handler, lockout prevention, adaptive queue pacing |
-| [`gateway_events.py`](custom_components/myhome/gateway_events.py) | **100%** | Core integration component |
-| [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Core integration component |
-| [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Core integration component |
-| [`identity.py`](custom_components/myhome/identity.py) | **100%** | Core integration component |
-| [`ignored.py`](custom_components/myhome/ignored.py) | **100%** | Core integration component |
-| [`legacy_yaml.py`](custom_components/myhome/legacy_yaml.py) | **100%** | Core integration component |
-| [`light.py`](custom_components/myhome/light.py) | **100%** | Relays, auto-dimmer detection, and brightness transitions |
-| [`light_dali.py`](custom_components/myhome/light_dali.py) | **100%** | Core integration component |
-| [`light_fade.py`](custom_components/myhome/light_fade.py) | **100%** | Core integration component |
-| [`light_group.py`](custom_components/myhome/light_group.py) | **100%** | Core integration component |
-| [`lock.py`](custom_components/myhome/lock.py) | **100%** | Core integration component |
-| [`media_player.py`](custom_components/myhome/media_player.py) | **100%** | F441/F441M sound system zones, dynamic proxy, gain-staging |
-| [`media_player_decoder.py`](custom_components/myhome/media_player_decoder.py) | **100%** | Core integration component |
-| [`media_player_group.py`](custom_components/myhome/media_player_group.py) | **100%** | Core integration component |
-| [`media_player_pool.py`](custom_components/myhome/media_player_pool.py) | **100%** | Core integration component |
-| [`media_player_power.py`](custom_components/myhome/media_player_power.py) | **100%** | Core integration component |
-| [`media_player_routing.py`](custom_components/myhome/media_player_routing.py) | **100%** | Core integration component |
-| [`media_player_source.py`](custom_components/myhome/media_player_source.py) | **100%** | Core integration component |
-| [`media_player_zone.py`](custom_components/myhome/media_player_zone.py) | **100%** | Core integration component |
-| [`migrate.py`](custom_components/myhome/migrate.py) | **100%** | Core integration component |
-| [`myhome_device.py`](custom_components/myhome/myhome_device.py) | **100%** | Home Assistant device registry schema compliance |
-| [`number.py`](custom_components/myhome/number.py) | **100%** | Core integration component |
-| [`poll_health.py`](custom_components/myhome/poll_health.py) | **100%** | Core integration component |
-| [`repairs.py`](custom_components/myhome/repairs.py) | **100%** | Core integration component |
-| [`router.py`](custom_components/myhome/router.py) | **100%** | Core integration component |
-| [`sensor.py`](custom_components/myhome/sensor.py) | **100%** | Power meters, energy counters, and pulse sensors |
-| [`services.py`](custom_components/myhome/services.py) | **100%** | Core integration component |
-| [`sound_source.py`](custom_components/myhome/sound_source.py) | **100%** | Core integration component |
-| [`switch.py`](custom_components/myhome/switch.py) | **100%** | Relay actuators, auxiliary switches, socket controllers |
-| [`thermo_switch.py`](custom_components/myhome/thermo_switch.py) | **100%** | Core integration component |
-| [`topology.py`](custom_components/myhome/topology.py) | **100%** | Core integration component |
-| [`tuner_decode.py`](custom_components/myhome/tuner_decode.py) | **100%** | Core integration component |
-| [`typing_compat.py`](custom_components/myhome/typing_compat.py) | **100%** | Core integration component |
-| [`validate.py`](custom_components/myhome/validate.py) | **100%** | Device & gateway schemas, custom WHERE validators, sensor injections |
-| [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus streaming, history, and diagnostics |
-| [`where_grammar.py`](custom_components/myhome/where_grammar.py) | **100%** | Core integration component |
+| [`__init__.py`](custom_components/myhome/__init__.py) | **100%** | Setup/unload lifecycle, static Lovelace card registration & cleanup, and migrations |
+| [`access_policy.py`](custom_components/myhome/access_policy.py) | **100%** | Human-in-the-loop approval, pre-warning, and watchdog policy for impulse gates/doors |
+| [`alarm_control_panel.py`](custom_components/myhome/alarm_control_panel.py) | **100%** | Read-only WHO=5 burglar alarm central unit status (3485/3486) and broadcast sync |
+| [`binary_sensor.py`](custom_components/myhome/binary_sensor.py) | **100%** | WHO=1 PIR motion, WHO=9 AUX channels, and WHO=25 dry contacts with state inversion |
+| [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra gateway sockets) |
+| [`button.py`](custom_components/myhome/button.py) | **100%** | WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek |
+| [`climate.py`](custom_components/myhome/climate.py) | **100%** | WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync |
+| [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Gateway onboarding, manual/SSDP setup, and subentry flow registration |
+| [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options |
+| [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | SSDP discovery, connection probing, reauthentication, and reconfiguration steps |
+| [`config_flow_expose.py`](custom_components/myhome/config_flow_expose.py) | **100%** | Subentry flow for projecting Home Assistant entities onto the SCS bus |
+| [`config_flow_options.py`](custom_components/myhome/config_flow_options.py) | **100%** | Gateway runtime options flow (worker sessions, fades, connection, ignored addresses) |
+| [`config_flow_thermo_switch.py`](custom_components/myhome/config_flow_thermo_switch.py) | **100%** | Subentry flow for WHO=4 probe-less thermoregulation / towel-warmer switches |
+| [`config_flow_topology.py`](custom_components/myhome/config_flow_topology.py) | **100%** | Shared-bus primary, secondary (delegated WHO), and warm-standby topology flows |
+| [`const.py`](custom_components/myhome/const.py) | **100%** | Protocol commands, dimensions, platform definitions, and integration constants |
+| [`cover.py`](custom_components/myhome/cover.py) | **100%** | WHO=2 shutters/blinds and WHO=1 impulse gates/garage doors with state tracking |
+| [`cover_calibration.py`](custom_components/myhome/cover_calibration.py) | **100%** | Automated on-bus stopwatch travel-time calibration engine for WHO=2 covers |
+| [`cover_motion.py`](custom_components/myhome/cover_motion.py) | **100%** | Pure travel-time position interpolation math and command echo suppression |
+| [`cover_scope.py`](custom_components/myhome/cover_scope.py) | **100%** | Stateless general, area, and group WHERE cover entities (WHO=2) |
+| [`cover_strategies/__init__.py`](custom_components/myhome/cover_strategies/__init__.py) | **100%** | Strategy exports and registry for pluggable WHO=2 cover kinematics |
+| [`cover_strategies/base.py`](custom_components/myhome/cover_strategies/base.py) | **100%** | Base protocol and shared timing state for WHO=2 cover kinematics strategies |
+| [`cover_strategies/native.py`](custom_components/myhome/cover_strategies/native.py) | **100%** | Native percentage position strategy for advanced WHO=2 actuators (Dim 10/11) |
+| [`cover_strategies/simple.py`](custom_components/myhome/cover_strategies/simple.py) | **100%** | Open/close/stop strategy for uncalibrated standard WHO=2 actuators |
+| [`cover_strategies/timed.py`](custom_components/myhome/cover_strategies/timed.py) | **100%** | Interpolated virtual position strategy for travel-time calibrated WHO=2 shutters |
+| [`cover_strategies/venetian.py`](custom_components/myhome/cover_strategies/venetian.py) | **100%** | Combined curtain travel and slat-tilt dead-reckoning strategy for Venetian blinds |
+| [`data.py`](custom_components/myhome/data.py) | **100%** | Typed per-entry runtime_data container and config-entry lookup helpers |
+| [`decoder_allocation.py`](custom_components/myhome/decoder_allocation.py) | **100%** | Deterministic decoder slot allocation, LRU eviction, and group topology bookkeeper |
+| [`decoder_companion.py`](custom_components/myhome/decoder_companion.py) | **100%** | Cross-integration streaming companion discovery and loop-safe entity filtering |
+| [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Dynamic streaming proxy audio pool coordinating matrix inputs and upstream players |
+| [`device_health.py`](custom_components/myhome/device_health.py) | **100%** | Hardware fault telemetry and self-clearing Home Assistant Repair issue lifecycle |
+| [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless WHO=15 CEN and WHO=25 CEN+ pushbutton and rotary automation triggers |
+| [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Sanitized config-entry diagnostics export with credential, IP, and MAC redaction |
+| [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Shared entity restore, YAML overlay merge, dynamic bus discovery, and dispatcher |
+| [`expose.py`](custom_components/myhome/expose.py) | **100%** | Virtual OpenWebNet responder projecting HA entities and system clock onto SCS |
+| [`gateway.py`](custom_components/myhome/gateway.py) | **100%** | Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle |
+| [`gateway_events.py`](custom_components/myhome/gateway_events.py) | **100%** | Inbound OpenWebNet frame classification, event bus emission, and doorbell routing |
+| [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Debounced lighting status resync sweeps after group, area, and general broadcasts |
+| [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Persistent event session watchdog, priority command queue, and paced worker pool |
+| [`identity.py`](custom_components/myhome/identity.py) | **100%** | Multi-source gateway model and firmware resolution (SSDP, WHO=13, WHO=1013) |
+| [`ignored.py`](custom_components/myhome/ignored.py) | **100%** | WHO/WHERE address parser and filter silencing discovery, entities, and fault alerts |
+| [`legacy_yaml.py`](custom_components/myhome/legacy_yaml.py) | **100%** | Backward-compatible myhome.yaml loader, schema validator, and platform normalizer |
+| [`light.py`](custom_components/myhome/light.py) | **100%** | WHO=1 relays, dimmers, DALI DT8 tunable white/HSV colour, and DIN bus timers |
+| [`light_dali.py`](custom_components/myhome/light_dali.py) | **100%** | DALI DT8 feature-lock and Home Assistant colour-mode mutual exclusion helpers |
+| [`light_fade.py`](custom_components/myhome/light_fade.py) | **100%** | Software-stepped dimmer brightness fade interpolation and cancellation engine |
+| [`light_group.py`](custom_components/myhome/light_group.py) | **100%** | Declared physical SCS lighting group entities (WHO=1, WHERE=#G) with member rollup |
+| [`lock.py`](custom_components/myhome/lock.py) | **100%** | WHO=6 video door-entry electric strikes with constant-time PIN verification |
+| [`media_player.py`](custom_components/myhome/media_player.py) | **100%** | WHO=16 F441/F441M audio zones, WHO=16/22 FM RDS tuners, and dynamic streaming proxy |
+| [`media_player_decoder.py`](custom_components/myhome/media_player_decoder.py) | **100%** | Upstream streaming decoder mirroring, fixed pre-gain feed trim, and anti-hiss auto-off |
+| [`media_player_group.py`](custom_components/myhome/media_player_group.py) | **100%** | Multi-room audio zone join/unjoin, master hand-over, parking, and group wake |
+| [`media_player_pool.py`](custom_components/myhome/media_player_pool.py) | **100%** | Gateway options-to-DecoderPool builder and live pool reconfiguration helpers |
+| [`media_player_power.py`](custom_components/myhome/media_player_power.py) | **100%** | Audio zone power-state machine, frame classification, and auto-off delay rules |
+| [`media_player_routing.py`](custom_components/myhome/media_player_routing.py) | **100%** | WHO=16 environment/amplifier matrix routing address math |
+| [`media_player_source.py`](custom_components/myhome/media_player_source.py) | **100%** | Matrix input source naming, tuner binding, and per-environment default routing |
+| [`media_player_zone.py`](custom_components/myhome/media_player_zone.py) | **100%** | Shared state, volume/mute primitives, and DecoderPool access for audio zone mixins |
+| [`migrate.py`](custom_components/myhome/migrate.py) | **100%** | Config-entry version upgrades and zero-friction entity/device registry migrations |
+| [`myhome_device.py`](custom_components/myhome/myhome_device.py) | **100%** | Base entity class, DeviceInfo registry linkage, and availability lifecycle |
+| [`number.py`](custom_components/myhome/number.py) | **100%** | Direct FM radio frequency number entities (87.50–108.00 MHz) for F500/F500N tuners |
+| [`poll_health.py`](custom_components/myhome/poll_health.py) | **100%** | Adaptive suppression of non-answering bus addresses during background status polls |
+| [`repairs.py`](custom_components/myhome/repairs.py) | **100%** | Home Assistant Repair issue builders, interactive fix flows, and cleanup helpers |
+| [`router.py`](custom_components/myhome/router.py) | **100%** | O(1) WHO/WHERE frame router dispatching bus telegrams to registered entities |
+| [`sensor.py`](custom_components/myhome/sensor.py) | **100%** | WHO=18 active power & total/daily/monthly energy counters, WHO=4 probes, WHO=1 lux |
+| [`services.py`](custom_components/myhome/services.py) | **100%** | Domain service registrations, Voluptuous schemas, and gateway/entity action handlers |
+| [`sound_source.py`](custom_components/myhome/sound_source.py) | **100%** | F500/F500N FM RDS tuner media_player entity, preset browser, and WHO=16/22 tuning |
+| [`switch.py`](custom_components/myhome/switch.py) | **100%** | WHO=1 relay/outlet switches, WHO=4 thermo actuator switches, and WHO=9/25 invert switches |
+| [`thermo_switch.py`](custom_components/myhome/thermo_switch.py) | **100%** | Runtime helpers and subentry sync for WHO=4 probe-less thermo actuator switches |
+| [`topology.py`](custom_components/myhome/topology.py) | **100%** | Shared-bus role validation, WHO delegation rules, and warm-standby failover logic |
+| [`tuner_decode.py`](custom_components/myhome/tuner_decode.py) | **100%** | Pure WHO=16 and WHO=22 FM frequency, preset, and RDS text frame decoders |
+| [`typing_compat.py`](custom_components/myhome/typing_compat.py) | **100%** | Cross-version Home Assistant typing compatibility shims for strict mypy |
+| [`validate.py`](custom_components/myhome/validate.py) | **100%** | Voluptuous schemas for myhome.yaml devices, canonical WHERE rules, and access policies |
+| [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus monitor streaming, frame history, and diagnostics |
+| [`where_grammar.py`](custom_components/myhome/where_grammar.py) | **100%** | Canonical OpenWebNet APL, F422 #4#bus, and WHO=4 zone/actuator WHERE grammar |
 
 <!-- END_COVERAGE_TABLE -->
 

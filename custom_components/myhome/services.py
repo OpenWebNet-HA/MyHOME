@@ -74,6 +74,25 @@ SEND_MESSAGE_SCHEMA = vol.Schema(
         vol.Required(ATTR_MESSAGE): cv.string,
     }
 )
+SWEEP_BUS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_GATEWAY): cv.string,
+        vol.Optional("force", default=False): cv.boolean,
+    }
+)
+STOP_COVER_CALIBRATION_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_GATEWAY): cv.string,
+    }
+)
+SEND_SCENARIO_PLUS_COMMAND_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_WHERE): vol.Any(cv.string, int, None),
+        vol.Optional(ATTR_ACTION): vol.Any(cv.string, None),
+        vol.Optional(ATTR_GATEWAY): vol.Any(cv.string, None),
+    },
+    extra=vol.PREVENT_EXTRA,
+)
 
 
 def _loaded_gateways(hass: HomeAssistant) -> dict[str, MyHOMEGatewayHandler]:
@@ -423,6 +442,16 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
     hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time, schema=as_any(SYNC_TIME_SCHEMA))
     hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message, schema=as_any(SEND_MESSAGE_SCHEMA))
-    hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus)
-    hass.services.async_register(DOMAIN, SERVICE_STOP_COVER_CALIBRATION, handle_stop_cover_calibration)
-    hass.services.async_register(DOMAIN, SERVICE_SEND_SCENARIO_PLUS_COMMAND, handle_send_scenario_plus_command)
+    hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus, schema=as_any(SWEEP_BUS_SCHEMA))
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_STOP_COVER_CALIBRATION,
+        handle_stop_cover_calibration,
+        schema=as_any(STOP_COVER_CALIBRATION_SCHEMA),
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEND_SCENARIO_PLUS_COMMAND,
+        handle_send_scenario_plus_command,
+        schema=as_any(SEND_SCENARIO_PLUS_COMMAND_SCHEMA),
+    )

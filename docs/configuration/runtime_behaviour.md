@@ -151,16 +151,18 @@ Central units handle status updates differently from subordinate zones (`1..99`)
 Central units coordinate with the plant as follows:
 
 1. **Startup Hydration & Polling**: On restart, the central unit entity is restored from its previous state (`async_restore_last_state()`) and sends canonical status request `*#4*#0##`, updating its mode and subordinate zones upon answer.
-2. **Outbound Mode Commands**: When commanded from Home Assistant, the central unit receives seasonal mode commands:
+2. **Outbound Mode Commands**: When commanded from Home Assistant, the central unit receives canonical seasonal mode commands (`OWNHeatingCommand.set_central_mode`):
 
-    - `*4*100*#0##` (Conditioning OFF command)
-    - `*4*101*#0##` (Manual Heating command)
-    - `*4*102*#0##` (Manual Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 102 denotes Antifreeze protection)
-    - `*4*103*#0##` (Auto Heating/Cooling command; integration command mapping. Note that in WHO 4 status grammar, WHAT 103 denotes Heating OFF)
+    - `*4*303*#0##` (Central unit OFF command)
+    - `*4*1*#0##` (Manual Heating mode command)
+    - `*4*0*#0##` (Manual Cooling / Conditioning mode command)
+    - `*4*3100*#0##` (Auto / restore scheduled programming command)
     - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
+
+    *(Note: `WHAT = 103`, `101`, `100`, and `102` — Heating OFF, Manual Heating, Conditioning, and Antifreeze protection — are inbound status reports emitted by thermostats/central units on the bus, never outbound `#0` mode-switch commands.)*
 3. **Inbound Operating Mode & Status Broadcasts**: The physical central unit broadcasts events across the bus whenever its state changes:
 
-    - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` (Generic OFF status), `*4*202*#0##` (Conditional OFF status).
+    - Operating mode status: `*4*110*#0##` / `*4*101*#0##` (Manual Heating status), `*4*210*#0##` / `*4*100*#0##` (Manual Cooling / Conditioning status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` / `*4*103*#0##` (OFF status), `*4*202*#0##` (Conditional OFF status), `*4*102*#0##` (Antifreeze / thermal protection status).
     - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
     - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
     - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).
@@ -169,6 +171,19 @@ Central units coordinate with the plant as follows:
 6. **Bus Discovery Isolation**: All broadcast frames emitted by a 3550 central unit carry address `#0`. They never resolve to or invent phantom zone `99` (commercial name *"Centrale termoregolazione 99 zone"*). If an installation physically includes a Zone 99 thermostat, on-wire frames directed to zone 99 (`*4*...*99##`) will discover and manage it normally.
 
 *(#582, #629)*
+
+---
+
+## 🛡️ `WHO = 4` Firmware Refusal Guards
+
+Several BTicino / Legrand gateway firmwares deterministically NACK, drop, or crash on specific `WHO = 4` requests. The runtime enforces model-specific protocol guards in `gateway.py`, `climate.py`, and `services.py` before any frame reaches the TCP command queue:
+
+- **`GENERAL_ZONE_REQUEST_REFUSED`**: Broadcast `*#4*0##` status sweeps are suppressed on `F450`, `F454`, `F459`, `F460`, `F461`, `H4684`, `MH200`, `MH201`, `MH202`, and `MyHomeServer1`, where firmware returns immediate NACK or silent timeout.
+- **`SILENT_ZONE_POLL` & `ZONE_ACTUATOR_REQUEST_REFUSED` (`F455`)**: On `F455`, `*#4*0##` returns nothing, `*#4*<zone>*20##` is refused immediately, and unanswered `*#4*<zone>##` polls stall the command socket for ~9 s. Climate zones skip startup polling and instead run the 120 s delayed sequential direct-read recovery described above (`*#4*<zone>*0##`, `*14##`, `*12##`, `*#4*<zone>#1*20##`), while skipping zone-wide `*#4*<zone>*20##` watches.
+- **Local-bus `#4#II` write refusal**: Gateway translators do not implement `#4#<interface>` sub-bus routing on `WHO = 4` thermoregulation writes; outbound `WHO = 4` frames carrying `#4#II` are refused rather than stalling or NACKing on the gateway.
+- **`HUMIDITY_REQUEST_REFUSED`**: Explicit Dimension 60 (`*#4*<zone>*60##`) humidity polls are suppressed on `F450`, `F453`, `F453AV`, `F454`, `F455`, `H4684`, `MH200`, `MH200N`, and `MH202` (zones still decode unsolicited Dimension 60 reports whenever broadcast on the bus).
+- **`ACTUATOR_REQUEST_REFUSED`**: Explicit Dimension 20 (`*#4*<zone>*20##`) actuator status polls are suppressed on `F453`, `F453AV`, `H4684`, `MH200`, `MH200N`, and `MH202`.
+- **Non-split Dimension 22 crash guard (`is_refused_dimension_22`)**: Non-split `WHO = 4` Dimension 22 queries such as `*#4*1*22##` or `*#4*0*22##` crash the thermostat daemon on `F461`, `F454`, and `MH200N` and are refused in `myhome.send_message` (split addressing `*#4*3#Z#N*22##` remains permitted).
 
 ---
 

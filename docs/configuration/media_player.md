@@ -211,9 +211,9 @@ matrix hardware, not an integration limitation. The integration holds to it:
 - **One stream per environment.** While zone 22 streams from a decoder,
   `play_media` or a source change on zone 23 is refused with an error naming
   zone 22, instead of silently switching zone 22 off its stream.
-- **Environment 0 cannot be switched.** Amplifiers `01`–`09` would be routed
+- **Environment 0 cannot be switched or grouped.** Amplifiers `01`–`09` (and single-digit legacy addresses whose environment is unknown) would be routed
   with `10S`, which is the source device address itself. Source selection is
-  refused there and no default can be set for it; use a wall panel.
+  refused there, no default can be set for it, and `MediaPlayerEntityFeature.GROUPING` is omitted on Environment 0 zones; use a wall panel.
 - **Only two-digit amplifier addresses are routed.** The WHO=16 address table
   lists amplifiers as `01`–`99`. A single-digit address such as `1` in a YAML
   configuration does not say which environment it belongs to (`01` or `11`?),
@@ -277,7 +277,7 @@ A matrix input can hold a **tuner** rather than a line interface. Tick *Source N
 is a tuner* in the options and the integration creates a dedicated `Audio Source`
 device with four entities alongside the amplifier zones:
 
-- `media_player.<source>` — power, preset dropdown (`Station 1`–`Station 15`), next/previous preset, RDS title, and Home Assistant Media Browser (`BROWSE_MEDIA`)
+- `media_player.<source>` — power, preset dropdown (`Station 1`–`Station 5` by default, dynamically expanding up to `Station 1`–`Station 15` on `WHO = 22` gateways once a slot `> 5` is seen on the bus or stored via `myhome.tuner_store_station`), next/previous preset, RDS title, custom station artwork (`tuner_pictures`), and Home Assistant Media Browser (`BROWSE_MEDIA`)
 - `number.<source>_frequency` — direct manual FM frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step, box mode)
 - `button.<source>_seek_up` & `button.<source>_seek_down` — one-tap hardware FM auto-seek buttons
 
@@ -285,11 +285,12 @@ device with four entities alongside the amplifier zones:
 | :--- | :--- |
 | On / off | `*16*3*10S##` / `*16*13*10S##` (or the published `*22*1#4#1*2#S##` / `*22*0#4#0*2#S##`) |
 | Next / previous track | next / previous station (`*16*6001*10S##` / `*16*6101*10S##`, or `*22*9*2#S##` / `*22*10*2#S##`) |
-| Source list | stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
+| Source list | stored stations (`_station_count` starts at `5` for F500 and dynamically expands up to `1–15` on `WHO 22` once a slot `> 5` is reported on the bus or stored via `myhome.tuner_store_station`: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
 | Manual frequency (`number.<source>_frequency` / `myhome.tuner_set_frequency`) | `87.50–108.00 MHz` (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`) |
 | Seek up / down (`button` / `myhome.tuner_seek_up` & `tuner_seek_down`) | `*16*5000*10S##` / `*16*5100*10S##` (or `*22*5*2#S##` / `*22*6*2#S##`) |
 | Store preset (`myhome.tuner_store_station`) | `*#16*10S*#10*<1–5>##` (or `*22*33#<1–15>*2#S##` for slots `6`–`15` and `WHO 22`-only gateways) |
-| Media Browser (`BROWSE_MEDIA`) & `play_media` (`channel`) | `"1"`–`"15"` selects a station; anything else is read as MHz, so `"105.3"` tunes to `105.30 MHz` |
+| Media Browser (`BROWSE_MEDIA`) & `play_media` (`channel`) | `"1"`–`"15"` selects a station (with station thumbnails from `tuner_pictures` when matched); anything else is read as MHz, so `"105.3"` tunes to `105.30 MHz` |
+| `entity_picture` (`tuner_pictures` option) | One `MHz=URL` entry per line (e.g. `96.2=/local/radio/one.png`): shown while tuned to that frequency and used as Media Browser station thumbnails (your own images; none are bundled) |
 | `media_title` | RDS text, reported as ASCII codes on `WHO 16` `DIMENSION 8` / `WHO 22` `DIMENSION 10` |
 | `frequency` attribute | `WHO 16` `DIMENSION 6` / `WHO 22` `DIMENSION 5` & `11`, in MHz |
 | `station` attribute | `WHO 16` `DIMENSION 7` / `WHO 22` `DIMENSION 6` & `11` |
@@ -370,7 +371,9 @@ Sources, defaults and the Dynamic Proxy are all configured in the integration's 
     - **Source input**: the F441M input it is wired to, chosen from a list that shows your source names (e.g. `S1 — Streamer`).
     - **Pre-gain offset**: percentage added to the 75% baseline decoder feed volume (0–100 %, e.g. `20` for 95% feed or `25`–`100` for 100% line-level feed; `0` = Pre-Amp OFF). See [Gain Staging](#gain-staging-bus-noise-elimination).
     - A decoder that is paused from outside (for example a Spotify Connect session started on the device) and not held by one of your zones is left alone by `play_media` for **5 minutes**; after that it counts as free. This applies to the streaming companion of a two-entity decoder as well.
-6. Click **Submit**.
+6. **Auto-join streaming groups (`auto_join_streaming`)**: when enabled, turning on a room or raising volume from a physical wall control automatically joins that room into an active streaming group playing on its routed source.
+7. **Tuner pictures (`tuner_pictures`)**: optional `MHz=URL` mapping (one per line, e.g. `96.2=/local/radio/one.png`) showing your station logo on the tuner entity while tuned to that frequency and in Media Browser thumbnails.
+8. Click **Submit**.
 
 Naming a source or setting a default is what switches on automatic routing for
 streaming (see [Routing when streaming](#routing-when-streaming)); leaving both

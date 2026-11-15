@@ -117,6 +117,26 @@ states:
 
 ---
 
+## 📡 Event Bus Notifications (`myhome_alarm_event`)
+
+Every `WHO = 5` frame received from the burglar alarm central unit or its zones also fires `myhome_alarm_event` on the Home Assistant event bus, so automations can react to individual zone activations (`*5*11*#n##` / `*5*18*#n##`) and technical alarms without polling:
+
+- `where`: Wire zone or central-unit address (e.g. `"0"`, `"#1"`, or `None` on empty-WHERE system frames)
+- `state`: Decoded state string (e.g. `"disengaged"`, `"engaged"`, `"intrusion_alarm"`)
+- `state_code`: Numeric `WHAT` state code
+- `is_alarm`: `True` when the frame reports an active alarm condition
+- `message`: Raw OpenWebNet frame string
+
+```yaml
+trigger:
+  - platform: event
+    event_type: myhome_alarm_event
+    event_data:
+      is_alarm: true
+```
+
+---
+
 ## 🧪 Interactive Diagnostics via Bus Monitor
 
 You can query the alarm with the [Lovelace Bus Monitor Card](bus_monitor.md) Command Injector:

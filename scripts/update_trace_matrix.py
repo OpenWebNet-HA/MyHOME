@@ -27,6 +27,45 @@ GATEWAY_CANONICAL_KEYS = {
     "078479": "H4890",
 }
 
+WHO_LABELS: dict[int, str] = {
+    0: "Scenario",
+    1: "Lights",
+    2: "Autom.",
+    3: "Load",
+    4: "Climate",
+    5: "Alarm",
+    6: "Door",
+    7: "Video",
+    8: "Intercom",
+    9: "Aux",
+    13: "Gateway",
+    14: "Lock",
+    15: "CEN",
+    16: "Audio",
+    17: "Scenario",
+    18: "Energy",
+    22: "Audio Diff.",
+    25: "CEN+",
+    1001: "Diag",
+    1004: "Diag",
+    1013: "Diag",
+    1022: "Diag",
+}
+
+
+def validate_who_labels(labels: dict[int, str] = WHO_LABELS) -> None:
+    """Validate canonical short labels for OpenWebNet WHO columns."""
+    expected_canonical = {
+        9: "Aux",
+        25: "CEN+",
+    }
+    for who_code, expected_label in expected_canonical.items():
+        actual = labels.get(who_code)
+        if actual != expected_label:
+            raise ValueError(
+                f"WHO {who_code} label in WHO_LABELS must be {expected_label!r}, got {actual!r}"
+            )
+
 
 def canonical_gateway(model):
     """Map a captured model label ("H/L4684", "L4684", "AM4890") to its matrix key."""
@@ -62,21 +101,15 @@ def build_matrix():
     for whos in gateways_data.values():
         all_whos_found.update(whos)
 
-    who_names = {
-        0: 'Scenario', 1: 'Lights', 2: 'Autom.', 3: 'Load', 4: 'Climate', 5: 'Alarm',
-        6: 'Door', 7: 'Video', 8: 'Intercom', 9: 'Power',
-        13: 'Gateway', 14: 'Lock', 15: 'CEN', 16: 'Audio', 17: 'Scenario', 18: 'Energy',
-        22: 'Audio Diff.', 25: 'Diag', 1001: 'Diag', 1004: 'Diag', 1013: 'Diag', 1022: 'Diag'
-    }
-
-    whos_list = sorted([w for w in all_whos_found if w in who_names])
+    validate_who_labels(WHO_LABELS)
+    whos_list = sorted([w for w in all_whos_found if w in WHO_LABELS])
 
     GATEWAY_DISPLAY_NAMES = {
         "H4684": "H4684 / H/L4684",
         "H4890": "H4890 / AM4890",
     }
 
-    header = "| Gateway Model | " + " | ".join([f"WHO {w}<br>{who_names.get(w, '')}" for w in whos_list]) + " |"
+    header = "| Gateway Model | " + " | ".join([f"WHO {w}<br>{WHO_LABELS.get(w, '')}" for w in whos_list]) + " |"
     separator = "| :--- | " + " | ".join([" :---: " for _ in whos_list]) + " |"
 
     rows = []

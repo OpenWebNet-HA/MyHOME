@@ -6,25 +6,27 @@ This document provides a comprehensive reference for all custom services registe
 
 ## 📋 Services Summary
 
+<!-- SERVICES_TABLE_START -->
 | Service | Target | Description |
 | :--- | :--- | :--- |
-| [`myhome.send_message`](#1-myhomesend_message) | Gateway | Send an arbitrary, validated OpenWebNet frame to the SCS bus. |
-| [`myhome.turn_on_timed`](#2-myhometurn_on_timed) | `light`, `switch` | Turn on an actuator with a hardware-offloaded SCS timer that turns off automatically even if Home Assistant reboots. |
-| [`myhome.sync_time`](#3-myhomesync_time) | Gateway | Synchronize the gateway internal clock with Home Assistant's local time. |
-| [`myhome.start_sending_instant_power`](#4-myhomestart_sending_instant_power) | `sensor` | Request a temporary continuous stream of instant power readings from an energy meter. |
+| [`myhome.send_message`](#1-myhomesend_message) | Gateway | Send an arbitrary (but valid) OpenWebNet message to the gateway. |
+| [`myhome.turn_on_timed`](#2-myhometurn_on_timed) | `light`, `switch` | Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts. |
+| [`myhome.sync_time`](#3-myhomesync_time) | Gateway | Synchronize gateway's time to HA local time. |
+| [`myhome.start_sending_instant_power`](#4-myhomestart_sending_instant_power) | `sensor` | Get automatic instant power draw updates for a sensor. |
 | [`myhome.stop_sending_instant_power`](#5-myhomestop_sending_instant_power) | `sensor` | Stop automatic instant power draw updates for a sensor. |
-| [`myhome.sweep_bus`](#6-myhomesweep_bus) | Gateway | Actively poll status across all subsystems to populate diagnostic buffers. |
-| [`myhome.calibrate_cover`](#7-myhomecalibrate_cover) | `cover` | Measure a timed cover's up and down travel times on the bus and store them. |
-| [`myhome.stop_cover_calibration`](#8-myhomestop_cover_calibration) | Gateway | Stop the running calibration and cancel queued ones. |
-| [`myhome.set_cover_travel_time`](#9-myhomeset_cover_travel_time) | `cover` | Store stopwatch-measured travel times without driving the cover. |
-| [`myhome.reset_cover_travel_time`](#10-myhomereset_cover_travel_time) | `cover` | Forget measured / manual travel times; back to YAML or the default. |
-| [`myhome.tuner_seek_up`](#11-myhometuner_seek_up) | `media_player` | Seek forward to the next receivable FM radio frequency on an F500 tuner. |
-| [`myhome.tuner_seek_down`](#12-myhometuner_seek_down) | `media_player` | Seek backward to the previous receivable FM radio frequency on an F500 tuner. |
-| [`myhome.send_scenario_plus_command`](#13-myhomesend_scenario_plus_command) | Gateway | Send a WHO 25 scenario plus command (on, off, increase, decrease, stop). |
-| [`myhome.cancel_cover_request`](#14-myhomecancel_cover_request) | `cover` | Cancel a pending approval request or running pre-warning countdown. |
-| [`myhome.acknowledge_cover_fault`](#15-myhomeacknowledge_cover_fault) | `cover` | Clear a latched safety watchdog fault after verifying physical gate/door clearance. |
-| [`myhome.tuner_set_frequency`](#16-myhometuner_set_frequency) | `media_player` | Tune an F500 / F500N radio tuner directly to an FM frequency in MHz (`87.50–108.00 MHz`). |
-| [`myhome.tuner_store_station`](#17-myhometuner_store_station) | `media_player` | Memorise the currently tuned FM frequency into a preset station slot (`1–15`). |
+| [`myhome.sweep_bus`](#6-myhomesweep_bus) | Gateway | Triggers an active read-only status query across all bus subsystems (lighting, covers, thermoregulation, clock, and gateway diagnostics) to populate the diagnostic bus monitor ring buffer. |
+| [`myhome.calibrate_cover`](#7-myhomecalibrate_cover) | `cover` | Measures a timed cover's up and down travel times on the SCS bus and stores them. The cover is driven fully up, then fully down (timed), then fully up again (timed). Covers are calibrated one at a time per gateway. Do not run while the shutter must stay put. |
+| [`myhome.stop_cover_calibration`](#8-myhomestop_cover_calibration) | Gateway | Stops the running travel-time calibration and cancels the queued ones. The moving cover is stopped; nothing is stored. Without a gateway every gateway is stopped. |
+| [`myhome.set_cover_travel_time`](#9-myhomeset_cover_travel_time) | `cover` | Stores the physical travel times of a timed cover by hand (measured with a stopwatch) instead of calibrating on the bus. Values are kept in the config entry, survive restarts and apply to discovered covers without YAML. |
+| [`myhome.reset_cover_travel_time`](#10-myhomereset_cover_travel_time) | `cover` | Forgets the measured or manually set travel times of a timed cover and returns to the myhome.yaml travel_time or the 25 s default. |
+| [`myhome.tuner_seek_up`](#11-myhometuner_seek_up) | `media_player` | Seek forward to the next receivable FM radio frequency on an F500 tuner source. |
+| [`myhome.tuner_seek_down`](#12-myhometuner_seek_down) | `media_player` | Seek backward to the previous receivable FM radio frequency on an F500 tuner source. |
+| [`myhome.send_scenario_plus_command`](#13-myhomesend_scenario_plus_command) | Gateway | Send a WHO 25 scenario plus command (on, off, increase, decrease, stop) to an addressed scenario plus object. |
+| [`myhome.cancel_cover_request`](#14-myhomecancel_cover_request) | `cover` | Cancels a pending approval request or a running pre-warning of an impulse gate or garage door. Cancelling is always safe; nothing moves. |
+| [`myhome.acknowledge_cover_fault`](#15-myhomeacknowledge_cover_fault) | `cover` | Clears the fault latched when a gate or garage door did not reach the expected state after a pulse (possible obstacle or reversal). Only an allowed user who is at home may acknowledge it; until then closing from Home Assistant stays blocked. |
+| [`myhome.tuner_set_frequency`](#16-myhometuner_set_frequency) | `media_player` | Tune directly to a manual FM radio frequency (87.50–108.00 MHz) on an F500 / F500N tuner source. |
+| [`myhome.tuner_store_station`](#17-myhometuner_store_station) | `media_player` | Memorise the currently tuned FM radio frequency into a preset station slot (1–15) on an F500 / F500N tuner source. |
+<!-- SERVICES_TABLE_END -->
 
 ---
 
@@ -32,10 +34,14 @@ This document provides a comprehensive reference for all custom services registe
 
 Sends an arbitrary, valid OpenWebNet message through the gateway command session. The integration validates syntax, dispatches the frame, and logs the transaction to the Bus Monitor.
 
+> [!WARNING]
+> **`WHO = 4` Dimension 22 Firmware Crash Guard (`is_refused_dimension_22`)**:
+> Non-split `WHO = 4` Dimension 22 frames whose `WHERE` carries no actuator token (such as a zone `*#4*1*22##`, the general address `*#4*0*22##`, or the central unit `*#4*#0*22##`) kill the thermostat daemon on Linux IP gateways (`F461`, `F454`, `MH200N`, etc.) and are **strictly refused** before reaching the socket. Published split-unit forms (`*#4*3#Z#N*22##` and `*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`) are safe across all twelve emulated gateway firmwares and are permitted.
+
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
-| `gateway` | string | No | The MAC address of the target gateway (defaults to the first configured gateway). Unknown keys such as `gw_mac` are rejected. | `"00:03:50:20:00:01"` |
+| `gateway` | string | No | The MAC address of the target gateway (defaults to the `is_primary` gateway, or the first loaded gateway if none is primary). Unknown keys such as `gw_mac` are rejected. | `"00:03:50:20:00:01"` |
 | `message` | string | **Yes** | Valid OpenWebNet frame ending with `##`. | `"*1*0*0##"` |
 
 ### Example YAML Call
@@ -50,22 +56,25 @@ data:
 
 ## 2. `myhome.turn_on_timed`
 
-Turns on a light or switch with a **hardware-offloaded SCS timer**. 
+Turns on an individual `WHO = 1` light or switch actuator with a **hardware-offloaded SCS timer**.
 
 > [!TIP]
 > **Why use this service?** Standard Home Assistant timers (e.g. `delay: 00:02:00` followed by `light.turn_off`) will fail if Home Assistant restarts or crashes during the delay. `myhome.turn_on_timed` programs the hardware actuator itself to count down and power off autonomously on the physical bus.
 
+> [!NOTE]
+> **Supported Entities**: `myhome.turn_on_timed` applies only to individual point-to-point `WHO = 1` light and switch actuators (`0.5–918,000` seconds via preset `WHAT` codes or `Dimension 2` `*#1*WHERE*#2*H*M*S##`). Calling it on an SCS group light (`#G`, `group_no_timer`), a `WHO = 4` probe-less thermo switch (`thermo_switch_no_timer`), or a `WHO = 9/25` **Invert state** configuration switch (`invert_switch_no_timer`) raises a `ServiceValidationError`.
+
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
-| `duration` | float | No | Total duration in seconds (0.5 to 918,000s). | `120` |
-| `hours` | integer | No | Hours component (0–255). | `0` |
-| `minutes` | integer | No | Minutes component (0–59). | `5` |
-| `seconds` | float | No | Seconds component (0–59). | `30` |
-| `brightness` | integer | No | Brightness level (1–255) for dimmable lights. | `200` |
-| `brightness_pct`| integer | No | Brightness percentage (1–100%) for dimmable lights. | `80` |
+| `duration` | float | No | Total duration in seconds (`0.5` to `918,000` s — `0.5` s impulse preset up to `255` hours via `Dimension 2`). | `120` |
+| `hours` | integer | No | Hours component (`0`–`255`). | `0` |
+| `minutes` | integer | No | Minutes component (`0`–`59`). | `5` |
+| `seconds` | float | No | Seconds component (`0`–`59`). | `30` |
+| `brightness` | integer | No | Brightness level (`1`–`255`) for dimmable lights. | `200` |
+| `brightness_pct`| integer | No | Brightness percentage (`1`–`100%`) for dimmable lights. | `80` |
 
-*(Note: You can specify `duration` directly, or specify custom `hours`/`minutes`/`seconds`).*
+*(Note: Specify `duration` directly, or specify custom `hours`/`minutes`/`seconds`.)*
 
 ### Example YAML Call
 ```yaml
@@ -84,10 +93,14 @@ data:
 
 Synchronizes the gateway's real-time clock (RTC) with Home Assistant's local time using `WHO = 13` dimension frames. This ensures scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules) run in lockstep with real time.
 
+> [!NOTE]
+> - **Shared-Bus Topology**: When `gateway` is omitted, follower (`secondary` / `standby`) gateways on a shared SCS bus are automatically skipped so only primary gateways broadcast clock updates.
+> - **Whole-Hour UTC Offset Requirement**: Because the OpenWebNet `WHO = 13` timezone offset field (`0HH` / `1HH`) only encodes whole hours, calling `myhome.sync_time` when Home Assistant is configured in a fractional-hour timezone (such as `Asia/Kolkata` `+05:30`) raises `ServiceValidationError` (`sync_time_unsupported_offset`) rather than transmitting a truncated offset.
+
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
-| `gateway` | string | No | Target gateway MAC address (defaults to all gateways). | `"00:03:50:20:00:01"` |
+| `gateway` | string | No | Target gateway MAC address (defaults to all primary gateways). | `"00:03:50:20:00:01"` |
 
 ### Example YAML Call
 ```yaml
@@ -100,20 +113,21 @@ data:
 
 ## 4. `myhome.start_sending_instant_power`
 
-By default, MyHOME energy meters (F520, F521, F522, F523) transmit energy readings periodically to conserve bus bandwidth. Calling this service causes the meter to continuously stream high-frequency instant power updates for a defined duration.
+By default, MyHOME energy meters (`F520`, `F521`, `F522`, `F523`, `3522`) transmit energy readings periodically to conserve bus bandwidth. Calling this entity service instructs the targeted power sensor's meter to stream high-frequency instant power updates (`Dimension 113`) for a bounded window (`1–255` minutes, default `65`). To stop streaming early, call [`myhome.stop_sending_instant_power`](#5-myhomestop_sending_instant_power) (`duration: 0` is rejected by schema validation).
 
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
-| `entity_id` | string | **Yes** | The power sensor entity ID. | `"sensor.general_power"` |
-| `duration` | integer | **Yes** | Duration in minutes to keep streaming (0 to stop). | `60` |
+| `entity_id` | target | **Yes** | Target MyHOME `sensor` entity (`device_class: power`). | `sensor.general_power` |
+| `duration` | integer | No | Duration in minutes (`1`–`255`, default `65`) to keep streaming instant power; call `myhome.stop_sending_instant_power` to stop early. | `65` |
 
 ### Example YAML Call
 ```yaml
 action: myhome.start_sending_instant_power
+target:
+  entity_id: sensor.heat_pump_power
 data:
-  entity_id: "sensor.heat_pump_power"
-  duration: 120
+  duration: 65
 ```
 
 ---
@@ -125,13 +139,13 @@ Stops active high-frequency instant power streaming from an energy meter, return
 ### Fields
 | Parameter | Type | Required | Description | Example |
 | :--- | :---: | :---: | :--- | :--- |
-| `entity_id` | string | **Yes** | The power sensor entity ID. | `"sensor.general_power"` |
+| `entity_id` | target | **Yes** | Target MyHOME `sensor` entity (`device_class: power`). | `sensor.general_power` |
 
 ### Example YAML Call
 ```yaml
 action: myhome.stop_sending_instant_power
-data:
-  entity_id: "sensor.heat_pump_power"
+target:
+  entity_id: sensor.heat_pump_power
 ```
 
 ---
@@ -346,7 +360,7 @@ target:
 
 ## 16. `myhome.tuner_set_frequency`
 
-Tunes an F500 / F500N sound source tuner entity (`WHERE` 101–109 / `WHO 22` `2#S`) directly to an explicit FM radio frequency (`87.50–108.00 MHz`, `0.05 MHz` step), dispatching `*#16*10S*#6*0*<kHz>##` on `WHO 16` gateways or `*#22*2#S*#5*1*<10kHz>##` on `WHO 22`-only gateways (`MyHomeServer1`, `F459`, `F460`, `F461`). You can also adjust this directly in the UI via the companion `number.<source>_frequency` entity.
+Tunes an F500 / F500N sound source tuner entity (`WHERE` 101–109 / `WHO 22` `2#S`) directly to an explicit FM radio frequency (`87.50–108.00 MHz`, `0.05 MHz` step), dispatching `*#16*10S*#6*0*<kHz>##` on `WHO 16` gateways or `*#22*2#S*#5*1*<10kHz>##` on `WHO 22`-only gateways (`MyHomeServer1`, `F461`). You can also adjust this directly in the UI via the companion `number.<source>_frequency` entity.
 
 ### Fields
 | Parameter | Type | Required | Description | Example |

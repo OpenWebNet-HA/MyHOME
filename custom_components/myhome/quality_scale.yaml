@@ -31,7 +31,7 @@ rules:
     comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; Apache-2.0 licensed.
   docs-actions:
     status: done
-    comment: docs/configuration/services.md documents all eleven services and their fields (services.yaml, strings.json and icons.json list the same eleven).
+    comment: docs/configuration/services.md documents all 17 services and their fields (services.yaml, strings.json and icons.json list the same 17).
   docs-triggers:
     status: done
     comment: docs/configuration/cen_cenplus.md documents CEN / CEN+ device triggers.
@@ -93,7 +93,7 @@ rules:
     comment: Grace period and connection supervisor log once on loss and once on recovery, without spamming.
   parallel-updates:
     status: done
-    comment: PARALLEL_UPDATES = 0 declared across all 10 platform files for push-driven event streaming.
+    comment: PARALLEL_UPDATES = 0 declared across all 11 platform files for push-driven event streaming.
   reauthentication-flow:
     status: done
     comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.

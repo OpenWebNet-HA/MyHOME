@@ -18,6 +18,7 @@ import os
 import py_compile
 import re
 import sys
+import tomllib
 from pathlib import Path
 from typing import List
 
@@ -1293,6 +1294,425 @@ def check_documentation_anti_drift_rule(checker: StandardsChecker):
         )
 
 
+def check_service_and_icon_parity(
+    checker: StandardsChecker, root_dir: Path | None = None
+) -> None:
+    """Gate 3: Enforce 5-way service/field parity, zero schema=None, and entity translation_key icon parity."""
+    base_root = root_dir if root_dir is not None else ROOT_DIR
+    comp_dir = base_root / "custom_components" / "myhome"
+    services_py = comp_dir / "services.py"
+    services_yaml = comp_dir / "services.yaml"
+    strings_json = comp_dir / "strings.json"
+    icons_json = comp_dir / "icons.json"
+    services_doc = base_root / "docs" / "configuration" / "services.md"
+
+    for required_file in (services_py, services_yaml, strings_json, icons_json, services_doc):
+        if not required_file.exists():
+            checker.log_error(
+                "RULE_SERVICE_ICON_PARITY",
+                required_file,
+                1,
+                f"Required file missing for service/icon parity check: {required_file.name}",
+            )
+            return
+
+    import yaml
+
+    before_errs = len(checker.errors)
+    sy_data = yaml.safe_load(services_yaml.read_text(encoding="utf-8")) or {}
+    st_root = json.loads(strings_json.read_text(encoding="utf-8"))
+    ic_root = json.loads(icons_json.read_text(encoding="utf-8"))
+    st_services = st_root.get("services", {})
+    ic_services = ic_root.get("services", {})
+    doc_text = services_doc.read_text(encoding="utf-8")
+
+    # Resolve SERVICE_* string constants across const.py and module files
+    service_consts: dict[str, str] = {}
+    for const_candidate in (comp_dir / "const.py", services_py):
+        if const_candidate.exists():
+            c_tree = ast.parse(const_candidate.read_text(encoding="utf-8"))
+            for node in c_tree.body:
+                if (
+                    isinstance(node, ast.Assign)
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)
+                ):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            service_consts[target.id] = node.value.value
+
+    registered_services: set[str] = set()
+    for py_file in sorted(comp_dir.glob("*.py")):
+        tree = ast.parse(py_file.read_text(encoding="utf-8"))
+        local_consts = dict(service_consts)
+        for node in tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        local_consts[target.id] = node.value.value
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            attr = node.func.attr
+            if attr == "async_register" and len(node.args) >= 2:
+                svc_node = node.args[1]
+                svc_name = (
+                    svc_node.value
+                    if isinstance(svc_node, ast.Constant) and isinstance(svc_node.value, str)
+                    else local_consts.get(svc_node.id)
+                    if isinstance(svc_node, ast.Name)
+                    else None
+                )
+                if svc_name:
+                    registered_services.add(svc_name)
+                schema_arg: ast.expr | None = node.args[3] if len(node.args) >= 4 else None
+                for kw in node.keywords:
+                    if kw.arg == "schema":
+                        schema_arg = kw.value
+                if schema_arg is None or (isinstance(schema_arg, ast.Constant) and schema_arg.value is None):
+                    checker.log_error(
+                        "RULE_SERVICE_ICON_PARITY",
+                        py_file,
+                        node.lineno,
+                        f"Service registration for {svc_name or '<unknown>'!r} must specify a non-None schema",
+                    )
+            elif attr == "async_register_entity_service" and len(node.args) >= 1:
+                svc_node = node.args[0]
+                svc_name = (
+                    svc_node.value
+                    if isinstance(svc_node, ast.Constant) and isinstance(svc_node.value, str)
+                    else local_consts.get(svc_node.id)
+                    if isinstance(svc_node, ast.Name)
+                    else None
+                )
+                if svc_name:
+                    registered_services.add(svc_name)
+                schema_arg = node.args[1] if len(node.args) >= 2 else None
+                for kw in node.keywords:
+                    if kw.arg == "schema":
+                        schema_arg = kw.value
+                if schema_arg is None or (isinstance(schema_arg, ast.Constant) and schema_arg.value is None):
+                    checker.log_error(
+                        "RULE_SERVICE_ICON_PARITY",
+                        py_file,
+                        node.lineno,
+                        f"Entity service registration for {svc_name or '<unknown>'!r} must specify a non-None schema",
+                    )
+
+    yaml_services = set(sy_data.keys())
+    strings_service_set = set(st_services.keys())
+    icons_service_set = set(ic_services.keys())
+
+    # Slice services.md into per-service sections
+    matches = list(
+        re.finditer(
+            r"^##\s+(?:\d+\.\s+)?`?myhome\.([a-zA-Z0-9_]+)`?[^\n]*$",
+            doc_text,
+            re.MULTILINE,
+        )
+    )
+    doc_sections: dict[str, str] = {}
+    for idx, m in enumerate(matches):
+        svc = m.group(1)
+        start = m.end()
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(doc_text)
+        doc_sections[svc] = doc_text[start:end]
+    doc_service_set = set(doc_sections.keys())
+
+    for label, candidate_set, target_file in (
+        ("AST service registrations", registered_services, services_py),
+        ("strings.json['services']", strings_service_set, strings_json),
+        ("icons.json['services']", icons_service_set, icons_json),
+        ("docs/configuration/services.md", doc_service_set, services_doc),
+    ):
+        missing = sorted(yaml_services - candidate_set)
+        extra = sorted(candidate_set - yaml_services)
+        if missing or extra:
+            checker.log_error(
+                "RULE_SERVICE_ICON_PARITY",
+                target_file,
+                1,
+                f"5-way service parity mismatch between services.yaml and {label}: "
+                f"missing={missing}, extra={extra}",
+            )
+
+    for svc_name, svc_spec in sorted(sy_data.items()):
+        yaml_fields = set(((svc_spec or {}).get("fields") or {}).keys())
+        str_fields = set(((st_services.get(svc_name) or {}).get("fields") or {}).keys())
+        if yaml_fields != str_fields:
+            checker.log_error(
+                "RULE_SERVICE_ICON_PARITY",
+                strings_json,
+                1,
+                f"Service field mismatch for 'myhome.{svc_name}' in strings.json: "
+                f"services.yaml={sorted(yaml_fields)}, strings.json={sorted(str_fields)}",
+            )
+        icon_entry = ic_services.get(svc_name)
+        if not isinstance(icon_entry, dict) or not str(icon_entry.get("service", "")).startswith("mdi:"):
+            checker.log_error(
+                "RULE_SERVICE_ICON_PARITY",
+                icons_json,
+                1,
+                f"Service 'myhome.{svc_name}' in icons.json must define a valid 'mdi:...' service icon",
+            )
+        sec_body = doc_sections.get(svc_name, "")
+        for field_name in sorted(yaml_fields):
+            if f"`{field_name}`" not in sec_body and f"| {field_name} |" not in sec_body:
+                checker.log_error(
+                    "RULE_SERVICE_ICON_PARITY",
+                    services_doc,
+                    1,
+                    f"Service field '{field_name}' for 'myhome.{svc_name}' is missing in docs/configuration/services.md",
+                )
+
+    # Entity translation_key parity across platform modules, strings.json["entity"], and icons.json["entity"]
+    entity_platforms = (
+        "light",
+        "switch",
+        "cover",
+        "climate",
+        "binary_sensor",
+        "sensor",
+        "media_player",
+        "button",
+        "number",
+        "alarm_control_panel",
+        "lock",
+    )
+    excluded_call_names = {
+        "HomeAssistantError",
+        "ServiceValidationError",
+        "CalibrationError",
+        "async_create_issue",
+    }
+    st_entities = st_root.get("entity", {})
+    ic_entities = ic_root.get("entity", {})
+
+    for plat in entity_platforms:
+        plat_file = comp_dir / f"{plat}.py"
+        if not plat_file.exists():
+            continue
+        p_tree = ast.parse(plat_file.read_text(encoding="utf-8"))
+        found_keys: set[str] = set()
+        for node in ast.walk(p_tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                for target in node.targets:
+                    t_name = (
+                        target.id
+                        if isinstance(target, ast.Name)
+                        else target.attr
+                        if isinstance(target, ast.Attribute)
+                        else None
+                    )
+                    if t_name in ("_attr_translation_key", "_translation_key"):
+                        found_keys.add(node.value.value)
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                t_name = (
+                    node.target.id
+                    if isinstance(node.target, ast.Name)
+                    else node.target.attr
+                    if isinstance(node.target, ast.Attribute)
+                    else None
+                )
+                if t_name in ("_attr_translation_key", "_translation_key"):
+                    found_keys.add(node.value.value)
+            elif isinstance(node, ast.Call):
+                fn_name = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else node.func.attr
+                    if isinstance(node.func, ast.Attribute)
+                    else ""
+                )
+                if fn_name in excluded_call_names:
+                    continue
+                for kw in node.keywords:
+                    if kw.arg == "translation_key" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                        found_keys.add(kw.value.value)
+
+        st_plat_keys = set((st_entities.get(plat) or {}).keys())
+        ic_plat_keys = set((ic_entities.get(plat) or {}).keys())
+        for tkey in sorted(found_keys):
+            if tkey not in st_plat_keys:
+                checker.log_error(
+                    "RULE_SERVICE_ICON_PARITY",
+                    strings_json,
+                    1,
+                    f"Entity translation_key '{plat}.{tkey}' in {plat_file.name} missing from strings.json['entity']['{plat}']",
+                )
+            if tkey not in ic_plat_keys:
+                checker.log_error(
+                    "RULE_SERVICE_ICON_PARITY",
+                    icons_json,
+                    1,
+                    f"Entity translation_key '{plat}.{tkey}' in {plat_file.name} missing from icons.json['entity']['{plat}']",
+                )
+        if st_plat_keys != ic_plat_keys:
+            checker.log_error(
+                "RULE_SERVICE_ICON_PARITY",
+                icons_json,
+                1,
+                f"Entity translation_key set mismatch for platform '{plat}': "
+                f"strings.json={sorted(st_plat_keys)}, icons.json={sorted(ic_plat_keys)}",
+            )
+
+    all_st_entity_keys = {
+        k
+        for plat_map in st_entities.values()
+        if isinstance(plat_map, dict)
+        for k in plat_map
+    }
+    all_ic_entity_keys = {
+        k
+        for plat_map in ic_entities.values()
+        if isinstance(plat_map, dict)
+        for k in plat_map
+    }
+    platform_filenames = {f"{plat}.py" for plat in entity_platforms}
+    for helper_py in sorted(comp_dir.glob("*.py")):
+        if helper_py.name in platform_filenames:
+            continue
+        h_tree = ast.parse(helper_py.read_text(encoding="utf-8"))
+        for node in ast.walk(h_tree):
+            helper_tkey: str | None = None
+            if (
+                isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                if any(
+                    (
+                        t.id
+                        if isinstance(t, ast.Name)
+                        else t.attr
+                        if isinstance(t, ast.Attribute)
+                        else None
+                    )
+                    in ("_attr_translation_key", "_translation_key")
+                    for t in node.targets
+                ):
+                    helper_tkey = node.value.value
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.value, ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
+                t_nm = (
+                    node.target.id
+                    if isinstance(node.target, ast.Name)
+                    else node.target.attr
+                    if isinstance(node.target, ast.Attribute)
+                    else None
+                )
+                if t_nm in ("_attr_translation_key", "_translation_key"):
+                    helper_tkey = node.value.value
+            if helper_tkey:
+                if helper_tkey not in all_st_entity_keys:
+                    checker.log_error(
+                        "RULE_SERVICE_ICON_PARITY",
+                        strings_json,
+                        1,
+                        f"Entity translation_key '{helper_tkey}' in {helper_py.name} missing from strings.json['entity']",
+                    )
+                if helper_tkey not in all_ic_entity_keys:
+                    checker.log_error(
+                        "RULE_SERVICE_ICON_PARITY",
+                        icons_json,
+                        1,
+                        f"Entity translation_key '{helper_tkey}' in {helper_py.name} missing from icons.json['entity']",
+                    )
+
+    if len(checker.errors) == before_errs:
+        checker.log_ok(
+            f"5-way service parity ({len(yaml_services)} services, 0 schema=None) and entity icon parity verified."
+        )
+
+
+def check_packaging_metadata_rule(
+    checker: StandardsChecker, root_dir: Path | None = None
+) -> None:
+    """Gate 7: Enforce pyproject.toml and CONTRIBUTING.md parity with manifest.json."""
+    base_root = root_dir if root_dir is not None else ROOT_DIR
+    manifest_file = base_root / "custom_components" / "myhome" / "manifest.json"
+    pyproject_file = base_root / "pyproject.toml"
+    contributing_file = base_root / "CONTRIBUTING.md"
+
+    if not manifest_file.exists() or not pyproject_file.exists():
+        checker.log_error(
+            "RULE_PACKAGING_METADATA",
+            pyproject_file if not pyproject_file.exists() else manifest_file,
+            1,
+            "manifest.json and pyproject.toml must both exist",
+        )
+        return
+
+    manifest_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    manifest_version = manifest_data.get("version", "")
+    reqs = manifest_data.get("requirements", [])
+    ownd_req = next((r for r in reqs if isinstance(r, str) and r.startswith("OWNd==")), "")
+
+    py_data = tomllib.loads(pyproject_file.read_text(encoding="utf-8"))
+    project = py_data.get("project", {})
+    py_version = project.get("version", "")
+    req_python = project.get("requires-python", "")
+    classifiers = list(project.get("classifiers", []))
+    test_deps = list(project.get("optional-dependencies", {}).get("test", []))
+
+    before_errs = len(checker.errors)
+    if py_version != manifest_version:
+        checker.log_error(
+            "RULE_PACKAGING_METADATA",
+            pyproject_file,
+            1,
+            f"pyproject.toml project.version ({py_version!r}) must match manifest.json version ({manifest_version!r})",
+        )
+    if req_python != ">=3.14":
+        checker.log_error(
+            "RULE_PACKAGING_METADATA",
+            pyproject_file,
+            1,
+            f"pyproject.toml requires-python must be '>=3.14' (got {req_python!r})",
+        )
+    if "Programming Language :: Python :: 3.13" in classifiers:
+        checker.log_error(
+            "RULE_PACKAGING_METADATA",
+            pyproject_file,
+            1,
+            "pyproject.toml classifiers must not advertise 'Programming Language :: Python :: 3.13'",
+        )
+    if ownd_req and ownd_req not in test_deps:
+        checker.log_error(
+            "RULE_PACKAGING_METADATA",
+            pyproject_file,
+            1,
+            f"pyproject.toml optional-dependencies.test must pin {ownd_req!r} matching manifest.json",
+        )
+
+    if contributing_file.exists():
+        contrib_text = contributing_file.read_text(encoding="utf-8")
+        if "Python 3.14" not in contrib_text or re.search(r"Python\s+3\.1[0-3]\b", contrib_text):
+            checker.log_error(
+                "RULE_PACKAGING_METADATA",
+                contributing_file,
+                1,
+                "CONTRIBUTING.md must reference Python 3.14 and not stale Python 3.10–3.13 versions",
+            )
+
+    if len(checker.errors) == before_errs:
+        checker.log_ok(
+            f"Packaging metadata parity verified (pyproject.toml v{py_version}, Python >=3.14, {ownd_req})."
+        )
+
+
 def main():
     print("=" * 70)
     print("Running Home Assistant Architectural Standards Validator")
@@ -1306,7 +1726,9 @@ def main():
     check_no_update_listener_reload_conflict(checker)
     check_ruff_standards(checker)
     check_manifest_requirements_rule(checker)
+    check_packaging_metadata_rule(checker)
     check_marketplace_manifest_rule(checker)
+    check_service_and_icon_parity(checker)
     check_future_annotations_and_syntax(checker)
     check_quality_scale_rules(checker)
     check_ownd_library_standards(checker)
