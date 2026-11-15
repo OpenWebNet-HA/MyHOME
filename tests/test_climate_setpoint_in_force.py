@@ -535,3 +535,302 @@ async def test_out_of_range_or_stale_dimension_pairs_do_not_derive_offset(hass, 
     assert zone.extra_state_attributes["local_offset"] == 0
     assert zone.extra_state_attributes["knob_pos"] == "UNKNOWN"
 
+
+async def test_n4692_standalone_knob_detents_update_target_without_dimension_12(hass, monkeypatch):
+    """N4692 standalone Dimension 13 detents update target_temperature even 0.5s after a paired Dim 13 -> Dim 12 burst."""
+    clock = [1000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass, where="1", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    # Mode-entry burst: *4*1*1## -> *#4*1*13*12## (-2) -> 50 ms -> *#4*1*12*0060*3## (6.0 °C)
+    _feed(zone, "*4*1*1##", "*#4*1*13*12##")
+    clock[0] += 0.05
+    _feed(zone, "*#4*1*12*0060*3##")
+    assert zone.target_temperature == 6.0
+    assert zone._target_temperature == 8.0
+
+    # 525 ms later, standalone live knob detent -1 (*#4*1*13*11##), repeated once, then 0 (*#4*1*13*00##)
+    clock[0] += 0.525
+    _feed(zone, "*#4*1*13*11##")
+    assert zone.target_temperature == 7.0
+    assert zone.extra_state_attributes["knob_pos"] == "-1"
+    _feed(zone, "*#4*1*13*11##")
+    assert zone.target_temperature == 7.0
+
+    clock[0] += 0.69
+    _feed(zone, "*#4*1*13*00##")
+    assert zone.target_temperature == 8.0
+    assert zone.extra_state_attributes["knob_pos"] == "0"
+
+
+async def test_dimension_12_before_initial_dimension_13_reconciles_nominal_without_double_adding(hass):
+    """Initial Dim 12 before Dim 13 keeps effective setpoint and reconciles _target_temperature once Dim 13 arrives."""
+    zone = _zone(hass, where="1", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    _feed(zone, "*4*1*1##", "*#4*1*12*0050*3##", "*#4*1*13*13##")
+    assert zone.target_temperature == 5.0
+    assert zone._target_temperature == 8.0
+    assert zone.extra_state_attributes["local_offset"] == -3
+
+    # Subsequent standalone knob move to centre reaches 8.0 °C
+    _feed(zone, "*#4*1*13*00##")
+    assert zone.target_temperature == 8.0
+
+    # Protection OFF cycle and return to heating preserves nominal 8.0 °C
+    _feed(zone, "*4*102*1##", "*#4*1*13*5##", "*#4*1*12*0070*3##")
+    assert zone.hvac_mode == HVACMode.OFF
+    _feed(zone, "*4*1*1##", "*#4*1*13*01##")
+    assert zone.hvac_mode == HVACMode.HEAT
+    assert zone.target_temperature == 9.0
+
+
+async def test_f461_repeated_poll_with_changed_knob_does_not_double_add_offset(hass, monkeypatch):
+    """A second F461 *#4*Z## poll burst after an unmonitored knob change does not double-add the trailing Dim 13."""
+    clock = [2000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass)
+    _feed(zone, *F461_POLL_REPLY)
+    assert zone.target_temperature == 23.5
+    assert zone._target_temperature == 21.0
+    assert zone.extra_state_attributes["local_offset"] == 0
+
+    # Later poll reply where the knob was moved to +1 (*#4*2*12*0245*3## .. *#4*2*13*01##)
+    clock[0] += 60.0
+    _feed(
+        zone,
+        "*#4*2*0*0239##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0210*3##",
+        "*#4*2*13*01##",
+    )
+    assert zone.target_temperature == 24.5
+    assert zone._target_temperature == 21.0
+    assert zone.extra_state_attributes["local_offset"] == 1
+    assert zone.extra_state_attributes["knob_pos"] == "+1"
+
+    # A standalone live knob click to +2 0.5 s later adjusts target_temperature by +1.0 -> 25.5
+    clock[0] += 0.5
+    _feed(zone, "*#4*2*13*02##")
+    assert zone.target_temperature == 25.5
+    assert zone._target_temperature == 21.0
+    assert zone.extra_state_attributes["local_offset"] == 2
+    assert zone.extra_state_attributes["knob_pos"] == "+2"
+
+
+async def test_paired_dim12_then_dim13_without_dim14_after_prior_knob_reconciles_nominal(hass, monkeypatch):
+    """When Dim 12 arrives unpaired and Dim 13 follows within the burst window without Dim 14, _target_temperature is reconciled."""
+    clock = [3000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass, where="1", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    _feed(zone, "*4*1*1##", "*#4*1*13*00##", "*#4*1*12*0080*3##")
+    assert zone.target_temperature == 8.0
+    assert zone._target_temperature == 8.0
+
+    clock[0] += 10.0
+    _feed(zone, "*#4*1*12*0090*3##")
+    clock[0] += 0.05
+    _feed(zone, "*#4*1*13*01##")
+    assert zone.target_temperature == 9.0
+    assert zone._target_temperature == 8.0
+    assert zone.extra_state_attributes["local_offset"] == 1
+
+
+async def test_dual_platform_frame_delivery_keeps_dim12_dim13_pairing_idempotent(hass, monkeypatch):
+    """Dual WHO=4 routing (climate + sensor platforms) neither breaks Dim 13 -> Dim 12 pairing nor double-adds F461 Dim 13."""
+    clock = [4000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+
+    def _feed_twice(entity, *raw_frames):
+        for raw in raw_frames:
+            entity.handle_event(OWNHeatingEvent(raw))
+            entity.handle_event(OWNHeatingEvent(raw))
+
+    # 1. N4692 mode-entry burst (Dim 13 -> Dim 12) delivered twice, followed 0.5 s later by live Dim 13
+    n4692 = _zone(hass, where="1", standalone=False)
+    n4692._gateway_handler.has_central_unit = True
+    _feed_twice(n4692, "*4*1*1##", "*#4*1*13*12##")
+    clock[0] += 0.05
+    _feed_twice(n4692, "*#4*1*12*0060*3##")
+    assert n4692.target_temperature == 6.0
+    clock[0] += 0.5
+    _feed_twice(n4692, "*#4*1*13*11##")
+    assert n4692.target_temperature == 7.0
+
+    # 2. F461 poll burst (Dim 12 -> *4*1*2## -> Dim 14 -> Dim 13) delivered twice, then live Dim 13
+    f461 = _zone(hass, where="2")
+    _feed_twice(f461, *F461_POLL_REPLY)
+    assert f461.target_temperature == 23.5
+    clock[0] += 30.0
+    _feed_twice(
+        f461,
+        "*#4*2*0*0239##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0210*3##",
+        "*#4*2*13*01##",
+    )
+    assert f461.target_temperature == 24.5
+    clock[0] += 0.5
+    _feed_twice(f461, "*#4*2*13*02##")
+    assert f461.target_temperature == 25.5
+
+
+async def test_manual_write_echo_does_not_swallow_subsecond_knob_detent_or_corrupt_nominal(
+    hass, monkeypatch
+):
+    """A manual setpoint write echo (*#4*Z*12*TTTT*3## + *4*1*Z##) never pairs with a live Dim 13 knob turn within 2 s."""
+    clock = [5000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass, where="1", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    _feed(zone, "*4*1*1##", "*#4*1*13*00##", "*#4*1*12*0080*3##")
+    assert zone.target_temperature == 8.0
+    assert zone._target_temperature == 8.0
+
+    await zone.async_set_temperature(temperature=22.0)
+    # Dual-platform delivery of the write echo (*#4*1*12*0220*3## + *4*1*1##)
+    for raw in ("*#4*1*12*0220*3##", "*4*1*1##"):
+        zone.handle_event(OWNHeatingEvent(raw))
+        zone.handle_event(OWNHeatingEvent(raw))
+    assert zone.target_temperature == 22.0
+    assert zone._target_temperature == 22.0
+
+    # Physical knob turned to +1 just 1.0 s after the write echo
+    clock[0] += 1.0
+    for _ in range(2):
+        zone.handle_event(OWNHeatingEvent("*#4*1*13*01##"))
+    assert zone.target_temperature == 23.0
+    assert zone._target_temperature == 22.0
+
+    # Returning the knob to 0 restores 22.0 °C (never drifts to 21.0 °C)
+    clock[0] += 10.0
+    _feed(zone, "*#4*1*13*00##")
+    assert zone.target_temperature == 22.0
+    assert zone._target_temperature == 22.0
+
+
+async def test_slow_f455_poll_burst_over_two_seconds_pairs_dim13_via_dim14(hass, monkeypatch):
+    """F455 *#4*Z## poll bursts taking >2.0 s from Dim 12 to Dim 13 (with Dim 14 in between) do not double-add offset."""
+    clock = [6000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass, where="36", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    _feed(zone, "*4*1*36##", "*#4*36*13*00##", "*#4*36*12*0100*3##")
+    assert zone.target_temperature == 10.0
+
+    # Unmonitored knob change to +1, followed by a slow F455 poll burst:
+    # +0.000 s Dim 12 (11.0 °C), +0.177 s *4*1*36##, +1.712 s Dim 14 (10.0 °C), +2.302 s Dim 13 (+1)
+    clock[0] += 60.0
+    _feed(zone, "*#4*36*12*0110*3##")
+    clock[0] += 0.177
+    _feed(zone, "*4*1*36##")
+    clock[0] += 1.712 - 0.177
+    _feed(zone, "*#4*36*14*0100*3##")
+    clock[0] += 2.302 - 1.712
+    _feed(zone, "*#4*36*13*01##")
+    assert zone.target_temperature == 11.0
+    assert zone._target_temperature == 10.0
+    assert zone.extra_state_attributes["local_offset"] == 1
+
+
+async def test_transient_non_numeric_dim13_while_active_preserves_base_on_next_numeric_detent(
+    hass, monkeypatch
+):
+    """A transient non-numeric Dim 13 while active does not strand _local_target_temperature on subsequent numeric detents."""
+    clock = [7000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass, where="1", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    _feed(zone, "*4*1*1##", "*#4*1*13*13##", "*#4*1*12*0050*3##")
+    assert zone.target_temperature == 5.0
+    assert zone._target_temperature == 8.0
+
+    clock[0] += 5.0
+    _feed(zone, "*#4*1*13*5##")
+    assert zone.extra_state_attributes["knob_pos"] == "*"
+    clock[0] += 0.3
+    _feed(zone, "*#4*1*13*12##")
+    assert zone.target_temperature == 6.0
+    assert zone._target_temperature == 8.0
+    assert zone.extra_state_attributes["knob_pos"] == "-2"
+
+
+async def test_hl4684_derived_offset_and_3550_closing_frame_track_live_dim13_detents(
+    hass, monkeypatch
+):
+    """H/L4684 zone whose initial offset was derived from Dim 12 + Dim 14 (#466) tracks live Dim 13 knob clicks."""
+    clock = [8000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+    zone = _zone(hass, where="33", standalone=False)
+    zone._gateway_handler.has_central_unit = True
+
+    # Real H/L4684 3550 push burst: Dim 12 = 26.0, Dim 14 = 27.0 -> derived offset -1, closed by *4*110*#33##
+    _feed(
+        zone,
+        "*#4*33*0*0218##",
+        "*#4*33*12*0260*3##",
+        "*4*1*33##",
+        "*#4*33*14*0270*3##",
+        "*4*110*#33##",
+    )
+    assert zone.target_temperature == 26.0
+    assert zone._target_temperature == 27.0
+    assert zone.extra_state_attributes["local_offset"] == -1
+
+    # Sub-second live knob click to -2 (*#4*33*13*12## -> *4*110*#33##) updates target_temperature to 25.0 °C
+    clock[0] += 0.5
+    _feed(zone, "*#4*33*13*12##", "*4*110*#33##")
+    assert zone.target_temperature == 25.0
+    assert zone.extra_state_attributes["local_offset"] == -2
+
+    # Next knob click to -3 and back to -1 tracks 24.0 -> 26.0 °C
+    clock[0] += 3.0
+    _feed(zone, "*#4*33*13*13##", "*4*110*#33##")
+    assert zone.target_temperature == 24.0
+    clock[0] += 3.0
+    _feed(zone, "*#4*33*13*11##", "*4*110*#33##")
+    assert zone.target_temperature == 26.0
+
+    # Central mode+target frame (*4*110#0200*#33##) updates nominal to 20.0 + (-1) = 19.0 °C cleanly
+    _feed(zone, "*4*110#0200*#33##")
+    assert zone.target_temperature == 19.0
+
+
+async def test_startup_dim13_dim14_dim12_before_mode_hydrates_base_and_rounds_tenth_degrees(
+    hass, monkeypatch
+):
+    """Startup Dim 13 + Dim 14 + Dim 12 before *4*1*Z## hydrates _local_target_base, and 0.1 °C restore avoids float drift."""
+    clock = [9000.0]
+    monkeypatch.setattr(climate_module.time, "monotonic", lambda: clock[0])
+
+    # 1. Startup Dim 13 (-1) + Dim 14 (21.2) + Dim 12 (20.2) while mode is None, then *4*1*2## -> live Dim 13 (-3)
+    zone = _zone(hass, where="2")
+    _feed(zone, "*#4*2*13*11##", "*#4*2*14*0212*3##", "*#4*2*12*0202*3##", "*4*1*2##")
+    assert zone.target_temperature == 20.2
+    assert zone._target_temperature == 21.2
+    clock[0] += 5.0
+    _feed(zone, "*#4*2*13*13##")
+    assert zone.target_temperature == 18.2
+
+    # 2. Restored 0.1 °C setpoint with offset +3 has exact 0.1 °C rounding (never 18.099999999999998)
+    restored = _zone(hass, where="3")
+    await restored.async_restore_last_state(
+        State(
+            "climate.zone_3",
+            HVACMode.HEAT,
+            {"temperature": 21.1, "local_offset": 3},
+        )
+    )
+    assert restored._target_temperature == 18.1
+    assert restored.target_temperature == 21.1
+    _feed(restored, "*4*102*3##")
+    _feed(restored, "*4*1*3##")
+    assert restored.target_temperature == 21.1

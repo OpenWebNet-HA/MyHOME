@@ -96,4 +96,4 @@ Climate zones equipped with integrated humidity sensors (such as BTicino Living 
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `climate:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Climate Documentation](../../0.9.4/configuration/climate/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, climate zones are auto-discovered dynamically.
+> If you are upgrading from legacy v0.9 installations and still have manual `climate:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Climate Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/climate/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, climate zones are auto-discovered dynamically.

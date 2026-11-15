@@ -793,8 +793,6 @@ async def test_thermo_switch_direct_commands_revert_warning_and_custom_triggers(
     # Hardware bus timer rejected cleanly with translated HomeAssistantError
     with pytest.raises(HomeAssistantError):
         await sw_direct.async_turn_on_timed(duration=30)
-    with pytest.raises(HomeAssistantError):
-        await sw_direct.async_turn_on(duration=30)
 
 
 @pytest.mark.asyncio

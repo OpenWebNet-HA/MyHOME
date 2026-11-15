@@ -1,24 +1,37 @@
-# Switches & Relays (WHO = 1 & WHO = 4)
+# Switches & Relays (WHO = 1, WHO = 4, WHO = 9 & WHO = 25)
 
-The **MyHOME** integration provides full control for on/off relay actuators, socket outlets, contactors, and appliance relays operating on OpenWebNet **WHO = 1**, as well as probe-less thermoregulation relays / towel warmers (`F430/2`, `F430/4`) operating on **WHO = 4**.
+The **MyHOME** integration provides `switch` entities across three OpenWebNet families:
 
-In v2, setup and management are **100% UI-first**: switch relays are automatically discovered over the SCS bus, and entity types (such as distinguishing between a wall switch and a power outlet) are configured natively through Home Assistant's UI settings without manual YAML.
-
----
-
-## 🚀 Auto-Discovery
-
-When your gateway connects to Home Assistant:
-
-1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 1` relay commands and active addresses.
-2. **Device Creation**: Each physical relay actuator (`WHERE = 1..99` or area/point addresses `WHERE = 01..9999`) is registered as a Home Assistant entity linked to your gateway device.
-3. **UI Customization**: You can rename the switch, assign it to an Area (e.g. *Kitchen*, *Utility Room*), and select a custom icon directly in the Home Assistant UI.
+1. **On/Off Relay Actuators (`WHO = 1`)**: Socket outlets, contactors, pumps, and appliance relays declared under `switch:` in `/config/myhome.yaml`.
+2. **Probe-less Thermo Actuators & Towel Warmers (`WHO = 4`)**: `F430/2` and `F430/4` thermoregulation relays configured via the UI Config Subentry flow (**Add thermo actuator / towel-warmer switch (WHO 4)**) or `switch:` in `/config/myhome.yaml`.
+3. **Contact Polarity Toggle (`WHO = 9` & `WHO = 25`)**: Per-device **Invert state** configuration switches (`EntityCategory.CONFIG`) created automatically alongside every `WHO = 25` dry contact and `WHO = 9` auxiliary binary sensor.
 
 ---
 
-## 🔌 Displaying Relays as Outlets, Valves, or Appliances
+## 🚀 How `WHO = 1` Relays Are Discovered vs Declared as Switches
 
-In legacy configurations, distinguishing between an outlet and a switch required manual `class: outlet` YAML entries. In Home Assistant v2, this is handled natively in the UI using Home Assistant's **"Show As"** feature:
+OpenWebNet `WHO = 1` bus frames (`*1*0*WHERE##` / `*1*1*WHERE##`) carry no hardware metadata distinguishing a ceiling light relay from a wall socket or extractor fan relay. Because `switch.py` sets `listen=False`, **unconfigured `WHO = 1` addresses seen on the SCS bus are auto-discovered as `light.*` entities**, never automatically as `switch.*`.
+
+To expose a `WHO = 1` relay as a `switch.*` entity (suppressing the duplicate `light.*` entity on that address), declare it under `switch:` in `/config/myhome.yaml`:
+
+```yaml
+# /config/myhome.yaml
+switch:
+  kitchen_counter_socket:
+    where: "14"
+    name: Kitchen Counter Socket
+    class: outlet
+```
+
+> [!NOTE]
+> **Single-Gateway vs Multi-Gateway `myhome.yaml` Layout**:
+> Flat top-level `switch:` blocks apply to single-gateway installations. On multi-gateway installations, nest `switch:` (and any other domain blocks) under each gateway's MAC address key (e.g. `"00:03:50:01:02:03":`).
+
+---
+
+## 🔌 Displaying Relays as Outlets, Valves, or Fans ("Show As")
+
+Once a relay is declared under `switch:` (with optional `class: outlet` or `class: switch`), you can also refine how Home Assistant presents it in the UI using **"Show As"**:
 
 1. Open Home Assistant and navigate to **Settings → Devices & Services → Entities**.
 2. Select your switch entity (e.g. `switch.kitchen_counter_socket`).
@@ -26,22 +39,21 @@ In legacy configurations, distinguishing between an outlet and a switch required
 4. Under **Show As**, choose how you want the entity presented across your dashboards:
     - **Switch** (*Default*): Standard relay, appliance, or heater.
     - **Outlet**: Wall socket / plug load.
-    - **Light**: If the relay controls an external transformer or ballast.
-    - **Valve**: Irrigation or water shutoff valve.
+    - **Fan / Valve / Light**: Helper wrapper around the underlying switch.
 5. Click **Update**. Home Assistant immediately converts the entity representation across Lovelace dashboards, voice assistants (HomeKit, Alexa, Google Assistant), and automations.
 
 ---
 
 ## ⏱️ Native Hardware Bus Timers
 
-Like MyHOME lights, physical SCS switch relays can run native hardware timers directly on the bus. This ensures that pumps, heaters, or ventilation relays turn off after the elapsed time regardless of whether Home Assistant is running:
+Like MyHOME lights, physical SCS `WHO = 1` switch relays can run native hardware timers directly on the bus (`myhome.turn_on_timed` applies to individual `WHO = 1` relays and refuses `WHO = 4` thermo switches and `WHO = 9/25` invert switches). This ensures that pumps, heaters, or ventilation relays turn off after the elapsed time regardless of whether Home Assistant is running:
 
 ```yaml
 action: myhome.turn_on_timed
 target:
   entity_id: switch.bed_heating_pad
 data:
-  time: 1800   # Turn on and automatically turn off after 30 minutes (1800s)
+  duration: 1800   # Turn on and automatically turn off after 30 minutes (1800 s)
 ```
 
 ---
@@ -58,7 +70,7 @@ In traditional physical SCS configuration, auxiliary loads like bathroom extract
 Instead of wiring two relays in parallel or keeping `M=SLA`:
 
 1. **Remove `M=SLA`**: Configure the auxiliary relay (e.g. Channel 2 of an `F411/2` or `F411/4`) with its own distinct `PL` address (e.g. Light = `11`, Fan = `12`, with `M` left empty).
-2. **Expose as Fan / Switch**: Home Assistant discovers `12` as an independent entity (`switch.bathroom_fan` or `fan.bathroom_fan`).
+2. **Declare as Switch**: Declare address `12` under `switch:` in `/config/myhome.yaml` (`switch.bathroom_fan`) and optionally wrap it as a Fan via Home Assistant's **Show As** setting.
 3. **Automate the Overrun in HA**: Use an automation to turn on the fan when the light turns on, and run an overrun timer (`myhome.turn_on_timed`) or humidity purge when the light turns off.
 
 See the complete guide and YAML configuration in [Use Cases — Decoupled Bathroom Extractor Fan](use_cases.md#11-decoupled-bathroom-extractor-fan-with-smart-overrun-humidity-boost-single-f411-contact).
@@ -92,7 +104,7 @@ switch:
 
 ---
 
-## 🔄 Legacy YAML Note
+## 🔄 Legacy YAML Import & Multi-Gateway Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `switch:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Switch Documentation](../../0.9.4/configuration/switches/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all switches are managed dynamically via Home Assistant's native registry.
+> Validated `switch:` entries in `/config/myhome.yaml` are automatically imported and cached into the gateway's config entry options (`migrated_yaml_platforms`) so `WHO = 1` relays remain `switch.*` entities even if `/config/myhome.yaml` is later removed. On multi-gateway setups, place `switch:` under each gateway's `<MAC>:` header. For migrating pre-v0.9 `configuration.yaml` files, see the [Legacy YAML Migration Guide](../migration/legacy-yaml.md).

@@ -522,3 +522,234 @@ async def test_diagnostics_profile_without_keepalive_fields_reports_none(hass: H
     assert diag["profile"]["name"] == "F454"
     assert diag["profile"]["keepalive_interval"] is None
     assert diag["profile"]["keepalive_summary"] is None
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_platform_device_counts_deduplicate_aliases_and_live_entities(
+    hass: HomeAssistant,
+) -> None:
+    """Platform counts deduplicate shared dict aliases, JSON alias copies, and inline #4#II routing."""
+    mac = "00:03:50:aa:bb:df"
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_platform_dedup"
+    mock_entry.version = 1
+    mock_entry.domain = DOMAIN
+    mock_entry.title = "F453 Gateway"
+    mock_entry.data = {CONF_MAC: mac, "name": "F453"}
+    mock_entry.options = {}
+
+    mock_handler = MagicMock()
+    mock_handler.gateway = None
+    mock_handler.send_buffer = None
+    mock_handler.bus_monitor = None
+    mock_handler.device_health = None
+
+    # 1. Shared dict reference across 4 lookup aliases with a live non-JSON-serializable entity ref
+    shared_climate = {
+        "who": "4",
+        "zone": "1",
+        "name": "Master Bedroom",
+        "entities": {"climate": object()},
+    }
+    # 2. Separate JSON-copied dicts for central unit #0 (including omitted "who") and routed zone 2#4#02
+    central_a = {"zone": "#0", "name": "Central"}
+    central_b = {"who": "4", "zone": "#0", "name": "Central"}
+    routed_inline = {"who": "4", "where": "2#4#02", "name": "Guest"}
+    routed_split = {"who": "4", "where": "2", "interface": "02", "name": "Guest"}
+
+    # 3. Binary sensors with 2 alias keys ("25-311" without explicit "who" and "311" with platform default WHO=25)
+    bs_a = {"where": "311", "class": "window"}
+    bs_b = {"who": "25", "where": "311", "class": "window"}
+
+    # 4. Multi-class energy sensors on the same WHERE ("51") must still count as 2
+    sensor_power = {"who": "18", "where": "51", "class": "power"}
+    sensor_energy = {"who": "18", "where": "51", "class": "energy"}
+
+    # 5. Light platform default WHO ("1") deduplicates explicit "who": "1" against omitted "who"
+    light_a = {"where": "12", "name": "Ceiling"}
+    light_b = {"who": "1", "where": "12", "name": "Ceiling"}
+
+    platforms = {
+        "climate": {
+            "4-1": shared_climate,
+            "camera_01": shared_climate,
+            "1": shared_climate,
+            "zone_1": shared_climate,
+            "4-#0": central_a,
+            "#0": central_b,
+            "4-2#4#02": routed_inline,
+            "2#4#02": routed_split,
+        },
+        "binary_sensor": {
+            "25-311": bs_a,
+            "311": bs_b,
+        },
+        "light": {
+            "ceiling": light_a,
+            "12": light_b,
+        },
+        "sensor": {
+            "18-51-power": sensor_power,
+            "18-51-energy": sensor_energy,
+        },
+        "misc_empty": {
+            "a": {},
+            "b": {},
+            "raw": "scalar",
+        },
+        "non_mapping": ["x", "y"],
+    }
+
+    hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_PLATFORMS: platforms}}
+    attach_runtime(hass, mock_entry, mac, mock_handler)
+
+    diag = await async_get_config_entry_diagnostics(hass, mock_entry)
+
+    assert diag["platforms"] == {
+        "climate": 3,
+        "binary_sensor": 1,
+        "light": 1,
+        "sensor": 2,
+        "misc_empty": 3,
+        "non_mapping": 2,
+    }
+    # Gateway model name in entry.data["name"] stays intact
+    assert diag["config_entry"]["data"]["name"] == "F453"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_redacts_migrated_yaml_platforms_and_decoder_companions(
+    hass: HomeAssistant,
+) -> None:
+    """migrated_yaml_platforms strips room-slug keys, redacts household names/pins/access, and leaves entry.options intact."""
+    mac = "00:03:50:aa:bb:e0"
+    shared_z152 = {
+        "who": "4",
+        "zone": "52",
+        "name": "Camera 152",
+        "entity_name": None,
+        "heat": True,
+        "cool": False,
+    }
+    raw_options = {
+        "decoder_1_entity": "media_player.living_room_sky",
+        "decoder_1_companion": "media_player.living_room_amp",
+        "source_1_name": "Rossi Kitchen Streamer",
+        "source_2_name": "",
+        "tuner_pictures": {"1": {"101.5": "/local/rossi_radio.png"}},
+        "migrated_yaml_platforms": {
+            "climate": {
+                "4-#0": {"zone": "#0", "name": "Rossi Central"},
+                "rossi_attic": {"zone": "99", "name": "Rossi Attic"},
+                "4-52": shared_z152,
+                "camera_152": shared_z152,
+                "52": dict(shared_z152),
+                "zone_52": dict(shared_z152),
+            },
+            "cover": {
+                "rossi_garage_gate": {
+                    "who": "1",
+                    "where": "12",
+                    "interface": "02",
+                    "name": "Rossi Garage Gate",
+                    "entity_name": "Garage",
+                    "state_sensor": "binary_sensor.rossi_garage_contact",
+                    "subentry_id": "rossi_subentry_01",
+                    "pin_code": "9876",
+                    "code": "4321",
+                    "access": {
+                        "allowed_users": ["user-uuid-1"],
+                        "approvers": [],
+                        "camera": "camera.rossi_driveway",
+                        "prewarn_light": "light.rossi_porch",
+                        "close_block_entity": "binary_sensor.rossi_beam",
+                        "require_confirm": True,
+                    },
+                },
+            },
+            "sensor": {
+                "power_main": {"who": "18", "where": "51", "class": "power", "name": "Rossi Power"},
+                "energy_main": {"who": "18", "where": "51", "class": "energy", "name": "Rossi Energy"},
+                "raw_51": {"who": "18", "where": "51", "name": "Rossi Raw"},
+                "bare_where": {"where": "77", "name": "Rossi Probe"},
+                "zone_1": {"custom": True},
+                "rossi_headless": {"custom": True},
+                "99": 42,
+                "98": "Rossi Label",
+                "rossi_scalar_a": "Rossi Main",
+                "rossi_scalar_b": "Rossi Annex",
+                "rossi_scalar_c": "Rossi Shed",
+            },
+            "raw_list": [1, 2],
+        },
+    }
+
+    mock_entry = MagicMock()
+    mock_entry.entry_id = "test_yaml_redact"
+    mock_entry.version = 1
+    mock_entry.domain = DOMAIN
+    mock_entry.title = "Casa Rossi"
+    mock_entry.data = {CONF_MAC: mac, "name": "F453"}
+    mock_entry.options = raw_options
+
+    hass.data[DOMAIN] = {}
+
+    diag = await async_get_config_entry_diagnostics(hass, mock_entry)
+    opts = diag["config_entry"]["options"]
+    assert opts["decoder_1_entity"] == "media_player.decoder_1"
+    assert opts["decoder_1_companion"] == "media_player.decoder_1_companion"
+    assert opts["source_1_name"] == "Source 1"
+    assert opts["source_2_name"] == ""
+    assert opts["tuner_pictures"] == "**REDACTED**"
+
+    mig = opts["migrated_yaml_platforms"]
+    # 1. Climate preserves "4-#0" and infers "4-99" when "who" is omitted, and collapses aliases to canonical "4-52"
+    assert list(mig["climate"].keys()) == ["4-#0", "4-99", "4-52"]
+    assert mig["climate"]["4-#0"]["name"] == "**REDACTED**"
+    assert mig["climate"]["4-99"]["name"] == "**REDACTED**"
+    assert mig["climate"]["4-52"]["name"] == "**REDACTED**"
+    assert mig["climate"]["4-52"]["entity_name"] is None
+
+    # 2. Cover room-slug key, name, entity_name, state_sensor, subentry_id, pin_code, code, and access redacted
+    assert list(mig["cover"].keys()) == ["1-12#4#02"]
+    cov = mig["cover"]["1-12#4#02"]
+    assert cov["name"] == "**REDACTED**"
+    assert cov["entity_name"] == "**REDACTED**"
+    assert cov["state_sensor"] == "**REDACTED**"
+    assert cov["subentry_id"] == "**REDACTED**"
+    assert cov["pin_code"] == "**REDACTED**"
+    assert cov["code"] == "**REDACTED**"
+    assert cov["access"] == {
+        "allowed_users": "**REDACTED**",
+        "approvers": [],
+        "camera": "**REDACTED**",
+        "prewarn_light": "**REDACTED**",
+        "close_block_entity": "**REDACTED**",
+        "require_confirm": True,
+    }
+
+    # 3. Multi-class & classless sensors on same WHERE preserved without overwriting; scalars redacted & collision-free
+    assert mig["sensor"]["18-51"]["name"] == "**REDACTED**"
+    assert mig["sensor"]["18-51-energy"]["name"] == "**REDACTED**"
+    assert mig["sensor"]["18-51_2"]["name"] == "**REDACTED**"
+    assert mig["sensor"]["77"]["name"] == "**REDACTED**"
+    assert mig["sensor"]["zone_1"] == {"custom": True}
+    assert mig["sensor"]["device_6"] == {"custom": True}
+    assert mig["sensor"]["99"] == 42
+    assert mig["sensor"]["98"] == "**REDACTED**"
+    assert mig["sensor"]["value"] == "**REDACTED**"
+    assert mig["sensor"]["value_2"] == "**REDACTED**"
+    assert mig["sensor"]["value_3"] == "**REDACTED**"
+    assert mig["raw_list"] == [1, 2]
+
+    # 4. Zero household strings anywhere in serialized diagnostics, and original options unmutated
+    serialized = repr(diag)
+    assert "Camera 152" not in serialized
+    assert "camera_152" not in serialized
+    assert "Rossi" not in serialized
+    assert "rossi" not in serialized
+    assert "living_room" not in serialized
+    assert "9876" not in serialized
+    assert "4321" not in serialized
+    assert shared_z152["name"] == "Camera 152"
+    assert "camera_152" in raw_options["migrated_yaml_platforms"]["climate"]

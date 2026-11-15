@@ -58,4 +58,4 @@ You do **not** need to manually dismiss the repair issue in Home Assistant:
 ## Related Documentation
 
 - [Gateway Identification](identification.md) — Model resolution precedence and model mismatch repairs.
-- [v2.0 Documentation](../../latest/) — Modern UI-first documentation.
+- [v2.0 Documentation](https://openwebnet-ha.github.io/MyHOME/latest/) — Modern UI-first documentation.

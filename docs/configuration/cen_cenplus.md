@@ -11,12 +11,13 @@ BTicino / Legrand pushbuttons operate in either **CEN** (`WHO = 15`) or **CEN+**
 | Feature | **CEN (`WHO = 15`)** | **CEN+ (`WHO = 25`)** |
 | :--- | :--- | :--- |
 | **Typical Hardware** | L/N/NT4652, 067552, F420 | L/N/NT4652/2, 067554, 3477 (Dry Contacts), F428 |
-| **Buttons per Device** | 1 to 32 | 0 to 255 |
-| **Addressing Syntax** | `*15*<WHAT>*<WHERE>#<BUTTON>##` | `*25*<WHAT>#<BUTTON>*<WHERE>##` |
-| **Short Press Event** | `WHAT = 1` | `WHAT = 21` |
-| **Start Long Press** | `WHAT = 0` | `WHAT = 22` |
-| **Release Long Press** | `WHAT = 2` | `WHAT = 24` |
-| **Rotary Dials** | Supported via vendor extensions | Supported (CW/CCW slow & fast) |
+| **Buttons per Device (UI Device Triggers)** | `0` to `31` (`00..31` on wire) | `0` to `31` (`button_0`..`button_31` in UI; protocol supports `0..31` per CEN+ object) |
+| **Addressing Syntax** | `*15*<BB>[#<PHASE>]*<WHERE>##` | `*25*<WHAT>#<BUTTON>*<WHERE>##` |
+| **Short Press Event** | `*15*<BB>*<WHERE>##` (no phase qualifier) | `WHAT = 21` (`*25*21#<BUTTON>*<WHERE>##`) |
+| **Short Release Event** | `#1` (`*15*<BB>#1*<WHERE>##`) | N/A (CEN-only; CEN+ has no short-release frame) |
+| **Extended / Long Press** | `#3` (`*15*<BB>#3*<WHERE>##`, repeated ~0.5 s while held) | `WHAT = 22` (start) & `WHAT = 23` (~0.5 s hold repeat) |
+| **Release Long Press** | `#2` (`*15*<BB>#2*<WHERE>##`) | `WHAT = 24` (`*25*24#<BUTTON>*<WHERE>##`) |
+| **Rotary Dials** | ❌ Not supported on CEN | ✅ Supported (`WHAT = 25..28`: CW/CCW slow & fast) |
 | **Dry Contact Status** | N/A | `WHAT = 31` (Closed), `WHAT = 32` (Opened) |
 | **Scenario Plus Actions** | N/A | `WHAT = 11..15` (`on`, `off`, `increase`, `decrease`, `stop`) |
 
@@ -38,18 +39,18 @@ In MyHOME v2.0, physical pushbuttons are automatically discovered and registered
 >    Per BTicino's scenario-programmer specifications, a control configured in Basic CEN mode (`M = CEN`) must use a dedicated `A`/`PL` address that **does not duplicate any light or shutter actuator address**. If a CEN control shares an address with a light actuator (e.g. `WHERE = 61`), toggling or polling that light from Home Assistant (`*1*1*61##` or `*#1*61##`) causes the CEN control at `61` to emit `*15*<BUTTON>*61##` on the bus and fire whatever scenario is bound to it in the scenario programmer ([#612](https://github.com/OpenWebNet-HA/MyHOME/issues/612), [#773](https://github.com/OpenWebNet-HA/MyHOME/issues/773)).
 
 ### Supported Trigger Types
-- `pushbutton_short_press`: Fired immediately upon a quick tap.
-- `pushbutton_short_release`: Fired when a short tap is released.
-- `pushbutton_long_press`: Fired when the button is held down (exceeding ~400ms). On CEN+ it fires once per hold.
+- `pushbutton_short_press`: Fired immediately upon a quick tap (CEN & CEN+).
+- `pushbutton_short_release` (CEN only): Fired when a short tap is released (`*15*<BB>#1*<WHERE>##`).
+- `pushbutton_long_press`: Fired when the button is held down (exceeding ~400 ms; CEN `#3` / CEN+ `WHAT = 22`). On CEN+ it fires once per hold.
 - `pushbutton_long_press_repeat` (CEN+ only): Fired about every 0.5 s while the button stays held (`WHAT = 23`). Use it for "hold to dim"; use `pushbutton_long_press` for actions that should run once.
-- `pushbutton_long_release`: Fired when a held button is finally released.
-- `rotary_cw_slow`: Clockwise rotation at normal speed.
-- `rotary_cw_fast`: Clockwise rotation at fast speed.
-- `rotary_ccw_slow`: Counter-clockwise rotation at normal speed.
-- `rotary_ccw_fast`: Counter-clockwise rotation at fast speed.
+- `pushbutton_long_release`: Fired when a held button is finally released (CEN `#2` / CEN+ `WHAT = 24`).
+- `rotary_cw_slow` (CEN+ only): Clockwise rotation at normal speed.
+- `rotary_cw_fast` (CEN+ only): Clockwise rotation at fast speed.
+- `rotary_ccw_slow` (CEN+ only): Counter-clockwise rotation at normal speed.
+- `rotary_ccw_fast` (CEN+ only): Counter-clockwise rotation at fast speed.
 
 ### Button Subtypes
-- `button_0` through `button_31` corresponding to physical button keys or rocker positions on the faceplate.
+- `button_0` through `button_31` (`0..31` for both CEN and CEN+ devices in `device_trigger.py`) corresponding to physical button keys or rocker positions on the faceplate.
 
 ---
 
@@ -175,6 +176,27 @@ trigger:
       object: 1
       pushbutton: 1
       event: pushbutton_short_press
+```
+
+### WHO 25 Scenario Plus Action Events (`myhome_scenario_plus_event`)
+
+When a CEN+ Scenario Plus control sends an action frame (`WHO = 25`, `WHAT = 11..15`), the integration automatically registers a **`CEN+ Scenario Plus Control`** device in the Home Assistant Device Registry (`model="CEN+ Scenario Plus Control"`) and fires `myhome_scenario_plus_event`:
+
+- `object`: Scenario Plus object identifier (where available)
+- `where`: Wire Scenario Plus address (e.g. `"11"` or `"205"`)
+- `action`: Canonical action string — `on` (`WHAT = 11`), `off` (`WHAT = 12`), `increase` (`WHAT = 13`), `decrease` (`WHAT = 14`), or `stop` (`WHAT = 15`)
+- `gateway_mac`: Active gateway MAC address
+- `entry_id`: Config entry identifier
+
+You can also transmit outbound Scenario Plus commands from Home Assistant using [`myhome.send_scenario_plus_command`](services.md#13-myhomesend_scenario_plus_command).
+
+```yaml
+trigger:
+  - platform: event
+    event_type: myhome_scenario_plus_event
+    event_data:
+      where: "11"
+      action: "on"
 ```
 
 ### WHO 17 Scenario Programmer Events (`myhome_scene_event`)

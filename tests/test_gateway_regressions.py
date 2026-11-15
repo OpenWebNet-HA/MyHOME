@@ -88,8 +88,8 @@ async def test_discovery_drains_every_reply_before_next_command(count):
 
 async def test_incomplete_response_times_out_and_next_command_reconnects():
     session, _, writer = session_with_frames(OWNCommandSession, [b"*1*0*11##"])
-    session.RESPONSE_TIMEOUT = 0.01
-    assert await session.send("*#1*0##", is_status_request=True) is None
+    with patch("OWNd.connection.command_session.COMMAND_TIMEOUT", 0.01):
+        assert await session.send("*#1*0##", is_status_request=True) is None
     writer.close.assert_called_once()
     assert session._stream_reader is None
     assert session._stream_writer is None

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
 ISSUE_DEVICE_FAULT = "device_fault"
-DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/beta/diagnostics/repair-issues/"
+DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/"
 # How long a WHO 1001 autodiagnostic report and a status outside the table can be apart
 # and still belong together, in either order. On the MH200 (2026-09-26 trace) the mask
 # arrived 3.45 s before the status.

@@ -427,7 +427,7 @@ class MyHomeSensorSchema(Schema):
 light_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="1"): "1",
+            Optional(CONF_WHO, default="1"): All(Coerce(str), In(["1"])),
             Required(CONF_WHERE): All(
                 Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
             ),
@@ -583,7 +583,7 @@ access_schema = All(
 cover_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="2"): In(["1", "2"]),
+            Optional(CONF_WHO, default="2"): All(Coerce(str), In(["1", "2"])),
             Required(CONF_WHERE): All(
                 Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
             ),
@@ -721,7 +721,7 @@ def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any
 binary_sensor_schema = MyHomeDeviceSchema(
     {
         Required(str): All({
-            Optional(CONF_WHO, default="25"): In(["1", "9", "25"]),
+            Optional(CONF_WHO, default="25"): All(Coerce(str), In(["1", "9", "25"])),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
@@ -791,7 +791,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
 sensor_schema = MyHomeSensorSchema(
     {
         Required(str): {
-            Optional(CONF_WHO): In(["1", "4", "18"]),
+            Optional(CONF_WHO): All(Coerce(str), In(["1", "4", "18"])),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
             Required(CONF_DEVICE_CLASS): In(
@@ -811,7 +811,7 @@ sensor_schema = MyHomeSensorSchema(
 climate_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="4"): "4",
+            Optional(CONF_WHO, default="4"): All(Coerce(str), In(["4"])),
             Optional(CONF_ZONE, default="#0"): Coerce(str),
             Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Optional(CONF_NAME): str,
@@ -830,7 +830,7 @@ climate_schema = MyHomeDeviceSchema(
 alarm_control_panel_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="5"): "5",
+            Optional(CONF_WHO, default="5"): All(Coerce(str), In(["5"])),
             Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(canonical=False), SpecialWhere())),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
@@ -867,7 +867,7 @@ lock_schema = MyHomeDeviceSchema(
         Required(str): {
             # Only door entry strikes. A WHO 1 relay can be a motorized gate, and a lock
             # would let it bypass the cover's access policy, so there is no `who: 1` here.
-            Optional(CONF_WHO, default="6"): "6",
+            Optional(CONF_WHO, default="6"): All(Coerce(str), In(["6"])),
             Required(CONF_WHERE): All(Coerce(str), DoorEntryWhere()),
             Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,

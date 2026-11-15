@@ -1,19 +1,26 @@
 """Diagnostics support for MyHOME."""
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.components.diagnostics import REDACTED, async_redact_data
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PASSWORD
+from homeassistant.const import CONF_CODE, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    BUS_ROUTING,
     CONF_DECODER_COMPANION,
     CONF_DECODER_ENTITY,
     CONF_DECODER_SLOTS,
     CONF_FILE_PATH,
+    CONF_PIN_CODE,
     CONF_PRIMARY_GATEWAY,
+    CONF_SOURCE_NAME,
+    CONF_SOURCE_SLOTS,
+    CONF_TUNER_PICTURES,
     DOMAIN,
     INTEGRATION_VERSION,
     ROLE_PRIMARY,
@@ -23,6 +30,7 @@ from .const import (
 )
 from .data import MyHOMERuntimeData, get_runtime_data
 from .device_health import DeviceHealth
+from .legacy_yaml import CONF_MIGRATED_YAML_PLATFORMS
 
 # A diagnostics download is meant to be attached to a public issue. Secrets go
 # without saying; the rest identifies a household - where the gateway lives on
@@ -46,6 +54,8 @@ TO_REDACT = {
     CONF_PASSWORD,
     "password",
     "pin",
+    CONF_PIN_CODE,
+    CONF_CODE,
     "token",
     "secret",
     "host",
@@ -56,6 +66,7 @@ TO_REDACT = {
     "friendly_name",
     "file_path",
     CONF_FILE_PATH,
+    CONF_TUNER_PICTURES,
     CONF_PRIMARY_GATEWAY,
     "primary_mac",
     "secondary_mac",
@@ -63,17 +74,163 @@ TO_REDACT = {
     "configured_primary",
 }
 
+_SAFE_DEVICE_KEY_RE = re.compile(r"^(?:\d+-)?#?\d+(?:#\d+)*(?:#4#\d+)?$|^zone_\d+$")
+_WHO_PREFIX_RE = re.compile(r"^(\d+)-")
+_PLATFORM_DEFAULT_WHO: dict[str, str] = {
+    "alarm_control_panel": "5",
+    "binary_sensor": "25",
+    "climate": "4",
+    "cover": "2",
+    "light": "1",
+    "lock": "6",
+    "media_player": "16",
+    "switch": "1",
+}
+
+
+def _unique_key(plat_out: Mapping[str, Any], base: str) -> str:
+    """Return ``base`` if unused in ``plat_out``, otherwise ``{base}_{n}``."""
+    if base not in plat_out:
+        return base
+    suffix = 2
+    while f"{base}_{suffix}" in plat_out:
+        suffix += 1
+    return f"{base}_{suffix}"
+
+
+def _device_identity(
+    cfg: Mapping[str, Any],
+    *,
+    platform_name: str = "",
+    raw_key: str = "",
+) -> tuple[str, str, str, str, str] | None:
+    """Return canonical (who, where_or_zone, interface, device_class, subentry_id) for a device dict."""
+    if "where" not in cfg and "zone" not in cfg:
+        return None
+    base_addr = str(cfg["where"] if "where" in cfg else cfg["zone"])
+    iface = str(cfg.get("interface") or cfg.get("bus_interface") or "")
+    if not iface and BUS_ROUTING in base_addr:
+        base_addr, _, iface = base_addr.rpartition(BUS_ROUTING)
+    raw_who = str(cfg.get("who") or "")
+    if not raw_who:
+        prefix_match = _WHO_PREFIX_RE.match(raw_key)
+        if prefix_match is not None:
+            raw_who = prefix_match.group(1)
+        elif "zone" in cfg:
+            raw_who = "4"
+        else:
+            raw_who = _PLATFORM_DEFAULT_WHO.get(platform_name, "")
+    return (
+        raw_who,
+        base_addr,
+        iface,
+        str(cfg.get("class") or cfg.get("device_class") or ""),
+        str(cfg.get("subentry_id") or ""),
+    )
+
+
+def _count_unique_devices(devices: Mapping[str, Any], platform_name: str = "") -> int:
+    """Count distinct configured devices in a platform mapping, ignoring lookup aliases."""
+    seen_ids: set[int] = set()
+    seen_identities: set[tuple[str, str, str, str, str]] = set()
+    count = 0
+    for raw_key, cfg in devices.items():
+        if id(cfg) in seen_ids:
+            continue
+        seen_ids.add(id(cfg))
+        if isinstance(cfg, Mapping):
+            identity = _device_identity(cfg, platform_name=platform_name, raw_key=str(raw_key))
+            if identity is not None:
+                if identity in seen_identities:
+                    continue
+                seen_identities.add(identity)
+        count += 1
+    return count
+
+
+def _redact_yaml_device_config(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a copy of a migrated YAML device config with household/entity names redacted."""
+    redacted = dict(cfg)
+    for name_key in ("name", "entity_name", "state_sensor", "subentry_id"):
+        if name_key in redacted and redacted[name_key] is not None:
+            redacted[name_key] = REDACTED
+    access = redacted.get("access")
+    if isinstance(access, Mapping):
+        clean_access = dict(access)
+        for access_key in ("allowed_users", "approvers", "camera", "prewarn_light", "close_block_entity"):
+            if access_key in clean_access and clean_access[access_key] not in (None, [], {}):
+                clean_access[access_key] = REDACTED
+        redacted["access"] = clean_access
+    return redacted
+
+
+def _redact_migrated_yaml_platforms(migrated: Mapping[str, Any]) -> dict[str, Any]:
+    """Deduplicate alias keys and redact user-chosen names in migrated_yaml_platforms."""
+    out: dict[str, Any] = {}
+    for platform_name, devices in migrated.items():
+        plat_str = str(platform_name)
+        if not isinstance(devices, Mapping):
+            out[plat_str] = devices
+            continue
+        seen_ids: set[int] = set()
+        seen_identities: set[tuple[str, str, str, str, str]] = set()
+        plat_out: dict[str, Any] = {}
+        for raw_key, cfg in devices.items():
+            key_str = str(raw_key)
+            if not isinstance(cfg, Mapping):
+                safe_key = (
+                    _unique_key(plat_out, key_str)
+                    if _SAFE_DEVICE_KEY_RE.match(key_str)
+                    else _unique_key(plat_out, "value")
+                )
+                plat_out[safe_key] = REDACTED if isinstance(cfg, str) else cfg
+                continue
+            if id(cfg) in seen_ids:
+                continue
+            seen_ids.add(id(cfg))
+            identity = _device_identity(cfg, platform_name=plat_str, raw_key=key_str)
+            if identity is not None:
+                if identity in seen_identities:
+                    continue
+                seen_identities.add(identity)
+                who, base_addr, iface, klass, _ = identity
+                addr_with_routing = f"{base_addr}{BUS_ROUTING}{iface}" if iface else base_addr
+                canon_key = f"{who}-{addr_with_routing}" if who else addr_with_routing
+                if canon_key in plat_out and klass:
+                    canon_key = f"{canon_key}-{klass}"
+                canon_key = _unique_key(plat_out, canon_key)
+            else:
+                canon_key = _unique_key(
+                    plat_out,
+                    key_str if _SAFE_DEVICE_KEY_RE.match(key_str) else f"device_{len(plat_out) + 1}",
+                )
+            plat_out[canon_key] = _redact_yaml_device_config(cfg)
+        out[plat_str] = plat_out
+    return out
+
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a MyHOME config entry."""
+    raw_options = dict(entry.options)
+    if isinstance(raw_options.get(CONF_MIGRATED_YAML_PLATFORMS), Mapping):
+        raw_options[CONF_MIGRATED_YAML_PLATFORMS] = _redact_migrated_yaml_platforms(
+            raw_options[CONF_MIGRATED_YAML_PLATFORMS]
+        )
     entry_data = async_redact_data(dict(entry.data), TO_REDACT)
-    entry_options = async_redact_data(dict(entry.options), TO_REDACT)
+    entry_options = async_redact_data(raw_options, TO_REDACT)
     for slot in range(1, CONF_DECODER_SLOTS + 1):
         key = CONF_DECODER_ENTITY.format(slot)
         if entry_options.get(key):  # an empty slot stays empty: configured or not is diagnostics
             entry_options[key] = f"media_player.decoder_{slot}"
+        comp_key = CONF_DECODER_COMPANION.format(slot)
+        if entry_options.get(comp_key):
+            entry_options[comp_key] = f"media_player.decoder_{slot}_companion"
+    for slot in range(1, CONF_SOURCE_SLOTS + 1):
+        src_key = CONF_SOURCE_NAME.format(slot)
+        if str(entry_options.get(src_key) or "").strip():
+            entry_options[src_key] = f"Source {slot}"
 
     runtime = get_runtime_data(entry)
     gateway_handler = runtime.gateway if runtime is not None else None
@@ -139,7 +296,11 @@ async def async_get_config_entry_diagnostics(
     # Configured devices per platform (``runtime.entities`` is never filled)
     platforms_info: dict[str, int] = {}
     for platform_name, devices in (runtime.platforms if runtime is not None else {}).items():
-        platforms_info[platform_name] = len(devices)
+        platforms_info[platform_name] = (
+            _count_unique_devices(devices, str(platform_name))
+            if isinstance(devices, Mapping)
+            else len(devices)
+        )
 
     topology_inference = _build_topology_inference_diagnostics(hass, entry, profile_info)
 

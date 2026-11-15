@@ -1,11 +1,12 @@
 # Legacy Configuration History (< v0.9 & v0.9.x)
 
 > [!WARNING]
-> **You are viewing the v2 (Beta) Documentation.**
-> In v2.0+, setup and device onboarding are **100% UI-first** via Config Flow and Auto-Discovery. Manual YAML files are **not used** for device creation.
+> **Historical Archive (`< v0.9` & `v0.9.x`) — Do NOT Paste Into v2 `/config/myhome.yaml`!**
 >
+> * The pre-v0.9 `platform: myhome` / `platforms:` list / `devices:` syntax shown on this page is preserved **strictly as an archive reference** for migrating old Home Assistant `configuration.yaml` setups and **will fail v2 `/config/myhome.yaml` schema validation** if pasted directly.
+> * In **MyHOME v2.0+**, gateway setup and device onboarding are **UI-first** via Config Flow and Auto-Discovery, with `/config/myhome.yaml` acting only as an optional v0.9.4-compatible overlay (keyed by `<MAC>:` or `myhome:`).
 > * To upgrade an existing v0.9.4 installation, see the [**Upgrade from 0.9.4 Guide**](upgrade-from-094.md).
-> * For the complete, dedicated manual for `/config/myhome.yaml`, visit the [**v0.9.4 Legacy Documentation**](../../0.9.4/).
+> * For the v0.9.4 documentation archive, visit [**v0.9.4 Legacy Documentation**](https://openwebnet-ha.github.io/MyHOME/0.9.4/).
 
 This page is preserved for historical reference and documentation of the deprecated pre-v0.9 and v0.9.x YAML schemas.
 
