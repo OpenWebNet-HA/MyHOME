@@ -456,7 +456,7 @@ GATEWAY_OPTIONS_SPECS: list[dict[str, object]] = [
         "option": "**Command Worker Concurrency**",
         "key_cell": "`command_worker_count`",
         "selector": "Integer",
-        "default": "`1` (single-session) / `2` (multi-session via `command_session_default`)",
+        "default": "`1` (`2` on F455 and MyHomeServer1, via `command_session_default`)",
         "limits": "Range 1–4 capped by model (`1` on single-session models, `2` on MH202, `4` on F454/F455/F461/MyHomeServer1; `1–10` on Generic)",
         "description": "Number of concurrent asynchronous command sessions (`*99*0##`) dispatched to the gateway.",
     },

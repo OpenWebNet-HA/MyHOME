@@ -52,7 +52,7 @@ Once connected:
 
 Fine-tune runtime parameters by clicking **Configure** on the MyHOME integration card:
 
-* **Command Worker Concurrency (`command_worker_count`)**: Number of asynchronous command workers (`1` on single-session models, default `2` and up to `4` on high-throughput multi-session gateways like `F454`, `F455`, `F461`, and `MyHomeServer1`).
+* **Command Worker Concurrency (`command_worker_count`)**: Number of asynchronous command workers (default `1`, or `2` on `F455` and `MyHomeServer1`; up to `2` on `MH202` and up to `4` on `F454`, `F455`, `F461`, and `MyHomeServer1`).
 * **Dimmer Transition Mode (`transition_mode`)**: Choose between `software_stepped` (smooth **25-step** software fade interpolation managed by Home Assistant) and `native` (actuator hardware fade speed parameter).
 * **Event Bus Broadcasting (`generate_events`)**: Toggle whether raw bus frames are emitted as `myhome_message_event` events to Home Assistant for custom event automations.
 * **Dynamic Proxy Decoders (`decoder_1_entity`–`decoder_4_entity`)**: Map network audio decoders (Music Assistant, Squeezelite, WiiM, DLNA DMR) to physical F441/F441M matrix source inputs for Diffusione Sonora.

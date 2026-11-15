@@ -454,7 +454,7 @@ SUBSYSTEM_ROADMAP_ROWS: tuple[SubsystemRoadmapRowSpec, ...] = (
         mermaid_id="SUB_ENERGY",
         mermaid_title="Energy Metering (WHO 18)",
         frame_regex=r"^\*#?18\*",
-        covered_note="*Baseline covered (`F520` / `F521` / `3522` active power `W` and total/daily/monthly `kWh` energy counters).*",
+        covered_note="*Baseline covered (`F520` / `F521` / `3522` active power `W` and total/daily/monthly `Wh` energy counters).*",
         missing_target="**Energy meter trace**: `WHO = 18` power and cumulative energy frames.",
     ),
     SubsystemRoadmapRowSpec(

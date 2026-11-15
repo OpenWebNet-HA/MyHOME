@@ -121,8 +121,8 @@ states:
 
 Every `WHO = 5` frame received from the burglar alarm central unit or its zones also fires `myhome_alarm_event` on the Home Assistant event bus, so automations can react to individual zone activations (`*5*11*#n##` / `*5*18*#n##`) and technical alarms without polling:
 
-- `where`: Wire zone or central-unit address (e.g. `"0"`, `"#1"`, or `None` on empty-WHERE system frames)
-- `state`: Decoded state string (e.g. `"disengaged"`, `"engaged"`, `"intrusion_alarm"`)
+- `where`: Wire zone or central-unit address as a string (e.g. `"0"`, `"#1"`, or an empty string `""` on empty-WHERE system frames)
+- `state`: Decoded state string from OWNd (e.g. `"disengage"`, `"engage"`, `"intrusion alarm"`, `"active zone"`, `"technical alarm"`)
 - `state_code`: Numeric `WHAT` state code
 - `is_alarm`: `True` when the frame reports an active alarm condition
 - `message`: Raw OpenWebNet frame string

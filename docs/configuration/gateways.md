@@ -37,7 +37,7 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 
 | Step | Parameter | Key | Type | Default | Description |
 | :--- | :--- | :--- | :---: | :---: | :--- |
-| `custom` | **IPv4 Address** | `address` *(stored as `host`)* | IPv4 String | `192.168.1.35` | Strict numeric IPv4 address of the OpenWebNet gateway (`.local` mDNS hostnames and IPv6 literals are rejected). A static IP or DHCP reservation is strongly advised. |
+| `custom` | **IPv4 Address** | `address` *(stored as `host`)* | IPv4 String | `192.168.1.100` | Strict numeric IPv4 address of the OpenWebNet gateway (`.local` mDNS hostnames and IPv6 literals are rejected). A static IP or DHCP reservation is strongly advised. |
 | `custom` | **Port** | `port` | Integer | `20000` | TCP port for the OpenWebNet service (`1–65535`, standard default `20000`). Home Assistant then attempts a UPnP `get_gateway` metadata lookup at that IP. |
 | `custom_manual` *(only if UPnP lookup fails)* | **MAC Address** | `serialNumber` *(stored as `mac`)* | String | `00:03:50:00:00:00` | Gateway MAC address (`unique_id`). Automatically replaced after authentication if the gateway safely answers `*#13**12##` (`F461`, `MyHomeServer1`). |
 | `custom_manual` *(only if UPnP lookup fails)* | **Device Type** | `modelName` *(stored as `name`)* | Select | `MyHomeServer1` | Hardware model (`SUPPORTED_GATEWAY_MODELS`, including `"Generic"`). Probed and refined post-auth via `*#13**15##`, `*#13**16##`, and `*#1013**1##`. |
@@ -90,7 +90,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 <!-- GATEWAY_OPTIONS_START -->
 | Option | Key | Selector / Type | Default | Session / Model Limits | Description |
 | :--- | :--- | :---: | :---: | :--- | :--- |
-| **Command Worker Concurrency** | `command_worker_count` | Integer | `1` (single-session) / `2` (multi-session via `command_session_default`) | Range 1–4 capped by model (`1` on single-session models, `2` on MH202, `4` on F454/F455/F461/MyHomeServer1; `1–10` on Generic) | Number of concurrent asynchronous command sessions (`*99*0##`) dispatched to the gateway. |
+| **Command Worker Concurrency** | `command_worker_count` | Integer | `1` (`2` on F455 and MyHomeServer1, via `command_session_default`) | Range 1–4 capped by model (`1` on single-session models, `2` on MH202, `4` on F454/F455/F461/MyHomeServer1; `1–10` on Generic) | Number of concurrent asynchronous command sessions (`*99*0##`) dispatched to the gateway. |
 | **Dimmer Transition Mode** | `transition_mode` | Select | `software_stepped` | `software_stepped`, `native`, `auto` | Home Assistant software-stepped fade interpolation vs native hardware speed parameter (`auto` aliases `software_stepped`). |
 | **Event Bus Broadcasting** | `generate_events` | Boolean | `False` | All gateways | Emits raw OpenWebNet bus frames onto the Home Assistant event bus as `myhome_message_event`. |
 | **Broadcast Re-sync** | `broadcast_resync` | Boolean | `True` | All gateways | Sweeps group (`#G`), area, and general (`WHERE = 0`) light addresses for status after a debounced silence window. |
@@ -117,8 +117,8 @@ You can adjust integration runtime parameters at any time without re-adding the 
 - **Range**: `1` to `4` on profiled gateways (`1` to `10` on `Generic`).
 - Dynamically capped and validated against the gateway model's hardware limit:
     - **1 worker**: `MH200`, `MH200N`, `MH201`, `F452`, `F452V`, `F453`, `F453AV`, `H4684`, `AM4890` / `H4890` / `LN4890`.
-    - **Up to 2 workers**: `MH202` (default `2`).
-    - **Up to 4 workers**: `F454`, `F455`, `F461`, `MyHomeServer1` (default `2`).
+    - **Up to 2 workers**: `MH202` (default `1`).
+    - **Up to 4 workers**: `F454`, `F461` (default `1`); `F455`, `MyHomeServer1` (default `2`).
 - Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.
 
 ### 2. Dimmer Transition Mode (`transition_mode`)
@@ -149,7 +149,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 
 The integration includes enterprise-grade connection reliability safeguards:
 
-- **OS-Level TCP Socket Keepalive**: Configures OS-level TCP socket keepalive probes (`SO_KEEPALIVE`) on persistent sessions (`gateway_sessions.py`) to detect half-open NAT/router drops without polluting the SCS bus with periodic application ping frames.
+- **OS-Level TCP Socket Keepalive**: OWNd enables OS-level TCP socket keepalive probes (`SO_KEEPALIVE`) on the event session socket to detect half-open NAT/router drops. On `F454`, `F461`, `MH200` and `MH200N` it also writes the keepalive frame `*#*1##` on the event session every 90 s; on the other models that session carries no periodic application frames.
 - **Backoff & Auto-Reconnect**: If a network glitch or gateway reboot occurs, the event and command workers automatically cycle through an exponential backoff reconnect loop.
 - **Availability Grace Period**: An entity availability grace timer (60 seconds) prevents entities from rapidly toggling to `Unavailable` during brief gateway reconnections or WiFi dropouts.
 - **Silent Reconnect Cycles**: The read cycle in which OWNd re-establishes the event socket produces no frame and is skipped at `DEBUG` level; `Event connection lost, reconnecting...` is OWNd's own log line and is normal on gateways that close idle sockets (MH200/MH201).

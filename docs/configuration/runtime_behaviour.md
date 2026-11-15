@@ -154,15 +154,15 @@ Central units coordinate with the plant as follows:
 2. **Outbound Mode Commands**: When commanded from Home Assistant, the central unit receives canonical seasonal mode commands (`OWNHeatingCommand.set_central_mode`):
 
     - `*4*303*#0##` (Central unit OFF command)
-    - `*4*1*#0##` (Manual Heating mode command)
-    - `*4*0*#0##` (Manual Cooling / Conditioning mode command)
+    - `*4*1*#0##` (Heating season command)
+    - `*4*0*#0##` (Conditioning season command)
     - `*4*3100*#0##` (Auto / restore scheduled programming command)
     - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
 
-    *(Note: `WHAT = 103`, `101`, `100`, and `102` — Heating OFF, Manual Heating, Conditioning, and Antifreeze protection — are inbound status reports emitted by thermostats/central units on the bus, never outbound `#0` mode-switch commands.)*
+    *(Note: `WHAT = 103` and `102` — Heating OFF and Antifreeze protection — are inbound status reports emitted by thermostats/central units on the bus, never outbound `#0` mode-switch commands.)*
 3. **Inbound Operating Mode & Status Broadcasts**: The physical central unit broadcasts events across the bus whenever its state changes:
 
-    - Operating mode status: `*4*110*#0##` / `*4*101*#0##` (Manual Heating status), `*4*210*#0##` / `*4*100*#0##` (Manual Cooling / Conditioning status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` / `*4*103*#0##` (OFF status), `*4*202*#0##` (Conditional OFF status), `*4*102*#0##` (Antifreeze / thermal protection status).
+    - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling / Conditioning status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` / `*4*103*#0##` (OFF status), `*4*202*#0##` (Conditional OFF status), `*4*102*#0##` (Antifreeze status).
     - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
     - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
     - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).
