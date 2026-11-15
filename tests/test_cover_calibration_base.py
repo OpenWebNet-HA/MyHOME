@@ -1630,6 +1630,42 @@ async def test_a_reply_before_the_movement_leaves_the_actuators_stop_its_meaning
     assert "opening_time" not in cal.session.values
 
 
+@pytest.mark.parametrize("base", [{"slats": False}], indirect=True)
+async def test_an_interlock_stop_after_our_request_makes_the_run_refused_then_repeated_never_timed_wrong(base):
+    """The gateway's interlock Stop cannot be told from a reply: before the movement it uses up our request, so the
+    real reply after the movement is taken for the actuator's stop and the run is refused as already at the end stop,
+    Stop written. Chosen on purpose: a needless repeat costs a run, a reply taken for the stop would save a wrong time.
+    The repeat brings the cover back and the run is timed as usual."""
+    cal = base
+    await act(cal, "open")
+    assert cal.queue[-1][1]()
+    await asked(cal)
+    cal.clock[0] += .1
+    bus(cal, STOP)  # The interlock Stop, not a reply.
+    cal.clock[0] += .4
+    bus(cal, RISE)
+    cal.clock[0] += .1
+    marked_stop(cal)
+    bus(cal, STOP)  # The reply, "stopped" from before the motor started.
+    assert (cal.session.phase, cal.session.reason, cal.session.values) == ("confirm_closed", "already_at_end", {})
+    assert written(cal) == STOP
+    await act(cal, "repeat", direction="opening")
+    assert cal.session.phase == "rehoming"
+    assert written(cal) == STOP
+    await asyncio.sleep(0)
+    fire(cal.session.settle)
+    assert written(cal) == LOWER
+    cal.clock[0] += .6
+    bus(cal, LOWER)
+    cal.clock[0] += 3
+    bus(cal, STOP)
+    assert cal.session.phase == "confirm_closed"
+    await opening(cal)
+    cal.clock[0] += 20
+    bus(cal, STOP)
+    assert (cal.session.phase, cal.session.values) == ("confirm_open", {"opening_time": 20.0})
+
+
 @pytest.mark.parametrize("base", [{"slats": True, "home": True}], indirect=True)
 async def test_a_reply_before_the_close_to_the_rest_moves_leaves_the_actuators_stop_its_meaning(base):
     cal = base
