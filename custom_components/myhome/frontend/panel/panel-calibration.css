@@ -1053,10 +1053,13 @@ dialog.cal-dialog .dialog-head { justify-content: space-between; padding-block: 
 :is(.cal-note.is-warning, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-busy, [data-tone="warning"])) { --note-tone: var(--panel-warning); --note-text: color-mix(in srgb, var(--panel-warning) 60%, #000); }
 :is(.cal-note.is-success, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-done, [data-tone="success"])) { --note-tone: var(--panel-success); --note-text: var(--panel-success); }
 :is(.cal-note.is-error, :is(.cal-tab, dialog.cal-dialog) .notice:is(.error, [data-tone="error"])) { --note-tone: var(--panel-error); --note-text: var(--panel-error); }
+/* Grey: the same note as a yellow one, not in force now (the impact under a choice not taken). Only the tone changes;
+   written as the other tones so it outweighs the recipe's `dialog.cal-dialog .notice`. */
+:is(.cal-note, dialog.cal-dialog .cal-note).is-muted { --note-tone: var(--panel-text-2); --note-text: var(--panel-text-2); }
 :is(.cal-tab, dialog.cal-dialog) .notice ha-icon { display: none; }
 [data-theme="dark"] :is(.cal-note, .cal-tab .notice, dialog.cal-dialog .notice) { background: none; border: 0 solid transparent; border-inline-start: 2px solid var(--note-tone);
   border-radius: 0; box-shadow: none; padding: 4px 0 4px 12px; }
-[data-theme="dark"] .cal-note:not(.is-warning, .is-success, .is-error) { --note-text: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); }
+[data-theme="dark"] .cal-note:not(.is-warning, .is-success, .is-error, .is-muted) { --note-text: color-mix(in srgb, var(--panel-accent) 70%, var(--primary-text-color, #fff)); }
 [data-theme="dark"] :is(.cal-note.is-warning, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-busy, [data-tone="warning"])) { --note-text: color-mix(in srgb, var(--panel-warning) 70%, var(--primary-text-color, #fff)); }
 [data-theme="dark"] :is(.cal-note.is-success, :is(.cal-tab, dialog.cal-dialog) .notice:is(.cal-tab-done, [data-tone="success"])) { --note-text: color-mix(in srgb, var(--panel-success) 70%, var(--primary-text-color, #fff)); }
 /* An error's bar and text in the red ink. */

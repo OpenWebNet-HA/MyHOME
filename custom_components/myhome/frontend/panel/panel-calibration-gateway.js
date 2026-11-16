@@ -307,12 +307,15 @@ export class LiveCalibrationGateway {
 
   /**
    * What updating the profile followed would do (`preview_save` with `save_mode: "shared"`): the profile
-   * before and after and every cover that follows it, with the confirmation Save then carries. Null when refused.
+   * before and after and every cover that follows it, with the confirmation Save then carries. Null when refused (or
+   * not sent): never the preview of an earlier answer.
    */
   async previewShared() {
     this.savePreview = null;
+    const before = this._engine.lastView;
     await this._engine._perform("preview_save", { save_mode: "shared" });
-    this.savePreview = this._engine.lastView?.save_preview ?? null;
+    const after = this._engine.lastView;
+    this.savePreview = after !== before ? after?.save_preview ?? null : null;
     return this.savePreview;
   }
 

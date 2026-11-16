@@ -547,7 +547,10 @@ test("a profile's source saves the tape's values into it (with its confirmation)
   assert.equal(wiz().querySelector(".wiz-result-notices").textContent.includes("not available"), false);
   assert.deepEqual([...wiz().querySelectorAll('[name="save_choice"]')].map((input) => [input.value, input.disabled]), [["update", false], ["new", false]]);
   assert.equal(wiz().querySelector('[name="save_choice"][value="update"]').checked, true, "the source: updating by default");
-  assert.match(wiz().querySelector(".wiz-profile-block").textContent, /Will also change 1 cover: Living room shutter\u00a03\./);
+  // The preview asked on arrival: who and what changes, in yellow under «Update», before Save.
+  await tick(4);
+  const note = () => wiz().querySelector('[name="save_choice"][value="update"]').closest("label").querySelector(".cal-note.is-warning")?.textContent ?? null;
+  assert.equal(note(), "The times of the other cover that follows it change too: Living room shutter 3.");
   const fresh = wiz().querySelector('[name="save_choice"][value="new"]');
   fresh.checked = true; fresh.dispatchEvent(new Event("change", { bubbles: true })); await tick();
   const name = wiz().querySelector('[name="profile_name"]');
@@ -556,16 +559,20 @@ test("a profile's source saves the tape's values into it (with its confirmation)
   assert.deepEqual([error().hidden, error().textContent], [false, "A profile with this name already exists."]);
   name.value = "kitchen_two"; name.dispatchEvent(new Event("input", { bubbles: true })); await tick();
   assert.equal(error().hidden, true);
-  // «Aggiorna»: Save asks first, naming the covers whose times change.
+  assert.equal(note(), null, "«New profile»: no yellow notice");
+  assert.equal(wiz().querySelector('[name="save_choice"][value="update"]').closest("label").querySelector(".cal-note.is-muted")?.textContent,
+    "The times of the other cover that follows it change too: Living room shutter 3.", "the same note in grey");
+  // «Aggiorna» again: the same preview, its impact in yellow, and one press saves.
   const update = wiz().querySelector('[name="save_choice"][value="update"]');
-  update.checked = true; update.dispatchEvent(new Event("change", { bubbles: true })); await tick();
-  assert.equal(wiz().querySelector('[data-wiz="save"]').textContent, 'Save in the profile "tall_two_leaf"');
-  await press("save"); await tick(4);
-  assert.deepEqual(backend.calls.filter((message) => message.type === "myhome/cover_calibration/action").map((message) => message.action).filter((action) => ["preview_save", "save"].includes(action)), ["preview_save"]);
-  assert.match(wiz().querySelector(".wiz-result-notices").textContent, /Times change for the cover Living room shutter 3\./);
+  update.checked = true; update.dispatchEvent(new Event("change", { bubbles: true })); await tick(4);
+  const sent = () => backend.calls.filter((message) => message.type === "myhome/cover_calibration/action").map((message) => message.action).filter((action) => ["preview_save", "save"].includes(action));
+  assert.deepEqual(sent(), ["preview_save"]);
+  assert.equal(note(), "The times of the other cover that follows it change too: Living room shutter 3.");
+  assert.equal(wiz().querySelector(".wiz-result-notices").textContent, "", "nothing said at the top");
   assert.deepEqual([...wiz().querySelectorAll(".wiz-actions .wiz-action")].map((button) => [button.dataset.wiz, button.textContent]),
-    [["save", 'Confirm and save in the profile "tall_two_leaf"'], ["shared-cancel", "Cancel"]]);
+    [["save", 'Save in the profile "tall_two_leaf"']]);
   await press("save"); await tick(4);
+  assert.deepEqual(sent(), ["preview_save", "save"], "saved at the first press");
   const save = backend.calls.filter((message) => message.action === "save").at(-1);
   assert.deepEqual([save.save_mode, save.confirmation], ["shared", "shared:session-1"]);
   assert.equal(code(), "A-34");
@@ -1533,6 +1540,9 @@ for (const [entity, variant] of [["cover.kitchen_two", "A-21d, the choice of the
       await move(backend, { auto: true, stop: true }); await type("101"); await press("check-start");
       assert.match(code(), /^A-21[cd]?$/);
       const first = code();
+      // The preview of the profile's update, asked on arrival, redraws the summary when it is back: a reader scrolls
+      // after that frame, not within it.
+      await tick(4); await new Promise((resolve) => setTimeout(resolve, 30));
       // The scrolling elements: the wizard's content and a composed parent (the panel, host of the shadow root).
       wiz().querySelector(".wiz-main").scrollTop = 420; panel.scrollTop = 150;
       const toggle = wiz().querySelector('[name="save_choice"][value="update"]');
@@ -3627,7 +3637,7 @@ test("counts of zero and one use their own forms", () => {
   assert.match(review(["Sala 2", "Sala 3"]).saveInfo.body, /e le altre 2 tapparelle che lo seguono resteranno come sono\./);
   const a21d = (followers, origin) => buildScreen({ t, language: "it", stage: "session", path: "A", cover: cover(followers, origin), view, local: { saveProfile: true, saveChoice: "new" },
     followerNames: followers.join(" e ") }).profileBlock;
-  assert.equal(a21d([]).choice.options.find((option) => option.value === "update").description, "Nessun’altra tapparella lo segue.");
+  assert.equal(a21d([]).choice.options.find((option) => option.value === "update").note.text, "Nessun’altra tapparella lo segue.");
   assert.equal(a21d([]).name.line, "Questa tapparella seguirà il nuovo profilo. Il profilo «alte» resterà senza tapparelle: potrai eliminarlo dalla scheda Profili.");
   assert.equal(a21d(["Sala 3"]).name.line, "Questa tapparella seguirà il nuovo profilo. Il profilo «alte» resterà all'altra tapparella.");
   assert.equal(a21d(["Sala 2", "Sala 3"]).name.line, "Questa tapparella seguirà il nuovo profilo. Il profilo «alte» resterà alle altre 2 tapparelle.");
@@ -3640,7 +3650,7 @@ test("counts of zero and one use their own forms", () => {
   assert.equal(update.switchLabel, "Salva anche come profilo riusabile, o aggiorna quello esistente", "the switch says it can also update");
   assert.equal(buildScreen({ t, language: "it", stage: "session", path: "A", cover: { name: "Kitchen 2", followers: [], effective: {} }, view, local: {} }).profileBlock.switchLabel,
     "Salva anche come profilo riusabile", "without a profile the short label");
-  assert.equal(a21d(["Sala 3"]).choice.options.find((option) => option.value === "update").description, "Cambierà anche l’altra tapparella che lo segue: Sala 3.");
+  assert.equal(a21d(["Sala 3"]).choice.options.find((option) => option.value === "update").note.text, "Cambierà anche l’altra tapparella che lo segue: Sala 3.");
   const b01 = (followerNames) => buildScreen({ t, language: "it", stage: "profile", path: "B", cover: cover([]), local: {},
     profiles: [{ id: "p", name: "alte", followers: followerNames.length, followerNames, measuredOn: "Sala 1" }] }).choice.options[0];
   assert.equal(b01([]).label, "alte · misurato sulla tapparella Sala 1");
