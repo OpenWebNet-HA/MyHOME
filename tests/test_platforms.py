@@ -16,6 +16,8 @@ from OWNd.message import (
     OWNEvent,
 )
 
+from custom_components.myhome.typing_compat import device_info_to_dict
+
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -98,9 +100,10 @@ class TestMyHOMEEntity:
                 model="F411/4",
                 gateway=mock_gateway,
             )
-            assert "identifiers" in entity._attr_device_info
-            assert entity._attr_device_info["model"] == "F411/4"
-            assert entity._attr_device_info["name"] == "Test Device"
+            info = device_info_to_dict(entity._attr_device_info)
+            assert "identifiers" in info
+            assert info["model"] == "F411/4"
+            assert info["name"] == "Test Device"
 
     async def test_entity_lifecycle_hooks(self, mock_hass, mock_gateway):
         with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
@@ -164,25 +167,23 @@ class TestMyHOMEEntity:
             assert entity._availability_listener_registered is False
 
     async def test_entity_via_device_id_annotation(self, mock_hass, mock_gateway):
-        from homeassistant.helpers.device_registry import DeviceInfo
-        with patch.dict(DeviceInfo.__annotations__, {"via_device_id": str}):
-            with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
-                from custom_components.myhome.myhome_device import MyHOMEEntity
-                mock_gateway.device_registry_id = "mock_reg_id"
-                entity = MyHOMEEntity(
-                    hass=mock_hass,
-                    name="Test Device",
-                    platform="light",
-                    device_id="21",
-                    who="1",
-                    where="21",
-                    manufacturer="BTicino",
-                    model="F411/4",
-                    gateway=mock_gateway,
-                )
-                mock_gateway.unique_id = "mock_gw_unique"
-                assert entity._attr_device_info.get("via_device_id") == "mock_reg_id"
-                assert entity.via_device_id == "mock_gw_unique"
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            from custom_components.myhome.myhome_device import MyHOMEEntity
+            mock_gateway.device_registry_id = "mock_reg_id"
+            entity = MyHOMEEntity(
+                hass=mock_hass,
+                name="Test Device",
+                platform="light",
+                device_id="21",
+                who="1",
+                where="21",
+                manufacturer="BTicino",
+                model="F411/4",
+                gateway=mock_gateway,
+            )
+            mock_gateway.unique_id = "mock_gw_unique"
+            assert device_info_to_dict(entity._attr_device_info).get("via_device_id") == "mock_reg_id"
+            assert entity.via_device_id == "mock_gw_unique"
 
 
 # ── MediaPlayer Entity ─────────────────────────────────────────────────────

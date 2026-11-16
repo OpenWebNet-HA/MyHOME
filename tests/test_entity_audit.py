@@ -38,6 +38,7 @@ from custom_components.myhome.sensor import (
     MyHOMETemperatureSensor,
 )
 from custom_components.myhome.switch import MyHOMEInvertSwitch, MyHOMESwitch
+from custom_components.myhome.typing_compat import device_info_to_dict
 
 
 @pytest.fixture
@@ -150,5 +151,6 @@ def test_entity_audit(hass, gateway, label, factory, device_class, category, ena
 def test_entities_link_to_the_gateway_device(hass, gateway):
     """Every entity's device points at the gateway device through via_device_id."""
     entity = _light(hass, gateway)
-    assert entity.device_info["via_device_id"] == gateway.device_registry_id
-    assert "via_device" not in entity.device_info
+    info = device_info_to_dict(entity.device_info)
+    assert info["via_device_id"] == gateway.device_registry_id
+    assert "via_device" not in info

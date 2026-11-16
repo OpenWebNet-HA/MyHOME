@@ -330,6 +330,211 @@ def check_no_update_listener_reload_conflict(checker: StandardsChecker, target_d
     checker.log_ok("No update listener / direct flow reload conflicts (HA 2026.12).")
 
 
+DEPRECATED_DEVICE_INFO_METHODS = frozenset(
+    {
+        "get",
+        "update",
+        "keys",
+        "items",
+        "values",
+        "pop",
+        "popitem",
+        "setdefault",
+        "clear",
+        "copy",
+        "__getitem__",
+        "__setitem__",
+        "__delitem__",
+        "__contains__",
+        "__iter__",
+        "__len__",
+        "__required_keys__",
+        "__optional_keys__",
+        "__annotations__",
+        "__total__",
+    }
+)
+
+DEPRECATED_DEVICE_INFO_CLASS_ATTRS = frozenset(
+    {
+        "__required_keys__",
+        "__optional_keys__",
+        "__annotations__",
+        "__total__",
+    }
+)
+
+
+def _is_device_info_class(expr: ast.AST, class_names: set[str]) -> bool:
+    """Return True when ``expr`` names ``DeviceInfo`` or ``ChildDeviceInfo``."""
+    return (isinstance(expr, ast.Name) and expr.id in class_names) or (
+        isinstance(expr, ast.Attribute) and expr.attr in {"DeviceInfo", "ChildDeviceInfo"}
+    )
+
+
+def _is_device_info_expr(
+    expr: ast.AST, device_info_vars: set[str], class_names: set[str]
+) -> bool:
+    """Return True when ``expr`` evaluates to a ``DeviceInfo`` / ``ChildDeviceInfo`` value."""
+    if isinstance(expr, ast.Attribute) and expr.attr in {"device_info", "_attr_device_info"}:
+        return True
+    if isinstance(expr, ast.Name) and (
+        expr.id in {"device_info", "_attr_device_info"} or expr.id in device_info_vars
+    ):
+        return True
+    if isinstance(expr, ast.Call) and _is_device_info_class(expr.func, class_names):
+        return True
+    if isinstance(expr, ast.BoolOp):
+        return any(_is_device_info_expr(v, device_info_vars, class_names) for v in expr.values)
+    if isinstance(expr, ast.IfExp):
+        return _is_device_info_expr(expr.body, device_info_vars, class_names) or _is_device_info_expr(
+            expr.orelse, device_info_vars, class_names
+        )
+    if isinstance(expr, ast.NamedExpr):
+        return _is_device_info_expr(expr.value, device_info_vars, class_names)
+    return False
+
+
+def check_no_deprecated_device_info_mapping(
+    checker: StandardsChecker, target_dir: Path | None = None
+) -> None:
+    """Forbid deprecated mapping operations on ``DeviceInfo`` / ``ChildDeviceInfo`` (#930).
+
+    Home Assistant 2026.12 (core#192323) converted ``DeviceInfo`` and ``ChildDeviceInfo``
+    from ``TypedDict`` to ``@dataclass(slots=True)`` and deprecated all ``_DeviceInfoMapping``
+    dict-compatibility operations (removal in 2027.12). Because MyHOME supports HA 2026.3+,
+    code must pass fields directly to ``DeviceInfo(...)`` at construction time and read
+    existing instances via ``typing_compat.device_info_to_dict()``.
+    """
+    base = target_dir or CUSTOM_COMPONENTS_DIR
+    errors_before = len(checker.errors)
+
+    for py_path in sorted(base.rglob("*.py")):
+        try:
+            tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
+        except SyntaxError:
+            continue
+
+        class_names: set[str] = {"DeviceInfo", "ChildDeviceInfo"}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name in {"DeviceInfo", "ChildDeviceInfo"}:
+                        class_names.add(alias.asname or alias.name)
+
+        device_info_vars: set[str] = set()
+        for _ in range(2):
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign) and _is_device_info_expr(
+                    node.value, device_info_vars, class_names
+                ):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            device_info_vars.add(target.id)
+                elif (
+                    isinstance(node, ast.AnnAssign)
+                    and node.value is not None
+                    and isinstance(node.target, ast.Name)
+                    and _is_device_info_expr(node.value, device_info_vars, class_names)
+                ):
+                    device_info_vars.add(node.target.id)
+                elif (
+                    isinstance(node, ast.NamedExpr)
+                    and isinstance(node.target, ast.Name)
+                    and _is_device_info_expr(node.value, device_info_vars, class_names)
+                ):
+                    device_info_vars.add(node.target.id)
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Subscript) and _is_device_info_expr(
+                node.value, device_info_vars, class_names
+            ):
+                checker.log_error(
+                    "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                    py_path,
+                    node.lineno,
+                    "Deprecated mapping subscript '[...]' on DeviceInfo (HA 2026.12+, core#192323). "
+                    "Pass fields to DeviceInfo(...) at construction or read via typing_compat.device_info_to_dict().",
+                )
+            elif isinstance(node, ast.Attribute):
+                if (
+                    _is_device_info_class(node.value, class_names)
+                    and node.attr in DEPRECATED_DEVICE_INFO_CLASS_ATTRS
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.lineno,
+                        f"Deprecated TypedDict attribute '.{node.attr}' on DeviceInfo class "
+                        "(HA 2026.12+, core#192323).",
+                    )
+                elif (
+                    _is_device_info_expr(node.value, device_info_vars, class_names)
+                    and node.attr in DEPRECATED_DEVICE_INFO_METHODS
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.lineno,
+                        f"Deprecated mapping access '.{node.attr}' on DeviceInfo "
+                        "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                    )
+            elif isinstance(node, ast.Compare):
+                for op, comparator in zip(node.ops, node.comparators):
+                    if isinstance(op, (ast.In, ast.NotIn)) and _is_device_info_expr(
+                        comparator, device_info_vars, class_names
+                    ):
+                        checker.log_error(
+                            "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                            py_path,
+                            node.lineno,
+                            "Deprecated membership check ('in' / 'not in') on DeviceInfo "
+                            "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                        )
+            elif isinstance(node, ast.Dict):
+                for key, val in zip(node.keys, node.values):
+                    if (
+                        key is None
+                        and val is not None
+                        and _is_device_info_expr(val, device_info_vars, class_names)
+                    ):
+                        checker.log_error(
+                            "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                            py_path,
+                            node.lineno,
+                            "Deprecated mapping unpacking '**' on DeviceInfo "
+                            "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                        )
+            elif isinstance(node, ast.Call):
+                for kw in node.keywords:
+                    if kw.arg is None and _is_device_info_expr(
+                        kw.value, device_info_vars, class_names
+                    ):
+                        checker.log_error(
+                            "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                            py_path,
+                            node.lineno,
+                            "Deprecated mapping unpacking '**' on DeviceInfo "
+                            "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                        )
+                if (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id == "dict"
+                    and len(node.args) == 1
+                    and _is_device_info_expr(node.args[0], device_info_vars, class_names)
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.lineno,
+                        "Direct dict(...) conversion on DeviceInfo invokes deprecated mapping methods "
+                        "on HA 2026.12+ (core#192323). Use typing_compat.device_info_to_dict() instead.",
+                    )
+
+    if len(checker.errors) == errors_before:
+        checker.log_ok("No deprecated DeviceInfo mapping operations (HA 2026.12+, core#192323).")
+
+
 def check_no_blocking_calls(checker: StandardsChecker):
     """Rule 5: Verify no synchronous sleep or blocking calls in async functions."""
     for root, _, files in os.walk(CUSTOM_COMPONENTS_DIR):
@@ -1724,6 +1929,7 @@ def main():
     check_deprecated_constants(checker)
     check_no_blocking_calls(checker)
     check_no_update_listener_reload_conflict(checker)
+    check_no_deprecated_device_info_mapping(checker)
     check_ruff_standards(checker)
     check_manifest_requirements_rule(checker)
     check_packaging_metadata_rule(checker)

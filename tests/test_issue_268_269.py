@@ -31,6 +31,7 @@ from custom_components.myhome.const import (
     CONF_PLATFORMS,
     DOMAIN,
 )
+from custom_components.myhome.typing_compat import device_info_to_dict
 from custom_components.myhome.validate import climate_schema
 from tests.conftest import attach_runtime
 
@@ -403,10 +404,11 @@ async def test_issue_268_climate_friendly_name_restored_from_myhome_yaml(hass: H
     assert isinstance(climate_entity, MyHOMEClimate)
 
     # Name must be Soggiorno, NOT "Climate Zone 1"
+    climate_info = device_info_to_dict(climate_entity.device_info)
     assert climate_entity._display_name == "Soggiorno"
-    assert climate_entity.device_info["name"] == "Soggiorno"
-    assert climate_entity.device_info["manufacturer"] == "BTicino"
-    assert climate_entity.device_info["model"] == "KM4691"
+    assert climate_info["name"] == "Soggiorno"
+    assert climate_info["manufacturer"] == "BTicino"
+    assert climate_info["model"] == "KM4691"
     assert climate_entity.unique_id == "00:03:50:81:17:76-4-1"
 
 
@@ -473,7 +475,7 @@ async def test_issue_268_climate_discovery_preserves_name_via_bus_message(hass: 
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
     assert climate_entity._display_name == "Camera da letto"
-    assert climate_entity.device_info["name"] == "Camera da letto"
+    assert device_info_to_dict(climate_entity.device_info)["name"] == "Camera da letto"
 
 
 @pytest.mark.asyncio

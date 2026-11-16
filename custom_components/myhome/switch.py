@@ -79,6 +79,7 @@ from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
+from .typing_compat import device_info_to_dict
 from .where_grammar import (
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -445,7 +446,7 @@ async def async_setup_entry(
         if follower_contacts is None:
             return False
         primary_mac, with_sensor = follower_contacts
-        identifiers = (switch.device_info or {}).get("identifiers") or set()
+        identifiers = device_info_to_dict(switch.device_info).get("identifiers") or set()
         return any(
             domain == DOMAIN and binary_sensor_only_on_primary(with_sensor, identifier, gateway_mac, primary_mac)
             for domain, identifier in identifiers

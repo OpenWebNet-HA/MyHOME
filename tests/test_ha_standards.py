@@ -10,6 +10,7 @@ from scripts.verify_ha_standards import (
     check_manifest_requirements_rule,
     check_marketplace_manifest_rule,
     check_no_blocking_calls,
+    check_no_deprecated_device_info_mapping,
     check_no_update_listener_reload_conflict,
     check_ruff_standards,
     check_supported_domains_rule,
@@ -111,6 +112,58 @@ def test_update_listener_rule_catches_violations(tmp_path):
     checker = StandardsChecker()
     check_no_update_listener_reload_conflict(checker, target_dir=tmp_path)
     assert len(checker.errors) == 2
+
+
+def test_no_deprecated_device_info_mapping():
+    """Verify integration code never uses deprecated DeviceInfo mapping access (#930)."""
+    checker = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker)
+    assert not checker.errors, f"DeviceInfo mapping violations found: {checker.errors}"
+
+
+def test_deprecated_device_info_mapping_rule_catches_violations(tmp_path):
+    """Verify AST rule flags all deprecated DeviceInfo mapping/TypedDict operations and allows clean idioms."""
+    clean_file = tmp_path / "clean.py"
+    clean_file.write_text(
+        "from homeassistant.helpers.device_registry import DeviceInfo\n"
+        "from .typing_compat import device_info_to_dict\n\n"
+        "def build(entity, gw):\n"
+        "    entity._attr_device_info = DeviceInfo(\n"
+        "        identifiers={('myhome', '1')},\n"
+        "        via_device_id=gw.device_registry_id,\n"
+        "    )\n"
+        "    return device_info_to_dict(entity.device_info).get('identifiers')\n",
+        encoding="utf-8",
+    )
+    checker_clean = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_clean, target_dir=tmp_path)
+    assert not checker_clean.errors, f"Unexpected errors on clean patterns: {checker_clean.errors}"
+
+    bad_file = tmp_path / "bad_device_info.py"
+    bad_file.write_text(
+        "from homeassistant.helpers import device_registry as dr\n"
+        "from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo as DI\n\n"
+        "def bad_ops(self, switch):\n"
+        "    self._attr_device_info['via_device_id'] = 'gw'\n"
+        "    _ = switch.device_info['name']\n"
+        "    _ = (switch.device_info or {}).get('identifiers')\n"
+        "    self._attr_device_info.update({'model': 'X'})\n"
+        "    _ = switch.device_info.keys()\n"
+        "    _ = switch.device_info.items()\n"
+        "    _ = 'via_device' in switch.device_info\n"
+        "    _ = DI.__annotations__\n"
+        "    _ = ChildDeviceInfo.__required_keys__\n"
+        "    _ = dr.DeviceInfo.__optional_keys__\n"
+        "    local_di = DI(identifiers={('myhome', '1')})\n"
+        "    _ = local_di['identifiers']\n"
+        "    _ = dict(switch.device_info)\n"
+        "    _ = {**switch.device_info}\n",
+        encoding="utf-8",
+    )
+    checker_bad = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_bad, target_dir=tmp_path)
+    assert len(checker_bad.errors) == 13, f"Expected 13 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
+    assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_bad.errors)
 
 
 def test_marketplace_manifest_and_workflow_standards():

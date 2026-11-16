@@ -9,6 +9,7 @@ error there and not on earlier cores. These helpers hide that mismatch behind
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import homeassistant.helpers.typing as _ha_typing
@@ -31,6 +32,22 @@ def _resolve_undefined(typing_module: Any) -> Any:
 
 
 UNDEFINED: Any = _resolve_undefined(_ha_typing)
+
+
+def device_info_to_dict(info: Any) -> dict[str, Any]:
+    """Return ``DeviceInfo`` fields as a plain ``dict`` across Home Assistant cores.
+
+    Home Assistant 2026.12 turned ``DeviceInfo`` into a dataclass whose mapping
+    methods emit deprecation warnings (removal in 2027.12) and added ``as_dict()``.
+    Earlier supported cores (2026.3..2026.11) represent ``DeviceInfo`` as a
+    ``TypedDict`` (a plain ``dict`` at runtime without ``as_dict()``).
+    """
+    as_dict = getattr(info, "as_dict", None)
+    if callable(as_dict):
+        return dict(as_dict())
+    if isinstance(info, Mapping):
+        return dict(info)
+    return {}
 
 
 def flow_schema(definition: Any) -> Any:

@@ -17,6 +17,7 @@ from custom_components.myhome.const import CONF_SOURCE_NAME, CONF_SOURCE_TUNER
 from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.media_player import _build_sound_sources, _sound_route_keys
 from custom_components.myhome.sound_source import MyHOMESoundSource, rds_text, source_address
+from custom_components.myhome.typing_compat import device_info_to_dict
 from tests.conftest import attach_platform
 
 
@@ -302,9 +303,9 @@ def test_build_sound_sources_only_for_declared_tuners(hass, mock_gateway):
     sources = _build_sound_sources(hass, entry, mock_gateway)
 
     assert [s._where for s in sources] == ["101", "103"]
-    assert sources[0].device_info["name"] == "Radio"
+    assert device_info_to_dict(sources[0].device_info)["name"] == "Radio"
     # An unnamed tuner still gets a usable name
-    assert sources[1].device_info["name"] == "Audio Source 3"
+    assert device_info_to_dict(sources[1].device_info)["name"] == "Audio Source 3"
 
 
 def test_sound_route_keys_delivers_source_frames(hass):
