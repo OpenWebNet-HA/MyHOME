@@ -180,6 +180,7 @@ SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
 CONF_ADVANCED_COVERS = "advanced_covers"          # config entry option: {device_id: True}
 CONF_EXPLICIT_KINEMATICS = "_explicit_kinematics"
+CONF_EXPLICIT_TRAVEL_TIME = "_explicit_travel_time"
 EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
     CONF_ADVANCED_SHUTTER,
     "advanced_shutter",

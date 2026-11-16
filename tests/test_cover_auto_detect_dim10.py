@@ -19,7 +19,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from OWNd.message import OWNAutomationEvent, OWNEvent, OWNMessage
+from OWNd.message import OWNAutomationEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import (
@@ -93,7 +93,7 @@ async def _setup_entry(
 
 
 async def _feed(hass: HomeAssistant, raw: str) -> None:
-    msg = OWNEvent.parse(raw) or OWNMessage.parse(raw)
+    msg = OWNMessage.parse(raw)
     assert msg is not None, f"Failed to parse frame {raw!r}"
     async_dispatcher_send(hass, f"myhome_message_{MAC}", msg)
     await hass.async_block_till_done()
@@ -112,7 +112,7 @@ def _drain_sent(handler: MyHOMEGatewayHandler, harness: MockGatewayHarness) -> l
 async def test_mh201_discovery_calibrated_dim10_auto_promotes_and_sends_dim11(
     hass: HomeAssistant,
 ) -> None:
-    """Exact @fedem95 MH201 sequence auto-promotes on discovery and commands via Dimension 11."""
+    """MH201 fw 3.3.6 (issue #466) Dimension 10 sequence auto-promotes on discovery and commands via Dimension 11."""
     harness = MockGatewayHarness()
     port = await harness.start()
     entry = _make_entry(port)
@@ -129,7 +129,8 @@ async def test_mh201_discovery_calibrated_dim10_auto_promotes_and_sends_dim11(
             await handler.wait_for_initial_discovery(timeout=5.0)
             harness.received_messages.clear()
 
-            # Exact MH201 sweep sequence from Discussion #911: Dim 10 then plain stop
+            # MH201 fw 3.3.6 sweep sequence from myhome_sweep_MH201_all_2026-09-25T19-11-35.json:
+            # Dim 10 then plain stop
             await _feed(hass, "*#2*0715*10*10*100*000*0##")
             await _feed(hass, "*2*0*0715##")
 
@@ -159,6 +160,99 @@ async def test_mh201_discovery_calibrated_dim10_auto_promotes_and_sends_dim11(
             sent_cmds = _drain_sent(handler, harness)
             assert "*#2*0715*#11#001*40##" in sent_cmds
             assert "*2*2*0715##" not in sent_cmds
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_fedem95_mh201_ack_only_poll_promotes_and_updates_calibration_buttons(
+    hass: HomeAssistant,
+) -> None:
+    """Reproduce @fedem95's MH201 fw 3.6.27 comment (#926): ACK-only poll -> event-session Dim 10 -> Dim 11 + buttons."""
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{MAC}-2-0110",
+        config_entry=entry,
+        suggested_object_id="cover_0110",
+    )
+    registry.async_get_or_create(
+        domain="button",
+        platform=DOMAIN,
+        unique_id=f"{MAC}-2-0110-calibrate",
+        config_entry=entry,
+        suggested_object_id="cover_0110_calibrate_travel_time",
+    )
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await asyncio.sleep(0.2)
+            await hass.async_block_till_done()
+
+            # Pre-existing v2.0.0 timed cover polls -> *#2*0110##; MH201 command session returns ACK only.
+            sent_poll = _drain_sent(handler, harness)
+            assert "*#2*0110##" in sent_poll
+
+            cal_btn_id = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-0110-calibrate")
+            cal_all_id = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-calibrate-all-covers")
+            assert cal_btn_id is not None and cal_all_id is not None
+            assert hass.states.get(cal_btn_id).state != "unavailable"
+            assert hass.states.get(cal_all_id).state != "unavailable"
+
+            # Event session may echo the request *#2*0110## before actuator replies: must not create a phantom entity.
+            await _feed(hass, "*#2*0110##")
+            assert hass.states.async_entity_ids("cover") == ["cover.cover_0110"]
+            assert hass.states.get(cal_btn_id).state != "unavailable"
+
+            # Exact MH201 fw 3.6.27 event-session replies from issue #926 comment #6910228975
+            await _feed(hass, "*#2*0110*10*10*75*001*0##")
+            await _feed(hass, "*2*0*0110##")
+
+            state = hass.states.get("cover.cover_0110")
+            assert state is not None
+            assert state.state == "open"
+            assert state.attributes.get("current_position") == 75
+            assert state.attributes.get("min_position_delta") == 2
+            assert "travel_time" not in state.attributes
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"0110": True}
+
+            # Calibration buttons immediately turn unavailable in the running session
+            assert hass.states.get(cal_btn_id).state == "unavailable"
+            assert hass.states.get(cal_all_id).state == "unavailable"
+
+            # Subsequent position command uses native Dimension 11
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0110", "position": 40},
+                blocking=True,
+            )
+            await asyncio.sleep(0.05)
+            await hass.async_block_till_done()
+            assert "*#2*0110*#11#001*40##" in _drain_sent(handler, harness)
+
+            # On reload, persisted advanced cover prunes the redundant per-cover calibrate button
+            assert await hass.config_entries.async_reload(entry.entry_id)
+            await hass.async_block_till_done()
+            assert registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-0110-calibrate") is None
+            assert hass.states.get(cal_all_id).state == "unavailable"
     finally:
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
@@ -338,6 +432,18 @@ mh201:
       where: "0715"
       name: "Cosmetic Blind"
       class: blind
+    cosmetic_with_cal:
+      where: "0711"
+      name: "Cosmetic Calibrated"
+      class: shutter
+    strategy_native:
+      where: "0712"
+      name: "Explicit Native"
+      strategy: native
+    explicit_adv_true:
+      where: "0801"
+      name: "Explicit Adv True"
+      advanced: true
     explicit_adv_false:
       where: "0701"
       name: "Explicit Adv False"
@@ -373,6 +479,10 @@ mh201:
     area_scope_cover:
       where: "1"
       name: "Area 1 Scope"
+    impulse_gate:
+      where: "50"
+      who: "1"
+      name: "Impulse Gate"
 """,
         encoding="utf-8",
     )
@@ -384,19 +494,28 @@ mh201:
         options={
             CONF_FILE_PATH: str(yaml_path),
             CONF_COVER_TRAVEL_TIMES: {
-                "0709": {"down": 18.0, "up": 19.0, "source": "measured"}
+                "0709": {"down": 18.0, "up": 19.0, "source": "measured"},
+                "0711": {"down": 16.0, "up": 17.0, "source": "measured"},
             },
         },
     )
 
-    # Pre-register stored calibrated discovered cover 0709
+    # Pre-register stored calibrated discovered cover 0709 and a WHO=1 impulse cover
     entry.add_to_hass(hass)
-    er.async_get(hass).async_get_or_create(
+    reg = er.async_get(hass)
+    reg.async_get_or_create(
         domain="cover",
         platform=DOMAIN,
         unique_id=f"{MAC}-2-0709",
         config_entry=entry,
         suggested_object_id="cover_0709",
+    )
+    reg.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{MAC}-1-50",
+        config_entry=entry,
+        suggested_object_id="impulse_gate",
     )
 
     try:
@@ -410,13 +529,52 @@ mh201:
             handler = await _setup_entry(hass, entry)
             await handler.wait_for_initial_discovery(timeout=5.0)
 
-            # 1. Cosmetic-only YAML blind auto-promotes on calibrated Dim 10 frame
+            # 1. Cosmetic-only YAML blind starts with calibration_source="default" (not "yaml"),
+            # then auto-promotes on calibrated Dim 10 frame.
+            cosmetic_before = hass.states.get("cover.cosmetic_blind")
+            assert cosmetic_before is not None
+            assert cosmetic_before.attributes.get("calibration_source") == "default"
+            await hass.services.async_call(
+                DOMAIN,
+                "reset_cover_travel_time",
+                {"entity_id": "cover.cosmetic_blind"},
+                blocking=True,
+            )
+            assert hass.states.get("cover.cosmetic_blind").attributes.get("calibration_source") == "default"
+
             await _feed(hass, "*#2*0715*10*10*75*000*0##")
             cosmetic = hass.states.get("cover.cosmetic_blind")
             assert cosmetic is not None
             assert cosmetic.attributes.get("min_position_delta") == 2
             assert cosmetic.attributes.get("current_position") == 75
             assert entry.options.get(CONF_ADVANCED_COVERS) == {"0715": True}
+
+            # Cosmetic YAML cover with stored calibration preserves it and stays timed on Dim 10
+            await _feed(hass, "*#2*0711*10*10*60*000*0##")
+            st_cosmetic_cal = hass.states.get("cover.cosmetic_calibrated")
+            assert st_cosmetic_cal is not None
+            assert st_cosmetic_cal.attributes.get("travel_time_down") == 16.0
+            assert "min_position_delta" not in st_cosmetic_cal.attributes
+
+            # Non-calibratable YAML / scope / impulse covers have no calibration button and are excluded
+            # from CalibrateAllCoversButtonEntity
+            for dev_id in ("0712", "0801", "1"):
+                assert reg.async_get_entity_id("button", DOMAIN, f"{MAC}-2-{dev_id}-calibrate") is None
+
+            cal_all_btn = hass.states.get(
+                reg.async_get_entity_id("button", DOMAIN, f"{MAC}-calibrate-all-covers")
+            )
+            assert cal_all_btn is not None and cal_all_btn.state != "unavailable"
+            from custom_components.myhome.button import CalibrateAllCoversButtonEntity
+
+            cal_all_helper = CalibrateAllCoversButtonEntity(hass=hass, config_entry=entry, gateway=handler)
+            cal_targets = cal_all_helper._cover_entity_ids()
+            assert "cover.cosmetic_blind" not in cal_targets
+            assert "cover.explicit_native" not in cal_targets
+            assert "cover.explicit_adv_true" not in cal_targets
+            assert "cover.area_1_scope" not in cal_targets
+            assert "cover.impulse_gate" not in cal_targets
+            assert "cover.explicit_adv_false" in cal_targets
 
             # 2. Explicit YAML covers with kinematics / model / scope NEVER auto-promote
             for where, entity_id in (
@@ -469,8 +627,10 @@ mh201:
 @pytest.mark.asyncio
 async def test_manual_and_measured_calibration_lock_out_future_auto_promotion(
     hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Calibrating a timed cover manually or interactively disables future auto-promotion."""
+    """Calibrating a timed cover manually, via min_motor_pulse, or interactively disables future auto-promotion."""
+    monkeypatch.setattr("custom_components.myhome.cover.CALIBRATION_SETTLE", 0.0)
     harness = MockGatewayHarness()
     port = await harness.start()
     entry = _make_entry(port)
@@ -503,12 +663,95 @@ async def test_manual_and_measured_calibration_lock_out_future_auto_promotion(
 
             # 2. Interactive calibrate_cover also locks out Dim 10 auto-promotion
             await _feed(hass, "*2*0*0714##")
-            cover_714 = next(
-                c
-                for c in hass.states.async_entity_ids("cover")
-                if c == "cover.cover_0714"
+            with patch.object(
+                MyHOMECover,
+                "_calibration_run",
+                AsyncMock(side_effect=[10.0, 14.2, 15.6]),
+            ):
+                await hass.services.async_call(
+                    DOMAIN,
+                    "calibrate_cover",
+                    {"entity_id": "cover.cover_0714"},
+                    blocking=True,
+                )
+            await _feed(hass, "*#2*0714*10*10*55*001*0##")
+            st_cal = hass.states.get("cover.cover_0714")
+            assert st_cal is not None
+            assert st_cal.attributes.get("travel_time_down") == 14.2
+            assert st_cal.attributes.get("travel_time_up") == 15.6
+            assert "min_position_delta" not in st_cal.attributes
+            assert CONF_ADVANCED_COVERS not in entry.options
+
+            # 3. min_motor_pulse-only set_cover_travel_time also locks out Dim 10 auto-promotion
+            await _feed(hass, "*2*0*0713##")
+            await hass.services.async_call(
+                DOMAIN,
+                "set_cover_travel_time",
+                {"entity_id": "cover.cover_0713", "min_motor_pulse": 0.3},
+                blocking=True,
             )
-            assert cover_714 == "cover.cover_0714"
+            await _feed(hass, "*#2*0713*10*10*55*001*0##")
+            st_pulse = hass.states.get("cover.cover_0713")
+            assert st_pulse is not None
+            assert st_pulse.attributes.get("min_motor_pulse") == 0.3
+            assert "min_position_delta" not in st_pulse.attributes
+            assert CONF_ADVANCED_COVERS not in entry.options
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_entity_removal_cleans_advanced_covers_and_button_promotion_edges(
+    hass: HomeAssistant,
+) -> None:
+    """Deleting a cover cleans advanced_covers, and unrelated cover promotion keeps sibling calibrate buttons available."""
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    registry = er.async_get(hass)
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+
+            # Discover two timed covers 0110 and 0111
+            await _feed(hass, "*2*0*0110##")
+            await _feed(hass, "*2*0*0111##")
+            btn_110 = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-0110-calibrate")
+            btn_111 = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-0111-calibrate")
+            cal_all = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-calibrate-all-covers")
+            assert btn_110 and btn_111 and cal_all
+
+            # Promote 0110 only -> 0110's calibrate button turns unavailable, 0111's and calibrate-all stay available
+            await _feed(hass, "*#2*0110*10*10*75*001*0##")
+            assert hass.states.get(btn_110).state == "unavailable"
+            assert hass.states.get(btn_111).state != "unavailable"
+            assert hass.states.get(cal_all).state != "unavailable"
+
+            # Promote 0111 too -> both stored in advanced_covers, calibrate-all turns unavailable
+            await _feed(hass, "*#2*0111*10*10*20*001*0##")
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"0110": True, "0111": True}
+            assert hass.states.get(btn_111).state == "unavailable"
+            assert hass.states.get(cal_all).state == "unavailable"
+
+            # Remove 0110 from entity registry -> removes "0110", preserves "0111"
+            registry.async_remove("cover.cover_0110")
+            await hass.async_block_till_done()
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"0111": True}
+
+            # Remove 0111 from entity registry -> pops CONF_ADVANCED_COVERS key cleanly
+            registry.async_remove("cover.cover_0111")
+            await hass.async_block_till_done()
+            assert CONF_ADVANCED_COVERS not in entry.options
     finally:
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
@@ -547,9 +790,10 @@ async def test_direct_unit_edges_and_calibration_lockout(hass: HomeAssistant) ->
     assert _can_auto_promote_advanced({CONF_TRAVEL_TIME: 25}, None, None) is False
     assert _can_auto_promote_advanced({CONF_DEVICE_MODEL: "F411/2"}, None, None) is False
     assert _can_auto_promote_advanced({}, {"down": 15.0, "up": 15.0}, None) is False
+    assert _can_auto_promote_advanced({}, {"min_motor_pulse": 0.3}, None) is False
     assert _can_auto_promote_advanced({}, None, object()) is False
 
-    # 2. _persist_advanced_cover: missing entry and idempotent repeat
+    # 2. _persist_advanced_cover and async_removed_from_registry: missing entry, no-op, and cleanup
     with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
         cover = MyHOMECover(
             hass=hass,
@@ -572,11 +816,14 @@ async def test_direct_unit_edges_and_calibration_lockout(hass: HomeAssistant) ->
 
     # No config_entry string entry_id -> no-op return
     cover._persist_advanced_cover()
+    await cover.async_removed_from_registry()
 
     # Real MockConfigEntry -> writes once, second call short-circuits when stored[key] is True
     mock_entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC}, unique_id=MAC, entry_id="e-unit")
     mock_entry.add_to_hass(hass)
     gw.config_entry = mock_entry
+    # Non-stored key on async_removed_from_registry -> no-op
+    await cover.async_removed_from_registry()
     cover._persist_advanced_cover()
     assert mock_entry.options.get(CONF_ADVANCED_COVERS) == {"0715": True}
     with patch.object(hass.config_entries, "async_update_entry") as update_spy:

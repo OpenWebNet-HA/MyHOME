@@ -35,6 +35,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_call_later,
@@ -75,6 +76,7 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_ENTITY_NAME,
     CONF_EXPLICIT_KINEMATICS,
+    CONF_EXPLICIT_TRAVEL_TIME,
     CONF_MANUFACTURER,
     CONF_MEMBERS,
     CONF_MIN_CYCLE_TIME,
@@ -240,6 +242,11 @@ def _message_has_calibrated_dim10(message: Any) -> bool:
     )
 
 
+def _has_explicit_travel_time(cfg: Mapping[str, Any]) -> bool:
+    """Return True when ``travel_time`` was explicitly configured in YAML."""
+    return CONF_TRAVEL_TIME in cfg and bool(cfg.get(CONF_EXPLICIT_TRAVEL_TIME, True))
+
+
 def _can_auto_promote_advanced(
     cfg: Mapping[str, Any],
     calibration: Mapping[str, Any] | None,
@@ -257,7 +264,12 @@ def _can_auto_promote_advanced(
         return False
     if _is_standard_timed_shutter_model(cfg.get(CONF_DEVICE_MODEL)):
         return False
-    return not bool(calibration and calibration.get("down") and calibration.get("up"))
+    if calibration and (
+        (calibration.get("down") and calibration.get("up"))
+        or calibration.get("min_motor_pulse") is not None
+    ):
+        return False
+    return True
 
 
 def _actuator_cutoff(seconds: float) -> float | None:
@@ -303,15 +315,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     def build(ctx: DeviceContext) -> MyHOMECover:
         cfg = ctx.cfg
         kwargs: dict[str, Any] = {}
-        if ctx.source != "yaml":
-            # Registry / discovered covers carry their measured calibration; yaml covers
-            # start from the configured travel time.
-            kwargs["travel_time_source"] = "yaml" if CONF_TRAVEL_TIME in cfg else "default"
-            kwargs["calibration"] = _stored_calibration(config_entry, ctx.key)
-        elif (stored := _stored_calibration(config_entry, ctx.key)) and stored.get(CONF_SLAT_TIME) is not None:
-            # yaml covers keep their configured travel time, but a slat time set
-            # with myhome.set_cover_travel_time wins until it is reset.
-            kwargs["calibration"] = {CONF_SLAT_TIME: stored[CONF_SLAT_TIME]}
+        stored_cal = _stored_calibration(config_entry, ctx.key)
+        if ctx.source != "yaml" or cfg.get(CONF_EXPLICIT_KINEMATICS) is False:
+            # Registry / discovered / cosmetic-only YAML covers carry stored calibration.
+            kwargs["travel_time_source"] = "yaml" if _has_explicit_travel_time(cfg) else "default"
+            kwargs["calibration"] = stored_cal
+        elif stored_cal and stored_cal.get(CONF_SLAT_TIME) is not None:
+            # Explicit-kinematics YAML covers keep their configured travel time, while
+            # a slat time set with myhome.set_cover_travel_time wins until reset.
+            kwargs["calibration"] = {CONF_SLAT_TIME: stored_cal[CONF_SLAT_TIME]}
         # cover_schema folds a yaml `device_class:` into CONF_DEVICE_CLASS; the raw
         # key is kept as a fallback for callers that bypass the schema, as build_impulse does.
         raw_dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
@@ -324,7 +336,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         if (scope := CoverScope.of(ctx.address.where, ctx.address.interface, cfg.get(CONF_MEMBERS) or ())) is not None:
             cls = MyHOMEScopeCover
             kwargs["scope"] = scope
-        allow_auto_advanced = _can_auto_promote_advanced(cfg, kwargs.get("calibration"), scope)
+        allow_auto_advanced = _can_auto_promote_advanced(cfg, stored_cal, scope)
         configured_advanced = bool(cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)))
         stored_advanced = allow_auto_advanced and _is_stored_advanced_cover(config_entry, ctx.key)
         detected_on_build = allow_auto_advanced and _message_has_calibrated_dim10(ctx.message)
@@ -1283,6 +1295,29 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_stop_context = None
         await super().async_will_remove_from_hass()
 
+    async def async_removed_from_registry(self) -> None:
+        """Drop device fault issues and any persisted auto-detected advanced flag on deletion."""
+        await super().async_removed_from_registry()
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        hass = self.hass or self._hass
+        if (
+            entry is None
+            or not isinstance(getattr(entry, "entry_id", None), str)
+            or hass is None
+            or not hasattr(hass, "config_entries")
+        ):
+            return
+        options = dict(getattr(entry, "options", None) or {})
+        stored = options.get(CONF_ADVANCED_COVERS)
+        key = str(self._device_id)
+        if isinstance(stored, Mapping) and key in stored:
+            updated = {k: v for k, v in stored.items() if k != key}
+            if updated:
+                options[CONF_ADVANCED_COVERS] = updated
+            else:
+                options.pop(CONF_ADVANCED_COVERS, None)
+            hass.config_entries.async_update_entry(entry, options=options)
+
 
     # ── Calibration ──────────────────────────────────────────────────────
 
@@ -1378,7 +1413,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         if self._advanced:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
+                f"{self._display_name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1599,7 +1634,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
         if self._advanced and (has_travel or min_motor_pulse is not None or slat_time is None):
             raise HomeAssistantError(
-                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel time cannot be set — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
+                f"{self._display_name} reports its position (Dimension 10 / advanced: true); travel time cannot be set — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1625,6 +1660,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     },
                 )
             self._min_motor_pulse = round(float(min_motor_pulse), 2)
+            self._allow_auto_advanced = False
 
         if has_travel:
             down = travel_time_down if travel_time_down is not None else travel_time
@@ -1728,7 +1764,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Reset travel times back to default or YAML configuration."""
         if self._advanced and not self._slat_tilt:
             raise HomeAssistantError(
-                f"{self._display_name} reports its position (advanced: true in myhome.yaml); calibration is not applicable — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
+                f"{self._display_name} reports its position (Dimension 10 / advanced: true); calibration is not applicable — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml",
                 translation_domain=DOMAIN,
                 translation_key="cover_reports_position",
                 translation_placeholders={"name": self._display_name},
@@ -1756,7 +1792,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 "%s Cover %s slat time reset to %.1f s.", self._gateway_handler.log_id, self._full_where, self._slat_time
             )
             return
-        if CONF_TRAVEL_TIME in cfg:
+        if _has_explicit_travel_time(cfg):
             base_travel = float(cfg[CONF_TRAVEL_TIME])
             source = "yaml"
         else:
@@ -1845,7 +1881,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def async_update(self) -> None:
         """Update the entity.
 
-        Only used by the generic entity update service.
+        Called by ``homeassistant.update_entity`` and post-discovery startup polling
+        via ``_async_poll_if_needed()``.
         """
         if self._advanced:
             await self._gateway_handler.send_status_request(
@@ -2872,12 +2909,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 entity_id=self.entity_id,
             )
 
+        promoted = False
         if position is not None or position_unknown:
             self._dim10_seen = True
         if position is not None:
             self._bus_state_complete = True
             if not self._advanced and self._allow_auto_advanced and not self._calibrating:
                 self._promote_to_native_strategy()
+                promoted = True
 
         LOGGER.debug(
             "%s %s",
@@ -2912,7 +2951,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._attr_is_closed = bool(is_closed)
                     else:
                         self._attr_is_closed = (self._attr_current_cover_position == 0)
-                    self._publish_state()
+                    self._finish_handle_event(promoted)
                     return
 
             self._stop_live_refresh()
@@ -3124,7 +3163,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     LOGGER.warning(
                         "%s Cover %s (%s) stopped with a plain status frame (*2*0*%s##) and has never reported "
                         "a Dimension 10 position; if this is a standard timed actuator (e.g. F411) that does "
-                        "not support Dimension 10, remove advanced: true from myhome.yaml",
+                        "not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml",
                         self._gateway_handler.log_id,
                         self._full_where,
                         self._display_name,
@@ -3143,7 +3182,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if not (self._attr_is_opening or self._attr_is_closing):
                 self._attr_is_closed = None
 
+        self._finish_handle_event(promoted)
+
+    def _finish_handle_event(self, promoted: bool) -> None:
+        """Publish entity state and notify companion calibration buttons when promoted."""
         self._publish_state()
+        if promoted and (target_hass := (self.hass or self._hass)) is not None:
+            async_dispatcher_send(
+                target_hass,
+                f"myhome_cover_promoted_{self._gateway_handler.mac}",
+                str(self._device_id),
+            )
 
     async def async_cancel_request(self) -> None:
         """Raise when cancel_cover_request is called on a WHO=2 shutter."""

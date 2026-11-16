@@ -89,6 +89,7 @@ from .const import (
     CONF_ENTITIES,
     CONF_ENTITY_NAME,
     CONF_EXPLICIT_KINEMATICS,
+    CONF_EXPLICIT_TRAVEL_TIME,
     CONF_EXPOSE,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
@@ -351,11 +352,17 @@ class MyHomeDeviceSchema(Schema):
             if isinstance(raw, Mapping)
             and any(key in raw for key in EXPLICIT_COVER_KINEMATICS_KEYS)
         }
+        explicit_travel_time = {
+            str(device)
+            for device, raw in (data.items() if isinstance(data, Mapping) else ())
+            if isinstance(raw, Mapping) and CONF_TRAVEL_TIME in raw
+        }
         data = super().__call__(data)  # type: ignore
         _rekeyed_data = {}
 
         for device in data:
             data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
+            data[device][CONF_EXPLICIT_TRAVEL_TIME] = str(device) in explicit_travel_time
             data[device][CONF_ENTITIES] = {}
             interface = data[device].get(CONF_BUS_INTERFACE)
             routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
