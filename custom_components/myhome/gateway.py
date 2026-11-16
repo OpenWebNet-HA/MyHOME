@@ -235,31 +235,60 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
 # so their zones keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
-# Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
-# one after another), but where a zone that has not reported its temperature, setpoint, mode and
-# an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
-# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its setpoint
+# Gateways whose zones are not sent the zone status request (``*#4*Z##``) when the OWNd profile
+# has no ``supports_heating_zone_status`` flag, matched as substrings of the model name
+# (``supports_zone_status``; ``MH200`` also covers the ``MH200N``, ``F453`` the ``F453AV``).
+NO_ZONE_STATUS_REQUEST = (
+    "F450",
+    "F455",
+    "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
+    "MH200",
+    "MH201",
+    "F452",
+    "F453",
+    "F458",
+    "F459",
+    "H4684",
+)
+# The silent-zone poll (#466, #932). A gateway that is not sent the zone status request
+# (``supports_zone_status`` is False, the table above) has nothing that asks a zone for its
+# setpoint: the zone shows what its thermostat pushes, and a thermostat nobody touches pushes
+# nothing. So on every such gateway a zone that has not reported its temperature, setpoint, mode
+# and an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
+# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its knob
+# (*#4*Z*13##, unless the zone already asked for it when it was added), its setpoint
 # (*#4*Z*14##), its setpoint in force (*#4*Z*12##, followed by the zone's season frame) and
-# actuator 1 (*#4*Z#1*20##). A value Home Assistant restored from before the restart is not a
-# report. A physical F455 1.0.76 answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
-# (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
-# standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
-# four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a probe
-# the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
-# (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the poll
-# holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
+# actuator 1 (*#4*Z#1*20##, not where the gateway drops the actuator request,
+# ``silent_zone_actuator_read_refused``). A value Home Assistant restored from before the restart is not
+# a report. The rule goes by the result, not by a model list: a zone that got everything from
+# the sweep or from its thermostat sends nothing, and the zones of a gateway that is sent
+# *#4*Z## are not polled a second time. Evidence:
+# - F455 1.0.76 (physical): answers each read in ~0.1 s and ACKs *#4*Z## only after ~9 s
+#   (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
+#   standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
+#   four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a
+#   probe the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
+#   (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the
+#   poll holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in
+#   0.09 s there.
+# - MH201 3.6.43 (physical, #932; catalogued but not emulated in the oracle): standalone zones
+#   1-4 showed no target temperature after a restart until a thermostat published a change. It
+#   answered *#4*2*12## with *#4*2*12*0200*3## and *#4*#2*14## with *#4*2*14*0200*3##, and with
+#   this poll all four zones had their setpoint after a full restart without anyone touching a
+#   thermostat.
+# - own-firmware-oracle (main 3c1634b): all thirteen emulated gateways put *#4*Z*0##,
+#   *#4*Z*12##, *#4*Z*13## and *#4*Z*14## on the bus (verdict "out" in thermo-ts10.tsv,
+#   thermo-zone-requests.tsv and trace-corpus.tsv). For the SCS-only ones among them (F450,
+#   F453, F453AV, F459, H4684, MH200, MH200N) the poll is new: no physical capture of it yet.
 # The gate is read when the poll runs (the in-band identity may correct the model after the
 # entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
-# The MH201 (#932) is listed for its setpoint: its zones keep the temperature poll on add
-# (ZONE_TEMPERATURE_POLL above), but nothing asked for dimension 12 / 14, so a zone that had not
-# changed since the restart had no target temperature. A physical MH201 3.6.43 (standalone, zones
-# 1-4) answered *#4*2*12## with *#4*2*12*0200*3## and *#4*#2*14## with *#4*2*14*0200*3##, and with
-# the MH201 in this table all four zones had their setpoint after a full restart without anyone
-# touching a thermostat (the reporter's plant, #932; the MH201 is catalogued but not emulated in
-# the oracle). As on the F455, the knob read (*#4*Z*13##) then goes out inside this serial poll
-# and no longer when the zone is added (``_local_offset_read_pending`` in climate.py).
-SILENT_ZONE_POLL = frozenset({"F455", "MH201"})
 SILENT_ZONE_GRACE = 120.0
+# Gateways whose zones do not send the knob read (*#4*Z*13##) when they are added; it goes out
+# inside the silent-zone poll instead, after the temperature read (``_local_offset_read_pending``
+# in climate.py). The F455: its zones ask nothing on add (#674, sixteen *#4*Z## polls timing out
+# one after another), and a single-dimension read on a probe-less channel holds a command
+# session ~9 s before the NACK. The MH201: the configuration run on the reporter's plant (#932).
+KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455", "MH201"})
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -321,7 +350,8 @@ KNOWN_GATEWAY_MODELS = frozenset(
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
-    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL | SILENT_ZONE_POLL
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL
+    | KNOB_READ_IN_SILENT_ZONE_POLL
     | ZONE_ACTUATOR_REQUEST_REFUSED,
     key=len,
     reverse=True,
@@ -584,22 +614,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             _alnum(self.model),
             str(_profile_for_model(self.model).model_name).upper(),
         )
-        return not any(
-            k in norm
-            for norm in names
-            for k in (
-                "F450",
-                "F455",
-                "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
-                "MH200",
-                "MH201",
-                "F452",
-                "F453",
-                "F458",
-                "F459",
-                "H4684",
-            )
-        )
+        return not any(k in norm for norm in names for k in NO_ZONE_STATUS_REQUEST)
 
     @property
     def _model_key(self) -> str:
@@ -830,7 +845,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def silent_zone_poll_needed(self) -> bool:
-        """Whether a zone silent after the startup sweep asks its own state once (``SILENT_ZONE_POLL``).
+        """Whether a zone silent after the startup sweep asks its own state once.
+
+        On every gateway that is not sent the zone status request (``supports_zone_status`` is
+        False): there nothing else asks a zone for its setpoint (#466 on an F455, #932 on an
+        MH201). A gateway that answers ``*#4*Z##`` needs no second round.
 
         Decided by the gateway the reads go through (``_who4_target``: a secondary WHO 4 is
         delegated to, or the warm standby while this primary is down), like
@@ -839,7 +858,33 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """
         if self.is_follower and 4 not in self.delegated_whos:
             return False
-        return self._who4_target()._model_key in SILENT_ZONE_POLL
+        target = self._who4_target()
+        if not target.supports_zone_status:
+            return True
+        # The in-band identity (WHO 13 / WHO 1013) may have corrected the configured model after
+        # the zones were added: ``_model_key`` follows it, while ``supports_zone_status`` reads
+        # the configured name where the profile has no flag of its own.
+        flag = getattr(getattr(target.gateway, "profile", None), "supports_heating_zone_status", None)
+        return not isinstance(flag, bool) and any(model in target._model_key for model in NO_ZONE_STATUS_REQUEST)
+
+    @property
+    def knob_read_in_silent_zone_poll(self) -> bool:
+        """Whether the knob read (``*#4*Z*13##``) waits for the silent-zone poll (``KNOB_READ_IN_SILENT_ZONE_POLL``).
+
+        Decided like ``silent_zone_poll_needed``: by the gateway the reads go through, and a
+        passive follower has no zones of its own to ask.
+        """
+        if self.is_follower and 4 not in self.delegated_whos:
+            return False
+        return self._who4_target()._model_key in KNOB_READ_IN_SILENT_ZONE_POLL
+
+    @property
+    def silent_zone_actuator_read_refused(self) -> bool:
+        """Whether the silent-zone poll leaves the actuator read (``*#4*Z#1*20##``) out.
+
+        ``actuator_request_refused`` of the gateway the reads go through (``_who4_target``).
+        """
+        return self._who4_target().actuator_request_refused
 
     @property
     def zone_temperature_poll_needed(self) -> bool:

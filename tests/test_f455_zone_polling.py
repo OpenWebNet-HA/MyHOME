@@ -8,6 +8,10 @@ What is added, backed by the physical F455 1.0.76 capture
 standalone zone 2 reported nothing on its own): SILENT_ZONE_GRACE seconds after the sweep, a zone
 still without a temperature or setpoint of its own asks ``*#4*Z*0##``, then ``*#4*Z*14##``, ``*#4*Z*12##`` (followed by the
 zone's mode frame) and ``*#4*Z#1*20##``, each only once the previous read was answered.
+
+Since #932 the poll runs on every gateway that is not sent the zone status request, not only on the
+F455 (``tests/test_silent_zone_poll_by_result.py``). What stays F455-specific here: nothing is asked
+on add, so the knob read (``*#4*Z*13##``) is part of the poll (``KNOB_READ_IN_SILENT_ZONE_POLL``).
 """
 
 from __future__ import annotations
@@ -28,8 +32,8 @@ from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import CONF_FIRMWARE
 from custom_components.myhome.gateway import (
     HUMIDITY_REQUEST_REFUSED,
+    KNOB_READ_IN_SILENT_ZONE_POLL,
     SILENT_ZONE_GRACE,
-    SILENT_ZONE_POLL,
     ZONE_ACTUATOR_REQUEST_REFUSED,
     MyHOMEGatewayHandler,
 )
@@ -162,7 +166,8 @@ def test_f455_keeps_the_issue_674_gates(hass) -> None:
     assert handler.general_zone_request_refused is False
     assert handler.actuator_request_refused is False
     assert "*#4*0##" in handler._discovery_frames()
-    assert SILENT_ZONE_POLL == {"F455", "MH201"} and SILENT_ZONE_GRACE == 120.0  # the MH201: #932
+    assert handler.knob_read_in_silent_zone_poll is True
+    assert KNOB_READ_IN_SILENT_ZONE_POLL == {"F455", "MH201"} and SILENT_ZONE_GRACE == 120.0  # the MH201: #932
 
 
 def test_capture_backs_the_f455_refusing_the_zone_actuator_and_humidity_reads() -> None:
@@ -209,10 +214,12 @@ def test_the_gateway_that_serves_who_4_decides(hass, monkeypatch) -> None:
     other = _handler(hass, "F455")
     monkeypatch.setattr(primary, "_who4_target", lambda: other)
     assert primary.silent_zone_poll_needed is True
+    assert primary.knob_read_in_silent_zone_poll is True
     assert primary.zone_actuator_request_refused is True
     monkeypatch.setattr(primary, "_who4_target", lambda: primary)
     monkeypatch.setattr(other, "_who4_target", lambda: primary)
     assert other.silent_zone_poll_needed is False
+    assert other.knob_read_in_silent_zone_poll is False
     assert other.zone_actuator_request_refused is False
 
 
@@ -222,13 +229,19 @@ def test_a_passive_follower_polls_nothing(hass, monkeypatch) -> None:
     monkeypatch.setattr(MyHOMEGatewayHandler, "is_follower", property(lambda self: True))
     monkeypatch.setattr(MyHOMEGatewayHandler, "delegated_whos", property(lambda self: set()))
     assert handler.silent_zone_poll_needed is False
+    assert handler.knob_read_in_silent_zone_poll is False
     monkeypatch.setattr(MyHOMEGatewayHandler, "delegated_whos", property(lambda self: {4}))
     assert handler.silent_zone_poll_needed is True
+    assert handler.knob_read_in_silent_zone_poll is True
 
 
-@pytest.mark.parametrize("model", ["F450", "F454", "F459", "F461", "MH200", "MH200N", "MH202", "MyHomeServer1"])
-def test_other_gateways_have_no_silent_zone_poll(hass, model) -> None:
-    assert _handler(hass, model).silent_zone_poll_needed is False
+@pytest.mark.parametrize("model", ["F454", "F460", "F461", "MH202", "MyHomeServer1", "Generic"])
+def test_gateways_sent_the_zone_status_request_have_no_silent_zone_poll(hass, model) -> None:
+    """``*#4*Z##`` already asks their zones for everything; the other gateways: ``test_silent_zone_poll_by_result.py``."""
+    handler = _handler(hass, model)
+    assert handler.supports_zone_status is True
+    assert handler.silent_zone_poll_needed is False
+    assert handler.knob_read_in_silent_zone_poll is False
 
 
 async def test_f455_zone_still_asks_nothing_on_add_or_update(hass) -> None:
@@ -434,7 +447,8 @@ async def test_a_zone_labelled_f455_but_corrected_in_band_asks_nothing(hass) -> 
 
 
 async def test_a_zone_added_after_the_sweep_on_another_gateway_schedules_nothing(hass, monkeypatch) -> None:
-    """Once the sweep is over the model has settled: a non-F455 zone found on the bus schedules no poll."""
+    """Once the sweep is over the model has settled: a zone found on the bus of a gateway that is sent
+    the zone status request schedules no poll."""
     handler = _handler(hass, "F454")
     handler._initial_discovery_done.set()
     zone = _zone(hass, handler)

@@ -80,7 +80,12 @@ from .discovery import (
     is_broadcast_where,
 )
 from .expose import is_exposed_on_bus
-from .gateway import _ZONE_WHERE, SILENT_ZONE_GRACE, SILENT_ZONE_POLL, MyHOMEGatewayHandler
+from .gateway import (
+    _ZONE_WHERE,
+    KNOB_READ_IN_SILENT_ZONE_POLL,
+    SILENT_ZONE_GRACE,
+    MyHOMEGatewayHandler,
+)
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
@@ -782,20 +787,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         knob lets a setpoint write compensate it on the first write after a restart, instead of
         waiting for the Dimension 12/14 echo of a write to derive it (#890). Not for the central
         unit, a zone whose knob already reported, an actuator or probe address, or a zone behind
-        an interface the gateway does not route. A silent-zone gateway (``SILENT_ZONE_POLL``:
-        the ``F455``, and the ``MH201`` since #932) is excluded: on an F455 a single-dimension
+        an interface the gateway does not route. The gateways of ``KNOB_READ_IN_SILENT_ZONE_POLL``
+        (the ``F455``, and the ``MH201`` since #932) are excluded: on an F455 a single-dimension
         read on a probe-less channel holds its command session ~9 s before NACKing (#674), so
         there the knob read is folded into the serial silent-zone poll (``_silent_zone_reads``)
-        instead of a point-to-point request.
+        instead of a point-to-point request. Elsewhere the read is not held back, and the
+        silent-zone poll does not repeat a read the zone has already sent.
 
         This deliberately ignores the one-shot send guard (``_local_offset_read_sent``): a zone
         that has sent the read but not yet heard the answer still owes its knob, so
         ``message_has_state`` must keep treating its state as incomplete until the knob arrives.
         """
         gateway = getattr(self, "_gateway_handler", None)
-        silent = (
-            getattr(gateway, "silent_zone_poll_needed", False) is True
-            or getattr(gateway, "model", None) in SILENT_ZONE_POLL
+        in_poll = (
+            getattr(gateway, "knob_read_in_silent_zone_poll", False) is True
+            or getattr(gateway, "model", None) in KNOB_READ_IN_SILENT_ZONE_POLL
         )
         return (
             not self._central
@@ -803,7 +809,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not is_actuator_where(self._where)
             and not is_probe(self._where)
             and not self._interface_poll_refused
-            and not silent
+            and not in_poll
         )
 
     @property
@@ -1069,7 +1075,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # MyHomeServer1 expand it onto the SCS bus ($0499013000) and answer all five frames in
             # ~1.3-1.9 s (#649, #714, #886): those five keep the poll. Where an SCS-only gateway also drops
             # the general request *#4*0##, the zone asks for its temperature below (_polls_temperature);
-            # everywhere else it waits for the sweep replies or for the thermostat's own reports.
+            # everywhere else it waits for the sweep replies or for the thermostat's own reports. What a
+            # zone has still not reported SILENT_ZONE_GRACE seconds after the sweep, it asks for once,
+            # read by read (_poll_if_silent, #466 / #932).
             return
         await self._async_send_zone_polls()
 
@@ -1538,12 +1546,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
             if callable(watch):
                 self.async_on_remove(watch(self._full_where))
-            # Whether the gateway wants the silent-zone poll (#466) is decided inside the task,
-            # once the startup sweep and the grace period are over: the in-band identity (WHO 13 /
-            # WHO 1013) can still correct the model after the entities were added, as the
-            # actuator request already allows for (``watch_zone_actuators``). So the task is
-            # scheduled when the gateway wants the poll now, or while the sweep is still to run
-            # and the model may still change.
+            # Whether the gateway wants the silent-zone poll (#466, #932: every gateway that is
+            # not sent the zone status request) is decided inside the task, once the startup sweep
+            # and the grace period are over: the in-band identity (WHO 13 / WHO 1013) can still
+            # correct the model after the entities were added, as the actuator request already
+            # allows for (``watch_zone_actuators``). So the task is scheduled when the gateway
+            # wants the poll now, or while the sweep is still to run and the model may still
+            # change.
             if (
                 not self._interface_poll_refused
                 and not is_actuator_where(self._where)
@@ -1563,16 +1572,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self.async_on_remove(_cancel_silent_zone_poll)
 
     def _silent_zone_reads(self) -> list[str]:
-        """The reads of the silent-zone poll (#466) this zone still needs, in the order they go out.
+        """The reads of the silent-zone poll (#466, #932) this zone still needs, in the order they go out.
 
         What the zone said since the restart is not asked again; a value Home Assistant restored
         is. The temperature (``*0``) comes first because a zone without a probe refuses it, and
-        that refusal ends the poll. The setpoint (``*14``), then the setpoint in force (``*12``,
-        the F455 follows its reply with the zone's season frame, which gives the mode), then
-        actuator 1 (``#1*20``) last: ``hvac_action`` is derived when an actuator report finds the
-        mode known. The zone is named by its number: a ``#Z`` entry of ``myhome.yaml`` would
-        otherwise ask through the central unit, and an actuator behind an interface is
-        ``Z#N#4#II``, not ``Z#4#II#N``.
+        that refusal ends the poll. The knob (``*13``) only if the zone has not asked for it
+        already when it was added (``_local_offset_read_pending``). The setpoint (``*14``), then
+        the setpoint in force (``*12``, the F455 follows its reply with the zone's season frame,
+        which gives the mode), then actuator 1 (``#1*20``) last, and not on a gateway that drops
+        the actuator request (``silent_zone_actuator_read_refused``): ``hvac_action`` is derived when an
+        actuator report finds the mode known. The zone is named by its number: a ``#Z`` entry of
+        ``myhome.yaml`` would otherwise ask through the central unit, and an actuator behind an
+        interface is ``Z#N#4#II``, not ``Z#4#II#N``.
         """
         zone = zone_number(self._where)
         routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
@@ -1582,30 +1593,36 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         reads: list[str] = []
         if not temperature_known:
             reads.append(f"*#4*{zone}{routing}*0##")
-        if not self._local_offset_reported and not is_probe(self._where):
+        if not self._local_offset_reported and not self._local_offset_read_sent and not is_probe(self._where):
             # The knob read (#466) goes after *0## (a probe-less zone refuses *0## and the
             # serial poll ends there) and before *14## / *12## so a reported knob keeps the
             # #890 derivation from running on the setpoint echo. A zone that reported its
             # temperature itself skips *0## and asks only *13## here: it has a probe (the
             # temperature proves it), so this is safe. F455 1.0.76 answered *#4*2*13## ->
-            # *#4*2*13*00## in 0.108 s (F455_direct_requests_2026-11-06.jsonl line 70).
+            # *#4*2*13*00## in 0.108 s (F455_direct_requests_2026-11-06.jsonl line 70). A zone
+            # that sent the read when it was added (the gateways outside
+            # KNOB_READ_IN_SILENT_ZONE_POLL) does not send it a second time.
             reads.append(f"*#4*{zone}{routing}*13##")
         if not setpoint_known:
             reads.append(f"*#4*{zone}{routing}*14##")
         if not setpoint_known or not mode_known:
             reads.append(f"*#4*{zone}{routing}*12##")
-        if not self._actuator_states and self._zone_active is None:
+        if (
+            not self._actuator_states
+            and self._zone_active is None
+            and getattr(self._gateway_handler, "silent_zone_actuator_read_refused", False) is not True
+        ):
             reads.append(f"*#4*{zone}#1{routing}*20##")
         return reads
 
     async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
-        """Ask a zone that has not reported by itself since the startup sweep, read by read (#466).
+        """Ask a zone that has not reported by itself since the startup sweep, read by read (#466, #932).
 
-        Only on a gateway in ``SILENT_ZONE_POLL`` (the one that serves WHO 4, read once the
-        in-band identity has had the sweep and the grace period to settle). Nothing goes out for
-        what the zone reported itself (``_silent_zone_reads``). Each read waits for the previous
-        one to be answered, so a refused or unanswered read (a zone without a probe) ends it
-        after one request.
+        Only on a gateway that is not sent the zone status request (``silent_zone_poll_needed``
+        of the one that serves WHO 4, read once the in-band identity has had the sweep and the
+        grace period to settle). Nothing goes out for what the zone reported itself
+        (``_silent_zone_reads``). Each read waits for the previous one to be answered, so a
+        refused or unanswered read (a zone without a probe) ends it after one request.
         """
         wait = getattr(self._gateway_handler, "wait_for_initial_discovery", None)
         if callable(wait):
@@ -1614,7 +1631,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 await waiting
         await asyncio.sleep(grace)
         if getattr(self._gateway_handler, "silent_zone_poll_needed", False) is not True:
-            return  # not a silent-zone gateway after all, or its zones are another gateway's to ask
+            return  # the gateway answers the zone status request after all, or its zones are another gateway's to ask
         reads = self._silent_zone_reads()
         if not reads:
             return  # the zone reported its temperature, setpoint, mode and an actuator on its own

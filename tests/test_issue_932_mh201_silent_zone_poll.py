@@ -9,11 +9,14 @@ What stays as it was: the MH201 stays off the zone status poll (``*#4*Z##``) and
 request (``*#4*0##``), and each zone still asks for its temperature (``*#4*Z*0##``) when it is added
 (#185).
 
-What changes: the MH201 joins ``SILENT_ZONE_POLL``. ``SILENT_ZONE_GRACE`` seconds after the sweep a
+What changes: MH201 zones run the silent-zone poll. ``SILENT_ZONE_GRACE`` seconds after the sweep a
 zone asks for what it has not reported, one read at a time: its knob (``*#4*Z*13##``), its setpoint
 (``*#4*Z*14##``), its setpoint in force (``*#4*Z*12##``) and actuator 1 (``*#4*Z#1*20##``). The knob
-read therefore goes out inside this serial poll and no longer when the zone is added, as on the
-F455.
+read goes out inside this serial poll and not when the zone is added, as on the F455
+(``KNOB_READ_IN_SILENT_ZONE_POLL``): the configuration the reporter ran.
+
+The poll itself is no longer keyed on a model list: every gateway that is not sent the zone status
+request runs it (``tests/test_silent_zone_poll_by_result.py``).
 
 The frames below are the ones quoted in the issue; the reporter's plant is the hardware evidence
 (the MH201 is catalogued but not emulated in own-firmware-oracle).
@@ -21,10 +24,9 @@ The frames below are the ones quoted in the issue; the reporter's plant is the h
 
 from __future__ import annotations
 
-import pytest
 from OWNd.message import OWNHeatingEvent
 
-from custom_components.myhome.gateway import SILENT_ZONE_GRACE, SILENT_ZONE_POLL
+from custom_components.myhome.gateway import KNOB_READ_IN_SILENT_ZONE_POLL, SILENT_ZONE_GRACE
 from tests.test_f455_zone_polling import _handler, _queued, _ready, _zone
 
 # Issue 932, "Bus evidence": the replies of the reporter's MH201 3.6.43 to explicit reads.
@@ -39,8 +41,9 @@ MH201_READS = ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 def test_mh201_is_a_silent_zone_gateway_and_keeps_its_other_gates(hass) -> None:
     handler = _handler(hass, "MH201")
-    assert SILENT_ZONE_POLL == {"F455", "MH201"} and SILENT_ZONE_GRACE == 120.0
+    assert KNOB_READ_IN_SILENT_ZONE_POLL == {"F455", "MH201"} and SILENT_ZONE_GRACE == 120.0
     assert handler.silent_zone_poll_needed is True
+    assert handler.knob_read_in_silent_zone_poll is True
     assert handler.supports_zone_status is False
     assert handler.zone_temperature_poll_needed is True
     assert handler.general_zone_request_refused is True
@@ -98,13 +101,3 @@ async def test_mh201_zone_that_published_its_setpoint_is_not_asked_for_it_again(
     await zone._poll_if_silent(grace=0)
     assert "*#4*2*14##" not in _queued(handler)
     assert "*#4*2*0##" not in _queued(handler)
-
-
-@pytest.mark.parametrize("model", ["F450", "F453", "F453AV", "F459", "H4684", "MH200", "MH200N"])
-async def test_the_other_scs_only_gateways_are_unchanged(hass, model) -> None:
-    """Only the MH201 was reported and verified (#932); the other SCS-only gateways keep asking nothing here."""
-    handler = _handler(hass, model)
-    _ready(handler)
-    assert handler.silent_zone_poll_needed is False
-    await _zone(hass, handler)._poll_if_silent(grace=0)
-    assert _queued(handler) == []
