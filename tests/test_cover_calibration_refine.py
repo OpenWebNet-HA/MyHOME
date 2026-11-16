@@ -636,3 +636,38 @@ async def test_the_half_close_on_a_timer_cover_is_planned_as_before(hass, plant,
     await stopped(cal)
     assert (cal.session.phase, cal.session.samples["half_close"]) == ("reading", pytest.approx(19.0 / 2))
     cal.session.close()
+
+
+async def test_an_end_stop_before_the_sessions_stop_ends_the_session_and_the_cover_stops(hass, plant, clocked):
+    """Times inherited from another cover still follow the travel read: here past the whole run, so the end stop comes
+    first. The session ends on it; nothing escapes into the cover, which shows the stop as any other."""
+    other = {**GUIDED, "origin_unique_id": "elsewhere"}
+    seed(plant, profile={**END_STOP, "provenance": {"opening": other, "closing": other}}, record={"travel_cm": 50.0})
+    cal = await started(hass, plant)
+    cal.clock = clocked
+    await to_half_close_at_end_stops(cal)
+    assert cal.session.values["closing_time"] == pytest.approx(17.8 * 3)
+    assert cal.cover.is_closing
+    cal.clock[0] += 17.8
+    bus(cal, "*2*0*11##")  # Its end stop, before the planned Stop.
+    assert (cal.session.phase, cal.session.reason) == ("interrupted", "unexpected_stop")
+    assert not cal.cover.is_closing and cal.cover.state != "closing", "stopped, no longer closing"
+    bus(cal, "*2*0*11##")  # Later statuses of the cover reach an ended session: nothing escapes either.
+    cal.session.close()
+
+
+async def test_nothing_the_session_fails_on_escapes_into_the_cover(hass, plant, clocked, caplog):
+    """A session that fails on a bus event ends (its Stop written); the cover still handles the event as its own."""
+    seed(plant)
+    cal = await started(hass, plant)
+    cal.clock = clocked
+    await act(cal, "next")
+    write(cal)
+    commands = len(cal.queue)
+    with patch.object(cal.session, "_planned", side_effect=KeyError("closing_time")):
+        bus(cal, "*2*2*11##")
+    assert (cal.session.phase, cal.session.reason) == ("interrupted", "internal_error")
+    assert "*2*0*" in str(cal.queue[-1][0]) and len(cal.queue) == commands + 1
+    assert cal.cover.is_closing, "the cover follows the status all the same"
+    assert "could not handle" in caplog.text
+    cal.session.close()

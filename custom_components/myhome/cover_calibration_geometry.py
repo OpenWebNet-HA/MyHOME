@@ -321,7 +321,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         if future.cancelled() and self.active and not self.closed:
             self.interrupt("not_delivered")
 
-    def on_event(self, event: Any) -> None:
+    def bus_event(self, event: Any) -> None:
         if self.phase == "settling":
             # At the rest, between the two automatic movements: the close's own late statuses change nothing.
             self.reservation.observe(event)
@@ -346,9 +346,12 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                 self.arm_deadline(guided.STOP_QUEUE_SECONDS, "not_stopped")
             return
         starting = self.phase.startswith("starting_")
-        super().on_event(event)
+        super().bus_event(event)
+        # Only a run that has just started is planned: after an interruption the values are gone.
+        if not (starting and self.phase in {"opening", "closing"}):
+            return
         seconds = self._planned()
-        if starting and self.phase in {"opening", "closing"} and seconds is not None:
+        if seconds is not None:
             # Reuse the motion deadline: interruption/close already cancels it. The run is timed
             # from its start, which a command translation dates before its delivery.
             cast(asyncio.TimerHandle, self.deadline).cancel()
