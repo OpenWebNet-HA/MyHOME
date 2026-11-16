@@ -321,7 +321,7 @@ class GeometryCalibrationSession(guided.CalibrationSession):
         if future.cancelled() and self.active and not self.closed:
             self.interrupt("not_delivered")
 
-    def on_event(self, event: Any) -> None:
+    def bus_event(self, event: Any) -> None:
         if self.phase == "settling":
             # At the rest, between the two automatic movements: the close's own late statuses change nothing.
             self.reservation.observe(event)
@@ -346,9 +346,12 @@ class GeometryCalibrationSession(guided.CalibrationSession):
                 self.arm_deadline(guided.STOP_QUEUE_SECONDS, "not_stopped")
             return
         starting = self.phase.startswith("starting_")
-        super().on_event(event)
+        super().bus_event(event)
+        # Only a run that has just started is planned: after an interruption the values are gone.
+        if not (starting and self.phase in {"opening", "closing"}):
+            return
         seconds = self._planned()
-        if starting and self.phase in {"opening", "closing"} and seconds is not None:
+        if seconds is not None:
             # Reuse the motion deadline: interruption/close already cancels it. The run is timed
             # from its start, which a command translation dates before its delivery.
             cast(asyncio.TimerHandle, self.deadline).cancel()
@@ -584,8 +587,12 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             if number <= self.readings.get("gap", 0.0):
                 raise vol.Invalid("Travel must exceed the lift-off gap")
             if self.keep_times:
-                # Times that a profile scales to this cover's travel follow the travel just read.
-                self.values = self.saved_times(number)[0]
+                # Times that a profile scales to this cover's travel follow the travel just read. A time measured on
+                # this cover is its own whatever travel is read (its motor ran it): never scaled, and the runs the
+                # session times are planned on it. Scaled, a reference travel saved wrong (50 cm for a 150 cm cover)
+                # would plan the half close past the end stop, and save times three times too long.
+                scaled, own = self.saved_times(number)[0], self.saved_times(None)[0]
+                self.values = {key: own[key] if self._own_time(key) else scaled[key] for key in scaled}
             self.measured_travel = number
             # On the saved times, from the top: half the time down first.
             self.step = "half_close" if self.keep_times else "closing"
@@ -624,6 +631,11 @@ class GeometryCalibrationSession(guided.CalibrationSession):
             return
         self.phase = "briefing"
         self.emit()
+
+    def _own_time(self, key: str) -> bool:
+        """`opening_time` / `closing_time` in use was measured on this cover (its evidence names it)."""
+        origin = self.provenance.get(key.removesuffix("_time"), {}).get("origin_unique_id")
+        return origin is not None and origin == self.cover.unique_id
 
     def _closing_roll(self) -> None:
         """One closing point fixes one roll, on the fitted slat time (the same fit in either order)."""

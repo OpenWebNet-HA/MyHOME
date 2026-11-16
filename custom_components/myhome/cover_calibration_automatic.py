@@ -32,7 +32,7 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
     def view(self) -> Any:
         return {**super().view(), "run_index": self.run_index}
 
-    def on_event(self, event: Any) -> None:
+    def bus_event(self, event: Any) -> None:
         if event.current_position is not None and self.active:
             self.interrupt("unexpected_movement")
             return
@@ -68,7 +68,7 @@ class AutomaticCalibrationSession(guided.CalibrationSession):
                 self.settle = self.hass.loop.call_later(SETTLE_SECONDS, self.next_run)
             self.emit()
             return
-        super().on_event(event)
+        super().bus_event(event)
 
     def finish_measurement(self) -> None:
         self.phase = "review"

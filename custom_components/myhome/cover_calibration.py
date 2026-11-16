@@ -585,6 +585,18 @@ class CalibrationSession:
         return written
 
     def on_event(self, event: Any) -> None:
+        """A bus event of this cover, from the cover's `handle_event`. Whatever goes wrong in the session stays in it:
+        the session ends (its Stop written), and the cover still handles the event as its own."""
+        try:
+            self.bus_event(event)
+        except Exception:  # noqa: BLE001 - nothing of the session may break the cover's handling of the bus.
+            LOGGER.exception("Calibration of %s could not handle %s", self.cover.entity_id, event)
+            try:
+                self.interrupt("internal_error")
+            except Exception:  # noqa: BLE001
+                LOGGER.exception("Calibration of %s could not be interrupted", self.cover.entity_id)
+
+    def bus_event(self, event: Any) -> None:
         self.reservation.observe(event)
         if self.closed:
             return
