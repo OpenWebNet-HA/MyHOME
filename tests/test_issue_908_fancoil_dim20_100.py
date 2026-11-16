@@ -433,6 +433,29 @@ def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
         is None
     )
 
+    # Out-of-table Dimension 19 empty-field frame emitted by emulated MyHomeServer1/F461 -> None
+    empty_dim19 = OWNMessage.parse("*#4*1*19*0*##")
+    assert isinstance(empty_dim19, OWNHeatingEvent)
+    assert empty_dim19.message_type is None
+    assert empty_dim19.dimension == 19
+    assert empty_dim19.dimension_value == ["0", ""]
+    assert thermo_dim19_status(empty_dim19) is None
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19*0*##")) is None
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19**0##")) is None
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19**##")) is None
+    for bad_vals in (["0", ""], ["", "0"], ["0"]):
+        assert (
+            thermo_dim19_status(
+                MagicMock(
+                    who=4,
+                    dimension=19,
+                    message_type=MESSAGE_TYPE_ACTION,
+                    dimension_value=bad_vals,
+                )
+            )
+            is None
+        )
+
 
 @pytest.mark.asyncio
 async def test_f459_sabiana_trace_replay_no_stuck_or_flipping_heating(
@@ -604,9 +627,15 @@ async def test_myhomeserver1_extended_off_14_16_and_probeless_zone_no_ghost_clim
         sw_by_where["8"].handle_event(evt_d19)
         assert sw_by_where["8"].is_on is expected_on
 
-    # Unlisted Dim 20 (250) and Dim 19 (999) codes on probe-less zones ALSO defer (#785)
+    # Unlisted Dim 20 (250), Dim 19 (999), and out-of-table empty-field Dim 19 (*#4*8*19*0*##)
+    # on probe-less zones ALSO defer (#785) and leave switch state untouched
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7#1*20*250##"))
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*8*19*0*999##"))
+    empty_dim19_probe = OWNMessage.parse("*#4*8*19*0*##")
+    assert isinstance(empty_dim19_probe, OWNHeatingEvent)
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", empty_dim19_probe)
+    sw_by_where["8"].handle_event(empty_dim19_probe)
+    assert sw_by_where["8"].is_on is True
     assert {c._where for c in added_climates} == {"1"}
 
 
@@ -619,10 +648,15 @@ async def test_climate_dim19_and_dim20_unrecognized_and_modulating_cooling(
     zone = _make_zone(hass, gw, "1")
     zone._attr_hvac_mode = HVACMode.AUTO
 
-    # Unrecognized Dim 20 (999) and Dim 19 (999) codes return early without mutating _actuator_states
+    # Unrecognized Dim 20 (999), Dim 19 (999), and empty-field Dim 19 (*#4*1*19*0*##)
+    # return early without mutating _actuator_states or _zone_active
     zone.handle_event(OWNHeatingEvent("*#4*1#3*20*999##"))
     assert zone._actuator_states == {}
     zone.handle_event(OWNHeatingEvent("*#4*1*19*0*999##"))
+    assert zone._zone_active is None
+    empty_dim19_evt = OWNMessage.parse("*#4*1*19*0*##")
+    assert isinstance(empty_dim19_evt, OWNHeatingEvent)
+    zone.handle_event(empty_dim19_evt)
     assert zone._zone_active is None
 
     # Modulating 0-10 V cooling (140 = 40%) and heating (160 = 60%) on Dim 19 set COOLING / HEATING

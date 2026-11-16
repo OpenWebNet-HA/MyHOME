@@ -449,8 +449,8 @@ def _decode_thermo_output_code(
       unsupported on ``MH200N`` (``010108``); supported on Dimension 20 only on ``F454``
       (``020051``) and ``MH202`` (``010024``); supported on Dimension 19, Dimension 20,
       and ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Note that
-      only ``100`` has a live plant capture; ``101..200``, ``10..13``, and ``17..22``
-      are firmware-verified without a live capture yet.
+      only ``100`` has a live plant capture; ``14..16``, ``101..200``, ``10..13``, and
+      ``17..22`` are firmware-verified without a live capture yet.
 
     Per-code semantics:
     - ``0, 3, 4``: valve/actuator OFF, Closed, Stop -> ``(False, None, None)``
@@ -472,7 +472,10 @@ def _decode_thermo_output_code(
     - ``100``: proportional 0-10 V output at 0% (OFF / stopped) -> ``(False, None, None)``
     - ``101..200``: proportional 0-10 V output at 1%..100% (active)
       -> ``(True, None, None)``
-    - ``< 0``, ``23..99``, ``> 200``: unassigned -> ``None``
+    - ``< 0``, ``23..99``, ``> 200``: unassigned -> ``None`` (note: for out-of-table
+      SCS bytes on Dimension 19, emulated ``MyHomeServer1`` ``028206`` and ``F461``
+      ``020011`` emit an empty field such as ``*#4*1*19*0*##``, for which
+      :func:`thermo_dim19_status` returns ``None``)
     """
     if code in _DIM20_ACTIVE_CODES:
         return (
@@ -523,13 +526,14 @@ def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | 
 
     Decodes ``dimension_value[0]`` directly before delegating to ``OWNd`` because:
     - ``#20`` writes (``OWNCommand``) do not expose ``.is_active()``.
-    - ``OWNd <= 2.0.0b14`` (the release pinned in ``manifest.json``) treats every
-      Dimension 20 value ``>= 6`` (including ``100`` = 0% proportional 0-10 V OFF
-      and ``14..16`` = extended fan-coil OFF speeds) as ``is_active = True,
-      fan_on = True`` (#908).
-    - ``OWNd`` ``b2a1f9ee`` returns ``None`` for ``10..13`` and ``17..22`` pending its
-      correctional PR, whereas ``MyHOME`` classifies them via the ``MyHomeServer1``
-      ``bt_thermo_manager`` bitmask (``13, 17`` inactive; ``10..12, 18..22`` active).
+    - ``OWNd <= 2.0.0b14`` treats every Dimension 20 value ``>= 6`` (including
+      ``100`` = 0% proportional 0-10 V OFF and ``14..16`` = extended fan-coil OFF
+      speeds) as ``is_active = True, fan_on = True`` (#908).
+    - ``OWNd`` ``b2a1f9ee`` returned ``None`` for ``10..13`` and ``17..22``;
+      ``OWNd#178`` (``549da04``) subsequently adopted the same ``MyHomeServer1``
+      ``bt_thermo_manager`` active/inactive bitmask (``13, 17`` inactive;
+      ``10..12, 18..22`` active, no fan claim) so both decoders agree across all
+      codes ``0..999``.
 
     Falls back to ``message.is_active()`` only for unit-test mocks without a
     ``dimension_value`` sequence.
@@ -588,10 +592,13 @@ def thermo_dim19_status(
     ``MyHomeServer1``/``F461`` extended fan-coil OFF states (``14..16``) are not
     misclassified as active heating/cooling fans by ``OWNd <= 2.0.0b14`` (#908),
     ``10..13`` and ``17..22`` follow the ``MyHomeServer1`` ``bt_thermo_manager``
-    bitmask rather than returning ``None`` as in ``OWNd`` ``b2a1f9ee``, and active
-    fan speed is preserved across both the heating (``HV``) and cooling (``CV``)
-    sides. Falls back to ``message.is_active()`` only for unit-test mocks without
-    a two-element numeric ``dimension_value`` sequence.
+    bitmask in alignment with ``OWNd#178`` (``549da04``; older ``OWNd``
+    ``b2a1f9ee`` returned ``None``), and active fan speed is preserved across both
+    the heating (``HV``) and cooling (``CV``) sides. Frames with an empty field
+    (such as ``*#4*1*19*0*##``, emitted by emulated ``MyHomeServer1`` ``028206``
+    and ``F461`` ``020011`` for out-of-table SCS bytes) stay untyped in ``OWNd``
+    and return ``None``. Falls back to ``message.is_active()`` only for
+    unit-test mocks without a ``dimension_value`` sequence.
     """
     who = getattr(message, "who", None)
     if isinstance(who, (int, str)) and str(who) != "4":
@@ -602,12 +609,13 @@ def thermo_dim19_status(
     ):
         return None
     vals = getattr(message, "dimension_value", None)
-    if (
-        isinstance(vals, (list, tuple))
-        and len(vals) >= 2
-        and _is_ascii_uint(str(vals[0]))
-        and _is_ascii_uint(str(vals[1]))
-    ):
+    if isinstance(vals, (list, tuple)):
+        if (
+            len(vals) < 2
+            or not _is_ascii_uint(str(vals[0]))
+            or not _is_ascii_uint(str(vals[1]))
+        ):
+            return None
         c_dec = _decode_thermo_output_code(int(str(vals[0])))
         h_dec = _decode_thermo_output_code(int(str(vals[1])))
         if c_dec is None or h_dec is None:
