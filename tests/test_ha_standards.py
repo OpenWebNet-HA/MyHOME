@@ -219,6 +219,69 @@ def test_deprecated_device_info_mapping_scope_isolation(tmp_path):
     assert not checker.errors, f"Unexpected cross-scope leakage errors: {checker.errors}"
 
 
+def test_deprecated_device_info_mapping_bare_name_plain_dict_vs_param(tmp_path):
+    """Verify bare `device_info` bound exclusively to plain dicts passes, while unshadowed params/attributes fail."""
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir()
+    # One-function snippet matching @gdluck's exact review test (even without explicit imports)
+    (clean_dir / "one_func.py").write_text(
+        "def read_ids(entity):\n"
+        "    device_info = device_info_to_dict(entity.device_info)\n"
+        "    _ = device_info.get('identifiers')\n"
+        "    return device_info['identifiers']\n",
+        encoding="utf-8",
+    )
+    (clean_dir / "dict_variants.py").write_text(
+        "from typing import Any\n"
+        "from . import typing_compat\n"
+        "from .typing_compat import device_info_to_dict as to_plain_dict\n\n"
+        "def literal_and_qualified(entity, cond: bool):\n"
+        "    device_info = {'identifiers': set()}\n"
+        "    _ = device_info['identifiers']\n"
+        "    _ = device_info.get('identifiers')\n"
+        "    _attr_device_info: dict[str, Any]\n"
+        "    if cond:\n"
+        "        _attr_device_info = typing_compat.device_info_to_dict(entity.device_info)\n"
+        "    else:\n"
+        "        _attr_device_info = to_plain_dict(entity.device_info) or dict(identifiers=set())\n"
+        "    copied = _attr_device_info\n"
+        "    def inner():\n"
+        "        return _attr_device_info.get('identifiers'), copied['identifiers']\n"
+        "    return inner()\n",
+        encoding="utf-8",
+    )
+    checker_clean = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_clean, target_dir=clean_dir)
+    assert not checker_clean.errors, f"Unexpected errors on plain-dict device_info bindings: {checker_clean.errors}"
+
+    bad_dir = tmp_path / "bad"
+    bad_dir.mkdir()
+    (bad_dir / "bad_cases.py").write_text(
+        "def bad_param(device_info):\n"
+        "    return device_info.get('identifiers')\n\n"
+        "def bad_unbound():\n"
+        "    return device_info['identifiers']\n\n"
+        "def bad_mixed(entity, cond):\n"
+        "    if cond:\n"
+        "        device_info = entity.device_info\n"
+        "    else:\n"
+        "        device_info = {'identifiers': set()}\n"
+        "    return device_info.get('identifiers')\n\n"
+        "def bad_attr_despite_local(entity, other):\n"
+        "    device_info = device_info_to_dict(entity.device_info)\n"
+        "    _ = device_info.get('identifiers')\n"
+        "    _ = entity.device_info == device_info_to_dict(other.device_info)\n"
+        "    return entity.device_info['identifiers']\n",
+        encoding="utf-8",
+    )
+    checker_bad = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_bad, target_dir=bad_dir)
+    assert len(checker_bad.errors) == 5, (
+        f"Expected 5 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
+    )
+    assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_bad.errors)
+
+
 def test_marketplace_manifest_and_workflow_standards():
     """Verify hacs.json and validate.yml satisfy Home Assistant 2026.11 Marketplace standards."""
     checker = StandardsChecker()
@@ -312,7 +375,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "persistent_directory": "../escape",
                 "zip_release": False,
                 "filename": "myhome.zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.8.0",
             }
         ),
         encoding="utf-8",
@@ -338,7 +401,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": ".zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.8.0",
             }
         ),
         encoding="utf-8",
@@ -363,7 +426,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": "other.zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.8.0",
             }
         ),
         encoding="utf-8",
@@ -405,7 +468,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     assert any("must be a valid Home Assistant CalVer string" in err for err in checker_edge.errors)
     assert any("must preserve the required 'validate' job ID" in err for err in checker_edge.errors)
 
-    # 8. Unpinned hacs/action, if/continue-on-error bypasses, HA version < 2026.3.0, category duplicates/unknowns/overlaps, brand PNG checks, and unparseable OUTPUT_ZIP
+    # 8. Unpinned hacs/action, if/continue-on-error bypasses, HA version < 2026.8.0, category duplicates/unknowns/overlaps, brand PNG checks, and unparseable OUTPUT_ZIP
     brand_dir = manifest_dir / "brand"
     brand_dir.mkdir()
     (brand_dir / "icon.png").write_bytes(b"not-a-png")
@@ -444,7 +507,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": "myhome.zip",
-                "homeassistant": "2026.2.0",
+                "homeassistant": "2026.7.4",
             }
         ),
         encoding="utf-8",
@@ -452,7 +515,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     checker_edge2 = StandardsChecker()
     check_marketplace_manifest_rule(checker_edge2, root_dir=tmp_path)
     assert any("must be 'custom_pkg.zip' to match scripts/package_release.py" in err for err in checker_edge2.errors)
-    assert any("must be >= '2026.3.0'" in err for err in checker_edge2.errors)
+    assert any("must be >= '2026.8.0'" in err for err in checker_edge2.errors)
     assert any("unknown Home Assistant categories: ['nonexistent_cat']" in err for err in checker_edge2.errors)
     assert any("is implied by subcategory 'hubs_protocols.building_automation'" in err for err in checker_edge2.errors)
     assert any("Local brand asset 'icon.png' is not a valid PNG file" in err for err in checker_edge2.errors)

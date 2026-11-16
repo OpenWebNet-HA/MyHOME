@@ -1,7 +1,7 @@
 """Regression tests for HA 2026.12+ DeviceInfo dataclass compatibility (Issue #930, core#192323).
 
 Home Assistant Core ``DeviceInfo`` / ``ChildDeviceInfo`` timeline:
-- ``2026.3–2026.10``: ``DeviceInfo`` is a ``TypedDict`` (``dict`` at runtime without
+- ``2026.8–2026.10``: ``DeviceInfo`` is a ``TypedDict`` (``dict`` at runtime without
   ``.as_dict()`` or attribute access).
 - ``2026.11``: ``DeviceInfo`` and ``ChildDeviceInfo`` became ``@dataclass(slots=True)``
   with ``.as_dict()`` and a silent ``_DeviceInfoMapping`` compatibility shim.
@@ -10,8 +10,8 @@ Home Assistant Core ``DeviceInfo`` / ``ChildDeviceInfo`` timeline:
   ``.items()``, ``.update()``, ``__eq__`` against ``Mapping``) emit ``frame.report_usage``
   deprecations (removal scheduled for ``2027.12.0``).
 
-Because MyHOME v2.0.0 supports Home Assistant 2026.3+, this module simulates the strict
-HA 2026.12+ slotted dataclass contract even when the test suite runs on HA 2026.3–2026.10,
+Because MyHOME v2.0.0 supports Home Assistant 2026.8+, this module simulates the strict
+HA 2026.12+ slotted dataclass contract even when the test suite runs on HA 2026.8–2026.10,
 guaranteeing zero deprecated mapping calls and 100% branch coverage across both regimes.
 """
 
@@ -189,7 +189,7 @@ def test_device_info_to_dict_cross_version_branches() -> None:
 
     assert device_info_to_dict(_AsDictProvider()) is fresh
 
-    # 2. HA 2026.3–2026.10 TypedDict (plain dict at runtime without .as_dict())
+    # 2. HA 2026.8–2026.10 TypedDict (plain dict at runtime without .as_dict())
     legacy_dict = {"identifiers": {(DOMAIN, "mac-1-12")}, "name": "Hallway"}
     converted = device_info_to_dict(legacy_dict)
     assert converted == legacy_dict

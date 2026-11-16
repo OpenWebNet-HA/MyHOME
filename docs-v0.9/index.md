@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **Legacy Documentation (v0.9.4)**: You are viewing archived documentation for the legacy **YAML-based configuration (`/config/myhome.yaml`)**.
-> For MyHOME **v2.0+** (UI-first setup with auto-discovery and config flow on Home Assistant 2026.3+), switch to the [**v2.0 (latest) documentation**](https://openwebnet-ha.github.io/MyHOME/latest/) using the version switcher in the header.
+> For MyHOME **v2.0+** (UI-first setup with auto-discovery and config flow on Home Assistant 2026.8+), switch to the [**v2.0 (latest) documentation**](https://openwebnet-ha.github.io/MyHOME/latest/) using the version switcher in the header.
 > To upgrade an existing v0.9.4 plant to v2.0, see the [**Upgrade to v2.0 Guide**](https://openwebnet-ha.github.io/MyHOME/latest/migration/upgrade-from-094/).
 
 Welcome to the legacy documentation for the **MyHOME for Home Assistant** integration (v0.9.4).
