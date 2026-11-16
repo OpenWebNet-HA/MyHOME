@@ -671,3 +671,18 @@ async def test_nothing_the_session_fails_on_escapes_into_the_cover(hass, plant, 
     assert cal.cover.is_closing, "the cover follows the status all the same"
     assert "could not handle" in caplog.text
     cal.session.close()
+
+
+async def test_a_session_that_cannot_be_interrupted_still_lets_the_cover_handle_the_event(hass, plant, clocked, caplog):
+    """Even an interruption that fails after the session failed on a bus event stays in the session: both are logged."""
+    seed(plant)
+    cal = await started(hass, plant)
+    cal.clock = clocked
+    await act(cal, "next")
+    write(cal)
+    with patch.object(cal.session, "bus_event", side_effect=KeyError("closing_time")), \
+            patch.object(cal.session, "interrupt", side_effect=RuntimeError("broken")):
+        bus(cal, "*2*2*11##")
+    assert cal.cover.is_closing, "the cover follows the status all the same"
+    assert "could not handle" in caplog.text and "could not be interrupted" in caplog.text
+    cal.session.close()
