@@ -585,7 +585,7 @@
       "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
     },
     "cover_reports_position": {
-      "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
+      "message": "{name} signale sa position (Dimension 10 / advanced: true) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, définissez advanced: false ou retirez advanced: true dans myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"

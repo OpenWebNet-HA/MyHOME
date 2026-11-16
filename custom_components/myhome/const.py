@@ -178,6 +178,19 @@ SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
+CONF_ADVANCED_COVERS = "advanced_covers"          # config entry option: {device_id: True}
+CONF_EXPLICIT_KINEMATICS = "_explicit_kinematics"
+CONF_EXPLICIT_TRAVEL_TIME = "_explicit_travel_time"
+EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
+    CONF_ADVANCED_SHUTTER,
+    "advanced_shutter",
+    CONF_STRATEGY,
+    CONF_TRAVEL_TIME,
+    CONF_SLAT_TILT,
+    CONF_SLAT_TIME,
+    CONF_MIN_MOTOR_PULSE,
+    CONF_MIN_POSITION_DELTA,
+)
 SERVICE_CALIBRATE_COVER = "calibrate_cover"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
 SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
