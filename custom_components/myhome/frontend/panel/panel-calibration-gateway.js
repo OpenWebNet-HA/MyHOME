@@ -48,8 +48,10 @@ export async function cancelSession(hass, session) {
 /**
  * «Esci senza salvare» refused by Home Assistant (every command refused, the cancel too). The wizard
  * closes all the same and the cancel waits here, as `calCancelFailed` says: each time the connection returns (`ready`)
- * the session is read again and, still open, cancelled (`cancelSession`); dropped once it went through or the session is
- * over. Meanwhile Home Assistant hands the cover back by itself (the session's inactivity lease).
+ * the session is read again and, still open and still this device's (`client_owner`), cancelled (`cancelSession`);
+ * dropped once it went through, the session is over, or another device took it meanwhile (its session now: never
+ * claimed back from here, and nothing said, the wizard being closed). Meanwhile Home Assistant hands the cover back by
+ * itself (the session's inactivity lease).
  */
 const queuedCancels = new WeakMap();
 export function cancelWhenBack(hass, session) {
@@ -66,7 +68,8 @@ export function cancelWhenBack(hass, session) {
       const client_id = calibrationClient() || await checkedCalibrationClient();
       const live = (await hass.callWS({ type: "myhome/cover_profiles/read", entry_id: session.entry_id, entity_id: session.entity_id, client_id }))?.calibration;
       const open = live?.session_id === id && !["saved", "cancelled", "expired"].includes(live.phase) && (live.phase !== "interrupted" || live.recoverable);
-      if (open) await cancelSession(hass, live);
+      // Only a session this device still owns: the claim in `cancelSession` would otherwise take it from its new owner.
+      if (open && live.client_owner === true) await cancelSession(hass, live);
       drop();
     } catch (error) {
       // Refused for good (the session gone, or now guided by another device): nothing left to cancel from here.

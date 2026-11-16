@@ -1349,6 +1349,39 @@ describe("commands refused", async () => {
     assert.equal(ready.listeners.size, 0, "nothing left queued");
   });
 
+  for (const taken of [true, false]) {
+    test(taken ? "the cancel queued is dropped when another device took the session meanwhile: never claimed back, never cancelled, nothing said"
+      : "the cancel queued still goes through when the session is still this device's (the read says `client_owner`)", async () => {
+      const { backend, wiz, press, startFor } = await mount();
+      const ready = readyEvents(backend);
+      await startFor("cover.living_one");
+      await press("begin"); await move(backend);
+      const restore = refuseCommands(backend);
+      wiz().querySelector('.wiz-head [data-wiz="exit"]').click(); await tick();
+      wiz().querySelector('[data-wiz="leave"]').click(); await settle();
+      assert.equal(wiz(), null, "the wizard closed");
+      assert.equal(ready.listeners.size, 1, "the cancel queued");
+      restore();
+      // Another device takes the session and carries on with it.
+      if (taken) backend.takenElsewhere();
+      const calls = backend.calls.length, subscriptions = backend.subscriptions.length;
+      await ready.fire();
+      const read = backend.calls.slice(calls).find((message) => message.type === "myhome/cover_profiles/read");
+      assert.ok(read?.client_id, "the session read again, as this client");
+      const claims = backend.subscriptions.slice(subscriptions).filter((message) => message.type === "myhome/cover_calibration/resume" && message.claim);
+      const cancels = backend.calls.slice(calls).filter((message) => message.action === "cancel");
+      if (taken) {
+        assert.deepEqual([claims.length, cancels.length], [0, 0], "no claim, no cancel");
+        assert.notEqual(backend.session.phase, "cancelled", "the other device's session goes on");
+        assert.equal(wiz(), null, "nothing said");
+      } else {
+        assert.deepEqual([claims.length, cancels.length], [1, 1], "claimed as its owner, then cancelled");
+        assert.equal(backend.session.phase, "cancelled");
+      }
+      assert.equal(ready.listeners.size, 0, "nothing left queued");
+    });
+  }
+
   test("still refused when the connection returns, the cancel stays queued for the next time; a session already over is dropped", async () => {
     const { backend, wiz, press, startFor } = await mount();
     const ready = readyEvents(backend);

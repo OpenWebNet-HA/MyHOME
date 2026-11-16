@@ -81,6 +81,8 @@ export function createFakeBackend({ language = "en", inventory = coverInventory(
     },
     /** Presence of the owning tab as Home Assistant reports it (`owner_present`). */
     setPresence(present) { ownerPresent = present; },
+    /** Another device claims the session: this client only reads it from now on (a claim is a transition). */
+    takenElsewhere() { owner = false; session.sequence += 1; listener?.(backend.view()); },
     /** Another tab presses Stop: the session ends and every subscriber gets the view. */
     stopFromElsewhere() { session.phase = "interrupted"; session.reason = "stopped"; session._started = null; forgetTap(); backend.emit(); },
     interrupt(reason) { session.phase = "interrupted"; session.reason = reason; session._started = null; forgetTap(); backend.emit(); },
