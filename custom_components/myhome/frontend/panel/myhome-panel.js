@@ -19,7 +19,7 @@ export const MODULE_LAYERS = [
    "panel-calibration-layout.js", "panel-calibration-morph.js", "panel-calibration-illustrations-svg.js"],
   ["panel-cover-calibration.js", "panel-calibration-text.js", "panel-cover-geometry.js", "panel-profile-presentation.js",
    "panel-calibration-illustration.js"],
-  ["panel-calibration-gateway.js", "panel-calibration-screens.js", "panel-cover-profiles.js",
+  ["panel-calibration-gateway.js", "panel-calibration-screens.js", "panel-profile-assign.js", "panel-cover-profiles.js",
    "panel-cover-profile-list.js", "panel-bus-monitor.js"],
   ["panel-calibration-wizard.js", "panel-profile-catalogue-editor.js"],
   ["panel-calibration-tab.js"],
@@ -684,6 +684,21 @@ class MyHomePanel extends HTMLElement {
     this._calibrationTab.requestWizard(entity.entry_id, entity.entity_id);
     this._renderContent();
     this.shadowRoot.getElementById("cover-calibration-tab")?.scrollIntoView?.({ block: "start" });
+  }
+
+  /**
+   * The twin of `_openCalibrationWizard` for one cover (docs/panel-calibration-open-cover.md): the Calibration tab, with
+   * that cover's view open (`CalibrationTab.requestCover`). No control calls it yet; wiring one is the owning tab's choice.
+   */
+  _openCalibrationCover(entity, options = {}) {
+    if (!this._data) return false;
+    this._view = "entities";
+    this._coverView = "calibration";
+    if (this._categoryMode === "single") this._selectedWho = "2";
+    const asked = this._calibrationTab.requestCover(entity.entry_id, entity.entity_id, options);
+    this._renderContent();
+    this.shadowRoot.getElementById("cover-calibration-tab")?.scrollIntoView?.({ block: "start" });
+    return asked;
   }
 
   /**

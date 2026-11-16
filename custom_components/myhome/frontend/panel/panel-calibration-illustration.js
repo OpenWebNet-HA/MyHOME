@@ -22,7 +22,7 @@ export const ILLUSTRATIONS = {
   "curtain-partial-tape": { width: 207, height: 200 },
   check: { width: 208, height: 200 },
   "lift-sequence-mobile": { width: 358, height: 228 },
-  // Z-14 (Figma, 9 Oct): the edge at a quarter, half and three quarters with the tape (the ascent's quarter apart), and
+  // The edge at a quarter, half and three quarters with the tape (the ascent's quarter apart), and
   // the ascent and descent of a cover without slats.
   "curtain-tape-quarter": { width: 207, height: 200 },
   "curtain-tape-half": { width: 207, height: 200 },
@@ -38,13 +38,16 @@ export const PHONE_VERSION = { "lift-sequence": "lift-sequence-mobile" };
 export { SVG };
 
 /** The drawing of one illustration id, described as a whole for assistive technology. */
-export function illustrationMarkup(id, label, escape) {
-  const one = (name, extra = "") => {
+export function illustrationMarkup(id, label, escape, { small = false } = {}) {
+  const one = (name, kind = "") => {
+    // A drawing a little smaller than the others (A-08), so that its field is seen without scrolling.
+    const extra = `${kind}${small ? " is-small" : ""}`;
     const size = ILLUSTRATIONS[name], svg = SVG[name];
     if (!size || !svg) return "";
     // The ratio is set too: with only width and height attributes some browsers (Safari) keep the full height when the
     // column is narrower than the drawing, and it overlaps the text under it.
-    return svg.replace(/^<svg /, `<svg class="wiz-illustration${extra}" data-illustration="${escape(name)}" role="img" aria-label="${escape(label)}" width="${size.width}" height="${size.height}" style="width: min(100%, ${size.width}px); aspect-ratio: ${size.width} / ${size.height}" focusable="false" `);
+    // The width follows the height the stylesheet allows (`max-height`), the ratio always kept.
+    return svg.replace(/^<svg /, `<svg class="wiz-illustration${extra}" data-illustration="${escape(name)}" role="img" aria-label="${escape(label)}" width="${size.width}" height="${size.height}" style="max-width: min(100%, ${size.width}px); aspect-ratio: ${size.width} / ${size.height}" focusable="false" `);
   };
   // A drawing with a phone version: both are in the page and the stylesheet shows one per width (a resize needs no redraw).
   const phone = PHONE_VERSION[id];

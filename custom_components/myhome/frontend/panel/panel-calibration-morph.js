@@ -1,10 +1,10 @@
 /**
- * Update a container to new markup in place (M3: no data update or user action rebuilds what is on screen).
+ * Update a container to new markup in place (no data update or user action rebuilds what is on screen).
  *
  * The new markup is parsed once and the existing nodes are kept wherever they match: same tag at the same place, or the
  * same key (`id`, or `data-entity` with `data-entry`) anywhere among the siblings. Kept nodes keep their scroll position,
- * focus and pointer state; only changed attributes, text and form state are written. Nothing changes when the markup
- * is the same, whatever the browser's serialisation of it.
+ * focus, pointer state and a disclosure the reader opened; only changed attributes, text and form state are written.
+ * Nothing changes when the markup is the same, whatever the browser's serialisation of it.
  */
 export function morph(container, html) {
   const template = container.ownerDocument.createElement("template");
@@ -37,7 +37,9 @@ function children(from, to) {
 
 function update(from, to) {
   if (from.nodeType !== 1) { if (from.data !== to.data) from.data = to.data; return; }
-  for (const { name } of [...from.attributes]) if (!to.hasAttribute(name)) from.removeAttribute(name);
+  // A disclosure's `open` is the reader's: the markup may open it, a redraw never closes it (the details' «Profilo e questa
+  // tapparella» shut at every read of the overview). A node drawn anew (another cover, a card opened again) starts closed.
+  for (const { name } of [...from.attributes]) if (!to.hasAttribute(name) && !(name === "open" && from.tagName === "DETAILS")) from.removeAttribute(name);
   for (const { name, value } of [...to.attributes]) if (from.getAttribute(name) !== value) from.setAttribute(name, value);
   // A custom element (ha-icon…) owns what it draws: only its attributes are ours.
   if (!from.tagName.includes("-")) children(from, to);
