@@ -50,15 +50,15 @@ Full setup guides, per-subsystem configuration references, automation recipes, a
 
 ## Installation
 
-> **Requirement:** Home Assistant **2026.3 or newer** (Python 3.14).
+> **Requirement:** Home Assistant **2026.8 or newer** (Python 3.14).
 
-### Option 1: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.3 – 2026.10`)
+### Option 1: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.8 – 2026.10`)
 
-From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On **Home Assistant 2026.3 – 2026.10**, use **[HACS](https://hacs.xyz)**.
+From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On **Home Assistant 2026.8 – 2026.10**, use **[HACS](https://hacs.xyz)**.
 
 1. **Add or locate the repository:**
     - **Home Assistant 2026.11+ (Marketplace):** Open **Settings → Marketplace** and search for **MyHOME** *(if not yet listed in your catalog, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, select **Integration** if prompted, and select **Add**)*.
-    - **Home Assistant 2026.3 – 2026.10 (HACS):** Open **HACS → Integrations** and search for **MyHOME** *(or open `⋮` → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**)*.
+    - **Home Assistant 2026.8 – 2026.10 (HACS):** Open **HACS → Integrations** and search for **MyHOME** *(or open `⋮` → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**)*.
 2. **Install & restart:**
     - Open **MyHOME** and select **Install** in Marketplace (or **Download** in HACS). To pick a specific release tag, open `⋮` → **Install another version** (Marketplace) or `⋮` → **Redownload** (HACS).
     - Restart Home Assistant (**Settings → System → Restart**).

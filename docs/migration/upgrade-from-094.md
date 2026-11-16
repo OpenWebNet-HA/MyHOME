@@ -34,10 +34,10 @@ This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0
 
 ## 📦 Step 2: Installing MyHOME v2.0
 
-### Option A: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.3 – 2026.10`)
+### Option A: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.8 – 2026.10`)
 
 - **Home Assistant 2026.11+ (Marketplace)**: Open **Settings → Marketplace**, open **MyHOME** *(or add `https://github.com/OpenWebNet-HA/MyHOME` via **Add from link** → **Integration**)*, install or update to **v2.0+**, and restart Home Assistant.
-- **Home Assistant 2026.3 – 2026.10 (HACS)**: Open **HACS → Integrations → MyHOME**, update/download **v2.0+**, and restart Home Assistant.
+- **Home Assistant 2026.8 – 2026.10 (HACS)**: Open **HACS → Integrations → MyHOME**, update/download **v2.0+**, and restart Home Assistant.
 
 *(Note: To install a `2.0.0bX` pre-release tag published ahead of stable `v2.0.0` on `master`, use Option B below.)*
 
@@ -113,7 +113,7 @@ Before upgrading, review these key architectural changes:
 * **Change**: `MyHomeServer1` firmware supports up to **4** concurrent command sessions (`default = 2` command workers, `max = 4`, with a **`20 ms`** inter-frame delay). v2 enforces profile-specific worker caps and ticket-ordered FIFO queue pacing so `MyHomeServer1` stays responsive alongside the mobile app without exhausting its socket pool.
 
 ### 3. Core & Python Requirements
-* **Change**: v2 requires Home Assistant Core ≥ 2026.3 running on Python 3.14+ (or compatible container). Legacy Python 3.11 environments cannot import the modern async core.
+* **Change**: v2 requires Home Assistant Core ≥ 2026.8 running on Python 3.14+ (or compatible container). Legacy Python 3.11 environments cannot import the modern async core.
 
 ---
 

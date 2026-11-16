@@ -40,6 +40,7 @@ REVIEWED: dict[str, str] = {
     "media_player.py::MyHOMEMediaPlayer.handle_event": "WHO 16: WHERE is the sound zone",
     "cover.py::MyHOMECover.handle_event": "WHO 2 calibration: general frame test and the cover's own WHERE",
     "cover.py::MyHOMECover._handle_echo": "WHO 2 stop echo: general frame test (WHERE 0)",
+    "cover.py::MyHOMECover._is_own_point_message": "WHO 2 Dimension 10: promotion and completeness apply only on the cover's own point-to-point WHERE",
     "gateway_resync.py::LightingResyncManager.handle_ptp_echo": "WHO 1 point-to-point echo: WHERE is the APL address",
     "gateway_resync.py::LightingResyncManager.schedule_resync": "WHO 1 point-to-point echo: WHERE is the APL address",
     "topology.py::GatewayTopologyMixin._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",

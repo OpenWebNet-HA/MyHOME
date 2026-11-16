@@ -649,7 +649,7 @@
       "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
     },
     "cover_reports_position": {
-      "message": "{name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml."
+      "message": "{name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} is already being calibrated"

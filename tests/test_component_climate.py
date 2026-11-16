@@ -34,6 +34,7 @@ from custom_components.myhome.climate import (
     async_unload_entry,
 )
 from custom_components.myhome.discovery import Address
+from custom_components.myhome.typing_compat import device_info_to_dict
 from tests.conftest import attach_runtime
 
 
@@ -78,7 +79,7 @@ async def test_setup_and_unload_entry(hass):
     climate_entity = entities[0]
 
     assert isinstance(climate_entity, MyHOMEClimate)
-    assert climate_entity.device_info["name"] == "Zone 1"
+    assert device_info_to_dict(climate_entity.device_info)["name"] == "Zone 1"
 
     # Test unload
     attach_runtime(hass, config_entry)

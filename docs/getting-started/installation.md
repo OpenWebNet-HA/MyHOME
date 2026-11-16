@@ -6,7 +6,7 @@ This guide covers installing and updating the **MyHOME** integration in Home Ass
 
 ## Prerequisites
 
-- **Home Assistant**: Home Assistant Core 2026.3 or newer.
+- **Home Assistant**: Home Assistant Core 2026.8 or newer.
 - **Python Runtime**: Python 3.14+ (or official Home Assistant OS / Container).
 - **Physical Gateway**: An OpenWebNet IP gateway (F454, F455, F461, MyHomeServer1, MH200, MH200N, MH201, MH202, H4890/AM4890, H/L4684, F452/F453/F453AV) connected via local Ethernet.
 
@@ -14,14 +14,14 @@ This guide covers installing and updating the **MyHOME** integration in Home Ass
 
 ## Option 1: Home Assistant Marketplace / HACS (Recommended for Stable Releases)
 
-From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.3 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
+From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.8 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
 
 - **Home Assistant 2026.11+ (Marketplace):**
     1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
     2. Search for **MyHOME** in the catalog, or if adding manually before catalog publication, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
     3. Select **MyHOME** to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**)*.
     4. Restart Home Assistant when prompted.
-- **Home Assistant 2026.3 – 2026.10 (HACS):**
+- **Home Assistant 2026.8 – 2026.10 (HACS):**
     1. Open **HACS** in Home Assistant.
     2. Search for **MyHOME**, or click the three dots (`⋮`) in the top right → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**.
     3. Open **MyHOME**, select the desired release version, and click **Download**.
