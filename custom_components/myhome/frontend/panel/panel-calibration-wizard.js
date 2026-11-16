@@ -1370,6 +1370,7 @@ export class CalibrationWizard {
     if (to === null) { this._finish(); return; }
     if (to === "path") local.pathChoice = local.keepTimes ? "R" : local.path;
     local.stage = to;
+    local.startError = null;
     this._render();
   }
 
@@ -1492,6 +1493,7 @@ export class CalibrationWizard {
         this._closeFullRun(this._gateway?.view);
         const screen = this._screen(); if (screen.code !== this._renderedCode) this._render(); else this._patch(screen); return;
       }
+      if (change === "error" && this._startRefused()) return;
       this._viewChanged();
       // A refusal is never silent: its notice is brought into view (a long summary is read at its foot).
       if (change === "error") this._frame?.querySelector('.wiz-notice[data-tone="error"]')?.scrollIntoView?.({ block: "nearest" });
@@ -1500,6 +1502,20 @@ export class CalibrationWizard {
       : new PreviewCalibrationGateway({ onChange, plan, values, ...(this._stageMs != null ? { stageMs: this._stageMs } : {}) });
     if (kind === "live") this._watchLease();
     return this._gateway;
+  }
+
+  /**
+   * A start Home Assistant refused because the cover is moving (`calibration_moving`): no session, nothing to wait
+   * for. Back to «Prima di iniziare», where its notice stands above the buttons and «Ho capito, inizia» tries again.
+   */
+  _startRefused() {
+    const gateway = this._gateway, local = this._local, code = gateway?.status.error?.code;
+    if (!gateway || gateway.preview || gateway.view || local.stage !== "session" || code !== "calibration_moving") return false;
+    this._dropGateway();
+    Object.assign(local, { stage: "before", startError: { code } });
+    this._render();
+    this._frame?.querySelector('.wiz-notice[data-tone="error"]')?.scrollIntoView?.({ block: "nearest" });
+    return true;
   }
 
   _dropGateway() { clearInterval(this._leaseTimer); this._leaseTimer = null; clearInterval(this._tickTimer); this._tickTimer = null; this._gateway?.close(); this._gateway = null; this._staying = null; }
@@ -2152,7 +2168,9 @@ function freshFlags() {
     // The lift-off run measured, the first leg's planned time, the start of a stop's wait.
     liftRun: null, legOne: null, waitStopAt: null,
     // A-35 (its choices) and to how many covers it gave the profile (A-35 is not a step).
-    assign: null, assigned: 0 };
+    assign: null, assigned: 0,
+    // A start refused because the cover moved (`calibration_moving`), said on «Prima di iniziare».
+    startError: null };
 }
 
 export { slug };

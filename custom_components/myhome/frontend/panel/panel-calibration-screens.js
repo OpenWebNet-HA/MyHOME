@@ -342,6 +342,8 @@ export function buildScreen(ctx) {
     return finish();
   }
   if (stage === "before") {
+    // A start refused because the cover moved: its refusal, above the buttons; «Ho capito, inizia» tries again.
+    if (local.startError) screen.notices.push({ tone: "error", text: t(`profileError_${local.startError.code}`) });
     const pointsOnly = path === "C" && scope === "points_only", timesOnly = path === "C" && scope === "times_only";
     const bModel = path === "B";
     if (bModel) {

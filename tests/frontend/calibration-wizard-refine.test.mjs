@@ -304,3 +304,43 @@ describe("automatic runs and arrivals", async () => {
     assert.deepEqual(started.wait.stages.map((stage) => stage.text), waiting.wait.stages.map((stage) => stage.text), "the same stages");
   });
 });
+
+describe("a start refused because the cover is moving", () => {
+  // Calibra (a cover never calibrated), Ricalibra and Perfeziona: each starts from «Prima di iniziare».
+  const entries = {
+    Calibra: async (context) => context.startFor("cover.living_one", "base"),
+    Ricalibra: async (context) => context.startFor("cover.kitchen_two", "base"),
+    Perfeziona: async (context) => refineCover(context, "cover.kitchen_two"),
+  };
+  for (const [entry, open] of Object.entries(entries)) {
+    test(`${entry}: back to «Prima di iniziare» with the refusal above its buttons; «Ho capito, inizia» starts once the cover is still`, async () => {
+      const context = await mount({ language: "it" });
+      const { wiz, code, press, backend } = context;
+      for (const entity of ["cover.living_one", "cover.kitchen_two"]) backend.hass.states[entity] = { state: "closed", attributes: { current_position: 0 } };
+      await open(context);
+      const before = code(), buttons = () => [...wiz().querySelectorAll(".wiz-actions [data-wiz]")].map((button) => button.dataset.wiz);
+      const shown = buttons();
+      assert.ok(shown.includes("begin"), `«Ho capito, inizia» on ${before}`);
+      // Home Assistant refuses the first start: the cover still moves.
+      const connection = backend.hass.connection, subscribe = connection.subscribeMessage;
+      let refused = 0;
+      connection.subscribeMessage = async (callback, message) => {
+        if (message.type === "myhome/cover_calibration/start" && !refused++) throw { code: "calibration_moving" };
+        return subscribe(callback, message);
+      };
+      await press("begin"); await tick();
+      assert.equal(refused, 1);
+      assert.equal(backend.session, null, "nothing started");
+      assert.equal(code(), before, "«Prima di iniziare» again, not «Caricamento impianto…»");
+      assert.deepEqual(buttons(), shown, "its own buttons, nothing new");
+      const notices = [...wiz().querySelectorAll(".wiz-notices .wiz-notice[data-tone=error]")].map((notice) => notice.textContent.trim());
+      assert.deepEqual(notices, [translations.it.profileError_calibration_moving]);
+      // The cover is still now: the second press starts.
+      await press("begin"); await tick();
+      assert.equal(refused, 2);
+      assert.ok(backend.session, "started");
+      assert.notEqual(code(), before);
+      assert.equal(wiz().querySelector(".wiz-notice[data-tone=error]"), null, "the refusal is gone");
+    });
+  }
+});
