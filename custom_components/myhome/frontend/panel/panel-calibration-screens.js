@@ -772,7 +772,9 @@ function geometryScreen(screen, ctx, tx, n, values, stop) {
       // The descent's result is its duration only (the travel belongs to the ascent's).
       results: [timeTile("wiz_T094", view.values?.closing_time)].filter(Boolean), resultsTitle: t("wiz_T601"), provisional: true,
       actions: [{ id: "ack:descent", label: t("wiz_T060"), kind: "primary" }, { id: "repeat", label: t("wiz_T061"), kind: "secondary" }] });
-    if (phase === "briefing" && !local.ackReadings) return Object.assign(screen, { code: p("16"), title: t("wiz_T074"), body: t("wiz_T075"),
+    // A-16 says the runs in their order: the full measure reads the half ascent first, then the half descent; on
+    // the saved times the half descent came first (below), so a briefing shown here then says that order.
+    if (phase === "briefing" && !local.ackReadings) return Object.assign(screen, { code: p("16"), title: t("wiz_T074"), body: t(view.keep_times ? "wiz_T075_keep" : "wiz_T075"),
       actions: [{ id: "ack:readings", label: t("wiz_T076"), kind: "primary" }] });
     if (phase === "reading") return Object.assign(screen, { code: p("18"), title: t("wiz_T081"), body: t("wiz_T082"),
       field: halfField(ctx, tx, n), actions: [{ id: "reading", label: t("wiz_T051"), kind: "primary" }, { id: "repeat", label: t("wiz_T033"), kind: "secondary" }] });
@@ -819,7 +821,8 @@ function geometryScreen(screen, ctx, tx, n, values, stop) {
   // to the top first), after the readings' briefing (A-16), as the half ascent did before.
   if (view.keep_times && step === "half_close" && phase !== "reading") {
     screen.phase = "readings";
-    if (phase === "briefing" && !local.ackReadings) return Object.assign(screen, { code: p("16"), title: t("wiz_T074"), body: t("wiz_T075"),
+    // A-16 on the saved times: the half descent first, then the half ascent.
+    if (phase === "briefing" && !local.ackReadings) return Object.assign(screen, { code: p("16"), title: t("wiz_T074"), body: t("wiz_T075_keep"),
       actions: [{ id: "ack:readings", label: t("wiz_T076"), kind: "primary" }] });
     const seconds = view.planned_seconds ?? Math.max(((view.values?.closing_time || 0) - (view.samples?.lift || 0)) / 2, 0);
     Object.assign(screen, { code: p("19"), title: t("wiz_T027"),

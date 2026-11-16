@@ -1536,8 +1536,10 @@ dialog.cal-flow.is-leaving::backdrop { animation: wiz-scrim-out 160ms ease-in fo
 }
 /* The column's head belongs to the medium dialog and the phone's «Passi» sheet. It names the process, the
    variant chosen under it: the process 14/600 in the text colour (the steps' own weight), the variant
-   12/400 grey, 4 px between them, 16 px before the first step; the sheet's «Passi» title gives way to it. */
+   12/400 grey, 4 px between them, 16 px before the first step; the sheet's «Passi» title gives way to it. Over
+   the process, in the sheet only, the cover's whole name (14/600) while the bar cuts it. */
 .wiz-steps-head { display: none; }
+.wiz-steps-head .wiz-steps-cover { margin: 0; font-size: var(--cal-fs-14); line-height: var(--cal-lh-14); font-weight: 600; color: var(--primary-text-color); overflow-wrap: anywhere; }
 .wiz-steps-head .wiz-steps-title { margin: 0; font-size: var(--cal-fs-14); line-height: var(--cal-lh-14); font-weight: 600; color: var(--primary-text-color); }
 .wiz-steps-head .wiz-steps-variant { margin: 0; font-size: var(--cal-fs-12); line-height: var(--cal-lh-12); font-weight: 400; color: var(--panel-text-2); }
 .wiz .wiz-sheet .wiz-sheet-head { display: none; }
