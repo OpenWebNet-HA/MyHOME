@@ -532,3 +532,107 @@ async def test_a_late_marked_reply_does_not_end_the_close_to_the_rest_before_the
     bus(cal, "*2*0*11##")
     assert cal.session.phase == "settling"
     cal.session.close()
+
+
+# A cover with slats and an end-stop actuator whose profile, measured on it, kept a reference travel read wrong
+# (50 cm): 18.3 / 17.8 s are the times its motor runs, for its real 150 cm.
+END_STOP = {"opening_time": 18.3, "closing_time": 17.8, "reference_travel_cm": 50.0,
+            "geometry": {"slat_time_s": 3.01, "opening_roll": 1.0, "closing_roll": 1.0}}
+
+
+def write(cal):
+    """The last command queued goes on the bus now."""
+    _, guard, _, written = cal.queue[-1]
+    assert guard()
+    written.set_result(cal.clock[0])
+
+
+async def to_half_close_at_end_stops(cal):
+    """Perfeziona with every run to an end stop ended by the actuator's own stop, up to the half close's start."""
+    await act(cal, "next")  # The close to the rest: it ends at its stop status.
+    write(cal)
+    cal.clock[0] += .5
+    bus(cal, "*2*2*11##")
+    cal.clock[0] += 17.8
+    bus(cal, "*2*0*11##")
+    assert (cal.session.phase, cal.session.step) == ("settling", "lift")
+    write(cal)
+    await asyncio.sleep(0)
+    callback = cal.session.settle._callback
+    cal.session.settle.cancel()
+    callback()  # The rise for the saved slat time, by itself.
+    write(cal)
+    cal.clock[0] += .5
+    bus(cal, "*2*1*11##")
+    cal.clock[0] += 3.01
+    callback = cal.session.deadline._callback
+    cal.session.deadline.cancel()
+    callback()
+    await stopped(cal)
+    await act(cal, "reading", reading_cm=GAP)
+    await start(cal)  # Up: its end stop ends it.
+    cal.clock[0] += 18.3
+    bus(cal, "*2*0*11##")
+    write(cal)  # The Stop after the arrival.
+    await asyncio.sleep(0)
+    bus(cal, "*2*1000#0*11##")
+    bus(cal, "*2*0*11##")
+    assert (cal.session.phase, cal.session.view()["reading_kind"]) == ("reading", "travel")
+    await act(cal, "reading", reading_cm=150)
+    assert (cal.session.phase, cal.session.step) == ("briefing", "half_close")
+    # The command as the gateway relays it: its interlock Stop and that Stop's status first, then the translation
+    # (held, superseded by the status) and the actuator's movement status.
+    await act(cal, "next")
+    assert "*2*2*" in str(cal.queue[-1][0])
+    write(cal)
+    for seconds, frame in ((.06, "*2*1000#0*11##"), (.05, "*2*0*11##"), (.01, "*2*1000#2*11##"), (.48, "*2*2*11##")):
+        cal.clock[0] += seconds
+        bus(cal, frame)
+    assert cal.session.phase == "closing"
+
+
+async def test_the_half_close_of_an_end_stop_cover_stops_on_its_own_times(hass, plant, clocked):
+    """The times measured on this cover are its own whatever travel is read: the half close is planned on them and
+    the session's Stop goes out at half of it, before the end stop, whatever the order of the statuses."""
+    store, evidence = seed(plant, profile=END_STOP, record={"travel_cm": 50.0})
+    cal = await started(hass, plant)
+    cal.clock = clocked
+    assert cal.session.values == {"opening_time": 18.3, "closing_time": 17.8}
+    await to_half_close_at_end_stops(cal)
+    assert cal.session.values == {"opening_time": 18.3, "closing_time": 17.8}, "never scaled to the travel read"
+    planned = (17.8 - 3.01) / 2
+    assert cal.session.view()["planned_seconds"] == pytest.approx(planned)
+    assert cal.session.deadline._callback == cal.session._sample_stop
+    # Due at its planned time from the run's start (the movement status, .6 s after the write).
+    assert cal.session.deadline.when() - hass.loop.time() == pytest.approx(planned, abs=.05)
+    commands = len(cal.queue)
+    cal.clock[0] += planned
+    callback = cal.session.deadline._callback
+    cal.session.deadline.cancel()
+    callback()
+    assert len(cal.queue) == commands + 1 and "*2*0*" in str(cal.queue[-1][0])
+    await stopped(cal)
+    assert (cal.session.phase, cal.session.samples["half_close"]) == ("reading", pytest.approx(planned))
+    cal.session.close()
+
+
+async def test_the_half_close_on_a_timer_cover_is_planned_as_before(hass, plant, clocked):
+    """Without slats, on a relay timer, with a profile whose reference travel is the cover's: as before."""
+    seed(plant, profile={"opening_time": 20.0, "closing_time": 19.0, "reference_travel_cm": 160.0,
+                         "geometry": {"slat_time_s": 0.0, "opening_roll": 1.0, "closing_roll": 1.0}},
+         record={"travel_cm": 160.0})
+    cal = await started(hass, plant, slats=False)
+    cal.clock = clocked
+    await endpoint(cal, 20.5)  # Up, confirmed by the press: a relay timer stops it only after 60 s.
+    await act(cal, "reading", reading_cm=160)
+    assert (cal.session.step, cal.session.values) == ("half_close", {"opening_time": 20.0, "closing_time": 19.0})
+    await start(cal)
+    assert cal.session.view()["planned_seconds"] == pytest.approx(19.0 / 2)
+    assert cal.session.deadline._callback == cal.session._sample_stop
+    cal.clock[0] += 19.0 / 2
+    callback = cal.session.deadline._callback
+    cal.session.deadline.cancel()
+    callback()
+    await stopped(cal)
+    assert (cal.session.phase, cal.session.samples["half_close"]) == ("reading", pytest.approx(19.0 / 2))
+    cal.session.close()
