@@ -41,6 +41,7 @@ from custom_components.myhome.cover import (
     _can_auto_promote_advanced,
     _is_stored_advanced_cover,
     _message_has_calibrated_dim10,
+    _normalize_bus_interface,
 )
 from custom_components.myhome.cover_strategies import NativePositionStrategy
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
@@ -759,6 +760,115 @@ async def test_entity_removal_cleans_advanced_covers_and_button_promotion_edges(
 
 
 @pytest.mark.asyncio
+async def test_scope_dim10_frames_do_not_promote_members(
+    hass: HomeAssistant,
+    tmp_path: Path,
+) -> None:
+    """Scope Dimension 10 frames (area, general, group, F422-routed) never promote member covers (#927)."""
+    yaml_path = tmp_path / "myhome.yaml"
+    yaml_path.write_text(
+        f"""
+mh201:
+  mac: "{MAC}"
+  cover:
+    group_5:
+      where: "#5"
+      name: "Group 5 Shutters"
+      members:
+        - "52"
+        - "53"
+""",
+        encoding="utf-8",
+    )
+
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port, options={CONF_FILE_PATH: str(yaml_path)})
+    registry = er.async_get(hass)
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+
+            # Discover two main-bus timed covers (52, 53) and two F422-routed covers (52#4#01, 53#4#01)
+            for raw in ("*2*0*52##", "*2*0*53##", "*2*0*52#4#01##", "*2*0*53#4#01##"):
+                await _feed(hass, raw)
+
+            btn_52 = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-52-calibrate")
+            btn_53 = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-53-calibrate")
+            btn_52_i01 = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-52#4#01-calibrate")
+            btn_53_i01 = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-53#4#01-calibrate")
+            cal_all = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-calibrate-all-covers")
+            assert btn_52 and btn_53 and btn_52_i01 and btn_53_i01 and cal_all
+
+            # 1. Area 5 (*#2*5*10*10*50*001*0##), General (*#2*0*10*10*30*001*0##),
+            # and Group #5 (*#2*#5*10*10*40*001*0##) update position as before, but keep
+            # 52 and 53 timed with calibration buttons active and advanced_covers untouched.
+            for scope_frame, expected_pos in (
+                ("*#2*5*10*10*50*001*0##", 50),
+                ("*#2*0*10*10*30*001*0##", 30),
+                ("*#2*#5*10*10*40*001*0##", 40),
+            ):
+                await _feed(hass, scope_frame)
+                for eid in ("cover.cover_52", "cover.cover_53"):
+                    st = hass.states.get(eid)
+                    assert st is not None
+                    assert st.state == "open"
+                    assert st.attributes.get("current_position") == expected_pos
+                    assert st.attributes.get("travel_time") == 25
+                    assert "min_position_delta" not in st.attributes
+                assert CONF_ADVANCED_COVERS not in entry.options
+                assert hass.states.get(btn_52).state != "unavailable"
+                assert hass.states.get(btn_53).state != "unavailable"
+                assert hass.states.get(cal_all).state != "unavailable"
+
+            # 2. F422-routed scope Dimension 10 frames (*#2*5#4#01*10*...##, *#2*0#4#01*10*...##)
+            # also leave 52#4#01 and 53#4#01 timed.
+            for routed_scope, expected_pos in (
+                ("*#2*5#4#01*10*10*50*001*0##", 50),
+                ("*#2*0#4#01*10*10*30*001*0##", 30),
+            ):
+                await _feed(hass, routed_scope)
+                for eid in ("cover.cover_52i01", "cover.cover_53i01"):
+                    st = hass.states.get(eid)
+                    assert st is not None
+                    assert st.attributes.get("current_position") == expected_pos
+                    assert st.attributes.get("travel_time") == 25
+                    assert "min_position_delta" not in st.attributes
+                assert CONF_ADVANCED_COVERS not in entry.options
+                assert hass.states.get(btn_52_i01).state != "unavailable"
+                assert hass.states.get(btn_53_i01).state != "unavailable"
+
+            # 3. Point-to-point Dimension 10 on 52#4#01 and 52 promotes ONLY that cover,
+            # leaving sibling 53#4#01 and 53 timed.
+            await _feed(hass, "*#2*52#4#01*10*10*75*001*0##")
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"52#4#01": True}
+            assert hass.states.get("cover.cover_52i01").attributes.get("min_position_delta") == 2
+            assert hass.states.get("cover.cover_53i01").attributes.get("travel_time") == 25
+            assert hass.states.get(btn_52_i01).state == "unavailable"
+            assert hass.states.get(btn_53_i01).state != "unavailable"
+
+            await _feed(hass, "*#2*52*10*10*80*001*0##")
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"52#4#01": True, "52": True}
+            assert hass.states.get("cover.cover_52").attributes.get("min_position_delta") == 2
+            assert hass.states.get("cover.cover_53").attributes.get("travel_time") == 25
+            assert hass.states.get(btn_52).state == "unavailable"
+            assert hass.states.get(btn_53).state != "unavailable"
+            assert hass.states.get(cal_all).state != "unavailable"
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
 async def test_direct_unit_edges_and_calibration_lockout(hass: HomeAssistant) -> None:
     """Cover helper edge cases, _is_tilting promotion guard, calibrate_cover lock, and poll fallback."""
     gw = MagicMock()
@@ -778,11 +888,22 @@ async def test_direct_unit_edges_and_calibration_lockout(hass: HomeAssistant) ->
     assert _message_has_calibrated_dim10(SimpleNamespace(is_translation=True, current_position=50)) is False
     assert _message_has_calibrated_dim10(SimpleNamespace(_family="REQUEST", current_position=50)) is False
     assert _message_has_calibrated_dim10(SimpleNamespace(_message_type="STATUS_REQUEST", current_position=50)) is False
+    assert _message_has_calibrated_dim10(OWNAutomationEvent.parse("*#2*0*10*10*30*001*0##")) is False
+    assert _message_has_calibrated_dim10(OWNAutomationEvent.parse("*#2*5*10*10*50*001*0##")) is False
+    assert _message_has_calibrated_dim10(OWNAutomationEvent.parse("*#2*#5*10*10*50*001*0##")) is False
     assert _message_has_calibrated_dim10(SimpleNamespace(is_position_unknown=True, current_position=50)) is False
     assert _message_has_calibrated_dim10(SimpleNamespace(current_position=True)) is False
     assert _message_has_calibrated_dim10(SimpleNamespace(current_position=-1)) is False
     assert _message_has_calibrated_dim10(SimpleNamespace(current_position=101)) is False
     assert _message_has_calibrated_dim10(OWNAutomationEvent.parse("*#2*0715*10*10*42*000*0##")) is True
+
+    assert _normalize_bus_interface(None) is None
+    assert _normalize_bus_interface(True) is None
+    assert _normalize_bus_interface("") is None
+    assert _normalize_bus_interface("1") == "01"
+    assert _normalize_bus_interface(1) == "01"
+    assert _normalize_bus_interface("01") == "01"
+    assert _normalize_bus_interface("A") == "A"
 
     assert _can_auto_promote_advanced({}, None, None) is True
     assert _can_auto_promote_advanced({CONF_ADVANCED_SHUTTER: False}, None, None) is False
@@ -817,6 +938,21 @@ async def test_direct_unit_edges_and_calibration_lockout(hass: HomeAssistant) ->
     # No config_entry string entry_id -> no-op return
     cover._persist_advanced_cover()
     await cover.async_removed_from_registry()
+
+    # _is_own_point_message edges: missing/bool where, scope entity, legacy "2-" prefix, 1-digit interface
+    assert cover._is_own_point_message(SimpleNamespace(where=None)) is False  # type: ignore[arg-type]
+    assert cover._is_own_point_message(SimpleNamespace(where=True)) is False  # type: ignore[arg-type]
+    assert cover._is_own_point_message(OWNAutomationEvent.parse("*#2*0716*10*10*50*001*0##")) is False
+    assert cover._is_own_point_message(OWNAutomationEvent.parse("*#2*0715*10*10*50*001*0##")) is True
+    cover._where = "2-12"
+    cover._interface = "01"
+    assert cover._is_own_point_message(OWNAutomationEvent.parse("*#2*12#4#1*10*10*50*001*0##")) is True
+    assert cover._is_own_point_message(OWNAutomationEvent.parse("*#2*12*10*10*50*001*0##")) is False
+    cover.scope = object()  # type: ignore[assignment]
+    assert cover._is_own_point_message(OWNAutomationEvent.parse("*#2*12#4#01*10*10*50*001*0##")) is False
+    cover.scope = None
+    cover._where = "0715"
+    cover._interface = None
 
     # Real MockConfigEntry -> writes once, second call short-circuits when stored[key] is True
     mock_entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: MAC}, unique_id=MAC, entry_id="e-unit")

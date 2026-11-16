@@ -223,13 +223,29 @@ def _is_stored_advanced_cover(config_entry: Any, device_id: str) -> bool:
     return stored.get(str(device_id)) is True
 
 
+def _normalize_bus_interface(raw: Any) -> str | None:
+    """Normalize an optional F422 interface identifier (e.g. ``'1'`` -> ``'01'``)."""
+    if not isinstance(raw, (str, int)) or isinstance(raw, bool):
+        return None
+    text = str(raw)
+    if not text:
+        return None
+    return text.zfill(2) if text.isdigit() else text
+
+
 def _message_has_calibrated_dim10(message: Any) -> bool:
-    """Return True if ``message`` carries a calibrated WHO=2 Dimension 10 level (0..100)."""
+    """Return True if ``message`` carries a calibrated point-to-point WHO=2 Dimension 10 level (0..100)."""
     if message is None or getattr(message, "is_translation", False) is True:
         return False
     if (
         getattr(message, "_family", None) == "REQUEST"
         or getattr(message, "_message_type", None) == "STATUS_REQUEST"
+    ):
+        return False
+    if (
+        getattr(message, "is_general", False) is True
+        or getattr(message, "is_area", False) is True
+        or getattr(message, "is_group", False) is True
     ):
         return False
     if getattr(message, "is_position_unknown", False) is True:
@@ -2749,6 +2765,27 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         return msg_where, is_general
 
+    def _is_own_point_message(self, message: OWNMessage) -> bool:
+        """Return True when ``message`` addresses this cover's own point-to-point WHERE."""
+        if (
+            self.scope is not None
+            or getattr(message, "is_general", False) is True
+            or getattr(message, "is_area", False) is True
+            or getattr(message, "is_group", False) is True
+        ):
+            return False
+        raw_where = getattr(message, "where", None)
+        if not isinstance(raw_where, (str, int)) or isinstance(raw_where, bool):
+            return False
+        own_where = str(self._where)
+        if own_where.startswith(f"{self._who}-"):
+            own_where = own_where[len(f"{self._who}-") :]
+        return (
+            str(raw_where) == own_where
+            and _normalize_bus_interface(getattr(message, "interface", None))
+            == _normalize_bus_interface(self._interface)
+        )
+
     def _handle_echo(self, message: OWNMessage, now: float) -> bool:
         """Consume frames the gateway relays for our own in-flight command.
 
@@ -2909,10 +2946,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 entity_id=self.entity_id,
             )
 
+        # Physical shutters only report Dimension 10 on their own point-to-point WHERE,
+        # never on a general, area, or group scope address (which relay_general /
+        # relay_scope fan out to every member).
+        own_point = self._is_own_point_message(message)
         promoted = False
-        if position is not None or position_unknown:
+        if own_point and (position is not None or position_unknown):
             self._dim10_seen = True
-        if position is not None:
+        if own_point and position is not None:
             self._bus_state_complete = True
             if not self._advanced and self._allow_auto_advanced and not self._calibrating:
                 self._promote_to_native_strategy()
