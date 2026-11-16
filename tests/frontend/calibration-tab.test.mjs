@@ -399,7 +399,7 @@ test("a cover in progress keeps yellow tints in every state of its row (no open 
   }
 });
 
-test("Assign profile waits while a calibration is open on the gateway, and after a refusal", async () => {
+test("Assign profile waits while a calibration is open on the gateway; after a refusal it is on again to retry", async () => {
   const session = { entry_id: "one", entity_id: "cover.living_one", session_id: "s", mode: "geometry", phase: "briefing", step: "lift", sequence: 3,
     values: {}, recoverable: true, attached: true, owner_present: true };
   const busy = await mount({ session });
@@ -412,7 +412,7 @@ test("Assign profile waits while a calibration is open on the gateway, and after
   const tall = dialog.querySelector('input[value="tall"]');
   tall.checked = true; tall.dispatchEvent(new Event("change", { bubbles: true }));
   assert.equal(dialog.querySelector("[data-assign]").disabled, true, "Assign waits");
-  // Without a session, a refusal turns Assign off too.
+  // Without a session, a refusal (not a conflict) leaves Assign on, to try again.
   const refusing = await mount({ callWS: (message) => { if (message.type === "myhome/cover_profiles/write") throw Object.assign(new Error("busy"), { code: "calibration_busy" }); } });
   open(refusing.tab, "cover.bedroom"); await tick();
   dialog = sheetOf(refusing.tab);
@@ -424,9 +424,9 @@ test("Assign profile waits while a calibration is open on the gateway, and after
   assert.equal(refusal.hidden, false);
   assert.ok(refusal.classList.contains("notice"), "an error notice, not bare red text");
   assert.equal(refusal.nextElementSibling.nextElementSibling, dialog.querySelector(".cal-assign-list"), "above the choices, in view (the introduction between)");
-  assert.equal(dialog.querySelector("[data-assign]").disabled, true, "off after the refusal");
+  assert.equal(dialog.querySelector("[data-assign]").disabled, false, "on again after the refusal");
   choice.dispatchEvent(new Event("change", { bubbles: true }));
-  assert.equal(dialog.querySelector("[data-assign]").disabled, true, "and stays off");
+  assert.equal(dialog.querySelector("[data-assign]").disabled, false, "and stays on");
 });
 
 test("every radio of the Assign dialog is the same circle, No profile included", async () => {
