@@ -143,7 +143,7 @@ To maintain production stability and protect our release pipelines, this reposit
 ## 4. Development & Testing Standards
 
 ### Environment Setup
-Home Assistant core 2026.3 and later requires **Python 3.14.2+**, and current cores only run on Linux/macOS (`homeassistant.runner` imports `fcntl`). On Windows use **WSL**. `pytest-homeassistant-custom-component` pins the exact core release it was built for, so installing it gives you the core users run:
+MyHOME requires **Home Assistant Core 2026.8 or newer** (**Python 3.14.2+**), and current cores only run on Linux/macOS (`homeassistant.runner` imports `fcntl`). On Windows use **WSL**. `pytest-homeassistant-custom-component` pins the exact core release it was built for, so installing it gives you the core users run:
 
 ```bash
 # Python 3.14 without touching the system interpreter (uv fetches it into your profile)

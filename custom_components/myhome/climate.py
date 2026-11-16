@@ -167,7 +167,7 @@ SETPOINT_WRITE_MODE = CLIMATE_MODE_AUTO
 
 # Core 2026.11 renames the ClimateEntity temperature API to native_* and logs the
 # old names as deprecated (unsupported from 2027.11). Older cores, down to the
-# minimum 2026.3, only read the old names; MyHOMEClimate bridges them while they do.
+# minimum 2026.8, only read the old names; MyHOMEClimate bridges them while they do.
 _NATIVE_TEMPERATURE_API = hasattr(ClimateEntity, "native_temperature_unit")
 
 

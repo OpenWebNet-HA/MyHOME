@@ -10,6 +10,7 @@ from scripts.verify_ha_standards import (
     check_manifest_requirements_rule,
     check_marketplace_manifest_rule,
     check_no_blocking_calls,
+    check_no_deprecated_device_info_mapping,
     check_no_update_listener_reload_conflict,
     check_ruff_standards,
     check_supported_domains_rule,
@@ -113,6 +114,174 @@ def test_update_listener_rule_catches_violations(tmp_path):
     assert len(checker.errors) == 2
 
 
+def test_no_deprecated_device_info_mapping():
+    """Verify integration code never uses deprecated DeviceInfo mapping access (#930)."""
+    checker = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker)
+    assert not checker.errors, f"DeviceInfo mapping violations found: {checker.errors}"
+
+
+def test_deprecated_device_info_mapping_rule_catches_violations(tmp_path):
+    """Verify AST rule flags all deprecated DeviceInfo mapping/TypedDict operations and allows clean idioms."""
+    clean_file = tmp_path / "clean.py"
+    clean_file.write_text(
+        "from homeassistant.helpers.device_registry import DeviceInfo\n"
+        "from .typing_compat import device_info_to_dict\n\n"
+        "def fn_a(entity, gw):\n"
+        "    info = entity.device_info\n"
+        "    entity._attr_device_info = DeviceInfo(\n"
+        "        identifiers={('myhome', '1')},\n"
+        "        via_device_id=gw.device_registry_id,\n"
+        "    )\n"
+        "    assert device_info_to_dict(info) == {'identifiers': {('myhome', '1')}}\n"
+        "    return device_info_to_dict(entity.device_info).get('identifiers')\n\n"
+        "def fn_b():\n"
+        "    info = {'k': 1}\n"
+        "    return info['k']\n\n"
+        "class CleanHolder:\n"
+        "    def __init__(self):\n"
+        "        self.info = {'k': 1}\n"
+        "        _ = self.info['k']\n",
+        encoding="utf-8",
+    )
+    checker_clean = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_clean, target_dir=tmp_path)
+    assert not checker_clean.errors, f"Unexpected errors on clean patterns: {checker_clean.errors}"
+
+    bad_file = tmp_path / "bad_device_info.py"
+    bad_file.write_text(
+        "from homeassistant.helpers import device_registry as dr\n"
+        "from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo, DeviceInfo as DI\n\n"
+        "def bad_ops(self, switch, e):\n"
+        "    self._attr_device_info['via_device_id'] = 'gw'\n"
+        "    _ = switch.device_info['name']\n"
+        "    _ = (switch.device_info or {}).get('identifiers')\n"
+        "    self._attr_device_info.update({'model': 'X'})\n"
+        "    _ = switch.device_info.keys()\n"
+        "    _ = switch.device_info.items()\n"
+        "    _ = 'via_device' in switch.device_info\n"
+        "    _ = DI.__annotations__\n"
+        "    _ = ChildDeviceInfo.__required_keys__\n"
+        "    _ = dr.DeviceInfo.__optional_keys__\n"
+        "    local_di = DI(identifiers={('myhome', '1')})\n"
+        "    _ = local_di['identifiers']\n"
+        "    _ = dict(switch.device_info)\n"
+        "    _ = {**switch.device_info}\n"
+        "    _ = e.device_info == {'name': 'x'}\n"
+        "    _ = e.device_info != dict(name='x')\n"
+        "    self.info = DeviceInfo(identifiers={('myhome', '2')})\n"
+        "    self.info['x'] = 'y'\n\n"
+        "class BadHolder:\n"
+        "    def __init__(self):\n"
+        "        self.cached = DeviceInfo(identifiers={('myhome', '3')})\n\n"
+        "    def read_cached(self):\n"
+        "        return self.cached.get('name')\n",
+        encoding="utf-8",
+    )
+    checker_bad = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_bad, target_dir=tmp_path)
+    assert len(checker_bad.errors) == 17, f"Expected 17 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
+    assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_bad.errors)
+
+
+def test_deprecated_device_info_mapping_scope_isolation(tmp_path):
+    """Verify local variable and self.<attr> tracking do not leak across scopes or plain-dict shadows."""
+    scoped_file = tmp_path / "scoped.py"
+    scoped_file.write_text(
+        "from homeassistant.helpers.device_registry import DeviceInfo\n\n"
+        "def fn_a(e):\n"
+        "    info = e.device_info\n"
+        "    return info\n\n"
+        "def fn_b():\n"
+        "    info = {'k': 1}\n"
+        "    _ = info['k']\n"
+        "    return info.get('k')\n\n"
+        "def outer(e):\n"
+        "    info = e.device_info\n"
+        "    def inner_shadow():\n"
+        "        info = {'k': 2}\n"
+        "        return info['k']\n"
+        "    return info, inner_shadow()\n\n"
+        "class DeviceOwner:\n"
+        "    def __init__(self):\n"
+        "        self.info = DeviceInfo(identifiers={('myhome', '1')})\n\n"
+        "    def unrelated_local(self):\n"
+        "        info = {'k': 3}\n"
+        "        return info['k']\n\n"
+        "class UnrelatedOwner:\n"
+        "    def __init__(self):\n"
+        "        self.info = {'k': 4}\n"
+        "        _ = self.info['k']\n",
+        encoding="utf-8",
+    )
+    checker = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker, target_dir=tmp_path)
+    assert not checker.errors, f"Unexpected cross-scope leakage errors: {checker.errors}"
+
+
+def test_deprecated_device_info_mapping_bare_name_plain_dict_vs_param(tmp_path):
+    """Verify bare `device_info` bound exclusively to plain dicts passes, while unshadowed params/attributes fail."""
+    clean_dir = tmp_path / "clean"
+    clean_dir.mkdir()
+    # One-function snippet matching @gdluck's exact review test (even without explicit imports)
+    (clean_dir / "one_func.py").write_text(
+        "def read_ids(entity):\n"
+        "    device_info = device_info_to_dict(entity.device_info)\n"
+        "    _ = device_info.get('identifiers')\n"
+        "    return device_info['identifiers']\n",
+        encoding="utf-8",
+    )
+    (clean_dir / "dict_variants.py").write_text(
+        "from typing import Any\n"
+        "from . import typing_compat\n"
+        "from .typing_compat import device_info_to_dict as to_plain_dict\n\n"
+        "def literal_and_qualified(entity, cond: bool):\n"
+        "    device_info = {'identifiers': set()}\n"
+        "    _ = device_info['identifiers']\n"
+        "    _ = device_info.get('identifiers')\n"
+        "    _attr_device_info: dict[str, Any]\n"
+        "    if cond:\n"
+        "        _attr_device_info = typing_compat.device_info_to_dict(entity.device_info)\n"
+        "    else:\n"
+        "        _attr_device_info = to_plain_dict(entity.device_info) or dict(identifiers=set())\n"
+        "    copied = _attr_device_info\n"
+        "    def inner():\n"
+        "        return _attr_device_info.get('identifiers'), copied['identifiers']\n"
+        "    return inner()\n",
+        encoding="utf-8",
+    )
+    checker_clean = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_clean, target_dir=clean_dir)
+    assert not checker_clean.errors, f"Unexpected errors on plain-dict device_info bindings: {checker_clean.errors}"
+
+    bad_dir = tmp_path / "bad"
+    bad_dir.mkdir()
+    (bad_dir / "bad_cases.py").write_text(
+        "def bad_param(device_info):\n"
+        "    return device_info.get('identifiers')\n\n"
+        "def bad_unbound():\n"
+        "    return device_info['identifiers']\n\n"
+        "def bad_mixed(entity, cond):\n"
+        "    if cond:\n"
+        "        device_info = entity.device_info\n"
+        "    else:\n"
+        "        device_info = {'identifiers': set()}\n"
+        "    return device_info.get('identifiers')\n\n"
+        "def bad_attr_despite_local(entity, other):\n"
+        "    device_info = device_info_to_dict(entity.device_info)\n"
+        "    _ = device_info.get('identifiers')\n"
+        "    _ = entity.device_info == device_info_to_dict(other.device_info)\n"
+        "    return entity.device_info['identifiers']\n",
+        encoding="utf-8",
+    )
+    checker_bad = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_bad, target_dir=bad_dir)
+    assert len(checker_bad.errors) == 5, (
+        f"Expected 5 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
+    )
+    assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_bad.errors)
+
+
 def test_marketplace_manifest_and_workflow_standards():
     """Verify hacs.json and validate.yml satisfy Home Assistant 2026.11 Marketplace standards."""
     checker = StandardsChecker()
@@ -206,7 +375,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "persistent_directory": "../escape",
                 "zip_release": False,
                 "filename": "myhome.zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.8.0",
             }
         ),
         encoding="utf-8",
@@ -232,7 +401,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": ".zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.8.0",
             }
         ),
         encoding="utf-8",
@@ -257,7 +426,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": "other.zip",
-                "homeassistant": "2026.3.0",
+                "homeassistant": "2026.8.0",
             }
         ),
         encoding="utf-8",
@@ -299,7 +468,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     assert any("must be a valid Home Assistant CalVer string" in err for err in checker_edge.errors)
     assert any("must preserve the required 'validate' job ID" in err for err in checker_edge.errors)
 
-    # 8. Unpinned hacs/action, if/continue-on-error bypasses, HA version < 2026.3.0, category duplicates/unknowns/overlaps, brand PNG checks, and unparseable OUTPUT_ZIP
+    # 8. Unpinned hacs/action, if/continue-on-error bypasses, HA version < 2026.8.0, category duplicates/unknowns/overlaps, brand PNG checks, and unparseable OUTPUT_ZIP
     brand_dir = manifest_dir / "brand"
     brand_dir.mkdir()
     (brand_dir / "icon.png").write_bytes(b"not-a-png")
@@ -338,7 +507,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
                 "name": "MyHOME",
                 "zip_release": True,
                 "filename": "myhome.zip",
-                "homeassistant": "2026.2.0",
+                "homeassistant": "2026.7.4",
             }
         ),
         encoding="utf-8",
@@ -346,7 +515,7 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     checker_edge2 = StandardsChecker()
     check_marketplace_manifest_rule(checker_edge2, root_dir=tmp_path)
     assert any("must be 'custom_pkg.zip' to match scripts/package_release.py" in err for err in checker_edge2.errors)
-    assert any("must be >= '2026.3.0'" in err for err in checker_edge2.errors)
+    assert any("must be >= '2026.8.0'" in err for err in checker_edge2.errors)
     assert any("unknown Home Assistant categories: ['nonexistent_cat']" in err for err in checker_edge2.errors)
     assert any("is implied by subcategory 'hubs_protocols.building_automation'" in err for err in checker_edge2.errors)
     assert any("Local brand asset 'icon.png' is not a valid PNG file" in err for err in checker_edge2.errors)

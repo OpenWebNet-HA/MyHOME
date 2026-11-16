@@ -6,7 +6,7 @@ This archived guide covers installing the legacy **v0.9.4** YAML release of the 
 
 > [!WARNING]
 > **Legacy Archive Notice**:
-> For Home Assistant **2026.3 or newer**, install **MyHOME v2.0+** via the [**v2.0 Installation Manual**](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/installation/). If you are upgrading an existing v0.9.4 setup, review the [**v2.0 Upgrade Guide**](https://openwebnet-ha.github.io/MyHOME/latest/migration/upgrade-from-094/) first.
+> For Home Assistant **2026.8 or newer**, install **MyHOME v2.0+** via the [**v2.0 Installation Manual**](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/installation/). If you are upgrading an existing v0.9.4 setup, review the [**v2.0 Upgrade Guide**](https://openwebnet-ha.github.io/MyHOME/latest/migration/upgrade-from-094/) first.
 
 ---
 

@@ -92,15 +92,23 @@ class MyHOMEEntity(RestoreEntity):
         self._attr_entity_registry_enabled_default = True
         self._attr_should_poll = False
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")},
-            name=name,
-            manufacturer=self._manufacturer,
-            model=self._model,
-        )
         # Link to the gateway device (via_device_id; via_device is gone since core 2026.8).
+        identifiers = {(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")}
         if gateway.device_registry_id:
-            self._attr_device_info["via_device_id"] = gateway.device_registry_id
+            self._attr_device_info = DeviceInfo(
+                identifiers=identifiers,
+                name=name,
+                manufacturer=self._manufacturer,
+                model=self._model,
+                via_device_id=gateway.device_registry_id,
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers=identifiers,
+                name=name,
+                manufacturer=self._manufacturer,
+                model=self._model,
+            )
 
     @property
     def _display_name(self) -> str:
