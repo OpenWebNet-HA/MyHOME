@@ -2548,7 +2548,7 @@ Options Flow if your gateway lags on repeated status requests.</p>
 </blockquote>
 <hr />
 <h2 id="device-links">🧭 Device links<a class="headerlink" href="#device-links" title="Permanent link">&para;</a></h2>
-<p>Entity devices and CEN / CEN+ scenario units are linked to their parent gateway device via <code>via_device_id</code> (<code>MyHOME</code> v2 requires Home Assistant 2026.3+, and legacy <code>via_device</code> tuples are no longer used). Identifiers are unchanged, so existing devices are matched in place. <em>(#310)</em></p>
+<p>Entity devices and CEN / CEN+ scenario units are linked to their parent gateway device via <code>via_device_id</code> (<code>MyHOME</code> v2 requires Home Assistant 2026.8+, and legacy <code>via_device</code> tuples are no longer used). Identifiers are unchanged, so existing devices are matched in place. <em>(#310)</em></p>
 <hr />
 <h2 id="ownd-version">📦 OWNd version<a class="headerlink" href="#ownd-version" title="Permanent link">&para;</a></h2>
 <p>The installed OWNd version is resolved <strong>once, in the executor</strong>, when the integration is set up and cached; nothing reads package metadata from the event loop. <code>manifest.json</code> is the single source of truth for the pin — Home Assistant installs it, and the integration no longer tries to (re)install or reload OWNd at runtime. <em>(#309)</em></p>
