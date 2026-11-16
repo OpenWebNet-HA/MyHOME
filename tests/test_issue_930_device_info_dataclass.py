@@ -1,21 +1,25 @@
 """Regression tests for HA 2026.12+ DeviceInfo dataclass compatibility (Issue #930, core#192323).
 
-Upstream Home Assistant 2026.12 converted ``DeviceInfo`` (and ``ChildDeviceInfo``) from a
-``TypedDict`` into a ``@dataclass(slots=True)`` whose ``_DeviceInfoMapping`` dict-compatibility
-methods (``__getitem__``, ``__setitem__``, ``__contains__``, ``.get()``, ``.keys()``, ``.items()``,
-``.update()``) emit deprecation warnings (removal in HA 2027.12). Meanwhile MyHOME v2.0.0 supports
-Home Assistant 2026.3+, where ``DeviceInfo`` is still a ``TypedDict`` (``dict`` at runtime without
-``.as_dict()`` or attribute access).
+Home Assistant Core ``DeviceInfo`` / ``ChildDeviceInfo`` timeline:
+- ``2026.3–2026.10``: ``DeviceInfo`` is a ``TypedDict`` (``dict`` at runtime without
+  ``.as_dict()`` or attribute access).
+- ``2026.11``: ``DeviceInfo`` and ``ChildDeviceInfo`` became ``@dataclass(slots=True)``
+  with ``.as_dict()`` and a silent ``_DeviceInfoMapping`` compatibility shim.
+- ``2026.12`` (``home-assistant/core#192323``): ``_DeviceInfoMapping`` dict-compatibility
+  methods (``__getitem__``, ``__setitem__``, ``__contains__``, ``.get()``, ``.keys()``,
+  ``.items()``, ``.update()``, ``__eq__`` against ``Mapping``) emit ``frame.report_usage``
+  deprecations (removal scheduled for ``2027.12.0``).
 
-This module simulates the strict HA 2026.12+ slotted dataclass contract even when the test suite
-runs on HA 2026.3..2026.11, guaranteeing zero mapping calls and 100% branch coverage on both.
+Because MyHOME v2.0.0 supports Home Assistant 2026.3+, this module simulates the strict
+HA 2026.12+ slotted dataclass contract even when the test suite runs on HA 2026.3–2026.10,
+guaranteeing zero deprecated mapping calls and 100% branch coverage across both regimes.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import MagicMock
 
 import pytest
@@ -68,13 +72,25 @@ class StrictDataclassDeviceInfo:
     translation_placeholders: Mapping[str, str] | None = _UNSET
     via_device_id: str = _UNSET
 
+    __iter__: ClassVar[Any] = None
+
     def as_dict(self) -> dict[str, Any]:
-        """Return explicitly set fields as a plain ``dict``, matching HA 2026.12+."""
+        """Return explicitly set fields as a plain ``dict``, matching HA 2026.11+."""
         return {
             field.name: val
             for field in fields(self)
             if (val := getattr(self, field.name)) is not _UNSET
         }
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, Mapping):
+            raise AssertionError(_DEPRECATED_MSG)
+        if isinstance(other, StrictDataclassDeviceInfo):
+            return all(
+                getattr(self, field.name) == getattr(other, field.name)
+                for field in fields(self)
+            )
+        return NotImplemented
 
     def __getitem__(self, key: str) -> Any:
         raise AssertionError(_DEPRECATED_MSG)
@@ -104,8 +120,19 @@ def test_strict_dataclass_simulator_forbids_mapping_and_enforces_slots() -> None
         identifiers={(DOMAIN, "00:03:50:00:00:01-1-21")},
         name="Living Light",
     )
+    same_sim = StrictDataclassDeviceInfo(
+        identifiers={(DOMAIN, "00:03:50:00:00:01-1-21")},
+        name="Living Light",
+    )
+    other_sim = StrictDataclassDeviceInfo(
+        identifiers={(DOMAIN, "00:03:50:00:00:01-1-21")},
+        name="Kitchen Light",
+    )
     assert sim.identifiers == {(DOMAIN, "00:03:50:00:00:01-1-21")}
     assert sim.name == "Living Light"
+    assert sim == same_sim
+    assert sim != other_sim
+    assert (sim == object()) is False
     assert sim.as_dict() == {
         "identifiers": {(DOMAIN, "00:03:50:00:00:01-1-21")},
         "name": "Living Light",
@@ -114,6 +141,15 @@ def test_strict_dataclass_simulator_forbids_mapping_and_enforces_slots() -> None
     with pytest.raises(AttributeError):
         sim.extra_attr = "nope"  # type: ignore[attr-defined]
 
+    with pytest.raises(TypeError):
+        iter(sim)
+    with pytest.raises(TypeError):
+        list(sim)
+
+    with pytest.raises(AssertionError, match=_DEPRECATED_MSG):
+        _ = sim == {"name": "x"}
+    with pytest.raises(AssertionError, match=_DEPRECATED_MSG):
+        _ = sim != {"name": "x"}
     with pytest.raises(AssertionError, match=_DEPRECATED_MSG):
         _ = sim["name"]
     with pytest.raises(AssertionError, match=_DEPRECATED_MSG):
@@ -132,7 +168,7 @@ def test_strict_dataclass_simulator_forbids_mapping_and_enforces_slots() -> None
 
 def test_device_info_to_dict_cross_version_branches() -> None:
     """Verify typing_compat.device_info_to_dict handles dataclass, TypedDict dict, and None."""
-    # 1. HA 2026.12+ dataclass with .as_dict() (must never invoke mapping methods)
+    # 1. HA 2026.11+ dataclass with .as_dict() (2026.12+ deprecates _DeviceInfoMapping)
     sim = StrictDataclassDeviceInfo(
         identifiers={(DOMAIN, "mac-1-11")},
         name="Kitchen",
@@ -144,7 +180,16 @@ def test_device_info_to_dict_cross_version_branches() -> None:
         "via_device_id": "gw-123",
     }
 
-    # 2. HA 2026.3..2026.11 TypedDict (plain dict at runtime without .as_dict())
+    # Verify .as_dict() result is returned directly without a redundant second dict copy.
+    fresh = {"identifiers": {(DOMAIN, "mac-1-99")}, "name": "Direct"}
+
+    class _AsDictProvider:
+        def as_dict(self) -> dict[str, Any]:
+            return fresh
+
+    assert device_info_to_dict(_AsDictProvider()) is fresh
+
+    # 2. HA 2026.3–2026.10 TypedDict (plain dict at runtime without .as_dict())
     legacy_dict = {"identifiers": {(DOMAIN, "mac-1-12")}, "name": "Hallway"}
     converted = device_info_to_dict(legacy_dict)
     assert converted == legacy_dict

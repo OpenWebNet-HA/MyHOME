@@ -10,7 +10,7 @@ error there and not on earlier cores. These helpers hide that mismatch behind
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import homeassistant.helpers.typing as _ha_typing
 from voluptuous import Schema
@@ -37,14 +37,17 @@ UNDEFINED: Any = _resolve_undefined(_ha_typing)
 def device_info_to_dict(info: Any) -> dict[str, Any]:
     """Return ``DeviceInfo`` fields as a plain ``dict`` across Home Assistant cores.
 
-    Home Assistant 2026.12 turned ``DeviceInfo`` into a dataclass whose mapping
-    methods emit deprecation warnings (removal in 2027.12) and added ``as_dict()``.
-    Earlier supported cores (2026.3..2026.11) represent ``DeviceInfo`` as a
-    ``TypedDict`` (a plain ``dict`` at runtime without ``as_dict()``).
+    Home Assistant 2026.3–2026.10 represents ``DeviceInfo`` as a ``TypedDict``
+    (a plain ``dict`` at runtime without ``as_dict()``). Home Assistant 2026.11
+    converted ``DeviceInfo`` (and ``ChildDeviceInfo``) into ``@dataclass(slots=True)``
+    with ``as_dict()`` and a silent ``_DeviceInfoMapping`` compatibility shim, and
+    Home Assistant 2026.12 (``home-assistant/core#192323``) deprecated
+    ``_DeviceInfoMapping`` via ``frame.report_usage`` (removal scheduled for
+    2027.12.0).
     """
     as_dict = getattr(info, "as_dict", None)
     if callable(as_dict):
-        return dict(as_dict())
+        return cast("dict[str, Any]", as_dict())
     if isinstance(info, Mapping):
         return dict(info)
     return {}

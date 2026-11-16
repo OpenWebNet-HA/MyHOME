@@ -365,6 +365,9 @@ DEPRECATED_DEVICE_INFO_CLASS_ATTRS = frozenset(
 )
 
 
+_DEVICE_INFO_SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+
 def _is_device_info_class(expr: ast.AST, class_names: set[str]) -> bool:
     """Return True when ``expr`` names ``DeviceInfo`` or ``ChildDeviceInfo``."""
     return (isinstance(expr, ast.Name) and expr.id in class_names) or (
@@ -372,12 +375,30 @@ def _is_device_info_class(expr: ast.AST, class_names: set[str]) -> bool:
     )
 
 
+def _is_self_attr(expr: ast.AST) -> str | None:
+    """Return ``attr`` when ``expr`` is ``self.<attr>``, else ``None``."""
+    if (
+        isinstance(expr, ast.Attribute)
+        and isinstance(expr.value, ast.Name)
+        and expr.value.id == "self"
+    ):
+        return expr.attr
+    return None
+
+
 def _is_device_info_expr(
-    expr: ast.AST, device_info_vars: set[str], class_names: set[str]
+    expr: ast.AST,
+    device_info_vars: set[str],
+    self_device_info_attrs: set[str],
+    class_names: set[str],
 ) -> bool:
     """Return True when ``expr`` evaluates to a ``DeviceInfo`` / ``ChildDeviceInfo`` value."""
-    if isinstance(expr, ast.Attribute) and expr.attr in {"device_info", "_attr_device_info"}:
-        return True
+    if isinstance(expr, ast.Attribute):
+        if expr.attr in {"device_info", "_attr_device_info"}:
+            return True
+        self_attr = _is_self_attr(expr)
+        if self_attr is not None and self_attr in self_device_info_attrs:
+            return True
     if isinstance(expr, ast.Name) and (
         expr.id in {"device_info", "_attr_device_info"} or expr.id in device_info_vars
     ):
@@ -385,14 +406,137 @@ def _is_device_info_expr(
     if isinstance(expr, ast.Call) and _is_device_info_class(expr.func, class_names):
         return True
     if isinstance(expr, ast.BoolOp):
-        return any(_is_device_info_expr(v, device_info_vars, class_names) for v in expr.values)
+        return any(
+            _is_device_info_expr(v, device_info_vars, self_device_info_attrs, class_names)
+            for v in expr.values
+        )
     if isinstance(expr, ast.IfExp):
-        return _is_device_info_expr(expr.body, device_info_vars, class_names) or _is_device_info_expr(
-            expr.orelse, device_info_vars, class_names
+        return _is_device_info_expr(
+            expr.body, device_info_vars, self_device_info_attrs, class_names
+        ) or _is_device_info_expr(
+            expr.orelse, device_info_vars, self_device_info_attrs, class_names
         )
     if isinstance(expr, ast.NamedExpr):
-        return _is_device_info_expr(expr.value, device_info_vars, class_names)
+        return _is_device_info_expr(
+            expr.value, device_info_vars, self_device_info_attrs, class_names
+        )
     return False
+
+
+def _is_dict_expr(expr: ast.AST, plain_dict_vars: set[str]) -> bool:
+    """Return True when ``expr`` is a ``dict`` literal, ``dict(...)`` call, or local plain-dict var."""
+    if isinstance(expr, ast.Dict):
+        return True
+    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id == "dict":
+        return True
+    if isinstance(expr, ast.Name) and expr.id in plain_dict_vars:
+        return True
+    return False
+
+
+def _split_device_info_scope(
+    stmts: list[ast.stmt],
+) -> tuple[list[ast.AST], list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]]:
+    """Return AST nodes evaluated directly in ``stmts`` plus immediate child scope definitions."""
+    direct_nodes: list[ast.AST] = []
+    child_scopes: list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef] = []
+    stack: list[ast.AST] = list(reversed(stmts))
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, _DEVICE_INFO_SCOPE_NODES):
+            child_scopes.append(cur)
+            body_ids = {id(s) for s in cur.body}
+            for ch in reversed(list(ast.iter_child_nodes(cur))):
+                if id(ch) not in body_ids:
+                    stack.append(ch)
+            continue
+        direct_nodes.append(cur)
+        stack.extend(reversed(list(ast.iter_child_nodes(cur))))
+    return direct_nodes, child_scopes
+
+
+def _extract_scope_param_names(
+    scope_node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | None,
+) -> set[str]:
+    """Return parameter names bound by ``scope_node`` when it is a function or method."""
+    if not isinstance(scope_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return set()
+    args = scope_node.args
+    names = {
+        a.arg
+        for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)
+    }
+    if args.vararg is not None:
+        names.add(args.vararg.arg)
+    if args.kwarg is not None:
+        names.add(args.kwarg.arg)
+    return names
+
+
+def _resolve_device_info_scope_bindings(
+    direct_nodes: list[ast.AST],
+    param_names: set[str],
+    inherited_di_vars: set[str],
+    self_di_attrs: set[str],
+    class_names: set[str],
+) -> tuple[set[str], set[str]]:
+    """Resolve ``DeviceInfo`` local vars and strictly plain-dict local vars within one scope.
+
+    Updates ``self_di_attrs`` in place when ``self.<attr>`` is assigned a ``DeviceInfo``
+    expression so class scopes can share ``self.<attr>`` tracking across methods.
+    """
+    rebound_outer: set[str] = set()
+    assign_pairs: list[tuple[ast.AST, ast.AST]] = []
+    for node in direct_nodes:
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            rebound_outer.update(node.names)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                assign_pairs.append((target, node.value))
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            assign_pairs.append((node.target, node.value))
+        elif isinstance(node, ast.NamedExpr):
+            assign_pairs.append((node.target, node.value))
+
+    locally_bound = set(param_names) | {
+        target.id
+        for target, _ in assign_pairs
+        if isinstance(target, ast.Name) and target.id not in rebound_outer
+    }
+    di_vars: set[str] = set(inherited_di_vars - locally_bound)
+
+    changed = True
+    while changed:
+        changed = False
+        for target, value in assign_pairs:
+            if _is_device_info_expr(value, di_vars, self_di_attrs, class_names):
+                if isinstance(target, ast.Name) and target.id not in di_vars:
+                    di_vars.add(target.id)
+                    changed = True
+                else:
+                    self_attr = _is_self_attr(target)
+                    if self_attr is not None and self_attr not in self_di_attrs:
+                        self_di_attrs.add(self_attr)
+                        changed = True
+
+    assigned_values_by_name: dict[str, list[ast.AST]] = {}
+    for target, value in assign_pairs:
+        if isinstance(target, ast.Name) and target.id not in rebound_outer:
+            assigned_values_by_name.setdefault(target.id, []).append(value)
+
+    plain_dict_vars: set[str] = {
+        name
+        for name, values in assigned_values_by_name.items()
+        if name not in di_vars
+        and name not in param_names
+        and name not in {"device_info", "_attr_device_info"}
+        and all(
+            isinstance(val, ast.Dict)
+            or (isinstance(val, ast.Call) and isinstance(val.func, ast.Name) and val.func.id == "dict")
+            for val in values
+        )
+    }
+    return di_vars, plain_dict_vars
 
 
 def check_no_deprecated_device_info_mapping(
@@ -400,11 +544,20 @@ def check_no_deprecated_device_info_mapping(
 ) -> None:
     """Forbid deprecated mapping operations on ``DeviceInfo`` / ``ChildDeviceInfo`` (#930).
 
-    Home Assistant 2026.12 (core#192323) converted ``DeviceInfo`` and ``ChildDeviceInfo``
-    from ``TypedDict`` to ``@dataclass(slots=True)`` and deprecated all ``_DeviceInfoMapping``
-    dict-compatibility operations (removal in 2027.12). Because MyHOME supports HA 2026.3+,
-    code must pass fields directly to ``DeviceInfo(...)`` at construction time and read
-    existing instances via ``typing_compat.device_info_to_dict()``.
+    Home Assistant Core timeline:
+    - ``2026.3–2026.10``: ``DeviceInfo`` is a ``TypedDict`` (a plain ``dict`` at runtime).
+    - ``2026.11``: ``DeviceInfo`` and ``ChildDeviceInfo`` became ``@dataclass(slots=True)``
+      with ``.as_dict()`` and a silent ``_DeviceInfoMapping`` compatibility shim.
+    - ``2026.12`` (``home-assistant/core#192323``): ``_DeviceInfoMapping`` emits
+      ``frame.report_usage`` deprecations (removal scheduled for ``2027.12.0``).
+
+    Because MyHOME supports Home Assistant 2026.3+, code must pass fields directly to
+    ``DeviceInfo(...)`` at construction time and read existing instances via
+    ``typing_compat.device_info_to_dict()``.
+
+    Note: Matching ``.device_info``, ``._attr_device_info``, and bare ``device_info`` /
+    ``_attr_device_info`` names (in addition to per-scope tracked ``DeviceInfo`` variables
+    and ``self.<attr>`` bindings) is an intentional conservative anti-drift heuristic.
     """
     base = target_dir or CUSTOM_COMPONENTS_DIR
     errors_before = len(checker.errors)
@@ -422,114 +575,165 @@ def check_no_deprecated_device_info_mapping(
                     if alias.name in {"DeviceInfo", "ChildDeviceInfo"}:
                         class_names.add(alias.asname or alias.name)
 
-        device_info_vars: set[str] = set()
-        for _ in range(2):
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Assign) and _is_device_info_expr(
-                    node.value, device_info_vars, class_names
-                ):
-                    for target in node.targets:
-                        if isinstance(target, ast.Name):
-                            device_info_vars.add(target.id)
-                elif (
-                    isinstance(node, ast.AnnAssign)
-                    and node.value is not None
-                    and isinstance(node.target, ast.Name)
-                    and _is_device_info_expr(node.value, device_info_vars, class_names)
-                ):
-                    device_info_vars.add(node.target.id)
-                elif (
-                    isinstance(node, ast.NamedExpr)
-                    and isinstance(node.target, ast.Name)
-                    and _is_device_info_expr(node.value, device_info_vars, class_names)
-                ):
-                    device_info_vars.add(node.target.id)
+        def _audit_scope(
+            stmts: list[ast.stmt],
+            scope_node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | None,
+            inherited_di_vars: set[str],
+            inherited_self_attrs: set[str],
+        ) -> None:
+            direct_nodes, child_scopes = _split_device_info_scope(stmts)
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Subscript) and _is_device_info_expr(
-                node.value, device_info_vars, class_names
-            ):
-                checker.log_error(
-                    "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
-                    py_path,
-                    node.lineno,
-                    "Deprecated mapping subscript '[...]' on DeviceInfo (HA 2026.12+, core#192323). "
-                    "Pass fields to DeviceInfo(...) at construction or read via typing_compat.device_info_to_dict().",
-                )
-            elif isinstance(node, ast.Attribute):
-                if (
-                    _is_device_info_class(node.value, class_names)
-                    and node.attr in DEPRECATED_DEVICE_INFO_CLASS_ATTRS
-                ):
-                    checker.log_error(
-                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
-                        py_path,
-                        node.lineno,
-                        f"Deprecated TypedDict attribute '.{node.attr}' on DeviceInfo class "
-                        "(HA 2026.12+, core#192323).",
+            if isinstance(scope_node, ast.ClassDef):
+                active_self_attrs: set[str] = set()
+                method_splits = [
+                    (ch, _split_device_info_scope(ch.body)[0])
+                    for ch in child_scopes
+                    if isinstance(ch, (ast.FunctionDef, ast.AsyncFunctionDef))
+                ]
+                for _ in range(2):
+                    _resolve_device_info_scope_bindings(
+                        direct_nodes, set(), inherited_di_vars, active_self_attrs, class_names
                     )
-                elif (
-                    _is_device_info_expr(node.value, device_info_vars, class_names)
-                    and node.attr in DEPRECATED_DEVICE_INFO_METHODS
-                ):
-                    checker.log_error(
-                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
-                        py_path,
-                        node.lineno,
-                        f"Deprecated mapping access '.{node.attr}' on DeviceInfo "
-                        "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
-                    )
-            elif isinstance(node, ast.Compare):
-                for op, comparator in zip(node.ops, node.comparators):
-                    if isinstance(op, (ast.In, ast.NotIn)) and _is_device_info_expr(
-                        comparator, device_info_vars, class_names
-                    ):
-                        checker.log_error(
-                            "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
-                            py_path,
-                            node.lineno,
-                            "Deprecated membership check ('in' / 'not in') on DeviceInfo "
-                            "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                    for method_node, method_direct in method_splits:
+                        _resolve_device_info_scope_bindings(
+                            method_direct,
+                            _extract_scope_param_names(method_node),
+                            inherited_di_vars,
+                            active_self_attrs,
+                            class_names,
                         )
-            elif isinstance(node, ast.Dict):
-                for key, val in zip(node.keys, node.values):
+            else:
+                active_self_attrs = set(inherited_self_attrs)
+
+            di_vars, plain_dict_vars = _resolve_device_info_scope_bindings(
+                direct_nodes,
+                _extract_scope_param_names(scope_node),
+                inherited_di_vars,
+                active_self_attrs,
+                class_names,
+            )
+
+            for node in direct_nodes:
+                if isinstance(node, ast.Subscript) and _is_device_info_expr(
+                    node.value, di_vars, active_self_attrs, class_names
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.lineno,
+                        "Deprecated mapping subscript '[...]' on DeviceInfo (HA 2026.12+, core#192323). "
+                        "Pass fields to DeviceInfo(...) at construction or read via typing_compat.device_info_to_dict().",
+                    )
+                elif isinstance(node, ast.Attribute):
                     if (
-                        key is None
-                        and val is not None
-                        and _is_device_info_expr(val, device_info_vars, class_names)
+                        _is_device_info_class(node.value, class_names)
+                        and node.attr in DEPRECATED_DEVICE_INFO_CLASS_ATTRS
                     ):
                         checker.log_error(
                             "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
                             py_path,
                             node.lineno,
-                            "Deprecated mapping unpacking '**' on DeviceInfo "
-                            "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                            f"Deprecated TypedDict attribute '.{node.attr}' on DeviceInfo class "
+                            "(HA 2026.12+, core#192323).",
                         )
-            elif isinstance(node, ast.Call):
-                for kw in node.keywords:
-                    if kw.arg is None and _is_device_info_expr(
-                        kw.value, device_info_vars, class_names
+                    elif (
+                        _is_device_info_expr(node.value, di_vars, active_self_attrs, class_names)
+                        and node.attr in DEPRECATED_DEVICE_INFO_METHODS
                     ):
                         checker.log_error(
                             "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
                             py_path,
                             node.lineno,
-                            "Deprecated mapping unpacking '**' on DeviceInfo "
+                            f"Deprecated mapping access '.{node.attr}' on DeviceInfo "
                             "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
                         )
-                if (
-                    isinstance(node.func, ast.Name)
-                    and node.func.id == "dict"
-                    and len(node.args) == 1
-                    and _is_device_info_expr(node.args[0], device_info_vars, class_names)
-                ):
-                    checker.log_error(
-                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
-                        py_path,
-                        node.lineno,
-                        "Direct dict(...) conversion on DeviceInfo invokes deprecated mapping methods "
-                        "on HA 2026.12+ (core#192323). Use typing_compat.device_info_to_dict() instead.",
-                    )
+                elif isinstance(node, ast.Compare):
+                    for lhs, op, comparator in zip(
+                        [node.left, *node.comparators], node.ops, node.comparators
+                    ):
+                        if isinstance(op, (ast.In, ast.NotIn)) and _is_device_info_expr(
+                            comparator, di_vars, active_self_attrs, class_names
+                        ):
+                            checker.log_error(
+                                "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                                py_path,
+                                node.lineno,
+                                "Deprecated membership check ('in' / 'not in') on DeviceInfo "
+                                "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                            )
+                        elif isinstance(op, (ast.Eq, ast.NotEq)) and (
+                            (
+                                _is_device_info_expr(lhs, di_vars, active_self_attrs, class_names)
+                                and _is_dict_expr(comparator, plain_dict_vars)
+                            )
+                            or (
+                                _is_dict_expr(lhs, plain_dict_vars)
+                                and _is_device_info_expr(
+                                    comparator, di_vars, active_self_attrs, class_names
+                                )
+                            )
+                        ):
+                            checker.log_error(
+                                "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                                py_path,
+                                node.lineno,
+                                "Deprecated mapping equality comparison ('==' / '!=') on DeviceInfo "
+                                "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                            )
+                elif isinstance(node, ast.Dict):
+                    for key, val in zip(node.keys, node.values):
+                        if (
+                            key is None
+                            and val is not None
+                            and _is_device_info_expr(val, di_vars, active_self_attrs, class_names)
+                        ):
+                            checker.log_error(
+                                "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                                py_path,
+                                node.lineno,
+                                "Deprecated mapping unpacking '**' on DeviceInfo "
+                                "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                            )
+                elif isinstance(node, ast.Call):
+                    for kw in node.keywords:
+                        if kw.arg is None and _is_device_info_expr(
+                            kw.value, di_vars, active_self_attrs, class_names
+                        ):
+                            checker.log_error(
+                                "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                                py_path,
+                                node.lineno,
+                                "Deprecated mapping unpacking '**' on DeviceInfo "
+                                "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                            )
+                    if (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id == "dict"
+                        and len(node.args) == 1
+                        and _is_device_info_expr(
+                            node.args[0], di_vars, active_self_attrs, class_names
+                        )
+                    ):
+                        checker.log_error(
+                            "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                            py_path,
+                            node.lineno,
+                            "Direct dict(...) conversion on DeviceInfo invokes deprecated mapping methods "
+                            "on HA 2026.12+ (core#192323). Use typing_compat.device_info_to_dict() instead.",
+                        )
+
+            child_inherited_vars = (
+                inherited_di_vars if isinstance(scope_node, ast.ClassDef) else di_vars
+            )
+            for child in child_scopes:
+                _audit_scope(
+                    child.body,
+                    child,
+                    child_inherited_vars,
+                    set() if isinstance(child, ast.ClassDef) else active_self_attrs,
+                )
+
+        _audit_scope(tree.body, None, set(), set())
 
     if len(checker.errors) == errors_before:
         checker.log_ok("No deprecated DeviceInfo mapping operations (HA 2026.12+, core#192323).")

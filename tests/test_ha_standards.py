@@ -127,12 +127,21 @@ def test_deprecated_device_info_mapping_rule_catches_violations(tmp_path):
     clean_file.write_text(
         "from homeassistant.helpers.device_registry import DeviceInfo\n"
         "from .typing_compat import device_info_to_dict\n\n"
-        "def build(entity, gw):\n"
+        "def fn_a(entity, gw):\n"
+        "    info = entity.device_info\n"
         "    entity._attr_device_info = DeviceInfo(\n"
         "        identifiers={('myhome', '1')},\n"
         "        via_device_id=gw.device_registry_id,\n"
         "    )\n"
-        "    return device_info_to_dict(entity.device_info).get('identifiers')\n",
+        "    assert device_info_to_dict(info) == {'identifiers': {('myhome', '1')}}\n"
+        "    return device_info_to_dict(entity.device_info).get('identifiers')\n\n"
+        "def fn_b():\n"
+        "    info = {'k': 1}\n"
+        "    return info['k']\n\n"
+        "class CleanHolder:\n"
+        "    def __init__(self):\n"
+        "        self.info = {'k': 1}\n"
+        "        _ = self.info['k']\n",
         encoding="utf-8",
     )
     checker_clean = StandardsChecker()
@@ -142,8 +151,8 @@ def test_deprecated_device_info_mapping_rule_catches_violations(tmp_path):
     bad_file = tmp_path / "bad_device_info.py"
     bad_file.write_text(
         "from homeassistant.helpers import device_registry as dr\n"
-        "from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo as DI\n\n"
-        "def bad_ops(self, switch):\n"
+        "from homeassistant.helpers.device_registry import ChildDeviceInfo, DeviceInfo, DeviceInfo as DI\n\n"
+        "def bad_ops(self, switch, e):\n"
         "    self._attr_device_info['via_device_id'] = 'gw'\n"
         "    _ = switch.device_info['name']\n"
         "    _ = (switch.device_info or {}).get('identifiers')\n"
@@ -157,13 +166,57 @@ def test_deprecated_device_info_mapping_rule_catches_violations(tmp_path):
         "    local_di = DI(identifiers={('myhome', '1')})\n"
         "    _ = local_di['identifiers']\n"
         "    _ = dict(switch.device_info)\n"
-        "    _ = {**switch.device_info}\n",
+        "    _ = {**switch.device_info}\n"
+        "    _ = e.device_info == {'name': 'x'}\n"
+        "    _ = e.device_info != dict(name='x')\n"
+        "    self.info = DeviceInfo(identifiers={('myhome', '2')})\n"
+        "    self.info['x'] = 'y'\n\n"
+        "class BadHolder:\n"
+        "    def __init__(self):\n"
+        "        self.cached = DeviceInfo(identifiers={('myhome', '3')})\n\n"
+        "    def read_cached(self):\n"
+        "        return self.cached.get('name')\n",
         encoding="utf-8",
     )
     checker_bad = StandardsChecker()
     check_no_deprecated_device_info_mapping(checker_bad, target_dir=tmp_path)
-    assert len(checker_bad.errors) == 13, f"Expected 13 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
+    assert len(checker_bad.errors) == 17, f"Expected 17 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
     assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_bad.errors)
+
+
+def test_deprecated_device_info_mapping_scope_isolation(tmp_path):
+    """Verify local variable and self.<attr> tracking do not leak across scopes or plain-dict shadows."""
+    scoped_file = tmp_path / "scoped.py"
+    scoped_file.write_text(
+        "from homeassistant.helpers.device_registry import DeviceInfo\n\n"
+        "def fn_a(e):\n"
+        "    info = e.device_info\n"
+        "    return info\n\n"
+        "def fn_b():\n"
+        "    info = {'k': 1}\n"
+        "    _ = info['k']\n"
+        "    return info.get('k')\n\n"
+        "def outer(e):\n"
+        "    info = e.device_info\n"
+        "    def inner_shadow():\n"
+        "        info = {'k': 2}\n"
+        "        return info['k']\n"
+        "    return info, inner_shadow()\n\n"
+        "class DeviceOwner:\n"
+        "    def __init__(self):\n"
+        "        self.info = DeviceInfo(identifiers={('myhome', '1')})\n\n"
+        "    def unrelated_local(self):\n"
+        "        info = {'k': 3}\n"
+        "        return info['k']\n\n"
+        "class UnrelatedOwner:\n"
+        "    def __init__(self):\n"
+        "        self.info = {'k': 4}\n"
+        "        _ = self.info['k']\n",
+        encoding="utf-8",
+    )
+    checker = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker, target_dir=tmp_path)
+    assert not checker.errors, f"Unexpected cross-scope leakage errors: {checker.errors}"
 
 
 def test_marketplace_manifest_and_workflow_standards():
