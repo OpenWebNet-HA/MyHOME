@@ -782,10 +782,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         knob lets a setpoint write compensate it on the first write after a restart, instead of
         waiting for the Dimension 12/14 echo of a write to derive it (#890). Not for the central
         unit, a zone whose knob already reported, an actuator or probe address, or a zone behind
-        an interface the gateway does not route. A silent-zone gateway (``F455``,
-        ``SILENT_ZONE_POLL``) is excluded: a single-dimension read on a probe-less channel holds
-        its command session ~9 s before NACKing (#674), so there the knob read is folded into the
-        serial silent-zone poll (``_silent_zone_reads``) instead of a point-to-point request.
+        an interface the gateway does not route. A silent-zone gateway (``SILENT_ZONE_POLL``:
+        the ``F455``, and the ``MH201`` since #932) is excluded: on an F455 a single-dimension
+        read on a probe-less channel holds its command session ~9 s before NACKing (#674), so
+        there the knob read is folded into the serial silent-zone poll (``_silent_zone_reads``)
+        instead of a point-to-point request.
 
         This deliberately ignores the one-shot send guard (``_local_offset_read_sent``): a zone
         that has sent the read but not yet heard the answer still owes its knob, so
@@ -1613,7 +1614,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 await waiting
         await asyncio.sleep(grace)
         if getattr(self._gateway_handler, "silent_zone_poll_needed", False) is not True:
-            return  # not an F455 after all, or its zones are another gateway's to ask
+            return  # not a silent-zone gateway after all, or its zones are another gateway's to ask
         reads = self._silent_zone_reads()
         if not reads:
             return  # the zone reported its temperature, setpoint, mode and an actuator on its own

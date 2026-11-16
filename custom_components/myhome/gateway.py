@@ -250,7 +250,15 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 # holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
 # The gate is read when the poll runs (the in-band identity may correct the model after the
 # entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
-SILENT_ZONE_POLL = frozenset({"F455"})
+# The MH201 (#932) is listed for its setpoint: its zones keep the temperature poll on add
+# (ZONE_TEMPERATURE_POLL above), but nothing asked for dimension 12 / 14, so a zone that had not
+# changed since the restart had no target temperature. A physical MH201 3.6.43 (standalone, zones
+# 1-4) answered *#4*2*12## with *#4*2*12*0200*3## and *#4*#2*14## with *#4*2*14*0200*3##, and with
+# the MH201 in this table all four zones had their setpoint after a full restart without anyone
+# touching a thermostat (the reporter's plant, #932; the MH201 is catalogued but not emulated in
+# the oracle). As on the F455, the knob read (*#4*Z*13##) then goes out inside this serial poll
+# and no longer when the zone is added (``_local_offset_read_pending`` in climate.py).
+SILENT_ZONE_POLL = frozenset({"F455", "MH201"})
 SILENT_ZONE_GRACE = 120.0
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS

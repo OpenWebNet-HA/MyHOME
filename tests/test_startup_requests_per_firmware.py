@@ -215,14 +215,20 @@ def test_which_gateways_need_a_zone_temperature_poll(hass, model, expected):
     assert _handler(hass, model).zone_temperature_poll_needed is expected
 
 
-@pytest.mark.parametrize("model", ["MH201", "MH200"])
-async def test_scs_only_zone_asks_for_its_temperature(hass, model):
+@pytest.mark.parametrize(
+    ("model", "asked"),
+    [
+        ("MH201", ["*#4*3*0##"]),  # its knob read is part of the silent-zone poll since #932
+        ("MH200", ["*#4*3*0##", "*#4*3*13##"]),
+    ],
+)
+async def test_scs_only_zone_asks_for_its_temperature(hass, model, asked):
     handler = _handler(hass, model)
     handler.send_status_request = AsyncMock()
     zone = _zone(hass, handler)
     assert zone._poll_on_add is True
     await zone.async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*3*0##", "*#4*3*13##"]
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == asked
 
 
 @pytest.mark.parametrize(
@@ -528,7 +534,8 @@ async def test_mh201_leaves_the_general_request_out_and_polls_the_captured_zone(
     zone = _zone(hass, handler, where="4")
     await zone.async_restore_last_state(State("climate.zone_4", "heat", {"current_temperature": 20.0}))
     await zone.async_update()
-    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*4*0##", "*#4*4*13##"]
+    # The knob read (*#4*4*13##) is part of the silent-zone poll on an MH201 since #932.
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*4*0##"]
     (captured,) = [f["raw"] for f in mh201_trace["frames"] if f["raw"] == "*#4*4*0*0241##"]
     zone.handle_event(OWNHeatingEvent(captured))
     assert zone.current_temperature == 24.1

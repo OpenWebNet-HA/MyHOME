@@ -162,7 +162,7 @@ def test_f455_keeps_the_issue_674_gates(hass) -> None:
     assert handler.general_zone_request_refused is False
     assert handler.actuator_request_refused is False
     assert "*#4*0##" in handler._discovery_frames()
-    assert SILENT_ZONE_POLL == {"F455"} and SILENT_ZONE_GRACE == 120.0
+    assert SILENT_ZONE_POLL == {"F455", "MH201"} and SILENT_ZONE_GRACE == 120.0  # the MH201: #932
 
 
 def test_capture_backs_the_f455_refusing_the_zone_actuator_and_humidity_reads() -> None:
