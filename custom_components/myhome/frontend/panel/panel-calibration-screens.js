@@ -1212,25 +1212,32 @@ function summaryScreen(screen, ctx, tx, n, values) {
  */
 /**
  * Of the other covers on the profile (Home Assistant's preview), those whose times
- * updating it changes, and apart those that lose their check (`loses_check`). Only the source updates its
- * profile: they are all covers that follow it.
+ * updating it changes (`times`); those whose times stay but whose intermediate positions change, the model or a value
+ * of its geometry being different (`positions`, never one already in `times`); and apart those that lose their check
+ * (`loses_check`). Only the source updates its profile: they are all covers that follow it.
  */
 export function sharedImpact(preview, ...self) {
   const others = (preview?.followers || []).filter((item) => !self.includes(item.entity_id));
   const changed = (item) => ["opening", "closing"].some((direction) => item.changes?.[direction]
     && item.changes[direction].before !== item.changes[direction].after);
-  return { times: others.filter(changed), checks: others.filter((item) => item.loses_check === true) };
+  // Home Assistant lists the geometry whenever there are slats before or after, changed or not.
+  const reshaped = (item) => item.model_before !== item.model_after
+    || Object.values(item.geometry_changes || {}).some((value) => value?.before !== value?.after);
+  const times = others.filter(changed);
+  return { times, positions: others.filter((item) => !times.includes(item) && reshaped(item)),
+    checks: others.filter((item) => item.loses_check === true) };
 }
 
 export function sharedConfirm(screen, ctx, target) {
   const { t, local = {}, cover, view } = ctx, preview = local.sharedConfirm;
   if (target !== "profile_update" || !preview) return screen;
-  const { times, checks } = sharedImpact(preview, cover?.entity_id, view?.entity_id);
+  const { times, positions, checks } = sharedImpact(preview, cover?.entity_id, view?.entity_id);
   // The names the panel shows; Home Assistant's own only when it is not the entity id.
   const names = (items) => items.map((item) => ctx.coverName?.(item.entity_id) || (item.name && item.name !== item.entity_id ? item.name : null) || t("wiz_T679")).join(", ");
-  // For example: «Cambiano i tempi delle tapparelle A, B. Perderà la verifica la tapparella B.»
-  // The names said as covers, one («della tapparella X») or more («delle tapparelle X, Y»).
+  // For example: «Cambiano i tempi delle tapparelle A, B. Cambiano le posizioni intermedie della tapparella C.
+  // Perderà la verifica la tapparella B.» The names said as covers, one («della tapparella X») or more («delle tapparelle X, Y»).
   const text = [times.length ? fill(t(times.length === 1 ? "wiz_T709_one" : "wiz_T709"), { names: names(times) }) : "",
+    positions.length ? fill(t(positions.length === 1 ? "wiz_T721_one" : "wiz_T721"), { names: names(positions) }) : "",
     checks.length ? fill(t(checks.length === 1 ? "wiz_T710_one" : "wiz_T710"), { names: names(checks) }) : ""].filter(Boolean).join(" ");
   screen.notices.push({ tone: "info", result: true, text: text || t("wiz_T678") });
   screen.actions = screen.actions.map((action) => action.id === "save" ? { ...action, label: fill(t("wiz_T675"), { name: cover?.profile?.name ?? "" }) } : action);

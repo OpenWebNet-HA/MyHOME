@@ -195,7 +195,7 @@ describe("names with their type", async () => {
     "cal_D2_title_unsure", "wiz_T015", "wiz_T029", "wiz_T604", "wiz_T052", "wiz_T203", "wiz_T711", "wiz_T712", "wiz_T080", "wiz_T205", "wiz_T713",
     "wiz_T714", "wiz_T689", "wiz_T715", "wiz_T180", "wiz_T182", "wiz_T185", "wiz_T197", "wiz_T210", "wiz_T226", "wiz_T653", "wiz_T228", "wiz_T230",
     "wiz_T489", "wiz_T235", "wiz_T490", "wiz_T287", "wiz_T314", "wiz_T315", "wiz_T288", "wiz_T316", "wiz_T317", "wiz_T321", "wiz_T506", "wiz_T565",
-    "wiz_T566", "wiz_T567", "wiz_T695", "wiz_T696", "wiz_T697", "wiz_T709", "wiz_T709_one", "wiz_T710", "wiz_T710_one", "wiz_T536", "wizNoProfileBody",
+    "wiz_T566", "wiz_T567", "wiz_T695", "wiz_T696", "wiz_T697", "wiz_T709", "wiz_T709_one", "wiz_T721", "wiz_T721_one", "wiz_T710", "wiz_T710_one", "wiz_T536", "wizNoProfileBody",
     "wizSaveCoverOnly", "wizSavedCover", "wiz_T405", "calAssignSlatsNoYesNamed", "calAssignSlatsYesNoNamed", "cal_D0_warn_source_names",
     "cal_D0_warn_source_names_one", "cal_D0_warn_source_checks", "cal_D0_warn_source_checks_one", "wiz_T169", "wiz_T620", "wiz_T621", "wiz_T436",
     "wiz_T437", "wiz_T438", "wiz_T708", "wiz_T587", "wiz_T675", "calTabStatus_profile_adapted"];
@@ -286,6 +286,10 @@ describe("names with their type", async () => {
       ["Cambiano i tempi della tapparella Office. Perderà la verifica la tapparella Office.", "Conferma e salva nel profilo «tall»"]);
     assert.deepEqual(notice([{ entity_id: "cover.b", changes: changed, loses_check: true }, { entity_id: "cover.c", changes: changed, loses_check: true }])[0],
       "Cambiano i tempi delle tapparelle Office, Kitchen. Perderanno la verifica le tapparelle Office, Kitchen.");
+    // The intermediate positions after the times and before the check; a cover whose times change is said with the times only.
+    const reshaped = { model_before: "slat_roll", model_after: "slat_roll", geometry_changes: { opening_roll: { before: 1, after: 1.4 } } };
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }, { entity_id: "cover.c", ...reshaped, loses_check: true }])[0],
+      "Cambiano i tempi della tapparella Office. Cambiano le posizioni intermedie della tapparella Kitchen. Perderà la verifica la tapparella Kitchen.");
     assert.equal(text.fill(it.calAssignSlatsYesNoNamed, { cover: "Door" }), "La tapparella Door ha le lamelle, il profilo no: vicino alla chiusura le posizioni possono essere meno precise. Assegna comunque?");
   });
 

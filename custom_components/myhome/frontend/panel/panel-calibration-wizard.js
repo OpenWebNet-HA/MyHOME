@@ -1452,10 +1452,10 @@ export class CalibrationWizard {
     if (action.target === "profile_update" && !local.sharedConfirm) {
       const gateway = this._gateway, preview = await gateway.previewShared?.();
       if (gateway !== this._gateway) return;
-      // Asked only when other covers change; otherwise «Salva nel profilo» saves at once (the preview's
-      // confirmation is the gateway's).
+      // Asked only when other covers change (their times, their intermediate positions, their check); otherwise
+      // «Salva nel profilo» saves at once (the preview's confirmation is the gateway's).
       const impact = preview ? screens.sharedImpact(preview, this._item()?.cover.entity_id, gateway.view?.entity_id) : null;
-      if (!impact || impact.times.length || impact.checks.length) {
+      if (!impact || impact.times.length || impact.positions.length || impact.checks.length) {
         if (preview) local.sharedConfirm = preview;
         return this._render();
       }

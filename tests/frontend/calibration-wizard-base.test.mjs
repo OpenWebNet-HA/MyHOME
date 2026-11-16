@@ -1164,6 +1164,72 @@ describe("updating the profile from its source", async () => {
     assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]]);
   });
 
+  /**
+   * Home Assistant's preview of the update, reshaped for each follower (`shape(item)`): the fake changes every time
+   * and keeps the check of a verified cover, so each case says what it changes. Returns the restore.
+   */
+  function previewAs(backend, shape) {
+    const original = backend.hass.callWS;
+    backend.hass.callWS = async (message) => {
+      const result = await original(message);
+      if (message.action === "preview_save") for (const item of result.save_preview.followers) shape(item);
+      return result;
+    };
+    return () => { backend.hass.callWS = original; };
+  }
+  const same = { opening: { before: 22, after: 22, scaled: false, overridden: false }, closing: { before: 21.6, after: 21.6, scaled: false, overridden: false } };
+  const geometry = (roll) => ({ slat_time_s: { before: 3, after: 3, scaled: false }, opening_roll: { before: 1, after: roll, scaled: false },
+    closing_roll: { before: 1, after: 1, scaled: false } });
+  const notices = (wiz) => [...wiz().querySelectorAll(".wiz-notice")].map((notice) => notice.textContent.replace(/ /g, " ")).join(" | ");
+
+  test("times the same but the intermediate positions changed (the roll, or the model), no check saved: the first Save asks, naming them; the second saves", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz, press } = context;
+    await summary(context, "cover.living_one");
+    // Kitchen shutter 2: a roll changes; Living room shutter 3: the model only.
+    const restore = previewAs(backend, (item) => Object.assign(item, { changes: structuredClone(same), loses_check: false },
+      item.entity_id === "cover.living_three" ? { model_before: "linear_time", model_after: "slat_roll", geometry_changes: geometry(1) }
+        : { model_before: "slat_roll", model_after: "slat_roll", geometry_changes: geometry(1.4) }));
+    try {
+      await press("save"); await tick(4);
+    } finally { restore(); }
+    assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save"], "not saved at the first click");
+    const said = notices(wiz);
+    assert.match(said, /Cambiano le posizioni intermedie delle tapparelle Kitchen shutter 2, Living room shutter 3\./);
+    assert.doesNotMatch(said, /Cambiano i tempi|Perderà la verifica|Perderanno la verifica/);
+    assert.match(wiz().querySelector('.wiz-actions [data-wiz="save"]').textContent, /Conferma e salva nel profilo «tall_two_leaf»/);
+    await press("save"); await tick(6);
+    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]], "saved at «Conferma»");
+  });
+
+  test("the geometry listed but the same, times the same, no check saved: «Salva nel profilo» saves at once, as before", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz, press } = context;
+    await summary(context, "cover.living_one");
+    const restore = previewAs(backend, (item) => Object.assign(item, { changes: structuredClone(same), loses_check: false,
+      model_before: "slat_roll", model_after: "slat_roll", geometry_changes: geometry(1) }));
+    try {
+      await press("save"); await tick(6);
+    } finally { restore(); }
+    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]]);
+    assert.equal(wiz()?.querySelector('[data-wiz="shared-cancel"]') ?? null, null, "no confirmation");
+  });
+
+  test("times and intermediate positions both changed: only the sentence of the times, the cover not named twice", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz, press } = context;
+    await summary(context, "cover.living_one");
+    const restore = previewAs(backend, (item) => Object.assign(item, { loses_check: false,
+      model_before: "slat_roll", model_after: "slat_roll", geometry_changes: geometry(1.4) }));
+    try {
+      await press("save"); await tick(4);
+    } finally { restore(); }
+    assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save"]);
+    const said = notices(wiz);
+    assert.match(said, /Cambiano i tempi delle tapparelle Kitchen shutter 2, Living room shutter 3\./);
+    assert.doesNotMatch(said, /posizioni intermedie/);
+  });
+
   for (const [label, data, entity] of [
     ["a cover that follows a profile measured on another one", () => sourceData(), "cover.kitchen_two"],
     ["a cover that follows a profile made by hand (no source)", () => sourceData({ origin: null }), "cover.living_one"],
@@ -1193,6 +1259,8 @@ describe("updating the profile from its source", async () => {
     assert.equal(i18n.it.wiz_T708, "Questa tapparella ora usa un profilo suo; le altre restano sul profilo «{old}».");
     assert.deepEqual([i18n.it.wiz_T709, i18n.it.wiz_T710], ["Cambiano i tempi delle tapparelle {names}.", "Perderanno la verifica le tapparelle {names}."]);
     assert.deepEqual([i18n.en.wiz_T709, i18n.en.wiz_T710], ["Times change for the covers {names}.", "The covers {names} will lose their check."]);
+    assert.deepEqual([i18n.it.wiz_T721, i18n.it.wiz_T721_one], ["Cambiano le posizioni intermedie delle tapparelle {names}.", "Cambiano le posizioni intermedie della tapparella {names}."]);
+    assert.deepEqual([i18n.en.wiz_T721, i18n.en.wiz_T721_one], ["Intermediate positions change for the covers {names}.", "Intermediate positions change for the cover {names}."]);
     assert.ok(i18n.it.profileError_profile_not_source && i18n.en.profileError_profile_not_source);
     // Gone now that only the source updates its profile: the update offered to a follower and its notices. The old
     // refusal of a follower without its travel stays among the shared `profileError_*` texts the profile dialogs read.
