@@ -4396,9 +4396,9 @@
     "dimension_values": [
       "155"
     ],
-    "source": "encyclopedia",
+    "source": "mcp-draft",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Dimension 20 proportional 0-10 V 55% active output (code 155 in 101..200) on zone 1 actuator 3 (MyHOME#908)",
+    "mcp_notes": "Thermoregulation: Dimension 20 proportional 0-10 V 55% active output (code 155 in 101..200) on zone 1 actuator 3 (MyHOME#908). Not in the WHO 4 PDF or the Encyclopedia and in no plant capture: from the gateway firmware translation. own-firmware-oracle emulation (local probe 2026-11-15): MyHomeServer1 028206, F461 020011, MH202 010024 and F459 020105 emit this frame for the bus telegram B7 81 33 B7; MH200N 010108 emits nothing",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
@@ -4416,9 +4416,9 @@
     "dimension_values": [
       "200"
     ],
-    "source": "encyclopedia",
+    "source": "mcp-draft",
     "mcp_valid": true,
-    "mcp_notes": "Thermoregulation: Dimension 20 write setting proportional 0-10 V 100% output (code 200) on zone 7 actuator 1 (MyHOME#908)",
+    "mcp_notes": "Thermoregulation: Dimension 20 write setting proportional 0-10 V 100% output (code 200) on zone 7 actuator 1 (MyHOME#908). Not in the WHO 4 PDF or the Encyclopedia and in no plant capture: the #20 form with 200 is the maintainer's reading of the MyHomeServer1 firmware (OWNd#174), not reproduced in the own-firmware-oracle emulation, which emits the status form *#4*1#3*20*200## for the bus telegram B7 81 33 E4; the captured #20 writes in this corpus carry 0, 5, 6, 8 and 100, none above 100",
     "roundtrip": true,
     "_file": "who04_thermo.yaml"
   },
