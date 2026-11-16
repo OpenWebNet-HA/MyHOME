@@ -8056,7 +8056,7 @@
     "_file": "who22_sound_diffusion.yaml"
   },
   {
-    "id": "sounddiff.cmd.turn_on_with_source.area1.point1.source1",
+    "id": "sounddiff.cmd.turn_on_with_source.area1.point1.output_area1",
     "frame": "*22*1#4#1*3#1#1##",
     "direction": "command",
     "who": 22,
@@ -8068,7 +8068,7 @@
     ],
     "source": "encyclopedia",
     "mcp_valid": true,
-    "mcp_notes": "Sound Diffusion: Atomic speaker turn-on with stereo multimedia type (4) and source 1 on speaker 3#1#1 (Encyclopedia functional/who-22-sound-diffusion)",
+    "mcp_notes": "Sound Diffusion: Atomic speaker turn-on with stereo multimedia type (4) and output area 1 on speaker 3#1#1 (WHO 22 PDF version 1.1: <area> in section 1.1, frames in 3.1.2 and 3.2.2; Encyclopedia functional/who-22-sound-diffusion). Not a source: in trace who22_myhomeserver1_f500_h4562 the same 1#4#1 is followed by *#22*3#7#5*12*1*1## (audio channel 1) for one zone and by *#22*3#7#6*12*1*2## (audio channel 2) for the other.",
     "roundtrip": true,
     "builder": {
       "class": "OWNSoundDiffusionCommand",
