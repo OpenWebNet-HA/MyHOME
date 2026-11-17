@@ -234,8 +234,8 @@
           "source_4_name": "Source 4 — nom de l'appareil raccordé à l'entrée S4 de la matrice (laisser vide si rien n'est connecté)",
           "source_4_tuner": "La source 4 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "address": "Adresse IP",
-          "name": "Modèle de passerelle",
           "password": "Mot de passe",
+          "config_file_path": "Chemin du fichier de configuration",
           "command_worker_count": "Nombre de session de commande simultanées",
           "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu",
           "broadcast_resync": "Interroger les adresses de groupe/zone/générale après une fenêtre de silence",
@@ -266,13 +266,17 @@
           "primary_gateway": "Passerelle principale",
           "delegated_whos": "Sous-systèmes délégués",
           "ignored_addresses": "Adresses ignorées",
-          "tuner_pictures": "Images des tuners"
+          "tuner_pictures": "Images des tuners",
+          "send_explicit_stop": "Forcer l'arrêt du volet en fin de course",
+          "explicit_stop_margin": "Délai de sécurité avant l'arrêt forcé (secondes)"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrez à partir du matériel, pas au jugé : si la sortie ligne de ce décodeur alimente un module BTicino Ingresso RCA (L/N/NT4560) ou Controllo Stereo (L4561), augmentez le Pre-Gain pendant la lecture jusqu'à ce que la led de signal de ce module clignote en orange — ni fixe vert (signal trop faible) ni fixe rouge/orange (écrêtage). Câblez toujours la sortie ligne fixe (« OUT ») du décodeur, jamais une sortie casque/AUX dépendante du volume : un second étage de gain incontrôlé à cet endroit provoque exactement la distorsion contre laquelle le guide de dépannage BTicino met en garde.",
           "delegated_whos": "Rôle secondaire uniquement : sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale.",
           "ignored_addresses": "Ignore définitivement les adresses indiquées (ex. 1/74, 1/74#4#01) : ignore la découverte, supprime les entités et désactive le suivi des pannes. Séparez les entrées par des retours à la ligne ou des virgules.",
           "tuner_pictures": "Une entrée MHz=URL par ligne (ex. 96.2=/local/radio/one.png) : l'image affichée tant qu'un tuner est sur cette fréquence. Vos propres images ; aucune n'est fournie.",
+          "send_explicit_stop": "À activer si vos volets continuent de pousser contre leur butée après être arrivés en haut ou en bas (cas fréquent avec des actionneurs génériques qui ne signalent jamais que le volet s'est réellement arrêté). Envoie une commande d'arrêt sur le bus une fois le temps de course du volet écoulé. Désactivé par défaut ; un volet précis peut surcharger ce réglage en YAML.",
+          "explicit_stop_margin": "Temps supplémentaire laissé au volet, en plus de son temps de course habituel, avant d'envoyer l'arrêt forcé ci-dessus — pour être sûr qu'il a bien fini sa course. 2 secondes par défaut.",
           "command_worker_count": "Recommandé pour la {model} : {session_default}. Elle accepte au plus {session_limit} session(s) de commande, et chacune, avec la session d'événements, occupe l'une de ses rares connexions, dont l'application Legrand/BTicino et d'autres clients ont aussi besoin. N'augmentez que si les commandes s'accumulent."
         }
       }
@@ -294,7 +298,7 @@
       "gateway_has_dependents": "D'autres passerelles utilisent cette passerelle comme principale. Faites-les d'abord pointer vers une autre principale (ou rendez-les autonomes).",
       "secondary_requires_shared_topology": "Les rôles secondaire et veille active nécessitent que la topologie du bus soit définie sur Partagé.",
       "multiple_shared_primaries": "Une autre passerelle est déjà configurée comme passerelle principale pour ce bus partagé. Sélectionnez Secondaire ou Veille active.",
-      "duplicate_decoder_source": "Chaque décodeur doit être connecté à une entrée source de matrice différente.",
+      "duplicate_decoder_source": "Chaque décodeur doit être connecté à une entrée source de matrice diff��rente.",
       "invalid_ignored_address": "Format d'adresse ignorée invalide (attendu 'WHO/WHERE', ex. '1/74' ou '1/74#4#01')"
     }
   },
@@ -333,7 +337,7 @@
         },
         "duration": {
           "name": "Durée",
-          "description": "Durée en minutes (1–255) de l'envoi automatique de la puissance instantanée ; appelez myhome.stop_sending_instant_power pour arrêter l'envoi plus tôt."
+          "description": "Pendant combien de temps la puissance instantanée va-t-elle être automatiquement envoyée en minutes (0 pour arrêter)."
         }
       }
     },
@@ -384,10 +388,6 @@
         "gateway": {
           "name": "Passerelle",
           "description": "Adresse MAC de la passerelle (facultatif ; par défaut pour toutes les passerelles actives)."
-        },
-        "force": {
-          "name": "Forcer le balayage",
-          "description": "Force le balayage de tous les sous-systèmes (y compris Alarme et Énergie) quelles que soient les restrictions du profil de la passerelle, y compris les requêtes générales normalement ignorées par le firmware."
         }
       }
     },
@@ -415,7 +415,7 @@
       "fields": {
         "station": {
           "name": "Station",
-          "description": "Numéro d'emplacement mémoire (1–15). Les emplacements 6–15 nécessitent la prise en charge WHO = 22 par la passerelle (1–5 sur les passerelles WHO = 16 uniquement)."
+          "description": "Numéro d'emplacement mémoire (1–5 sur F500, jusqu'à 1–15 sur F500N)."
         }
       }
     },
@@ -474,6 +474,10 @@
     "acknowledge_cover_fault": {
       "name": "Acquitter le défaut de portail ou de porte de garage",
       "description": "Efface le défaut verrouillé lorsqu'un portail ou une porte de garage n'a pas atteint l'état attendu après une impulsion (obstacle ou inversion possible). Seul un utilisateur autorisé présent au domicile peut l'acquitter ; jusque-là, la fermeture depuis Home Assistant reste bloquée."
+    },
+    "calibrate_cover_manual": {
+      "name": "Calibrer manuellement le temps de course du volet",
+      "description": "Chronomètre la course montante et descendante d'un volet sans le faire bouger depuis Home Assistant : actionnez-le avec son bouton poussoir physique, une fois en pleine ouverture et une fois en pleine fermeture, et l'intégration enregistre les deux durées mesurées."
     }
   },
   "issues": {
@@ -486,7 +490,7 @@
       "description": "La passerelle a signalé un code de type d'appareil matériel ({code}) inconnu pour l'intégration MyHOME. Veuillez cliquer sur « En savoir plus » pour ouvrir un ticket GitHub et joindre une trace de diagnostic afin que nous puissions ajouter la prise en charge de ce modèle."
     },
     "incompatible_decoder_platform": {
-      "title": "Le décodeur {decoder} utilise une intégration non prise en charge ({platform})"
+      "title": "Le d��codeur {decoder} utilise une intégration non prise en charge ({platform})"
     },
     "gateway_authentication_failed": {
       "title": "Échec de l'authentification de la passerelle MyHOME {gateway}",
@@ -576,7 +580,7 @@
       "message": "{name} : {cause}"
     },
     "calibration_no_stop_status": {
-      "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
+      "message": "{name} : aucun état d'arr��t de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
     "calibration_actuator_cutoff_open": {
       "message": "{name} : la course d'ouverture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
@@ -585,7 +589,7 @@
       "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
     },
     "cover_reports_position": {
-      "message": "{name} signale sa position (Dimension 10 / advanced: true) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, définissez advanced: false ou retirez advanced: true dans myhome.yaml."
+      "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"
@@ -595,6 +599,12 @@
     },
     "calibration_implausible_run_up": {
       "message": "{name} : course d'ouverture invraisemblable de {seconds} s ; non enregistrée"
+    },
+    "manual_calibration_timeout": {
+      "message": "{name} : aucune course manuelle détectée en {timeout} s ; appuyez sur le bouton poussoir physique pour faire monter puis descendre complètement le volet"
+    },
+    "manual_calibration_incomplete": {
+      "message": "{name} : la calibration manuelle nécessite une course complète de fermeture et une d'ouverture"
     },
     "travel_time_missing": {
       "message": "Au moins travel_time, travel_time_down/up ou min_motor_pulse doit être indiqué"
