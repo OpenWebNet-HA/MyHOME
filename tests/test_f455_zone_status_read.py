@@ -394,5 +394,126 @@ async def test_a_dropped_read_is_repeated_only_if_its_own_answer_is_missing(hass
     assert _queued(handler).count(read) == (2 if repeated else 1)
 
 
+# ------------------------------------------------------------------ dimension 19 answered in the middle of the poll
+
+
+def _zone_4_with_a_fan_coil_on_actuator_1(hass, answers: dict[str, str], dropped: list[str] | None = None):
+    """Zone 4 after a restart, actuators 1 and 2 remembered, with the gateway's own queue of zone requests.
+
+    Actuator 1 answers with a fan coil value, so the zone asks for dimension 19 itself
+    (``_ask_fan_coil_sides``). The poll lets that request through before its next read
+    (``wait_for_zone_requests``), which is the read of actuator 2. ``dropped`` are reads the
+    #886 guard drops once, without their answer.
+    """
+    handler = _handler(hass, "F455")
+    zone = _zone(hass, handler, "4")
+    sent: list[str] = []
+    waiting: list[tuple[str, int]] = []
+    handler.request_zone_dimension = lambda where, dimension: waiting.append((where, dimension))
+
+    def _answer(frame: str) -> None:
+        sent.append(frame)
+        if frame in answers:
+            zone.handle_event(OWNHeatingEvent(answers[frame]))
+
+    async def _own_requests() -> None:
+        while waiting:
+            where, dimension = waiting.pop(0)
+            if dimension == 19:  # the fan speed read (11) is not part of this
+                _answer(f"*#4*{where}*19##")
+
+    async def _send(command):
+        frame = str(command)
+        written = hass.loop.create_future()
+        if dropped and frame in dropped:
+            dropped.remove(frame)
+            sent.append(frame)
+            written._gateway_desync = True
+            written.cancel()
+            return written
+        _answer(frame)
+        written.set_result(0.0)
+        return written
+
+    handler.wait_for_zone_requests = _own_requests
+    _ready(handler, side_effect=_send)
+    return zone, sent
+
+
+async def test_dimension_19_is_asked_again_after_a_later_actuator_took_the_lead(hass) -> None:
+    """Review of the pull request: a fan coil on actuator 1 (off), a valve on actuator 2 (off), a third one runs.
+
+    The zone's own dimension 19 request leaves before the read of actuator 2 and says that the
+    heating side is active. The first "off" of actuator 2 then takes the lead and the zone is
+    idle. The poll's last read must not be left out for the earlier answer.
+    """
+    answers = {"*#4*4#1*20##": "*#4*4#1*20*5##", "*#4*4*19##": "*#4*4*19*0*1##", "*#4*4#2*20##": "*#4*4#2*20*0##"}
+    zone, sent = _zone_4_with_a_fan_coil_on_actuator_1(hass, answers)
+    await zone.async_restore_last_state(_saved(actuators={"1": "off", "2": "off"}))
+    _reported(zone)
+    await zone._poll_if_silent(grace=0)
+    assert sent == ["*#4*4#1*20##", "*#4*4*19##", "*#4*4#2*20##", "*#4*4*19##"]
+    assert zone._zone_active is True and zone._active_source == "zone"
+    assert zone.hvac_action == HVACAction.HEATING
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+
+
+@pytest.mark.parametrize(
+    ("actuators", "answers"),
+    [
+        # One actuator: the zone's own request is still waiting when the poll reaches its last read.
+        ({"1": "off"}, {"*#4*4#1*20##": "*#4*4#1*20*5##", "*#4*4*19##": "*#4*4*19*0*1##"}),
+        # Two actuators: the zone's own request was answered before the read of actuator 2, and
+        # that read brought no report of actuator 2.
+        ({"1": "off", "2": "off"}, {"*#4*4#1*20##": "*#4*4#1*20*5##", "*#4*4*19##": "*#4*4*19*0*1##"}),
+    ],
+)
+async def test_dimension_19_is_not_asked_twice_while_it_leads(hass, actuators, answers) -> None:
+    zone, sent = _zone_4_with_a_fan_coil_on_actuator_1(hass, answers)
+    await zone.async_restore_last_state(_saved(actuators=actuators))
+    _reported(zone)
+    await zone._poll_if_silent(grace=0)
+    await zone._gateway_handler.wait_for_zone_requests()  # the gateway's own run, where the poll left it
+    assert sent.count("*#4*4*19##") == 1
+    assert zone._active_source == "zone" and zone.hvac_action == HVACAction.HEATING
+
+
+async def test_an_actuator_read_dropped_after_dimension_19_answered_is_repeated(hass) -> None:
+    """Dimension 19 gives the zone's state, not the actuator's own entry: a dropped read is sent once more."""
+    answers = {"*#4*4#1*20##": "*#4*4#1*20*5##", "*#4*4*19##": "*#4*4*19*0*1##", "*#4*4#2*20##": "*#4*4#2*20*1##"}
+    zone, sent = _zone_4_with_a_fan_coil_on_actuator_1(hass, answers, dropped=["*#4*4#2*20##"])
+    await zone.async_restore_last_state(_saved(actuators={"1": "off", "2": "off"}))
+    _reported(zone)
+    await zone._poll_if_silent(grace=0)
+    assert sent.count("*#4*4#2*20##") == 2
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "on"}
+    assert zone.hvac_action == HVACAction.HEATING
+
+
+async def test_a_dropped_dimension_19_read_is_repeated_when_an_actuator_leads(hass) -> None:
+    """The earlier answer of dimension 19 is not the answer of the poll's last read once an actuator led after it."""
+    answers = {"*#4*4#1*20##": "*#4*4#1*20*5##", "*#4*4*19##": "*#4*4*19*0*1##", "*#4*4#2*20##": "*#4*4#2*20*0##"}
+    zone, sent = _zone_4_with_a_fan_coil_on_actuator_1(hass, answers)
+    await zone.async_restore_last_state(_saved(actuators={"1": "off", "2": "off"}))
+    _reported(zone)
+    drop_the_last = {"armed": False}
+    send = zone._gateway_handler.send_status_request.side_effect
+
+    async def _send(command):
+        if str(command) == "*#4*4*19##" and not drop_the_last["armed"]:
+            drop_the_last["armed"] = True
+            sent.append(str(command))
+            written = hass.loop.create_future()
+            written._gateway_desync = True
+            written.cancel()
+            return written
+        return await send(command)
+
+    zone._gateway_handler.send_status_request.side_effect = _send
+    await zone._poll_if_silent(grace=0)
+    assert sent == ["*#4*4#1*20##", "*#4*4*19##", "*#4*4#2*20##", "*#4*4*19##", "*#4*4*19##"]
+    assert zone._active_source == "zone" and zone.hvac_action == HVACAction.HEATING
+
+
 def test_the_profile_of_the_capture_is_the_one_under_test() -> None:
     assert get_gateway_profile("F455").model_name == "F455"

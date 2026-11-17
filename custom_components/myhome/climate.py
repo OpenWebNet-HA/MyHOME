@@ -1692,9 +1692,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if frame.endswith("*12##"):
             return setpoint_known and self._attr_hvac_mode is not None and not self._hvac_mode_restored
         if frame.endswith("*19##"):
-            return self._zone_active is not None
+            # An answer an actuator's report has overtaken since is not the one the poll's last
+            # read is after (``_ask_what_is_missing``).
+            return self._active_source == "zone"
+        # Dimension 19 gives the zone's state, not this actuator's own entry (its state, its fan
+        # speed, its number for the next restart): only the actuator's own report answers.
         where = frame.split("*")[2].split("#")  # Z#N*20## or Z#N#4#II*20##
-        return (len(where) > 1 and where[1] in self._actuator_states) or self._zone_active is not None
+        return len(where) > 1 and where[1] in self._actuator_states
 
     async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
         """Ask a zone that has not reported by itself since the startup sweep, read by read (#466, #932).
@@ -1750,9 +1754,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         pace = getattr(handler, "pace_startup_status_write", None)
         own_requests = getattr(handler, "wait_for_zone_requests", None)
         for frame in reads:
-            if frame.endswith("*19##") and (self._zone_active is not None or self._fan_coil_sides_pending()):
+            if frame.endswith("*19##") and (self._active_source == "zone" or self._fan_coil_sides_pending()):
                 # Asked meanwhile because an actuator report showed a fan coil
-                # (``_ask_fan_coil_sides``), or already answered.
+                # (``_ask_fan_coil_sides``), or answered and still in the lead. That request
+                # can leave before the read of a later actuator: when that actuator's first
+                # report then took the lead, dimension 19 is read once more, last as planned.
                 continue
             frames_before = self._poll_health.frames
             request = cast(OWNCommand, OWNHeatingCommand.parse(frame))
