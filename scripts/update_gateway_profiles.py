@@ -230,8 +230,8 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**F455**",
         "profile_name": "F455",
         "pinned_whos": [1, 2, 4, 18],
-        "sweep_omits": [],
-        "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Not in own-firmware-oracle; a physical F455 1.0.76 ACKed `*#4*0##` after 9.1 s with no zone frame although its zones answer single reads (`tests/fixtures/traces/issue_466`), so the sweep leaves it out; a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",

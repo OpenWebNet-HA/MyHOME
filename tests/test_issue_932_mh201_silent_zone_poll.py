@@ -23,10 +23,14 @@ The frames below are the ones quoted in the issue; the reporter's plant is the h
 
 from __future__ import annotations
 
+import pytest
 from OWNd.message import OWNHeatingEvent
 
 from custom_components.myhome.gateway import KNOB_READ_IN_SILENT_ZONE_POLL, SILENT_ZONE_GRACE
 from tests.test_f455_zone_polling import _handler, _queued, _ready, _zone
+
+# The poll waits for the bus to be quiet after every read; the mock gateways answer at once.
+pytestmark = pytest.mark.usefixtures("fast_bus_pacing")
 
 # Issue 932, "Bus evidence": the replies of the reporter's MH201 3.6.43 to explicit reads.
 REPLY_SETPOINT_IN_FORCE = "*#4*2*12*0200*3##"  # to *#4*2*12##
@@ -42,7 +46,7 @@ MH201_READS = ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 def test_mh201_runs_the_silent_zone_poll_and_keeps_its_other_gates(hass) -> None:
     handler = _handler(hass, "MH201")
-    assert "MH201" not in KNOB_READ_IN_SILENT_ZONE_POLL and SILENT_ZONE_GRACE == 120.0
+    assert "MH201" not in KNOB_READ_IN_SILENT_ZONE_POLL and SILENT_ZONE_GRACE == 30.0
     assert handler.silent_zone_poll_needed is True
     assert handler.knob_read_in_silent_zone_poll is False
     assert handler.supports_zone_status is False

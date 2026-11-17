@@ -215,11 +215,15 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 # (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
 # until the flags exist there. Gateways not listed keep sending the request.
 GENERAL_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
+    {"F450", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
 )  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
 # oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
 # and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
-# trace 19-05-42 frames 0-10).
+# trace 19-05-42 frames 0-10). The F455 is not in the oracle either: a physical F455 1.0.76
+# ACKed *#4*0## after 9.1 s with no frame on either session, on a plant whose zones answer
+# every single read (tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl),
+# and again after about 9 s with no frame at every start on 2026-11-17 (#932); the request
+# holds a command session for those 9 s.
 SOUND_STATUS_REQUEST_REFUSED = frozenset(
     {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
@@ -251,7 +255,15 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 # asked for when it was added (``watch_zone_actuators``), so a zone that only misses them asks
 # for actuator 1 here only where that request is not sent (``zone_actuator_request_refused``,
 # the F455). A zone that answered neither of its last two status requests is left alone
-# (``poll_health``). Evidence:
+# (``poll_health``). The grace only lets the frames of the sweep and of the thermostats arrive;
+# the poll then waits for the zone's own startup poll, however long that takes on a large plant
+# (#886), before it looks at what is missing. The zones are asked one after another (the poll
+# holds ``_who4_startup_poll_lock``) and every read waits for the bus to be quiet after the one
+# before (``pace_startup_status_write``, BUS_QUIET_PERIOD): on a physical F455 plant the state
+# of an actuator came twice, 0.09-0.27 s apart, and the next read took the second copy for its
+# reply, which the #886 guard drops (tests/fixtures/traces/issue_932/README.md). A read the
+# guard still drops is sent once more, unless the zone's own answer arrived in the meantime.
+# Evidence:
 # - F455 1.0.76 (physical): answers each read in ~0.1 s and ACKs *#4*Z## only after ~9 s
 #   (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
 #   standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
@@ -271,7 +283,7 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 #   F450, F453, F453AV, F459, H4684, MH200 and MH200N.
 # The gate is read when the poll runs and through the gateway that serves WHO 4
 # (``silent_zone_poll_needed``).
-SILENT_ZONE_GRACE = 120.0
+SILENT_ZONE_GRACE = 30.0
 # Gateways whose zones do not send the knob read (*#4*Z*13##) when they are added; it goes out
 # inside the silent-zone poll instead, after the temperature read (``_local_offset_read_pending``
 # in climate.py). The F455: its zones ask nothing on add (#674, sixteen *#4*Z## polls timing out
@@ -885,6 +897,13 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         temperature; elsewhere the zone status poll or the sweep reports it.
         """
         if self.supports_zone_status:
+            return False
+        if self._model_key in KNOB_READ_IN_SILENT_ZONE_POLL:
+            # The F455: its zones ask nothing when they are added and nothing every five minutes
+            # (#674: a read on a channel without a probe holds its command session ~9 s before
+            # the NACK). Its temperature read goes out once, inside the silent-zone poll. Stated
+            # before the profile flag on purpose: the F455 refuses *#4*0## too, so a profile
+            # that says ``supports_general_heating_status = False`` must not turn this poll on.
             return False
         supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
         if isinstance(supported, bool):

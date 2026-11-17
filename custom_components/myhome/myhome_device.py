@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,8 @@ class MyHOMEEntity(RestoreEntity):
     # Whether to request a status update from the bus right after being added.
     # Push-only devices set this to False to avoid a useless (NACKed) query.
     _poll_on_add: bool = True
+    # The deferred poll on add, while the startup sweep is still to run (``_async_poll_if_needed``).
+    _poll_on_add_task: asyncio.Task[None] | None = None
     _bus_state_complete: bool = False
     # Sensors / binary sensors: let Home Assistant name the entity after its device class.
     _name_from_device_class: bool = False
@@ -289,6 +292,7 @@ class MyHOMEEntity(RestoreEntity):
                     self._async_poll_after_discovery(),
                     name=f"myhome_{self.entity_id}_poll_on_add",
                 )
+                self._poll_on_add_task = poll_task
 
                 def _cancel_poll() -> None:
                     poll_task.cancel()

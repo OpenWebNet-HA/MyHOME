@@ -15,6 +15,9 @@ any gateway asks for what it has not reported, read by read, and a refused read 
 - Actuator 1 (``*#4*Z#1*20##``) is not asked where the gateway drops the actuator request, and a
   zone that misses nothing else asks for it only where its watch could not (the F455).
 - A zone marked unresponsive (``poll_health``) is left alone.
+- The poll starts after the zone's own poll on add, the zones are asked one after another, and
+  every read waits for the bus to be quiet after the one before (the pacing of #886). A read the
+  #886 guard dropped is sent once more, unless the zone's own answer arrived in the meantime.
 
 Evidence: the F455 1.0.76 capture (``tests/test_f455_zone_polling.py``), the MH201 3.6.43 plant of
 #932 (``tests/test_issue_932_mh201_silent_zone_poll.py``), and own-firmware-oracle (main
@@ -42,6 +45,9 @@ from custom_components.myhome.gateway_sessions import (
     _mismatched_who4_reply_zones,
 )
 from tests.test_f455_zone_polling import _handler, _queued, _ready, _spin, _zone
+
+# The poll waits for the bus to be quiet after every read; the mock gateways answer at once.
+pytestmark = pytest.mark.usefixtures("fast_bus_pacing")
 
 TEMPERATURE = "*#4*2*0*0196##"
 SETPOINT = "*#4*2*14*0200*3##"
@@ -259,7 +265,8 @@ async def test_a_read_that_collected_another_zone_s_frame_is_sent_once_more(hass
 
     Zone 3 only misses its actuator, so its one read goes out just before zone 4's first one; the
     second copy of its answer is collected by `*#4*4*0##`, which the guard drops. That is not an
-    answer of zone 4: without a second try its poll would end there, with no setpoint.
+    answer of zone 4: without a second try its poll would end there, with no setpoint. (Here zone
+    4's own answer does not arrive either; when it does the read is not repeated, see below.)
     """
     handler = _handler(hass, "F455")
     _ready(handler, side_effect=[_dropped_by_the_desync_guard(hass), *[_acknowledged(hass, empty=False)] * 5])
@@ -274,6 +281,127 @@ async def test_a_read_dropped_twice_ends_the_poll(hass) -> None:
     zone = _zone(hass, handler, "4")
     await zone._poll_if_silent(grace=0)
     assert _queued(handler) == ["*#4*4*0##", "*#4*4*0##"]
+
+
+@pytest.mark.parametrize(
+    ("read", "answer"),
+    [
+        ("*#4*4*0##", "*#4*4*0*0255##"),
+        ("*#4*4*13##", "*#4*4*13*00##"),
+        ("*#4*4*14##", "*#4*4*14*0215*3##"),
+        ("*#4*4#1*20##", "*#4*4#1*20*0##"),
+    ],
+)
+async def test_a_dropped_read_is_not_repeated_when_the_zone_s_answer_came_all_the_same(hass, read, answer) -> None:
+    """The read went out on the bus, so the zone answers; only the command session lost the reply.
+
+    On the F455 plant zone 4's `*#4*4#1*20*0##` was on the event session 0.1 s after the warning
+    of the guard. The poll looks at the zone after the quiet time and asks again only for what
+    is still missing.
+    """
+    handler = _handler(hass, "F455")
+    zone = _zone(hass, handler, "4")
+
+    async def _send(command):
+        if str(command) != read:
+            return _acknowledged(hass, empty=False)
+        zone.handle_event(OWNHeatingEvent(answer))  # on the event session
+        return _dropped_by_the_desync_guard(hass)
+
+    _ready(handler, side_effect=_send)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+
+
+async def test_a_dropped_setpoint_in_force_read_needs_the_setpoint_and_the_mode(hass) -> None:
+    """`*12` is asked for the setpoint in force and for the season frame the F455 sends after it."""
+    handler = _handler(hass, "F455")
+    zone = _zone(hass, handler, "4")
+    answers = [["*#4*4*12*0215*3##"], ["*#4*4*12*0215*3##", "*4*0*4##"]]
+
+    async def _send(command):
+        if str(command) != "*#4*4*12##":
+            return _acknowledged(hass, empty=False)
+        for frame in answers.pop(0):
+            zone.handle_event(OWNHeatingEvent(frame))
+        return _dropped_by_the_desync_guard(hass) if answers else _acknowledged(hass, empty=False)
+
+    _ready(handler, side_effect=_send)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4*12##", "*#4*4#1*20##"]
+
+
+async def test_the_bus_is_quiet_before_the_next_read_goes_out(hass) -> None:
+    """Every read is followed by the wait of the paced startup polls (#886) before the next one.
+
+    The state of an actuator came twice, 0.09 to 0.27 s apart, after one read on the F455 plant
+    (issue_932/README.md): the second copy has to fall into this wait, not into the next read.
+    """
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=lambda command: _acknowledged(hass, empty=False))
+    zone = _zone(hass, handler)
+    paced: list[tuple[str, list[str]]] = []
+    gate = asyncio.Event()
+
+    async def _pace(written, message):
+        assert written.done()  # the reply is in before the quiet time starts
+        paced.append((str(message), _queued(handler)))
+        await gate.wait()
+
+    handler.pace_startup_status_write = _pace
+    task = asyncio.ensure_future(zone._poll_if_silent(grace=0))
+    await _spin()
+    assert _queued(handler) == ["*#4*2*0##"] and not task.done()  # held back by the quiet time
+    gate.set()
+    await task
+    reads = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    assert paced == [(read, reads[: index + 1]) for index, read in enumerate(reads)]
+
+
+async def test_the_quiet_time_is_the_gateway_s_bus_quiet_period(hass, monkeypatch) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=lambda command: _acknowledged(hass, empty=False))
+    zone = _zone(hass, handler)
+    waits: list[float] = []
+
+    async def _quiet(since):
+        waits.append(since)
+
+    monkeypatch.setattr(handler, "_wait_for_bus_quiet", _quiet)
+    await zone._poll_if_silent(grace=0)
+    assert len(waits) == len(_queued(handler)) == 5
+
+
+async def test_the_zones_are_asked_one_after_another(hass) -> None:
+    """The poll holds the startup poll lock for all reads of a zone: no read of zone 4 between zone 3's."""
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=lambda command: _acknowledged(hass, empty=False))
+    zones = [_zone(hass, handler, where) for where in ("3", "4", "2")]
+    await asyncio.gather(*(zone._poll_if_silent(grace=0) for zone in zones))
+    assert _queued(handler) == [
+        f"*#4*{where}{read}##" for where in ("3", "4", "2") for read in ("*0", "*13", "*14", "*12", "#1*20")
+    ]
+
+
+async def test_a_gateway_double_without_the_startup_lock_is_asked_all_the_same(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=lambda command: _acknowledged(hass, empty=False))
+    handler._who4_startup_poll_lock = None
+    await _zone(hass, handler)._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+
+
+async def test_a_read_that_is_never_answered_ends_the_poll_without_the_quiet_time(hass, monkeypatch) -> None:
+    """No reply at all within ``PACED_READ_TIMEOUT``: the poll ends, and the lock is free for the next zone."""
+    monkeypatch.setattr("custom_components.myhome.climate.PACED_READ_TIMEOUT", 0.01)
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=lambda command: hass.loop.create_future())
+    handler.pace_startup_status_write = AsyncMock()
+    zone = _zone(hass, handler)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*2*0##"]
+    handler.pace_startup_status_write.assert_not_awaited()
+    assert not handler._who4_startup_poll_lock.locked()
 
 
 async def test_the_capture_s_second_copy_is_what_the_guard_drops() -> None:
@@ -317,6 +445,61 @@ async def test_the_poll_waits_for_the_startup_polls_still_queued(hass) -> None:
     handler._who4_startup_poll_lock.release()
     await task
     assert _queued(handler) == []
+
+
+async def test_the_poll_waits_for_the_zone_s_own_poll_on_add(hass) -> None:
+    """The grace is short; on a large plant the zone's own poll on add can still be waiting for its turn."""
+    handler = _handler(hass, "MH201")
+    _ready(handler)
+    zone = _zone(hass, handler)
+    turn = asyncio.Event()
+
+    async def _own_poll_on_add() -> None:
+        await turn.wait()
+        for frame in (TEMPERATURE, KNOB, SETPOINT, MODE):  # what it brought
+            zone.handle_event(OWNHeatingEvent(frame))
+
+    zone._poll_on_add_task = hass.loop.create_task(_own_poll_on_add())
+    task = asyncio.ensure_future(zone._poll_if_silent(grace=0))
+    await _spin()
+    assert _queued(handler) == [] and not task.done()
+    assert not handler._who4_startup_poll_lock.locked()  # the poll on add needs that lock itself
+    turn.set()
+    await task
+    assert _queued(handler) == []
+
+
+async def test_a_cancelled_poll_on_add_does_not_hold_the_poll_back(hass) -> None:
+    handler = _handler(hass, "MH201")
+    _ready(handler)
+    zone = _zone(hass, handler)
+    zone._poll_on_add_task = hass.loop.create_task(asyncio.Event().wait())
+    task = asyncio.ensure_future(zone._poll_if_silent(grace=0))
+    await _spin()
+    assert not task.done()
+    zone._poll_on_add_task.cancel()
+    await task
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+
+
+async def test_the_deferred_poll_on_add_is_kept_for_the_silent_zone_poll(hass, monkeypatch) -> None:
+    """While the startup sweep is still to run the poll on add is a task; the silent-zone poll waits for it."""
+    handler = _handler(hass, "MH201")
+    assert handler.initial_discovery_pending is True
+    zone = _zone(hass, handler)
+    created: dict[str, MagicMock] = {}
+
+    def _capture(coro, name=None, **_kwargs):
+        coro.close()
+        created[name] = MagicMock()
+        return created[name]
+
+    monkeypatch.setattr(hass, "async_create_background_task", _capture)
+    handler.watch_zone_actuators = MagicMock(return_value=lambda: None)
+    assert zone._poll_on_add is True and zone._poll_on_add_task is None
+    await zone.async_added_to_hass()
+    assert set(created) == {"myhome_climate.zone_2_poll_on_add", "myhome_climate.zone_2_silent_zone_poll"}
+    assert zone._poll_on_add_task is created["myhome_climate.zone_2_poll_on_add"]
 
 
 # ------------------------------------------------------------------ what is asked, and when

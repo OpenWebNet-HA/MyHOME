@@ -1643,65 +1643,104 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             reads.append(f"*#4*{zone}{routing}*13##")
         return reads
 
+    def _silent_read_answered(self, frame: str) -> bool:
+        """Whether what a read of the silent-zone poll asks for has arrived from the bus by now."""
+        if frame.endswith("*0##"):
+            return self._attr_native_current_temperature is not None and not self._current_temperature_restored
+        if frame.endswith("*13##"):
+            return self._local_offset_reported
+        setpoint_known = self.native_target_temperature is not None and not self._target_temperature_restored
+        if frame.endswith("*14##"):
+            return setpoint_known
+        if frame.endswith("*12##"):
+            return setpoint_known and self._attr_hvac_mode is not None and not self._hvac_mode_restored
+        return bool(self._actuator_states) or self._zone_active is not None  # #1*20##
+
     async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
         """Ask a zone that has not reported by itself since the startup sweep, read by read (#466, #932).
 
-        On every gateway that serves its zones (``silent_zone_poll_needed``), after the zones'
-        own startup polls (they go out one after another, #886, and on a large plant can still
-        be running when the grace period ends). Nothing goes out for what the zone reported
-        itself (``_silent_zone_reads``), nor for a zone that answered neither of its last two
-        status requests (``poll_health``). Each read waits for the previous one to be answered,
-        so a refused or unanswered read (a zone without a probe) ends it after one request:
-        a NACK, no reply at all within ``PACED_READ_TIMEOUT``, or an ACK that came without
-        a frame while the zone sent nothing either (``EMPTY_REPLY_SETTLE``). A read dropped
-        because it collected another zone's frame is not an answer of this zone and is sent
-        once more.
+        On every gateway that serves its zones (``silent_zone_poll_needed``), ``grace`` seconds
+        after the startup sweep and not before this zone's own poll on add has finished (the
+        polls on add go out one after another, #886, and on a large plant they are still running
+        when the grace is over). Nothing goes out for what the zone reported itself
+        (``_silent_zone_reads``), nor for a zone that answered neither of its last two status
+        requests (``poll_health``).
+
+        One zone at a time (the gateway's startup poll lock is held for the zone's reads), and
+        each read waits for the previous one to be answered and for the bus to be quiet after it
+        (``pace_startup_status_write``): the frame a device sends twice then falls into that
+        quiet time and not into the next read. A refused or unanswered read (a zone without a
+        probe) ends the poll after one request: a NACK, no reply at all within
+        ``PACED_READ_TIMEOUT``, or an ACK that came without a frame while the zone sent nothing
+        either (``EMPTY_REPLY_SETTLE``). A read dropped because it collected another zone's
+        frame is not an answer of this zone: it is sent once more, unless the zone's own answer
+        arrived on the event session in the meantime.
         """
-        wait = getattr(self._gateway_handler, "wait_for_initial_discovery", None)
+        handler = self._gateway_handler
+        wait = getattr(handler, "wait_for_initial_discovery", None)
         if callable(wait):
             waiting = wait()
             if inspect.isawaitable(waiting):
                 await waiting
         await asyncio.sleep(grace)
-        if getattr(self._gateway_handler, "silent_zone_poll_needed", False) is not True:
+        own_poll = self._poll_on_add_task
+        if isinstance(own_poll, asyncio.Task) and not own_poll.done():
+            await asyncio.wait([own_poll])  # its answers are part of what the zone "reported"
+        if getattr(handler, "silent_zone_poll_needed", False) is not True:
             return  # a passive follower: its zones are another gateway's to ask
-        startup_lock = getattr(self._gateway_handler, "_who4_startup_poll_lock", None)
+        startup_lock = getattr(handler, "_who4_startup_poll_lock", None)
         if isinstance(startup_lock, asyncio.Lock):
+            # Fair: every startup poll and every other zone's silent poll queued before this
+            # point has finished when the lock is granted.
             async with startup_lock:
-                pass  # the lock is fair: every startup poll queued before this point has been answered or refused
+                await self._ask_what_is_missing()
+        else:
+            await self._ask_what_is_missing()
+
+    async def _ask_what_is_missing(self) -> None:
+        """The reads of ``_poll_if_silent``, one after another."""
+        handler = self._gateway_handler
         if self._poll_health.should_skip(time.time()):
             return  # no frame and no answer for two restarts: not asked again yet
         reads = self._silent_zone_reads()
         if not reads:
             return  # the zone reported its temperature, setpoint, mode and an actuator on its own
-        LOGGER.debug(
-            "%s %s has not reported since the startup sweep; asking %s", self._gateway_handler.log_id, self._display_name, reads
-        )
+        LOGGER.debug("%s %s has not reported since the startup sweep; asking %s", handler.log_id, self._display_name, reads)
+        pace = getattr(handler, "pace_startup_status_write", None)
         for frame in reads:
             frames_before = self._poll_health.frames
+            request = cast(OWNCommand, OWNHeatingCommand.parse(frame))
             written: object = None
             for _attempt in range(2):
                 try:
-                    written = await self._gateway_handler.send_status_request(
-                        cast(OWNCommand, OWNHeatingCommand.parse(frame))
-                    )
+                    written = await handler.send_status_request(request)
                 except Exception:  # a transport error must not end the task silently (#593)
-                    LOGGER.exception(
-                        "%s %s: `%s` could not be sent", self._gateway_handler.log_id, self._display_name, frame
-                    )
+                    LOGGER.exception("%s %s: `%s` could not be sent", handler.log_id, self._display_name, frame)
                     return
-                if not isinstance(written, asyncio.Future):
-                    break
-                await asyncio.wait([written], timeout=PACED_READ_TIMEOUT)
-                if not (written.cancelled() and getattr(written, "_gateway_desync", False) is True):
+                if isinstance(written, asyncio.Future):
+                    await asyncio.wait([written], timeout=PACED_READ_TIMEOUT)
+                    if not written.done():
+                        return  # no reply at all within PACED_READ_TIMEOUT
+                if callable(pace):
+                    # Bus quiet before the next read of any zone opens. On a physical F455
+                    # 1.0.76 plant the state of an actuator came twice, 0.09-0.27 s apart, after
+                    # one read (tests/fixtures/traces/issue_932/README.md).
+                    await pace(written, request)
+                if not (
+                    isinstance(written, asyncio.Future)
+                    and written.cancelled()
+                    and getattr(written, "_gateway_desync", False) is True
+                ):
                     break
                 # Another zone's frame was taken for the reply of this read and the read was
-                # dropped (the #886 guard): that says nothing about this zone, so it is asked once
-                # more. On a physical F455 1.0.76 plant the state of one zone's actuator came twice,
-                # 0.07-0.27 s apart, after one read, and in 2 of 3 starts the second copy fell
-                # inside the next read (tests/fixtures/traces/issue_932/README.md).
+                # dropped (the #886 guard). That says nothing about this zone. Its own answer
+                # went out on the bus all the same and usually arrives on the event session a
+                # moment later: then nothing is sent again. Otherwise the read is repeated once.
+                if self._silent_read_answered(frame):
+                    written = None
+                    break
             if isinstance(written, asyncio.Future):
-                if not written.done() or written.cancelled():
+                if written.cancelled():
                     return  # refused (NACK), timed out, or dropped twice by the desync guard
                 if getattr(written, "_empty_reply", False) is True:
                     # Acknowledged with no frame on the command session. The zone's answer can
@@ -1711,7 +1750,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     if self._poll_health.frames == frames_before:
                         LOGGER.debug(
                             "%s %s: `%s` was acknowledged and nothing answered; not asking further",
-                            self._gateway_handler.log_id,
+                            handler.log_id,
                             self._display_name,
                             frame,
                         )

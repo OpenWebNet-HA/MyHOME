@@ -13,7 +13,7 @@ was changed in the lines.
 
 | File | What it is |
 |---|---|
-| `F455_who4_monitor_start_nothing_stored_2026-11-17.log` | 08:31:50Z to 08:34:05Z, as the F455 delivered it. A start with no stored state for the four climate entities (core init 08:31:32Z): the central unit's answer to `*#4*#0##` (asked when the central unit was added), one temperature report of zone 2 by itself at 08:33:10Z, and from 08:33:53Z, 120 s after the startup sweep, the answers to the reads of the silent-zone poll: zone 2 `*13`, `*14`, `*12`, `#1*20`; zones 3 and 4 `*0`, `*13`, `*14`, `*12`, `#1*20`. |
+| `F455_who4_monitor_start_nothing_stored_2026-11-17.log` | 08:31:50Z to 08:34:05Z, as the F455 delivered it. A start with no stored state for the four climate entities (core init 08:31:32Z): the central unit's answer to `*#4*#0##` (asked when the central unit was added), one temperature report of zone 2 by itself at 08:33:10Z, and from 08:33:53Z, 120 s after the startup sweep (the grace of the build that ran then), the answers to the reads of the silent-zone poll: zone 2 `*13`, `*14`, `*12`, `#1*20`; zones 3 and 4 `*0`, `*13`, `*14`, `*12`, `#1*20`. |
 | `F461_who4_monitor_start_nothing_stored_2026-11-17.log` | The same window as the F461 delivered it. |
 | `F455_who4_monitor_poll_2026-11-17T08-00.log` | 08:00:46Z to 08:00:52Z, as the F455 delivered it: the answers to the poll of an earlier start the same day (state restored, so zone 2 was also asked `*0`). |
 | `F461_who4_monitor_poll_2026-11-17T08-00.log` | The same window as the F461 delivered it. |
@@ -38,4 +38,11 @@ was changed in the lines.
   `*#4*4#1*20##` was open, was collected as that read's reply, and Home Assistant logged
   `Gateway FIFO desync on *#4*4#1*20##: command session returned delayed replies for zone(s) 3`
   (the guard of #886). At 08:33:55Z it arrived 0.13 s after the reply to `*#4*4#1*20##`, and
-  nothing was logged. A third start the same day (08:50:47Z, not in these files) logged it again.
+  nothing was logged. Six more starts the same day (not in these files) had the two copies as
+  well, and five of them logged the warning: eight starts, the frame twice in every one, the
+  warning in six. In one of the six it was for `*#4*3#1*20##` and zone 2, whose actuator frame
+  `*#4*2#1*20*7##` had come twice, 0.06 s apart.
+- **The builds behind these logs sent the reads of all zones back to back.** Since then the poll
+  asks one zone after another and waits for the bus to be quiet (0.75 s without a frame) after
+  every answer, so that a second copy passes before the next read opens; a read the guard still
+  drops is sent once more, unless the zone's own answer arrived in the meantime.

@@ -4,8 +4,8 @@ The plant (``tests/fixtures/traces/issue_932/README.md``): a 3550 central unit i
 zones 3 and 4 under it, and zone 2, a standalone thermostat with its own season (heating). The
 capture is the WHO 4 traffic of one Home Assistant start with nothing stored for the four climate
 entities, 2026-11-17: the central unit's answer to the status request sent when it was added, one
-temperature report of zone 2, and 120 s after the startup sweep the answers to the reads of the
-silent-zone poll.
+temperature report of zone 2, and 120 s after the startup sweep (the grace of the build that ran
+then) the answers to the reads of the silent-zone poll.
 
 What the replay pins:
 

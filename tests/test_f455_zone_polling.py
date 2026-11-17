@@ -33,6 +33,7 @@ from OWNd.profiles import get_gateway_profile
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.const import CONF_FIRMWARE
 from custom_components.myhome.gateway import (
+    GENERAL_ZONE_REQUEST_REFUSED,
     HUMIDITY_REQUEST_REFUSED,
     KNOB_READ_IN_SILENT_ZONE_POLL,
     SILENT_ZONE_GRACE,
@@ -43,6 +44,8 @@ from custom_components.myhome.gateway import (
 DIRECT = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl"
 ZONE3 = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct_requests_zone3_2026-11-06.jsonl"
 MAC = "00:03:50:00:11:06"
+# The poll waits for the bus to be quiet after every read; the mock gateways answer at once.
+pytestmark = pytest.mark.usefixtures("fast_bus_pacing")
 SILENT_READS = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
 
 
@@ -165,11 +168,41 @@ def test_f455_keeps_the_issue_674_gates(hass) -> None:
     assert handler.silent_zone_poll_needed is True
     assert handler.supports_zone_status is False
     assert handler.zone_temperature_poll_needed is False
-    assert handler.general_zone_request_refused is False
     assert handler.actuator_request_refused is False
-    assert "*#4*0##" in handler._discovery_frames()
     assert handler.knob_read_in_silent_zone_poll is True
-    assert KNOB_READ_IN_SILENT_ZONE_POLL == {"F455"} and SILENT_ZONE_GRACE == 120.0
+    assert KNOB_READ_IN_SILENT_ZONE_POLL == {"F455"} and SILENT_ZONE_GRACE == 30.0
+
+
+def test_capture_backs_leaving_the_general_zone_request_out() -> None:
+    """``*#4*0##``: an ACK after 9.1 s, no frame on the command session and none on the event session."""
+    general = _sent()["*#4*0##"]
+    assert general["ack"] is True and general["replies"] is True and general["events"] == []
+    assert 8.5 < general["dt"] < 9.5
+
+
+def test_f455_is_not_sent_the_general_zone_request(hass) -> None:
+    handler = _handler(hass, "F455")
+    assert "F455" in GENERAL_ZONE_REQUEST_REFUSED
+    assert handler.general_zone_request_refused is True
+    assert "*#4*0##" not in handler._discovery_frames()
+
+
+@pytest.mark.parametrize("flag", [None, False, True])
+def test_f455_zones_stay_off_the_temperature_poll_whatever_the_profile_says(hass, flag) -> None:
+    """A profile that states ``supports_general_heating_status = False`` must not bring #674 back.
+
+    For the other SCS-only gateways that flag turns the per-zone temperature poll on; an F455
+    zone asks nothing when it is added and nothing every five minutes, with or without the flag.
+    """
+    handler = _handler(hass, "F455")
+    handler.gateway.profile = SimpleNamespace(
+        model_name="F455", supports_general_heating_status=flag, supports_who=lambda who: True
+    )
+    assert handler.zone_temperature_poll_needed is False
+    assert handler.general_zone_request_refused is (flag is not True)
+    assert ("*#4*0##" in handler._discovery_frames()) is (flag is True)
+    zone = _zone(hass, handler)
+    assert zone.should_poll is False and zone._poll_on_add is False
 
 
 def test_capture_backs_the_f455_refusing_the_zone_actuator_and_humidity_reads() -> None:
@@ -478,10 +511,12 @@ async def test_each_read_waits_for_the_previous_answer(hass) -> None:
     assert _queued(handler) == SILENT_READS[:1]
     futures[0].set_result(1.0)  # the F455 answered and ACKed
     await _spin()
+    assert _queued(handler) == SILENT_READS[:1]  # the bus-quiet wait after the answer
+    await asyncio.sleep(0.05)
     assert _queued(handler) == SILENT_READS[:2]
     for future in futures[1:]:
         future.set_result(1.0)
-        await _spin()
+        await asyncio.sleep(0.05)
     await task
     assert _queued(handler) == SILENT_READS
 
