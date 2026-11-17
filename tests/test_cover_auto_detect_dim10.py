@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -16,11 +17,13 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.entity_component import DATA_INSTANCES
 from OWNd.message import OWNAutomationEvent, OWNMessage
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_restore_cache
 
 from custom_components.myhome.const import (
     CONF_ADVANCED_COVERS,
@@ -1014,3 +1017,854 @@ async def test_direct_unit_edges_and_calibration_lockout(hass: HomeAssistant) ->
     gw.send_status_request.reset_mock()
     await cover2.async_added_to_hass()
     gw.send_status_request.assert_awaited_once()
+
+
+def _get_cover_entity(hass: HomeAssistant, entity_id: str) -> MyHOMECover:
+    """Return the live MyHOMECover instance registered in Home Assistant."""
+    entity = hass.data[DATA_INSTANCES]["cover"].get_entity(entity_id)
+    assert isinstance(entity, MyHOMECover), f"Expected MyHOMECover for {entity_id}, got {entity!r}"
+    return entity
+
+
+async def _wait_for_sent(
+    harness: MockGatewayHarness,
+    expected: str,
+    *,
+    timeout: float = 2.0,
+) -> None:
+    """Poll until expected frame reaches harness.received_messages."""
+    deadline = time.monotonic() + timeout
+    while expected not in harness.received_messages:
+        if time.monotonic() >= deadline:
+            raise AssertionError(
+                f"Timed out waiting for {expected!r} in {harness.received_messages!r}"
+            )
+        await asyncio.sleep(0.02)
+
+
+async def _drain_startup_polls(
+    handler: MyHOMEGatewayHandler,
+    harness: MockGatewayHarness,
+    *,
+    timeout: float = 2.0,
+) -> None:
+    """Drain queued startup _TIER_STATUS polls and wait for any in-flight poll to finish."""
+    _drain_sent(handler, harness)
+    deadline = time.monotonic() + timeout
+    while handler.send_buffer.in_flight_status or handler.send_buffer.in_flight_targets:
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(0.02)
+    _drain_sent(handler, harness)
+    harness.received_messages.clear()
+
+
+@pytest.mark.asyncio
+async def test_fedem95_midmove_moving_dim10_promotes_and_hands_off_dim11(
+    hass: HomeAssistant,
+) -> None:
+    """@fedem95 (#927): moving Dim 10 mid-run promotes, cancels _auto_stop, hands off Dim 11, and settles at target."""
+    mock_restore_cache(
+        hass,
+        [State("cover.cover_0110", "open", {"current_position": 100})],
+    )
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    registry.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{MAC}-2-0110",
+        config_entry=entry,
+        suggested_object_id="cover_0110",
+    )
+    registry.async_get_or_create(
+        domain="button",
+        platform=DOMAIN,
+        unique_id=f"{MAC}-2-0110-calibrate",
+        config_entry=entry,
+        suggested_object_id="cover_0110_calibrate_travel_time",
+    )
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await _drain_startup_polls(handler, harness)
+            await hass.async_block_till_done()
+
+            # Startup *#2*0110## returned ACK-only on MH201; cover is still timed with restored 100% position.
+            st_init = hass.states.get("cover.cover_0110")
+            assert st_init is not None
+            assert st_init.attributes.get("current_position") == 100
+            assert st_init.attributes.get("travel_time") == 25
+            assert "min_position_delta" not in st_init.attributes
+            cal_btn_id = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-2-0110-calibrate")
+            assert cal_btn_id is not None and hass.states.get(cal_btn_id).state != "unavailable"
+
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0110", "position": 40},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*2*0110##")
+            await hass.async_block_till_done()
+
+            cover = _get_cover_entity(hass, "cover.cover_0110")
+            assert "*2*2*0110##" in harness.received_messages
+            assert cover._stop_task is not None and not cover._stop_task.done()
+            assert hass.states.get("cover.cover_0110").state == "closing"
+            harness.received_messages.clear()
+
+            # MH201 / MH202 actuator emits moving calibrated Dim 10 + plain direction frame at motor start.
+            await _feed(hass, "*#2*0110*10*12*100*001*0##")
+            await _feed(hass, "*2*2*0110##")
+            await _wait_for_sent(harness, "*#2*0110*#11#001*40##")
+            await hass.async_block_till_done()
+
+            # Promoted in-place, _stop_task cancelled, Dim 11 40% handed off (no timed *2*0*).
+            assert cover._stop_task is None
+            assert isinstance(cover.strategy, NativePositionStrategy)
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"0110": True}
+            assert hass.states.get(cal_btn_id).state == "unavailable"
+
+            st_mid = hass.states.get("cover.cover_0110")
+            assert st_mid is not None
+            assert st_mid.state == "closing"
+            assert st_mid.attributes.get("current_position") == 100
+            assert st_mid.attributes.get("min_position_delta") == 2
+            assert "travel_time" not in st_mid.attributes
+
+            mid_sent = _drain_sent(handler, harness)
+            assert mid_sent == ["*#2*0110*#11#001*40##"]
+            assert "*2*0*0110##" not in mid_sent
+
+            # Actuator reaches 40% and reports stationary calibrated Dim 10 + plain stop.
+            harness.received_messages.clear()
+            await _feed(hass, "*#2*0110*10*10*40*001*0##")
+            await _feed(hass, "*2*0*0110##")
+            await asyncio.sleep(0.05)
+            await hass.async_block_till_done()
+
+            st_settled = hass.states.get("cover.cover_0110")
+            assert st_settled is not None
+            assert st_settled.state == "open"
+            assert st_settled.attributes.get("current_position") == 40
+            assert _drain_sent(handler, harness) == []
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_stationary_dim10_midmove_drops_queued_move_and_handles_pre_stop(
+    hass: HomeAssistant,
+) -> None:
+    """Stationary Dim 10 during queued move (MH201 poll race) or gateway pre-STOP (F454) hands off Dim 11 cleanly."""
+    mock_restore_cache(
+        hass,
+        [
+            State("cover.cover_0110", "open", {"current_position": 100}),
+            State("cover.cover_21", "open", {"current_position": 60}),
+        ],
+    )
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    for dev_id, obj_id in (("0110", "cover_0110"), ("21", "cover_21")):
+        registry.async_get_or_create(
+            domain="cover",
+            platform=DOMAIN,
+            unique_id=f"{MAC}-2-{dev_id}",
+            config_entry=entry,
+            suggested_object_id=obj_id,
+        )
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await _drain_startup_polls(handler, harness)
+            await hass.async_block_till_done()
+
+            # 1. Delayed MH201 ACK-only poll race: (2, "0110") is locked in-flight on a worker
+            # when set_cover_position(40) queues *2*2*0110##; stationary *#2*0110*10*10*75*001*0##
+            # arrives -> promotes, drops queued *2*2*0110## via is_cancel=True, and sends Dim 11 40%.
+            handler.send_buffer._in_flight_targets.add((2, "0110"))
+            try:
+                await hass.services.async_call(
+                    "cover",
+                    "set_cover_position",
+                    {"entity_id": "cover.cover_0110", "position": 40},
+                    blocking=True,
+                )
+                assert handler.send_buffer.command_qsize == 1
+                assert harness.received_messages == []
+
+                await _feed(hass, "*#2*0110*10*10*75*001*0##")
+                assert handler.send_buffer.command_qsize == 1
+            finally:
+                handler.send_buffer.release_target((2, "0110"))
+
+            await _wait_for_sent(harness, "*#2*0110*#11#001*40##")
+            await hass.async_block_till_done()
+
+            sent_0110 = _drain_sent(handler, harness)
+            assert sent_0110 == ["*#2*0110*#11#001*40##"]
+            assert "*2*2*0110##" not in sent_0110
+            assert "*2*0*0110##" not in sent_0110
+            cover_0110 = _get_cover_entity(hass, "cover.cover_0110")
+            assert cover_0110._echo_until is not None and cover_0110._echo_until > time.monotonic()
+
+            # 2. F454 / H4890 pre-STOP sequence (discussion_770_f454_f401): *2*2*21## already written,
+            # gateway emits *2*1000#0*21## + stationary *#2*21*10*10*47*001*15## before motor starts.
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_21", "position": 30},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*2*21##")
+            await hass.async_block_till_done()
+            assert "*2*2*21##" in harness.received_messages
+            harness.received_messages.clear()
+
+            await _feed(hass, "*2*1000#0*21##")
+            await _feed(hass, "*#2*21*10*10*47*001*15##")
+            await _wait_for_sent(harness, "*#2*21*#11#001*30##")
+            await hass.async_block_till_done()
+
+            sent_21 = _drain_sent(handler, harness)
+            assert sent_21 == ["*#2*21*#11#001*30##"]
+            cover_21 = _get_cover_entity(hass, "cover.cover_21")
+            assert cover_21._echo_until is not None and cover_21._echo_until > time.monotonic()
+
+            # Moving + arrival frames complete cleanly at 30%.
+            await _feed(hass, "*#2*21*10*12*47*001*15##")
+            await _feed(hass, "*#2*21*10*10*30*001*15##")
+            st_21 = hass.states.get("cover.cover_21")
+            assert st_21 is not None and st_21.attributes.get("current_position") == 30
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_stale_restored_position_wrong_way_reversal_and_already_at_target_guards(
+    hass: HomeAssistant,
+) -> None:
+    """Stale restored curr_pos reverses via Dim 11 or stops via *2*0* when already at target."""
+    mock_restore_cache(
+        hass,
+        [
+            State("cover.cover_0110", "open", {"current_position": 20}),
+            State("cover.cover_0111", "open", {"current_position": 20}),
+            State("cover.cover_0112", "open", {"current_position": 80}),
+            State("cover.cover_0113", "open", {"current_position": 20}),
+            State("cover.cover_0114", "open", {"current_position": 20}),
+            State("cover.cover_0115", "open", {"current_position": 20}),
+        ],
+    )
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    for dev_id in ("0110", "0111", "0112", "0113", "0114", "0115"):
+        registry.async_get_or_create(
+            domain="cover",
+            platform=DOMAIN,
+            unique_id=f"{MAC}-2-{dev_id}",
+            config_entry=entry,
+            suggested_object_id=f"cover_{dev_id}",
+        )
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await _drain_startup_polls(handler, harness)
+            await hass.async_block_till_done()
+
+            # 1. Wrong-way UP move: restored curr_pos=20, target=50 sends *2*1*0110## (UP),
+            # actuator reports moving UP from real 80% (*#2*0110*10*11*80*001*0##) -> reverses via Dim 11 50%.
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0110", "position": 50},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*1*0110##")
+            await hass.async_block_till_done()
+            assert "*2*1*0110##" in harness.received_messages
+            harness.received_messages.clear()
+
+            await _feed(hass, "*#2*0110*10*11*80*001*0##")
+            await _wait_for_sent(harness, "*#2*0110*#11#001*50##")
+            await hass.async_block_till_done()
+            assert _drain_sent(handler, harness) == ["*#2*0110*#11#001*50##"]
+
+            # 2. Opposite-direction moving Dim 10 on promotion (was_opening + status=12 closing,
+            # and was_closing + status=11 opening) preserves hand_off_gen (`if not promoted:`).
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0111", "position": 50},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*1*0111##")
+            await hass.async_block_till_done()
+            harness.received_messages.clear()
+            await _feed(hass, "*#2*0111*10*12*80*001*0##")
+            await _wait_for_sent(harness, "*#2*0111*#11#001*50##")
+            await hass.async_block_till_done()
+            assert _drain_sent(handler, harness) == ["*#2*0111*#11#001*50##"]
+
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0112", "position": 50},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*2*0112##")
+            await hass.async_block_till_done()
+            harness.received_messages.clear()
+            await _feed(hass, "*#2*0112*10*11*20*001*0##")
+            await _wait_for_sent(harness, "*#2*0112*#11#001*50##")
+            await hass.async_block_till_done()
+            assert _drain_sent(handler, harness) == ["*#2*0112*#11#001*50##"]
+
+            # 3. Already-at-target on moving status=11 at 50%: sends *2*0*0113## stop (not Dim 11).
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0113", "position": 50},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*1*0113##")
+            await hass.async_block_till_done()
+            assert "*2*1*0113##" in harness.received_messages
+            harness.received_messages.clear()
+
+            await _feed(hass, "*#2*0113*10*11*50*001*0##")
+            await _wait_for_sent(harness, "*2*0*0113##")
+            await hass.async_block_till_done()
+            assert _drain_sent(handler, harness) == ["*2*0*0113##"]
+
+            # 4. Already-at-target on stationary status=10 at 50% while *2*1*0114## is queued:
+            # drops queued *2*1*0114## via is_cancel=True and sends *2*0*0114##.
+            harness.received_messages.clear()
+            handler.send_buffer._in_flight_targets.add((2, "0114"))
+            try:
+                await hass.services.async_call(
+                    "cover",
+                    "set_cover_position",
+                    {"entity_id": "cover.cover_0114", "position": 50},
+                    blocking=True,
+                )
+                assert handler.send_buffer.command_qsize == 1
+                await _feed(hass, "*#2*0114*10*10*50*001*0##")
+                assert handler.send_buffer.command_qsize == 1
+            finally:
+                handler.send_buffer.release_target((2, "0114"))
+
+            await _wait_for_sent(harness, "*2*0*0114##")
+            await hass.async_block_till_done()
+            assert _drain_sent(handler, harness) == ["*2*0*0114##"]
+
+            # 5. Moving status=11 at 51% (1% delta inside min_position_delta=2): widens to Dim 11 49%.
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0115", "position": 50},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*1*0115##")
+            await hass.async_block_till_done()
+            harness.received_messages.clear()
+
+            await _feed(hass, "*#2*0115*10*11*51*001*0##")
+            await _wait_for_sent(harness, "*#2*0115*#11#001*49##")
+            await hass.async_block_till_done()
+            assert _drain_sent(handler, harness) == ["*#2*0115*#11#001*49##"]
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_deadband_zero_and_hundred_quantization_routes_to_plain_open_close(
+    hass: HomeAssistant,
+) -> None:
+    """Deadband-clamped 0% and 100% targets route to *2*2* / *2*1* (never Dim 11 0% / 100%)."""
+    mock_restore_cache(
+        hass,
+        [
+            State("cover.cover_0110", "closed", {"current_position": 0}),
+            State("cover.cover_0111", "open", {"current_position": 100}),
+        ],
+    )
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    entry.add_to_hass(hass)
+
+    registry = er.async_get(hass)
+    for dev_id in ("0110", "0111"):
+        registry.async_get_or_create(
+            domain="cover",
+            platform=DOMAIN,
+            unique_id=f"{MAC}-2-{dev_id}",
+            config_entry=entry,
+            suggested_object_id=f"cover_{dev_id}",
+        )
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await _drain_startup_polls(handler, harness)
+            await hass.async_block_till_done()
+
+            # 1. target=1 from restored 0% starts UP (*2*1*0110##); actuator reports position=2
+            # -> quantize_target(2, 1) == 0 -> routes to *2*2*0110## (never *#2*0110*#11#001*0##).
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0110", "position": 1},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*1*0110##")
+            await hass.async_block_till_done()
+            assert "*2*1*0110##" in harness.received_messages
+            harness.received_messages.clear()
+
+            await _feed(hass, "*#2*0110*10*11*2*001*0##")
+            await _wait_for_sent(harness, "*2*2*0110##")
+            await hass.async_block_till_done()
+            sent_low = _drain_sent(handler, harness)
+            assert sent_low == ["*2*2*0110##"]
+            assert "*#2*0110*#11#001*0##" not in sent_low
+
+            # 2. target=99 from restored 100% starts DOWN (*2*2*0111##); actuator reports position=98
+            # -> quantize_target(98, 99) == 100 -> routes to *2*1*0111## (never *#2*0111*#11#001*100##).
+            harness.received_messages.clear()
+            await hass.services.async_call(
+                "cover",
+                "set_cover_position",
+                {"entity_id": "cover.cover_0111", "position": 99},
+                blocking=True,
+            )
+            await _wait_for_sent(harness, "*2*2*0111##")
+            await hass.async_block_till_done()
+            assert "*2*2*0111##" in harness.received_messages
+            harness.received_messages.clear()
+
+            await _feed(hass, "*#2*0111*10*12*98*001*0##")
+            await _wait_for_sent(harness, "*2*1*0111##")
+            await hass.async_block_till_done()
+            sent_high = _drain_sent(handler, harness)
+            assert sent_high == ["*2*1*0111##"]
+            assert "*#2*0111*#11#001*100##" not in sent_high
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_midmove_promotion_dangling_write_full_runs_and_user_supersede(
+    hass: HomeAssistant,
+) -> None:
+    """Verify dangling _track_write isolation, _async_move promotion guard, full runs, and user supersede."""
+    loop = asyncio.get_running_loop()
+
+    def _build_unit_cover(where: str, gw: MagicMock, *, pos: int | None = 100) -> MyHOMECover:
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            cov = MyHOMECover(
+                hass=hass,
+                name=f"Cover {where}",
+                entity_name=None,
+                device_id=where,
+                who="2",
+                where=where,
+                interface=None,
+                advanced=False,
+                allow_auto_advanced=True,
+                manufacturer="BTicino",
+                model="Shutter / Cover",
+                gateway=gw,
+            )
+        cov.hass = hass
+        cov.entity_id = f"cover.cover_{where}"
+        cov.async_schedule_update_ha_state = MagicMock()
+        cov.async_write_ha_state = MagicMock()
+        if pos is not None:
+            cov._attr_current_cover_position = pos
+            cov._start_position = pos
+            cov._attr_is_closed = pos == 0
+        return cov
+
+    gw = MagicMock()
+    gw.mac = MAC
+    gw.log_id = "[test]"
+    gw.config_entry = None
+    gw.calibration_hub = None
+
+    # 1. Dangling _track_write callbacks resolving AFTER mid-move promotion must no-op:
+    # 1a) open/close write timestamp resolution does not re-anchor timed run or re-add timed attrs
+    fut_move: asyncio.Future[float] = loop.create_future()
+    gw.send = AsyncMock(side_effect=[fut_move, None])
+    cov_a = _build_unit_cover("0720", gw, pos=100)
+    await cov_a.async_set_cover_position(position=40)
+    cov_a.handle_event(OWNAutomationEvent.parse("*#2*0720*10*12*100*001*0##"))
+    await hass.async_block_till_done()
+    assert cov_a._advanced is True
+    assert "travel_time" not in cov_a.extra_state_attributes
+    cov_a._motion_started_at = None
+    cov_a._attr_extra_state_attributes.pop("motion_started_at", None)
+
+    fut_move.set_result(time.monotonic())
+    await hass.async_block_till_done()
+    assert cov_a._move_start_time is None
+    assert cov_a._live_refresh_unsub is None
+    assert "travel_time" not in cov_a.extra_state_attributes
+    assert cov_a.extra_state_attributes.get("motion_started_at") is None
+
+    # 1b) stop write timestamp resolution does not call _freeze_position or clear motion prematurely
+    fut_stop: asyncio.Future[float] = loop.create_future()
+    gw.send = AsyncMock(return_value=fut_stop)
+    cov_b = _build_unit_cover("0721", gw, pos=50)
+    cov_b._attr_is_opening = True
+    await cov_b.async_stop_cover()
+    cov_b.handle_event(OWNAutomationEvent.parse("*#2*0721*10*11*50*001*0##"))
+    assert cov_b._advanced is True
+    assert cov_b.is_opening is True
+
+    fut_stop.set_result(time.monotonic())
+    await hass.async_block_till_done()
+    assert cov_b.is_opening is True
+
+    # 1c) cancelled/failed move write after promotion does not call _abort_motion
+    fut_cancel: asyncio.Future[float] = loop.create_future()
+    gw.send = AsyncMock(return_value=fut_cancel)
+    cov_c = _build_unit_cover("0722", gw, pos=100)
+    await cov_c.async_open_cover()
+    cov_c.handle_event(OWNAutomationEvent.parse("*#2*0722*10*12*80*001*0##"))
+    fut_cancel.cancel()
+    await hass.async_block_till_done()
+    assert cov_c.is_closing is True
+    assert cov_c._start_position is None
+
+    # 2. Promotion firing INSIDE `await self._async_move(direction)` (`if self._is_promoted_native(): return`)
+    cov_inline = _build_unit_cover("0723", gw, pos=100)
+    sent_inline: list[tuple[str, bool]] = []
+
+    async def _send_and_promote_inline(cmd: object, *, is_cancel: bool = False) -> None:
+        sent_inline.append((str(cmd), is_cancel))
+        if str(cmd) == "*2*2*0723##":
+            cov_inline.handle_event(OWNAutomationEvent.parse("*#2*0723*10*12*100*001*0##"))
+
+    gw.send = AsyncMock(side_effect=_send_and_promote_inline)
+    await cov_inline.async_set_cover_position(position=40)
+    assert cov_inline._advanced is True
+    assert cov_inline._stop_task is None
+    await hass.async_block_till_done()
+    assert sent_inline == [
+        ("*2*2*0723##", False),
+        ("*#2*0723*#11#001*40##", True),
+    ]
+
+    # 3. Full open_cover / close_cover / 0% / 100% promotion sends NO extra Dim 11 or *2*0*
+    for idx, action in enumerate(("open", "close", "pos100", "pos0")):
+        where = f"073{idx}"
+        cov_full = _build_unit_cover(where, gw, pos=50)
+        gw.send = AsyncMock(return_value=None)
+        if action == "open":
+            await cov_full.async_open_cover()
+        elif action == "close":
+            await cov_full.async_close_cover()
+        elif action == "pos100":
+            await cov_full.async_set_cover_position(position=100)
+        else:
+            await cov_full.async_set_cover_position(position=0)
+        assert cov_full._stop_task is not None
+        gw.send.reset_mock()
+
+        cov_full.handle_event(OWNAutomationEvent.parse(f"*#2*{where}*10*11*50*001*0##"))
+        await hass.async_block_till_done()
+        assert cov_full._advanced is True
+        assert cov_full._stop_task is None
+        gw.send.assert_not_awaited()
+
+    # 4. User commands issued right after promotion (before _handoff_timed_target runs) supersede hand-off
+    for idx, user_cmd in enumerate(("stop", "open", "retarget", "tilting_stop")):
+        where = f"074{idx}"
+        cov_sup = _build_unit_cover(where, gw, pos=100)
+        sent_sup: list[str] = []
+
+        async def _record_send(cmd: object, *, is_cancel: bool = False, _log: list[str] = sent_sup) -> None:
+            _log.append(str(cmd))
+
+        gw.send = AsyncMock(side_effect=_record_send)
+        await cov_sup.async_set_cover_position(position=40)
+        sent_sup.clear()
+
+        # Synchronous handle_event schedules _handoff_timed_target without running it yet.
+        cov_sup.handle_event(OWNAutomationEvent.parse(f"*#2*{where}*10*12*100*001*0##"))
+        if user_cmd == "stop":
+            await cov_sup.async_stop_cover()
+            await hass.async_block_till_done()
+            assert sent_sup == [f"*2*0*{where}##"]
+        elif user_cmd == "open":
+            await cov_sup.async_open_cover()
+            await hass.async_block_till_done()
+            assert sent_sup == [f"*2*1*{where}##"]
+        elif user_cmd == "retarget":
+            await cov_sup.async_set_cover_position(position=70)
+            await hass.async_block_till_done()
+            assert sent_sup == [f"*#2*{where}*#11#001*70##"]
+        else:
+            # Also cover _begin_stop when _is_tilting is True on a promoted cover
+            cov_sup._is_tilting = True
+            await cov_sup.async_stop_cover()
+            cov_sup._is_tilting = False
+            await hass.async_block_till_done()
+            assert f"*2*0*{where}##" in sent_sup
+
+    # 5. Timed lifecycle endings (_abort_motion, _finish_end_of_run_settle, _auto_stop) clear
+    # _timed_target_position so later promotion never fires a stale Dim 11 hand-off, and
+    # already-promoted direction reversals still increment _run_generation (`if not promoted:`).
+    fut_abort: asyncio.Future[float] = loop.create_future()
+    gw.send = AsyncMock(return_value=fut_abort)
+    cov_abort = _build_unit_cover("0750", gw, pos=100)
+    await cov_abort.async_set_cover_position(position=40)
+    assert cov_abort._timed_target_position == 40
+    cov_abort._abort_motion()
+    assert cov_abort._timed_target_position is None
+    gw.send.reset_mock()
+    cov_abort.handle_event(OWNAutomationEvent.parse("*#2*0750*10*10*80*001*0##"))
+    await hass.async_block_till_done()
+    gw.send.assert_not_awaited()
+
+    cov_end = _build_unit_cover("0751", gw, pos=50)
+    cov_end._timed_target_position = 40
+    cov_end._finish_end_of_run_settle(True)
+    assert cov_end._timed_target_position is None
+    gw.send.reset_mock()
+    cov_end.handle_event(OWNAutomationEvent.parse("*#2*0751*10*10*100*001*0##"))
+    await hass.async_block_till_done()
+    gw.send.assert_not_awaited()
+
+    fut_past: asyncio.Future[float] = loop.create_future()
+    fut_past.set_result(time.monotonic() - 100.0)
+    gw.send = AsyncMock(side_effect=[fut_past, None])
+    cov_autostop = _build_unit_cover("0752", gw, pos=100)
+    await cov_autostop.async_set_cover_position(position=90)
+    assert cov_autostop._stop_task is not None
+    await asyncio.wait_for(cov_autostop._stop_task, timeout=2.0)
+    assert cov_autostop._timed_target_position is None
+    gw.send.reset_mock()
+    cov_autostop.handle_event(OWNAutomationEvent.parse("*#2*0752*10*10*90*001*0##"))
+    await hass.async_block_till_done()
+    gw.send.assert_not_awaited()
+
+    gen_before = cov_a._run_generation
+    cov_a.handle_event(OWNAutomationEvent.parse("*2*2*0720##"))
+    cov_a.handle_event(OWNAutomationEvent.parse("*2*1*0720##"))
+    assert cov_a._run_generation == gen_before + 1
+    cov_a.handle_event(OWNAutomationEvent.parse("*2*2*0720##"))
+    assert cov_a._run_generation == gen_before + 2
+
+
+@pytest.mark.asyncio
+async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Queued async_calibrate promoted while waiting on calibration_lock aborts with cover_reports_position."""
+    monkeypatch.setattr("custom_components.myhome.cover.CALIBRATION_SETTLE", 0.0)
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(port)
+    registry = er.async_get(hass)
+
+    cal_events: list[dict] = []
+    unsub_events = hass.bus.async_listen(
+        f"{DOMAIN}_cover_calibration",
+        lambda ev: cal_events.append(dict(ev.data)),
+    )
+
+    proceed_0110 = asyncio.Event()
+    entered_0110 = asyncio.Event()
+    swept_covers: list[tuple[str, str]] = []
+
+    async def _controlled_calibration_run(self: MyHOMECover, direction: str) -> float:
+        swept_covers.append((self._full_where, direction))
+        if self._full_where == "0110" and not entered_0110.is_set():
+            entered_0110.set()
+            await proceed_0110.wait()
+        return 14.0 if direction == "close" else 15.0
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch.object(MyHOMECover, "_calibration_run", _controlled_calibration_run),
+        ):
+            handler = await _setup_entry(hass, entry)
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await _drain_startup_polls(handler, harness)
+
+            for raw in ("*2*0*0110##", "*2*0*0111##", "*2*0*0112##"):
+                await _feed(hass, raw)
+
+            cover_0110 = _get_cover_entity(hass, "cover.cover_0110")
+            cover_0111 = _get_cover_entity(hass, "cover.cover_0111")
+            cover_0112 = _get_cover_entity(hass, "cover.cover_0112")
+            cal_all_id = registry.async_get_entity_id("button", DOMAIN, f"{MAC}-calibrate-all-covers")
+            assert cal_all_id is not None
+
+            # 1. Concurrent calibrate_cover calls:
+            # 0110 acquires lock first, then 0111 queues behind it; 0111 promotes via Dim 10 while waiting.
+            task_0110 = asyncio.create_task(
+                hass.services.async_call(
+                    DOMAIN,
+                    "calibrate_cover",
+                    {"entity_id": "cover.cover_0110"},
+                    blocking=True,
+                )
+            )
+            await asyncio.wait_for(entered_0110.wait(), timeout=5.0)
+
+            task_0111 = asyncio.create_task(
+                hass.services.async_call(
+                    DOMAIN,
+                    "calibrate_cover",
+                    {"entity_id": "cover.cover_0111"},
+                    blocking=True,
+                )
+            )
+            for _ in range(20):
+                if cover_0111 in cover_0110.calibration_hub.queued_covers:
+                    break
+                await asyncio.sleep(0.01)
+            assert cover_0111 in cover_0110.calibration_hub.queued_covers
+
+            # Promote 0111 while it sits queued on calibration_hub.lock (do NOT call _feed / async_block_till_done
+            # while task_0110 is parked on proceed_0110.wait()).
+            msg_0111 = OWNMessage.parse("*#2*0111*10*10*60*001*0##")
+            assert msg_0111 is not None
+            async_dispatcher_send(hass, f"myhome_message_{MAC}", msg_0111)
+            await asyncio.sleep(0)
+            assert cover_0111._advanced is True
+            assert entry.options.get(CONF_ADVANCED_COVERS) == {"0111": True}
+
+            proceed_0110.set()
+            await asyncio.wait_for(task_0110, timeout=5.0)
+            with pytest.raises(HomeAssistantError) as batch_exc:
+                await asyncio.wait_for(task_0111, timeout=5.0)
+            assert batch_exc.value.translation_key == "cover_reports_position"
+
+            # 0110 completed and saved travel times; 0111 NEVER swept its motor and NEVER wrote travel times.
+            assert [w for w, _ in swept_covers] == ["0110", "0110", "0110"]
+            assert set(entry.options.get(CONF_COVER_TRAVEL_TIMES, {}).keys()) == {"0110"}
+            assert cover_0110.calibration_hub.queued_covers == set()
+            assert any(
+                e.get("entity_id") == "cover.cover_0111" and e.get("phase") == "failed"
+                for e in cal_events
+            )
+
+            # 2. Queued async_calibrate on 0112 via CalibrateAllCoversButtonEntity,
+            # also verifying stale _calibration_interrupted is cleared and pre-lock check raises cleanly.
+            swept_covers.clear()
+            async with cover_0112.calibration_hub.lock:
+                await hass.services.async_call(
+                    "button",
+                    "press",
+                    {"entity_id": cal_all_id},
+                    blocking=True,
+                )
+                for _ in range(20):
+                    if cover_0112 in cover_0112.calibration_hub.queued_covers:
+                        break
+                    await asyncio.sleep(0.01)
+                assert cover_0112 in cover_0112.calibration_hub.queued_covers
+                cover_0112._calibration_interrupted = "stale_interrupt"
+                msg_0112 = OWNMessage.parse("*#2*0112*10*10*45*001*0##")
+                assert msg_0112 is not None
+                async_dispatcher_send(hass, f"myhome_message_{MAC}", msg_0112)
+                await asyncio.sleep(0)
+
+            await asyncio.sleep(0.05)
+            await hass.async_block_till_done()
+            assert "0112" not in [w for w, _ in swept_covers]
+            assert [w for w, _ in swept_covers] == ["0110", "0110", "0110"]
+            assert "0112" not in entry.options.get(CONF_COVER_TRAVEL_TIMES, {})
+            assert cover_0112._calibration_interrupted is None
+            assert cover_0112.calibration_hub.queued_covers == set()
+            assert any(
+                e.get("entity_id") == "cover.cover_0112" and e.get("phase") == "failed"
+                for e in cal_events
+            )
+
+            # Calling calibrate_cover on an already-promoted cover fails immediately at entry.
+            with pytest.raises(HomeAssistantError) as pre_lock_exc:
+                await hass.services.async_call(
+                    DOMAIN,
+                    "calibrate_cover",
+                    {"entity_id": "cover.cover_0112"},
+                    blocking=True,
+                )
+            assert pre_lock_exc.value.translation_key == "cover_reports_position"
+    finally:
+        proceed_0110.set()
+        unsub_events()
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
