@@ -150,6 +150,35 @@ DEFAULT_MIN_MOTOR_PULSE = 0.4
 CONF_MIN_POSITION_DELTA = "min_position_delta"
 MAX_MIN_POSITION_DELTA = 5
 
+# Some generic / older actuators (e.g. Legrand 067556 two-relay Celiane module)
+# never report a real end-of-travel stop status on the bus, or only report one
+# at a late factory safety cutoff (60 s / 120 s) that has nothing to do with the
+# shutter's real travel time. When enabled, the integration sends an explicit
+# *2*0*<where>## STOP frame on the bus once the software settle timer
+# (travel_time + CONF_EXPLICIT_STOP_MARGIN) elapses, instead of only updating
+# Home Assistant's internal state. This avoids leaving the actuator's relay
+# energized -- and the motor pushing against its mechanical end stop -- for the
+# remainder of the actuator's own (much longer) safety cutoff.
+#
+# The gateway-level option below (set from the integration's Options UI) is the
+# DEFAULT applied to every timed cover on this gateway; a cover can override it
+# individually in YAML with `send_explicit_stop: true/false`.
+# Disabled by default: covers whose actuator already reports a correct,
+# timely stop status must not receive a redundant/early stop command.
+CONF_SEND_EXPLICIT_STOP = "send_explicit_stop"
+DEFAULT_SEND_EXPLICIT_STOP = False
+
+# Extra delay (seconds), on top of the stored travel time, before the explicit
+# stop configured above is sent -- to be confident the shutter has physically
+# reached its end stop before cutting power. Defaults to the same margin the
+# integration already uses to decide a timed run has settled (END_SETTLE_MARGIN
+# in cover_motion.py), so the explicit stop and the internal "arrived" state
+# are reported at the same instant by default.
+CONF_EXPLICIT_STOP_MARGIN = "explicit_stop_margin"
+DEFAULT_EXPLICIT_STOP_MARGIN = 2.0
+MIN_EXPLICIT_STOP_MARGIN = 0.0
+MAX_EXPLICIT_STOP_MARGIN = 10.0
+
 # Impulse cover / access controls (gates, garage doors, impulse relays)
 CONF_TYPE = "type"
 TYPE_IMPULSE_RELAY = "impulse_relay"
@@ -178,19 +207,6 @@ SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
-CONF_ADVANCED_COVERS = "advanced_covers"          # config entry option: {device_id: True}
-CONF_EXPLICIT_KINEMATICS = "_explicit_kinematics"
-CONF_EXPLICIT_TRAVEL_TIME = "_explicit_travel_time"
-EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
-    CONF_ADVANCED_SHUTTER,
-    "advanced_shutter",
-    CONF_STRATEGY,
-    CONF_TRAVEL_TIME,
-    CONF_SLAT_TILT,
-    CONF_SLAT_TIME,
-    CONF_MIN_MOTOR_PULSE,
-    CONF_MIN_POSITION_DELTA,
-)
 SERVICE_CALIBRATE_COVER = "calibrate_cover"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
 SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
