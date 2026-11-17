@@ -1014,6 +1014,11 @@ class FrameScheduler:
         return self._status_resume_at > time.monotonic()
 
     @property
+    def is_shutdown(self) -> bool:
+        """Return True once shutdown() has been called on the scheduler."""
+        return self._is_shutdown
+
+    @property
     def _allow_status(self) -> bool:
         """Whether a worker may dequeue another status-tier item right now."""
         return self._in_flight_status < self._max_in_flight_status and not self.status_paused

@@ -48,7 +48,7 @@ from custom_components.myhome.cover import (
     _normalize_bus_interface,
 )
 from custom_components.myhome.cover_strategies import NativePositionStrategy
-from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from custom_components.myhome.gateway import FrameScheduler, MyHOMEGatewayHandler
 from tests.mock_gateway_harness import MockGatewayHarness
 
 MAC = "00:03:50:00:07:15"
@@ -1896,7 +1896,9 @@ async def test_midmove_promotion_handoff_failure_and_delivery_paths(
         gw.log_id = "[test]"
         gw.config_entry = None
         gw.calibration_hub = None
-        gw.send_buffer = SimpleNamespace(_is_shutdown=is_shutdown)
+        gw.send_buffer = FrameScheduler()
+        if is_shutdown:
+            gw.send_buffer.shutdown()
         return gw
 
     def _relevant_logs() -> list[logging.LogRecord]:
@@ -1968,7 +1970,7 @@ async def test_midmove_promotion_handoff_failure_and_delivery_paths(
     assert cov_sup_err._echo_until == newer_echo_stage1
     assert any("delayed enqueue failed" in r.message for r in _relevant_logs())
 
-    # 2. Stage 1: synchronous send() raising when send_buffer._is_shutdown = True
+    # 2. Stage 1: synchronous send() raising when send_buffer.is_shutdown = True
     # -> _echo_until cleared, NO warning logged.
     gw_shut_err = _make_gw(is_shutdown=True)
     gw_shut_err.send = AsyncMock(side_effect=[None, RuntimeError("queue shut down")])
@@ -2078,7 +2080,7 @@ async def test_midmove_promotion_handoff_failure_and_delivery_paths(
     assert cov_fut_sup._echo_until == newer_echo
     assert _relevant_logs() == []
 
-    # 4b. Stage 2: written future cancelled when send_buffer._is_shutdown = True
+    # 4b. Stage 2: written future cancelled when send_buffer.is_shutdown = True
     # -> _echo_until cleared, NO warning logged.
     gw_fut_shut = _make_gw(is_shutdown=False)
     fut_shut: asyncio.Future[float] = loop.create_future()
@@ -2088,7 +2090,8 @@ async def test_midmove_promotion_handoff_failure_and_delivery_paths(
     cov_fut_shut.handle_event(OWNAutomationEvent.parse("*#2*0769*10*12*100*001*0##"))
     await hass.async_block_till_done()
     assert cov_fut_shut._echo_until is not None
-    gw_fut_shut.send_buffer._is_shutdown = True
+    gw_fut_shut.send_buffer.shutdown()
+    assert gw_fut_shut.send_buffer.is_shutdown is True
     caplog.clear()
     with caplog.at_level(logging.WARNING):
         fut_shut.cancel()

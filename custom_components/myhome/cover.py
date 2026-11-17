@@ -152,7 +152,7 @@ from .discovery import (
     default_known_keys,
     parse_unique_id,
 )
-from .gateway import MyHOMEGatewayHandler
+from .gateway import FrameScheduler, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
 if TYPE_CHECKING:
@@ -1641,13 +1641,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._echo_until = time.monotonic() + ECHO_WINDOW
 
                 def _is_send_buffer_shutdown() -> bool:
+                    send_buffer = self._gateway_handler.send_buffer
                     return (
-                        getattr(
-                            getattr(self._gateway_handler, "send_buffer", None),
-                            "_is_shutdown",
-                            False,
-                        )
-                        is True
+                        isinstance(send_buffer, FrameScheduler)
+                        and send_buffer.is_shutdown
                     )
 
                 try:
