@@ -152,7 +152,7 @@ from .discovery import (
     default_known_keys,
     parse_unique_id,
 )
-from .gateway import MyHOMEGatewayHandler
+from .gateway import FrameScheduler, MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 
 if TYPE_CHECKING:
@@ -692,6 +692,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._move_lead: float = 0.0
         self._pending_stop_context: dict[str, Any] | None = None
         self._auto_stop_duration: float | None = None
+        self._timed_target_position: int | None = None
+        self._pending_timed_target: int | None = None
 
     @property
     def _settles_on_timer(self) -> bool:
@@ -1047,6 +1049,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_start_tilt = None
         self._run_lead = self._move_lead = 0.0
         self._auto_stop_duration = None
+        self._timed_target_position = None
         self._full_run_to_end = False
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = (self._attr_current_cover_position == 0)
@@ -1070,6 +1073,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_lead = self._move_lead = 0.0
         self._pending_stop_context = None
         self._auto_stop_duration = None
+        self._timed_target_position = None
         self._end_run_from_unknown = False
         self._full_run_to_end = False
         self._move_start_time = None
@@ -1170,6 +1174,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # A cancelled settle can no longer anchor a run from unknown: the next
         # stop status must end the run normally (a reversal or an HA stop).
         self._end_run_from_unknown = False
+        self._timed_target_position = None
         self._cancel_wall_settle()
         if self._stop_task is not None:
             try:
@@ -1419,6 +1424,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         finally:
             self._settles_on_timer = True
 
+    def _is_promoted_native(self) -> bool:
+        """Return True when this cover uses native Dimension 10/11 positioning."""
+        return self._advanced
+
+    def _cover_reports_position_error(self) -> HomeAssistantError:
+        """Build the error raised when travel-time calibration is called on a native cover."""
+        return HomeAssistantError(
+            f"{self._display_name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml",
+            translation_domain=DOMAIN,
+            translation_key="cover_reports_position",
+            translation_placeholders={"name": self._display_name},
+        )
+
     async def async_calibrate(self) -> dict:  # type: ignore
         """Measure this cover's travel times on the bus and store them.
 
@@ -1428,12 +1446,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         when the installer calibrated the actuator (the usual case).
         """
         if self._advanced:
-            raise HomeAssistantError(
-                f"{self._display_name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml",
-                translation_domain=DOMAIN,
-                translation_key="cover_reports_position",
-                translation_placeholders={"name": self._display_name},
-            )
+            raise self._cover_reports_position_error()
         if self._calibrating:
             raise HomeAssistantError(
                 f"{self._display_name} is already being calibrated",
@@ -1454,6 +1467,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         try:
             async with lock:
                 hub.queued_covers.discard(self)
+                if self._is_promoted_native():
+                    self._calibration_interrupted = None
+                    err = self._cover_reports_position_error()
+                    self._fire_calibration_event("failed", error=str(err))
+                    raise err
                 if self._calibration_interrupted:
                     self._fire_calibration_event("failed", error=self._calibration_interrupted)  # type: ignore
                     raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
@@ -1557,12 +1575,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # direction); a timed cover without a position is unknown.
                 self._attr_is_closed = None
 
-    def _promote_to_native_strategy(self) -> None:
+    def _promote_to_native_strategy(self, reported_position: int | None = None) -> None:
         """Promote a discovered timed cover in-place to NativePositionStrategy on calibrated Dimension 10."""
         self._stop_live_refresh()
         self._cancel_wall_settle()
+        timed_target: int | None = None
         if not self._is_tilting:
+            timed_target = self._timed_target_position
             self._cancel_stop_task()
+            self._run_generation += 1
+            self._end_echo_window()
+            self._run_start_position = None
+            self._run_start_tilt = None
+            self._run_lead = self._move_lead = 0.0
         self._auto_stop_duration = None
         self._full_run_to_end = False
         self._end_run_from_unknown = False
@@ -1589,6 +1614,73 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_extra_state_attributes.pop(attr_key, None)
         self._attr_extra_state_attributes["min_position_delta"] = native.min_position_delta
         self._persist_advanced_cover()
+        if timed_target is not None and (target_hass := (self.hass or self._hass)) is not None:
+            hand_off_gen = self._run_generation
+            quantized = native.quantize_target(reported_position, timed_target)
+
+            async def _handoff_timed_target() -> None:
+                # Yield once so hass.async_create_task()'s eager_start=True does not
+                # run this before handle_event() finishes (where a stationary Dim 10
+                # frame calls _end_echo_window()) or before a synchronous user
+                # takeover bumps _run_generation.
+                await asyncio.sleep(0)
+                if hand_off_gen != self._run_generation:
+                    return
+                arm_echo = False
+                if reported_position is not None and quantized == reported_position:
+                    command = OWNAutomationCommand.stop_shutter(self._full_where)
+                elif quantized <= 0:
+                    command = OWNAutomationCommand.lower_shutter(self._full_where)
+                elif quantized >= 100:
+                    command = OWNAutomationCommand.raise_shutter(self._full_where)
+                else:
+                    arm_echo = True
+                    command = OWNAutomationCommand.set_shutter_level(
+                        self._full_where, quantized
+                    )
+                    self._echo_until = time.monotonic() + ECHO_WINDOW
+
+                def _is_send_buffer_shutdown() -> bool:
+                    send_buffer = self._gateway_handler.send_buffer
+                    return (
+                        isinstance(send_buffer, FrameScheduler)
+                        and send_buffer.is_shutdown
+                    )
+
+                try:
+                    written = await self._gateway_handler.send(command, is_cancel=True)
+                except Exception as err:
+                    if arm_echo and hand_off_gen == self._run_generation:
+                        self._end_echo_window()
+                    if not _is_send_buffer_shutdown():
+                        LOGGER.warning(
+                            "%s Mid-move Dimension 10 promotion hand-off `%s` failed for cover %s: %s",
+                            self._gateway_handler.log_id,
+                            command,
+                            self._full_where,
+                            err,
+                        )
+                    return
+                if isinstance(written, asyncio.Future):
+
+                    @callback
+                    def _on_handoff_written(fut: asyncio.Future[float]) -> None:
+                        if hand_off_gen != self._run_generation:
+                            return
+                        if fut.cancelled() or fut.exception() is not None:
+                            if arm_echo:
+                                self._end_echo_window()
+                            if not _is_send_buffer_shutdown():
+                                LOGGER.warning(
+                                    "%s Mid-move Dimension 10 promotion hand-off `%s` did not reach the bus for cover %s.",
+                                    self._gateway_handler.log_id,
+                                    command,
+                                    self._full_where,
+                                )
+
+                    written.add_done_callback(_on_handoff_written)
+
+            target_hass.async_create_task(_handoff_timed_target())
         LOGGER.debug(
             "%s Auto-promoted cover %s to native Dimension 10 positioning.",
             self._gateway_handler.log_id,
@@ -1967,6 +2059,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_lead = self._move_lead = 0.0
             self._pending_stop_context = None
             self._auto_stop_duration = None
+            self._timed_target_position = self._pending_timed_target
+            self._pending_timed_target = None
             # The clock starts when the frame is written (see _track_write),
             # not now: with a busy queue the motor is still idle for a while.
             self._move_start_time = None
@@ -1978,6 +2072,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._is_closed_before_move = self._attr_is_closed
             self._attr_is_closed = False
             self._begin_command(direction)
+        else:
+            self._run_generation += 1
 
     async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
@@ -2056,6 +2152,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_lead = self._move_lead = 0.0
         self._pending_stop_context = None
         self._auto_stop_duration = None
+        self._timed_target_position = None
         self._end_run_from_unknown = False
         self._full_run_to_end = False
         self._refresh_travel_attributes()
@@ -2186,9 +2283,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if self._advanced:
             # The level command takes the motor over: a running slat pulse must
-            # not stop it with its own auto-stop.
+            # not stop it with its own auto-stop, and any pending promotion
+            # hand-off is superseded.
             self._cancel_stop_task()
             self._end_pulse_for_takeover()
+            self._run_generation += 1
             now = time.monotonic()
             current = self._attr_current_cover_position
             moving = bool(self._attr_is_opening or self._attr_is_closing)
@@ -2283,7 +2382,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self._async_run_to_end(False)
             return
 
-        written = await self._async_move(direction)
+        target_int = int(round(target_position))
+        self._pending_timed_target = target_int
+        try:
+            written = await self._async_move(direction)
+        finally:
+            self._pending_timed_target = None
+        if self._is_promoted_native():
+            return
+        self._timed_target_position = target_int
         generation = self._run_generation
 
         async def _auto_stop() -> None:
@@ -2305,6 +2412,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_tilt_position = 100 if opening else 0
                 self._move_start_time = time.monotonic()
                 self._move_lead = 0.0  # the lead was spent before the target
+                self._timed_target_position = None
                 await self.async_stop_cover()
                 if self.hass is not None:
                     self.async_write_ha_state()
@@ -2337,7 +2445,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._cancel_stop_task()
         # HA asked for the stop: its status is never the end stop, whenever it arrives.
         self._full_run_to_end = False
-        if self._advanced or self._is_tilting:
+        if self._is_tilting:
+            return
+        if self._advanced:
+            self._run_generation += 1
             return
         # The estimate keeps running until the stop frame is actually
         # written (_track_write freezes it then); if delivery never
@@ -2877,7 +2988,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     @callback
     def handle_event(self, message: OWNMessage) -> None:
-        """Handle an event message."""
+        """Handle an event message.
+
+        When a frame auto-promotes the cover mid-move (`promoted=True`) while
+        reporting the opposite direction from a stale pre-promotion estimate,
+        `if not promoted:` preserves `_run_generation` so Home Assistant's
+        in-flight target hand-off wins and reverses/retargets the shutter;
+        subsequent reversals after promotion increment `_run_generation` as an
+        external takeover.
+        """
         is_translation = getattr(message, "is_translation", None) is True
         if is_translation:
             effective_what = getattr(message, "effective_what", None)
@@ -2956,7 +3075,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if own_point and position is not None:
             self._bus_state_complete = True
             if not self._advanced and self._allow_auto_advanced and not self._calibrating:
-                self._promote_to_native_strategy()
+                self._promote_to_native_strategy(reported_position=position)
                 promoted = True
 
         LOGGER.debug(
@@ -3049,7 +3168,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 was_closing = bool(self._attr_is_closing)
                 if was_closing:
                     self._cancel_stop_task()
-                    self._run_generation += 1
+                    if not promoted:
+                        self._run_generation += 1
                 if not self._advanced and not self._attr_is_opening:
                     self._start_position = self.current_cover_position
                 if was_closing:
@@ -3088,7 +3208,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 was_opening = bool(self._attr_is_opening)
                 if was_opening:
                     self._cancel_stop_task()
-                    self._run_generation += 1
+                    if not promoted:
+                        self._run_generation += 1
                 if not self._advanced and not self._attr_is_closing:
                     self._start_position = self.current_cover_position
                 if was_opening:

@@ -1,0 +1,27 @@
+2026-11-17T11:47:44.086Z EVT *#4*2*0*0238## [OWNHeatingEvent] Zone 2's main sensor is reporting a temperature of 23.8°C.
+2026-11-17T11:47:44.990Z EVT *#4*2*13*00## [OWNHeatingEvent] Zone 2's local offset is set to 0°C.
+2026-11-17T11:47:45.902Z EVT *#4*2*14*0240*3## [OWNHeatingEvent] Zone 2's target temperature is set to 24.0°C.
+2026-11-17T11:47:46.755Z EVT *#4*2*12*0240*3## [OWNHeatingEvent] Zone 2's local target temperature is set to 24.0°C.
+2026-11-17T11:47:46.758Z EVT *4*1*2## [OWNHeatingEvent] Zone 2's season is heating.
+2026-11-17T11:47:47.676Z EVT *#4*2#1*20*7## [OWNHeatingEvent] Zone 2's fan is on at speed 2.
+2026-11-17T11:47:47.679Z EVT *#4*2#1*20*7## [OWNHeatingEvent] Zone 2's fan is on at speed 2.
+2026-11-17T11:47:48.438Z EVT *#4*2*19*5*7## [OWNHeatingEvent] Zone 2's cooling fan is off; heating fan is on at speed 2.
+2026-11-17T11:47:49.398Z EVT *#4*2*11*0## [OWNHeatingEvent] Zone 2's fan is on at 'Auto' speed.
+2026-11-17T11:47:50.338Z EVT *#4*3*0*0255## [OWNHeatingEvent] Zone 3's main sensor is reporting a temperature of 25.5°C.
+2026-11-17T11:47:51.157Z EVT *#4*3*13*00## [OWNHeatingEvent] Zone 3's local offset is set to 0°C.
+2026-11-17T11:47:51.918Z EVT *#4*3*14*0215*3## [OWNHeatingEvent] Zone 3's target temperature is set to 21.5°C.
+2026-11-17T11:47:52.758Z EVT *#4*3*12*0215*3## [OWNHeatingEvent] Zone 3's local target temperature is set to 21.5°C.
+2026-11-17T11:47:52.761Z EVT *4*0*3## [OWNHeatingEvent] Zone 3's season is conditioning.
+2026-11-17T11:47:53.110Z EVT *4*210*#3## [OWNHeatingEvent] Zone 3's mode is set to 'cool'.
+2026-11-17T11:47:53.113Z EVT *#4*#3*14*0215*2## [OWNHeatingEvent] Zone 3's target temperature is set to 21.5°C.
+2026-11-17T11:47:53.943Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T11:47:53.984Z EVT *#4*3#1*#20*0## [OWNHeatingCommand] *#4*3#1*#20*0##
+2026-11-17T11:47:54.023Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T11:47:54.882Z EVT *#4*4*0*0257## [OWNHeatingEvent] Zone 4's main sensor is reporting a temperature of 25.7°C.
+2026-11-17T11:47:55.803Z EVT *#4*4*13*00## [OWNHeatingEvent] Zone 4's local offset is set to 0°C.
+2026-11-17T11:47:55.846Z EVT *4*210*#4## [OWNHeatingEvent] Zone 4's mode is set to 'cool'.
+2026-11-17T11:47:55.849Z EVT *#4*#4*14*0215*2## [OWNHeatingEvent] Zone 4's target temperature is set to 21.5°C.
+2026-11-17T11:47:56.695Z EVT *#4*4*14*0215*3## [OWNHeatingEvent] Zone 4's target temperature is set to 21.5°C.
+2026-11-17T11:47:57.535Z EVT *#4*4*12*0215*3## [OWNHeatingEvent] Zone 4's local target temperature is set to 21.5°C.
+2026-11-17T11:47:57.539Z EVT *4*0*4## [OWNHeatingEvent] Zone 4's season is conditioning.
+2026-11-17T11:47:58.468Z EVT *#4*4#1*20*0## [OWNHeatingEvent] Zone 4's actuator 1 is off.

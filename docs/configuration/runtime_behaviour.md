@@ -111,16 +111,24 @@ If the gateway rejects the OpenWebNet password during setup, the integration rai
 
 ---
 
-## 🌡️ F455 zones ask once, 120 s after the sweep
+## 🌡️ Zones that have not reported ask once, 30 s after the sweep
 
-The F455 Basic Gateway returns nothing to `*#4*0##`, ACKs `*#4*<WHERE>##` only after about 9 s (sixteen of them timing out one after another was #674) and refuses `*#4*<WHERE>*20##` at once, so its climate zones ask nothing when they are added. A standalone thermostat on it can then stay `unknown` for hours (#466).
+What a zone is asked when it is added depends on the gateway: the zone status request `*#4*<WHERE>##` (F454, F460, F461, MH202, MyHomeServer1 and any model that is in no table), its temperature and its knob (F450, F459, H4684, MH200, MH201), its knob only (F452, F453, F453AV, F458, MH200N), or nothing (F455). Where none of that brings the setpoint, nothing else asked for it: a standalone thermostat on an F455 could stay `unknown` for hours (#466), and the zones of an MH201 had no `temperature` after every restart until a thermostat published a change (#932). Whether a gateway answers `*#4*0##` or `*#4*<WHERE>##` with the state of a zone is known for the models in the request tables and unknown for any other, so the delayed poll has no model list.
 
-Behaviour (live F455 1.0.76, `tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl`):
+Behaviour, on every gateway:
 
-- 120 s after the startup sweep, a zone that has not reported its temperature, setpoint, mode and an actuator by itself asks for what is missing, one read at a time: `*#4*<zone>*0##`, `*#4*<zone>*14##`, `*#4*<zone>*12##` (followed by the zone's season frame) and `*#4*<zone>#1*20##`. Each is answered in about 0.1 s. A value restored from before the restart does not count as reported.
-- Each read waits for the previous answer. A zone without a probe (an actuator-only channel) refuses the first read after about 9 s and is asked nothing else, so it costs one read and one command session held for those 9 s, once per zone added or reloaded (`F455_direct_requests_zone3_2026-11-06.jsonl`).
-- Whether the gateway wants this is decided when the poll runs, not when the zone is added, so a model corrected in band (WHO 13 / WHO 1013) after start is honoured; on a shared bus the gateway that serves WHO 4 decides, and a passive standby or secondary asks nothing.
-- The zone's actuator watch (`*#4*<WHERE>*20##`) is not sent to an F455; thermo actuator switches (`*#4*<WHERE>#<N>*20##`) still ask, and the F455 answers them.
+- 30 s after the startup sweep, and not before its own startup poll has finished (the zones of a large plant are polled one after another, which can take longer than that), a zone that has not reported its temperature, setpoint and mode asks for what is missing, one read at a time: `*#4*<zone>*0##` (only when the temperature is missing), `*#4*<zone>*13##` (the knob), `*#4*<zone>*14##`, `*#4*<zone>*12##` (the F455 follows it with the zone's season frame) and `*#4*<zone>#1*20##`. A value restored from before the restart does not count as reported; it is shown until the zone's own value arrives.
+- It goes by the result: a zone that got everything from the sweep, from its status request or from its thermostat sends nothing. A zone that answered neither of its last two status requests (`unresponsive_zone` repair) is left alone until it is probed again.
+- The zones are asked one after another, and each read waits for the previous answer and then for the bus to be quiet (no frame for 0.75 s, the pacing of the startup polls, #886). A request a zone makes on its own while the poll runs (dimension 19 and the fan speed, once an actuator reported a fan coil) is sent first, with the same quiet time, and the poll's next read follows it. A refused or unanswered read ends the poll, so a zone without a probe (an actuator-only channel) costs one read. Unanswered means a NACK, no reply at all within 60 s, or an ACK that came without a frame while the zone itself sent nothing within one more second: an ACK alone is not an answer (a physical F455 ACKs `*#4*0##` after about 9 s and sends nothing). A read that was dropped because it collected only another zone's frame (the guard of #886) says nothing about its own zone: it is sent once more after the quiet time, unless the zone's own answer arrived on the event session in the meantime. On a physical F455 plant the state of an actuator came twice, 0.09 to 0.27 s apart, after one read, and the next read collected the second copy (`tests/fixtures/traces/issue_932`); the quiet time lets such a frame pass before the next read opens. On an F455 that read is refused only after about 9 s and holds a command session for those 9 s, once per zone added or reloaded (`F455_direct_requests_zone3_2026-11-06.jsonl`).
+- What is asked when a zone is added does not change. The knob read is sent then (#466 / #902). The poll does not repeat a knob read that was answered; one that brought nothing is repeated once, as the last read of a zone that is still missing its temperature, setpoint or mode, so that its refusal cannot hold back the setpoint reads. The poll does not ask for a knob that a zone left out of its answer to `*#4*<WHERE>##`. Only the F455 keeps the knob read for the poll (`KNOB_READ_IN_SILENT_ZONE_POLL`): its zones ask nothing when they are added (`*#4*0##` returns nothing and `*#4*<WHERE>##` is ACKed only after about 9 s; sixteen of them timing out one after another was #674).
+- `*#4*<zone>#1*20##` is not asked on F453, F453AV, H4684, MH200, MH200N and MH202, which drop the actuator request (`ACTUATOR_REQUEST_REFUSED`). A zone that misses nothing but its actuators was already asked for them when it was added (`*#4*<WHERE>*20##`), so it asks for actuator 1 here only on an F455, where that request is not sent; thermo actuator switches (`*#4*<WHERE>#<N>*20##`) still ask, and the F455 answers them.
+- On a shared bus the gateway that serves WHO 4 decides the knob and the actuator read, and a passive standby or secondary asks nothing.
+
+Evidence:
+
+- F455 1.0.76, physical (`tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl`): each read is answered in about 0.1 s.
+- MH201 3.6.43, physical, four standalone zones (#932): explicit reads of dimensions 12 and 14 were answered, and with the poll all four zones showed their setpoint after a full restart.
+- F450, F453, F453AV, F459, H4684, MH200 and MH200N: in the firmware oracle each of `*#4*<zone>*0##`, `*12##`, `*13##` and `*14##` goes out to the bus; the poll has not yet run on a physical plant. F452 and F458 are not in the oracle.
 
 ---
 
@@ -131,7 +139,8 @@ Slave / external probes use the `ZPP` address form (zone `Z`, probe `PP`, e.g. `
 Behaviour:
 
 - A probe entity starts **receive-only**: no request is sent when it is added.
-- The periodic update (every 5 minutes) only sends a poll if **no reading arrived within the last interval**, so a probe that goes silent (battery, radio) still recovers.
+- The periodic update (every 5 minutes) only sends a poll if **no reading arrived within the last 15 minutes**, so a probe that goes silent (battery, radio) still recovers. Not every probe reports every few seconds: one on a physical F455 / F461 plant reported every 10 minutes, and with a 5-minute window every second update sent a read that the F455 NACKed only after about 9 s.
+- A read the gateway **refused** (a NACK, or no reply before the command timeout, while the gateway was connected and the probe sent nothing during the read) is **not sent again** until the entry is reloaded; the probe's own reports are still shown. A read that was not answered at all because the command session could not be opened or lost its connection is not a refusal, and neither is one that collected only another zone's frames (the guard of #886, which covers the read of a probe too).
 - Zone sensors (`WHERE < 100`) keep polling `*#4*Z*0##` as before.
 
 *(#308)*
@@ -178,8 +187,9 @@ Central units coordinate with the plant as follows:
 
 Several BTicino / Legrand gateway firmwares deterministically NACK, drop, or crash on specific `WHO = 4` requests. The runtime enforces model-specific protocol guards in `gateway.py`, `climate.py`, and `services.py` before any frame reaches the TCP command queue:
 
-- **`GENERAL_ZONE_REQUEST_REFUSED`**: Broadcast `*#4*0##` status sweeps are suppressed on `F450`, `F454`, `F459`, `F460`, `F461`, `H4684`, `MH200`, `MH201`, `MH202`, and `MyHomeServer1`, where firmware returns immediate NACK or silent timeout.
-- **`SILENT_ZONE_POLL` & `ZONE_ACTUATOR_REQUEST_REFUSED` (`F455`)**: On `F455`, `*#4*0##` returns nothing, `*#4*<zone>*20##` is refused immediately, and unanswered `*#4*<zone>##` polls stall the command socket for ~9 s. Climate zones skip startup polling and instead run the 120 s delayed sequential direct-read recovery described above (`*#4*<zone>*0##`, `*14##`, `*12##`, `*#4*<zone>#1*20##`), while skipping zone-wide `*#4*<zone>*20##` watches.
+- **`GENERAL_ZONE_REQUEST_REFUSED`**: Broadcast `*#4*0##` status sweeps are suppressed on `F450`, `F454`, `F455`, `F459`, `F460`, `F461`, `H4684`, `MH200`, `MH201`, `MH202`, and `MyHomeServer1`, where firmware returns immediate NACK or silent timeout (a physical `F455` 1.0.76: an ACK after about 9 s and no frame).
+- **`ZONE_ACTUATOR_REQUEST_REFUSED` (`F455`)**: On `F455`, `*#4*0##` returns nothing, `*#4*<zone>*20##` is refused immediately, and unanswered `*#4*<zone>##` polls stall the command socket for ~9 s. Climate zones skip startup polling and zone-wide `*#4*<zone>*20##` watches.
+- **`KNOB_READ_IN_SILENT_ZONE_POLL` (`F455`)**: The delayed sequential direct-read recovery described above (30 s after the sweep: `*#4*<zone>*0##`, `*13##`, `*14##`, `*12##`, `*#4*<zone>#1*20##`, for what a zone has not reported) runs on every gateway and has no model table. Only on `F455` is the knob read `*#4*<zone>*13##` part of that sequence instead of being sent when the zone is added (#466, #674).
 - **Local-bus `#4#II` write refusal**: Gateway translators do not implement `#4#<interface>` sub-bus routing on `WHO = 4` thermoregulation writes; outbound `WHO = 4` frames carrying `#4#II` are refused rather than stalling or NACKing on the gateway.
 - **`HUMIDITY_REQUEST_REFUSED`**: Explicit Dimension 60 (`*#4*<zone>*60##`) humidity polls are suppressed on `F450`, `F453`, `F453AV`, `F454`, `F455`, `H4684`, `MH200`, `MH200N`, and `MH202` (zones still decode unsolicited Dimension 60 reports whenever broadcast on the bus).
 - **`ACTUATOR_REQUEST_REFUSED`**: Explicit Dimension 20 (`*#4*<zone>*20##`) actuator status polls are suppressed on `F453`, `F453AV`, `H4684`, `MH200`, `MH200N`, and `MH202`.

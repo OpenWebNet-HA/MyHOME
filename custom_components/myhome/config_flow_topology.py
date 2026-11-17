@@ -217,6 +217,11 @@ class OptionsFlowTopologyMixin:
             model_override=user_input.get(CONF_NAME),
         )
         if top_errors:
+            if CONF_PRIMARY_GATEWAY in top_errors and not self._other_gateways():
+                # The form of the last MyHOME entry has no primary gateway field
+                # (``_append_topology_schema``): an error on it would not be shown. It goes on
+                # the one topology field that form has.
+                top_errors[CONF_BUS_TOPOLOGY] = top_errors.pop(CONF_PRIMARY_GATEWAY)
             errors.update(top_errors)
             return
 
@@ -259,17 +264,41 @@ class OptionsFlowTopologyMixin:
 
             async_delete_shared_bus_issue(self.hass, my_mac, str(norm_pri))
 
-    def _append_topology_schema(
-        self, schema_dict: dict[typing.Any, typing.Any]
-    ) -> None:
-        """Append shared-bus topology fields when multiple gateways exist."""
-        assert self.options is not None
-        other_gateways = [
+    def _other_gateways(self) -> list[ConfigEntry]:
+        """The MyHOME entries other than the one being configured."""
+        return [
             e
             for e in self.hass.config_entries.async_entries(DOMAIN)
             if e.entry_id != getattr(self.config_entry, "entry_id", None)
         ]
+
+    def _append_topology_schema(
+        self, schema_dict: dict[typing.Any, typing.Any]
+    ) -> None:
+        """Append shared-bus topology fields when multiple gateways exist.
+
+        The last MyHOME entry gets no topology field, with one exception: an entry that is
+        still a secondary or warm standby. Its primary has no entry any more, the
+        ``primary_gateway_missing`` repair (#453) tells the owner to set Bus Topology to
+        Standalone, and this is the form to do it in. Only that field is shown, with the
+        stored value; nothing changes unless the owner saves another one.
+        """
+        assert self.options is not None
+        other_gateways = self._other_gateways()
         if not other_gateways:
+            if entry_is_follower(self.config_entry):
+                schema_dict[
+                    vol.Optional(
+                        CONF_BUS_TOPOLOGY,
+                        description={"suggested_value": TOPOLOGY_SHARED},
+                    )
+                ] = selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[TOPOLOGY_STANDALONE, TOPOLOGY_SHARED],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                        translation_key=CONF_BUS_TOPOLOGY,
+                    )
+                )
             return
 
         gw_options = [
