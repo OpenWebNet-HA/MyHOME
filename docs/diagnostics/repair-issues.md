@@ -312,6 +312,7 @@ A gateway configured as **Secondary** or **Warm Standby** points at a primary ga
 ### How to resolve
 1. Navigate to **Settings → Devices & Services → MyHOME** and click **Configure** on the gateway named in the issue.
 2. Either select another gateway (configured as **Shared** / **Primary**) under **Primary Gateway**, or set **Bus Topology** to `standalone` if it is now the only gateway on its bus.
+3. If the gateway named in the issue is the only MyHOME gateway left in Home Assistant, its **Configure** form shows **Bus Topology** and no other topology field: set it to `standalone` and save. The gateway is reloaded as its own primary and the issue is cleared. Nothing changes until you save, and saving with `shared` is refused there, because the primary it points at has no entry.
 
 ---
 
