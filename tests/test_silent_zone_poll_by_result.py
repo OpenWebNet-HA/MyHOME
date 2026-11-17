@@ -372,6 +372,24 @@ async def test_the_quiet_time_is_the_gateway_s_bus_quiet_period(hass, monkeypatc
     assert len(waits) == len(_queued(handler)) == 5
 
 
+async def test_a_request_a_zone_made_on_its_own_goes_out_before_the_next_read(hass) -> None:
+    """On the F455 plant zone 2's actuator reported a fan coil, the zone asked for dimension 19
+    through the gateway's paced sender, and that read was queued 1 ms before the next poll read:
+    both had waited for the same quiet bus. The poll lets such a request through first."""
+    handler = _handler(hass, "F455")
+    zone = _zone(hass, handler)
+
+    async def _send(command):
+        if str(command) == "*#4*2*13##":
+            handler.request_zone_dimension("2", 19)  # what a fan coil report makes the zone do
+        return _acknowledged(hass, empty=False)
+
+    _ready(handler, side_effect=_send)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*19##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    assert handler._zone_request_task.done()
+
+
 async def test_the_zones_are_asked_one_after_another(hass) -> None:
     """The poll holds the startup poll lock for all reads of a zone: no read of zone 4 between zone 3's."""
     handler = _handler(hass, "F455")

@@ -1669,8 +1669,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         One zone at a time (the gateway's startup poll lock is held for the zone's reads), and
         each read waits for the previous one to be answered and for the bus to be quiet after it
         (``pace_startup_status_write``): the frame a device sends twice then falls into that
-        quiet time and not into the next read. A refused or unanswered read (a zone without a
-        probe) ends the poll after one request: a NACK, no reply at all within
+        quiet time and not into the next read. A request a zone made on its own in the meantime
+        (``request_zone_dimension``) is sent before the next read. A refused or unanswered read
+        (a zone without a probe) ends the poll after one request: a NACK, no reply at all within
         ``PACED_READ_TIMEOUT``, or an ACK that came without a frame while the zone sent nothing
         either (``EMPTY_REPLY_SETTLE``). A read dropped because it collected another zone's
         frame is not an answer of this zone: it is sent once more, unless the zone's own answer
@@ -1707,11 +1708,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return  # the zone reported its temperature, setpoint, mode and an actuator on its own
         LOGGER.debug("%s %s has not reported since the startup sweep; asking %s", handler.log_id, self._display_name, reads)
         pace = getattr(handler, "pace_startup_status_write", None)
+        own_requests = getattr(handler, "wait_for_zone_requests", None)
         for frame in reads:
             frames_before = self._poll_health.frames
             request = cast(OWNCommand, OWNHeatingCommand.parse(frame))
             written: object = None
             for _attempt in range(2):
+                if callable(own_requests):
+                    # A request a zone makes on its own while the poll runs (the fan coil's
+                    # side once an actuator reported a fan coil, the fan speed after that)
+                    # goes through the gateway's paced sender, which waits for the same quiet
+                    # bus as this poll. It is let through first, with its own quiet time,
+                    # instead of being written back to back with the next read.
+                    await own_requests()
                 try:
                     written = await handler.send_status_request(request)
                 except Exception:  # a transport error must not end the task silently (#593)
