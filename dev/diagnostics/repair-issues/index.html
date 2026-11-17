@@ -3820,6 +3820,7 @@
 <ol>
 <li>Navigate to <strong>Settings → Devices &amp; Services → MyHOME</strong> and click <strong>Configure</strong> on the gateway named in the issue.</li>
 <li>Either select another gateway (configured as <strong>Shared</strong> / <strong>Primary</strong>) under <strong>Primary Gateway</strong>, or set <strong>Bus Topology</strong> to <code>standalone</code> if it is now the only gateway on its bus.</li>
+<li>If the gateway named in the issue is the only MyHOME gateway left in Home Assistant, its <strong>Configure</strong> form shows <strong>Bus Topology</strong> and no other topology field: set it to <code>standalone</code> and save. The gateway is reloaded as its own primary and the issue is cleared. Nothing changes until you save, and saving with <code>shared</code> is refused there, because the primary it points at has no entry.</li>
 </ol>
 <hr />
 <h2 id="decoder-is-a-myhome-or-music-assistant-entity">Decoder Is A MyHOME Or Music Assistant Entity<a class="headerlink" href="#decoder-is-a-myhome-or-music-assistant-entity" title="Permanent link">&para;</a></h2>
