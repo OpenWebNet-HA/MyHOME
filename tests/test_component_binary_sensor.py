@@ -208,11 +208,11 @@ async def test_motion_sensor(hass):
     sensor.handle_event(event)
     assert sensor.is_on
 
-    # Test timeout event
+    # Test timeout event (60s + 3s grace = 63s)
     event.message_type = MESSAGE_TYPE_MOTION_TIMEOUT
     event.motion_timeout = timedelta(seconds=60)
     sensor.handle_event(event)
-    assert sensor._timeout == timedelta(seconds=75)
+    assert sensor._timeout == timedelta(seconds=63)
 
     # Test PIR sensitivity event
     event.message_type = MESSAGE_TYPE_PIR_SENSITIVITY
@@ -732,11 +732,11 @@ async def test_motion_sensor_zero_padded_where_and_legrand_048834_frames(hass):
         await hass.async_block_till_done()
         assert sensor.extra_state_attributes["Sensitivity"] == "high"
 
-        # 3. Timeout frame: *#1*0015*7*0*0*10##
+        # 3. Timeout frame: *#1*0015*7*0*0*10## (10s + 3s grace = 13s)
         timeout_msg = OWNEvent.parse("*#1*0015*7*0*0*10##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", timeout_msg)
         await hass.async_block_till_done()
-        assert sensor.extra_state_attributes["Timeout"] == 25.0
+        assert sensor.extra_state_attributes["Timeout"] == 13.0
 
 
 async def test_motion_sensor_0015_and_switch_15_coexistence(hass):

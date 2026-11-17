@@ -101,6 +101,9 @@ UNIMPLEMENTED_PARSER_SHAPES: dict[ShapeKey, str] = {
     ("dimension_write", 1001, None, "general", "30", 2): (
         "WHO 1001 #30 MyHomeSuite actuator memory-register configuration write (*#1001*0*#30*...##)"
     ),
+    ("dimension_write", 1001, None, "general", "32#dp1", 2): (
+        "WHO 1001 #32#1 MyHomeSuite slot-address configuration write (*#1001*0*#32#1*1*1001##)"
+    ),
     ("dimension_write", 1001, None, "general", "35#dp2", 1): (
         "WHO 1001 #35 MyHomeSuite actuator memory-slot configuration write (*#1001*0*#35#SLOT#BANK*VAL##)"
     ),

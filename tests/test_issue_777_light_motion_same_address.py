@@ -475,8 +475,8 @@ async def test_anonymous_where_0_dimension_replies_correlated_with_in_flight_req
         "*#1*52*7##",
     ]
     assert motion._attr_extra_state_attributes["Sensitivity"] == "high"
-    assert motion._attr_extra_state_attributes["Timeout"] == 60.0
-    assert motion._timeout == timedelta(seconds=60)
+    assert motion._attr_extra_state_attributes["Timeout"] == 48.0
+    assert motion._timeout == timedelta(seconds=48)
     # No WHERE=0 entity was discovered on either platform.
     assert [e._device_id for e in added_sensors] == ["52"]
     assert [e._device_id for e in added_lights] == ["52"]
@@ -504,9 +504,9 @@ async def test_anonymous_where_0_replies_sequential_across_two_motion_sensors(ha
 
     replies_for_request = {
         "*#1*52*5##": "*#1*0*5*2##",       # high
-        "*#1*52*7##": "*#1*0*7*0*0*45##",  # 45s + 15s = 60s
+        "*#1*52*7##": "*#1*0*7*0*0*45##",  # 45s + 3s grace = 48s
         "*#1*61*5##": "*#1*0*5*3##",       # very high
-        "*#1*61*7##": "*#1*0*7*0*2*0##",   # 120s + 15s = 135s
+        "*#1*61*7##": "*#1*0*7*0*2*0##",   # 120s + 3s grace = 123s
     }
 
     async def fake_command_send(message, is_status_request=False):
@@ -547,9 +547,9 @@ async def test_anonymous_where_0_replies_sequential_across_two_motion_sensors(ha
             await asyncio.wait_for(worker, timeout=2.0)
 
     assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "high"
-    assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 60.0
+    assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 48.0
     assert by_where["61"]._attr_extra_state_attributes["Sensitivity"] == "very high"
-    assert by_where["61"]._attr_extra_state_attributes["Timeout"] == 135.0
+    assert by_where["61"]._attr_extra_state_attributes["Timeout"] == 123.0
 
 
 @pytest.mark.asyncio
@@ -587,7 +587,7 @@ async def test_anonymous_where_0_replies_dropped_when_unclaimed_duplicate_or_amb
             async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse(frame))
         await hass.async_block_till_done()
         assert by_where["52"]._attr_extra_state_attributes["Sensitivity"] == "medium"
-        assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 315.0
+        assert by_where["52"]._attr_extra_state_attributes["Timeout"] == 303.0
 
         # 2. Broadcast, group, or area dimension requests in flight are never claimed as
         # point-to-point targets, even when a point-to-point request is in flight alongside them.
