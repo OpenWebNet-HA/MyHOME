@@ -1,0 +1,106 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.9.3",
+    "timezone": "UTC"
+  },
+  "data": {
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "config_entry": {
+      "entry_id": "01PLANTPR420MH202000000000",
+      "version": 1,
+      "domain": "myhome",
+      "title": "MH202 Gateway",
+      "data": {
+        "host": "192.0.2.1",
+        "id": "00:03:50:00:04:22",
+        "mac": "00:03:50:00:04:22",
+        "manufacturer": "BTicino S.p.A.",
+        "name": "MH202",
+        "password": null,
+        "port": 20000,
+        "ssdp_location": "http://192.0.2.1:49153/description.xml",
+        "firmware": "1.0.21"
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "MH202",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": "1.0.21",
+      "is_connected": true,
+      "send_workers": 1,
+      "identification": {
+        "model": "MH202",
+        "source": "ssdp",
+        "configured_model": "MH202",
+        "ssdp_model": "MH202",
+        "who13_code": "200",
+        "who13_model": "F454 / MyHomeServer1",
+        "who13_model_official": null,
+        "who13_model_observed": "F454 / MyHomeServer1",
+        "who13_firmware": "1.0.21",
+        "who13_kernel": null,
+        "who13_distribution": null,
+        "profile": "MH202Profile",
+        "conflict": null
+      }
+    },
+    "bus_monitor": {
+      "capture": {
+        "kind": "sweep",
+        "started_at": "2026-09-22T06:52:11.076Z"
+      },
+      "stats": {
+        "capacity": 200,
+        "captured": 38,
+        "total_rx": 32,
+        "total_tx": 6,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {"raw": "*#13**0##", "direction": "tx", "iso_time": "2026-09-22T06:52:10.819925+00:00"},
+        {"raw": "*#13**0*08*52*12*002##", "direction": "rx", "iso_time": "2026-09-22T06:52:10.835174+00:00"},
+        {"raw": "*#13**15##", "direction": "tx", "iso_time": "2026-09-22T06:52:10.936590+00:00"},
+        {"raw": "*#13**15*200##", "direction": "rx", "iso_time": "2026-09-22T06:52:10.945466+00:00"},
+        {"raw": "*#13**16##", "direction": "tx", "iso_time": "2026-09-22T06:52:11.046642+00:00"},
+        {"raw": "*#13**16*1*0*21##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.055725+00:00"},
+        {"raw": "*#2*0##", "direction": "tx", "iso_time": "2026-09-22T06:52:11.157042+00:00"},
+        {"raw": "*#2*12*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.201401+00:00"},
+        {"raw": "*2*0*12##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.205156+00:00"},
+        {"raw": "*#2*21*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.219791+00:00"},
+        {"raw": "*2*0*21##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.222835+00:00"},
+        {"raw": "*#2*11*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.226639+00:00"},
+        {"raw": "*2*0*11##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.234326+00:00"},
+        {"raw": "*#2*61*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.237208+00:00"},
+        {"raw": "*2*0*61##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.238719+00:00"},
+        {"raw": "*#2*71*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.240548+00:00"},
+        {"raw": "*2*0*71##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.242221+00:00"},
+        {"raw": "*#2*81*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.243943+00:00"},
+        {"raw": "*2*0*81##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.245402+00:00"},
+        {"raw": "*#2*91*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.257044+00:00"},
+        {"raw": "*2*0*91##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.261801+00:00"},
+        {"raw": "*#2*31*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.265386+00:00"},
+        {"raw": "*2*0*31##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.268985+00:00"},
+        {"raw": "*#2*13*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.272836+00:00"},
+        {"raw": "*2*0*13##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.276175+00:00"},
+        {"raw": "*#2*51*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.280241+00:00"},
+        {"raw": "*2*0*51##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.283408+00:00"},
+        {"raw": "*#2*22*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.287289+00:00"},
+        {"raw": "*2*0*22##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.288636+00:00"},
+        {"raw": "*#2*52*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.290123+00:00"},
+        {"raw": "*2*0*52##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.291295+00:00"},
+        {"raw": "*#2*62*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.292966+00:00"},
+        {"raw": "*2*0*62##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.294075+00:00"},
+        {"raw": "*#2*92*10*10*100*001*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.295486+00:00"},
+        {"raw": "*2*0*92##", "direction": "rx", "iso_time": "2026-09-22T06:52:11.309656+00:00"},
+        {"raw": "*#4*0##", "direction": "tx", "iso_time": "2026-09-22T06:52:12.286366+00:00"},
+        {"raw": "*#1013*0*1##", "direction": "tx", "iso_time": "2026-09-22T06:52:13.893633+00:00"},
+        {"raw": "*#1013**1*5*15*5*0##", "direction": "rx", "iso_time": "2026-09-22T06:52:13.903349+00:00"}
+      ]
+    }
+  }
+}

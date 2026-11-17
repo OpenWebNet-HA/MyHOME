@@ -1,0 +1,238 @@
+{
+  "capture": {
+    "kind": "hand-transcribed excerpt",
+    "title": "A=0 PL=2 (F411/4 output 1, Home + Project) physical presses seen on an MH200 event session",
+    "reporter": "peterbeepping",
+    "source": "https://github.com/OpenWebNet-HA/MyHOME/issues/684#issuecomment-6113090645",
+    "captured_at": "2026-10-11",
+    "abbreviated": true,
+    "abbreviation_note": "First 25.4 s of own_capture_luister_20261011_175623 (physical presses only). 't' is seconds since the capture started. Only frames of the trigger/burst windows plus the interleaved background frames are listed; the *1*19*29## / *#1001*29*11*...## dimmer chatter repeating about every 0.5 s is omitted."
+  },
+  "gateway": {
+    "model": "MH200",
+    "firmware": "2.1.2",
+    "connection_type": "tcp"
+  },
+  "frames": [
+    {
+      "t": 6.198,
+      "raw": "*1*2*97#4#01##",
+      "note": "Background: unrelated local-bus actuator (repeats about every 0.5 s)"
+    },
+    {
+      "t": 6.427,
+      "raw": "*1*1*2##",
+      "note": "Physical press: A=0 PL=2 reports ON as a single-digit WHERE"
+    },
+    {
+      "t": 6.538,
+      "raw": "*1*0*21##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.584,
+      "raw": "*1*0*22##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.622,
+      "raw": "*1*0*23##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.661,
+      "raw": "*1*0*24##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.702,
+      "raw": "*1*0*25##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.752,
+      "raw": "*1*0*26##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.792,
+      "raw": "*1*0*27##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.84,
+      "raw": "*1*0*28##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 6.864,
+      "raw": "*1*2*97#4#01##",
+      "note": "Background"
+    },
+    {
+      "t": 6.941,
+      "raw": "*1*0*29##",
+      "note": "Area-2 point reports OFF (last of the burst)"
+    },
+    {
+      "t": 11.671,
+      "raw": "*1*0*2##",
+      "note": "Physical press: A=0 PL=2 reports OFF"
+    },
+    {
+      "t": 11.798,
+      "raw": "*1*2*97#4#01##",
+      "note": "Background"
+    },
+    {
+      "t": 12.555,
+      "raw": "*1*0*21##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.586,
+      "raw": "*1*0*22##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.623,
+      "raw": "*1*0*23##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.662,
+      "raw": "*1*0*24##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.718,
+      "raw": "*1*0*25##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.758,
+      "raw": "*1*0*26##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.809,
+      "raw": "*1*0*27##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.842,
+      "raw": "*1*0*28##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 12.961,
+      "raw": "*1*0*29##",
+      "note": "Area-2 point reports OFF (last of the burst)"
+    },
+    {
+      "t": 17.449,
+      "raw": "*1*1*2##",
+      "note": "Physical press: ON"
+    },
+    {
+      "t": 18.569,
+      "raw": "*1*0*21##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.618,
+      "raw": "*1*0*22##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.656,
+      "raw": "*1*0*23##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.697,
+      "raw": "*1*0*24##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.736,
+      "raw": "*1*0*25##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.787,
+      "raw": "*1*0*26##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.827,
+      "raw": "*1*0*27##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.877,
+      "raw": "*1*0*28##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 18.927,
+      "raw": "*1*0*29##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.32,
+      "raw": "*1*0*2##",
+      "note": "Physical press: OFF"
+    },
+    {
+      "t": 24.589,
+      "raw": "*1*0*21##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.639,
+      "raw": "*1*0*22##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.678,
+      "raw": "*1*0*23##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.718,
+      "raw": "*1*0*24##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.745,
+      "raw": "*1*0*25##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.808,
+      "raw": "*1*0*26##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.842,
+      "raw": "*1*0*27##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 24.958,
+      "raw": "*1*0*28##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 25.011,
+      "raw": "*1*0*29##",
+      "note": "Area-2 point reports OFF"
+    },
+    {
+      "t": 25.421,
+      "raw": "*1*0*11##",
+      "note": "Area-1 point 1 reports OFF"
+    }
+  ]
+}

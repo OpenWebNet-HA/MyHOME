@@ -1,0 +1,11 @@
+# Synthetic plant for the PR #420 MH202 sweep (firmware 1.0.21): the fixture is
+# about gateway identification (WHO=13 dimension 15 = 200, WHO=1013 dimension 1
+# = 5), so only a cover from the sweep's replies is declared.
+
+mh202:
+  mac: "00:03:50:00:04:22"
+
+  cover:
+    cover_12:
+      where: "12"
+      name: "Cover 12"

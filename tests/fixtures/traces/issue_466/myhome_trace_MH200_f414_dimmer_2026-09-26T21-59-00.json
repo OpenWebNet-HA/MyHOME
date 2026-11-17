@@ -1,0 +1,231 @@
+{
+  "capture": {
+    "kind": "dimmer_test",
+    "started_at": "2026-09-26T19:58:35.649Z",
+    "notes": "Empirical bus capture on a physical BTicino MH200 (firmware 2.1.0) testing a physical BTicino F414 classic 10-level modular dimmer on WHERE=99 (woonkamer_plafond). Settles the open question from @anotherjulien in #466 (comment 5849245960) regarding whether classic/older dimmers also utilize Dimension 1 and reject Dimension 4.",
+    "subsystem": "WHO 1 (Lighting)",
+    "device_tested": {
+      "address": "99",
+      "model": "BTicino F414 (Classic 10-level incandescent/ferromagnetic modular dimmer)",
+      "friendly_name": "Woonkamer plafond"
+    },
+    "window": {
+      "first": "2026-09-26T19:58:35.649Z",
+      "last": "2026-09-26T19:59:43.275Z",
+      "frames": 18
+    }
+  },
+  "environment": {
+    "gateway_model": "MH200",
+    "gateway_firmware": "2.1.0",
+    "who13_device_type": 4,
+    "connection": "TCP OpenWebNet (Port 20000)",
+    "source_comment": "https://github.com/OpenWebNet-HA/MyHOME/issues/466#issuecomment-5849245960"
+  },
+  "frames": [
+    {
+      "timestamp": 1790452715.649,
+      "iso_time": "2026-09-26T19:58:35.649000+00:00",
+      "direction": "tx",
+      "raw": "*#1*99*1##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "description": "Initial status request: query Dimension 1 level on F414 dimmer 99"
+    },
+    {
+      "timestamp": 1790452715.775,
+      "iso_time": "2026-09-26T19:58:35.775000+00:00",
+      "direction": "rx",
+      "raw": "*#1*99*1*200*2##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "dimension_values": ["200", "2"],
+      "description": "F414 dimmer reports 100% brightness (LEVEL100=200) at transition speed 2"
+    },
+    {
+      "timestamp": 1790452734.609,
+      "iso_time": "2026-09-26T19:58:54.609000+00:00",
+      "direction": "tx",
+      "raw": "*1*9*99##",
+      "who": "1",
+      "what": "9",
+      "where": "99",
+      "dimension": null,
+      "description": "Send discrete Level 9 (90%) command"
+    },
+    {
+      "timestamp": 1790452734.745,
+      "iso_time": "2026-09-26T19:58:54.745000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*99##",
+      "who": "1",
+      "what": "9",
+      "where": "99",
+      "dimension": null,
+      "description": "F414 dimmer confirms discrete WHAT level 9"
+    },
+    {
+      "timestamp": 1790452740.992,
+      "iso_time": "2026-09-26T19:59:00.992000+00:00",
+      "direction": "tx",
+      "raw": "*#1*99*1##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "description": "Query resulting Dimension 1 level after discrete Level 9"
+    },
+    {
+      "timestamp": 1790452741.116,
+      "iso_time": "2026-09-26T19:59:01.116000+00:00",
+      "direction": "rx",
+      "raw": "*#1*99*1*174*2##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "dimension_values": ["174", "2"],
+      "description": "F414 dimmer internally mapped Level 9 to 74% (LEVEL100=174) at speed 2"
+    },
+    {
+      "timestamp": 1790452753.755,
+      "iso_time": "2026-09-26T19:59:13.755000+00:00",
+      "direction": "tx",
+      "raw": "*1*8*99##",
+      "who": "1",
+      "what": "8",
+      "where": "99",
+      "dimension": null,
+      "description": "Send discrete Level 8 (80%) command"
+    },
+    {
+      "timestamp": 1790452753.851,
+      "iso_time": "2026-09-26T19:59:13.851000+00:00",
+      "direction": "rx",
+      "raw": "*1*8*99##",
+      "who": "1",
+      "what": "8",
+      "where": "99",
+      "dimension": null,
+      "description": "F414 dimmer confirms discrete WHAT level 8"
+    },
+    {
+      "timestamp": 1790452758.686,
+      "iso_time": "2026-09-26T19:59:18.686000+00:00",
+      "direction": "tx",
+      "raw": "*#1*99*1##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "description": "Query resulting Dimension 1 level after discrete Level 8"
+    },
+    {
+      "timestamp": 1790452758.823,
+      "iso_time": "2026-09-26T19:59:18.823000+00:00",
+      "direction": "rx",
+      "raw": "*#1*99*1*163*2##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "dimension_values": ["163", "2"],
+      "description": "F414 dimmer internally mapped Level 8 to 63% (LEVEL100=163) at speed 2"
+    },
+    {
+      "timestamp": 1790452762.831,
+      "iso_time": "2026-09-26T19:59:22.831000+00:00",
+      "direction": "tx",
+      "raw": "*#1*99*#1*150*0##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "dimension_values": ["150", "0"],
+      "description": "Fine-grained Dimension 1 write: set 50% brightness with default speed"
+    },
+    {
+      "timestamp": 1790452762.990,
+      "iso_time": "2026-09-26T19:59:22.990000+00:00",
+      "direction": "rx",
+      "raw": "*#1*99*1*150*5##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "dimension_values": ["150", "5"],
+      "description": "F414 dimmer confirms Dimension 1 write, reporting 50% at active transition speed 5"
+    },
+    {
+      "timestamp": 1790452774.321,
+      "iso_time": "2026-09-26T19:59:34.321000+00:00",
+      "direction": "tx",
+      "raw": "*#1*99##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": null,
+      "description": "Query coarse status after Dimension 1 write"
+    },
+    {
+      "timestamp": 1790452774.420,
+      "iso_time": "2026-09-26T19:59:34.420000+00:00",
+      "direction": "rx",
+      "raw": "*1*7*99##",
+      "who": "1",
+      "what": "7",
+      "where": "99",
+      "dimension": null,
+      "description": "F414 dimmer maps 50% brightness to coarse WHAT level 7"
+    },
+    {
+      "timestamp": 1790452778.896,
+      "iso_time": "2026-09-26T19:59:38.896000+00:00",
+      "direction": "tx",
+      "raw": "*1*10*99##",
+      "who": "1",
+      "what": "10",
+      "where": "99",
+      "dimension": null,
+      "description": "Restore dimmer to discrete Level 10 (100%)"
+    },
+    {
+      "timestamp": 1790452778.982,
+      "iso_time": "2026-09-26T19:59:38.982000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*99##",
+      "who": "1",
+      "what": "10",
+      "where": "99",
+      "dimension": null,
+      "description": "F414 dimmer confirms restoration to Level 10"
+    },
+    {
+      "timestamp": 1790452783.137,
+      "iso_time": "2026-09-26T19:59:43.137000+00:00",
+      "direction": "tx",
+      "raw": "*#1*99*1##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "description": "Query final Dimension 1 level"
+    },
+    {
+      "timestamp": 1790452783.275,
+      "iso_time": "2026-09-26T19:59:43.275000+00:00",
+      "direction": "rx",
+      "raw": "*#1*99*1*200*2##",
+      "who": "1",
+      "what": null,
+      "where": "99",
+      "dimension": "1",
+      "dimension_values": ["200", "2"],
+      "description": "F414 dimmer confirmed restored to 100% (LEVEL100=200) at speed 2"
+    }
+  ]
+}

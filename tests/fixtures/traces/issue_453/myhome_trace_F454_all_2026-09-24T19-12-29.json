@@ -1,0 +1,275 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-09-24T19:10:44.603Z",
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-09-24T19:10:56.866Z",
+      "last": "2026-09-24T19:12:10.143Z",
+      "frames": 18,
+      "buffer_frames": 18,
+      "buffer_depth": 1000,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.3",
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "exported_at": "2026-09-24T19:12:29.514Z"
+  },
+  "gateway": {
+    "model": "F454",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.0.51",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "F454",
+      "source": "ssdp",
+      "configured_model": "F454",
+      "ssdp_model": "F454",
+      "who13_code": null,
+      "who13_model": null,
+      "who13_model_official": null,
+      "who13_model_observed": null,
+      "who13_firmware": null,
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "F454Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 16,
+    "total_tx": 2,
+    "captured_in_buffer": 18,
+    "buffer_depth": 1000,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1790277056.866609,
+      "iso_time": "2026-09-24T19:10:56.866609+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*16##",
+      "who": "1",
+      "what": "1000",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277056.900776,
+      "iso_time": "2026-09-24T19:10:56.900776+00:00",
+      "direction": "rx",
+      "raw": "*1*1*16##",
+      "who": "1",
+      "what": "1",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277062.327244,
+      "iso_time": "2026-09-24T19:11:02.327244+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*16##",
+      "who": "1",
+      "what": "1000",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277062.366805,
+      "iso_time": "2026-09-24T19:11:02.366805+00:00",
+      "direction": "rx",
+      "raw": "*1*0*16##",
+      "who": "1",
+      "what": "0",
+      "where": "16",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.091697,
+      "iso_time": "2026-09-24T19:11:08.091697+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*14##",
+      "who": "1",
+      "what": "1000",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.15493,
+      "iso_time": "2026-09-24T19:11:08.154930+00:00",
+      "direction": "rx",
+      "raw": "*1*5*14##",
+      "who": "1",
+      "what": "5",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277068.315263,
+      "iso_time": "2026-09-24T19:11:08.315263+00:00",
+      "direction": "rx",
+      "raw": "*#1*14*1*130*5##",
+      "who": "1",
+      "what": null,
+      "where": "14",
+      "dimension": "1",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277071.32717,
+      "iso_time": "2026-09-24T19:11:11.327170+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*14##",
+      "who": "1",
+      "what": "1000",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277071.377968,
+      "iso_time": "2026-09-24T19:11:11.377968+00:00",
+      "direction": "rx",
+      "raw": "*1*0*14##",
+      "who": "1",
+      "what": "0",
+      "where": "14",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277076.311165,
+      "iso_time": "2026-09-24T19:11:16.311165+00:00",
+      "direction": "rx",
+      "raw": "*25*21#1*21##",
+      "who": "25",
+      "what": "21",
+      "where": "21",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277099.767754,
+      "iso_time": "2026-09-24T19:11:39.767754+00:00",
+      "direction": "tx",
+      "raw": "*1*1*33##",
+      "who": "1",
+      "what": "1",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277099.890248,
+      "iso_time": "2026-09-24T19:11:39.890248+00:00",
+      "direction": "rx",
+      "raw": "*1*1*33##",
+      "who": "1",
+      "what": "1",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277103.642686,
+      "iso_time": "2026-09-24T19:11:43.642686+00:00",
+      "direction": "tx",
+      "raw": "*1*0*33##",
+      "who": "1",
+      "what": "0",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277103.750374,
+      "iso_time": "2026-09-24T19:11:43.750374+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "who": "1",
+      "what": "0",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277127.980272,
+      "iso_time": "2026-09-24T19:12:07.980272+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#1*33##",
+      "who": "1",
+      "what": "1000",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277127.995683,
+      "iso_time": "2026-09-24T19:12:07.995683+00:00",
+      "direction": "rx",
+      "raw": "*1*1*33##",
+      "who": "1",
+      "what": "1",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277130.101253,
+      "iso_time": "2026-09-24T19:12:10.101253+00:00",
+      "direction": "rx",
+      "raw": "*1*1000#0*33##",
+      "who": "1",
+      "what": "1000",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790277130.143068,
+      "iso_time": "2026-09-24T19:12:10.143068+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "who": "1",
+      "what": "0",
+      "where": "33",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}
+

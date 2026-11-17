@@ -1,12 +1,6 @@
 {
-  "name": "MyHome",
+  "name": "MyHOME",
   "zip_release": true,
   "filename": "myhome.zip",
-  "country": [
-    "GB",
-    "FR",
-    "NL",
-    "IT"
-  ],
-  "homeassistant": "2024.3.0"
+  "homeassistant": "2026.8.0"
 }

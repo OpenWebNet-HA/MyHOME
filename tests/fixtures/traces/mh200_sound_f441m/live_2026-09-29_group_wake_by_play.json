@@ -1,0 +1,349 @@
+{
+ "meta": {
+  "captured": "2026-09-29",
+  "gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix",
+  "home_assistant": "2026.9.3",
+  "build": "perf/faster-group-wake @ 86a8678c (MyHOME 2.0.0b13.dev202609291806), OWNd 2.0.0b9.dev202609291806",
+  "how": "WHO=16 frames from the diagnostics bus_monitor (tx = written by the integration, rx = read from the gateway); t is seconds from the first frame of the play",
+  "play": "Music Assistant plays into badkamer (36, leader) with Bureau (21) and Eetkamer (23) as members, all three parked (amplifiers off); Environment 3 = zone 36, Environment 2 = zones 21 and 23, source 2 = decoder"
+ },
+ "second_play_after_auto_off": [
+  {
+   "t": 0.0,
+   "dir": "tx",
+   "frame": "*16*13*36##"
+  },
+  {
+   "t": 0.227,
+   "dir": "tx",
+   "frame": "*16*3*36##"
+  },
+  {
+   "t": 0.845,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 0.899,
+   "dir": "rx",
+   "frame": "*16*3*36##"
+  },
+  {
+   "t": 1.001,
+   "dir": "tx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 1.399,
+   "dir": "rx",
+   "frame": "*#16*36*1*0##"
+  },
+  {
+   "t": 1.87,
+   "dir": "tx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 2.147,
+   "dir": "rx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 2.65,
+   "dir": "tx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 2.926,
+   "dir": "rx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 3.43,
+   "dir": "tx",
+   "frame": "*16*13*21##"
+  },
+  {
+   "t": 3.556,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 3.64,
+   "dir": "tx",
+   "frame": "*16*3*21##"
+  },
+  {
+   "t": 4.279,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 4.322,
+   "dir": "rx",
+   "frame": "*16*3*21##"
+  },
+  {
+   "t": 4.453,
+   "dir": "tx",
+   "frame": "*16*13*23##"
+  },
+  {
+   "t": 4.608,
+   "dir": "rx",
+   "frame": "*#16*21*1*0##"
+  },
+  {
+   "t": 4.72,
+   "dir": "rx",
+   "frame": "*#16*36*1*22##"
+  },
+  {
+   "t": 4.731,
+   "dir": "tx",
+   "frame": "*16*3*23##"
+  },
+  {
+   "t": 5.367,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 5.409,
+   "dir": "rx",
+   "frame": "*16*3*23##"
+  },
+  {
+   "t": 5.569,
+   "dir": "rx",
+   "frame": "*#16*21*1*15##"
+  },
+  {
+   "t": 5.7,
+   "dir": "rx",
+   "frame": "*#16*23*1*0##"
+  },
+  {
+   "t": 6.858,
+   "dir": "rx",
+   "frame": "*#16*23*1*20##"
+  }
+ ],
+ "first_play_after_restart": [
+  {
+   "t": 0.0,
+   "dir": "tx",
+   "frame": "*16*13*36##"
+  },
+  {
+   "t": 0.219,
+   "dir": "tx",
+   "frame": "*16*3*36##"
+  },
+  {
+   "t": 0.842,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 0.912,
+   "dir": "rx",
+   "frame": "*16*3*36##"
+  },
+  {
+   "t": 0.999,
+   "dir": "tx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 1.328,
+   "dir": "rx",
+   "frame": "*#16*36*1*0##"
+  },
+  {
+   "t": 1.778,
+   "dir": "tx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 2.073,
+   "dir": "rx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 2.558,
+   "dir": "tx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 2.854,
+   "dir": "rx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 3.338,
+   "dir": "tx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 3.633,
+   "dir": "rx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 4.258,
+   "dir": "rx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 4.927,
+   "dir": "tx",
+   "frame": "*16*13*21##"
+  },
+  {
+   "t": 5.138,
+   "dir": "tx",
+   "frame": "*16*3*21##"
+  },
+  {
+   "t": 5.774,
+   "dir": "rx",
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 5.816,
+   "dir": "rx",
+   "frame": "*16*3*21##"
+  },
+  {
+   "t": 5.937,
+   "dir": "rx",
+   "frame": "*#16*21*1*0##"
+  },
+  {
+   "t": 5.947,
+   "dir": "tx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 6.257,
+   "dir": "rx",
+   "frame": "*#16*36*1*22##"
+  },
+  {
+   "t": 6.313,
+   "dir": "rx",
+   "frame": "*#16*21*1*0##"
+  },
+  {
+   "t": 6.818,
+   "dir": "tx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 7.096,
+   "dir": "rx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 7.125,
+   "dir": "rx",
+   "frame": "*#16*21*1*15##"
+  },
+  {
+   "t": 7.609,
+   "dir": "tx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 7.884,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 8.388,
+   "dir": "tx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 8.655,
+   "dir": "rx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 9.158,
+   "dir": "tx",
+   "frame": "*16*13*23##"
+  },
+  {
+   "t": 9.294,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 9.368,
+   "dir": "tx",
+   "frame": "*16*3*23##"
+  },
+  {
+   "t": 10.006,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 10.044,
+   "dir": "rx",
+   "frame": "*16*3*23##"
+  },
+  {
+   "t": 10.154,
+   "dir": "rx",
+   "frame": "*#16*23*1*0##"
+  },
+  {
+   "t": 10.179,
+   "dir": "tx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 10.503,
+   "dir": "rx",
+   "frame": "*#16*23*1*0##"
+  },
+  {
+   "t": 10.825,
+   "dir": "rx",
+   "frame": "*#16*21*1*15##"
+  },
+  {
+   "t": 11.018,
+   "dir": "tx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 11.284,
+   "dir": "rx",
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 11.925,
+   "dir": "rx",
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 13.395,
+   "dir": "rx",
+   "frame": "*#16*21*1*15##"
+  },
+  {
+   "t": 13.575,
+   "dir": "rx",
+   "frame": "*#16*23*1*20##"
+  }
+ ],
+ "findings": [
+  "second play: exactly one OFF/ON pair per room and one route per environment and source (102, 132, 122); the leader's ON is on the bus 0.2 s after its OFF and before any member",
+  "the room's own OFF echo (rx *16*13*Z##) never appears in this play, and no room was parked again by an echo",
+  "first play after an HA restart: the routes 102/132 and later 102/122 went out three times each, which the second play does not do; not explained by this capture (no HA debug log), kept as an observation and not asserted"
+ ]
+}

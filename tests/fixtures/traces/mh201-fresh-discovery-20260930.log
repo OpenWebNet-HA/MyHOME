@@ -1,0 +1,332 @@
+2026-09-30 23:07:13.927 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#2*0##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:07:13.930 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#2*0##`
+2026-09-30 23:07:13.931 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0##` was successfully queued.
+2026-09-30 23:07:13.937 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0##` was successfully unqueued by worker 0.
+2026-09-30 23:07:13.937 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Opening command session.
+2026-09-30 23:07:13.945 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Negotiating command session.
+2026-09-30 23:07:13.970 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Received nonce: `*#<redacted>##`
+2026-09-30 23:07:13.970 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Sending command session password.
+2026-09-30 23:07:13.990 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Command session established successfully.
+2026-09-30 23:07:14.068 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0##` was successfully sent.
+2026-09-30 23:07:14.069 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0##`
+2026-09-30 23:07:14.069 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Unsupported message type: `*#2*0##`
+2026-09-30 23:07:14.093 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*20##`
+2026-09-30 23:07:14.093 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 20 is switched off.
+2026-09-30 23:07:14.122 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*18##`
+2026-09-30 23:07:14.123 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 18 is switched off.
+2026-09-30 23:07:14.162 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*1*21##`
+2026-09-30 23:07:14.163 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 21 is switched on.
+2026-09-30 23:07:14.200 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0110*10*10*60*001*0##`
+2026-09-30 23:07:14.201 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 is opened at 60%.
+2026-09-30 23:07:14.252 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*16##`
+2026-09-30 23:07:14.257 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*16##` was successfully queued.
+2026-09-30 23:07:14.274 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 16 is switched off.
+2026-09-30 23:07:14.280 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*16##` was successfully unqueued by worker 0.
+2026-09-30 23:07:14.312 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0112*10*10*0*001*0##`
+2026-09-30 23:07:14.323 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0112##` was successfully queued.
+2026-09-30 23:07:14.346 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 is closed.
+2026-09-30 23:07:15.934 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*16##` was successfully sent.
+2026-09-30 23:07:15.935 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0112##`
+2026-09-30 23:07:15.936 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 stopped.
+2026-09-30 23:07:15.940 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0111*10*10*50*001*0##`
+2026-09-30 23:07:15.942 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0111##` was successfully queued.
+2026-09-30 23:07:15.951 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 is opened at 50%.
+2026-09-30 23:07:15.957 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0112*10*10*0*001*0##`
+2026-09-30 23:07:15.957 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 is closed.
+2026-09-30 23:07:15.965 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*15##`
+2026-09-30 23:07:15.968 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*15##` was successfully queued.
+2026-09-30 23:07:15.977 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 15 is switched off.
+2026-09-30 23:07:15.989 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*1*22##`
+2026-09-30 23:07:15.991 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*22##` was successfully queued.
+2026-09-30 23:07:15.998 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 22 is switched on.
+2026-09-30 23:07:15.999 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0112##`
+2026-09-30 23:07:15.999 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 stopped.
+2026-09-30 23:07:16.012 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0015##`
+2026-09-30 23:07:16.014 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0015##` was successfully queued.
+2026-09-30 23:07:16.022 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0015 is switched off.
+2026-09-30 23:07:16.023 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0110##`
+2026-09-30 23:07:16.023 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 stopped.
+2026-09-30 23:07:16.033 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*05##`
+2026-09-30 23:07:16.035 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*05##` was successfully queued.
+2026-09-30 23:07:16.042 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 05 is switched off.
+2026-09-30 23:07:16.043 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*19*10*10*50*001*0##`
+2026-09-30 23:07:16.044 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 19 is opened at 50%.
+2026-09-30 23:07:16.054 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*16##`
+2026-09-30 23:07:16.055 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 16 is switched off.
+2026-09-30 23:07:16.056 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0315##`
+2026-09-30 23:07:16.056 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0315 is switched off.
+2026-09-30 23:07:16.057 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0112##` was successfully unqueued by worker 0.
+2026-09-30 23:07:16.145 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0112##` was successfully sent.
+2026-09-30 23:07:16.146 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0314##`
+2026-09-30 23:07:16.147 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0314 is switched off.
+2026-09-30 23:07:16.190 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0112*10*10*0*001*0##`
+2026-09-30 23:07:16.190 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 is closed.
+2026-09-30 23:07:16.247 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0111##` was successfully unqueued by worker 0.
+2026-09-30 23:07:16.250 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0112##`
+2026-09-30 23:07:16.250 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 stopped.
+2026-09-30 23:07:16.307 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0111##` was successfully sent.
+2026-09-30 23:07:16.350 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0111*10*10*50*001*0##`
+2026-09-30 23:07:16.350 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 is opened at 50%.
+2026-09-30 23:07:16.408 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*15##` was successfully unqueued by worker 0.
+2026-09-30 23:07:16.410 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0111##`
+2026-09-30 23:07:16.410 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 stopped.
+2026-09-30 23:07:16.468 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*15##` was successfully sent.
+2026-09-30 23:07:16.512 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*15##`
+2026-09-30 23:07:16.512 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 15 is switched off.
+2026-09-30 23:07:16.569 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*22##` was successfully unqueued by worker 0.
+2026-09-30 23:07:16.572 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0313##`
+2026-09-30 23:07:16.572 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0313 is switched off.
+2026-09-30 23:07:16.622 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*22##` was successfully sent.
+2026-09-30 23:07:16.652 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*1*22##`
+2026-09-30 23:07:16.652 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 22 is switched on.
+2026-09-30 23:07:16.712 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0312##`
+2026-09-30 23:07:16.712 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0312 is switched off.
+2026-09-30 23:07:16.723 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0015##` was successfully unqueued by worker 0.
+2026-09-30 23:07:16.767 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0015##` was successfully sent.
+2026-09-30 23:07:16.802 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0015##`
+2026-09-30 23:07:16.802 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0015 is switched off.
+2026-09-30 23:07:16.869 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*05##` was successfully unqueued by worker 0.
+2026-09-30 23:07:16.927 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*05##` was successfully sent.
+2026-09-30 23:07:16.962 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*05##`
+2026-09-30 23:07:16.962 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 05 is switched off.
+2026-09-30 23:07:27.239 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:07:27.240 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*0##`
+2026-09-30 23:07:27.240 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0##` was successfully queued.
+2026-09-30 23:07:27.241 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0##` was successfully unqueued by worker 0.
+2026-09-30 23:07:27.307 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0##` was successfully sent.
+2026-09-30 23:07:27.308 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#1*0##`
+2026-09-30 23:07:27.309 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Unsupported message type: `*#1*0##`
+2026-09-30 23:07:27.332 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*20##`
+2026-09-30 23:07:27.333 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 20 is switched off.
+2026-09-30 23:07:27.370 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0114*10*10*0*001*0##`
+2026-09-30 23:07:27.370 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0114 is closed.
+2026-09-30 23:07:27.420 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0111*10*10*50*001*0##`
+2026-09-30 23:07:27.420 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 is opened at 50%.
+2026-09-30 23:07:27.470 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0113*10*10*0*001*0##`
+2026-09-30 23:07:27.470 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0113 is closed.
+2026-09-30 23:07:27.520 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0115*10*10*0*001*0##`
+2026-09-30 23:07:27.524 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0115##` was successfully queued.
+2026-09-30 23:07:27.545 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0115 is closed.
+2026-09-30 23:07:27.546 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0115##` was successfully unqueued by worker 0.
+2026-09-30 23:07:28.702 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#2*0115##` was successfully sent.
+2026-09-30 23:07:28.703 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0113##`
+2026-09-30 23:07:28.704 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0113 stopped.
+2026-09-30 23:07:28.710 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*15##`
+2026-09-30 23:07:28.711 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 15 is switched off.
+2026-09-30 23:07:28.720 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*16##`
+2026-09-30 23:07:28.721 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 16 is switched off.
+2026-09-30 23:07:28.730 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0110*10*10*60*001*0##`
+2026-09-30 23:07:28.731 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 is opened at 60%.
+2026-09-30 23:07:28.740 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0114##`
+2026-09-30 23:07:28.740 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0114 stopped.
+2026-09-30 23:07:28.750 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0111##`
+2026-09-30 23:07:28.750 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 stopped.
+2026-09-30 23:07:28.760 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*10##`
+2026-09-30 23:07:28.764 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*10##` was successfully queued.
+2026-09-30 23:07:28.779 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 10 is switched off.
+2026-09-30 23:07:28.786 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*18##`
+2026-09-30 23:07:28.786 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 18 is switched off.
+2026-09-30 23:07:28.790 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0015##`
+2026-09-30 23:07:28.790 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0015 is switched off.
+2026-09-30 23:07:28.798 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0112*10*10*0*001*0##`
+2026-09-30 23:07:28.798 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 is closed.
+2026-09-30 23:07:28.813 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0115*10*10*0*001*0##`
+2026-09-30 23:07:28.814 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0115 is closed.
+2026-09-30 23:07:28.815 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*15##`
+2026-09-30 23:07:28.815 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 15 is switched off.
+2026-09-30 23:07:28.816 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*10##` was successfully unqueued by worker 0.
+2026-09-30 23:07:28.827 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0115##`
+2026-09-30 23:07:28.827 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0115 stopped.
+2026-09-30 23:07:28.993 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*10##` was successfully sent.
+2026-09-30 23:07:28.994 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0015##`
+2026-09-30 23:07:28.995 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0015 is switched off.
+2026-09-30 23:07:29.000 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*08##`
+2026-09-30 23:07:29.003 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*08##` was successfully queued.
+2026-09-30 23:07:29.012 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 08 is switched off.
+2026-09-30 23:07:29.016 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*07##`
+2026-09-30 23:07:29.019 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*07##` was successfully queued.
+2026-09-30 23:07:29.026 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 07 is switched off.
+2026-09-30 23:07:29.032 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*10##`
+2026-09-30 23:07:29.032 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 10 is switched off.
+2026-09-30 23:07:29.092 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0315##`
+2026-09-30 23:07:29.092 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0315 is switched off.
+2026-09-30 23:07:29.094 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*08##` was successfully unqueued by worker 0.
+2026-09-30 23:07:29.141 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*08##` was successfully sent.
+2026-09-30 23:07:29.182 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*08##`
+2026-09-30 23:07:29.182 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 08 is switched off.
+2026-09-30 23:07:29.242 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0314##`
+2026-09-30 23:07:29.243 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0314 is switched off.
+2026-09-30 23:07:29.244 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*07##` was successfully unqueued by worker 0.
+2026-09-30 23:07:29.298 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*07##` was successfully sent.
+2026-09-30 23:07:29.342 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*07##`
+2026-09-30 23:07:29.343 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 07 is switched off.
+2026-09-30 23:07:29.402 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0313##`
+2026-09-30 23:07:29.403 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0313 is switched off.
+2026-09-30 23:07:29.462 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0312##`
+2026-09-30 23:07:29.463 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0312 is switched off.
+2026-09-30 23:07:44.401 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-09-30 23:07:44.403 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Command session closed.
+2026-09-30 23:11:01.818 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*02##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:11:01.818 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*02##`
+2026-09-30 23:11:01.819 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*02##` was successfully queued.
+2026-09-30 23:11:01.820 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*02##` was successfully unqueued by worker 0.
+2026-09-30 23:11:01.820 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Opening command session.
+2026-09-30 23:11:01.832 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Negotiating command session.
+2026-09-30 23:11:01.845 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Received nonce: `*#<redacted>##`
+2026-09-30 23:11:01.846 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Sending command session password.
+2026-09-30 23:11:01.866 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Command session established successfully.
+2026-09-30 23:11:01.923 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*02##` was successfully sent.
+2026-09-30 23:11:01.968 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*02##`
+2026-09-30 23:11:01.973 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*02##` was successfully queued.
+2026-09-30 23:11:01.989 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 02 is switched off.
+2026-09-30 23:11:02.034 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*02##` was successfully unqueued by worker 0.
+2026-09-30 23:11:02.073 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*02##` was successfully sent.
+2026-09-30 23:11:02.108 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*02##`
+2026-09-30 23:11:02.109 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 02 is switched off.
+2026-09-30 23:11:14.411 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*04##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:11:14.412 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*04##`
+2026-09-30 23:11:14.412 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*04##` was successfully queued.
+2026-09-30 23:11:14.413 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*04##` was successfully unqueued by worker 0.
+2026-09-30 23:11:14.453 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*04##` was successfully sent.
+2026-09-30 23:11:14.478 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*04##`
+2026-09-30 23:11:14.483 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*04##` was successfully queued.
+2026-09-30 23:11:14.497 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 04 is switched off.
+2026-09-30 23:11:14.554 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*04##` was successfully unqueued by worker 0.
+2026-09-30 23:11:14.603 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*04##` was successfully sent.
+2026-09-30 23:11:14.628 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*04##`
+2026-09-30 23:11:14.628 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 04 is switched off.
+2026-09-30 23:11:18.490 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*06##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:11:18.490 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*06##`
+2026-09-30 23:11:18.491 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*06##` was successfully queued.
+2026-09-30 23:11:18.492 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*06##` was successfully unqueued by worker 0.
+2026-09-30 23:11:18.533 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*06##` was successfully sent.
+2026-09-30 23:11:18.568 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*06##`
+2026-09-30 23:11:18.572 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*06##` was successfully queued.
+2026-09-30 23:11:18.581 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 06 is switched off.
+2026-09-30 23:11:18.635 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*06##` was successfully unqueued by worker 0.
+2026-09-30 23:11:18.693 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*06##` was successfully sent.
+2026-09-30 23:11:18.728 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*06##`
+2026-09-30 23:11:18.728 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 06 is switched off.
+2026-09-30 23:11:22.691 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*09##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:11:22.691 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*09##`
+2026-09-30 23:11:22.692 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*09##` was successfully queued.
+2026-09-30 23:11:22.692 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*09##` was successfully unqueued by worker 0.
+2026-09-30 23:11:22.733 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*09##` was successfully sent.
+2026-09-30 23:11:22.758 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*09##`
+2026-09-30 23:11:22.760 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*09##` was successfully queued.
+2026-09-30 23:11:22.766 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 09 is switched off.
+2026-09-30 23:11:22.834 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*09##` was successfully unqueued by worker 0.
+2026-09-30 23:11:22.893 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*09##` was successfully sent.
+2026-09-30 23:11:22.928 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*09##`
+2026-09-30 23:11:22.928 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 09 is switched off.
+2026-09-30 23:11:28.479 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0013##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:11:28.479 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*0013##`
+2026-09-30 23:11:28.480 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0013##` was successfully queued.
+2026-09-30 23:11:28.481 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0013##` was successfully unqueued by worker 0.
+2026-09-30 23:11:28.523 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0013##` was successfully sent.
+2026-09-30 23:11:28.568 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0013##`
+2026-09-30 23:11:28.572 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0013##` was successfully queued.
+2026-09-30 23:11:28.586 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0013 is switched off.
+2026-09-30 23:11:28.625 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0013##` was successfully unqueued by worker 0.
+2026-09-30 23:11:28.683 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0013##` was successfully sent.
+2026-09-30 23:11:28.708 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0013##`
+2026-09-30 23:11:28.708 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0013 is switched off.
+2026-09-30 23:11:43.540 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0##` to be sent to `00:03:50:00:00:01`
+2026-09-30 23:11:43.541 DEBUG (MainThread) [custom_components.myhome.services] [MH201 gateway - 192.0.2.10] Sending valid OpenWebNet Message: `*#1*0##`
+2026-09-30 23:11:43.541 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0##` was successfully queued.
+2026-09-30 23:11:43.542 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0##` was successfully unqueued by worker 0.
+2026-09-30 23:11:43.602 INFO (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message `*#1*0##` was successfully sent.
+2026-09-30 23:11:43.604 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#1*0##`
+2026-09-30 23:11:43.604 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Unsupported message type: `*#1*0##`
+2026-09-30 23:11:43.628 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*20##`
+2026-09-30 23:11:43.628 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 20 is switched off.
+2026-09-30 23:11:43.668 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*03##`
+2026-09-30 23:11:43.668 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 03 is switched off.
+2026-09-30 23:11:43.698 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*18##`
+2026-09-30 23:11:43.698 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 18 is switched off.
+2026-09-30 23:11:43.735 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0112*10*10*0*001*0##`
+2026-09-30 23:11:43.736 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 is closed.
+2026-09-30 23:11:43.788 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*05##`
+2026-09-30 23:11:43.788 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 05 is switched off.
+2026-09-30 23:11:43.835 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0111*10*10*50*001*0##`
+2026-09-30 23:11:43.836 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 is opened at 50%.
+2026-09-30 23:11:43.878 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*10##`
+2026-09-30 23:11:43.878 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 10 is switched off.
+2026-09-30 23:11:43.915 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0114*10*10*0*001*0##`
+2026-09-30 23:11:43.916 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0114 is closed.
+2026-09-30 23:11:43.968 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*02##`
+2026-09-30 23:11:43.968 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 02 is switched off.
+2026-09-30 23:11:44.008 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*01##`
+2026-09-30 23:11:44.008 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 01 is switched off.
+2026-09-30 23:11:44.045 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0115*10*10*0*001*0##`
+2026-09-30 23:11:44.046 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0115 is closed.
+2026-09-30 23:11:44.097 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*1*21##`
+2026-09-30 23:11:44.098 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 21 is switched on.
+2026-09-30 23:11:44.135 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*19*10*10*50*001*0##`
+2026-09-30 23:11:44.136 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 19 is opened at 50%.
+2026-09-30 23:11:44.185 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0110*10*10*60*001*0##`
+2026-09-30 23:11:44.186 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 is opened at 60%.
+2026-09-30 23:11:44.225 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0114##`
+2026-09-30 23:11:44.226 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0114 stopped.
+2026-09-30 23:11:44.268 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*17##`
+2026-09-30 23:11:44.268 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 17 is switched off.
+2026-09-30 23:11:44.305 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0112##`
+2026-09-30 23:11:44.306 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0112 stopped.
+2026-09-30 23:11:44.345 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0113*10*10*0*001*0##`
+2026-09-30 23:11:44.346 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0113 is closed.
+2026-09-30 23:11:44.385 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*19##`
+2026-09-30 23:11:44.386 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 19 stopped.
+2026-09-30 23:11:44.425 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0115##`
+2026-09-30 23:11:44.426 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0115 stopped.
+2026-09-30 23:11:44.468 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*04##`
+2026-09-30 23:11:44.468 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 04 is switched off.
+2026-09-30 23:11:44.498 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*1*22##`
+2026-09-30 23:11:44.498 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 22 is switched on.
+2026-09-30 23:11:44.538 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*15##`
+2026-09-30 23:11:44.538 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 15 is switched off.
+2026-09-30 23:11:44.585 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0110##`
+2026-09-30 23:11:44.586 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 stopped.
+2026-09-30 23:11:44.617 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*09##`
+2026-09-30 23:11:44.618 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 09 is switched off.
+2026-09-30 23:11:44.657 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0015##`
+2026-09-30 23:11:44.658 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0015 is switched off.
+2026-09-30 23:11:44.697 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*10##`
+2026-09-30 23:11:44.698 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 10 is switched off.
+2026-09-30 23:11:44.735 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0111##`
+2026-09-30 23:11:44.736 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0111 stopped.
+2026-09-30 23:11:44.775 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*#2*0110*10*10*60*001*0##`
+2026-09-30 23:11:44.776 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 is opened at 60%.
+2026-09-30 23:11:44.828 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*08##`
+2026-09-30 23:11:44.828 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 08 is switched off.
+2026-09-30 23:11:44.868 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*07##`
+2026-09-30 23:11:44.868 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 07 is switched off.
+2026-09-30 23:11:44.908 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*16##`
+2026-09-30 23:11:44.908 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 16 is switched off.
+2026-09-30 23:11:44.958 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0013##`
+2026-09-30 23:11:44.958 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0013 is switched off.
+2026-09-30 23:11:44.988 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*15##`
+2026-09-30 23:11:44.988 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 15 is switched off.
+2026-09-30 23:11:45.025 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0110##`
+2026-09-30 23:11:45.026 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0110 stopped.
+2026-09-30 23:11:45.068 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*06##`
+2026-09-30 23:11:45.068 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 06 is switched off.
+2026-09-30 23:11:45.105 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*2*0*0113##`
+2026-09-30 23:11:45.106 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Cover 0113 stopped.
+2026-09-30 23:11:45.158 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0014##`
+2026-09-30 23:11:45.158 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0014 is switched off.
+2026-09-30 23:11:45.188 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0015##`
+2026-09-30 23:11:45.188 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0015 is switched off.
+2026-09-30 23:11:45.248 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*08##`
+2026-09-30 23:11:45.248 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 08 is switched off.
+2026-09-30 23:11:45.288 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*07##`
+2026-09-30 23:11:45.288 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 07 is switched off.
+2026-09-30 23:11:45.348 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0315##`
+2026-09-30 23:11:45.348 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0315 is switched off.
+2026-09-30 23:11:45.408 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0314##`
+2026-09-30 23:11:45.408 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0314 is switched off.
+2026-09-30 23:11:45.468 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0313##`
+2026-09-30 23:11:45.468 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0313 is switched off.
+2026-09-30 23:11:45.528 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Message received: `*1*0*0312##`
+2026-09-30 23:11:45.528 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Light 0312 is switched off.
+2026-09-30 23:11:58.705 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-09-30 23:11:58.707 DEBUG (MainThread) [custom_components.myhome] [MH201 gateway - 192.0.2.10] Command session closed.

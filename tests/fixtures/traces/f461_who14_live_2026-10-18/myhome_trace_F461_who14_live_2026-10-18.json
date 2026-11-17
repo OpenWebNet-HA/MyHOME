@@ -1,0 +1,2898 @@
+{
+  "capture": {
+    "kind": "derived_trace_archive",
+    "started_at": "2026-10-18T19:21:39+00:00",
+    "notes": "Derived archive from live BTicino F461 (firmware 2.0.11 / WHO 1013 134.15.5.0) multi-session bus capture with physical F411/4 lighting actuator (WHERE 06, 07), F411/2 shutter actuator (WHERE 05, 5s travel time), and KW4691 thermostat (zone 2). Covers WHO 14 (Special commands: actuator lock *14*0*WHERE## and unlock *14*1*WHERE##) across lighting and automation actuators, command-session ACK vs 2.05s unpopulated bus timeout NACK, status-query/WHAT parser NACK boundaries, and #4#01 interface routing.",
+    "window": {
+      "first": "2026-10-18T19:21:39+00:00",
+      "last": "2026-10-18T19:22:36+00:00",
+      "frames": 58,
+      "rows": 236
+    }
+  },
+  "gateway": {
+    "model": "F461",
+    "manufacturer": "BTicino",
+    "firmware": "2.0.11",
+    "kernel": "5.10.35",
+    "ip": "192.0.2.92",
+    "mac": "00:03:50:00:04:97",
+    "identification": {
+      "model": "F461",
+      "who13_code": "200",
+      "who1013_code": "134"
+    }
+  },
+  "frames": [
+    {
+      "timestamp": 0.052,
+      "direction": "rx",
+      "raw": "*#13**15*200##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 0.691,
+      "direction": "rx",
+      "raw": "*#13**16*2*0*11##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.29,
+      "direction": "rx",
+      "raw": "*#13**23*5*10*35##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 1.894,
+      "direction": "rx",
+      "raw": "*#13**24*2*26*4##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.579,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.634,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 2.689,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.82,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.869,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.923,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 4.978,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 7.074,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 7.753,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 8.439,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.239,
+      "direction": "rx",
+      "raw": "*#4*2*0*0249##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.55,
+      "direction": "rx",
+      "raw": "*#4*2*12*0245*3##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.616,
+      "direction": "rx",
+      "raw": "*4*1*2##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.854,
+      "direction": "rx",
+      "raw": "*#4*2*14*0245*3##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 11.941,
+      "direction": "rx",
+      "raw": "*#4*2*13*00##",
+      "run": "run1_gateway_and_sweeps",
+      "session": "evt"
+    },
+    {
+      "timestamp": 13.619,
+      "direction": "rx",
+      "raw": "*1*1*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 14.31,
+      "direction": "rx",
+      "raw": "*1*1*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 14.987,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 15.666,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 16.346,
+      "direction": "rx",
+      "raw": "*14*0*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 18.146,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 18.839,
+      "direction": "rx",
+      "raw": "*14*1*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 19.733,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 20.407,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 21.084,
+      "direction": "rx",
+      "raw": "*14*0*06##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 22.879,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 23.549,
+      "direction": "rx",
+      "raw": "*14*1*06##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 24.449,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run2_who14_lighting_f411_4",
+      "session": "evt"
+    },
+    {
+      "timestamp": 25.106,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 25.785,
+      "direction": "rx",
+      "raw": "*14*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 25.839,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 26.665,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 26.72,
+      "direction": "rx",
+      "raw": "*2*1000#1*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 27.658,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.314,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 28.402,
+      "direction": "rx",
+      "raw": "*2*1000#2*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 29.324,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 29.996,
+      "direction": "rx",
+      "raw": "*14*1*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 30.86,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 30.914,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 30.969,
+      "direction": "rx",
+      "raw": "*2*1000#1*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 30.969,
+      "direction": "rx",
+      "raw": "*2*1*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 36.095,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 37.262,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 37.917,
+      "direction": "rx",
+      "raw": "*2*1000#0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 37.973,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 38.027,
+      "direction": "rx",
+      "raw": "*2*1000#2*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 38.027,
+      "direction": "rx",
+      "raw": "*2*2*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 38.081,
+      "direction": "rx",
+      "raw": "*2*2*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 43.079,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 44.305,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run3_who14_shutter_f411_2",
+      "session": "evt"
+    },
+    {
+      "timestamp": 55.276,
+      "direction": "rx",
+      "raw": "*1*1*06##",
+      "run": "run4_who14_boundaries_and_routing",
+      "session": "evt"
+    },
+    {
+      "timestamp": 55.962,
+      "direction": "rx",
+      "raw": "*1*0*07##",
+      "run": "run4_who14_boundaries_and_routing",
+      "session": "evt"
+    },
+    {
+      "timestamp": 56.695,
+      "direction": "rx",
+      "raw": "*2*0*05##",
+      "run": "run4_who14_boundaries_and_routing",
+      "session": "evt"
+    }
+  ],
+  "rows": [
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.0,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**15##",
+      "step": "gateway_model",
+      "ack": true,
+      "reply_time_s": 0.138,
+      "replies": [
+        "*#13**15*200##"
+      ],
+      "events_after": [
+        "*#13**15*200##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.052,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**15*200##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.138,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**15*200##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.138,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.638,
+      "dir": "result",
+      "frame": "*#13**15##",
+      "ack": true,
+      "reply_time_s": 0.138,
+      "replies": [
+        "*#13**15*200##"
+      ],
+      "events_after": [
+        "*#13**15*200##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.639,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**16##",
+      "step": "gateway_firmware",
+      "ack": true,
+      "reply_time_s": 0.098,
+      "replies": [
+        "*#13**16*2*0*11##"
+      ],
+      "events_after": [
+        "*#13**16*2*0*11##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.691,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**16*2*0*11##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's firmware version is: 2.0.11."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.737,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**16*2*0*11##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 0.737,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.236,
+      "dir": "result",
+      "frame": "*#13**16##",
+      "ack": true,
+      "reply_time_s": 0.098,
+      "replies": [
+        "*#13**16*2*0*11##"
+      ],
+      "events_after": [
+        "*#13**16*2*0*11##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.237,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**23##",
+      "step": "gateway_kernel",
+      "ack": true,
+      "reply_time_s": 0.104,
+      "replies": [
+        "*#13**23*5*10*35##"
+      ],
+      "events_after": [
+        "*#13**23*5*10*35##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.29,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**23*5*10*35##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's kernel version is: 5.10.35."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.341,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**23*5*10*35##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.341,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.84,
+      "dir": "result",
+      "frame": "*#13**23##",
+      "ack": true,
+      "reply_time_s": 0.104,
+      "replies": [
+        "*#13**23*5*10*35##"
+      ],
+      "events_after": [
+        "*#13**23*5*10*35##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.841,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#13**24##",
+      "step": "gateway_distribution",
+      "ack": true,
+      "reply_time_s": 0.099,
+      "replies": [
+        "*#13**24*2*26*4##"
+      ],
+      "events_after": [
+        "*#13**24*2*26*4##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.894,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#13**24*2*26*4##",
+      "ownd_class": "OWNGatewayEvent",
+      "ownd_log": "Gateway's distribution version is: 2.26.4."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.94,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#13**24*2*26*4##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 1.94,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 2.44,
+      "dir": "result",
+      "frame": "*#13**24##",
+      "ack": true,
+      "reply_time_s": 0.099,
+      "replies": [
+        "*#13**24*2*26*4##"
+      ],
+      "events_after": [
+        "*#13**24*2*26*4##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 2.441,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*0##",
+      "step": "sweep_lighting",
+      "ack": true,
+      "reply_time_s": 1.221,
+      "replies": [
+        "*1*1*06##",
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*1*06##",
+        "*2*0*05##",
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 2.579,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 2.634,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 2.689,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 3.662,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 3.662,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 3.662,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 4.663,
+      "dir": "result",
+      "frame": "*#1*0##",
+      "ack": true,
+      "reply_time_s": 1.221,
+      "replies": [
+        "*1*1*06##",
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*1*06##",
+        "*2*0*05##",
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 4.664,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*0##",
+      "step": "sweep_automation",
+      "ack": true,
+      "reply_time_s": 1.287,
+      "replies": [
+        "*2*0*05##",
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##",
+        "*1*1*06##",
+        "*1*0*07##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 4.82,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 4.869,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 4.923,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 4.978,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 5.951,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 5.951,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 5.951,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 6.952,
+      "dir": "result",
+      "frame": "*#2*0##",
+      "ack": true,
+      "reply_time_s": 1.287,
+      "replies": [
+        "*2*0*05##",
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##",
+        "*1*1*06##",
+        "*1*0*07##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 6.953,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "step": "status_light_06",
+      "ack": true,
+      "reply_time_s": 0.175,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.074,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.128,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.128,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.628,
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.175,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.629,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "step": "status_light_07",
+      "ack": true,
+      "reply_time_s": 0.171,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.753,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.8,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 7.8,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.3,
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.171,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.301,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "status_shutter_05",
+      "ack": true,
+      "reply_time_s": 0.186,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.439,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.487,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.487,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.987,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.186,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 8.988,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05*10##",
+      "step": "dim10_shutter_05",
+      "ack": true,
+      "reply_time_s": 1.13,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 10.118,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 10.618,
+      "dir": "result",
+      "frame": "*#2*05*10##",
+      "ack": true,
+      "reply_time_s": 1.13,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 10.619,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#4*2##",
+      "step": "status_thermo_zone_2",
+      "ack": true,
+      "reply_time_s": 1.368,
+      "replies": [
+        "*#4*2*0*0249##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0245*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0249##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0245*3##",
+        "*#4*2*13*00##"
+      ]
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.239,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*0*0249##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's main sensor is reporting a temperature of 24.9\u00b0C."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.55,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*12*0245*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local target temperature is set to 24.5\u00b0C."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.616,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*4*1*2##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's season is heating."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.854,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*14*0245*3##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's target temperature is set to 24.5\u00b0C."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.941,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*#4*2*13*00##",
+      "ownd_class": "OWNHeatingEvent",
+      "ownd_log": "Zone 2's local offset is set to 0\u00b0C."
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.987,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*0*0249##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.987,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*12*0245*3##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.987,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*4*1*2##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.987,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*14*0245*3##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.987,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#4*2*13*00##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 11.987,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run1_gateway_and_sweeps",
+      "t": 13.488,
+      "dir": "result",
+      "frame": "*#4*2##",
+      "ack": true,
+      "reply_time_s": 1.368,
+      "replies": [
+        "*#4*2*0*0249##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0245*3##",
+        "*#4*2*13*00##"
+      ],
+      "events_after": [
+        "*#4*2*0*0249##",
+        "*#4*2*12*0245*3##",
+        "*4*1*2##",
+        "*#4*2*14*0245*3##",
+        "*#4*2*13*00##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 13.489,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*07##",
+      "step": "unlocked_07_on",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [],
+      "events_after": [
+        "*1*1*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 13.584,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 13.619,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched on."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.184,
+      "dir": "result",
+      "frame": "*1*1*07##",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [],
+      "events_after": [
+        "*1*1*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.185,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "step": "unlocked_07_status_on",
+      "ack": true,
+      "reply_time_s": 0.17,
+      "replies": [
+        "*1*1*07##"
+      ],
+      "events_after": [
+        "*1*1*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.31,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched on."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.355,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*07##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.355,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.854,
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.17,
+      "replies": [
+        "*1*1*07##"
+      ],
+      "events_after": [
+        "*1*1*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.855,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*07##",
+      "step": "unlocked_07_off",
+      "ack": true,
+      "reply_time_s": 0.088,
+      "replies": [],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.943,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 14.987,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 15.544,
+      "dir": "result",
+      "frame": "*1*0*07##",
+      "ack": true,
+      "reply_time_s": 0.088,
+      "replies": [],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 15.545,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "step": "unlocked_07_status_off",
+      "ack": true,
+      "reply_time_s": 0.168,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 15.666,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 15.713,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 15.713,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 16.213,
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.168,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 16.214,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*0*07##",
+      "step": "lock_07_while_off",
+      "ack": true,
+      "reply_time_s": 0.09,
+      "replies": [],
+      "events_after": [
+        "*14*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 16.304,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 16.346,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*14*0*07##",
+      "ownd_class": "OWNActuatorLockEvent",
+      "ownd_log": "Actuator 07 is locked."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 17.104,
+      "dir": "result",
+      "frame": "*14*0*07##",
+      "ack": true,
+      "reply_time_s": 0.09,
+      "replies": [],
+      "events_after": [
+        "*14*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 17.105,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*1*07##",
+      "step": "locked_07_ignore_on",
+      "ack": true,
+      "reply_time_s": 0.093,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 17.198,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 17.998,
+      "dir": "result",
+      "frame": "*1*1*07##",
+      "ack": true,
+      "reply_time_s": 0.093,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 17.999,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "step": "locked_07_confirm_still_off",
+      "ack": true,
+      "reply_time_s": 0.192,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.146,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.191,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.191,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.691,
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.192,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.692,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*1*07##",
+      "step": "unlock_07",
+      "ack": true,
+      "reply_time_s": 0.111,
+      "replies": [],
+      "events_after": [
+        "*14*1*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.803,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 18.839,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*14*1*07##",
+      "ownd_class": "OWNActuatorLockEvent",
+      "ownd_log": "Actuator 07 is unlocked."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 19.604,
+      "dir": "result",
+      "frame": "*14*1*07##",
+      "ack": true,
+      "reply_time_s": 0.111,
+      "replies": [],
+      "events_after": [
+        "*14*1*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 19.605,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "step": "unlocked_07_confirm_off",
+      "ack": true,
+      "reply_time_s": 0.174,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 19.733,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 19.779,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 19.779,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.279,
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.174,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.28,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "step": "baseline_06_on",
+      "ack": true,
+      "reply_time_s": 0.175,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.407,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.455,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.455,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.955,
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.175,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 20.956,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*0*06##",
+      "step": "lock_06_while_on",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [],
+      "events_after": [
+        "*14*0*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 21.051,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 21.084,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*14*0*06##",
+      "ownd_class": "OWNActuatorLockEvent",
+      "ownd_log": "Actuator 06 is locked."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 21.851,
+      "dir": "result",
+      "frame": "*14*0*06##",
+      "ack": true,
+      "reply_time_s": 0.095,
+      "replies": [],
+      "events_after": [
+        "*14*0*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 21.852,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*1*0*06##",
+      "step": "locked_06_ignore_off",
+      "ack": true,
+      "reply_time_s": 0.109,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 21.961,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 22.761,
+      "dir": "result",
+      "frame": "*1*0*06##",
+      "ack": true,
+      "reply_time_s": 0.109,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 22.762,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "step": "locked_06_confirm_still_on",
+      "ack": true,
+      "reply_time_s": 0.16,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 22.879,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 22.922,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 22.922,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 23.422,
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.16,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 23.423,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*1*06##",
+      "step": "unlock_06",
+      "ack": true,
+      "reply_time_s": 0.089,
+      "replies": [],
+      "events_after": [
+        "*14*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 23.512,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 23.549,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*14*1*06##",
+      "ownd_class": "OWNActuatorLockEvent",
+      "ownd_log": "Actuator 06 is unlocked."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 24.312,
+      "dir": "result",
+      "frame": "*14*1*06##",
+      "ack": true,
+      "reply_time_s": 0.089,
+      "replies": [],
+      "events_after": [
+        "*14*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 24.313,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "step": "unlocked_06_confirm_on",
+      "ack": true,
+      "reply_time_s": 0.185,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 24.449,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 24.498,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 24.498,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run2_who14_lighting_f411_4",
+      "t": 24.998,
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.185,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 24.999,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "baseline_shutter_05",
+      "ack": true,
+      "reply_time_s": 0.154,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.106,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.153,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.153,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.653,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.154,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.654,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*0*05##",
+      "step": "lock_shutter_05",
+      "ack": true,
+      "reply_time_s": 0.104,
+      "replies": [],
+      "events_after": [
+        "*14*0*05##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.758,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.785,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*14*0*05##",
+      "ownd_class": "OWNActuatorLockEvent",
+      "ownd_log": "Actuator 05 is locked."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 25.839,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 26.559,
+      "dir": "result",
+      "frame": "*14*0*05##",
+      "ack": true,
+      "reply_time_s": 0.104,
+      "replies": [],
+      "events_after": [
+        "*14*0*05##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 26.56,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*1*05##",
+      "step": "locked_shutter_05_ignore_up",
+      "ack": true,
+      "reply_time_s": 0.152,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*1000#1*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 26.665,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 26.712,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 26.72,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#1*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 27.513,
+      "dir": "result",
+      "frame": "*2*1*05##",
+      "ack": true,
+      "reply_time_s": 0.152,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*1000#1*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 27.514,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "locked_shutter_05_confirm_stopped_after_up",
+      "ack": true,
+      "reply_time_s": 0.19,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 27.658,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 27.704,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 27.704,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 28.204,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.19,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 28.205,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*2*05##",
+      "step": "locked_shutter_05_ignore_down",
+      "ack": true,
+      "reply_time_s": 0.196,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*1000#2*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 28.314,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 28.401,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 28.402,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#2*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#2*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.201,
+      "dir": "result",
+      "frame": "*2*2*05##",
+      "ack": true,
+      "reply_time_s": 0.196,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*1000#2*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.202,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "locked_shutter_05_confirm_stopped_after_down",
+      "ack": true,
+      "reply_time_s": 0.162,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.324,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.364,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.364,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.864,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.162,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.865,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*1*05##",
+      "step": "unlock_shutter_05",
+      "ack": true,
+      "reply_time_s": 0.096,
+      "replies": [],
+      "events_after": [
+        "*14*1*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.961,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 29.996,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*14*1*05##",
+      "ownd_class": "OWNActuatorLockEvent",
+      "ownd_log": "Actuator 05 is unlocked."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.761,
+      "dir": "result",
+      "frame": "*14*1*05##",
+      "ack": true,
+      "reply_time_s": 0.096,
+      "replies": [],
+      "events_after": [
+        "*14*1*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.762,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*1*05##",
+      "step": "unlocked_shutter_05_up_5s_auto_stop",
+      "ack": true,
+      "reply_time_s": 0.167,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#1*05##",
+        "*2*1*05##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.86,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.914,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.929,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.969,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#1*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 30.969,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 is opening."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 36.095,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.13,
+      "dir": "result",
+      "frame": "*2*1*05##",
+      "ack": true,
+      "reply_time_s": 0.167,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#1*05##",
+        "*2*1*05##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.131,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "unlocked_shutter_05_status_after_up",
+      "ack": true,
+      "reply_time_s": 0.178,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.262,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.309,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.309,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.809,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.178,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.81,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*2*2*05##",
+      "step": "unlocked_shutter_05_down_5s_auto_stop",
+      "ack": true,
+      "reply_time_s": 0.176,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#2*05##",
+        "*2*2*05##",
+        "*2*2*05##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.917,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.973,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 37.986,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 38.027,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*1000#2*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "*2*1000#2*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 38.027,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*2*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 is closing."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 38.081,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*2*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 is closing."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 43.079,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 44.187,
+      "dir": "result",
+      "frame": "*2*2*05##",
+      "ack": true,
+      "reply_time_s": 0.176,
+      "replies": [],
+      "events_after": [
+        "*2*1000#0*05##",
+        "*2*0*05##",
+        "*2*1000#2*05##",
+        "*2*2*05##",
+        "*2*2*05##",
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 44.188,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "unlocked_shutter_05_status_after_down",
+      "ack": true,
+      "reply_time_s": 0.165,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 44.305,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 44.353,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 44.353,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run3_who14_shutter_f411_2",
+      "t": 44.853,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.165,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 44.854,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#14*07##",
+      "step": "status_request_07_nack",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 44.905,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 45.405,
+      "dir": "result",
+      "frame": "*#14*07##",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 45.406,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#14*06##",
+      "step": "status_request_06_nack",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 45.457,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 45.957,
+      "dir": "result",
+      "frame": "*#14*06##",
+      "ack": false,
+      "reply_time_s": 0.051,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 45.958,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#14*05##",
+      "step": "status_request_05_nack",
+      "ack": false,
+      "reply_time_s": 0.05,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 46.008,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 46.508,
+      "dir": "result",
+      "frame": "*#14*05##",
+      "ack": false,
+      "reply_time_s": 0.05,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 46.509,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#14*0##",
+      "step": "status_request_general_nack",
+      "ack": false,
+      "reply_time_s": 0.052,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 46.561,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 47.061,
+      "dir": "result",
+      "frame": "*#14*0##",
+      "ack": false,
+      "reply_time_s": 0.052,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 47.062,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*2*07##",
+      "step": "invalid_what_2_nack",
+      "ack": false,
+      "reply_time_s": 0.053,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 47.115,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 47.615,
+      "dir": "result",
+      "frame": "*14*2*07##",
+      "ack": false,
+      "reply_time_s": 0.053,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 47.616,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*0*99##",
+      "step": "unpopulated_where_99_lock_timeout_nack",
+      "ack": false,
+      "reply_time_s": 2.053,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 49.669,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 50.469,
+      "dir": "result",
+      "frame": "*14*0*99##",
+      "ack": false,
+      "reply_time_s": 2.053,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 50.47,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*1*99##",
+      "step": "unpopulated_where_99_unlock_timeout_nack",
+      "ack": false,
+      "reply_time_s": 2.052,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 52.522,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*0##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 53.322,
+      "dir": "result",
+      "frame": "*14*1*99##",
+      "ack": false,
+      "reply_time_s": 2.052,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 53.323,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*0*07#4#01##",
+      "step": "interface_01_lock_07",
+      "ack": true,
+      "reply_time_s": 0.108,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 53.431,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 54.231,
+      "dir": "result",
+      "frame": "*14*0*07#4#01##",
+      "ack": true,
+      "reply_time_s": 0.108,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 54.232,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*14*1*07#4#01##",
+      "step": "interface_01_unlock_07",
+      "ack": true,
+      "reply_time_s": 0.127,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 54.359,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.159,
+      "dir": "result",
+      "frame": "*14*1*07#4#01##",
+      "ack": true,
+      "reply_time_s": 0.127,
+      "replies": [],
+      "events_after": []
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.16,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*06##",
+      "step": "final_verify_06_on",
+      "ack": true,
+      "reply_time_s": 0.162,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.276,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*1*06##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 06 is switched on."
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.322,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*1*06##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.322,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.822,
+      "dir": "result",
+      "frame": "*#1*06##",
+      "ack": true,
+      "reply_time_s": 0.162,
+      "replies": [
+        "*1*1*06##"
+      ],
+      "events_after": [
+        "*1*1*06##"
+      ]
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.823,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#1*07##",
+      "step": "final_verify_07_off",
+      "ack": true,
+      "reply_time_s": 0.218,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 55.962,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*1*0*07##",
+      "ownd_class": "OWNLightingEvent",
+      "ownd_log": "Light 07 is switched off."
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.041,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*1*0*07##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.041,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.54,
+      "dir": "result",
+      "frame": "*#1*07##",
+      "ack": true,
+      "reply_time_s": 0.218,
+      "replies": [
+        "*1*0*07##"
+      ],
+      "events_after": [
+        "*1*0*07##"
+      ]
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.541,
+      "dir": "tx",
+      "session": "cmd",
+      "frame": "*#2*05##",
+      "step": "final_verify_05_stop",
+      "ack": true,
+      "reply_time_s": 0.248,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.695,
+      "dir": "rx",
+      "session": "evt",
+      "frame": "*2*0*05##",
+      "ownd_class": "OWNAutomationEvent",
+      "ownd_log": "Cover 05 stopped."
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.789,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*2*0*05##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 56.789,
+      "dir": "rx",
+      "session": "cmd",
+      "frame": "*#*1##"
+    },
+    {
+      "run": "run4_who14_boundaries_and_routing",
+      "t": 57.289,
+      "dir": "result",
+      "frame": "*#2*05##",
+      "ack": true,
+      "reply_time_s": 0.248,
+      "replies": [
+        "*2*0*05##"
+      ],
+      "events_after": [
+        "*2*0*05##"
+      ]
+    }
+  ]
+}

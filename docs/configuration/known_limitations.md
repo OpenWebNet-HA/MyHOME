@@ -1,0 +1,84 @@
+# Known Limitations
+
+Things the integration does not do, or does with a caveat, and the reason. Where a limitation is a design decision it links to the discussion; where it is a gap it names the trace or hardware needed to close it (see the [Roadmap](../roadmap.md) and [RFC #248](https://github.com/orgs/OpenWebNet-HA/discussions/248)). The full feature matrix is in [Supported Functions](supported_functions.md).
+
+## Bus and gateway
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **One command session per gateway on MH200 / MH200N / MH201 / F452 / F453 / F453AV / H4684 / H4890.** Commands are queued and paced (`150 ms` on `MH200` / `MH200N` / `F452` / `F453` / `F453AV`, `100 ms` on `MH201`, `50 ms` on `H4684` / `H4890`). | Those gateways refuse or drop overlapping sessions; the pacing is what keeps them alive. | Keep the worker count at the profile default (`1`). `F454`, `F455`, `F461`, `MyHomeServer1` (up to `4`) and `MH202` (up to `2`) take more workers. |
+| **Entities can be unavailable for up to 60 s after a gateway drop.** | The availability grace period hides short reconnects instead of flapping every entity. | Nothing needed; a longer outage marks entities unavailable and they recover on reconnect. |
+| **A gateway's model can be mislabelled.** | Only the WHO 13 device-type reply is available in-band, and its official table stops at 2006 hardware. | The [identification rules](gateway-identification.md) correct manual choices and raise a repair issue when evidence contradicts SSDP; open **Configure** (Options Flow) to set the hardware `model` explicitly (**Reconfigure** updates `host`/`port`/`password`). |
+| **USB / serial gateways (`Legrand 3578` / `088328` OpenZigBee) are not supported in `v2.0`.** | Deferred out of `v2.0.0` ([Discussion #879](https://github.com/orgs/OpenWebNet-HA/discussions/879)): `OWNd` sessions open TCP sockets only, OpenZigBee `<id>#9` addressing is not wired end-to-end, and no physical serial capture has been verified. | Connect via a supported TCP/IP OpenWebNet gateway, or contribute a raw serial capture on [#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466) for `v2.1+`. |
+| **No HMAC on MH200 / MH200N / MH201 / F452 / F453 / F453AV / H4684 / AM4890 / H4890.** | Those gateways only implement the legacy numeric (SHA-less) OPEN password; SHA-256 HMAC is supported on `F454`, `F455`, `F461`, `MH202`, and `MyHomeServer1`. | Configure the numeric OpenWebNet password on legacy gateways. |
+| **Broadcast, Area 00, and General 0 frames do not generate entities.** | Broadcast frames (`WHERE="0"`, `"00"`) coordinate multiple actuators and do not represent individual physical devices (except WHO 5 where `WHERE="0"` is the alarm central unit). Creating entities from these frames produced phantom entities like `sensor.zone_00` or `climate.climate_zone_00`. | Control individual actuators or use YAML declared groups (`where: '#G'` under `light:`) and manual scenes. |
+| **Secondary energy meters (`52`–`59`) require bus activity or manual configuration for initial setup.** | Startup discovery queries factory default meter `51` (`*#18*51*51##`, `*#18*51*113##`) to avoid long startup sweep delays. | Secondary meters appear automatically when they transmit power/energy readings on the bus, or immediately when running `myhome.sweep_bus`. They can also be declared in `myhome.yaml`. |
+
+## Lighting (WHO 1)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Group, area and general commands from wall switches re-sync with a ~500 ms delay, and only areas with a known light.** (P7, #368) | A `500 ms` (`RESYNC_DEBOUNCE_S = 0.5`) debounced re-sync (see [runtime behaviour](runtime_behaviour.md#broadcast-re-sync-group-area-general)) only sweeps `*#1*A##` per area/group, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes *nothing* to confirm the fallback is sufficient there. | Disable **Sweep group/area/general light addresses for status** in the Options Flow if your gateway needs a different cadence, and report a bus trace on #368. |
+| **A declared group (`where: '#G'` in `myhome.yaml`) never auto-discovers its membership.** (P7, #368) | OpenWebNet has no command to read back which actuators a group was programmed with - that is set on the plant itself (MyHOME_Suite or a physical group-programmed actuator), not on the bus. | Declare `members:` yourself if you want derived on/off, brightness and colour state; without it the entity is `assumed_state` and shows separate On/Off controls. |
+| **Colour modes are learned, not configured.** A DALI DT8 light shows colour temperature only after its first dimension 14 frame. | The bus does not describe an actuator's capabilities; it only reports what it does. | Set `color_temp: true` / `rgb: true` / `hs: true` in `myhome.yaml` to declare the mode up front. |
+| **Native transitions depend on the actuator.** | Some dimmers ignore the fade parameter. | Keep the default `software_stepped` transition mode. |
+| **Physical sensors sharing an actuator address (e.g. 3477 twilight photocell) trigger the actuator directly on the wire.** | Point-to-point SCS physical addressing binds the sensor contact interface directly to the relay. Hardware turn-ons cannot be prevented before they execute on the bus. | Use the [Hardware-Coupled Sensors Guide](../guides/hardware-coupled-sensors.md) and Dusk Curfew Blueprint to enforce bedtime curfews and companion synchronization, or decouple the sensor address. |
+
+## Covers (WHO 2)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Timed covers report a calculated position.** It drifts if the motor runs at a different speed than assumed, or after a manual stop mid-travel. | The actuator has no encoder; only position-reporting actuators (dimension 10) know where the shutter is. | Calibrate with `myhome.calibrate_cover` (or `myhome.set_cover_travel_time`); a full open or close resynchronises the estimate. |
+| **Calibration on an MH200 / MH200N can fail** with *no stop status from the actuator*, and **configurator run-time cut-offs (60 s, 120 s, …) are refused**. | The single-session gateway delays or drops the actuator's stop status; actuators at a whole-minute configurator limit stop on their timer rather than at the end stop. | Measure the run with a stopwatch and store the timings via `myhome.set_cover_travel_time`. |
+| **One calibration at a time per gateway.** | Two motors on one paced session make the timings meaningless. | Queue is automatic; `myhome.stop_cover_calibration` cancels it. |
+| **Rapid concurrent point-to-point commands behind an F422 interface can drop frames.** | The physical F422 interface internal FIFO buffer and secondary SCS bus arbitration saturate under rapid unpaced bursts. | Use native General broadcast covers (`where: '0'`, `interface: '<id>'`) which send a single OpenWebNet broadcast (`*2*WHAT*0#4#<id>##`), or rely on the integration's automatic 0.3 s paced member fan-out for position control. See [Covers](covers.md#the-bticino-way-real-world-plant-discovery). |
+| **Timed Venetian slat tilt (`slat_tilt` / `slat_time`) is dead-reckoned on every actuator.** | `WHO 2` has no slat-angle field: `Dimension 10` reports status, level, priority and info, and `Dimension 11` is the go-to-level write. The slat angle is therefore an estimate from `slat_time` on every actuator, including the advanced ones (`F401`, `LN4661M2`, `067557`), whose `Dimension 10` position reports are only used to time that estimate. | Configure `slat_time` for timed Venetian blinds; a full open or close resynchronises the slat estimate. |
+
+## Thermoregulation (WHO 4)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Weekly programs, holiday and scenario modes are not exposed.** | Only manual set-point, auto, off and the seasonal modes are modelled on the climate entity. | `myhome.send_message` with the central-unit mode frame (`*4*<mode>*#0##`). |
+| **4-zone central unit 4695 (`#0#1`) is verified on synthetic frames only.** | No community trace from a 4695 plant yet. | Please attach a trace to RFC #248 if you own one. |
+| **A commanded setpoint (dimension 14) that arrives without a following dimension 12 does not update the slider once the zone has reported a setpoint in force.** | The slider follows dimension 12 (the setpoint the thermostat regulates to, knob offset included) as soon as the zone has reported it; a dimension 14 that is not the echo of a write from Home Assistant is kept as the commanded value only. Both captured plants (F461 2.0.11 with a KW4691, MyHomeServer1 3.87.13 with 36 zones) emit dimension 12 after every write and after every local change, so the slider stays current there; a gateway that echoed only dimension 14 for an external change would leave the slider on the previous value until the next dimension 12 report or poll. | Reload the entity (`homeassistant.update_entity`) to poll `*#4*Z##`; please attach a trace if you see this. |
+| **Probes (`WHERE ≥ 100`) are read-only and push-driven.** | They NACK the explicit poll (`*#4*ZPP*15##`) and push readings on their own schedule. | Nothing needed; a probe that goes silent is polled again after 5 min. |
+
+## Burglar alarm (WHO 5)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Zones are not individual entities; the panel follows the central unit (`3485` / `3486`).** Some plants (`F454 + 3486`) emit zone status frames without exposing direct OpenWebNet arm / disarm commands (#311). | OpenWebNet `WHO 5` central units reject unauthenticated TCP arm/disarm writes by design; the integration models the central unit as a read-only panel (with optional `WHO 9` AUX arm/disarm bridges) validated against physical `3486` and `MH202` captures. | Individual zone frames are available as `myhome_message_event` (with **Generate Events** on) and alarm state changes as `myhome_alarm_event`. |
+| **Arming requires the central unit to accept the command.** | Central units reject arming while a zone is open or the engineer code is active; the bus only reports the refusal. | Watch the bus-monitor card for the NACK. |
+
+## Door entry and intercom (WHO 6 / WHO 8)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Gateways whose firmware routes no `WHO 6` reject unlock commands (`*6*10*<where>##`) with NACK (`*#*0##`): `MyHomeServer1`, `F455`, `F461`, `F450`, `F460`, and the A/V gateways `F454` / `F459`.** (Discussion #833) | `MyHomeServer1`, `F450`, `F455`, `F460` and `F461` ship no `bt_vct` door-entry translator, so they also see no `WHO 6 / 8` traffic. `F454` (and `F459`, which ships the same firmware image) routes only `WHO 8` to `bt_vct`: it reports doorbells, but no program takes `WHO 6`. | Either wire an `MH`-bus dry-contact relay actuator (`F411/2`, `F411/1N`, or `F411/4` via interposing relays since `F411/4` shares a common `C` terminal across its 4 channels) in parallel with the gate/strike dry-contact input and configure it as a `WHO 1` impulse `cover`, or add a gateway that routes `WHO 6` and sees the door-entry riser (`MH200`, `MH202` or `F453`, with the riser reaching its bus, e.g. through an `F422` interface) as a **Shared Bus → Secondary** gateway with `WHO 6` (and `WHO 8` for doorbells) delegated to it. `F453AV` ships `bt_vct`, but its `WHO 6` routing is unverified. |
+| **`HomeTouch 3488` indoor video displays neither bridge `AV` frames onto `MH` nor expose a local OpenWebNet server on TCP port `20000`.** (Discussion #833) | `HomeTouch 3488` has physically isolated `MH SCS BUS` and `AV SCS BUS` 2-wire terminals: tapping its screen for lights transmits on `MH`, while door/gate release buttons transmit strictly on `AV`. Over LAN, `3488` acts only as an OpenWebNet *client* pairing to `MyHomeServer1` and exposes SIP/HTTPS for the BTicino cloud *Door Entry for HOMETOUCH* app — no local `openserver` listens on port `20000`. | Do not point the integration's host IP at `HomeTouch 3488`. Use an `MH`-bus dry-contact impulse relay (`F411/2`, `F411/1N`) at the gate/strike inputs or a `WHO 6`-capable gateway that sees the door-entry riser (see above). |
+| **Door entry locks (`lock`) are never auto-discovered from bus traffic.** | Creating a code-less `lock` entity automatically whenever someone presses an indoor door-release button would let anyone with dashboard access unlatch the strike. | Declare door entry locks explicitly under `lock:` in `myhome.yaml` (with an optional `code:` PIN). |
+
+## Sound system (WHO 16 / WHO 22)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **Streaming needs a network decoder per concurrent stream.** With two decoders mapped, a third room asks for *All audio matrix inputs are currently in use*. | The F441 matrix routes one physical input per source; the integration claims one decoder per playing zone. | Map more decoders in the options flow, or group rooms on the decoder side. |
+| **Removing the group leader interrupts the music briefly.** Unticking the leader in Music Assistant, or turning it off (Home Assistant or wall panel), stops the sound for a few seconds before the remaining rooms resume. | Music Assistant owns one queue per player and can only move it by stopping it and starting a new stream on another player; a powered-off player cannot keep a queue. The bus itself is not interrupted: MyHOME switches only the leader's amplifier off and hands the decoder to the next room. See [Why deselecting the group leader gives a short gap](media_player.md#why-deselecting-the-group-leader-gives-a-short-gap). | Play to a Music Assistant **Sync Group** with *Dynamic members* on, so any room can be ticked and unticked; see [Recommended: one Music Assistant Sync Group for the house](media_player.md#recommended-one-music-assistant-sync-group-for-the-house). With temporary groups, play to a room that stays on: removing a member never interrupts anything. |
+| **Gateways that speak only `WHO 22` (`MyHomeServer1`, `F461`) expose declared F500 / F500N FM tuners, not room amplifier zones.** | Those gateways ship `bt_multi` without `bt_difson` and reject every `WHO 16` frame. F500 / F500N tuner sources (`2#S` / `5#2#S`) are fully controlled and decoded over `WHO 22`, and dual-stack gateways also track `WHO 22` area-source routing (`4#<area>`), whereas room amplifier discovery and zone power/volume/routing commands (`01`–`99`) require `WHO 16`. | On a shared bus, pair a `WHO 16`-capable secondary gateway (such as `MH200N`, `MH202`, `F454`, `H4890`, or `H/L4684` FW ≥ `6.0.0` for coupled `WHO 16` / `WHO 22`, or `MH200` for `WHO 16`) with audio delegated to it. |
+
+## Scenario buttons (WHO 15 / 25)
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **CEN / CEN+ devices are stateless.** They have no entity, only device triggers. | Pushbuttons report presses, holds, releases and rotary steps rather than a persistent on/off state. | Use the device triggers (see [CEN & CEN+](cen_cenplus.md)) or the [community blueprint](https://community.home-assistant.io/t/myhome-cen-commands/260345). |
+
+## Home Assistant integration surface
+
+| Limitation | Why | Workaround |
+| :--- | :--- | :--- |
+| **`entity_name` in `myhome.yaml` only applies to sensors and binary sensors.** On a light, switch, cover, thermostat, audio zone or alarm panel it is ignored: those entities *are* their device and carry the device `name`. | Home Assistant's device / entity naming model; `entity_name` never named those platforms in earlier versions either. | Rename the device in the UI, or change `name`. |
+| **Fresh installs name sensor ids after the device class** (`sensor.house_power`, `binary_sensor.cancello_opening`) where earlier pre-releases produced `sensor.house`, `sensor.house_2`, `binary_sensor.cancello`. | Earlier pre-releases used the device name with numeric suffixes for the second and third sensor of a device. | Existing installations keep their ids; automations on a fresh install use the new ids. |
+| **Strict typing is complete.** | `mypy --strict` is enforced with zero errors across all integration modules (Platinum Quality Scale). | — |
+| **`myhome.yaml` is a compatibility path, not the primary configuration.** Devices are discovered from the bus; YAML only adds names, device classes and options. | v2 is UI-first. | Keep `myhome.yaml` for names and `travel_time`; delete devices you no longer want from the device page. |
+| **Deleting a device does not stop it from coming back.** | Devices are re-discovered from bus traffic; a device that still exists reappears on its next status frame. | Only delete devices that are physically gone. |
+| **Home Assistant 2026.8 or newer is required** (`hacs.json`). | Current cores require Python 3.14 and modern `via_device_id`, repairs, and HTTP server APIs. | Upgrade Home Assistant Core to 2026.8 or newer before installing MyHOME v2.0. |

@@ -1,341 +1,321 @@
 # MyHOME — OpenWebNet Integration for Home Assistant
 
-[![Current Stable](https://img.shields.io/badge/stable-v0.9.4-blue.svg)](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/0.9.4)
-[![Active Beta](https://img.shields.io/badge/beta-v2.0.0b17-orange.svg)](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/2.0.0b17)
 [![Validate with hassfest](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/hassfest.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/hassfest.yml)
-[![HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Marketplace / HACS Validation](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/validate.yml)
+[![test-coverage](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml)
+[![Coverage](coverage.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME)
+[![Integration Quality Scale](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml/badge.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml)
+[![Quality scale tier](quality_scale.svg)](custom_components/myhome/quality_scale.yaml)
+[![Home Assistant Marketplace](https://img.shields.io/badge/HA%20Marketplace%20%2F%20HACS-Integration-orange.svg)](https://www.home-assistant.io/integrations/marketplace/)
+[![Latest Release](https://img.shields.io/github/v/release/OpenWebNet-HA/MyHOME?include_prereleases&label=release&logo=github)](https://github.com/OpenWebNet-HA/MyHOME/releases)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://www.python.org/)
-[![Quality Scale](https://img.shields.io/badge/Quality%20Scale-Platinum%20(54%2F54%20Self--Assessed)-brightgreen.svg)](https://openwebnet-ha.github.io/MyHOME/beta/)
-[![Tests](https://img.shields.io/badge/tests-5%2C324%20passing-brightgreen.svg)](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/test-coverage.yaml)
-[![Coverage](https://img.shields.io/badge/coverage-100.0%25-brightgreen.svg)](https://app.codecov.io/gh/OpenWebNet-HA/MyHOME/tree/v2-phase1-architecture)
-[![Documentation](https://img.shields.io/badge/Docs-openwebnet--ha.github.io%2FMyHOME-blue.svg)](https://openwebnet-ha.github.io/MyHOME/beta/)
+[![mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy.readthedocs.io/)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![User Manual](https://img.shields.io/badge/Manual-openwebnet--ha.github.io%2FMyHOME-blue.svg)](https://openwebnet-ha.github.io/MyHOME/)
 [![Discussions](https://img.shields.io/badge/Discussions-Join-blue?logo=github)](https://github.com/OpenWebNet-HA/MyHOME/discussions)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-Modern, async-native Home Assistant integration for **BTicino / Legrand MyHOME** SCS bus systems connected via OpenWebNet IP & Serial gateways.
+Async-native Home Assistant integration for **BTicino / Legrand MyHOME** SCS bus systems connected via OpenWebNet TCP/IP gateways, powered by the decoupled [`OWNd`](https://github.com/OpenWebNet-HA/OWNd) protocol engine and maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** community organisation.
 
-Maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** community organisation.
-
-[⚖️ Version Comparison](#️-version-comparison-legacy-stable-vs-modern-beta) • [🧪 Testing & Reliability](#-testing--quality-comparison) • [📦 Installation](#-installation) • [🏛️ Supported Hardware](#️-supported-hardware--gateways) • [🌟 Key Features](#-modern-v2-features) • [📚 Full Documentation](https://openwebnet-ha.github.io/MyHOME/beta/) • [🗺️ Stable v2.0.0 PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)
+[📖 User Manual](https://openwebnet-ha.github.io/MyHOME/) • [📦 Installation](#installation) • [⚙️ Quick Start](#quick-start) • [🏛️ Supported Hardware](#supported-hardware) • [📡 Bus Monitor](#bus-monitor--diagnostics) • [💬 Discussions](https://github.com/OpenWebNet-HA/MyHOME/discussions) • [🤝 Contributing](CONTRIBUTING.md) • [📄 License](#license)
 
 ---
 
-> [!IMPORTANT]
-> ### 🛡️ Current Stable Status vs. Active V2 Beta
->
-> - **Current Stable Release ([v0.9.4](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/0.9.4))**: The baseline release on `master` for users seeking proven production stability. Fully compatible with Home Assistant 2026.9 and earlier. HACS installs this version by default when pre-releases are not enabled.
-> - **Active Field-Testing Beta ([v2.0.0b17](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/2.0.0b17), succeeding [v2.0.0b16](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/2.0.0b16))**: Modernized async-native architecture (`OWNd 2.0.0b13`), cover end-stop settle recomputation & 0.5 s limit-stop cutoff, configurable `min_position_delta` (1–5 %), BTicino 3550 Central Unit hydration & diagnostics, F500/F500N FM tuner frequency, seek & preset controls (`WHO=16` / `WHO=22`), Burglar alarm HomeKit arm-away, Legrand 067292 touchscreen gateway alias, declarative HA-to-SCS bus `expose` engine (`WHO 1/2/4/13/18`), Venetian blind slat tilt, impulse gate/garage covers & door-entry locks (`WHO 1/2/6/8`), and 100.0% test statement coverage (**5,324 tests** in `v2.0.0b17`, up from 4,393 in `v2.0.0b16`). Built for Home Assistant ≥ 2026.3 (Python 3.14).
-> - **Roadmap to Stable v2.0.0**: Once community field-testing on the beta line is concluded, **[PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)** will merge the V2 architecture directly into `master`, making it the official stable default for all users.
-> - **Zero-Friction Migration**: Upgrading to V2 safely preserves all existing device names, custom entity IDs (`light.living_room`), and gateway configurations. Unique IDs migrate automatically (`MAC-WHERE` → `MAC-WHO-WHERE`), and legacy `myhome.yaml` settings (`travel_time`, `lock_features`) are automatically persisted into the config entry ([#742](https://github.com/OpenWebNet-HA/MyHOME/pull/742)).
+## Highlights
+
+- **UI-First Setup & Dynamic Auto-Discovery**: SSDP/UPnP gateway discovery, native Config, Options, and Subentry flows, and automatic on-wire SCS entity discovery — with optional `myhome.yaml` declarations for physical `#G` lighting groups, `WHO=6` door-entry locks, and DALI feature locks.
+- **Declarative Hardware Gateway Profiles**: Model-aware session concurrency and adaptive per-target frame scheduling (`FrameScheduler`) across 11 BTicino and Legrand IP gateway families, prioritizing user commands and immediate cover `STOP` actions ahead of background sweeps.
+- **Lighting, Motorized Covers & Climate**: Smooth dimmer fades, hardware-offloaded DIN actuator countdown timers (`WHO=1`), DALI HSV & DT8 Tunable White (`2000K–6535K`), calibrated shutter and Venetian slat-tilt kinematics with ~1 s live position interpolation (`WHO=2`), and Central Unit `3550` / `4695` whole-home climate coordination (`WHO=4`).
+- **Multi-Room Audio & Streaming Proxy**: F441/F441M matrix routing, F500/F500N FM radio tuner controls with live RDS (`WHO=16` / `WHO=22`), and dynamic `DecoderPool` streaming from **Music Assistant** or **Spotify Connect** with analog gain-staging.
+- **Native CEN / CEN+ Triggers & Bus Projection (`expose`)**: All 8 press, hold, release, and rotary dial device triggers directly in the Home Assistant automation editor (`WHO=15` / `WHO=25`), plus declarative HA-to-SCS bus projection (`WHO=1, 2, 4, 13, 18`) so physical wall pushbuttons can control Home Assistant entities with LED feedback.
+- **Multi-Gateway Topologies & In-Band Diagnostics**: MAC-isolated multi-gateway routing, shared-bus warm-standby failover, self-clearing Home Assistant Repair issues, and a zero-socket built-in `<myhome-openwebnet-bus-monitor>` Lovelace card.
 
 ---
 
-## ⚖️ Version Comparison: Legacy Stable vs. Modern Beta
+## User Manual & Documentation
 
-Understanding the technical differences between **Legacy Stable (`v0.9.4`)**, **Previous Beta (`v2.0.0b16`)**, and **Latest Beta (`v2.0.0b17`)**:
+Full setup guides, per-subsystem configuration references, automation recipes, and troubleshooting steps are published in the **MyHOME User Manual**:
 
-| Feature / Architecture | Legacy Stable (`v0.9.4` on `master`) | Beta `v2.0.0b16` *(21 Oct 2026)* | Latest Beta `v2.0.0b17` *(4 Nov 2026)* |
-| :--- | :--- | :--- | :--- |
-| **Home Assistant Core** | Compatible with HA 2026.9 and earlier | **Core ≥ 2026.3** (Python 3.14 async-native; HA 2026.11 registry migration ready) | **Core ≥ 2026.3** (Python 3.14 async-native; HA 2026.11 logger, media player & registry migration verified) |
-| **IoT Class** | `local_polling` | **`local_push`** (real-time bus event stream push) | **`local_push`** (real-time bus event stream push) |
-| **Protocol Engine** | `OWNd==0.7.48` | **`OWNd==2.0.0b11`** (zero private symbols/shims, strict builder validation, whole-hour TZ guard) | **`OWNd==2.0.0b13`** (hardened WHO 4 setpoints, vacation program parser, WHO 6 gateway boundaries, WHO 16 station range validation, clean profile aliases) |
-| **Quality Scale** | Unranked legacy structure | **🏆 Platinum Tier (54/54 self-assessed rules)** + bundled brand icons ([#741](https://github.com/OpenWebNet-HA/MyHOME/pull/741)) — formal tier awarded upon upstream core review | **🏆 Platinum Tier (54/54 self-assessed rules satisfied/exempt in `quality_scale.yaml`)** |
-| **Type Safety** | Untyped | **100% `mypy --strict` compliance** across all **73 modules** (verified against pinned `OWNd==2.0.0b11`) | **100% `mypy --strict` compliance** across all **73 modules** (verified against pinned `OWNd==2.0.0b13`) |
-| **State Storage & Config** | Global `hass.data[DOMAIN]` dictionaries | Strongly-typed **`entry.runtime_data`** + automatic persistence of `myhome.yaml` device settings (`travel_time`, `lock_features`) into config entry ([#742](https://github.com/OpenWebNet-HA/MyHOME/pull/742)) | Strongly-typed **`entry.runtime_data`** (`MyHOMERuntimeData`), UI Config/Options/Subentry Flows with manual gateway model ID ([#804](https://github.com/OpenWebNet-HA/MyHOME/pull/804)), `WHO=4` thermo switch subentries ([#817](https://github.com/OpenWebNet-HA/MyHOME/pull/817)), UI binary sensor inversion ([#829](https://github.com/OpenWebNet-HA/MyHOME/pull/829)) & `ignored_addresses` |
-| **Device Discovery** | Requires manual YAML (`myhome.yaml`) | **Zero-config Dynamic Bus Auto-Discovery** + phantom-entity suppression on blank start ([#686](https://github.com/OpenWebNet-HA/MyHOME/pull/686)) & ON-dimmer brightness probing ([#742](https://github.com/OpenWebNet-HA/MyHOME/pull/742)) | **Zero-config Dynamic Bus Auto-Discovery** with per-firmware startup sweep filtering ([#794](https://github.com/OpenWebNet-HA/MyHOME/pull/794)) and subentry entity persistence |
-| **Expose HA to SCS Bus** | ❌ Not supported | **✅ Declarative `expose` engine ([#750](https://github.com/OpenWebNet-HA/MyHOME/pull/750))**: virtual `WHO 1/2` actuators (with wall LED feedback), `WHO 4` temperature probes, `WHO 18` energy meters, and `WHO 13` bus clock | **✅ Declarative `expose` engine**: virtual `WHO 1/2` actuators (with physical wall LED feedback), `WHO 4` temperature probes, `WHO 18` energy meters, and `WHO 13` bus clock sync |
-| **Gateway Profiles** | Fixed, hardcoded socket pacing | **12 Declarative Profiles** verified against empirical **Firmware Oracle** ([#745](https://github.com/OpenWebNet-HA/MyHOME/pull/745)), plus `H4684`/`LGRH4684` & `MH201` auto-ID ([#652](https://github.com/OpenWebNet-HA/MyHOME/pull/652), [#722](https://github.com/OpenWebNet-HA/MyHOME/pull/722)) | **12 Declarative Profiles** + **Legrand `067292` / `573958` / `078479` touchscreen aliases ([#854](https://github.com/OpenWebNet-HA/MyHOME/pull/854))** (F454, F455, F461, MH202, MH201, MHS1, MH200N, MH200, H4890, HL4684, F452/F453AV, 3578) |
-| **Supported Transports** | TCP Network Gateways only | **TCP IP + USB/Serial (Legrand 3578 / OpenZigBee)** + shared HA websession discovery ([#757](https://github.com/OpenWebNet-HA/MyHOME/pull/757)) | **TCP IP + USB/Serial (Legrand 3578 / OpenZigBee)** |
-| **Multi-Gateway Plants** | ❌ Single gateway only (cross-talk on multi-GW) | **Namespaced routing, plant isolation & warm-standby failover** | **Namespaced routing, plant isolation & warm-standby failover ([#453](https://github.com/OpenWebNet-HA/MyHOME/issues/453))** |
-| **Command Scheduling** | FIFO queue (user commands blocked behind sweeps) | **Unified `FrameScheduler` ([#738](https://github.com/OpenWebNet-HA/MyHOME/pull/738))** with per-target (`WHO`, `WHERE`) serialization, cover `STOP` overtaking queued frames ([#694](https://github.com/OpenWebNet-HA/MyHOME/pull/694)), and low-priority fade steps ([#739](https://github.com/OpenWebNet-HA/MyHOME/pull/739)) | **Unified `FrameScheduler`** with per-target queue serialization, priority user frames over background polls, and immediate cover stop-overtake |
-| **Lighting (`WHO=1`)** | Basic On/Off relays & stepped dimming | Hardware staircase bus timers, smooth software fades, **DALI DT8 Tunable White (2000K–6535K)**, DALI feature locks, 2-digit Area 0 point addresses (`01`–`09`, [#713](https://github.com/OpenWebNet-HA/MyHOME/pull/713)) | Adds **coarse preset brightness curve correction ([#828](https://github.com/OpenWebNet-HA/MyHOME/pull/828))**, **fine dimmer preset echo Dimension 1 refresh ([#852](https://github.com/OpenWebNet-HA/MyHOME/pull/852))**, and **shared-address light + motion sensor coexistence ([#781](https://github.com/OpenWebNet-HA/MyHOME/pull/781))** |
-| **Covers (`WHO=2` & `WHO=1`)** | Basic Open / Close / Stop | State tracking, position-reporting actuators, Venetian blind slat tilt ([#508](https://github.com/OpenWebNet-HA/MyHOME/pull/508)), impulse gate/garage covers on `WHO=1` ([#667](https://github.com/OpenWebNet-HA/MyHOME/pull/667)), `min_motor_pulse` floor & endpoint full runs ([#702](https://github.com/OpenWebNet-HA/MyHOME/pull/702), [#708](https://github.com/OpenWebNet-HA/MyHOME/pull/708)) | Adds **cover end-stop settle recomputation & 0.5 s limit-stop cutoff from known positions ([#834](https://github.com/OpenWebNet-HA/MyHOME/pull/834), [#847](https://github.com/OpenWebNet-HA/MyHOME/pull/847))**, **configurable `min_position_delta` ([#778](https://github.com/OpenWebNet-HA/MyHOME/pull/778))**, and cover calibration configurator cutoffs ([#843](https://github.com/OpenWebNet-HA/MyHOME/pull/843)) |
-| **Locks & Door Entry (`WHO=6` / `WHO=8`)** | ❌ Not supported | Native `lock` platform for `WHO=6` door-entry strikes with constant-time PIN verification, auto-relock, and `WHO=8` intercom call events ([#667](https://github.com/OpenWebNet-HA/MyHOME/pull/667)) | Native `lock` platform with **WHO 6 gateway boundary containment ([#835](https://github.com/OpenWebNet-HA/MyHOME/pull/835))** preventing cross-gateway broadcast leaks |
-| **Climate (`WHO=4`)** | Basic zone thermostats | Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination, season frames, holiday/vacation programs, zone humidity sensors ([#712](https://github.com/OpenWebNet-HA/MyHOME/pull/712)), F461 zone polling | Adds **BTicino 3550 Central Unit startup hydration, diagnostic flags & repair alerts ([#846](https://github.com/OpenWebNet-HA/MyHOME/pull/846))**, **probe-less thermo actuator switches & ghost pump suppression ([#817](https://github.com/OpenWebNet-HA/MyHOME/pull/817), [#825](https://github.com/OpenWebNet-HA/MyHOME/pull/825))**, and Dimension 22 crash-form & interface routing guards ([#816](https://github.com/OpenWebNet-HA/MyHOME/pull/816), [#849](https://github.com/OpenWebNet-HA/MyHOME/pull/849)) |
-| **Sound System (`WHO=16` / `WHO=22`)** | ❌ Not supported | Full audio matrix (F441/F441M), Dynamic Streaming Proxy, `WHO=22` FM tuner frequency/preset/RDS decoding | Adds **F500/F500N FM tuner manual frequency `number` input, seek `button` entities, Media Browser, preset storage & `WHO=22` command parity ([#839](https://github.com/OpenWebNet-HA/MyHOME/pull/839))** and **`WHO=16` station range validation ([#844](https://github.com/OpenWebNet-HA/MyHOME/pull/844))** |
-| **Burglar Alarm (`WHO=5`)** | ❌ Not supported | Dedicated `alarm_control_panel` (3485/3486), partition states, AUX arm/disarm workflows | Dedicated `alarm_control_panel` + **HomeKit-compatible arm-away read-only auxiliary panel mode ([#842](https://github.com/OpenWebNet-HA/MyHOME/pull/842))** |
-| **CEN / CEN+ & Scenarios (`WHO=15/17/25`)** | Raw event listeners; required external blueprints | 8 native UI device triggers with 4-digit string-preserved addressing (`"0001"`), `WHO=25` Scenario Plus, `WHO=17` scene events | 8 native UI device triggers with 4-digit string-preserved addressing (`"0001"`), `WHO=25` Scenario Plus, `WHO=17` scene events |
-| **Diagnostics & Health** | Raw logs only | Self-clearing HA Repair issues (`actuator_fault`), `ignored_addresses`, gateway kernel distribution sweep telemetry | Self-clearing HA Repair issues, configurable `ignored_addresses`, and **3550 Central Unit diagnostic flags & actionable repair alerts ([#846](https://github.com/OpenWebNet-HA/MyHOME/pull/846))** |
-| **Lovelace Frontend** | ❌ None | Built-in `<myhome-openwebnet-bus-monitor>` card with stricter WebSocket input bounds ([#747](https://github.com/OpenWebNet-HA/MyHOME/pull/747)) and 1-click sanitized diagnostic report export | Built-in `<myhome-openwebnet-bus-monitor>` card with live streaming feed, offline replay tab, syntax-validated frame injector, and sanitized diagnostics |
-| **License** | **AGPL-3.0** (per `master` repository [`LICENSE`](LICENSE)) | **Apache-2.0** (per published `2.0.0b16` release / [`LICENSE`](https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/LICENSE), aligning with Home Assistant Core) | **Apache-2.0** (per published `2.0.0b17` release / [`LICENSE`](https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/LICENSE), aligning with Home Assistant Core) |
+👉 **[https://openwebnet-ha.github.io/MyHOME/](https://openwebnet-ha.github.io/MyHOME/)**
 
-> 🔗 **Release Changelogs & GitHub Compares**:
-> - [`v2.0.0b17` Release Notes & Assets](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/2.0.0b17) • [`Compare 2.0.0b16...2.0.0b17` (61 PRs)](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b16...2.0.0b17)
-> - [`v2.0.0b16` Release Notes & Assets](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/2.0.0b16) • [`Compare 2.0.0b15...2.0.0b16` (83 PRs)](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b15...2.0.0b16)
-> - [`v2.0.0b15` Release Notes & Assets](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/2.0.0b15) • [`Compare 2.0.0b14...2.0.0b15` (41 PRs)](https://github.com/OpenWebNet-HA/MyHOME/compare/2.0.0b14...2.0.0b15)
-> - [Full Cross-Beta Capability Matrix (`v2.0.0b1` → `v2.0.0b17`)](https://openwebnet-ha.github.io/MyHOME/beta/roadmap/beta-differences/)
+| Category | Manual Guides |
+| :--- | :--- |
+| **Getting Started** | [Configuration Overview](https://openwebnet-ha.github.io/MyHOME/latest/configuration/) • [Installation](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/installation/) • [Hardware Compatibility](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/hardware-compatibility/) • [Clean Uninstall](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/removal/) |
+| **Gateways & Bus** | [Gateways & Connection](https://openwebnet-ha.github.io/MyHOME/latest/configuration/gateways/) • [Gateway Identification](https://openwebnet-ha.github.io/MyHOME/latest/configuration/gateway-identification/) • [Expose HA Entities to SCS Bus](https://openwebnet-ha.github.io/MyHOME/latest/configuration/expose/) • [Services Reference](https://openwebnet-ha.github.io/MyHOME/latest/configuration/services/) |
+| **Entity Domains** | [Lights & DALI](https://openwebnet-ha.github.io/MyHOME/latest/configuration/lights/) • [Covers & Travel-Time Calibration](https://openwebnet-ha.github.io/MyHOME/latest/configuration/covers/) • [Climate & Heating](https://openwebnet-ha.github.io/MyHOME/latest/configuration/climate/) • [Sound System & Streaming](https://openwebnet-ha.github.io/MyHOME/latest/configuration/media_player/) • [CEN / CEN+ Buttons](https://openwebnet-ha.github.io/MyHOME/latest/configuration/cen_cenplus/) • [Switches](https://openwebnet-ha.github.io/MyHOME/latest/configuration/switches/) • [Sensors & Energy](https://openwebnet-ha.github.io/MyHOME/latest/configuration/sensors/) • [Binary Sensors](https://openwebnet-ha.github.io/MyHOME/latest/configuration/binary-sensors/) • [Burglar Alarm](https://openwebnet-ha.github.io/MyHOME/latest/configuration/alarm/) |
+| **Diagnostics & Recipes** | [Lovelace Bus Monitor Card](https://openwebnet-ha.github.io/MyHOME/latest/configuration/bus_monitor/) • [Home Assistant Repairs](https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/) • [Dashboard Recipes](https://openwebnet-ha.github.io/MyHOME/latest/configuration/lovelace_recipes/) • [Use Cases](https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/) • [Troubleshooting](https://openwebnet-ha.github.io/MyHOME/latest/configuration/troubleshooting/) • [Known Limitations](https://openwebnet-ha.github.io/MyHOME/latest/configuration/known_limitations/) |
+| **Protocol & Specs** | [Supported Functions Matrix](https://openwebnet-ha.github.io/MyHOME/latest/configuration/supported_functions/) • [OpenWebNet WHO Specifications](https://openwebnet-ha.github.io/MyHOME/latest/openwebnet-who-specifications/) • [Official Legrand Developer Portal](https://developer.legrand.com/local-interoperability/#PDF%20documentation) |
 
 ---
 
-## 🧪 Testing & Quality Comparison
+## Installation
 
-The modernization from legacy to V2 established an extensive automated testing and verification foundation (real-world validation across diverse physical gateways remains an ongoing community effort):
+> **Requirement:** Home Assistant **2026.8 or newer** (Python 3.14).
 
-| Testing Dimension | Legacy Stable (`v0.9.4` on `master`) | Beta `v2.0.0b16` *(21 Oct 2026)* | Latest Beta `v2.0.0b17` *(4 Nov 2026)* |
-| :--- | :--- | :--- | :--- |
-| **Automated Tests** | **0 tests** (no pytest suite or test files in repository) | **4,393 automated tests** passing | **5,324 automated tests** passing (+931 new regression & conformance tests) |
-| **Statement Coverage** | **0%** tracked | **Strict 100.0% statement coverage** across all 73 modules | **Strict 100.0% statement coverage** across all **73 modules** |
-| **Branch Coverage** | Untracked | Enforced via automated zero-tolerance coverage gates in CI | Enforced via automated zero-tolerance coverage gates in CI |
-| **Trace Replay Engine** | ❌ None (testing required live physical hardware) | Automated CI replay of authentic on-wire traces from real European installations (F454, F455, F461, MH200, MH200N, MH201, MH202, MyHomeServer1, H4890, HL4684, Living Now controls) | Expanded with **live BTicino 3550 Central Unit captures, HL4684 touchscreen sweeps, Legrand 067292 traces, F454 burglar alarm (3486), and F461 physical plant fixtures** |
-| **Firmware Oracle Conformance** | ❌ None | Automated Firmware Oracle Verification (`test_firmware_oracle_conformance.py`, [#745](https://github.com/OpenWebNet-HA/MyHOME/pull/745)) | Automated Firmware Oracle Verification cross-checking frames and gateway profiles against hash-pinned emulated firmware verdicts |
-| **Golden Frame Corpus** | ❌ None | Expanded OpenWebNet Golden Corpus (`WHO 0–25, 1001–1022`) + zero-deprecation enforcement | **OpenWebNet Golden Corpus** with multi-authority calibrated frame fixtures across 11 subsystems (`WHO 0–25, 1001–1022`) |
-| **Snapshot Testing** | ❌ None | Syrupy snapshot suites verifying diagnostics exports, entity registry schemas, and state trees | **Syrupy snapshot suites** verifying diagnostics exports, entity registry schemas, and state trees |
-| **CI Automation** | 2 workflows (`hassfest`, basic `validate`) | 10 comprehensive CI workflows + containerized HA smoke (`stable`/`beta`/`dev`) & `OWNd` lockstep smoke gates | **10 comprehensive CI workflows** + containerized HA smoke (`stable`/`beta`/`dev`) & `OWNd` lockstep smoke gates |
-| **Anti-Drift Sentinels** | ❌ None | Automated sentinel (`scripts/sync_documentation.py`) + gateway profile oracle verification | **Automated sentinel (`scripts/sync_documentation.py`)** continuously validating documentation, tables, and code alignment |
+### Option 1: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.8 – 2026.10`)
 
----
+From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On **Home Assistant 2026.8 – 2026.10**, use **[HACS](https://hacs.xyz)**.
 
-## 📦 Installation
+1. **Add or locate the repository:**
+    - **Home Assistant 2026.11+ (Marketplace):** Open **Settings → Marketplace** and search for **MyHOME** *(if not yet listed in your catalog, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, select **Integration** if prompted, and select **Add**)*.
+    - **Home Assistant 2026.8 – 2026.10 (HACS):** Open **HACS → Integrations** and search for **MyHOME** *(or open `⋮` → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**)*.
+2. **Install & restart:**
+    - Open **MyHOME** and select **Install** in Marketplace (or **Download** in HACS). To pick a specific release tag, open `⋮` → **Install another version** (Marketplace) or `⋮` → **Redownload** (HACS).
+    - Restart Home Assistant (**Settings → System → Restart**).
 
 > [!CAUTION]
-> **⚠️ Never store backup copies inside `/config/custom_components/` (e.g. `myhome.backup`)!**  
-> Home Assistant automatically discovers **all** subdirectories containing `manifest.json` under `custom_components`. Backups inside this folder cause startup crashes (`Unable to import component: No module named 'custom_components.myhome.backup'`). Always keep backups **outside** in `/config/myhome_backup/`.
+> **Migrating from a personal fork? Never delete your MyHOME integration entry or click "Delete and uninstall"!**
+> Deleting the integration under *Settings → Devices & services* — or choosing **Delete and uninstall** in Marketplace's "integration in use" dialog — removes all configured gateways, devices, and entities.
+>
+> - **If a fork is marked Installed in Marketplace (`2026.11+`):** update `/config/custom_components/myhome/` in place using **Option 2 (Manual / Terminal)** below instead of clicking **Delete and uninstall**.
+> - **If a fork was only added as a link (not installed) in Marketplace (`2026.11+`):** open **Settings → Marketplace → `⋮` → Custom repositories**, click **Remove** next to the fork, and add `OpenWebNet-HA/MyHOME` via **Add from link**.
+> - **On Home Assistant `< 2026.11` (HACS):** open **HACS → `⋮` → Custom repositories**, remove the fork URL, and add `OpenWebNet-HA/MyHOME`.
 
-### 🚀 Installing the Active Beta (v2.0.0b17 — Recommended for HA ≥ 2026.3)
+### Option 2: Manual Archive or Terminal & SSH
 
-> [!TIP]
-> **Recommended Beta Install Method**: In **HACS 2.0+**, pre-release toggle switches can get stuck in an *"unavailable"* loop due to upstream registry caching, or show validation warnings before PR #232 merges. Using **Method 1 (Terminal & SSH)** below provides a direct, verified installation that safely preserves your configuration and entity IDs. *(To install the previous `2.0.0b16` milestone instead, replace `2.0.0b17` with `2.0.0b16` in the download URL.)*
+*(Also recommended for installing pre-release tags ahead of stable catalog releases — see the [Installation Manual](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/installation/) for 1-click SSH and Docker commands.)*
 
-#### Method 1: Verified Script via Terminal & SSH Add-on (⭐ Recommended)
+1. Download `myhome.zip` from [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases).
+2. Extract `myhome.zip` into `/config/custom_components/myhome/` (so `manifest.json` is at `/config/custom_components/myhome/manifest.json`).
+3. Restart Home Assistant (**Settings → System → Restart**).
 
-Open the **Terminal** in your Home Assistant sidebar and paste:
+> [!WARNING]
+> **Never keep backup folders inside `/config/custom_components/` (such as `custom_components/myhome.backup`)!** Home Assistant scans every subdirectory under `custom_components/` containing a `manifest.json`, causing import failures (`No module named 'custom_components.myhome.backup'`). Store any safety backups outside `custom_components/` (for example `/config/myhome_backup/`).
 
-```bash
-if cd /config/custom_components; then
-    # Move any legacy in-place backup out of custom_components to prevent loader crashes:
-    [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old
+For clean uninstallation steps, see [Removal & Clean Uninstall](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/removal/).
 
-    # Download and extract into a temporary directory first to verify archive integrity:
-    TMP_DIR=$(mktemp -d)
-    if wget -O "$TMP_DIR/myhome.zip" https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b17/myhome.zip && \
-       unzip -q "$TMP_DIR/myhome.zip" -d "$TMP_DIR/myhome" && \
-       [ -f "$TMP_DIR/myhome/manifest.json" ]; then
-        BACKUP_OK=1
-        if [ -d myhome ]; then
-            rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup || BACKUP_OK=0
-        fi
-
-        if [ "$BACKUP_OK" -eq 1 ]; then
-            if rm -rf myhome && mv "$TMP_DIR/myhome" myhome; then
-                rm -rf "$TMP_DIR"
-                echo "Installation verified. Restarting Home Assistant..."
-                ha core restart
-            else
-                echo "Error: Replacement failed. Recovery files preserved in $TMP_DIR and /config/myhome_backup."
-            fi
-        else
-            echo "Error: Backup failed. Existing installation left intact. Recovery files preserved in $TMP_DIR."
-        fi
-    else
-        echo "Error: Download or extraction verification failed. Existing installation left intact."
-        rm -rf "$TMP_DIR"
-    fi
-else
-    echo "Error: Failed to navigate to /config/custom_components. Directory does not exist."
-fi
-```
-
-*(For **Home Assistant Container / Docker**, run on your Docker host:)*
-```bash
-docker exec -it homeassistant bash -c 'cd /config/custom_components || { echo "Error: /config/custom_components not found."; exit 1; }; [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old; TMP_DIR=$(mktemp -d); if ! wget -O "$TMP_DIR/myhome.zip" https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b17/myhome.zip || ! unzip -q "$TMP_DIR/myhome.zip" -d "$TMP_DIR/myhome" || [ ! -f "$TMP_DIR/myhome/manifest.json" ]; then echo "Error: Download or extraction verification failed. Existing installation left intact."; rm -rf "$TMP_DIR"; exit 1; fi; if [ -d myhome ]; then rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup || { echo "Error: Backup failed. Existing installation left intact. Recovery files preserved in $TMP_DIR."; exit 1; }; fi; if ! (rm -rf myhome && mv "$TMP_DIR/myhome" myhome); then echo "Error: Replacement failed. Recovery files preserved in $TMP_DIR and /config/myhome_backup."; exit 1; fi; rm -rf "$TMP_DIR" && echo "Installation verified. Restarting container..."' && docker restart homeassistant
-```
-
-#### Method 2: Manual Installation (Archive / Samba)
-
-1. Download the release package:  
-   👉 **[Download myhome.zip (v2.0.0b17 — Latest Beta)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b17/myhome.zip)** • **[Download myhome.zip (v2.0.0b16)](https://github.com/OpenWebNet-HA/MyHOME/releases/download/2.0.0b16/myhome.zip)** (or browse all [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases))
-2. Open your configuration directory via Samba Share, Studio Code Server, or File Editor.
-3. Extract `myhome.zip` directly into `/config/custom_components/myhome/` (overwriting existing files).
-4. Restart Home Assistant (**Settings → System → Restart**).
-
-#### Method 3: HACS (Custom Repository)
-
-1. In Home Assistant, open **HACS → Integrations**.
-2. Click the top-right menu (`⋮`) → **Custom repositories**.
-3. Add repository URL: `https://github.com/OpenWebNet-HA/MyHOME` with type **Integration**.
-4. Open the **MyHOME** card in HACS, click `⋮` → **Redownload**, ensure **Show beta versions** is toggled ON, select **`2.0.0b17`** (or **`2.0.0b16`**), and click **Download**.
-5. Restart Home Assistant.
+Upgrading from the previous stable release? Follow the [upgrade guide](https://openwebnet-ha.github.io/MyHOME/latest/migration/upgrade-from-094/).
 
 ---
 
-### 🛡️ Installing or Staying on Current Stable (v0.9.4)
+## Quick Start
 
-If you prefer proven production stability or wish to wait for the final `v2.0.0` stable merge:
-
-* **Via HACS (Default)**: Search for **MyHOME** in HACS and click **Download** (keep *Show beta versions* disabled). HACS will automatically install **v0.9.4**.
-* **Via Terminal & SSH**:
-  ```bash
-  if cd /config/custom_components; then
-      # Move any legacy in-place backup out of custom_components to prevent loader crashes:
-      [ -d myhome.backup ] && mv myhome.backup /config/myhome_backup_old
-
-      # Download and extract into a temporary directory first to verify archive integrity:
-      TMP_DIR=$(mktemp -d)
-      if wget -O "$TMP_DIR/myhome.zip" https://github.com/OpenWebNet-HA/MyHOME/releases/download/0.9.4/myhome.zip && \
-         unzip -q "$TMP_DIR/myhome.zip" -d "$TMP_DIR/myhome" && \
-         [ -f "$TMP_DIR/myhome/manifest.json" ]; then
-          BACKUP_OK=1
-          if [ -d myhome ]; then
-              rm -rf /config/myhome_backup && cp -r myhome /config/myhome_backup || BACKUP_OK=0
-          fi
-
-          if [ "$BACKUP_OK" -eq 1 ]; then
-              if rm -rf myhome && mv "$TMP_DIR/myhome" myhome; then
-                  rm -rf "$TMP_DIR"
-                  echo "Installation verified. Restarting Home Assistant..."
-                  ha core restart
-              else
-                  echo "Error: Replacement failed. Recovery files preserved in $TMP_DIR and /config/myhome_backup."
-              fi
-          else
-              echo "Error: Backup failed. Existing installation left intact. Recovery files preserved in $TMP_DIR."
-          fi
-      else
-          echo "Error: Download or extraction verification failed. Existing installation left intact."
-          rm -rf "$TMP_DIR"
-      fi
-  else
-      echo "Error: Failed to navigate to /config/custom_components. Directory does not exist."
-  fi
-  ```
-* **Configuration Guide for v0.9.4**: Entity definitions on legacy 0.9.4 use manual YAML configuration. Refer to the [Legacy v0.9.4 Documentation](https://openwebnet-ha.github.io/MyHOME/legacy/) or [Legacy Configuration Wiki](https://github.com/anotherjulien/MyHOME/wiki/Configuration).
+1. **Add Your Gateway**: Navigate to **Settings → Devices & Services → Add Integration → MyHOME**. Confirm an SSDP/UPnP-discovered gateway (**Configure**), or enter your gateway's IP address, port (default `20000`), and OpenWebNet / HMAC password manually.
+2. **Automatic Bus Discovery**: MyHOME establishes dedicated command (`*99*0##`) and event (`*99*1##`) sessions, identifies your gateway hardware profile, and automatically discovers devices from bus sweeps and live frames.
+3. **Fine-Tune in UI**: Click **Configure** on the MyHOME integration card to adjust command worker concurrency, dimmer transition mode (`software_stepped` or `native`), F500/F500N FM tuner source flags (`source_1_tuner`–`source_4_tuner`), audio decoder pool mappings, exposed Home Assistant entities, probe-less thermo actuator switches, or ignored addresses.
+4. **Optional `myhome.yaml` Overlay**: Physical SCS lighting groups (`#1`–`#255` under `light:`), `WHO=6` video door-entry locks, impulse covers, and DALI `lock_features` declarations can be placed in `/config/myhome.yaml` — see the [Configuration Overview](https://openwebnet-ha.github.io/MyHOME/latest/configuration/).
 
 ---
 
-## 🏛️ Supported Hardware & Gateways
+## Supported Hardware
 
-The integration features declarative hardware profiles that automatically calibrate connection concurrency, inter-frame bus pacing, and query throttles specifically for your gateway model:
+### Gateway Profiles
 
-| Gateway Model | Protocol Support | Max Command Workers | Inter-Frame Delay | Discovery | Notes |
+<!-- GATEWAY_PROFILES_START -->
+| Gateway Model | Protocol Support | Max Command Workers | Inter-Frame Delay | UPnP Discovery | Notes |
 |---|---|---|---|---|---|
-| **F454** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ UPnP / Port 49153 | Full high-speed multi-session IP gateway |
-| **F455** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ UPnP / Port 49153 | Basic gateway (single SCS bus) |
+| **F454** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ Port 49153 | Full high-speed multi-session support |
+| **F455** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ Port 49153 | Basic gateway (single SCS bus) |
 | **F461** | OpenWebNet / HMAC | 4 workers | 50 ms | ❌ Manual | Compact DIN Ethernet Web Server |
-| **MH202** | OpenWebNet / HMAC | 2 workers | 100 ms | ✅ UPnP / Port 49153 | Modern scenario programmer gateway |
-| **MH201** | OpenWebNet | 1 worker | 100 ms | ✅ UPnP / Port 49153 | Second-generation scenario programmer |
-| **MyHomeServer1** | OpenWebNet / HMAC | 4 workers | 20 ms | ✅ SSDP | Modern cloud/local hybrid gateway |
+| **MH202** | OpenWebNet / HMAC | 2 workers | 100 ms | ✅ Port 49153 | Modern scenario programmer gateway |
+| **MH201** | OpenWebNet | 1 worker | 100 ms | ✅ Port 49153 | Second-generation scenario programmer |
+| **MyHomeServer1** | OpenWebNet / HMAC | 4 workers | 20 ms | ✅ SSDP | Cloud/local hybrid gateway |
 | **MH200N** | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Second-generation scenario programmer |
 | **MH200** *(Legacy)* | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Strict single-session pacing; watchdog hardened |
-| **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway |
-| **F452 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ UPnP / Port 49153 | Audio/video & web server gateway |
-| **HL4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 10" Touch screen display IP gateway |
-| **Legrand 067292** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Céliane, `H4890` profile alias) |
-| **Legrand 3578** | OpenWebNet (Serial) | 1 worker | 50 ms | ❌ Manual (Serial) | USB / Serial gateway & OpenZigBee interface |
+| **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
+| **F452 / F453 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
+| **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
+<!-- GATEWAY_PROFILES_END -->
 
-📖 [Read the full Hardware Gateway Profiles Guide →](https://openwebnet-ha.github.io/MyHOME/beta/configuration/gateways/)
-
----
-
-## 🌟 Modern V2 Features
+*This table is automatically updated from gateway profile definitions and hardware specifications.*
 
 ### Supported Entity Domains & Automations
 
+<!-- SUPPORTED_DOMAINS_START -->
 | Domain | WHO | Capabilities |
 |---|---|---|
-| **`light`** | WHO=1 | On/Off, dimmers with smooth software-stepped curves, coarse preset brightness curve correction, DALI DT8 Tunable White (2000K–6535K), HS/RGB colour, 2-digit Area 0 (`01`–`09`) addressing, and hardware-offloaded bus staircase timers (`myhome.turn_on_timed`). |
-| **`switch`** | WHO=1 / 4 | Relay actuators, auxiliary switches, socket actuators (switch/outlet device classes), probe-less `WHO=4` thermo actuator switches, and hardware-offloaded bus timers. |
-| **`cover`** | WHO=1 / WHO=2 | Motorized shutters, Venetian blinds with slat tilt (`slat_tilt`, `slat_time`), position-reporting actuators, virtual travel-time positioning with end-stop settle recomputation & 0.5 s limit-stop cutoff from known positions, configurable `min_position_delta` (1–5 %), `min_motor_pulse` start-up floors & endpoint full runs, impulse gates & garage doors (`WHO=1`) with optional multi-factor approval, and centralized shutter triggers. |
-| **`lock`** | WHO=6 | Native video door-entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN authentication, auto-relock, `WHO=8` intercom call events, and gateway boundary containment. |
-| **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, offset tracking, season frames, holiday/vacation programs, zone humidity sensors, thermo actuator switches & ghost pump suppression, and Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination with startup hydration and diagnostics. |
-| **`alarm_control_panel`** | WHO=5 | Central units (3485/3486), partition states (disarmed / armed away / triggered), zone 0 broadcast sync, AUX arm/disarm workflows, and HomeKit-compatible arm-away read-only auxiliary panel mode. |
-| **`binary_sensor`** | WHO=1 / 9 / 25 | Magnetic contacts, door/window sensors, PIR motion, AUX channels (1–9), and dry contact interfaces (F482/3477) with per-entity UI state inversion. |
-| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature & humidity probes (3475), and illuminance / lux sensors. |
-| **`button`** | WHO=14 / 2 / 16 / 22 | Hardware actuator lock/unlock for maintenance (`WHO=14`), cover travel-time calibration buttons (`WHO=2`), and F500/F500N FM tuner Seek up / Seek down buttons (`WHO=16` / `22`). |
-| **`number`** | WHO=16 / 22 | Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) for declared F500/F500N tuner sources. |
-| **`media_player`** | WHO=16 / 22 | F441/F441M audio matrix zones, source routing, F500/F500N FM radio tuners (presets, live RDS station decoding with optional station artwork, Media Browser, manual frequency & preset storage on `WHO=16` & `WHO=22`), volume normalization, software mute, and Dynamic Streaming Proxy. |
-| **`device_trigger`** | WHO=15 / 17 / 25 | Stateless CEN & CEN+ scenario pushbuttons with 4-digit string-preserved addressing (`"0001"`), MAC isolation, 8 native UI trigger types, `WHO=25` Scenario Plus, and `WHO=17` scene lifecycle events. |
-| **`expose`** *(Bus Projection)* | WHO=1 / 2 / 4 / 13 / 18 | Declarative HA-to-SCS bus projection: virtual `WHO 1/2` actuators (driven by physical wall buttons with LED feedback), `WHO 4` virtual temperature probes, `WHO 18` virtual energy meters, and `WHO 13` bus clock sync. |
+| **`light`** | WHO=1 | On/Off, Dimmers with brightness control & transitions (stepped & native), DALI DT8 Tunable White (Dimension 14, 2000K–6535K), HS/RGB colour, Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`) |
+| **`switch`** | WHO=1 / 4 / 9 / 25 | Relays & socket actuators (`WHO=1`, switch/outlet device classes), thermoregulation zone/actuator power switches (`WHO=4`), auxiliary & CEN+ contact invert switches (`WHO=9 / 25`), Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`) |
+| **`cover`** | WHO=1 / WHO=2 | Motorized shutters, blinds, roll-ups with state tracking, position-reporting actuators & virtual travel-time positioning; impulse gates & garage doors (`WHO=1`) with sensor feedback and an optional multi-factor approval workflow |
+| **`lock`** | WHO=6 | Native video door entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN authentication and auto-relock |
+| **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
+| **`alarm_control_panel`** | WHO=5 | Central units (3485/3486), read-only state (disarmed / armed away / triggered), zone 0 broadcast sync; arm/disarm via AUX frames ([docs](docs/configuration/alarm.md)) |
+| **`binary_sensor`** | WHO=1 / 9 / 25 | Magnetic contacts, door/window sensors, PIR motion, AUX channels (1–9), dry contacts (F482/3477), inverted contacts |
+| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), illuminance / lux sensors |
+| **`button`** | WHO=14 / 2 / 16 / 22 | Hardware actuator lock/unlock for lights, switches & covers (WHO=14), cover travel time calibration buttons (per cover & gateway-wide, WHO=2), F500/F500N FM tuner Seek up / Seek down buttons (WHO=16 / 22) |
+| **`number`** | WHO=16 / 22 | Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) for declared F500/F500N tuner sources (WHO=16 / 22) |
+| **`media_player`** | WHO=16 / 22 | F441/F441M audio zones, F500/F500N FM radio tuners (presets, RDS, Media Browser, manual frequency & preset storage on WHO=16 & WHO=22), volume normalization, software mute, streaming dynamic proxy (Music Assistant / Spotify Connect) |
+| **`device_trigger`** *(Automations)* | WHO=15 / 25 | Stateless CEN & CEN+ scenario pushbuttons with string-preserved addressing (`"0001"`), gateway MAC isolation, and 8 native UI trigger types (short press, long press start, held, release, rotary dials) |
+<!-- SUPPORTED_DOMAINS_END -->
 
-### Architectural Highlights
+*This table is automatically updated from platform definitions and [`supported_functions.md`](docs/configuration/supported_functions.md).*
 
-* **Declarative HA-to-SCS Bus Expose Engine (`#750`)**: Project Home Assistant lights, switches, covers, temperature sensors, power meters, and the system clock onto unused OpenWebNet addresses (`WHO 1, 2, 4, 13, 18`). Physical wall controls can drive exposed virtual actuators with real-time LED state mirroring or execute Home Assistant scripts.
-* **Cover Kinematics, End-Stop Settling & Min Delta (`#508`, `#667`, `#702`, `#707`, `#708`, `#739`, `#778`, `#834`, `#843`, `#847`)**: Configurable `min_position_delta` (1–5 %, default 2 %) for tall shutters and fine slat adjustments, automatic end-stop settle recomputation on `travel_time + 2 s` from known positions, 0.5 s early cutoff recognition preventing fractional frozen positions short of limit stops, timed slat tilt pulses (`slat_tilt`, `slat_time`), impulse garage/gate covers on `WHO=1` relays with optional safety approval, native `WHO=6` door-entry locks, per-cover `min_motor_pulse` start-up floors, endpoint full runs (`0%` / `100%`), and stop-status position re-anchoring.
-* **Native Hardware Bus Light & Switch Timers (`WHO=1`)**: Offload countdown timers directly onto physical Legrand DIN actuators via `myhome.turn_on_timed` or standard `timer` parameters. The lights turn off automatically even if Home Assistant restarts.
-* **Sound System 2.0, Native Tuner Controls & Streaming Proxy (`#695`, `#839`, `#844`)**: Stream from **Music Assistant**, **Spotify Connect**, or any HA media player to wired BTicino audio zones using an intelligent `DecoderPool` with analog gain-staging and anti-hiss auto-off, plus F500/F500N FM tuner `number`, `button`, and `media_player` controls (`WHO=16` / `WHO=22`) for manual frequency input, seek, Media Browser presets, station storage, and live RDS metadata.
-* **Thermoregulation Central Unit Coordination, Seasons & Hydration (`3550` / `4695`, `#657`, `#689`, `#712`, `#817`, `#825`, `#846`)**: Master climate coordination for 99-zone (`#0`) and 4-zone (`#0#1`) central units automatically propagates whole-home heating/cooling modes, seasons, and holiday programs across subordinate zones, with active 3550 Central Unit hydration, diagnostic flags & repair alerts, thermo actuator switches, and ghost pump suppression.
-* **Multi-Gateway Routing & Plant Isolation (`#453`)**: Namespaced dispatchers eliminate cross-talk across plants combining multiple gateways (e.g. F454 + MH200N).
-* **Unified Per-Target FrameScheduler (`#738`)**: Serializes commands per target (`WHO`, `WHERE`) while allowing cover `STOP` commands to overtake queued frames (`#694`) and user actions to execute ahead of background status polls (`#685`).
-* **Self-Healing Diagnostics, Fault Repairs & Ignored Addresses (`#593`, `#621`, `#666`)**: Hardware anomalies surface as self-clearing Home Assistant repair issues (`actuator_fault`), with configurable `ignored_addresses` in Options Flow.
+<details>
+<summary><strong>📊 Hardware Trace Availability Matrix (Real-Plant CI Corpus)</strong></summary>
+
+<!-- TRACE_MATRIX_START -->
+| Gateway Model | WHO 0<br>Scenario | WHO 1<br>Lights | WHO 2<br>Autom. | WHO 3<br>Load | WHO 4<br>Climate | WHO 5<br>Alarm | WHO 6<br>Door | WHO 7<br>Video | WHO 8<br>Intercom | WHO 9<br>Aux | WHO 13<br>Gateway | WHO 14<br>Lock | WHO 15<br>CEN | WHO 16<br>Audio | WHO 17<br>Scenario | WHO 18<br>Energy | WHO 22<br>Audio Diff. | WHO 25<br>CEN+ | WHO 1001<br>Diag | WHO 1004<br>Diag | WHO 1013<br>Diag | WHO 1022<br>Diag |
+| :--- |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |  :---:  |
+| **067292** |  | ✅ |  |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  |  |  |
+| **F453** |  |  | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ |  |  | ✅ |  |
+| **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |
+| **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |  | ✅ |  |
+| **F455** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
+| **F459** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
+| **F461** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  | ✅ |  | ✅ |  |
+| **H4684 / H/L4684** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ | ✅ |  |  |
+| **H4890 / AM4890** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |  |
+| **MH200** |  | ✅ | ✅ |  |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |
+| **MH200N** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ |
+| **MH201** | ✅ | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  |
+| **MH202** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ |  |
+| **MyHomeServer1** |  | ✅ | ✅ |  | ✅ |  |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |
+<!-- TRACE_MATRIX_END -->
+
+*Checkmarks (✅) indicate that at least one anonymized bus capture in `tests/fixtures/` exercises that subsystem on the given gateway model. See [Trace Availability](https://openwebnet-ha.github.io/MyHOME/latest/trace-availability/) and [Issue #466](https://github.com/OpenWebNet-HA/MyHOME/issues/466) to contribute traces.*
+
+</details>
 
 ---
 
-## 📡 Built-In Bus Monitor Lovelace Card
+## Bus Monitor & Diagnostics
 
-The integration includes an in-band real-time bus monitor operating over the existing gateway event stream with zero extra sockets:
+MyHOME includes an in-band real-time bus monitor operating over the existing gateway event stream with **zero extra socket connections**:
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OpenWebNet-HA/MyHOME/v2-phase1-architecture/docs/images/myhome-bus-card.jpg" alt="MyHOME OpenWebNet Bus Monitor Lovelace Card" width="750">
+  <img src="docs/images/myhome-bus-card.jpg" alt="MyHOME OpenWebNet Bus Monitor Lovelace Card" width="750">
 </p>
 
-* **Visual Card Picker**: Add directly from Home Assistant's dashboard editor by searching for **"MyHOME OpenWebNet Bus Monitor"** (`custom:myhome-openwebnet-bus-monitor`).
-* **Live Feed & Frame Injector**: Color-coded badges for subsystems, ACK/NACK highlighting, pause/resume, buffer filtering, and manual frame injection with syntax validation.
+- **Visual Card Picker**: Search for **"MyHOME OpenWebNet Bus Monitor"** under `+ Add Card` in any dashboard (`custom:myhome-openwebnet-bus-monitor`).
+- **Live Frame Stream & Injector**: Subsystem badges (`WHO=1`, `WHO=2`, `WHO=4`, `WHO=15/25`, `WHO=16/22`, `WHO=18`), ACK/NACK highlighting, filtering by `WHO` / `WHERE` / RX/TX, offline trace replay, and syntax-validated manual frame injection.
+- **Sanitized Diagnostics**: One-click diagnostic export from the card or via **Settings → Devices & Services → MyHOME → `⋮` → Download diagnostics**, with automatic credential, IP, MAC, and SSDP redaction.
 
-📖 [Read the Bus Monitor Card Guide →](https://openwebnet-ha.github.io/MyHOME/beta/configuration/bus_monitor/)
-
----
-
-## 📚 Documentation & Protocol Specifications
-
-Comprehensive guides, specifications, and tutorials are available on our documentation site and wiki:
-
-* 📖 **[Official Documentation Site](https://openwebnet-ha.github.io/MyHOME/beta/)**
-  * [Getting Started & Installation](https://openwebnet-ha.github.io/MyHOME/beta/getting-started/installation/)
-  * [Upgrade from v0.9.4 to v2.0](https://openwebnet-ha.github.io/MyHOME/beta/migration/upgrade-from-094/)
-  * [Beta Releases & Delta Explorer (`b1` → `b17`)](https://openwebnet-ha.github.io/MyHOME/beta/roadmap/beta-differences/)
-  * [Hardware Gateway Profiles](https://openwebnet-ha.github.io/MyHOME/beta/configuration/gateways/)
-  * [Supported Functions & Subsystems](https://openwebnet-ha.github.io/MyHOME/beta/configuration/supported_functions/)
-  * [Sound System & Dynamic Proxy](https://openwebnet-ha.github.io/MyHOME/beta/configuration/media_player/)
-  * [CEN & CEN+ Scenario Automations](https://openwebnet-ha.github.io/MyHOME/beta/configuration/cen_cenplus/)
-  * [Troubleshooting & Diagnostics](https://openwebnet-ha.github.io/MyHOME/beta/configuration/troubleshooting/)
-* 🏛️ **[OpenWebNet Protocol & WHO Specifications Wiki](https://github.com/OpenWebNet-HA/MyHOME/wiki/OpenWebNet-Protocol-&-WHO-Specifications)**
-* 🗺️ **[Development Roadmap](https://openwebnet-ha.github.io/MyHOME/beta/roadmap/)** and **[Stable v2.0.0 Pull Request #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)**
+Read the full [Lovelace Bus Monitor Card Guide](https://openwebnet-ha.github.io/MyHOME/latest/configuration/bus_monitor/).
 
 ---
 
-## 👥 Community & Credits
+## Quality & Development
 
-This integration is developed and maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** community organization.
+MyHOME enforces 100% statement test coverage across all integration modules, `mypy --strict` type checking, empirical gateway firmware oracle conformance, and deterministic replay of anonymized real-plant OpenWebNet traces. For local setup, test runners, trace anonymization (`scripts/anonymize_plant_fixture.py`), and pull request guidelines, see **[CONTRIBUTING.md](CONTRIBUTING.md)** and **[ROADMAP.md](ROADMAP.md)**.
 
-- **Community Hub & Discussions**: [GitHub Discussions](https://github.com/OpenWebNet-HA/MyHOME/discussions)
-- **Issue Tracker & Traces**: [GitHub Issues](https://github.com/OpenWebNet-HA/MyHOME/issues)
-- **Phase 1 & 2 Pull Request**: [PR #232](https://github.com/OpenWebNet-HA/MyHOME/pull/232)
+### Home Assistant Integration Quality Scale
 
-### Core Integration & Architecture
-* **[@anotherjulien](https://github.com/anotherjulien)** for creating the original MyHOME integration and laying the protocol foundations.
-* **[@GreenGrassBlueOcean](https://github.com/GreenGrassBlueOcean)** for the modernized v2 architecture, declarative gateway profiles, streaming proxy, and automated test suite.
-* **[@xtimmy86x](https://github.com/xtimmy86x)** for crafting the frontend user experience, administration panel, cover calibration interfaces, and hardware diagnostics.
-* **[@gdluck](https://github.com/gdluck)** for outstanding engineering, invaluable ideas, and rigorous physical F461 plant measurements.
-* **[@TheDarkWizard](https://github.com/TheDarkWizard)** for crucial CEN+ wire address captures (KW8011), WHO 1001 diagnostics, and tireless real-world hardware testing across Living Now controls and MyHomeServer1 setups.
-* **[@wave68runner](https://github.com/wave68runner)** for authentic MH200N + MyHomeServer1 dual-gateway captures and BTicino 3550 central thermoregulation sweeps.
-* **[@Interstellar0verdrive](https://github.com/Interstellar0verdrive)** for deep hardware actuator analysis, cover timing/concurrency mechanics, and platform extensions.
-* **[@fedem95](https://github.com/fedem95)**, **[@mantovanellimatteo](https://github.com/mantovanellimatteo)**, **[@lyubomirtraykov](https://github.com/lyubomirtraykov)**, and **Cedric Rohou** for key bugfixes, platform extensions, and community testing.
-* **[@GianlucaCh](https://github.com/GianlucaCh)** for preserving and contributing the comprehensive 15-manual BTicino/Legrand specification archive (`OWN DOC.zip`), the official `WHO_24.pdf` Lighting Management specification, and CEN+ community automation references.
-* **[@nicolacavallo84](https://github.com/nicolacavallo84)** for the iconic 70+ device plant captures and H4890 touchscreen multi-gateway traces that form our foundational CI replay fixtures.
+<!-- START_QUALITY_SCALE -->
 
-### Hardware Traces & Real-World Validation
-Special gratitude to all community testers and trace providers whose real-world bus captures keep our 5,324+ CI tests grounded in real hardware: *"In traces we find the truth"* — their traces prove again and again that we can only build reliable stuff when we get authentic user traces:
-* **[@TheDarkWizard](https://github.com/TheDarkWizard)** for MyHomeServer1 automation command-translation echoes and WHO 4 heating/cooling Home+Control traces ([#378](https://github.com/OpenWebNet-HA/MyHOME/issues/378), [#429](https://github.com/OpenWebNet-HA/MyHOME/issues/429)).
-* **[@wave68runner](https://github.com/wave68runner)** for MH200N + MyHomeServer1 dual-gateway 4-digit CEN scenario traces ([#624](https://github.com/OpenWebNet-HA/MyHOME/issues/624)) and BTicino 3550 Central Unit sweep & WHO 4 diagnostic captures ([Discussion #819](https://github.com/orgs/OpenWebNet-HA/discussions/819), [#845](https://github.com/OpenWebNet-HA/MyHOME/pull/845)).
-* **[@gdluck](https://github.com/gdluck)** for MyHomeServer1 live climate heating/cooling season switching, timed relays, and F461 plant traces ([#649](https://github.com/OpenWebNet-HA/MyHOME/pull/649)).
-* **[@nicolacavallo84](https://github.com/nicolacavallo84)** for shared-bus dual gateway captures (MHS1 + H4890) and H4890 WHO 25 dry contacts ([#453](https://github.com/OpenWebNet-HA/MyHOME/issues/453), [#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)).
-* **[@lionelser](https://github.com/lionelser)** for Legrand F455 Basic Gateway full bus sweep, modular dimmers, and pushbutton captures ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)).
-* **[@f18m](https://github.com/f18m)** (Francesco Montorsi) for MyHomeServer1 & LN-4660M2 centralized shutter and advanced automation traces ([#445](https://github.com/OpenWebNet-HA/MyHOME/issues/445)).
-* **[@caiosweet](https://github.com/caiosweet)** for BTicino MH200N full bus sweep and climate probe knob offset cycle captures ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)).
-* **[@gimprota76](https://github.com/gimprota76)** (Giovanni) for BTicino F454 burglar alarm (3486, WHO 5) and auxiliary channel (WHO 9) traces ([#311](https://github.com/OpenWebNet-HA/MyHOME/issues/311), [#841](https://github.com/OpenWebNet-HA/MyHOME/pull/841)).
-* **[@paoloboatto](https://github.com/paoloboatto)** for MyHomeServer1 + F500 + H4562 `WHO=22` FM tuner RDS and preset traces ([#695](https://github.com/OpenWebNet-HA/MyHOME/pull/695)).
-* **[@andrea-mag](https://github.com/andrea-mag)** for BTicino H/L4684 colour touchscreen (`FW 6.0.11`) full bus sweeps, F500 FM tuner, and WHO 3/4/16/22/1004 traces ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466), [#818](https://github.com/OpenWebNet-HA/MyHOME/pull/818), [#839](https://github.com/OpenWebNet-HA/MyHOME/pull/839)).
-* **[@cricri72](https://github.com/cricri72)** for BTicino F454 + F411U2 cover calibration and diagnostic captures ([#730](https://github.com/OpenWebNet-HA/MyHOME/issues/730)).
-* **[@ricdijk](https://github.com/ricdijk)** for BTicino F454 WHO 4 99-zone central unit (`#0`) status captures ([#629](https://github.com/OpenWebNet-HA/MyHOME/issues/629)).
-* **[@eC0y0te](https://github.com/eC0y0te)** for BTicino F454 + F401 tall Venetian shutter, mechanical slat-tilt, and 1 % position-step captures ([Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770), [#779](https://github.com/OpenWebNet-HA/MyHOME/pull/779), [#783](https://github.com/OpenWebNet-HA/MyHOME/pull/783)).
-* **[@manfredgittmaier-afk](https://github.com/manfredgittmaier-afk)** for live shutter end-stop settle travel timer and limit-stop captures ([Discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770), [#834](https://github.com/OpenWebNet-HA/MyHOME/pull/834), [#847](https://github.com/OpenWebNet-HA/MyHOME/pull/847)).
-* **[@Yvan13120](https://github.com/Yvan13120)** for Legrand 067292 (Céliane 3.5" touchscreen) IP gateway identification & 500-frame bus diagnostics ([#832](https://github.com/OpenWebNet-HA/MyHOME/issues/832), [#853](https://github.com/OpenWebNet-HA/MyHOME/pull/853)).
-* **[@emil-d](https://github.com/emil-d)** for BTicino MH201 (`FW 3.6.43`) + F414 dimmer sweep & WHO 1013 identity captures ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466), [#824](https://github.com/OpenWebNet-HA/MyHOME/pull/824), [#827](https://github.com/OpenWebNet-HA/MyHOME/pull/827)).
-* **[@marcob79](https://github.com/marcob79)**, **[@xduss](https://github.com/xduss)**, **[@pakob81](https://github.com/pakob81)**, **[@Depechie](https://github.com/Depechie)**, **[@nce2704](https://github.com/nce2704)**, **[@imfreddie](https://github.com/imfreddie)**, **[@theveninjeremy](https://github.com/theveninjeremy)**, and **[@simo72mast-lab](https://github.com/simo72mast-lab)** for essential real-world verification traces across diverse European SCS plants.
+**Tier reached: 🏆 Platinum**
+
+| Tier | Rules satisfied | Status |
+| :--- | :---: | :--- |
+| 🥉 Bronze | 20 / 20 | ✅ complete |
+| 🥈 Silver | 10 / 10 | ✅ complete |
+| 🥇 Gold | 21 / 21 | ✅ complete |
+| 🏆 Platinum | 3 / 3 | ✅ complete |
+
+_Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yaml) against the official [Integration Quality Scale](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules/); a tier needs every rule of that tier and all lower tiers `done`/`exempt`. Updated by the [Integration Quality Scale workflow](https://github.com/OpenWebNet-HA/MyHOME/actions/workflows/quality-scale.yml); tiers are formally awarded only by Home Assistant core review._
+
+<!-- END_QUALITY_SCALE -->
+
+### Code Coverage
+
+The integration maintains 6,554 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+
+<details>
+<summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>
+
+<!-- START_COVERAGE_TABLE -->
+
+| Component / Module | Coverage | Notes |
+|---|:---:|---|
+| [`__init__.py`](custom_components/myhome/__init__.py) | **100%** | Setup/unload lifecycle, static Lovelace card registration & cleanup, and migrations |
+| [`access_policy.py`](custom_components/myhome/access_policy.py) | **100%** | Human-in-the-loop approval, pre-warning, and watchdog policy for impulse gates/doors |
+| [`alarm_control_panel.py`](custom_components/myhome/alarm_control_panel.py) | **100%** | Read-only WHO=5 burglar alarm central unit status (3485/3486) and broadcast sync |
+| [`binary_sensor.py`](custom_components/myhome/binary_sensor.py) | **100%** | WHO=1 PIR motion, WHO=9 AUX channels, and WHO=25 dry contacts with state inversion |
+| [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra gateway sockets) |
+| [`button.py`](custom_components/myhome/button.py) | **100%** | WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek |
+| [`climate.py`](custom_components/myhome/climate.py) | **100%** | WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync |
+| [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Gateway onboarding, manual/SSDP setup, and subentry flow registration |
+| [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options |
+| [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | SSDP discovery, connection probing, reauthentication, and reconfiguration steps |
+| [`config_flow_expose.py`](custom_components/myhome/config_flow_expose.py) | **100%** | Subentry flow for projecting Home Assistant entities onto the SCS bus |
+| [`config_flow_options.py`](custom_components/myhome/config_flow_options.py) | **100%** | Gateway runtime options flow (worker sessions, fades, connection, ignored addresses) |
+| [`config_flow_thermo_switch.py`](custom_components/myhome/config_flow_thermo_switch.py) | **100%** | Subentry flow for WHO=4 probe-less thermoregulation / towel-warmer switches |
+| [`config_flow_topology.py`](custom_components/myhome/config_flow_topology.py) | **100%** | Shared-bus primary, secondary (delegated WHO), and warm-standby topology flows |
+| [`const.py`](custom_components/myhome/const.py) | **100%** | Protocol commands, dimensions, platform definitions, and integration constants |
+| [`cover.py`](custom_components/myhome/cover.py) | **100%** | WHO=2 shutters/blinds and WHO=1 impulse gates/garage doors with state tracking |
+| [`cover_calibration.py`](custom_components/myhome/cover_calibration.py) | **100%** | Automated on-bus stopwatch travel-time calibration engine for WHO=2 covers |
+| [`cover_motion.py`](custom_components/myhome/cover_motion.py) | **100%** | Pure travel-time position interpolation math and command echo suppression |
+| [`cover_scope.py`](custom_components/myhome/cover_scope.py) | **100%** | Stateless general, area, and group WHERE cover entities (WHO=2) |
+| [`cover_strategies/__init__.py`](custom_components/myhome/cover_strategies/__init__.py) | **100%** | Strategy exports and registry for pluggable WHO=2 cover kinematics |
+| [`cover_strategies/base.py`](custom_components/myhome/cover_strategies/base.py) | **100%** | Base protocol and shared timing state for WHO=2 cover kinematics strategies |
+| [`cover_strategies/native.py`](custom_components/myhome/cover_strategies/native.py) | **100%** | Native percentage position strategy for advanced WHO=2 actuators (Dim 10/11) |
+| [`cover_strategies/simple.py`](custom_components/myhome/cover_strategies/simple.py) | **100%** | Open/close/stop strategy for uncalibrated standard WHO=2 actuators |
+| [`cover_strategies/timed.py`](custom_components/myhome/cover_strategies/timed.py) | **100%** | Interpolated virtual position strategy for travel-time calibrated WHO=2 shutters |
+| [`cover_strategies/venetian.py`](custom_components/myhome/cover_strategies/venetian.py) | **100%** | Combined curtain travel and slat-tilt dead-reckoning strategy for Venetian blinds |
+| [`data.py`](custom_components/myhome/data.py) | **100%** | Typed per-entry runtime_data container and config-entry lookup helpers |
+| [`decoder_allocation.py`](custom_components/myhome/decoder_allocation.py) | **100%** | Deterministic decoder slot allocation, LRU eviction, and group topology bookkeeper |
+| [`decoder_companion.py`](custom_components/myhome/decoder_companion.py) | **100%** | Cross-integration streaming companion discovery and loop-safe entity filtering |
+| [`decoder_pool.py`](custom_components/myhome/decoder_pool.py) | **100%** | Dynamic streaming proxy audio pool coordinating matrix inputs and upstream players |
+| [`device_health.py`](custom_components/myhome/device_health.py) | **100%** | Hardware fault telemetry and self-clearing Home Assistant Repair issue lifecycle |
+| [`device_trigger.py`](custom_components/myhome/device_trigger.py) | **100%** | Stateless WHO=15 CEN and WHO=25 CEN+ pushbutton and rotary automation triggers |
+| [`diagnostics.py`](custom_components/myhome/diagnostics.py) | **100%** | Sanitized config-entry diagnostics export with credential, IP, and MAC redaction |
+| [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Shared entity restore, YAML overlay merge, dynamic bus discovery, and dispatcher |
+| [`expose.py`](custom_components/myhome/expose.py) | **100%** | Virtual OpenWebNet responder projecting HA entities and system clock onto SCS |
+| [`gateway.py`](custom_components/myhome/gateway.py) | **100%** | Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle |
+| [`gateway_events.py`](custom_components/myhome/gateway_events.py) | **100%** | Inbound OpenWebNet frame classification, event bus emission, and doorbell routing |
+| [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Debounced lighting status resync sweeps after group, area, and general broadcasts |
+| [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Persistent event session watchdog, priority command queue, and paced worker pool |
+| [`identity.py`](custom_components/myhome/identity.py) | **100%** | Multi-source gateway model and firmware resolution (SSDP, WHO=13, WHO=1013) |
+| [`ignored.py`](custom_components/myhome/ignored.py) | **100%** | WHO/WHERE address parser and filter silencing discovery, entities, and fault alerts |
+| [`legacy_yaml.py`](custom_components/myhome/legacy_yaml.py) | **100%** | Backward-compatible myhome.yaml loader, schema validator, and platform normalizer |
+| [`light.py`](custom_components/myhome/light.py) | **100%** | WHO=1 relays, dimmers, DALI DT8 tunable white/HSV colour, and DIN bus timers |
+| [`light_dali.py`](custom_components/myhome/light_dali.py) | **100%** | DALI DT8 feature-lock and Home Assistant colour-mode mutual exclusion helpers |
+| [`light_fade.py`](custom_components/myhome/light_fade.py) | **100%** | Software-stepped dimmer brightness fade interpolation and cancellation engine |
+| [`light_group.py`](custom_components/myhome/light_group.py) | **100%** | Declared physical SCS lighting group entities (WHO=1, WHERE=#G) with member rollup |
+| [`lock.py`](custom_components/myhome/lock.py) | **100%** | WHO=6 video door-entry electric strikes with constant-time PIN verification |
+| [`media_player.py`](custom_components/myhome/media_player.py) | **100%** | WHO=16 F441/F441M audio zones, WHO=16/22 FM RDS tuners, and dynamic streaming proxy |
+| [`media_player_decoder.py`](custom_components/myhome/media_player_decoder.py) | **100%** | Upstream streaming decoder mirroring, fixed pre-gain feed trim, and anti-hiss auto-off |
+| [`media_player_group.py`](custom_components/myhome/media_player_group.py) | **100%** | Multi-room audio zone join/unjoin, master hand-over, parking, and group wake |
+| [`media_player_pool.py`](custom_components/myhome/media_player_pool.py) | **100%** | Gateway options-to-DecoderPool builder and live pool reconfiguration helpers |
+| [`media_player_power.py`](custom_components/myhome/media_player_power.py) | **100%** | Audio zone power-state machine, frame classification, and auto-off delay rules |
+| [`media_player_routing.py`](custom_components/myhome/media_player_routing.py) | **100%** | WHO=16 environment/amplifier matrix routing address math |
+| [`media_player_source.py`](custom_components/myhome/media_player_source.py) | **100%** | Matrix input source naming, tuner binding, and per-environment default routing |
+| [`media_player_zone.py`](custom_components/myhome/media_player_zone.py) | **100%** | Shared state, volume/mute primitives, and DecoderPool access for audio zone mixins |
+| [`migrate.py`](custom_components/myhome/migrate.py) | **100%** | Config-entry version upgrades and zero-friction entity/device registry migrations |
+| [`myhome_device.py`](custom_components/myhome/myhome_device.py) | **100%** | Base entity class, DeviceInfo registry linkage, and availability lifecycle |
+| [`number.py`](custom_components/myhome/number.py) | **100%** | Direct FM radio frequency number entities (87.50–108.00 MHz) for F500/F500N tuners |
+| [`poll_health.py`](custom_components/myhome/poll_health.py) | **100%** | Adaptive suppression of non-answering bus addresses during background status polls |
+| [`repairs.py`](custom_components/myhome/repairs.py) | **100%** | Home Assistant Repair issue builders, interactive fix flows, and cleanup helpers |
+| [`router.py`](custom_components/myhome/router.py) | **100%** | O(1) WHO/WHERE frame router dispatching bus telegrams to registered entities |
+| [`sensor.py`](custom_components/myhome/sensor.py) | **100%** | WHO=18 active power & total/daily/monthly energy counters, WHO=4 probes, WHO=1 lux |
+| [`services.py`](custom_components/myhome/services.py) | **100%** | Domain service registrations, Voluptuous schemas, and gateway/entity action handlers |
+| [`sound_source.py`](custom_components/myhome/sound_source.py) | **100%** | F500/F500N FM RDS tuner media_player entity, preset browser, and WHO=16/22 tuning |
+| [`switch.py`](custom_components/myhome/switch.py) | **100%** | WHO=1 relay/outlet switches, WHO=4 thermo actuator switches, and WHO=9/25 invert switches |
+| [`thermo_switch.py`](custom_components/myhome/thermo_switch.py) | **100%** | Runtime helpers and subentry sync for WHO=4 probe-less thermo actuator switches |
+| [`topology.py`](custom_components/myhome/topology.py) | **100%** | Shared-bus role validation, WHO delegation rules, and warm-standby failover logic |
+| [`tuner_decode.py`](custom_components/myhome/tuner_decode.py) | **100%** | Pure WHO=16 and WHO=22 FM frequency, preset, and RDS text frame decoders |
+| [`typing_compat.py`](custom_components/myhome/typing_compat.py) | **100%** | Cross-version Home Assistant typing compatibility shims for strict mypy |
+| [`validate.py`](custom_components/myhome/validate.py) | **100%** | Voluptuous schemas for myhome.yaml devices, canonical WHERE rules, and access policies |
+| [`websocket.py`](custom_components/myhome/websocket.py) | **100%** | WebSocket API for real-time bus monitor streaming, frame history, and diagnostics |
+| [`where_grammar.py`](custom_components/myhome/where_grammar.py) | **100%** | Canonical OpenWebNet APL, F422 #4#bus, and WHO=4 zone/actuator WHERE grammar |
+
+<!-- END_COVERAGE_TABLE -->
+
+</details>
 
 ---
 
-## 📄 License
+## Credits & Attribution
 
-* **Current `master` & Stable Releases (v0.9.4)**: Licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
-* **Modern Beta Releases (v2.0.0b15 / v2.0.0b16 / v2.0.0b17) & V2 Architecture**: Licensed under the [Apache License 2.0](https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/LICENSE) (aligning with Home Assistant Core).
+Developed and maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-HA)** community.
+
+Special thanks to:
+
+- **[@anotherjulien](https://github.com/anotherjulien)** for creating the original MyHOME integration, laying the `OWNd` protocol foundations, and authoring the **[OpenWebNet Encyclopedia](https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia)** & Machine KB whose machine-readable protocol and device-model insights dramatically accelerated `v2.0.0` development.
+- **[@GreenGrassBlueOcean](https://github.com/GreenGrassBlueOcean)** for the modernized async architecture, gateway profiles, streaming proxy, and automated test suite.
+- **[@xtimmy86x](https://github.com/xtimmy86x)** for crafting the frontend user experience, administration panel, cover calibration interfaces, and hardware diagnostics.
+- **[@gdluck](https://github.com/gdluck)** for 328 commits of deep protocol engineering across `MyHOME`, `OWNd`, `own-firmware-oracle`, and `openwebnet-mcp`, live multi-gateway hardware lab verification (`F455`, `F459`, `F461`, `F524`, `MH200`, `3550`, `MyHomeServer1`, `3488 HOMETOUCH`), and the Encyclopedia & Firmware Oracle audits.
+- **[@TheDarkWizard](https://github.com/TheDarkWizard)** for crucial CEN+ wire address captures (KW8011), WHO 1001 diagnostics, and tireless real-world hardware testing across Living Now controls and MyHomeServer1 setups.
+- **[@wave68runner](https://github.com/wave68runner)** for authentic HL4684 touchscreen captures, BTicino 3550 thermoregulation sweeps, and tuner diagnostics.
+- **[@Interstellar0verdrive](https://github.com/Interstellar0verdrive)** for deep hardware actuator analysis, cover timing/concurrency mechanics, and platform extensions.
+- **[@fedem95](https://github.com/fedem95)**, **[@andreasorbelli](https://github.com/andreasorbelli)**, **[@mantovanellimatteo](https://github.com/mantovanellimatteo)**, **[@lyubomirtraykov](https://github.com/lyubomirtraykov)**, and **Cedric Rohou** for key bugfixes, platform extensions, and community testing.
+- **[@GianlucaCh](https://github.com/GianlucaCh)** for preserving and contributing the 15-manual BTicino/Legrand specification archive (`OWN DOC.zip`), the `WHO_24.pdf` Lighting Management specification, and CEN+ community automation references.
+- **[@nicolacavallo84](https://github.com/nicolacavallo84)** for the 70+ device plant captures and H4890 touchscreen multi-gateway traces that form foundational CI replay fixtures.
+- **All community testers and trace providers** whose real-world bus captures keep our test suite grounded in real hardware (*"In traces we find the truth"*): **[@xmavgithub](https://github.com/xmavgithub)**, **[@DinoMesina](https://github.com/DinoMesina)**, **[@SimoneRevool](https://github.com/SimoneRevool)**, **[@flow68000](https://github.com/flow68000)**, **[@manfredgittmaier-afk](https://github.com/manfredgittmaier-afk)**, **[@stefanvitz](https://github.com/stefanvitz)**, **[@eC0y0te](https://github.com/eC0y0te)**, **[@simo72mast-lab](https://github.com/simo72mast-lab)**, **[@lionelser](https://github.com/lionelser)**, **[@caiosweet](https://github.com/caiosweet)**, **[@f18m](https://github.com/f18m)**, **[@gimprota76](https://github.com/gimprota76)**, **[@paoloboatto](https://github.com/paoloboatto)**, **[@andrea-mag](https://github.com/andrea-mag)**, **[@cricri72](https://github.com/cricri72)**, **[@emil-d](https://github.com/emil-d)**, **[@marcob79](https://github.com/marcob79)**, **[@xduss](https://github.com/xduss)**, **[@pakob81](https://github.com/pakob81)**, **[@Depechie](https://github.com/Depechie)**, **[@nce2704](https://github.com/nce2704)**, **[@ricdijk](https://github.com/ricdijk)**, **[@imfreddie](https://github.com/imfreddie)**, **[@theveninjeremy](https://github.com/theveninjeremy)**, and **[@Yvan13120](https://github.com/Yvan13120)**.
+
+---
+
+## License
+
+Copyright © 2020–2026 OpenWebNet-HA Community & Contributors.
+
+Licensed under the **[Apache License 2.0](LICENSE)**, the same permissive open-source license used by Home Assistant Core and [`OWNd`](https://github.com/OpenWebNet-HA/OWNd).

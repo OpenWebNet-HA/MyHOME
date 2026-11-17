@@ -1,0 +1,24 @@
+f461:
+  mac: "00:03:50:00:03:03"
+
+  climate:
+    climate_zone_1:
+      zone: "1"
+      name: "Climate Zone 1"
+      standalone: True
+    climate_zone_2:
+      zone: "2"
+      name: "Climate Zone 2"
+      standalone: True
+    climate_zone_3:
+      zone: "3"
+      name: "Climate Zone 3"
+      standalone: True
+    climate_zone_5:
+      zone: "5"
+      name: "Climate Zone 5"
+      standalone: True
+    climate_zone_6:
+      zone: "6"
+      name: "Climate Zone 6"
+      standalone: True

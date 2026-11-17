@@ -1,0 +1,3458 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-10-07T11:55:29.964000+00:00",
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-10-07T11:55:29.964000+00:00",
+      "last": "2026-10-07T12:31:21.204000+00:00",
+      "frames": 425,
+      "buffer_frames": 425,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.4",
+    "integration_version": "2.0.0b15",
+    "ownd_version": "2.0.0b10",
+    "exported_at": "2026-10-07T14:31:00.000000+00:00"
+  },
+  "gateway": {
+    "model": "MH200",
+    "manufacturer": "BTicino",
+    "firmware": "2.1.0",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.05,
+    "is_connected": true,
+    "identification": {
+      "model": "MH200",
+      "source": "who13",
+      "configured_model": "MH200",
+      "ssdp_model": null,
+      "who13_code": 4,
+      "who13_model": "MH200",
+      "who13_model_official": "MH200",
+      "who13_model_observed": "MH200",
+      "who13_firmware": "2.1.0",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MH200Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 412,
+    "total_tx": 13,
+    "captured_in_buffer": 425,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1791374129.964,
+      "iso_time": "2026-10-07T11:55:29.964000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*65##",
+      "type": "OWNLightingEvent",
+      "description": "Light 65 is switched off."
+    },
+    {
+      "timestamp": 1791374130.512,
+      "iso_time": "2026-10-07T11:55:30.512000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*64##",
+      "type": "OWNLightingEvent",
+      "description": "Light 64 is switched off."
+    },
+    {
+      "timestamp": 1791374130.974,
+      "iso_time": "2026-10-07T11:55:30.974000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*23##",
+      "type": "OWNLightingEvent",
+      "description": "Light 23 is switched off."
+    },
+    {
+      "timestamp": 1791374131.485,
+      "iso_time": "2026-10-07T11:55:31.485000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791374131.846,
+      "iso_time": "2026-10-07T11:55:31.846000+00:00",
+      "direction": "tx",
+      "raw": "*#2*0##",
+      "type": "OWNAutomationCommand",
+      "description": "*#2*0##"
+    },
+    {
+      "timestamp": 1791374131.985,
+      "iso_time": "2026-10-07T11:55:31.985000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*11##",
+      "type": "OWNLightingEvent",
+      "description": "Light 11 is switched off."
+    },
+    {
+      "timestamp": 1791374132.028,
+      "iso_time": "2026-10-07T11:55:32.028000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*11#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 11 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374132.074,
+      "iso_time": "2026-10-07T11:55:32.074000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*12##",
+      "type": "OWNLightingEvent",
+      "description": "Light 12 is switched off."
+    },
+    {
+      "timestamp": 1791374132.12,
+      "iso_time": "2026-10-07T11:55:32.120000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*21#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 21 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374132.169,
+      "iso_time": "2026-10-07T11:55:32.169000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*21##",
+      "type": "OWNLightingEvent",
+      "description": "Light 21 is switched off."
+    },
+    {
+      "timestamp": 1791374132.216,
+      "iso_time": "2026-10-07T11:55:32.216000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791374132.263,
+      "iso_time": "2026-10-07T11:55:32.263000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*31##",
+      "type": "OWNLightingEvent",
+      "description": "Light 31 is switched off."
+    },
+    {
+      "timestamp": 1791374132.311,
+      "iso_time": "2026-10-07T11:55:32.311000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*41##",
+      "type": "OWNLightingEvent",
+      "description": "Light 41 is switched off."
+    },
+    {
+      "timestamp": 1791374132.311,
+      "iso_time": "2026-10-07T11:55:32.311000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*32##",
+      "type": "OWNLightingEvent",
+      "description": "Light 32 is switched off."
+    },
+    {
+      "timestamp": 1791374132.356,
+      "iso_time": "2026-10-07T11:55:32.356000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*42##",
+      "type": "OWNLightingEvent",
+      "description": "Light 42 is switched off."
+    },
+    {
+      "timestamp": 1791374132.403,
+      "iso_time": "2026-10-07T11:55:32.403000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched off."
+    },
+    {
+      "timestamp": 1791374132.449,
+      "iso_time": "2026-10-07T11:55:32.449000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*61##",
+      "type": "OWNLightingEvent",
+      "description": "Light 61 is switched off."
+    },
+    {
+      "timestamp": 1791374132.449,
+      "iso_time": "2026-10-07T11:55:32.449000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*81##",
+      "type": "OWNLightingEvent",
+      "description": "Light 81 is switched on."
+    },
+    {
+      "timestamp": 1791374132.496,
+      "iso_time": "2026-10-07T11:55:32.496000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "type": "OWNLightingEvent",
+      "description": "Light 52 is switched off."
+    },
+    {
+      "timestamp": 1791374132.545,
+      "iso_time": "2026-10-07T11:55:32.545000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*71##",
+      "type": "OWNLightingEvent",
+      "description": "Light 71 is switched off."
+    },
+    {
+      "timestamp": 1791374132.591,
+      "iso_time": "2026-10-07T11:55:32.591000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*82##",
+      "type": "OWNLightingEvent",
+      "description": "Light 82 is switched off."
+    },
+    {
+      "timestamp": 1791374132.591,
+      "iso_time": "2026-10-07T11:55:32.591000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*71##",
+      "type": "OWNLightingEvent",
+      "description": "Light 71 is switched off."
+    },
+    {
+      "timestamp": 1791374132.591,
+      "iso_time": "2026-10-07T11:55:32.591000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*83##",
+      "type": "OWNLightingEvent",
+      "description": "Light 83 is switched off."
+    },
+    {
+      "timestamp": 1791374132.639,
+      "iso_time": "2026-10-07T11:55:32.639000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*84##",
+      "type": "OWNLightingEvent",
+      "description": "Light 84 is switched on."
+    },
+    {
+      "timestamp": 1791374132.686,
+      "iso_time": "2026-10-07T11:55:32.686000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*62##",
+      "type": "OWNLightingEvent",
+      "description": "Light 62 is switched on at brightness level 10."
+    },
+    {
+      "timestamp": 1791374132.732,
+      "iso_time": "2026-10-07T11:55:32.732000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*72##",
+      "type": "OWNLightingEvent",
+      "description": "Light 72 is switched off."
+    },
+    {
+      "timestamp": 1791374132.781,
+      "iso_time": "2026-10-07T11:55:32.781000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*13##",
+      "type": "OWNLightingEvent",
+      "description": "Light 13 is switched off."
+    },
+    {
+      "timestamp": 1791374132.781,
+      "iso_time": "2026-10-07T11:55:32.781000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*14##",
+      "type": "OWNLightingEvent",
+      "description": "Light 14 is switched off."
+    },
+    {
+      "timestamp": 1791374132.826,
+      "iso_time": "2026-10-07T11:55:32.826000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*23##",
+      "type": "OWNLightingEvent",
+      "description": "Light 23 is switched off."
+    },
+    {
+      "timestamp": 1791374132.872,
+      "iso_time": "2026-10-07T11:55:32.872000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "type": "OWNLightingEvent",
+      "description": "Light 33 is switched off."
+    },
+    {
+      "timestamp": 1791374132.92,
+      "iso_time": "2026-10-07T11:55:32.920000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*24##",
+      "type": "OWNLightingEvent",
+      "description": "Light 24 is switched off."
+    },
+    {
+      "timestamp": 1791374132.967,
+      "iso_time": "2026-10-07T11:55:32.967000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*34##",
+      "type": "OWNLightingEvent",
+      "description": "Light 34 is switched off."
+    },
+    {
+      "timestamp": 1791374133.012,
+      "iso_time": "2026-10-07T11:55:33.012000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791374133.012,
+      "iso_time": "2026-10-07T11:55:33.012000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*53##",
+      "type": "OWNLightingEvent",
+      "description": "Light 53 is switched off."
+    },
+    {
+      "timestamp": 1791374133.012,
+      "iso_time": "2026-10-07T11:55:33.012000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791374133.059,
+      "iso_time": "2026-10-07T11:55:33.059000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*54##",
+      "type": "OWNLightingEvent",
+      "description": "Light 54 is switched off."
+    },
+    {
+      "timestamp": 1791374133.106,
+      "iso_time": "2026-10-07T11:55:33.106000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*44##",
+      "type": "OWNLightingEvent",
+      "description": "Light 44 is switched off."
+    },
+    {
+      "timestamp": 1791374133.152,
+      "iso_time": "2026-10-07T11:55:33.152000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*63##",
+      "type": "OWNLightingEvent",
+      "description": "Light 63 is switched off."
+    },
+    {
+      "timestamp": 1791374133.152,
+      "iso_time": "2026-10-07T11:55:33.152000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*73##",
+      "type": "OWNLightingEvent",
+      "description": "Light 73 is switched off."
+    },
+    {
+      "timestamp": 1791374133.199,
+      "iso_time": "2026-10-07T11:55:33.199000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*63##",
+      "type": "OWNLightingEvent",
+      "description": "Light 63 is switched off."
+    },
+    {
+      "timestamp": 1791374133.199,
+      "iso_time": "2026-10-07T11:55:33.199000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*64##",
+      "type": "OWNLightingEvent",
+      "description": "Light 64 is switched off."
+    },
+    {
+      "timestamp": 1791374133.245,
+      "iso_time": "2026-10-07T11:55:33.245000+00:00",
+      "direction": "rx",
+      "raw": "*1*19*74##",
+      "type": "OWNLightingEvent",
+      "description": "Light 74 reports unknown lighting WHAT 19."
+    },
+    {
+      "timestamp": 1791374133.339,
+      "iso_time": "2026-10-07T11:55:33.339000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*15##",
+      "type": "OWNLightingEvent",
+      "description": "Light 15 is switched off."
+    },
+    {
+      "timestamp": 1791374133.386,
+      "iso_time": "2026-10-07T11:55:33.386000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*25##",
+      "type": "OWNLightingEvent",
+      "description": "Light 25 is switched off."
+    },
+    {
+      "timestamp": 1791374133.433,
+      "iso_time": "2026-10-07T11:55:33.433000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*16##",
+      "type": "OWNLightingEvent",
+      "description": "Light 16 is switched off."
+    },
+    {
+      "timestamp": 1791374133.482,
+      "iso_time": "2026-10-07T11:55:33.482000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*26##",
+      "type": "OWNLightingEvent",
+      "description": "Light 26 is switched off."
+    },
+    {
+      "timestamp": 1791374133.529,
+      "iso_time": "2026-10-07T11:55:33.529000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*35##",
+      "type": "OWNLightingEvent",
+      "description": "Light 35 is switched off."
+    },
+    {
+      "timestamp": 1791374133.575,
+      "iso_time": "2026-10-07T11:55:33.575000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*36##",
+      "type": "OWNLightingEvent",
+      "description": "Light 36 is switched off."
+    },
+    {
+      "timestamp": 1791374133.575,
+      "iso_time": "2026-10-07T11:55:33.575000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*45##",
+      "type": "OWNLightingEvent",
+      "description": "Light 45 is switched off."
+    },
+    {
+      "timestamp": 1791374133.623,
+      "iso_time": "2026-10-07T11:55:33.623000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*55##",
+      "type": "OWNLightingEvent",
+      "description": "Light 55 is switched off."
+    },
+    {
+      "timestamp": 1791374133.668,
+      "iso_time": "2026-10-07T11:55:33.668000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*46##",
+      "type": "OWNLightingEvent",
+      "description": "Light 46 is switched off."
+    },
+    {
+      "timestamp": 1791374133.715,
+      "iso_time": "2026-10-07T11:55:33.715000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791374133.761,
+      "iso_time": "2026-10-07T11:55:33.761000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*65##",
+      "type": "OWNLightingEvent",
+      "description": "Light 65 is switched off."
+    },
+    {
+      "timestamp": 1791374133.808,
+      "iso_time": "2026-10-07T11:55:33.808000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*75##",
+      "type": "OWNLightingEvent",
+      "description": "Light 75 is switched off."
+    },
+    {
+      "timestamp": 1791374133.853,
+      "iso_time": "2026-10-07T11:55:33.853000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*66##",
+      "type": "OWNLightingEvent",
+      "description": "Light 66 is switched off."
+    },
+    {
+      "timestamp": 1791374133.901,
+      "iso_time": "2026-10-07T11:55:33.901000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*85##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 85 stopped."
+    },
+    {
+      "timestamp": 1791374133.949,
+      "iso_time": "2026-10-07T11:55:33.949000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791374133.996,
+      "iso_time": "2026-10-07T11:55:33.996000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*76##",
+      "type": "OWNLightingEvent",
+      "description": "Light 76 is switched off."
+    },
+    {
+      "timestamp": 1791374134.044,
+      "iso_time": "2026-10-07T11:55:34.044000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*77##",
+      "type": "OWNLightingEvent",
+      "description": "Light 77 is switched off."
+    },
+    {
+      "timestamp": 1791374134.089,
+      "iso_time": "2026-10-07T11:55:34.089000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*78##",
+      "type": "OWNLightingEvent",
+      "description": "Light 78 is switched off."
+    },
+    {
+      "timestamp": 1791374134.136,
+      "iso_time": "2026-10-07T11:55:34.136000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791374134.182,
+      "iso_time": "2026-10-07T11:55:34.182000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*17##",
+      "type": "OWNLightingEvent",
+      "description": "Light 17 is switched off."
+    },
+    {
+      "timestamp": 1791374134.229,
+      "iso_time": "2026-10-07T11:55:34.229000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791374134.229,
+      "iso_time": "2026-10-07T11:55:34.229000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*37##",
+      "type": "OWNLightingEvent",
+      "description": "Light 37 is switched off."
+    },
+    {
+      "timestamp": 1791374134.277,
+      "iso_time": "2026-10-07T11:55:34.277000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*18##",
+      "type": "OWNLightingEvent",
+      "description": "Light 18 is switched off."
+    },
+    {
+      "timestamp": 1791374134.324,
+      "iso_time": "2026-10-07T11:55:34.324000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*28##",
+      "type": "OWNLightingEvent",
+      "description": "Light 28 is switched off."
+    },
+    {
+      "timestamp": 1791374134.37,
+      "iso_time": "2026-10-07T11:55:34.370000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*38##",
+      "type": "OWNLightingEvent",
+      "description": "Light 38 is switched off."
+    },
+    {
+      "timestamp": 1791374134.37,
+      "iso_time": "2026-10-07T11:55:34.370000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*28##",
+      "type": "OWNLightingEvent",
+      "description": "Light 28 is switched off."
+    },
+    {
+      "timestamp": 1791374134.416,
+      "iso_time": "2026-10-07T11:55:34.416000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*47##",
+      "type": "OWNLightingEvent",
+      "description": "Light 47 is switched off."
+    },
+    {
+      "timestamp": 1791374134.464,
+      "iso_time": "2026-10-07T11:55:34.464000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*57##",
+      "type": "OWNLightingEvent",
+      "description": "Light 57 is switched on."
+    },
+    {
+      "timestamp": 1791374134.512,
+      "iso_time": "2026-10-07T11:55:34.512000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*48##",
+      "type": "OWNLightingEvent",
+      "description": "Light 48 is switched off."
+    },
+    {
+      "timestamp": 1791374134.56,
+      "iso_time": "2026-10-07T11:55:34.560000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*58##",
+      "type": "OWNLightingEvent",
+      "description": "Light 58 is switched off."
+    },
+    {
+      "timestamp": 1791374134.56,
+      "iso_time": "2026-10-07T11:55:34.560000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*67##",
+      "type": "OWNLightingEvent",
+      "description": "Light 67 is switched on."
+    },
+    {
+      "timestamp": 1791374134.607,
+      "iso_time": "2026-10-07T11:55:34.607000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*58##",
+      "type": "OWNLightingEvent",
+      "description": "Light 58 is switched off."
+    },
+    {
+      "timestamp": 1791374134.607,
+      "iso_time": "2026-10-07T11:55:34.607000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*67##",
+      "type": "OWNLightingEvent",
+      "description": "Light 67 is switched on at brightness level 9."
+    },
+    {
+      "timestamp": 1791374134.654,
+      "iso_time": "2026-10-07T11:55:34.654000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*68##",
+      "type": "OWNLightingEvent",
+      "description": "Light 68 is switched off."
+    },
+    {
+      "timestamp": 1791374134.702,
+      "iso_time": "2026-10-07T11:55:34.702000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*19##",
+      "type": "OWNLightingEvent",
+      "description": "Light 19 is switched off."
+    },
+    {
+      "timestamp": 1791374134.748,
+      "iso_time": "2026-10-07T11:55:34.748000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791374134.804,
+      "iso_time": "2026-10-07T11:55:34.804000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*39##",
+      "type": "OWNLightingEvent",
+      "description": "Light 39 is switched off."
+    },
+    {
+      "timestamp": 1791374134.857,
+      "iso_time": "2026-10-07T11:55:34.857000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*49##",
+      "type": "OWNLightingEvent",
+      "description": "Light 49 is switched off."
+    },
+    {
+      "timestamp": 1791374134.906,
+      "iso_time": "2026-10-07T11:55:34.906000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*59##",
+      "type": "OWNLightingEvent",
+      "description": "Light 59 is switched off."
+    },
+    {
+      "timestamp": 1791374134.953,
+      "iso_time": "2026-10-07T11:55:34.953000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*69##",
+      "type": "OWNLightingEvent",
+      "description": "Light 69 is switched on at brightness level 9."
+    },
+    {
+      "timestamp": 1791374135.0,
+      "iso_time": "2026-10-07T11:55:35+00:00",
+      "direction": "rx",
+      "raw": "*1*0*79##",
+      "type": "OWNLightingEvent",
+      "description": "Light 79 is switched off."
+    },
+    {
+      "timestamp": 1791374135.047,
+      "iso_time": "2026-10-07T11:55:35.047000+00:00",
+      "direction": "rx",
+      "raw": "*1*7*89##",
+      "type": "OWNLightingEvent",
+      "description": "Light 89 is switched on at brightness level 7."
+    },
+    {
+      "timestamp": 1791374135.095,
+      "iso_time": "2026-10-07T11:55:35.095000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*99##",
+      "type": "OWNLightingEvent",
+      "description": "Light 99 is switched on at brightness level 10."
+    },
+    {
+      "timestamp": 1791374135.811,
+      "iso_time": "2026-10-07T11:55:35.811000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*12#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 12 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374135.86,
+      "iso_time": "2026-10-07T11:55:35.860000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*22#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 22 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374135.907,
+      "iso_time": "2026-10-07T11:55:35.907000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*13#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 13 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374135.953,
+      "iso_time": "2026-10-07T11:55:35.953000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*14#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 14 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374136.002,
+      "iso_time": "2026-10-07T11:55:36.002000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*15#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 15 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374136.051,
+      "iso_time": "2026-10-07T11:55:36.051000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*16#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 16 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374136.095,
+      "iso_time": "2026-10-07T11:55:36.095000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*18#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 18 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374136.141,
+      "iso_time": "2026-10-07T11:55:36.141000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*19#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 19 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374138.025,
+      "iso_time": "2026-10-07T11:55:38.025000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*54##",
+      "type": "OWNLightingEvent",
+      "description": "Light 54 is switched off."
+    },
+    {
+      "timestamp": 1791374138.179,
+      "iso_time": "2026-10-07T11:55:38.179000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*42##",
+      "type": "OWNLightingEvent",
+      "description": "Light 42 is switched off."
+    },
+    {
+      "timestamp": 1791374138.264,
+      "iso_time": "2026-10-07T11:55:38.264000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*55##",
+      "type": "OWNLightingEvent",
+      "description": "Light 55 is switched off."
+    },
+    {
+      "timestamp": 1791374138.354,
+      "iso_time": "2026-10-07T11:55:38.354000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*39##",
+      "type": "OWNLightingEvent",
+      "description": "Light 39 is switched off."
+    },
+    {
+      "timestamp": 1791374138.439,
+      "iso_time": "2026-10-07T11:55:38.439000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*45##",
+      "type": "OWNLightingEvent",
+      "description": "Light 45 is switched off."
+    },
+    {
+      "timestamp": 1791374138.538,
+      "iso_time": "2026-10-07T11:55:38.538000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*49##",
+      "type": "OWNLightingEvent",
+      "description": "Light 49 is switched off."
+    },
+    {
+      "timestamp": 1791374138.693,
+      "iso_time": "2026-10-07T11:55:38.693000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*11##",
+      "type": "OWNLightingEvent",
+      "description": "Light 11 is switched off."
+    },
+    {
+      "timestamp": 1791374138.777,
+      "iso_time": "2026-10-07T11:55:38.777000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "type": "OWNLightingEvent",
+      "description": "Light 52 is switched off."
+    },
+    {
+      "timestamp": 1791374138.871,
+      "iso_time": "2026-10-07T11:55:38.871000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*14##",
+      "type": "OWNLightingEvent",
+      "description": "Light 14 is switched off."
+    },
+    {
+      "timestamp": 1791374138.954,
+      "iso_time": "2026-10-07T11:55:38.954000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*24##",
+      "type": "OWNLightingEvent",
+      "description": "Light 24 is switched off."
+    },
+    {
+      "timestamp": 1791374139.038,
+      "iso_time": "2026-10-07T11:55:39.038000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*66##",
+      "type": "OWNLightingEvent",
+      "description": "Light 66 is switched off."
+    },
+    {
+      "timestamp": 1791374139.119,
+      "iso_time": "2026-10-07T11:55:39.119000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*25##",
+      "type": "OWNLightingEvent",
+      "description": "Light 25 is switched off."
+    },
+    {
+      "timestamp": 1791374139.291,
+      "iso_time": "2026-10-07T11:55:39.291000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*17##",
+      "type": "OWNLightingEvent",
+      "description": "Light 17 is switched off."
+    },
+    {
+      "timestamp": 1791374139.437,
+      "iso_time": "2026-10-07T11:55:39.437000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791374139.602,
+      "iso_time": "2026-10-07T11:55:39.602000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*21##",
+      "type": "OWNLightingEvent",
+      "description": "Light 21 is switched off."
+    },
+    {
+      "timestamp": 1791374139.987,
+      "iso_time": "2026-10-07T11:55:39.987000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*77##",
+      "type": "OWNLightingEvent",
+      "description": "Light 77 is switched off."
+    },
+    {
+      "timestamp": 1791374140.473,
+      "iso_time": "2026-10-07T11:55:40.473000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*18##",
+      "type": "OWNLightingEvent",
+      "description": "Light 18 is switched off."
+    },
+    {
+      "timestamp": 1791374140.985,
+      "iso_time": "2026-10-07T11:55:40.985000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*44##",
+      "type": "OWNLightingEvent",
+      "description": "Light 44 is switched off."
+    },
+    {
+      "timestamp": 1791374141.486,
+      "iso_time": "2026-10-07T11:55:41.486000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*16##",
+      "type": "OWNLightingEvent",
+      "description": "Light 16 is switched off."
+    },
+    {
+      "timestamp": 1791374141.974,
+      "iso_time": "2026-10-07T11:55:41.974000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*76##",
+      "type": "OWNLightingEvent",
+      "description": "Light 76 is switched off."
+    },
+    {
+      "timestamp": 1791374142.495,
+      "iso_time": "2026-10-07T11:55:42.495000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*58##",
+      "type": "OWNLightingEvent",
+      "description": "Light 58 is switched off."
+    },
+    {
+      "timestamp": 1791374142.995,
+      "iso_time": "2026-10-07T11:55:42.995000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*37##",
+      "type": "OWNLightingEvent",
+      "description": "Light 37 is switched off."
+    },
+    {
+      "timestamp": 1791374143.485,
+      "iso_time": "2026-10-07T11:55:43.485000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*13##",
+      "type": "OWNLightingEvent",
+      "description": "Light 13 is switched off."
+    },
+    {
+      "timestamp": 1791374143.996,
+      "iso_time": "2026-10-07T11:55:43.996000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*26##",
+      "type": "OWNLightingEvent",
+      "description": "Light 26 is switched off."
+    },
+    {
+      "timestamp": 1791374144.485,
+      "iso_time": "2026-10-07T11:55:44.485000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*31##",
+      "type": "OWNLightingEvent",
+      "description": "Light 31 is switched off."
+    },
+    {
+      "timestamp": 1791374144.985,
+      "iso_time": "2026-10-07T11:55:44.985000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*12##",
+      "type": "OWNLightingEvent",
+      "description": "Light 12 is switched off."
+    },
+    {
+      "timestamp": 1791374145.039,
+      "iso_time": "2026-10-07T11:55:45.039000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374145.496,
+      "iso_time": "2026-10-07T11:55:45.496000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*15##",
+      "type": "OWNLightingEvent",
+      "description": "Light 15 is switched off."
+    },
+    {
+      "timestamp": 1791374145.995,
+      "iso_time": "2026-10-07T11:55:45.995000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*38##",
+      "type": "OWNLightingEvent",
+      "description": "Light 38 is switched off."
+    },
+    {
+      "timestamp": 1791374146.532,
+      "iso_time": "2026-10-07T11:55:46.532000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*28##",
+      "type": "OWNLightingEvent",
+      "description": "Light 28 is switched off."
+    },
+    {
+      "timestamp": 1791374147.04,
+      "iso_time": "2026-10-07T11:55:47.040000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*91##",
+      "type": "OWNLightingEvent",
+      "description": "Light 91 is switched off."
+    },
+    {
+      "timestamp": 1791374147.987,
+      "iso_time": "2026-10-07T11:55:47.987000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*93##",
+      "type": "OWNLightingEvent",
+      "description": "Light 93 is switched off."
+    },
+    {
+      "timestamp": 1791374148.485,
+      "iso_time": "2026-10-07T11:55:48.485000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*94##",
+      "type": "OWNLightingEvent",
+      "description": "Light 94 is switched off."
+    },
+    {
+      "timestamp": 1791374148.998,
+      "iso_time": "2026-10-07T11:55:48.998000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*96##",
+      "type": "OWNLightingEvent",
+      "description": "Light 96 is switched off."
+    },
+    {
+      "timestamp": 1791374149.493,
+      "iso_time": "2026-10-07T11:55:49.493000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*97##",
+      "type": "OWNLightingEvent",
+      "description": "Light 97 is switched off."
+    },
+    {
+      "timestamp": 1791374149.991,
+      "iso_time": "2026-10-07T11:55:49.991000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791374150.484,
+      "iso_time": "2026-10-07T11:55:50.484000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*78##",
+      "type": "OWNLightingEvent",
+      "description": "Light 78 is switched off."
+    },
+    {
+      "timestamp": 1791374150.979,
+      "iso_time": "2026-10-07T11:55:50.979000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*84##",
+      "type": "OWNLightingEvent",
+      "description": "Light 84 is switched on."
+    },
+    {
+      "timestamp": 1791374151.481,
+      "iso_time": "2026-10-07T11:55:51.481000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*81##",
+      "type": "OWNLightingEvent",
+      "description": "Light 81 is switched on."
+    },
+    {
+      "timestamp": 1791374151.993,
+      "iso_time": "2026-10-07T11:55:51.993000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*82##",
+      "type": "OWNLightingEvent",
+      "description": "Light 82 is switched off."
+    },
+    {
+      "timestamp": 1791374152.565,
+      "iso_time": "2026-10-07T11:55:52.565000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*83##",
+      "type": "OWNLightingEvent",
+      "description": "Light 83 is switched off."
+    },
+    {
+      "timestamp": 1791374152.982,
+      "iso_time": "2026-10-07T11:55:52.982000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*95##",
+      "type": "OWNLightingEvent",
+      "description": "Light 95 is switched off."
+    },
+    {
+      "timestamp": 1791374153.538,
+      "iso_time": "2026-10-07T11:55:53.538000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*18#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 18 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374154.038,
+      "iso_time": "2026-10-07T11:55:54.038000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*19#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 19 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374155.028,
+      "iso_time": "2026-10-07T11:55:55.028000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*11#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 11 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374155.528,
+      "iso_time": "2026-10-07T11:55:55.528000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*12#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 12 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374156.022,
+      "iso_time": "2026-10-07T11:55:56.022000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*13#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 13 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374156.438,
+      "iso_time": "2026-10-07T11:55:56.438000+00:00",
+      "direction": "tx",
+      "raw": "*#2*11#4#02*10##",
+      "type": "OWNAutomationCommand",
+      "description": "*#2*11#4#02*10##"
+    },
+    {
+      "timestamp": 1791374156.524,
+      "iso_time": "2026-10-07T11:55:56.524000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*22#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 22 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374157.036,
+      "iso_time": "2026-10-07T11:55:57.036000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*21#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 21 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374157.515,
+      "iso_time": "2026-10-07T11:55:57.515000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*85##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 85 stopped."
+    },
+    {
+      "timestamp": 1791374158.115,
+      "iso_time": "2026-10-07T11:55:58.115000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*14#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 14 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374158.537,
+      "iso_time": "2026-10-07T11:55:58.537000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*15#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 15 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791374179.393,
+      "iso_time": "2026-10-07T11:56:19.393000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374239.407,
+      "iso_time": "2026-10-07T11:57:19.407000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374273.923,
+      "iso_time": "2026-10-07T11:57:53.923000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374299.397,
+      "iso_time": "2026-10-07T11:58:19.397000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374359.399,
+      "iso_time": "2026-10-07T11:59:19.399000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374403.462,
+      "iso_time": "2026-10-07T12:00:03.462000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374419.432,
+      "iso_time": "2026-10-07T12:00:19.432000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374479.398,
+      "iso_time": "2026-10-07T12:01:19.398000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374532.977,
+      "iso_time": "2026-10-07T12:02:12.977000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374539.401,
+      "iso_time": "2026-10-07T12:02:19.401000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374599.403,
+      "iso_time": "2026-10-07T12:03:19.403000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374659.403,
+      "iso_time": "2026-10-07T12:04:19.403000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374662.443,
+      "iso_time": "2026-10-07T12:04:22.443000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374719.405,
+      "iso_time": "2026-10-07T12:05:19.405000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374779.468,
+      "iso_time": "2026-10-07T12:06:19.468000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374791.935,
+      "iso_time": "2026-10-07T12:06:31.935000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374839.408,
+      "iso_time": "2026-10-07T12:07:19.408000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374899.448,
+      "iso_time": "2026-10-07T12:08:19.448000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374921.439,
+      "iso_time": "2026-10-07T12:08:41.439000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791374959.414,
+      "iso_time": "2026-10-07T12:09:19.414000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375016.96,
+      "iso_time": "2026-10-07T12:10:16.960000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched on."
+    },
+    {
+      "timestamp": 1791375019.418,
+      "iso_time": "2026-10-07T12:10:19.418000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375050.943,
+      "iso_time": "2026-10-07T12:10:50.943000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375079.42,
+      "iso_time": "2026-10-07T12:11:19.420000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375090.482,
+      "iso_time": "2026-10-07T12:11:30.482000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched off."
+    },
+    {
+      "timestamp": 1791375139.422,
+      "iso_time": "2026-10-07T12:12:19.422000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375180.449,
+      "iso_time": "2026-10-07T12:13:00.449000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375199.423,
+      "iso_time": "2026-10-07T12:13:19.423000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375259.42,
+      "iso_time": "2026-10-07T12:14:19.420000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375309.952,
+      "iso_time": "2026-10-07T12:15:09.952000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375319.472,
+      "iso_time": "2026-10-07T12:15:19.472000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375379.429,
+      "iso_time": "2026-10-07T12:16:19.429000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375439.503,
+      "iso_time": "2026-10-07T12:17:19.503000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375439.589,
+      "iso_time": "2026-10-07T12:17:19.589000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375499.425,
+      "iso_time": "2026-10-07T12:18:19.425000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375559.464,
+      "iso_time": "2026-10-07T12:19:19.464000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375568.982,
+      "iso_time": "2026-10-07T12:19:28.982000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375598.627,
+      "iso_time": "2026-10-07T12:19:58.627000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched on."
+    },
+    {
+      "timestamp": 1791375619.433,
+      "iso_time": "2026-10-07T12:20:19.433000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375677.59,
+      "iso_time": "2026-10-07T12:21:17.590000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched off."
+    },
+    {
+      "timestamp": 1791375679.434,
+      "iso_time": "2026-10-07T12:21:19.434000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375698.484,
+      "iso_time": "2026-10-07T12:21:38.484000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375739.431,
+      "iso_time": "2026-10-07T12:22:19.431000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375799.453,
+      "iso_time": "2026-10-07T12:23:19.453000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375827.984,
+      "iso_time": "2026-10-07T12:23:47.984000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375859.435,
+      "iso_time": "2026-10-07T12:24:19.435000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375919.436,
+      "iso_time": "2026-10-07T12:25:19.436000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375957.471,
+      "iso_time": "2026-10-07T12:25:57.471000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791375979.437,
+      "iso_time": "2026-10-07T12:26:19.437000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376026.001,
+      "iso_time": "2026-10-07T12:27:06.001000+00:00",
+      "direction": "tx",
+      "raw": "*#2*0#4#02##",
+      "type": "OWNAutomationCommand",
+      "description": "*#2*0#4#02##"
+    },
+    {
+      "timestamp": 1791376026.331,
+      "iso_time": "2026-10-07T12:27:06.331000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*11#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 11 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.424,
+      "iso_time": "2026-10-07T12:27:06.424000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*21#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 21 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.424,
+      "iso_time": "2026-10-07T12:27:06.424000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*12#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 12 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.508,
+      "iso_time": "2026-10-07T12:27:06.508000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*22#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 22 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.508,
+      "iso_time": "2026-10-07T12:27:06.508000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*13#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 13 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.598,
+      "iso_time": "2026-10-07T12:27:06.598000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*14#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 14 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.598,
+      "iso_time": "2026-10-07T12:27:06.598000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*15#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 15 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.686,
+      "iso_time": "2026-10-07T12:27:06.686000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*16#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 16 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.686,
+      "iso_time": "2026-10-07T12:27:06.686000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*18#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 18 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376026.77,
+      "iso_time": "2026-10-07T12:27:06.770000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*19#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 19 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376039.442,
+      "iso_time": "2026-10-07T12:27:19.442000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376048.079,
+      "iso_time": "2026-10-07T12:27:28.079000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched on."
+    },
+    {
+      "timestamp": 1791376086.98,
+      "iso_time": "2026-10-07T12:28:06.980000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376099.485,
+      "iso_time": "2026-10-07T12:28:19.485000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376149.264,
+      "iso_time": "2026-10-07T12:29:09.264000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched off."
+    },
+    {
+      "timestamp": 1791376159.441,
+      "iso_time": "2026-10-07T12:29:19.441000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376216.494,
+      "iso_time": "2026-10-07T12:30:16.494000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376218.852,
+      "iso_time": "2026-10-07T12:30:18.852000+00:00",
+      "direction": "tx",
+      "raw": "*#2*11#4#02##",
+      "type": "OWNAutomationCommand",
+      "description": "*#2*11#4#02##"
+    },
+    {
+      "timestamp": 1791376219.089,
+      "iso_time": "2026-10-07T12:30:19.089000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*11#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 11 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376219.477,
+      "iso_time": "2026-10-07T12:30:19.477000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376222.744,
+      "iso_time": "2026-10-07T12:30:22.744000+00:00",
+      "direction": "tx",
+      "raw": "*#2*11#4#02*10##",
+      "type": "OWNAutomationCommand",
+      "description": "*#2*11#4#02*10##"
+    },
+    {
+      "timestamp": 1791376231.824,
+      "iso_time": "2026-10-07T12:30:31.824000+00:00",
+      "direction": "tx",
+      "raw": "*#2*0##",
+      "type": "OWNAutomationCommand",
+      "description": "*#2*0##"
+    },
+    {
+      "timestamp": 1791376231.955,
+      "iso_time": "2026-10-07T12:30:31.955000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*11##",
+      "type": "OWNLightingEvent",
+      "description": "Light 11 is switched off."
+    },
+    {
+      "timestamp": 1791376232.009,
+      "iso_time": "2026-10-07T12:30:32.009000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*11#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 11 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376232.054,
+      "iso_time": "2026-10-07T12:30:32.054000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*12##",
+      "type": "OWNLightingEvent",
+      "description": "Light 12 is switched off."
+    },
+    {
+      "timestamp": 1791376232.101,
+      "iso_time": "2026-10-07T12:30:32.101000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*21##",
+      "type": "OWNLightingEvent",
+      "description": "Light 21 is switched off."
+    },
+    {
+      "timestamp": 1791376232.146,
+      "iso_time": "2026-10-07T12:30:32.146000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*31##",
+      "type": "OWNLightingEvent",
+      "description": "Light 31 is switched off."
+    },
+    {
+      "timestamp": 1791376232.193,
+      "iso_time": "2026-10-07T12:30:32.193000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791376232.24,
+      "iso_time": "2026-10-07T12:30:32.240000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*32##",
+      "type": "OWNLightingEvent",
+      "description": "Light 32 is switched off."
+    },
+    {
+      "timestamp": 1791376232.287,
+      "iso_time": "2026-10-07T12:30:32.287000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*41##",
+      "type": "OWNLightingEvent",
+      "description": "Light 41 is switched off."
+    },
+    {
+      "timestamp": 1791376232.334,
+      "iso_time": "2026-10-07T12:30:32.334000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched off."
+    },
+    {
+      "timestamp": 1791376232.335,
+      "iso_time": "2026-10-07T12:30:32.335000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*42##",
+      "type": "OWNLightingEvent",
+      "description": "Light 42 is switched off."
+    },
+    {
+      "timestamp": 1791376232.382,
+      "iso_time": "2026-10-07T12:30:32.382000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "type": "OWNLightingEvent",
+      "description": "Light 52 is switched off."
+    },
+    {
+      "timestamp": 1791376232.429,
+      "iso_time": "2026-10-07T12:30:32.429000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*61##",
+      "type": "OWNLightingEvent",
+      "description": "Light 61 is switched off."
+    },
+    {
+      "timestamp": 1791376232.43,
+      "iso_time": "2026-10-07T12:30:32.430000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*81##",
+      "type": "OWNLightingEvent",
+      "description": "Light 81 is switched on."
+    },
+    {
+      "timestamp": 1791376232.477,
+      "iso_time": "2026-10-07T12:30:32.477000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*71##",
+      "type": "OWNLightingEvent",
+      "description": "Light 71 is switched off."
+    },
+    {
+      "timestamp": 1791376232.524,
+      "iso_time": "2026-10-07T12:30:32.524000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*82##",
+      "type": "OWNLightingEvent",
+      "description": "Light 82 is switched off."
+    },
+    {
+      "timestamp": 1791376232.57,
+      "iso_time": "2026-10-07T12:30:32.570000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*83##",
+      "type": "OWNLightingEvent",
+      "description": "Light 83 is switched off."
+    },
+    {
+      "timestamp": 1791376232.57,
+      "iso_time": "2026-10-07T12:30:32.570000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*84##",
+      "type": "OWNLightingEvent",
+      "description": "Light 84 is switched on."
+    },
+    {
+      "timestamp": 1791376232.629,
+      "iso_time": "2026-10-07T12:30:32.629000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*62##",
+      "type": "OWNLightingEvent",
+      "description": "Light 62 is switched on at brightness level 10."
+    },
+    {
+      "timestamp": 1791376232.681,
+      "iso_time": "2026-10-07T12:30:32.681000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*72##",
+      "type": "OWNLightingEvent",
+      "description": "Light 72 is switched off."
+    },
+    {
+      "timestamp": 1791376232.681,
+      "iso_time": "2026-10-07T12:30:32.681000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*13##",
+      "type": "OWNLightingEvent",
+      "description": "Light 13 is switched off."
+    },
+    {
+      "timestamp": 1791376232.727,
+      "iso_time": "2026-10-07T12:30:32.727000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*23##",
+      "type": "OWNLightingEvent",
+      "description": "Light 23 is switched off."
+    },
+    {
+      "timestamp": 1791376232.775,
+      "iso_time": "2026-10-07T12:30:32.775000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*14##",
+      "type": "OWNLightingEvent",
+      "description": "Light 14 is switched off."
+    },
+    {
+      "timestamp": 1791376232.822,
+      "iso_time": "2026-10-07T12:30:32.822000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*24##",
+      "type": "OWNLightingEvent",
+      "description": "Light 24 is switched off."
+    },
+    {
+      "timestamp": 1791376232.87,
+      "iso_time": "2026-10-07T12:30:32.870000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "type": "OWNLightingEvent",
+      "description": "Light 33 is switched off."
+    },
+    {
+      "timestamp": 1791376232.87,
+      "iso_time": "2026-10-07T12:30:32.870000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791376232.918,
+      "iso_time": "2026-10-07T12:30:32.918000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "type": "OWNLightingEvent",
+      "description": "Light 33 is switched off."
+    },
+    {
+      "timestamp": 1791376232.919,
+      "iso_time": "2026-10-07T12:30:32.919000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*44##",
+      "type": "OWNLightingEvent",
+      "description": "Light 44 is switched off."
+    },
+    {
+      "timestamp": 1791376232.965,
+      "iso_time": "2026-10-07T12:30:32.965000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*34##",
+      "type": "OWNLightingEvent",
+      "description": "Light 34 is switched off."
+    },
+    {
+      "timestamp": 1791376233.013,
+      "iso_time": "2026-10-07T12:30:33.013000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*53##",
+      "type": "OWNLightingEvent",
+      "description": "Light 53 is switched off."
+    },
+    {
+      "timestamp": 1791376233.059,
+      "iso_time": "2026-10-07T12:30:33.059000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*63##",
+      "type": "OWNLightingEvent",
+      "description": "Light 63 is switched off."
+    },
+    {
+      "timestamp": 1791376233.059,
+      "iso_time": "2026-10-07T12:30:33.059000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*73##",
+      "type": "OWNLightingEvent",
+      "description": "Light 73 is switched off."
+    },
+    {
+      "timestamp": 1791376233.105,
+      "iso_time": "2026-10-07T12:30:33.105000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*54##",
+      "type": "OWNLightingEvent",
+      "description": "Light 54 is switched off."
+    },
+    {
+      "timestamp": 1791376233.151,
+      "iso_time": "2026-10-07T12:30:33.151000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*64##",
+      "type": "OWNLightingEvent",
+      "description": "Light 64 is switched off."
+    },
+    {
+      "timestamp": 1791376233.198,
+      "iso_time": "2026-10-07T12:30:33.198000+00:00",
+      "direction": "rx",
+      "raw": "*1*19*74##",
+      "type": "OWNLightingEvent",
+      "description": "Light 74 reports unknown lighting WHAT 19."
+    },
+    {
+      "timestamp": 1791376233.292,
+      "iso_time": "2026-10-07T12:30:33.292000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*15##",
+      "type": "OWNLightingEvent",
+      "description": "Light 15 is switched off."
+    },
+    {
+      "timestamp": 1791376233.342,
+      "iso_time": "2026-10-07T12:30:33.342000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*25##",
+      "type": "OWNLightingEvent",
+      "description": "Light 25 is switched off."
+    },
+    {
+      "timestamp": 1791376233.387,
+      "iso_time": "2026-10-07T12:30:33.387000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*16##",
+      "type": "OWNLightingEvent",
+      "description": "Light 16 is switched off."
+    },
+    {
+      "timestamp": 1791376233.433,
+      "iso_time": "2026-10-07T12:30:33.433000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*26##",
+      "type": "OWNLightingEvent",
+      "description": "Light 26 is switched off."
+    },
+    {
+      "timestamp": 1791376233.433,
+      "iso_time": "2026-10-07T12:30:33.433000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*35##",
+      "type": "OWNLightingEvent",
+      "description": "Light 35 is switched off."
+    },
+    {
+      "timestamp": 1791376233.489,
+      "iso_time": "2026-10-07T12:30:33.489000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*45##",
+      "type": "OWNLightingEvent",
+      "description": "Light 45 is switched off."
+    },
+    {
+      "timestamp": 1791376233.543,
+      "iso_time": "2026-10-07T12:30:33.543000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*36##",
+      "type": "OWNLightingEvent",
+      "description": "Light 36 is switched off."
+    },
+    {
+      "timestamp": 1791376233.591,
+      "iso_time": "2026-10-07T12:30:33.591000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*46##",
+      "type": "OWNLightingEvent",
+      "description": "Light 46 is switched off."
+    },
+    {
+      "timestamp": 1791376233.637,
+      "iso_time": "2026-10-07T12:30:33.637000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*55##",
+      "type": "OWNLightingEvent",
+      "description": "Light 55 is switched off."
+    },
+    {
+      "timestamp": 1791376233.685,
+      "iso_time": "2026-10-07T12:30:33.685000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*65##",
+      "type": "OWNLightingEvent",
+      "description": "Light 65 is switched off."
+    },
+    {
+      "timestamp": 1791376233.685,
+      "iso_time": "2026-10-07T12:30:33.685000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*55##",
+      "type": "OWNLightingEvent",
+      "description": "Light 55 is switched off."
+    },
+    {
+      "timestamp": 1791376233.685,
+      "iso_time": "2026-10-07T12:30:33.685000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*66##",
+      "type": "OWNLightingEvent",
+      "description": "Light 66 is switched off."
+    },
+    {
+      "timestamp": 1791376233.741,
+      "iso_time": "2026-10-07T12:30:33.741000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791376233.795,
+      "iso_time": "2026-10-07T12:30:33.795000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*75##",
+      "type": "OWNLightingEvent",
+      "description": "Light 75 is switched off."
+    },
+    {
+      "timestamp": 1791376233.841,
+      "iso_time": "2026-10-07T12:30:33.841000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*85##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 85 stopped."
+    },
+    {
+      "timestamp": 1791376233.887,
+      "iso_time": "2026-10-07T12:30:33.887000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791376233.935,
+      "iso_time": "2026-10-07T12:30:33.935000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*76##",
+      "type": "OWNLightingEvent",
+      "description": "Light 76 is switched off."
+    },
+    {
+      "timestamp": 1791376233.982,
+      "iso_time": "2026-10-07T12:30:33.982000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*77##",
+      "type": "OWNLightingEvent",
+      "description": "Light 77 is switched off."
+    },
+    {
+      "timestamp": 1791376234.03,
+      "iso_time": "2026-10-07T12:30:34.030000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*78##",
+      "type": "OWNLightingEvent",
+      "description": "Light 78 is switched off."
+    },
+    {
+      "timestamp": 1791376234.077,
+      "iso_time": "2026-10-07T12:30:34.077000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791376234.077,
+      "iso_time": "2026-10-07T12:30:34.077000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*17##",
+      "type": "OWNLightingEvent",
+      "description": "Light 17 is switched off."
+    },
+    {
+      "timestamp": 1791376234.132,
+      "iso_time": "2026-10-07T12:30:34.132000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791376234.186,
+      "iso_time": "2026-10-07T12:30:34.186000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*37##",
+      "type": "OWNLightingEvent",
+      "description": "Light 37 is switched off."
+    },
+    {
+      "timestamp": 1791376234.186,
+      "iso_time": "2026-10-07T12:30:34.186000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791376234.233,
+      "iso_time": "2026-10-07T12:30:34.233000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*18##",
+      "type": "OWNLightingEvent",
+      "description": "Light 18 is switched off."
+    },
+    {
+      "timestamp": 1791376234.28,
+      "iso_time": "2026-10-07T12:30:34.280000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*28##",
+      "type": "OWNLightingEvent",
+      "description": "Light 28 is switched off."
+    },
+    {
+      "timestamp": 1791376234.326,
+      "iso_time": "2026-10-07T12:30:34.326000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*38##",
+      "type": "OWNLightingEvent",
+      "description": "Light 38 is switched off."
+    },
+    {
+      "timestamp": 1791376234.373,
+      "iso_time": "2026-10-07T12:30:34.373000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*47##",
+      "type": "OWNLightingEvent",
+      "description": "Light 47 is switched off."
+    },
+    {
+      "timestamp": 1791376234.374,
+      "iso_time": "2026-10-07T12:30:34.374000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*57##",
+      "type": "OWNLightingEvent",
+      "description": "Light 57 is switched on."
+    },
+    {
+      "timestamp": 1791376234.422,
+      "iso_time": "2026-10-07T12:30:34.422000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*67##",
+      "type": "OWNLightingEvent",
+      "description": "Light 67 is switched on."
+    },
+    {
+      "timestamp": 1791376234.47,
+      "iso_time": "2026-10-07T12:30:34.470000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*57##",
+      "type": "OWNLightingEvent",
+      "description": "Light 57 is switched on."
+    },
+    {
+      "timestamp": 1791376234.471,
+      "iso_time": "2026-10-07T12:30:34.471000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*48##",
+      "type": "OWNLightingEvent",
+      "description": "Light 48 is switched off."
+    },
+    {
+      "timestamp": 1791376234.55,
+      "iso_time": "2026-10-07T12:30:34.550000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*58##",
+      "type": "OWNLightingEvent",
+      "description": "Light 58 is switched off."
+    },
+    {
+      "timestamp": 1791376234.627,
+      "iso_time": "2026-10-07T12:30:34.627000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*68##",
+      "type": "OWNLightingEvent",
+      "description": "Light 68 is switched off."
+    },
+    {
+      "timestamp": 1791376234.627,
+      "iso_time": "2026-10-07T12:30:34.627000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*67##",
+      "type": "OWNLightingEvent",
+      "description": "Light 67 is switched on at brightness level 9."
+    },
+    {
+      "timestamp": 1791376234.627,
+      "iso_time": "2026-10-07T12:30:34.627000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*19##",
+      "type": "OWNLightingEvent",
+      "description": "Light 19 is switched off."
+    },
+    {
+      "timestamp": 1791376234.701,
+      "iso_time": "2026-10-07T12:30:34.701000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*39##",
+      "type": "OWNLightingEvent",
+      "description": "Light 39 is switched off."
+    },
+    {
+      "timestamp": 1791376234.701,
+      "iso_time": "2026-10-07T12:30:34.701000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791376234.793,
+      "iso_time": "2026-10-07T12:30:34.793000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*49##",
+      "type": "OWNLightingEvent",
+      "description": "Light 49 is switched off."
+    },
+    {
+      "timestamp": 1791376234.882,
+      "iso_time": "2026-10-07T12:30:34.882000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*59##",
+      "type": "OWNLightingEvent",
+      "description": "Light 59 is switched off."
+    },
+    {
+      "timestamp": 1791376234.882,
+      "iso_time": "2026-10-07T12:30:34.882000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*69##",
+      "type": "OWNLightingEvent",
+      "description": "Light 69 is switched on at brightness level 9."
+    },
+    {
+      "timestamp": 1791376234.882,
+      "iso_time": "2026-10-07T12:30:34.882000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*79##",
+      "type": "OWNLightingEvent",
+      "description": "Light 79 is switched off."
+    },
+    {
+      "timestamp": 1791376234.964,
+      "iso_time": "2026-10-07T12:30:34.964000+00:00",
+      "direction": "rx",
+      "raw": "*1*7*89##",
+      "type": "OWNLightingEvent",
+      "description": "Light 89 is switched on at brightness level 7."
+    },
+    {
+      "timestamp": 1791376235.039,
+      "iso_time": "2026-10-07T12:30:35.039000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*99##",
+      "type": "OWNLightingEvent",
+      "description": "Light 99 is switched on at brightness level 10."
+    },
+    {
+      "timestamp": 1791376235.726,
+      "iso_time": "2026-10-07T12:30:35.726000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*21#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 21 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376235.796,
+      "iso_time": "2026-10-07T12:30:35.796000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*12#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 12 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376235.796,
+      "iso_time": "2026-10-07T12:30:35.796000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*22#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 22 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376235.885,
+      "iso_time": "2026-10-07T12:30:35.885000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*13#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 13 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376235.972,
+      "iso_time": "2026-10-07T12:30:35.972000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*14#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 14 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376235.972,
+      "iso_time": "2026-10-07T12:30:35.972000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*15#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 15 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376236.06,
+      "iso_time": "2026-10-07T12:30:36.060000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*16#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 16 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376236.06,
+      "iso_time": "2026-10-07T12:30:36.060000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*18#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 18 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376236.142,
+      "iso_time": "2026-10-07T12:30:36.142000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*19#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 19 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376237.891,
+      "iso_time": "2026-10-07T12:30:37.891000+00:00",
+      "direction": "tx",
+      "raw": "*#1*0##",
+      "type": "OWNLightingCommand",
+      "description": "*#1*0##"
+    },
+    {
+      "timestamp": 1791376238.089,
+      "iso_time": "2026-10-07T12:30:38.089000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*11##",
+      "type": "OWNLightingEvent",
+      "description": "Light 11 is switched off."
+    },
+    {
+      "timestamp": 1791376238.141,
+      "iso_time": "2026-10-07T12:30:38.141000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*11#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 11 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376238.142,
+      "iso_time": "2026-10-07T12:30:38.142000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*12##",
+      "type": "OWNLightingEvent",
+      "description": "Light 12 is switched off."
+    },
+    {
+      "timestamp": 1791376238.142,
+      "iso_time": "2026-10-07T12:30:38.142000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*21#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 21 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376238.208,
+      "iso_time": "2026-10-07T12:30:38.208000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*21##",
+      "type": "OWNLightingEvent",
+      "description": "Light 21 is switched off."
+    },
+    {
+      "timestamp": 1791376238.265,
+      "iso_time": "2026-10-07T12:30:38.265000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*31##",
+      "type": "OWNLightingEvent",
+      "description": "Light 31 is switched off."
+    },
+    {
+      "timestamp": 1791376238.312,
+      "iso_time": "2026-10-07T12:30:38.312000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791376238.369,
+      "iso_time": "2026-10-07T12:30:38.369000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*32##",
+      "type": "OWNLightingEvent",
+      "description": "Light 32 is switched off."
+    },
+    {
+      "timestamp": 1791376238.37,
+      "iso_time": "2026-10-07T12:30:38.370000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*41##",
+      "type": "OWNLightingEvent",
+      "description": "Light 41 is switched off."
+    },
+    {
+      "timestamp": 1791376238.404,
+      "iso_time": "2026-10-07T12:30:38.404000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*32##",
+      "type": "OWNLightingEvent",
+      "description": "Light 32 is switched off."
+    },
+    {
+      "timestamp": 1791376238.404,
+      "iso_time": "2026-10-07T12:30:38.404000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*42##",
+      "type": "OWNLightingEvent",
+      "description": "Light 42 is switched off."
+    },
+    {
+      "timestamp": 1791376238.451,
+      "iso_time": "2026-10-07T12:30:38.451000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*51##",
+      "type": "OWNLightingEvent",
+      "description": "Light 51 is switched off."
+    },
+    {
+      "timestamp": 1791376238.497,
+      "iso_time": "2026-10-07T12:30:38.497000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*61##",
+      "type": "OWNLightingEvent",
+      "description": "Light 61 is switched off."
+    },
+    {
+      "timestamp": 1791376238.545,
+      "iso_time": "2026-10-07T12:30:38.545000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*52##",
+      "type": "OWNLightingEvent",
+      "description": "Light 52 is switched off."
+    },
+    {
+      "timestamp": 1791376238.545,
+      "iso_time": "2026-10-07T12:30:38.545000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*71##",
+      "type": "OWNLightingEvent",
+      "description": "Light 71 is switched off."
+    },
+    {
+      "timestamp": 1791376238.592,
+      "iso_time": "2026-10-07T12:30:38.592000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*81##",
+      "type": "OWNLightingEvent",
+      "description": "Light 81 is switched on."
+    },
+    {
+      "timestamp": 1791376238.637,
+      "iso_time": "2026-10-07T12:30:38.637000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*82##",
+      "type": "OWNLightingEvent",
+      "description": "Light 82 is switched off."
+    },
+    {
+      "timestamp": 1791376238.685,
+      "iso_time": "2026-10-07T12:30:38.685000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*83##",
+      "type": "OWNLightingEvent",
+      "description": "Light 83 is switched off."
+    },
+    {
+      "timestamp": 1791376238.731,
+      "iso_time": "2026-10-07T12:30:38.731000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*84##",
+      "type": "OWNLightingEvent",
+      "description": "Light 84 is switched on."
+    },
+    {
+      "timestamp": 1791376238.731,
+      "iso_time": "2026-10-07T12:30:38.731000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*62##",
+      "type": "OWNLightingEvent",
+      "description": "Light 62 is switched on at brightness level 10."
+    },
+    {
+      "timestamp": 1791376238.778,
+      "iso_time": "2026-10-07T12:30:38.778000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*72##",
+      "type": "OWNLightingEvent",
+      "description": "Light 72 is switched off."
+    },
+    {
+      "timestamp": 1791376238.827,
+      "iso_time": "2026-10-07T12:30:38.827000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*13##",
+      "type": "OWNLightingEvent",
+      "description": "Light 13 is switched off."
+    },
+    {
+      "timestamp": 1791376238.873,
+      "iso_time": "2026-10-07T12:30:38.873000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*23##",
+      "type": "OWNLightingEvent",
+      "description": "Light 23 is switched off."
+    },
+    {
+      "timestamp": 1791376238.873,
+      "iso_time": "2026-10-07T12:30:38.873000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*14##",
+      "type": "OWNLightingEvent",
+      "description": "Light 14 is switched off."
+    },
+    {
+      "timestamp": 1791376238.919,
+      "iso_time": "2026-10-07T12:30:38.919000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*24##",
+      "type": "OWNLightingEvent",
+      "description": "Light 24 is switched off."
+    },
+    {
+      "timestamp": 1791376238.965,
+      "iso_time": "2026-10-07T12:30:38.965000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*33##",
+      "type": "OWNLightingEvent",
+      "description": "Light 33 is switched off."
+    },
+    {
+      "timestamp": 1791376239.011,
+      "iso_time": "2026-10-07T12:30:39.011000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*43##",
+      "type": "OWNLightingEvent",
+      "description": "Light 43 is switched off."
+    },
+    {
+      "timestamp": 1791376239.058,
+      "iso_time": "2026-10-07T12:30:39.058000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*34##",
+      "type": "OWNLightingEvent",
+      "description": "Light 34 is switched off."
+    },
+    {
+      "timestamp": 1791376239.104,
+      "iso_time": "2026-10-07T12:30:39.104000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*44##",
+      "type": "OWNLightingEvent",
+      "description": "Light 44 is switched off."
+    },
+    {
+      "timestamp": 1791376239.152,
+      "iso_time": "2026-10-07T12:30:39.152000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*53##",
+      "type": "OWNLightingEvent",
+      "description": "Light 53 is switched off."
+    },
+    {
+      "timestamp": 1791376239.2,
+      "iso_time": "2026-10-07T12:30:39.200000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*63##",
+      "type": "OWNLightingEvent",
+      "description": "Light 63 is switched off."
+    },
+    {
+      "timestamp": 1791376239.2,
+      "iso_time": "2026-10-07T12:30:39.200000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*73##",
+      "type": "OWNLightingEvent",
+      "description": "Light 73 is switched off."
+    },
+    {
+      "timestamp": 1791376239.2,
+      "iso_time": "2026-10-07T12:30:39.200000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*63##",
+      "type": "OWNLightingEvent",
+      "description": "Light 63 is switched off."
+    },
+    {
+      "timestamp": 1791376239.245,
+      "iso_time": "2026-10-07T12:30:39.245000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*54##",
+      "type": "OWNLightingEvent",
+      "description": "Light 54 is switched off."
+    },
+    {
+      "timestamp": 1791376239.291,
+      "iso_time": "2026-10-07T12:30:39.291000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*64##",
+      "type": "OWNLightingEvent",
+      "description": "Light 64 is switched off."
+    },
+    {
+      "timestamp": 1791376239.338,
+      "iso_time": "2026-10-07T12:30:39.338000+00:00",
+      "direction": "rx",
+      "raw": "*1*19*74##",
+      "type": "OWNLightingEvent",
+      "description": "Light 74 reports unknown lighting WHAT 19."
+    },
+    {
+      "timestamp": 1791376239.432,
+      "iso_time": "2026-10-07T12:30:39.432000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*15##",
+      "type": "OWNLightingEvent",
+      "description": "Light 15 is switched off."
+    },
+    {
+      "timestamp": 1791376239.479,
+      "iso_time": "2026-10-07T12:30:39.479000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*25##",
+      "type": "OWNLightingEvent",
+      "description": "Light 25 is switched off."
+    },
+    {
+      "timestamp": 1791376239.526,
+      "iso_time": "2026-10-07T12:30:39.526000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*16##",
+      "type": "OWNLightingEvent",
+      "description": "Light 16 is switched off."
+    },
+    {
+      "timestamp": 1791376239.573,
+      "iso_time": "2026-10-07T12:30:39.573000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*26##",
+      "type": "OWNLightingEvent",
+      "description": "Light 26 is switched off."
+    },
+    {
+      "timestamp": 1791376239.573,
+      "iso_time": "2026-10-07T12:30:39.573000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*35##",
+      "type": "OWNLightingEvent",
+      "description": "Light 35 is switched off."
+    },
+    {
+      "timestamp": 1791376239.62,
+      "iso_time": "2026-10-07T12:30:39.620000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*45##",
+      "type": "OWNLightingEvent",
+      "description": "Light 45 is switched off."
+    },
+    {
+      "timestamp": 1791376239.668,
+      "iso_time": "2026-10-07T12:30:39.668000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*36##",
+      "type": "OWNLightingEvent",
+      "description": "Light 36 is switched off."
+    },
+    {
+      "timestamp": 1791376239.714,
+      "iso_time": "2026-10-07T12:30:39.714000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*46##",
+      "type": "OWNLightingEvent",
+      "description": "Light 46 is switched off."
+    },
+    {
+      "timestamp": 1791376239.76,
+      "iso_time": "2026-10-07T12:30:39.760000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*55##",
+      "type": "OWNLightingEvent",
+      "description": "Light 55 is switched off."
+    },
+    {
+      "timestamp": 1791376239.807,
+      "iso_time": "2026-10-07T12:30:39.807000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*65##",
+      "type": "OWNLightingEvent",
+      "description": "Light 65 is switched off."
+    },
+    {
+      "timestamp": 1791376239.854,
+      "iso_time": "2026-10-07T12:30:39.854000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791376239.901,
+      "iso_time": "2026-10-07T12:30:39.901000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*66##",
+      "type": "OWNLightingEvent",
+      "description": "Light 66 is switched off."
+    },
+    {
+      "timestamp": 1791376239.949,
+      "iso_time": "2026-10-07T12:30:39.949000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*75##",
+      "type": "OWNLightingEvent",
+      "description": "Light 75 is switched off."
+    },
+    {
+      "timestamp": 1791376239.993,
+      "iso_time": "2026-10-07T12:30:39.993000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*85##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 85 stopped."
+    },
+    {
+      "timestamp": 1791376240.039,
+      "iso_time": "2026-10-07T12:30:40.039000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*56##",
+      "type": "OWNLightingEvent",
+      "description": "Light 56 is switched off."
+    },
+    {
+      "timestamp": 1791376240.087,
+      "iso_time": "2026-10-07T12:30:40.087000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*76##",
+      "type": "OWNLightingEvent",
+      "description": "Light 76 is switched off."
+    },
+    {
+      "timestamp": 1791376240.148,
+      "iso_time": "2026-10-07T12:30:40.148000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*77##",
+      "type": "OWNLightingEvent",
+      "description": "Light 77 is switched off."
+    },
+    {
+      "timestamp": 1791376240.18,
+      "iso_time": "2026-10-07T12:30:40.180000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*78##",
+      "type": "OWNLightingEvent",
+      "description": "Light 78 is switched off."
+    },
+    {
+      "timestamp": 1791376240.227,
+      "iso_time": "2026-10-07T12:30:40.227000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791376240.227,
+      "iso_time": "2026-10-07T12:30:40.227000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*17##",
+      "type": "OWNLightingEvent",
+      "description": "Light 17 is switched off."
+    },
+    {
+      "timestamp": 1791376240.273,
+      "iso_time": "2026-10-07T12:30:40.273000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*18##",
+      "type": "OWNLightingEvent",
+      "description": "Light 18 is switched off."
+    },
+    {
+      "timestamp": 1791376240.319,
+      "iso_time": "2026-10-07T12:30:40.319000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*27##",
+      "type": "OWNLightingEvent",
+      "description": "Light 27 is switched off."
+    },
+    {
+      "timestamp": 1791376240.367,
+      "iso_time": "2026-10-07T12:30:40.367000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*37##",
+      "type": "OWNLightingEvent",
+      "description": "Light 37 is switched off."
+    },
+    {
+      "timestamp": 1791376240.413,
+      "iso_time": "2026-10-07T12:30:40.413000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*28##",
+      "type": "OWNLightingEvent",
+      "description": "Light 28 is switched off."
+    },
+    {
+      "timestamp": 1791376240.46,
+      "iso_time": "2026-10-07T12:30:40.460000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*38##",
+      "type": "OWNLightingEvent",
+      "description": "Light 38 is switched off."
+    },
+    {
+      "timestamp": 1791376240.508,
+      "iso_time": "2026-10-07T12:30:40.508000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*47##",
+      "type": "OWNLightingEvent",
+      "description": "Light 47 is switched off."
+    },
+    {
+      "timestamp": 1791376240.556,
+      "iso_time": "2026-10-07T12:30:40.556000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*48##",
+      "type": "OWNLightingEvent",
+      "description": "Light 48 is switched off."
+    },
+    {
+      "timestamp": 1791376240.556,
+      "iso_time": "2026-10-07T12:30:40.556000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*57##",
+      "type": "OWNLightingEvent",
+      "description": "Light 57 is switched on."
+    },
+    {
+      "timestamp": 1791376240.603,
+      "iso_time": "2026-10-07T12:30:40.603000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*67##",
+      "type": "OWNLightingEvent",
+      "description": "Light 67 is switched on at brightness level 9."
+    },
+    {
+      "timestamp": 1791376240.649,
+      "iso_time": "2026-10-07T12:30:40.649000+00:00",
+      "direction": "rx",
+      "raw": "*1*1*67##",
+      "type": "OWNLightingEvent",
+      "description": "Light 67 is switched on."
+    },
+    {
+      "timestamp": 1791376240.695,
+      "iso_time": "2026-10-07T12:30:40.695000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*58##",
+      "type": "OWNLightingEvent",
+      "description": "Light 58 is switched off."
+    },
+    {
+      "timestamp": 1791376240.741,
+      "iso_time": "2026-10-07T12:30:40.741000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*68##",
+      "type": "OWNLightingEvent",
+      "description": "Light 68 is switched off."
+    },
+    {
+      "timestamp": 1791376240.787,
+      "iso_time": "2026-10-07T12:30:40.787000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*19##",
+      "type": "OWNLightingEvent",
+      "description": "Light 19 is switched off."
+    },
+    {
+      "timestamp": 1791376240.834,
+      "iso_time": "2026-10-07T12:30:40.834000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791376240.883,
+      "iso_time": "2026-10-07T12:30:40.883000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*39##",
+      "type": "OWNLightingEvent",
+      "description": "Light 39 is switched off."
+    },
+    {
+      "timestamp": 1791376240.883,
+      "iso_time": "2026-10-07T12:30:40.883000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*29##",
+      "type": "OWNLightingEvent",
+      "description": "Light 29 is switched off."
+    },
+    {
+      "timestamp": 1791376240.927,
+      "iso_time": "2026-10-07T12:30:40.927000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*49##",
+      "type": "OWNLightingEvent",
+      "description": "Light 49 is switched off."
+    },
+    {
+      "timestamp": 1791376240.975,
+      "iso_time": "2026-10-07T12:30:40.975000+00:00",
+      "direction": "rx",
+      "raw": "*1*9*69##",
+      "type": "OWNLightingEvent",
+      "description": "Light 69 is switched on at brightness level 9."
+    },
+    {
+      "timestamp": 1791376241.02,
+      "iso_time": "2026-10-07T12:30:41.020000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*59##",
+      "type": "OWNLightingEvent",
+      "description": "Light 59 is switched off."
+    },
+    {
+      "timestamp": 1791376241.067,
+      "iso_time": "2026-10-07T12:30:41.067000+00:00",
+      "direction": "rx",
+      "raw": "*1*0*79##",
+      "type": "OWNLightingEvent",
+      "description": "Light 79 is switched off."
+    },
+    {
+      "timestamp": 1791376241.113,
+      "iso_time": "2026-10-07T12:30:41.113000+00:00",
+      "direction": "rx",
+      "raw": "*1*7*89##",
+      "type": "OWNLightingEvent",
+      "description": "Light 89 is switched on at brightness level 7."
+    },
+    {
+      "timestamp": 1791376241.16,
+      "iso_time": "2026-10-07T12:30:41.160000+00:00",
+      "direction": "rx",
+      "raw": "*1*10*99##",
+      "type": "OWNLightingEvent",
+      "description": "Light 99 is switched on at brightness level 10."
+    },
+    {
+      "timestamp": 1791376241.753,
+      "iso_time": "2026-10-07T12:30:41.753000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*12#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 12 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376241.808,
+      "iso_time": "2026-10-07T12:30:41.808000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*22#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 22 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376241.863,
+      "iso_time": "2026-10-07T12:30:41.863000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*13#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 13 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376241.91,
+      "iso_time": "2026-10-07T12:30:41.910000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*14#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 14 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376241.956,
+      "iso_time": "2026-10-07T12:30:41.956000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*15#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 15 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376242.003,
+      "iso_time": "2026-10-07T12:30:42.003000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*16#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 16 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376242.052,
+      "iso_time": "2026-10-07T12:30:42.052000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*18#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 18 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376242.101,
+      "iso_time": "2026-10-07T12:30:42.101000+00:00",
+      "direction": "rx",
+      "raw": "*2*0*19#4#02##",
+      "type": "OWNAutomationEvent",
+      "description": "Cover 19 on interface 02 stopped."
+    },
+    {
+      "timestamp": 1791376243.929,
+      "iso_time": "2026-10-07T12:30:43.929000+00:00",
+      "direction": "tx",
+      "raw": "*#13**15##",
+      "type": "OWNGatewayCommand",
+      "description": "*#13**15##"
+    },
+    {
+      "timestamp": 1791376243.945,
+      "iso_time": "2026-10-07T12:30:43.945000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376259.267,
+      "iso_time": "2026-10-07T12:30:59.267000+00:00",
+      "direction": "tx",
+      "raw": "*#4*0##",
+      "type": "OWNHeatingCommand",
+      "description": "*#4*0##"
+    },
+    {
+      "timestamp": 1791376262.666,
+      "iso_time": "2026-10-07T12:31:02.666000+00:00",
+      "direction": "tx",
+      "raw": "*#16*0*5##",
+      "type": "OWNSoundCommand",
+      "description": "*#16*0*5##"
+    },
+    {
+      "timestamp": 1791376262.816,
+      "iso_time": "2026-10-07T12:31:02.816000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*21##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 21 is switched OFF."
+    },
+    {
+      "timestamp": 1791376262.896,
+      "iso_time": "2026-10-07T12:31:02.896000+00:00",
+      "direction": "rx",
+      "raw": "*16*3*101##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Source 1 is switched ON."
+    },
+    {
+      "timestamp": 1791376262.896,
+      "iso_time": "2026-10-07T12:31:02.896000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*22##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 22 is switched OFF."
+    },
+    {
+      "timestamp": 1791376262.896,
+      "iso_time": "2026-10-07T12:31:02.896000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*22##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 22 is switched OFF."
+    },
+    {
+      "timestamp": 1791376262.981,
+      "iso_time": "2026-10-07T12:31:02.981000+00:00",
+      "direction": "rx",
+      "raw": "*16*3*102##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Source 2 is switched ON."
+    },
+    {
+      "timestamp": 1791376262.981,
+      "iso_time": "2026-10-07T12:31:02.981000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*23##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 23 is switched OFF."
+    },
+    {
+      "timestamp": 1791376263.06,
+      "iso_time": "2026-10-07T12:31:03.060000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*14##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 14 is switched OFF."
+    },
+    {
+      "timestamp": 1791376263.06,
+      "iso_time": "2026-10-07T12:31:03.060000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*35##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 35 is switched OFF."
+    },
+    {
+      "timestamp": 1791376263.136,
+      "iso_time": "2026-10-07T12:31:03.136000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*36##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 36 is switched OFF."
+    },
+    {
+      "timestamp": 1791376263.226,
+      "iso_time": "2026-10-07T12:31:03.226000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*17##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 17 is switched OFF."
+    },
+    {
+      "timestamp": 1791376263.226,
+      "iso_time": "2026-10-07T12:31:03.226000+00:00",
+      "direction": "rx",
+      "raw": "*16*13*18##",
+      "type": "OWNSoundEvent",
+      "description": "Audio Zone 18 is switched OFF."
+    },
+    {
+      "timestamp": 1791376270.084,
+      "iso_time": "2026-10-07T12:31:10.084000+00:00",
+      "direction": "tx",
+      "raw": "*#5*0##",
+      "type": "OWNAlarmCommand",
+      "description": "*#5*0##"
+    },
+    {
+      "timestamp": 1791376273.256,
+      "iso_time": "2026-10-07T12:31:13.256000+00:00",
+      "direction": "rx",
+      "raw": "*5*0*##",
+      "type": "raw_string",
+      "description": "*5*0*##"
+    },
+    {
+      "timestamp": 1791376273.322,
+      "iso_time": "2026-10-07T12:31:13.322000+00:00",
+      "direction": "rx",
+      "raw": "*5*9*##",
+      "type": "raw_string",
+      "description": "*5*9*##"
+    },
+    {
+      "timestamp": 1791376273.322,
+      "iso_time": "2026-10-07T12:31:13.322000+00:00",
+      "direction": "rx",
+      "raw": "*5*5*##",
+      "type": "raw_string",
+      "description": "*5*5*##"
+    },
+    {
+      "timestamp": 1791376273.322,
+      "iso_time": "2026-10-07T12:31:13.322000+00:00",
+      "direction": "rx",
+      "raw": "*5*7*##",
+      "type": "raw_string",
+      "description": "*5*7*##"
+    },
+    {
+      "timestamp": 1791376273.322,
+      "iso_time": "2026-10-07T12:31:13.322000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#1##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 1 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#2##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 2 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#3##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 3 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#4##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 4 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#5##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 5 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#6##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 6 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#7##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 7 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376273.323,
+      "iso_time": "2026-10-07T12:31:13.323000+00:00",
+      "direction": "rx",
+      "raw": "*5*11*#8##",
+      "type": "OWNAlarmEvent",
+      "description": "Zone 8 is reporting: 'active zone'."
+    },
+    {
+      "timestamp": 1791376277.319,
+      "iso_time": "2026-10-07T12:31:17.319000+00:00",
+      "direction": "tx",
+      "raw": "*#13**16##",
+      "type": "OWNGatewayCommand",
+      "description": "*#13**16##"
+    },
+    {
+      "timestamp": 1791376277.336,
+      "iso_time": "2026-10-07T12:31:17.336000+00:00",
+      "direction": "rx",
+      "raw": "*#13**16*2*1*0##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway's firmware version is: 2.1.0."
+    },
+    {
+      "timestamp": 1791376279.449,
+      "iso_time": "2026-10-07T12:31:19.449000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*4##",
+      "type": "OWNGatewayEvent",
+      "description": "Gateway device type is: MH200."
+    },
+    {
+      "timestamp": 1791376281.14,
+      "iso_time": "2026-10-07T12:31:21.140000+00:00",
+      "direction": "tx",
+      "raw": "*#1013*0*1##",
+      "type": "OWNCommand",
+      "description": "*#1013*0*1##"
+    },
+    {
+      "timestamp": 1791376281.204,
+      "iso_time": "2026-10-07T12:31:21.204000+00:00",
+      "direction": "rx",
+      "raw": "*#1013**1*4##",
+      "type": "OWNEvent",
+      "description": "*#1013**1*4##"
+    }
+  ]
+}

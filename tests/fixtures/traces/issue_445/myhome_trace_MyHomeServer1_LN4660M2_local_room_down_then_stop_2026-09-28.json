@@ -1,0 +1,106 @@
+{
+  "capture": {
+    "kind": "trace",
+    "started_at": "2026-09-28T08:52:33.565Z",
+    "filters": {
+      "who": null,
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-09-28T08:52:41.988Z",
+      "last": "2026-09-28T08:52:50.389Z",
+      "frames": 4,
+      "buffer_frames": 4,
+      "buffer_depth": 200,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.9.4",
+    "integration_version": "2.0.0b13",
+    "ownd_version": "2.0.0b8",
+    "exported_at": "2026-09-28T08:52:58.799Z"
+  },
+  "gateway": {
+    "model": "MyHomeServer1",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "Unknown",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.02,
+    "is_connected": true,
+    "identification": {
+      "model": "MyHomeServer1",
+      "source": "ssdp",
+      "configured_model": "MyHomeServer1",
+      "ssdp_model": "MyHomeServer1",
+      "who13_code": null,
+      "who13_model": null,
+      "who13_model_official": null,
+      "who13_model_observed": null,
+      "who13_firmware": null,
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "profile": "MyHomeServer1Profile",
+      "conflict": null
+    }
+  },
+  "telemetry": {
+    "total_rx": 4,
+    "total_tx": 0,
+    "captured_in_buffer": 4,
+    "buffer_depth": 200,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1790585561.988054,
+      "iso_time": "2026-09-28T08:52:41.988054+00:00",
+      "direction": "rx",
+      "raw": "*#2*02*10*12*100*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "02",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790585561.994644,
+      "iso_time": "2026-09-28T08:52:41.994644+00:00",
+      "direction": "rx",
+      "raw": "*2*2*02##",
+      "who": "2",
+      "what": "2",
+      "where": "02",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790585570.374043,
+      "iso_time": "2026-09-28T08:52:50.374043+00:00",
+      "direction": "rx",
+      "raw": "*#2*02*10*10*74*001*0##",
+      "who": "2",
+      "what": null,
+      "where": "02",
+      "dimension": "10",
+      "is_ack": false,
+      "is_nack": false
+    },
+    {
+      "timestamp": 1790585570.38911,
+      "iso_time": "2026-09-28T08:52:50.389110+00:00",
+      "direction": "rx",
+      "raw": "*2*0*02##",
+      "who": "2",
+      "what": "0",
+      "where": "02",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false
+    }
+  ]
+}

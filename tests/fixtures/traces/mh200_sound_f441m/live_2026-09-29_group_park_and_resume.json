@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "captured": "2026-09-29",
+    "gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix",
+    "home_assistant": "2026.9.3",
+    "build": "feat/keep-group-when-parked @ d5d316d0 (MyHOME 2.0.0b13.dev202609291247), OWNd 2.0.0b8",
+    "how": "bus frames read with the myhome-gateway MCP event session (times UTC); decoder states from the HA History panel; group calls from the Music Assistant log",
+    "decoder": "media_player.audio_decoder (Audio Decoder hardware entity) with the streaming companion media_player.audio_decoder_2, wired to matrix source 2",
+    "zones": {
+      "36": {"name": "badkamer", "environment": 3, "role": "leader"},
+      "21": {"name": "Bureau", "environment": 2, "role": "member"},
+      "23": {"name": "Eetkamer", "environment": 2, "role": "member"}
+    },
+    "findings": [
+      "the Audio Decoder sits in 'on' (powered, not playing) after a stream and reports 'playing' when it plays: 'on' must count as free (both 'all decoders busy' failures happened in 'on')",
+      "Music Assistant dissolves a sync group whose leader reports 'off' (log: 'Dissolving sync group of player badkamer as it is being removed from itself', 6 ms after HA parked)",
+      "Music Assistant also removes a member that still reports paused/idle when the leader comes on (set_members remove=[Bureau] 3.5 s after play): a parked member must say 'on' before its slow wake frames go out",
+      "an HA restart sends nothing to the bus; the rooms keep playing",
+      "the MH200 only wakes an amplifier with the OFF then ON pair: *16*3*Z## alone does nothing"
+    ]
+  },
+  "decoder_states_seen": {
+    "free": ["off", "on", "idle"],
+    "free_after_5_minutes": ["paused"],
+    "busy": ["playing", "buffering", "unavailable"]
+  },
+  "park": {
+    "trigger": "media_player.audio_decoder paused for 60 s",
+    "expected_tx": ["*16*13*36##", "*16*13*21##", "*16*13*23##"],
+    "bus_rx": [
+      {"t": "10:56:20.608", "frame": "*16*13*36##"},
+      {"t": "10:56:20.806", "frame": "*16*13*21##"},
+      {"t": "10:56:21.017", "frame": "*16*13*23##"}
+    ],
+    "ma_expectation": "no set_members remove; the group stays"
+  },
+  "resume": {
+    "trigger": "Music Assistant play_media on the leader",
+    "expected_tx_contains": [
+      "*16*13*36##", "*16*3*36##", "*16*3*132##",
+      "*16*13*21##", "*16*3*21##",
+      "*16*13*23##", "*16*3*23##", "*16*3*122##"
+    ],
+    "bus_rx": [
+      {"t": "10:55:34.587", "frame": "*16*3*122##"},
+      {"t": "10:55:34.647", "frame": "*16*3*36##"},
+      {"t": "10:55:34.840", "frame": "*#16*36*1*0##"},
+      {"t": "10:55:35.734", "frame": "*16*3*102##"},
+      {"t": "10:55:36.393", "frame": "*16*3*132##"},
+      {"t": "10:55:38.438", "frame": "*16*3*122##"},
+      {"t": "10:55:38.840", "frame": "*#16*36*1*26##"},
+      {"t": "10:55:38.890", "frame": "*16*3*21##"},
+      {"t": "10:55:38.968", "frame": "*#16*21*1*0##"},
+      {"t": "10:55:40.364", "frame": "*#16*21*1*15##"},
+      {"t": "10:55:41.441", "frame": "*16*3*23##"},
+      {"t": "10:55:41.577", "frame": "*#16*23*1*0##"},
+      {"t": "10:55:42.986", "frame": "*#16*23*1*23##"}
+    ],
+    "volumes_after": {"36": 26, "21": 15, "23": 23}
+  }
+}

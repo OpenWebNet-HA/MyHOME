@@ -1,0 +1,1134 @@
+2026-11-04 17:37:12.482 INFO (MainThread) [custom_components.myhome] Initializing MyHOME integration v2.0.0b17 (OWNd v2.0.0b13)
+2026-11-04 17:37:12.485 INFO (MainThread) [custom_components.myhome.websocket] Registered MyHOME WebSocket API commands for Bus Monitor
+2026-11-04 17:37:12.487 DEBUG (MainThread) [custom_components.myhome] Lovelace bus monitor resource already present: /myhome_static/myhome-bus-card.js?v=dad8b99f
+2026-11-04 17:37:12.487 INFO (MainThread) [custom_components.myhome] Setting up MyHOME gateway 'F461 Gateway' (v2.0.0b17, OWNd v2.0.0b13)
+2026-11-04 17:37:12.492 INFO (MainThread) [custom_components.myhome] Loaded legacy myhome.yaml configuration for gateway 00:03:50:00:11:04 (4 platforms)
+2026-11-04 17:37:12.497 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Negotiating test session.
+2026-11-04 17:37:12.504 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Received SHA challenge: `*98*2##`
+2026-11-04 17:37:12.504 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Accepting sha256 challenge, initiating handshake.
+2026-11-04 17:37:12.510 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Sending test session password.
+2026-11-04 17:37:12.517 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Session established successfully.
+2026-11-04 17:37:12.517 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Test session closed.
+2026-11-04 17:37:12.517 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Creating listening worker.
+2026-11-04 17:37:12.518 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Opening event session.
+2026-11-04 17:37:12.518 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Creating sending worker 0
+2026-11-04 17:37:12.518 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Worker 0 waiting for event session to be ready...
+2026-11-04 17:37:12.522 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] TCP keepalive enabled on event socket (idle=30s, intvl=10s, cnt=3).
+2026-11-04 17:37:12.522 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Negotiating event session.
+2026-11-04 17:37:12.530 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Received SHA challenge: `*98*2##`
+2026-11-04 17:37:12.530 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Accepting sha256 challenge, initiating handshake.
+2026-11-04 17:37:12.546 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Sending event session password.
+2026-11-04 17:37:12.552 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Session established successfully.
+2026-11-04 17:37:12.552 INFO (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway available again.
+2026-11-04 17:37:12.552 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Event session ready, command sessions can now start.
+2026-11-04 17:37:12.553 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Worker 0: event session is ready, proceeding with command session.
+2026-11-04 17:37:12.553 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Opening command session.
+2026-11-04 17:37:12.563 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Negotiating command session.
+2026-11-04 17:37:12.569 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Received SHA challenge: `*98*2##`
+2026-11-04 17:37:12.569 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Accepting sha256 challenge, initiating handshake.
+2026-11-04 17:37:12.574 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Sending command session password.
+2026-11-04 17:37:12.582 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Session established successfully.
+2026-11-04 17:37:13.010 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: light restored/configured 6 entities (6 addresses known)
+2026-11-04 17:37:13.010 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: switch restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.010 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: switch restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.015 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: cover restored/configured 1 entities (2 addresses known)
+2026-11-04 17:37:13.015 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: cover restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.017 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: climate restored/configured 1 entities (1 addresses known)
+2026-11-04 17:37:13.018 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: binary_sensor restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.018 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: binary_sensor restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.018 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: binary_sensor restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.018 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: sensor restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.018 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: sensor restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.018 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: sensor restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.024 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: alarm_control_panel restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.024 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: lock restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.026 INFO (MainThread) [custom_components.myhome] MyHOME media player: decoder pool initialised with 0 decoder(s)
+2026-11-04 17:37:13.027 DEBUG (MainThread) [custom_components.myhome] 00:03:50:00:11:04: media_player restored/configured 0 entities (0 addresses known)
+2026-11-04 17:37:13.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Skipping `*#4*0##`: F461 firmware refuses it.
+2026-11-04 17:37:13.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Skipping WHO=5 discovery: not supported by F461 profile.
+2026-11-04 17:37:13.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Skipping WHO=16 discovery: not supported by F461 profile.
+2026-11-04 17:37:13.029 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0##` was successfully queued.
+2026-11-04 17:37:13.029 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0##` was successfully unqueued by worker 0.
+2026-11-04 17:37:13.168 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:37:13.168 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:37:13.213 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*06##`
+2026-11-04 17:37:13.213 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched off.
+2026-11-04 17:37:13.214 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*06##`.
+2026-11-04 17:37:13.254 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*07##`
+2026-11-04 17:37:13.254 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 07 is switched off.
+2026-11-04 17:37:13.255 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*07##`.
+2026-11-04 17:37:13.310 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*8*0010##`
+2026-11-04 17:37:13.310 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 8.
+2026-11-04 17:37:13.311 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*8*0010##`.
+2026-11-04 17:37:13.397 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*09#4#01##`
+2026-11-04 17:37:13.397 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched off.
+2026-11-04 17:37:13.398 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*09#4#01##`.
+2026-11-04 17:37:14.113 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:14.397 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0##` was successfully sent.
+2026-11-04 17:37:14.502 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:37:14.502 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:37:14.566 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:37:14.567 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:37:15.318 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*0##` was successfully queued.
+2026-11-04 17:37:15.319 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*0##` was successfully unqueued by worker 0.
+2026-11-04 17:37:15.454 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*06##`
+2026-11-04 17:37:15.454 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched off.
+2026-11-04 17:37:15.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:37:15.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:37:15.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*2*0*05##`.
+2026-11-04 17:37:15.533 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*07##`
+2026-11-04 17:37:15.533 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 07 is switched off.
+2026-11-04 17:37:15.589 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*8*0010##`
+2026-11-04 17:37:15.589 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 8.
+2026-11-04 17:37:15.590 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:37:15.718 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:37:15.718 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:37:15.765 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*09#4#01##`
+2026-11-04 17:37:15.765 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched off.
+2026-11-04 17:37:15.832 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:37:15.832 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:37:16.348 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:16.831 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*0##` was successfully sent.
+2026-11-04 17:37:16.882 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:37:17.014 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:37:17.014 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:37:17.015 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*163*4##`.
+2026-11-04 17:37:17.017 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:37:17.079 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:37:17.079 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:37:17.830 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*51##` was successfully queued.
+2026-11-04 17:37:17.830 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*51##` was successfully unqueued by worker 0.
+2026-11-04 17:37:18.563 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:18.779 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*51##` was successfully sent.
+2026-11-04 17:37:19.531 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*113##` was successfully queued.
+2026-11-04 17:37:19.531 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*113##` was successfully unqueued by worker 0.
+2026-11-04 17:37:20.784 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*113##` was successfully sent.
+2026-11-04 17:37:20.786 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:21.534 DEBUG (MainThread) [custom_components.myhome] light.light_1: state already reported on the bus, skipping post-discovery poll
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] light.light_2: state already reported on the bus, skipping post-discovery poll
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*09##` was successfully queued.
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] light.light_09i01: state already reported on the bus, skipping post-discovery poll
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*01##` was successfully queued.
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] light.light_0010: state already reported on the bus, skipping post-discovery poll
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05##` was successfully queued.
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2##` was successfully queued.
+2026-11-04 17:37:21.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*60##` was successfully queued.
+2026-11-04 17:37:21.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*09##` was successfully unqueued by worker 0.
+2026-11-04 17:37:21.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0*20##` was successfully queued.
+2026-11-04 17:37:23.031 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:23.542 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#1*09## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:37:23.593 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*01##` was successfully unqueued by worker 0.
+2026-11-04 17:37:25.259 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:25.599 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#1*01## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:37:25.650 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05##` was successfully unqueued by worker 0.
+2026-11-04 17:37:25.736 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:37:25.736 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:37:25.736 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*2*0*05##`.
+2026-11-04 17:37:25.738 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05##` was successfully sent.
+2026-11-04 17:37:25.790 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2##` was successfully unqueued by worker 0.
+2026-11-04 17:37:26.371 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:37:26.371 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:37:26.371 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:37:26.371 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*0*0240##`.
+2026-11-04 17:37:26.675 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0240*3##`
+2026-11-04 17:37:26.676 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:37:26.676 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:37:26.676 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*12*0240*3##`.
+2026-11-04 17:37:26.677 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*4*1*2##`.
+2026-11-04 17:37:26.678 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:37:26.678 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:37:26.678 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:37:26.996 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*14*0240*3##`
+2026-11-04 17:37:26.996 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's target temperature is set to 24.0°C.
+2026-11-04 17:37:26.996 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's target temperature is set to 24.0°C.
+2026-11-04 17:37:26.996 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*14*0240*3##`.
+2026-11-04 17:37:27.081 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*13*00##`
+2026-11-04 17:37:27.081 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local offset is set to 0°C.
+2026-11-04 17:37:27.081 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local offset is set to 0°C.
+2026-11-04 17:37:27.081 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*13*00##`.
+2026-11-04 17:37:27.083 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2##` was successfully sent.
+2026-11-04 17:37:27.134 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*60##` was successfully unqueued by worker 0.
+2026-11-04 17:37:27.248 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*60*41##`
+2026-11-04 17:37:27.249 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a humidity of 41.0%.
+2026-11-04 17:37:27.249 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a humidity of 41.0%.
+2026-11-04 17:37:27.249 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*60*41##`.
+2026-11-04 17:37:27.251 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*60##` was successfully sent.
+2026-11-04 17:37:27.302 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0*20##` was successfully unqueued by worker 0.
+2026-11-04 17:37:27.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#1*20*0##`
+2026-11-04 17:37:27.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is off.
+2026-11-04 17:37:27.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is off.
+2026-11-04 17:37:27.409 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2#1*20*0##`.
+2026-11-04 17:37:27.456 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#2*20*5##`
+2026-11-04 17:37:27.456 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is off.
+2026-11-04 17:37:27.456 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is off.
+2026-11-04 17:37:27.457 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2#2*20*5##`.
+2026-11-04 17:37:27.473 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:29.459 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0*20##` was successfully sent.
+2026-11-04 17:37:29.679 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:31.887 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:34.123 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:36.335 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:38.544 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:40.747 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:42.947 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:44.512 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Command session idle for 15.0s; closing socket to release gateway resource.
+2026-11-04 17:37:44.513 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Command session closed.
+2026-11-04 17:37:45.161 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:47.378 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:49.611 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:51.855 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:54.064 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:56.289 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:37:58.509 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:00.717 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:02.926 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:05.133 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:07.360 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:09.572 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:11.783 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:14.014 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:16.232 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:18.463 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:20.671 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:22.883 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:25.109 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:27.336 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:29.545 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:31.751 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:34.004 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:36.206 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:38.418 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:40.627 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:42.559 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Event session keepalive sent.
+2026-11-04 17:38:42.840 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:45.060 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:47.286 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:49.497 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:51.706 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:53.958 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:56.172 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:38:58.389 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:00.589 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:02.803 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:05.013 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:07.223 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:09.448 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:11.661 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:13.868 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:16.078 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:18.299 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:20.512 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:22.741 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:24.952 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:27.164 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:29.379 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:31.587 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:33.795 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:36.006 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:38.208 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:40.428 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:42.656 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:44.892 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:47.111 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:49.328 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:51.537 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:53.758 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:55.978 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:39:58.194 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:00.006 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**#1*03*04*11*2026##`
+2026-11-04 17:40:00.007 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway broadcasting internal date: 2026-11-04.
+2026-11-04 17:40:00.009 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**#0*17*40*00*##`
+2026-11-04 17:40:00.009 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway broadcasting internal time: 17:40:00.
+2026-11-04 17:40:00.414 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:02.630 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:04.852 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:07.070 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:09.294 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:11.505 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:12.561 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Event session keepalive sent.
+2026-11-04 17:40:13.716 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:15.933 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:18.150 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:20.376 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:22.596 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:24.821 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:27.036 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:40:29.254 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:41:42.194 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/config/config_entries/entry'. (Python-urllib/3.15)
+2026-11-04 17:41:42.436 WARNING (MainThread) [homeassistant.components.http.ban] Login attempt or request with invalid authentication from localhost (127.0.0.1). Requested URL: '/api/states'. (Python-urllib/3.15)
+2026-11-04 17:41:42.562 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Event session keepalive sent.
+2026-11-04 17:42:13.407 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**0##` to be sent to `None`
+2026-11-04 17:42:13.407 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**0##`
+2026-11-04 17:42:13.407 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**0##` was successfully queued.
+2026-11-04 17:42:13.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**0##` was successfully unqueued by worker 0.
+2026-11-04 17:42:13.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Opening command session.
+2026-11-04 17:42:13.418 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Negotiating command session.
+2026-11-04 17:42:13.427 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Received SHA challenge: `*98*2##`
+2026-11-04 17:42:13.427 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Accepting sha256 challenge, initiating handshake.
+2026-11-04 17:42:13.432 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Sending command session password.
+2026-11-04 17:42:13.434 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Session established successfully.
+2026-11-04 17:42:13.444 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**0*17*42*13*999##`
+2026-11-04 17:42:13.444 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's internal time is: 17:42:13.
+2026-11-04 17:42:13.444 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**0*17*42*13*999##`.
+2026-11-04 17:42:13.446 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**0##` was successfully sent.
+2026-11-04 17:42:14.918 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**1##` to be sent to `None`
+2026-11-04 17:42:14.918 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**1##`
+2026-11-04 17:42:14.919 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**1##` was successfully queued.
+2026-11-04 17:42:14.919 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**1##` was successfully unqueued by worker 0.
+2026-11-04 17:42:14.929 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**1*03*04*11*2026##`
+2026-11-04 17:42:14.930 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's internal date is: 2026-11-04.
+2026-11-04 17:42:14.930 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**1*03*04*11*2026##`.
+2026-11-04 17:42:14.932 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**1##` was successfully sent.
+2026-11-04 17:42:16.428 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**10##` to be sent to `None`
+2026-11-04 17:42:16.429 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**10##`
+2026-11-04 17:42:16.429 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**10##` was successfully queued.
+2026-11-04 17:42:16.429 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**10##` was successfully unqueued by worker 0.
+2026-11-04 17:42:16.438 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**10*192*0*2*92##`
+2026-11-04 17:42:16.438 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's IP address is: 192.0.2.92.
+2026-11-04 17:42:16.438 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**10*192*0*2*92##`.
+2026-11-04 17:42:16.441 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**10##` was successfully sent.
+2026-11-04 17:42:17.937 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**11##` to be sent to `None`
+2026-11-04 17:42:17.937 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**11##`
+2026-11-04 17:42:17.937 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**11##` was successfully queued.
+2026-11-04 17:42:17.937 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**11##` was successfully unqueued by worker 0.
+2026-11-04 17:42:17.946 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**11*255*255*255*0##`
+2026-11-04 17:42:17.946 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's netmask is: 255.255.255.0.
+2026-11-04 17:42:17.946 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**11*255*255*255*0##`.
+2026-11-04 17:42:17.949 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**11##` was successfully sent.
+2026-11-04 17:42:19.448 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**12##` to be sent to `None`
+2026-11-04 17:42:19.449 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**12##`
+2026-11-04 17:42:19.449 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**12##` was successfully queued.
+2026-11-04 17:42:19.449 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**12##` was successfully unqueued by worker 0.
+2026-11-04 17:42:19.455 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**12*0*3*80*0*17*4##`
+2026-11-04 17:42:19.455 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's MAC address is: 00:03:50:00:11:04.
+2026-11-04 17:42:19.455 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**12*0*3*80*0*17*4##`.
+2026-11-04 17:42:19.464 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**12##` was successfully sent.
+2026-11-04 17:42:20.957 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**15##` to be sent to `None`
+2026-11-04 17:42:20.957 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**15##`
+2026-11-04 17:42:20.957 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**15##` was successfully queued.
+2026-11-04 17:42:20.958 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**15##` was successfully unqueued by worker 0.
+2026-11-04 17:42:20.970 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**15*200##`
+2026-11-04 17:42:20.970 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201.
+2026-11-04 17:42:20.970 INFO (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] WHO=13 reports device type 200 (seen on multiple modern gateways); keeping model `F461` until WHO=1013 answers.
+2026-11-04 17:42:20.970 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Requesting WHO=1013 dimension 1 (OBJECT_MODEL) to settle the model.
+2026-11-04 17:42:20.971 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**15*200##`.
+2026-11-04 17:42:20.973 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**15##` was successfully sent.
+2026-11-04 17:42:21.025 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1013**1##` was successfully unqueued by worker 0.
+2026-11-04 17:42:21.034 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1013**1*134*15*5*0##`
+2026-11-04 17:42:21.034 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1013**1*134*15*5*0##`.
+2026-11-04 17:42:21.036 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1013**1##` was successfully sent.
+2026-11-04 17:42:22.469 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**16##` to be sent to `None`
+2026-11-04 17:42:22.469 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**16##`
+2026-11-04 17:42:22.469 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**16##` was successfully queued.
+2026-11-04 17:42:22.470 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**16##` was successfully unqueued by worker 0.
+2026-11-04 17:42:22.484 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**16*2*0*11##`
+2026-11-04 17:42:22.484 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's firmware version is: 2.0.11.
+2026-11-04 17:42:22.485 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**16*2*0*11##`.
+2026-11-04 17:42:22.487 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**16##` was successfully sent.
+2026-11-04 17:42:23.981 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**17##` to be sent to `None`
+2026-11-04 17:42:23.982 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**17##`
+2026-11-04 17:42:23.982 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**17##` was successfully queued.
+2026-11-04 17:42:23.983 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**17##` was successfully unqueued by worker 0.
+2026-11-04 17:42:24.105 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**17*4*2*0##`
+2026-11-04 17:42:24.105 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *#13**17*4*2*0##
+2026-11-04 17:42:24.105 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**17*4*2*0##`.
+2026-11-04 17:42:24.106 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**17##` was successfully sent.
+2026-11-04 17:42:25.494 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**19##` to be sent to `None`
+2026-11-04 17:42:25.494 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**19##`
+2026-11-04 17:42:25.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**19##` was successfully queued.
+2026-11-04 17:42:25.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**19##` was successfully unqueued by worker 0.
+2026-11-04 17:42:25.504 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**19*0*14*53*9##`
+2026-11-04 17:42:25.504 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's uptime is: 14:53:09.
+2026-11-04 17:42:25.505 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**19*0*14*53*9##`.
+2026-11-04 17:42:25.507 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**19##` was successfully sent.
+2026-11-04 17:42:27.005 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**22##` to be sent to `None`
+2026-11-04 17:42:27.005 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**22##`
+2026-11-04 17:42:27.005 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**22##` was successfully queued.
+2026-11-04 17:42:27.006 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**22##` was successfully unqueued by worker 0.
+2026-11-04 17:42:27.012 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**22*17*42*27*999*03*04*11*2026##`
+2026-11-04 17:42:27.012 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's internal datetime is: 2026-11-04 17:42:27.
+2026-11-04 17:42:27.012 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**22*17*42*27*999*03*04*11*2026##`.
+2026-11-04 17:42:27.014 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**22##` was successfully sent.
+2026-11-04 17:42:28.515 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**23##` to be sent to `None`
+2026-11-04 17:42:28.515 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**23##`
+2026-11-04 17:42:28.515 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**23##` was successfully queued.
+2026-11-04 17:42:28.516 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**23##` was successfully unqueued by worker 0.
+2026-11-04 17:42:28.521 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**23*5*10*35##`
+2026-11-04 17:42:28.521 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's kernel version is: 5.10.35.
+2026-11-04 17:42:28.521 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**23*5*10*35##`.
+2026-11-04 17:42:28.523 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**23##` was successfully sent.
+2026-11-04 17:42:30.019 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**24##` to be sent to `None`
+2026-11-04 17:42:30.019 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**24##`
+2026-11-04 17:42:30.019 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**24##` was successfully queued.
+2026-11-04 17:42:30.019 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**24##` was successfully unqueued by worker 0.
+2026-11-04 17:42:30.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**24*2*26*4##`
+2026-11-04 17:42:30.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's distribution version is: 2.26.4.
+2026-11-04 17:42:30.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**24*2*26*4##`.
+2026-11-04 17:42:30.031 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**24##` was successfully sent.
+2026-11-04 17:42:31.529 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#13**27##` to be sent to `None`
+2026-11-04 17:42:31.530 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#13**27##`
+2026-11-04 17:42:31.530 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**27##` was successfully queued.
+2026-11-04 17:42:31.530 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**27##` was successfully unqueued by worker 0.
+2026-11-04 17:42:31.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**27*70#52#54#49##`
+2026-11-04 17:42:31.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's model name is: F461.
+2026-11-04 17:42:31.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**27*70#52#54#49##`.
+2026-11-04 17:42:31.539 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**27##` was successfully sent.
+2026-11-04 17:42:33.036 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*06##` was successfully queued.
+2026-11-04 17:42:33.037 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*06##` was successfully unqueued by worker 0.
+2026-11-04 17:42:33.089 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*06##` was successfully sent.
+2026-11-04 17:42:33.122 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*1*06##`
+2026-11-04 17:42:33.122 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched on.
+2026-11-04 17:42:33.547 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*06##` was successfully queued.
+2026-11-04 17:42:33.548 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*06##` was successfully unqueued by worker 0.
+2026-11-04 17:42:33.593 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*06##` was successfully sent.
+2026-11-04 17:42:33.626 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*06##`
+2026-11-04 17:42:33.626 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched off.
+2026-11-04 17:42:34.061 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*07##` was successfully queued.
+2026-11-04 17:42:34.062 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*07##` was successfully unqueued by worker 0.
+2026-11-04 17:42:34.097 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*07##` was successfully sent.
+2026-11-04 17:42:34.139 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*1*07##`
+2026-11-04 17:42:34.140 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 07 is switched on.
+2026-11-04 17:42:34.574 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*07##` was successfully queued.
+2026-11-04 17:42:34.574 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*07##` was successfully unqueued by worker 0.
+2026-11-04 17:42:34.624 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*07##` was successfully sent.
+2026-11-04 17:42:34.665 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*07##`
+2026-11-04 17:42:34.665 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 07 is switched off.
+2026-11-04 17:42:35.086 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*09##` was successfully queued.
+2026-11-04 17:42:35.087 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*09##` was successfully unqueued by worker 0.
+2026-11-04 17:42:37.101 ERROR (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Could not send message `*1*1*09##`. Retrying (1)...
+2026-11-04 17:42:39.145 ERROR (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Could not send message `*1*1*09##`. No more retries.
+2026-11-04 17:42:47.409 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*09##` was successfully queued.
+2026-11-04 17:42:47.410 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*09##` was successfully unqueued by worker 0.
+2026-11-04 17:42:47.414 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*09#4#01##` was successfully queued.
+2026-11-04 17:42:49.418 ERROR (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Could not send message `*1*0*09##`. Retrying (1)...
+2026-11-04 17:42:51.432 ERROR (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Could not send message `*1*0*09##`. No more retries.
+2026-11-04 17:42:51.483 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*09#4#01##` was successfully unqueued by worker 0.
+2026-11-04 17:42:51.555 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1*09#4#01##` was successfully sent.
+2026-11-04 17:42:51.596 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*1*09#4#01##`
+2026-11-04 17:42:51.596 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched on.
+2026-11-04 17:42:52.010 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*09#4#01##` was successfully queued.
+2026-11-04 17:42:52.017 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*09#4#01##` was successfully unqueued by worker 0.
+2026-11-04 17:42:52.121 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*09#4#01##` was successfully sent.
+2026-11-04 17:42:52.163 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*09#4#01##`
+2026-11-04 17:42:52.163 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched off.
+2026-11-04 17:42:52.527 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*06##` to be sent to `None`
+2026-11-04 17:42:52.527 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#1*06##`
+2026-11-04 17:42:52.527 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*06##` was successfully queued.
+2026-11-04 17:42:52.527 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*06##` was successfully unqueued by worker 0.
+2026-11-04 17:42:52.610 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*06##`
+2026-11-04 17:42:52.610 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched off.
+2026-11-04 17:42:52.611 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*06##`.
+2026-11-04 17:42:52.614 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*06##` was successfully sent.
+2026-11-04 17:42:54.538 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*09#4#01##` to be sent to `None`
+2026-11-04 17:42:54.538 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#1*09#4#01##`
+2026-11-04 17:42:54.538 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*09#4#01##` was successfully queued.
+2026-11-04 17:42:54.539 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*09#4#01##` was successfully unqueued by worker 0.
+2026-11-04 17:42:54.661 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*09#4#01##`
+2026-11-04 17:42:54.661 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched off.
+2026-11-04 17:42:54.661 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*09#4#01##`.
+2026-11-04 17:42:54.664 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*09#4#01##` was successfully sent.
+2026-11-04 17:42:56.551 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*130*0##` was successfully queued.
+2026-11-04 17:42:56.552 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*130*0##` was successfully unqueued by worker 0.
+2026-11-04 17:42:56.657 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*130*0##` was successfully sent.
+2026-11-04 17:42:56.696 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*130*4##`
+2026-11-04 17:42:56.696 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 30%.
+2026-11-04 17:42:58.563 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*160*0##` was successfully queued.
+2026-11-04 17:42:58.563 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*160*0##` was successfully unqueued by worker 0.
+2026-11-04 17:42:58.633 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*160*0##` was successfully sent.
+2026-11-04 17:42:58.677 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*160*4##`
+2026-11-04 17:42:58.678 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 60%.
+2026-11-04 17:43:00.568 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*200*0##` was successfully queued.
+2026-11-04 17:43:00.568 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*200*0##` was successfully unqueued by worker 0.
+2026-11-04 17:43:00.649 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*200*0##` was successfully sent.
+2026-11-04 17:43:00.691 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*200*4##`
+2026-11-04 17:43:00.691 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:02.578 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0010##` to be sent to `None`
+2026-11-04 17:43:02.578 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#1*0010##`
+2026-11-04 17:43:02.579 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010##` was successfully queued.
+2026-11-04 17:43:02.579 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010##` was successfully unqueued by worker 0.
+2026-11-04 17:43:02.674 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*10*0010##`
+2026-11-04 17:43:02.675 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 10.
+2026-11-04 17:43:02.675 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:43:02.675 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*10*0010##`.
+2026-11-04 17:43:02.678 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010##` was successfully sent.
+2026-11-04 17:43:02.728 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:43:02.805 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*200*4##`
+2026-11-04 17:43:02.805 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:02.869 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:02.869 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:02.980 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*200*4##`
+2026-11-04 17:43:02.980 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:02.980 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*200*4##`.
+2026-11-04 17:43:02.987 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:43:03.044 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:03.044 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:04.588 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0010*1##` to be sent to `None`
+2026-11-04 17:43:04.588 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#1*0010*1##`
+2026-11-04 17:43:04.588 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:43:04.589 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:43:04.731 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*200*4##`
+2026-11-04 17:43:04.731 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:04.732 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*200*4##`.
+2026-11-04 17:43:04.738 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:43:04.795 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:04.795 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:06.600 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0010*4##` to be sent to `None`
+2026-11-04 17:43:06.600 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#1*0010*4##`
+2026-11-04 17:43:06.600 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*4##` was successfully queued.
+2026-11-04 17:43:06.600 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*4##` was successfully unqueued by worker 0.
+2026-11-04 17:43:06.715 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*4*200*2##`
+2026-11-04 17:43:06.715 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:06.715 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*4*200*2##`.
+2026-11-04 17:43:06.718 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*4##` was successfully sent.
+2026-11-04 17:43:06.780 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:06.780 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:08.610 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*1*30*0010##` to be sent to `None`
+2026-11-04 17:43:08.610 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*1*30*0010##`
+2026-11-04 17:43:08.611 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*30*0010##` was successfully queued.
+2026-11-04 17:43:08.611 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*30*0010##` was successfully unqueued by worker 0.
+2026-11-04 17:43:08.659 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*30*0010##` was successfully sent.
+2026-11-04 17:43:08.689 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*10*0010##`
+2026-11-04 17:43:08.689 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 10.
+2026-11-04 17:43:08.689 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:43:08.710 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:43:08.810 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*200*4##`
+2026-11-04 17:43:08.810 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:08.932 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:08.932 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:08.994 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*200*4##`
+2026-11-04 17:43:08.994 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 100%.
+2026-11-04 17:43:08.995 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*200*4##`.
+2026-11-04 17:43:09.001 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:43:09.062 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:09.062 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:10.614 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*1*31*0010##` to be sent to `None`
+2026-11-04 17:43:10.616 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*1*31*0010##`
+2026-11-04 17:43:10.616 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*31*0010##` was successfully queued.
+2026-11-04 17:43:10.617 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*31*0010##` was successfully unqueued by worker 0.
+2026-11-04 17:43:10.668 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*31*0010##` was successfully sent.
+2026-11-04 17:43:10.705 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*9*0010##`
+2026-11-04 17:43:10.705 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 9.
+2026-11-04 17:43:10.706 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:43:10.720 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:43:10.838 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*179*4##`
+2026-11-04 17:43:10.838 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 79%.
+2026-11-04 17:43:10.899 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:10.899 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:11.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*179*4##`
+2026-11-04 17:43:11.028 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 79%.
+2026-11-04 17:43:11.029 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*179*4##`.
+2026-11-04 17:43:11.031 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:43:11.091 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:11.091 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:12.564 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Event session keepalive sent.
+2026-11-04 17:43:12.626 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*1*30#2#255*0010##` to be sent to `None`
+2026-11-04 17:43:12.626 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*1*30#2#255*0010##`
+2026-11-04 17:43:12.626 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*30#2#255*0010##` was successfully queued.
+2026-11-04 17:43:12.627 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*30#2#255*0010##` was successfully unqueued by worker 0.
+2026-11-04 17:43:12.704 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*30#2#255*0010##` was successfully sent.
+2026-11-04 17:43:12.746 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*181*4##`
+2026-11-04 17:43:12.746 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 81%.
+2026-11-04 17:43:14.638 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*1*1#255*0010##` to be sent to `None`
+2026-11-04 17:43:14.638 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*1*1#255*0010##`
+2026-11-04 17:43:14.638 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1#255*0010##` was successfully queued.
+2026-11-04 17:43:14.638 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1#255*0010##` was successfully unqueued by worker 0.
+2026-11-04 17:43:14.720 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*1#255*0010##` was successfully sent.
+2026-11-04 17:43:14.754 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*4*181*2##`
+2026-11-04 17:43:14.754 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 81%.
+2026-11-04 17:43:16.645 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#1*0010*1##` to be sent to `None`
+2026-11-04 17:43:16.646 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#1*0010*1##`
+2026-11-04 17:43:16.646 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:43:16.646 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:43:16.778 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*181*4##`
+2026-11-04 17:43:16.778 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 81%.
+2026-11-04 17:43:16.779 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*181*4##`.
+2026-11-04 17:43:16.786 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:43:16.842 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:16.843 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:43:18.667 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*0010##` was successfully queued.
+2026-11-04 17:43:18.668 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*0010##` was successfully unqueued by worker 0.
+2026-11-04 17:43:18.721 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*1*0*0010##` was successfully sent.
+2026-11-04 17:43:18.770 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*0010##`
+2026-11-04 17:43:18.770 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched off.
+2026-11-04 17:43:19.180 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*163*0##` was successfully queued.
+2026-11-04 17:43:19.180 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*163*0##` was successfully unqueued by worker 0.
+2026-11-04 17:43:19.182 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*1*05##` was successfully queued.
+2026-11-04 17:43:19.273 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*#1*163*0##` was successfully sent.
+2026-11-04 17:43:19.314 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:43:19.315 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:43:19.324 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*1*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:19.378 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#0*05##`
+2026-11-04 17:43:19.378 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#0*05##
+2026-11-04 17:43:19.378 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring stop echo for 05.
+2026-11-04 17:43:19.378 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#0*05##`
+2026-11-04 17:43:19.418 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:43:19.418 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:43:19.418 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring stop echo for 05.
+2026-11-04 17:43:19.458 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#1*05##`
+2026-11-04 17:43:19.458 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#1*05##`
+2026-11-04 17:43:19.459 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*1*05##` was successfully sent.
+2026-11-04 17:43:19.499 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1*05##`
+2026-11-04 17:43:19.499 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 is opening.
+2026-11-04 17:43:19.499 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Motor start echo for 05; clock anchored.
+2026-11-04 17:43:27.192 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#2*05*10##` to be sent to `None`
+2026-11-04 17:43:27.192 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#2*05*10##`
+2026-11-04 17:43:27.192 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*10##` was successfully queued.
+2026-11-04 17:43:27.193 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*10##` was successfully unqueued by worker 0.
+2026-11-04 17:43:28.290 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*10##` was successfully sent.
+2026-11-04 17:43:29.202 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#2*05*11##` to be sent to `None`
+2026-11-04 17:43:29.203 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#2*05*11##`
+2026-11-04 17:43:29.203 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*11##` was successfully queued.
+2026-11-04 17:43:29.204 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*11##` was successfully unqueued by worker 0.
+2026-11-04 17:43:29.208 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#2*05*11## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:43:31.217 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully queued.
+2026-11-04 17:43:31.217 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:31.256 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#0*05##`
+2026-11-04 17:43:31.256 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#0*05##
+2026-11-04 17:43:31.256 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring stop echo for 05.
+2026-11-04 17:43:31.256 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#0*05##`
+2026-11-04 17:43:31.273 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:43:31.273 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:43:31.273 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring stop echo for 05.
+2026-11-04 17:43:31.320 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#2*05##`
+2026-11-04 17:43:31.320 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#2*05##`
+2026-11-04 17:43:31.320 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully sent.
+2026-11-04 17:43:31.361 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*2*05##`
+2026-11-04 17:43:31.361 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 is closing.
+2026-11-04 17:43:31.361 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Motor start echo for 05; clock anchored.
+2026-11-04 17:43:34.229 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*0*05##` was successfully queued.
+2026-11-04 17:43:34.230 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*0*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:34.282 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*0*05##` was successfully sent.
+2026-11-04 17:43:34.283 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#0*05##`
+2026-11-04 17:43:34.283 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#0*05##
+2026-11-04 17:43:34.283 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#0*05##`
+2026-11-04 17:43:34.313 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:43:34.314 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:43:34.314 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Stop status echo for 05; re-anchored to 51% (elapsed 2.95 s).
+2026-11-04 17:43:36.240 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*11#1#001*05##` to be sent to `None`
+2026-11-04 17:43:36.240 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*11#1#001*05##`
+2026-11-04 17:43:36.240 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*11#1#001*05##` was successfully queued.
+2026-11-04 17:43:36.241 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*11#1#001*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:36.312 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#11#1#001#1*05##`
+2026-11-04 17:43:36.312 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#11#1#001#1*05##`
+2026-11-04 17:43:36.313 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*11#1#001*05##` was successfully sent.
+2026-11-04 17:43:42.249 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*10#001#1*05##` to be sent to `None`
+2026-11-04 17:43:42.250 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*10#001#1*05##`
+2026-11-04 17:43:42.250 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*10#001#1*05##` was successfully queued.
+2026-11-04 17:43:42.250 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*10#001#1*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:42.336 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#10#001#1*05##`
+2026-11-04 17:43:42.336 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#10#001#1*05##
+2026-11-04 17:43:42.336 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#10#001#1*05##`
+2026-11-04 17:43:42.336 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*10#001#1*05##` was successfully sent.
+2026-11-04 17:43:46.266 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*12#1#001*05##` to be sent to `None`
+2026-11-04 17:43:46.267 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*12#1#001*05##`
+2026-11-04 17:43:46.267 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*12#1#001*05##` was successfully queued.
+2026-11-04 17:43:46.267 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*12#1#001*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:46.344 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#12#1#001#1*05##`
+2026-11-04 17:43:46.344 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#12#1#001#1*05##`
+2026-11-04 17:43:46.344 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*12#1#001*05##` was successfully sent.
+2026-11-04 17:43:52.285 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*10#001#1*05##` to be sent to `None`
+2026-11-04 17:43:52.285 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*10#001#1*05##`
+2026-11-04 17:43:52.285 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*10#001#1*05##` was successfully queued.
+2026-11-04 17:43:52.285 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*10#001#1*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:52.369 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*10#001#1*05##` was successfully sent.
+2026-11-04 17:43:52.370 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#10#001#1*05##`
+2026-11-04 17:43:52.370 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#10#001#1*05##
+2026-11-04 17:43:52.370 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#10#001#1*05##`
+2026-11-04 17:43:56.302 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*13*05##` to be sent to `None`
+2026-11-04 17:43:56.302 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*13*05##`
+2026-11-04 17:43:56.302 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*13*05##` was successfully queued.
+2026-11-04 17:43:56.303 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*13*05##` was successfully unqueued by worker 0.
+2026-11-04 17:43:56.399 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*13*05##` was successfully sent.
+2026-11-04 17:43:56.400 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#13#001#1*05##`
+2026-11-04 17:43:56.400 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#13#001#1*05##`
+2026-11-04 17:44:01.323 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*14*05##` to be sent to `None`
+2026-11-04 17:44:01.323 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*14*05##`
+2026-11-04 17:44:01.324 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*14*05##` was successfully queued.
+2026-11-04 17:44:01.324 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*14*05##` was successfully unqueued by worker 0.
+2026-11-04 17:44:01.409 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#14#001#1*05##`
+2026-11-04 17:44:01.409 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#14#001#1*05##`
+2026-11-04 17:44:01.409 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*14*05##` was successfully sent.
+2026-11-04 17:44:06.345 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*2*2*05##` to be sent to `None`
+2026-11-04 17:44:06.345 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*2*2*05##`
+2026-11-04 17:44:06.345 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully queued.
+2026-11-04 17:44:06.345 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully unqueued by worker 0.
+2026-11-04 17:44:06.383 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#0*05##`
+2026-11-04 17:44:06.384 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#0*05##
+2026-11-04 17:44:06.384 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#0*05##`
+2026-11-04 17:44:06.416 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:44:06.417 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:44:06.471 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#2*05##`
+2026-11-04 17:44:06.471 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#2*05##`
+2026-11-04 17:44:06.472 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully sent.
+2026-11-04 17:44:06.497 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*2*05##`
+2026-11-04 17:44:06.497 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 is closing.
+2026-11-04 17:44:16.361 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#2*05*10##` to be sent to `None`
+2026-11-04 17:44:16.361 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#2*05*10##`
+2026-11-04 17:44:16.362 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*10##` was successfully queued.
+2026-11-04 17:44:16.362 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*10##` was successfully unqueued by worker 0.
+2026-11-04 17:44:17.458 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05*10##` was successfully sent.
+2026-11-04 17:44:18.372 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#2*05##` to be sent to `None`
+2026-11-04 17:44:18.372 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#2*05##`
+2026-11-04 17:44:18.372 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05##` was successfully queued.
+2026-11-04 17:44:18.372 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05##` was successfully unqueued by worker 0.
+2026-11-04 17:44:18.450 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*2*2*05##`.
+2026-11-04 17:44:18.450 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*2*05##`
+2026-11-04 17:44:18.451 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 is closing.
+2026-11-04 17:44:18.453 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*05##` was successfully sent.
+2026-11-04 17:44:20.381 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully queued.
+2026-11-04 17:44:20.382 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully unqueued by worker 0.
+2026-11-04 17:44:20.440 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#0*05##`
+2026-11-04 17:44:20.440 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] *2*1000#0*05##
+2026-11-04 17:44:20.440 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring stop echo for 05.
+2026-11-04 17:44:20.440 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#0*05##`
+2026-11-04 17:44:20.465 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:44:20.465 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:44:20.465 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring stop echo for 05.
+2026-11-04 17:44:20.513 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*2*2*05##` was successfully sent.
+2026-11-04 17:44:20.513 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*1000#2*05##`
+2026-11-04 17:44:20.513 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Ignoring translation message `*2*1000#2*05##`
+2026-11-04 17:44:20.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*2*05##`
+2026-11-04 17:44:20.537 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 is closing.
+2026-11-04 17:44:20.537 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Motor start echo for 05; clock anchored.
+2026-11-04 17:44:29.034 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*0##` to be sent to `None`
+2026-11-04 17:44:29.034 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*0##`
+2026-11-04 17:44:29.034 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*0##` was successfully queued.
+2026-11-04 17:44:29.035 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*0##` was successfully unqueued by worker 0.
+2026-11-04 17:44:29.139 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:44:29.139 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:29.140 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:29.140 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*0*0240##`.
+2026-11-04 17:44:29.149 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*0##` was successfully sent.
+2026-11-04 17:44:30.544 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*11##` to be sent to `None`
+2026-11-04 17:44:30.545 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*11##`
+2026-11-04 17:44:30.545 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*11##` was successfully queued.
+2026-11-04 17:44:30.545 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*11##` was successfully unqueued by worker 0.
+2026-11-04 17:44:32.054 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*12##` to be sent to `None`
+2026-11-04 17:44:32.054 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*12##`
+2026-11-04 17:44:32.055 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*12##` was successfully queued.
+2026-11-04 17:44:32.626 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#4*2*11## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:44:32.678 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*12##` was successfully unqueued by worker 0.
+2026-11-04 17:44:32.787 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0240*3##`
+2026-11-04 17:44:32.787 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:44:32.787 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:44:32.788 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*12*0240*3##`.
+2026-11-04 17:44:32.789 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*4*1*2##`.
+2026-11-04 17:44:32.789 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*12##` was successfully sent.
+2026-11-04 17:44:32.789 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:32.789 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:32.790 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:44:32.790 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:32.790 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:33.567 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*13##` to be sent to `None`
+2026-11-04 17:44:33.567 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*13##`
+2026-11-04 17:44:33.567 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*13##` was successfully queued.
+2026-11-04 17:44:33.568 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*13##` was successfully unqueued by worker 0.
+2026-11-04 17:44:33.682 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*13*00##`
+2026-11-04 17:44:33.683 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local offset is set to 0°C.
+2026-11-04 17:44:33.683 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local offset is set to 0°C.
+2026-11-04 17:44:33.684 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*13*00##`.
+2026-11-04 17:44:33.687 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*13##` was successfully sent.
+2026-11-04 17:44:35.079 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*14##` to be sent to `None`
+2026-11-04 17:44:35.079 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*14##`
+2026-11-04 17:44:35.079 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*14##` was successfully queued.
+2026-11-04 17:44:35.079 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*14##` was successfully unqueued by worker 0.
+2026-11-04 17:44:35.186 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*14*0240*3##`
+2026-11-04 17:44:35.186 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's target temperature is set to 24.0°C.
+2026-11-04 17:44:35.187 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's target temperature is set to 24.0°C.
+2026-11-04 17:44:35.187 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*14*0240*3##`.
+2026-11-04 17:44:35.189 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*14##` was successfully sent.
+2026-11-04 17:44:36.589 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*19##` to be sent to `None`
+2026-11-04 17:44:36.589 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*19##`
+2026-11-04 17:44:36.590 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*19##` was successfully queued.
+2026-11-04 17:44:36.590 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*19##` was successfully unqueued by worker 0.
+2026-11-04 17:44:36.722 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*19*5*0##`
+2026-11-04 17:44:36.722 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's cooling fan is off; heating valve is off.
+2026-11-04 17:44:36.722 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's cooling fan is off; heating valve is off.
+2026-11-04 17:44:36.723 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*19*5*0##`.
+2026-11-04 17:44:36.725 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*19##` was successfully sent.
+2026-11-04 17:44:38.098 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*20##` to be sent to `None`
+2026-11-04 17:44:38.098 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*20##`
+2026-11-04 17:44:38.098 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*20##` was successfully queued.
+2026-11-04 17:44:38.098 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*20##` was successfully unqueued by worker 0.
+2026-11-04 17:44:38.185 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#1*20*0##`
+2026-11-04 17:44:38.185 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is off.
+2026-11-04 17:44:38.185 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is off.
+2026-11-04 17:44:38.186 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2#1*20*0##`.
+2026-11-04 17:44:38.187 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*20##` was successfully sent.
+2026-11-04 17:44:38.235 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#2*20*5##`
+2026-11-04 17:44:38.235 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is off.
+2026-11-04 17:44:38.236 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is off.
+2026-11-04 17:44:38.298 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#2*20*5##`
+2026-11-04 17:44:38.298 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is off.
+2026-11-04 17:44:38.298 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is off.
+2026-11-04 17:44:39.608 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2*60##` to be sent to `None`
+2026-11-04 17:44:39.608 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2*60##`
+2026-11-04 17:44:39.608 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*60##` was successfully queued.
+2026-11-04 17:44:39.609 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*60##` was successfully unqueued by worker 0.
+2026-11-04 17:44:39.754 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*60*42##`
+2026-11-04 17:44:39.755 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a humidity of 42.0%.
+2026-11-04 17:44:39.755 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a humidity of 42.0%.
+2026-11-04 17:44:39.755 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*60*42##`.
+2026-11-04 17:44:39.761 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*60##` was successfully sent.
+2026-11-04 17:44:41.116 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2##` to be sent to `None`
+2026-11-04 17:44:41.116 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2##`
+2026-11-04 17:44:41.116 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2##` was successfully queued.
+2026-11-04 17:44:41.117 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2##` was successfully unqueued by worker 0.
+2026-11-04 17:44:41.701 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:44:41.701 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:41.701 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:41.702 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*0*0240##`.
+2026-11-04 17:44:42.005 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0240*3##`
+2026-11-04 17:44:42.006 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:44:42.006 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:44:42.007 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*12*0240*3##`.
+2026-11-04 17:44:42.011 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*4*1*2##`.
+2026-11-04 17:44:42.012 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:44:42.012 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:42.012 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:42.309 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*14*0240*3##`
+2026-11-04 17:44:42.309 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's target temperature is set to 24.0°C.
+2026-11-04 17:44:42.309 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's target temperature is set to 24.0°C.
+2026-11-04 17:44:42.310 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*14*0240*3##`.
+2026-11-04 17:44:42.410 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*13*00##`
+2026-11-04 17:44:42.410 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local offset is set to 0°C.
+2026-11-04 17:44:42.410 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local offset is set to 0°C.
+2026-11-04 17:44:42.410 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*13*00##`.
+2026-11-04 17:44:42.416 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2##` was successfully sent.
+2026-11-04 17:44:42.566 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Event session keepalive sent.
+2026-11-04 17:44:43.126 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*#2##` to be sent to `None`
+2026-11-04 17:44:43.126 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*#2##`
+2026-11-04 17:44:43.127 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#2##` was successfully queued.
+2026-11-04 17:44:43.127 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#2##` was successfully unqueued by worker 0.
+2026-11-04 17:44:45.132 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*#0##` to be sent to `None`
+2026-11-04 17:44:45.132 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*#0##`
+2026-11-04 17:44:45.132 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0##` was successfully queued.
+2026-11-04 17:44:45.217 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#4*#2## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:44:45.267 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0##` was successfully unqueued by worker 0.
+2026-11-04 17:44:47.142 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*2#1*20##` to be sent to `None`
+2026-11-04 17:44:47.142 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*2#1*20##`
+2026-11-04 17:44:47.142 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2#1*20##` was successfully queued.
+2026-11-04 17:44:47.338 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#4*#0## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:44:47.390 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2#1*20##` was successfully unqueued by worker 0.
+2026-11-04 17:44:47.512 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#1*20*0##`
+2026-11-04 17:44:47.513 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is off.
+2026-11-04 17:44:47.513 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is off.
+2026-11-04 17:44:47.514 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2#1*20*0##`.
+2026-11-04 17:44:47.518 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2#1*20##` was successfully sent.
+2026-11-04 17:44:49.154 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#4*#0*19##` to be sent to `None`
+2026-11-04 17:44:49.154 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#4*#0*19##`
+2026-11-04 17:44:49.154 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0*19##` was successfully queued.
+2026-11-04 17:44:49.155 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*#0*19##` was successfully unqueued by worker 0.
+2026-11-04 17:44:49.162 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#4*#0*19## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:44:51.161 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*3##` was successfully queued.
+2026-11-04 17:44:51.161 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*3##` was successfully unqueued by worker 0.
+2026-11-04 17:44:51.247 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*3##` was successfully sent.
+2026-11-04 17:44:51.282 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0245*3##`
+2026-11-04 17:44:51.282 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:51.282 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:51.292 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:44:51.292 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:51.293 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays heat)
+2026-11-04 17:44:51.339 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:44:51.339 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:51.339 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:51.424 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:44:51.424 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:44:51.675 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*4*303*2##` was successfully queued.
+2026-11-04 17:44:51.676 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*4*303*2##` was successfully unqueued by worker 0.
+2026-11-04 17:44:51.750 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*4*303*2##` was successfully sent.
+2026-11-04 17:44:51.777 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*303*2##`
+2026-11-04 17:44:51.777 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's mode is set to 'off'.
+2026-11-04 17:44:51.778 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's mode is set to 'off'.
+2026-11-04 17:44:51.826 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0245*3##`
+2026-11-04 17:44:51.827 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:51.827 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:51.829 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*303*2##`
+2026-11-04 17:44:51.829 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's mode is set to 'off'.
+2026-11-04 17:44:51.830 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's mode is set to 'off'.
+2026-11-04 17:44:51.881 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:44:51.882 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:51.882 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:55.684 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*2##` was successfully queued.
+2026-11-04 17:44:55.685 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*2##` was successfully unqueued by worker 0.
+2026-11-04 17:44:55.751 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*2##` was successfully sent.
+2026-11-04 17:44:55.794 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*0*2##`
+2026-11-04 17:44:55.794 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is conditioning.
+2026-11-04 17:44:55.795 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-04 17:44:55.834 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0245*3##`
+2026-11-04 17:44:55.834 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:55.834 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:55.843 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*0*2##`
+2026-11-04 17:44:55.844 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-04 17:44:55.844 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is conditioning. (season only, zone stays cool)
+2026-11-04 17:44:55.895 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*11##` was successfully queued.
+2026-11-04 17:44:55.895 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*11##` was successfully unqueued by worker 0.
+2026-11-04 17:44:55.903 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:44:55.903 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:55.903 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:56.002 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*11*0##`
+2026-11-04 17:44:56.003 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is on at 'Auto' speed.
+2026-11-04 17:44:56.003 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is on at 'Auto' speed.
+2026-11-04 17:44:56.121 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*11*0##`
+2026-11-04 17:44:56.122 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is on at 'Auto' speed.
+2026-11-04 17:44:56.122 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's fan is on at 'Auto' speed.
+2026-11-04 17:44:56.122 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#4*2*11*0##`.
+2026-11-04 17:44:56.124 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*11##` was successfully sent.
+2026-11-04 17:44:59.699 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*1##` was successfully queued.
+2026-11-04 17:44:59.699 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*1##` was successfully unqueued by worker 0.
+2026-11-04 17:44:59.766 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*1##` was successfully sent.
+2026-11-04 17:44:59.792 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:44:59.792 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays cool)
+2026-11-04 17:44:59.793 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays cool)
+2026-11-04 17:44:59.857 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0245*3##`
+2026-11-04 17:44:59.857 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:59.857 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.5°C.
+2026-11-04 17:44:59.862 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:44:59.863 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays cool)
+2026-11-04 17:44:59.863 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays cool)
+2026-11-04 17:44:59.913 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:44:59.913 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:44:59.913 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:03.709 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Thermo ofice is a standalone zone without a central unit: AUTO is written as a setpoint
+2026-11-04 17:45:03.710 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*3##` was successfully queued.
+2026-11-04 17:45:03.710 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*3##` was successfully unqueued by worker 0.
+2026-11-04 17:45:03.774 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*3##` was successfully sent.
+2026-11-04 17:45:03.800 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:45:03.801 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:03.801 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:04.376 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#1*#20*1##`
+2026-11-04 17:45:04.377 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#4*2#1*#20*1##`
+2026-11-04 17:45:04.416 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2#1*20*1##`
+2026-11-04 17:45:04.417 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is on.
+2026-11-04 17:45:04.417 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's actuator 1 is on.
+2026-11-04 17:45:15.746 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*1##` was successfully queued.
+2026-11-04 17:45:15.747 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*1##` was successfully unqueued by worker 0.
+2026-11-04 17:45:15.830 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0245*1##` was successfully sent.
+2026-11-04 17:45:15.857 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:45:15.857 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:15.857 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:19.756 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0240*3##` was successfully queued.
+2026-11-04 17:45:19.757 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0240*3##` was successfully unqueued by worker 0.
+2026-11-04 17:45:19.838 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#4*2*#14*0240*3##` was successfully sent.
+2026-11-04 17:45:19.880 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*12*0240*3##`
+2026-11-04 17:45:19.881 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:45:19.881 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's local target temperature is set to 24.0°C.
+2026-11-04 17:45:19.886 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*4*1*2##`
+2026-11-04 17:45:19.886 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays cool)
+2026-11-04 17:45:19.887 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's season is heating. (season only, zone stays cool)
+2026-11-04 17:45:19.937 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#4*2*0*0240##`
+2026-11-04 17:45:19.937 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:19.937 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-04 17:45:20.274 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*#17##` to be sent to `None`
+2026-11-04 17:45:20.274 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*#17##`
+2026-11-04 17:45:20.274 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#17##` was successfully queued.
+2026-11-04 17:45:20.274 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#17##` was successfully unqueued by worker 0.
+2026-11-04 17:45:20.288 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#17## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:22.284 DEBUG (MainThread) [custom_components.myhome.services] Handling message `*14*1*0##` to be sent to `None`
+2026-11-04 17:45:22.284 DEBUG (MainThread) [custom_components.myhome.services] [F461 gateway - 192.0.2.92] Sending valid OpenWebNet Message: `*14*1*0##`
+2026-11-04 17:45:22.285 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*14*1*0##` was successfully queued.
+2026-11-04 17:45:22.285 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*14*1*0##` was successfully unqueued by worker 0.
+2026-11-04 17:45:22.375 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*14*1*0##`
+2026-11-04 17:45:22.375 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*14*1*0##`
+2026-11-04 17:45:22.375 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*14*1*0##` was successfully sent.
+2026-11-04 17:45:22.401 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*14*1*0##`
+2026-11-04 17:45:22.402 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*14*1*0##`
+2026-11-04 17:45:24.296 INFO (MainThread) [custom_components.myhome.services] Executing diagnostic bus sweep on gateway 00:03:50:00:11:04 (force=False)
+2026-11-04 17:45:24.296 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**0##` was successfully queued.
+2026-11-04 17:45:24.297 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**0##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.302 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**0*17*45*24*999##`
+2026-11-04 17:45:24.302 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's internal time is: 17:45:24.
+2026-11-04 17:45:24.303 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**0*17*45*24*999##`.
+2026-11-04 17:45:24.305 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**0##` was successfully sent.
+2026-11-04 17:45:24.347 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**15##` was successfully queued.
+2026-11-04 17:45:24.356 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**15##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.363 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**15*200##`
+2026-11-04 17:45:24.363 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway device type is: F454 / MyHomeServer1 / MH202 / F461 / H4890 / F450 / F459 / F460 / MH201.
+2026-11-04 17:45:24.364 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**15*200##`.
+2026-11-04 17:45:24.364 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**15##` was successfully sent.
+2026-11-04 17:45:24.400 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**16##` was successfully queued.
+2026-11-04 17:45:24.415 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**16##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.425 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**16*2*0*11##`
+2026-11-04 17:45:24.425 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's firmware version is: 2.0.11.
+2026-11-04 17:45:24.425 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**16*2*0*11##`.
+2026-11-04 17:45:24.428 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**16##` was successfully sent.
+2026-11-04 17:45:24.451 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**23##` was successfully queued.
+2026-11-04 17:45:24.484 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**23##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**23*5*10*35##`
+2026-11-04 17:45:24.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's kernel version is: 5.10.35.
+2026-11-04 17:45:24.494 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**23*5*10*35##`.
+2026-11-04 17:45:24.498 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**23##` was successfully sent.
+2026-11-04 17:45:24.502 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**24##` was successfully queued.
+2026-11-04 17:45:24.549 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**24##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.553 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1013*0*1##` was successfully queued.
+2026-11-04 17:45:24.559 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#13**24*2*26*4##`
+2026-11-04 17:45:24.559 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway's distribution version is: 2.26.4.
+2026-11-04 17:45:24.559 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#13**24*2*26*4##`.
+2026-11-04 17:45:24.562 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#13**24##` was successfully sent.
+2026-11-04 17:45:24.605 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0##` was successfully queued.
+2026-11-04 17:45:24.612 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1013*0*1##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.621 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1013**1*134*15*5*0##`
+2026-11-04 17:45:24.622 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1013**1*134*15*5*0##`.
+2026-11-04 17:45:24.626 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1013*0*1##` was successfully sent.
+2026-11-04 17:45:24.677 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0##` was successfully unqueued by worker 0.
+2026-11-04 17:45:24.817 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:45:24.817 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:45:24.863 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*06##`
+2026-11-04 17:45:24.863 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched off.
+2026-11-04 17:45:24.864 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*06##`.
+2026-11-04 17:45:24.903 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*07##`
+2026-11-04 17:45:24.903 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 07 is switched off.
+2026-11-04 17:45:24.904 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*07##`.
+2026-11-04 17:45:24.954 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*8*0010##`
+2026-11-04 17:45:24.954 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 8.
+2026-11-04 17:45:24.955 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:45:24.956 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*8*0010##`.
+2026-11-04 17:45:25.047 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*09#4#01##`
+2026-11-04 17:45:25.048 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched off.
+2026-11-04 17:45:25.048 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*1*0*09#4#01##`.
+2026-11-04 17:45:26.046 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0##` was successfully sent.
+2026-11-04 17:45:26.097 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:45:26.161 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:45:26.161 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:45:26.280 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:26.280 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:26.344 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:45:26.344 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:45:26.345 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*163*4##`.
+2026-11-04 17:45:26.347 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:45:26.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:26.408 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:27.158 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*0##` was successfully queued.
+2026-11-04 17:45:27.159 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*0##` was successfully unqueued by worker 0.
+2026-11-04 17:45:27.303 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*06##`
+2026-11-04 17:45:27.303 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 06 is switched off.
+2026-11-04 17:45:27.334 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*2*0*05##`.
+2026-11-04 17:45:27.344 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*2*0*05##`
+2026-11-04 17:45:27.345 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Cover 05 stopped.
+2026-11-04 17:45:27.384 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*07##`
+2026-11-04 17:45:27.384 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 07 is switched off.
+2026-11-04 17:45:27.431 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*8*0010##`
+2026-11-04 17:45:27.431 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at brightness level 8.
+2026-11-04 17:45:27.432 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully queued.
+2026-11-04 17:45:27.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:45:27.535 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:45:27.600 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:27.600 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:27.649 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*1*0*09#4#01##`
+2026-11-04 17:45:27.650 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 09 on interface 01 is switched off.
+2026-11-04 17:45:28.647 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#2*0##` was successfully sent.
+2026-11-04 17:45:28.700 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully unqueued by worker 0.
+2026-11-04 17:45:28.815 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1*0010*1*163*4##`
+2026-11-04 17:45:28.816 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Light 0010 is switched on at 63%.
+2026-11-04 17:45:28.816 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Collected command response `*#1*0010*1*163*4##`.
+2026-11-04 17:45:28.828 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#1*0010*1##` was successfully sent.
+2026-11-04 17:45:28.881 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message received: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:28.881 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Unsupported message type: `*#1001*0010*11*111110111111111101100111##`
+2026-11-04 17:45:29.632 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*51##` was successfully queued.
+2026-11-04 17:45:29.632 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:29.683 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*1200##` was successfully queued.
+2026-11-04 17:45:29.734 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*52*51##` was successfully queued.
+2026-11-04 17:45:29.785 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*52*1200##` was successfully queued.
+2026-11-04 17:45:29.835 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*53*51##` was successfully queued.
+2026-11-04 17:45:29.886 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*53*1200##` was successfully queued.
+2026-11-04 17:45:29.938 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*54*51##` was successfully queued.
+2026-11-04 17:45:29.989 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*54*1200##` was successfully queued.
+2026-11-04 17:45:30.040 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*55*51##` was successfully queued.
+2026-11-04 17:45:30.092 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*55*1200##` was successfully queued.
+2026-11-04 17:45:30.143 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*56*51##` was successfully queued.
+2026-11-04 17:45:30.195 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*56*1200##` was successfully queued.
+2026-11-04 17:45:30.246 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*57*51##` was successfully queued.
+2026-11-04 17:45:30.297 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*57*1200##` was successfully queued.
+2026-11-04 17:45:30.349 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*58*51##` was successfully queued.
+2026-11-04 17:45:30.400 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*58*1200##` was successfully queued.
+2026-11-04 17:45:30.452 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*59*51##` was successfully queued.
+2026-11-04 17:45:30.453 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*51##` was successfully sent.
+2026-11-04 17:45:30.503 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*59*1200##` was successfully queued.
+2026-11-04 17:45:30.504 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*51*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:30.521 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*51*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:30.556 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*71#0*51##` was successfully queued.
+2026-11-04 17:45:30.572 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*52*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:30.607 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*71#0*1200##` was successfully queued.
+2026-11-04 17:45:30.658 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*72#0*51##` was successfully queued.
+2026-11-04 17:45:30.709 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*72#0*1200##` was successfully queued.
+2026-11-04 17:45:30.761 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*73#0*51##` was successfully queued.
+2026-11-04 17:45:30.812 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*73#0*1200##` was successfully queued.
+2026-11-04 17:45:30.863 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*74#0*51##` was successfully queued.
+2026-11-04 17:45:30.915 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*74#0*1200##` was successfully queued.
+2026-11-04 17:45:30.967 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*75#0*51##` was successfully queued.
+2026-11-04 17:45:31.019 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*75#0*1200##` was successfully queued.
+2026-11-04 17:45:31.071 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*76#0*51##` was successfully queued.
+2026-11-04 17:45:31.122 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*76#0*1200##` was successfully queued.
+2026-11-04 17:45:31.173 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*77#0*51##` was successfully queued.
+2026-11-04 17:45:31.224 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*77#0*1200##` was successfully queued.
+2026-11-04 17:45:31.275 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*78#0*51##` was successfully queued.
+2026-11-04 17:45:31.327 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*78#0*1200##` was successfully queued.
+2026-11-04 17:45:31.377 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*79#0*51##` was successfully queued.
+2026-11-04 17:45:31.428 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*79#0*1200##` was successfully queued.
+2026-11-04 17:45:31.456 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*52*51##` was successfully sent.
+2026-11-04 17:45:31.507 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*52*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:31.529 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*52*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:31.580 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*53*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:32.459 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*53*51##` was successfully sent.
+2026-11-04 17:45:32.511 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*53*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:32.523 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*53*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:32.575 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*54*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:33.464 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*54*51##` was successfully sent.
+2026-11-04 17:45:33.515 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*54*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:33.524 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*54*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:33.575 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*55*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:34.469 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*55*51##` was successfully sent.
+2026-11-04 17:45:34.521 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*55*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:34.527 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*55*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:34.579 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*56*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:35.473 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*56*51##` was successfully sent.
+2026-11-04 17:45:35.523 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*56*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:35.529 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*56*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:35.581 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*57*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:36.477 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*57*51##` was successfully sent.
+2026-11-04 17:45:36.529 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*57*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:36.536 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*57*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:36.587 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*58*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:37.482 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*58*51##` was successfully sent.
+2026-11-04 17:45:37.534 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*58*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:37.541 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*58*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:37.592 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*59*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:38.486 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*59*51##` was successfully sent.
+2026-11-04 17:45:38.537 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*59*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:38.543 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*59*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:38.594 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*71#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:39.490 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*71#0*51##` was successfully sent.
+2026-11-04 17:45:39.543 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*71#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:39.549 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*71#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:39.600 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*72#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:40.498 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*72#0*51##` was successfully sent.
+2026-11-04 17:45:40.548 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*72#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:40.555 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*72#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:40.605 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*73#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:41.499 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*73#0*51##` was successfully sent.
+2026-11-04 17:45:41.550 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*73#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:41.557 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*73#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:41.607 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*74#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:42.503 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*74#0*51##` was successfully sent.
+2026-11-04 17:45:42.554 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*74#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:42.561 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*74#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:42.613 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*75#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:43.507 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*75#0*51##` was successfully sent.
+2026-11-04 17:45:43.558 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*75#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:43.565 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*75#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:43.617 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*76#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:44.512 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*76#0*51##` was successfully sent.
+2026-11-04 17:45:44.563 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*76#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:44.569 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*76#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:44.620 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*77#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:45.557 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*77#0*51##` was successfully sent.
+2026-11-04 17:45:45.609 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*77#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:45.618 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*77#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:45.669 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*78#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:46.521 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*78#0*51##` was successfully sent.
+2026-11-04 17:45:46.572 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*78#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:46.582 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*78#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-04 17:45:46.633 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*79#0*51##` was successfully unqueued by worker 0.
+2026-11-04 17:45:47.525 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*79#0*51##` was successfully sent.
+2026-11-04 17:45:47.578 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Message `*#18*79#0*1200##` was successfully unqueued by worker 0.
+2026-11-04 17:45:47.584 DEBUG (MainThread) [custom_components.myhome] [F461 gateway - 192.0.2.92] Gateway rejected status request *#18*79#0*1200## (NACK, 0 response(s)). Subsystem or device may not be present.

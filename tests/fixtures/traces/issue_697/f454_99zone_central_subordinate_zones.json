@@ -1,0 +1,149 @@
+{
+  "capture": {
+    "kind": "hand-transcribed excerpt",
+    "title": "BTicino F454 with 99-zone Central Unit and subordinate zones (setpoints, modes, protection frames)",
+    "reporter": "ricdijk",
+    "source": "https://github.com/OpenWebNet-HA/MyHOME/issues/697",
+    "captured_at": "2026-10-12..2026-10-16",
+    "abbreviated": true,
+    "abbreviation_note": "Hand-transcribed debug log excerpts from physical F454 gateway testing. Includes setpoint writes, OFF/AUTO mode writes, central unit protection switches, and zone responses."
+  },
+  "gateway": {
+    "model": "F454",
+    "firmware": "1.0.34",
+    "connection_type": "tcp"
+  },
+  "plant": {
+    "central_unit": "99-zone (WHERE #0)",
+    "subordinate_zones": 13,
+    "discovery": "bus-discovered (no myhome.yaml)",
+    "zone_offsets": {
+      "11": -3.0
+    }
+  },
+  "frames": [
+    {
+      "direction": "rx",
+      "raw": "*4*110#0170*#0##",
+      "note": "Central unit reports mode 'heat' at setpoint 17.0 C after being set natively"
+    },
+    {
+      "direction": "tx",
+      "raw": "*#4*#0*#14*0165*1##",
+      "accepted": true,
+      "note": "Central unit setpoint written from Home Assistant to 16.5 C"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*110#0165*#0##",
+      "note": "Central unit confirms mode 'heat' at 16.5 C"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*202*#0##",
+      "note": "Season switch on central panel turned to 'Estate' (summer thermal protection)"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*202*3##",
+      "note": "Zone 3 follows central unit into protection"
+    },
+    {
+      "direction": "rx",
+      "raw": "*#4*3*12*0350*3##",
+      "note": "Zone 3 reports thermal protection setpoint 35.0 C"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*102*#0##",
+      "note": "Season switch on central panel turned to 'Inverno' (winter antifreeze)"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*102*3##",
+      "note": "Zone 3 follows central unit into antifreeze"
+    },
+    {
+      "direction": "rx",
+      "raw": "*#4*3*12*0070*3##",
+      "note": "Zone 3 reports antifreeze setpoint 7.0 C"
+    },
+    {
+      "direction": "rx",
+      "raw": "*#4*1*12*0100*3##",
+      "note": "Zone 1 reports antifreeze setpoint 10.0 C"
+    },
+    {
+      "direction": "tx",
+      "raw": "*#4*3*#14*0160*1##",
+      "accepted": false,
+      "note": "Failing setpoint write without '#' on subordinate zone 3 (fails every time on F454)"
+    },
+    {
+      "direction": "tx",
+      "raw": "*#4*#3*#14*0160*1##",
+      "accepted": true,
+      "note": "Successful setpoint write with '#' on subordinate zone 3 to 16.0 C"
+    },
+    {
+      "direction": "rx",
+      "raw": "*#4*3*12*0160*3##",
+      "note": "Zone 3 confirms local target temperature 16.0 C"
+    },
+    {
+      "direction": "tx",
+      "raw": "*#4*#3*#14*0145*1##",
+      "accepted": true,
+      "note": "Successful setpoint write with '#' on subordinate zone 3 to 14.5 C"
+    },
+    {
+      "direction": "rx",
+      "raw": "*#4*3*12*0145*3##",
+      "note": "Zone 3 confirms local target temperature 14.5 C"
+    },
+    {
+      "direction": "tx",
+      "raw": "*#4*#11*#14*0170*1##",
+      "accepted": true,
+      "note": "Successful setpoint write with '#' on subordinate zone 11 (offset -3.0 C applied, wire target 17.0 C)"
+    },
+    {
+      "direction": "rx",
+      "raw": "*#4*11*12*0140*3##",
+      "note": "Zone 11 confirms local target temperature 14.0 C"
+    },
+    {
+      "direction": "tx",
+      "raw": "*4*303*3##",
+      "accepted": false,
+      "note": "Failing OFF mode write without '#' on subordinate zone 3 (retries and fails on F454)"
+    },
+    {
+      "direction": "tx",
+      "raw": "*4*303*#3##",
+      "accepted": true,
+      "note": "Successful OFF mode write with '#' on subordinate zone 3"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*303*3##",
+      "note": "Zone 3 confirms mode set to 'off'"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*103*#3##",
+      "note": "Zone 3 confirms mode set to 'off'"
+    },
+    {
+      "direction": "tx",
+      "raw": "*4*311*#3##",
+      "accepted": true,
+      "note": "Successful AUTO mode write with '#' on subordinate zone 3"
+    },
+    {
+      "direction": "rx",
+      "raw": "*4*110*#3##",
+      "note": "Zone 3 confirms mode set to 'heat'"
+    }
+  ]
+}

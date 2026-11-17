@@ -1,0 +1,95 @@
+{
+ "meta": {
+  "captured": "2026-09-29",
+  "gateway": "BTicino MH200 (firmware 2.1.0) + F441M matrix",
+  "build": "perf/faster-group-wake @ 86a8678c, debug log of the integration",
+  "how": "frames the integration reported as 'successfully sent' (t = seconds after the first, times local)",
+  "play": "Music Assistant plays into badkamer (36) and adds Bureau (21), Eetkamer (23) and Keuken (22) one set_members call at a time, all parked"
+ },
+ "tx_before_the_join_fix": [
+  {
+   "t": 0.0,
+   "frame": "*16*13*36##"
+  },
+  {
+   "t": 0.78,
+   "frame": "*16*3*36##"
+  },
+  {
+   "t": 1.56,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 2.34,
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 3.15,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 3.93,
+   "frame": "*16*3*132##"
+  },
+  {
+   "t": 4.142,
+   "frame": "*16*13*21##"
+  },
+  {
+   "t": 4.952,
+   "frame": "*16*3*21##"
+  },
+  {
+   "t": 5.8,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 6.59,
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 7.36,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 8.14,
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 8.35,
+   "frame": "*16*13*23##"
+  },
+  {
+   "t": 9.161,
+   "frame": "*16*3*23##"
+  },
+  {
+   "t": 10.03,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 10.81,
+   "frame": "*16*3*122##"
+  },
+  {
+   "t": 11.02,
+   "frame": "*16*13*22##"
+  },
+  {
+   "t": 11.832,
+   "frame": "*16*3*22##"
+  },
+  {
+   "t": 12.732,
+   "frame": "*16*3*102##"
+  },
+  {
+   "t": 13.51,
+   "frame": "*16*3*122##"
+  }
+ ],
+ "findings": [
+  "Music Assistant joins the rooms one call at a time; every join re-sent the source-on frame (*16*3*102##) and the environment route, so 102 went out 7 times and 122 4 times in 13 s, each costing ~0.8 s of the single command session and delaying the last room's ON by ~8 s",
+  "the frames each room needs are one OFF/ON pair, one 102 and one route per environment (132 for 36, 122 for 21/23/22)"
+ ]
+}

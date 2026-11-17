@@ -1,0 +1,297 @@
+{
+  "home_assistant": {
+    "installation_type": "Home Assistant OS",
+    "version": "2026.9.1",
+    "timezone": "UTC"
+  },
+  "data": {
+    "integration_version": "2.0.0b10",
+    "ownd_version": "2.0.0b5",
+    "config_entry": {
+      "entry_id": "01PLANTISSUE303F4610000000",
+      "version": 1,
+      "domain": "myhome",
+      "title": "F461 Gateway",
+      "data": {
+        "host": "192.0.2.1",
+        "id": "00:03:50:00:03:03",
+        "mac": "00:03:50:00:03:03",
+        "manufacturer": "BTicino S.p.A.",
+        "name": "F461",
+        "password": null,
+        "port": 20000
+      },
+      "options": {
+        "command_worker_count": 1
+      }
+    },
+    "gateway": {
+      "model_name": "F461",
+      "manufacturer": "BTicino S.p.A.",
+      "firmware": null,
+      "is_connected": true,
+      "send_workers": 1
+    },
+    "bus_monitor": {
+      "stats": {
+        "capacity": 200,
+        "captured": 50,
+        "total_rx": 47,
+        "total_tx": 3,
+        "subscribers": 0
+      },
+      "recent_frames": [
+        {
+          "raw": "*4*303*1##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:09.733Z"
+        },
+        {
+          "raw": "*#4*1*0*0234##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:09.796Z"
+        },
+        {
+          "raw": "*4*4002#1*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:12.140Z"
+        },
+        {
+          "raw": "*4*4002*1##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:12.204Z"
+        },
+        {
+          "raw": "*4*4002#6*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:12.508Z"
+        },
+        {
+          "raw": "*4*4002*6##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:12.605Z"
+        },
+        {
+          "raw": "*#4*1#2*#20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:14.116Z"
+        },
+        {
+          "raw": "*#4*1#2*20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:14.180Z"
+        },
+        {
+          "raw": "*#4*1#2*20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:14.220Z"
+        },
+        {
+          "raw": "*#4*6#2*#20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:14.516Z"
+        },
+        {
+          "raw": "*#4*6#2*20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:14.556Z"
+        },
+        {
+          "raw": "*#4*6#3*#20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:14.995Z"
+        },
+        {
+          "raw": "*#4*6#3*20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:15.044Z"
+        },
+        {
+          "raw": "*#4*3*0*0230##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:16.884Z"
+        },
+        {
+          "raw": "*#4*3*60*59##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:20.876Z"
+        },
+        {
+          "raw": "*#4*1*#14*0200*2##",
+          "direction": "tx",
+          "iso_time": "2026-09-12T07:09:29.847Z"
+        },
+        {
+          "raw": "*4*0*1##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:30.004Z"
+        },
+        {
+          "raw": "*#4*1*12*0200*3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:30.052Z"
+        },
+        {
+          "raw": "*4*0*1##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:30.053Z"
+        },
+        {
+          "raw": "*#4*1*0*0234##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:30.099Z"
+        },
+        {
+          "raw": "*#4*1#2*#20*8##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:32.332Z"
+        },
+        {
+          "raw": "*#4*1#2*20*8##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:32.372Z"
+        },
+        {
+          "raw": "*4*4001#1*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:34.996Z"
+        },
+        {
+          "raw": "*#4*3#2*#20*6##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:44.965Z"
+        },
+        {
+          "raw": "*#4*3#2*20*6##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:45.012Z"
+        },
+        {
+          "raw": "*4*4001#3*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:09:47.869Z"
+        },
+        {
+          "raw": "*#4*2*#14*0210*2##",
+          "direction": "tx",
+          "iso_time": "2026-09-12T07:10:08.438Z"
+        },
+        {
+          "raw": "*#4*2*12*0210*3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:08.637Z"
+        },
+        {
+          "raw": "*4*0*2##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:08.640Z"
+        },
+        {
+          "raw": "*#4*2*0*0231##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:08.685Z"
+        },
+        {
+          "raw": "*#4*2#2*#20*8##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:11.373Z"
+        },
+        {
+          "raw": "*#4*2#2*20*8##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:11.413Z"
+        },
+        {
+          "raw": "*4*4001#2*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:13.469Z"
+        },
+        {
+          "raw": "*#4*6*0*0228##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:15.413Z"
+        },
+        {
+          "raw": "*#4*2*#14*0265*2##",
+          "direction": "tx",
+          "iso_time": "2026-09-12T07:10:15.513Z"
+        },
+        {
+          "raw": "*#4*2*12*0265*3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:15.701Z"
+        },
+        {
+          "raw": "*4*0*2##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:15.706Z"
+        },
+        {
+          "raw": "*#4*2*0*0231##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:15.772Z"
+        },
+        {
+          "raw": "*#4*5*0*0230##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:16.524Z"
+        },
+        {
+          "raw": "*4*4002#2*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:21.357Z"
+        },
+        {
+          "raw": "*4*4002*2##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:21.397Z"
+        },
+        {
+          "raw": "*#4*2#2*#20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:23.372Z"
+        },
+        {
+          "raw": "*#4*2#2*20*5##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:23.412Z"
+        },
+        {
+          "raw": "*#4*5*60*61##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:26.717Z"
+        },
+        {
+          "raw": "*#4*6*60*59##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:31.517Z"
+        },
+        {
+          "raw": "*#4*1*60*55##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:42.933Z"
+        },
+        {
+          "raw": "*#4*5#2*#20*6##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:52.852Z"
+        },
+        {
+          "raw": "*#4*5#2*20*6##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:52.900Z"
+        },
+        {
+          "raw": "*4*4001#5*0#3##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:10:54.852Z"
+        },
+        {
+          "raw": "*#4*2*60*54##",
+          "direction": "rx",
+          "iso_time": "2026-09-12T07:13:57.397Z"
+        }
+      ]
+    }
+  }
+}

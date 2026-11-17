@@ -1,0 +1,70 @@
+# Anonymized plant configuration for Issue #333 (MyHomeServer1 with Climate & Actuators WHO=4)
+myhomeserver1:
+  mac: "00:03:50:00:03:33"
+  climate:
+    climate_0:
+      zone: "#0"
+      name: "Climate Zone 0"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: BTicino
+      model: 3550
+    climate_1:
+      zone: "1"
+      name: "Climate Zone 1"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: bticino
+      model: LN4691
+    climate_2:
+      zone: "2"
+      name: "Climate Zone 2"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: bticino
+      model: LN4691
+    climate_3:
+      zone: "3"
+      name: "Climate Zone 3"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: bticino
+      model: LN4691
+    climate_4:
+      zone: "4"
+      name: "Climate Zone 4"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: bticino
+      model: LN4691
+    climate_5:
+      zone: "5"
+      name: "Climate Zone 5"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: bticino
+      model: LN4691
+    climate_6:
+      zone: "6"
+      name: "Climate Zone 6"
+      heat: true
+      cool: false
+      standalone: false
+      manufacturer: bticino
+      model: LN4691
+  binary_sensor:
+    binary_sensor_1:
+      where: "1"
+      name: "Binary Sensor 1"
+    binary_sensor_2:
+      where: "2"
+      name: "Binary Sensor 2"
+    binary_sensor_4:
+      where: "4"
+      name: "Binary Sensor 4"

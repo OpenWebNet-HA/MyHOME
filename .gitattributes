@@ -1,0 +1,8 @@
+# Enforce LF line endings on raw-byte SHA-256 trace/plant fixtures and
+# cross-repository OpenWebNet Golden Corpus lockstep files regardless of OS.
+tests/fixtures/** text eol=lf
+tests/golden/** text eol=lf
+tools/golden/** text eol=lf
+tests/test_golden_conformance.py text eol=lf
+tests/test_golden_privacy.py text eol=lf
+scripts/sync_golden_corpus.py text eol=lf
