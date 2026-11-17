@@ -1115,6 +1115,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#2-hardware-limitations-on-unpopulated-who-1-addresses-wall-switch-leds-tcp-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Hardware Limitations on Unpopulated WHO = 1 Addresses (Wall-Switch LEDs &amp; TCP Clients)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2117,6 +2128,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#2-hardware-limitations-on-unpopulated-who-1-addresses-wall-switch-leds-tcp-clients" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Hardware Limitations on Unpopulated WHO = 1 Addresses (Wall-Switch LEDs &amp; TCP Clients)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2229,7 +2251,7 @@
 <li><strong>Touchscreen Control of Non-SCS Devices (<code>WHO = 1</code> &amp; <code>WHO = 2</code>)</strong>:
    Tap an icon or slider on a Legrand <code>067292</code> or BTicino <code>H4890</code> wall screen to control a Zigbee, Matter, or Wi-Fi device in Home Assistant. Changes made in Home Assistant or voice assistants instantly update the status icon and LED on the wall screen.</li>
 <li><strong>Unpopulated Physical Wall Switches (<code>WHO = 1</code>)</strong>:
-   Use an unused rocker on an <code>H4652/2</code> or <code>K4652M2</code> physical wall control configured as a point-to-point light (<code>WHO = 1</code>) to toggle a TV, media player, or smart bulb with full LED status feedback.</li>
+   Use an unused rocker on an <code>H4652/2</code>, <code>H4652/3</code>, <code>L4652/2</code>, or <code>K4652M2</code> physical wall control configured as a point-to-point light (<code>WHO = 1</code>) to toggle or dim a TV, media player, smart bulb, or relay in Home Assistant. <em>(Note: On an unpopulated 2-wire address without a physical SCS actuator, basic 2-wire pushbuttons cannot latch steady load-status LEDs and flash briefly on press due to the missing hardware link-layer ACK — see <a href="#2-hardware-limitations-on-unpopulated-who-1-addresses-wall-switch-leds-tcp-clients">Wall-Switch LEDs &amp; TCP Client Limitations</a> below.)</em></li>
 <li><strong>Virtual Temperature Probes (<code>WHO = 4</code>, gateway-dependent)</strong>:
    On gateways whose <code>bt_termo</code> daemon translates <code>#0</code> temperature writes onto the SCS bus (verified on <code>F461</code>), publish an outdoor weather service temperature, Zigbee room sensor, or ESPHome probe onto an unused zone master address (<code>1..99</code>, <code>DIMENSION 0</code>). <em>(Rejected by <code>F454</code>, <code>MH200N</code>, <code>MH202</code>, and wall touchscreens such as <code>067292</code> / <code>H4890</code> — see <a href="#gateway-compatibility-firmware-verification">Gateway Compatibility</a> below.)</em></li>
 <li><strong>Virtual Energy &amp; Power Meters (<code>WHO = 18</code>, gateway-dependent)</strong>:
@@ -2419,7 +2441,7 @@
 </ul>
 <p>Both modalities work identically for a point-to-point virtual dimmer:</p>
 <ul>
-<li><strong>Short press UP / DOWN</strong>: Sends <code>*1*1000#1*WHERE##</code> / <code>*1*1000#0*WHERE##</code> to turn the Home Assistant entity ON or OFF and updates the wall control's status LED.</li>
+<li><strong>Short press UP / DOWN</strong>: Sends <code>*1*1000#1*WHERE##</code> / <code>*1*1000#0*WHERE##</code> to turn the Home Assistant entity ON or OFF and mirrors <code>*1*1*WHERE##</code> / <code>*1*0*WHERE##</code> onto the bus (updating <code>WHO = 1</code> tiles on wall touchscreens such as <code>067292</code>, <code>H4890</code>, and <code>L4684</code>).</li>
 <li><strong>Hold DOWN</strong>: Sends <code>*1*1000#31*WHERE##</code> and steps brightness down by <code>brightness_step_pct</code> (or runs <code>step_down_action</code>).</li>
 <li><strong>Hold UP</strong>: Because no physical SCS dimmer hardware-ACKs the unpopulated address on the 2-wire bus, <code>H4652/2</code> repeats <code>*1*1000#1*WHERE##</code> every <strong>~2 seconds</strong> (with a ~200 ms SCS link-layer retry per step) instead of switching to <code>*1*1000#30*WHERE##</code>. <code>ExposeManager</code> automatically deduplicates the ~200 ms SCS retries and treats consecutive held <code>*1*1000#1*WHERE##</code> frames (<code>1.6–3.0 s</code> apart while the bound entity is already on) as <code>step_up</code> (<code>+brightness_step_pct</code> or <code>step_up_action</code>), while keeping single taps, quick double-presses, and turn-on from off idempotent.</li>
 </ul>
@@ -2428,6 +2450,17 @@
 <p><strong>Want faster (~0.5 s) smooth dimming without the ~2 s unacknowledged SCS timeout?</strong>
 On <code>H4652/2</code> / <code>L4652/2</code> / <code>067552</code> / <code>K4652M2</code>, you can alternatively configure the module in <strong>MyHOME_Suite</strong> as <strong>Scheduled scenario PLUS (<code>CEN+</code>, <code>WHO = 25</code>, <code>Object 406</code>)</strong> instead of <code>WHO = 1</code> Expose. <code>CEN+</code> frames are broadcast events (<code>*25*21#&lt;btn&gt;*2&lt;addr&gt;##</code> short press, <code>22</code> hold start, <code>23</code> ~0.5 s hold repeat, <code>24</code> hold release) that require no physical actuator ACK on the 2-wire bus and appear directly as Home Assistant device triggers — at the trade-off that <code>CEN+</code> buttons do not track <code>WHO = 1</code> load-state LEDs or Area/General light commands.</p>
 </div>
+<h3 id="2-hardware-limitations-on-unpopulated-who-1-addresses-wall-switch-leds-tcp-clients">2. Hardware Limitations on Unpopulated <code>WHO = 1</code> Addresses (Wall-Switch LEDs &amp; TCP Clients)<a class="headerlink" href="#2-hardware-limitations-on-unpopulated-who-1-addresses-wall-switch-leds-tcp-clients" title="Permanent link">&para;</a></h3>
+<p>When <code>WHERE</code> is a purely virtual <code>WHO = 1</code> address with <strong>no physical SCS actuator</strong> wired on the 2-wire bus, two hardware/firmware constraints of the 2-wire SCS bus and OpenWebNet gateways (<code>MH201</code>, <code>MH200N</code>, <code>F454</code>, <code>F453</code>, <code>F461</code>, <code>MyHomeServer1</code>, <code>H4684</code>) apply:</p>
+<ol>
+<li><strong>Basic 2-Wire Pushbutton LEDs (<code>H4652/2</code>, <code>H4652/3</code>, <code>L4652/2</code>, <code>AM5832/2</code>)</strong>:</li>
+<li><strong>Missing ~35 ms 2-wire link-layer hardware ACK</strong>: When a physical <code>WHO = 1</code> pushbutton sends a unicast command (<code>A8 &lt;WHERE&gt; 00 12 &lt;00|01&gt; &lt;xor&gt; A3</code>), it waits ~35 ms for the target physical SCS actuator to assert a hardware link-layer ACK (<code>0xA5</code> / PIC <code>$08</code>). Because no physical actuator occupies <code>WHERE</code> (and OpenWebNet IP gateways are passive bus peers that do not synthesize link-layer ACKs for arbitrary unpopulated addresses), the wall switch retransmits once ~200 ms later and <strong>flashes its LED</strong> to indicate a delivery fault / unpopulated address (on multi-channel controls such as <code>H4652/3</code> with shared indicator logic, this fault flash can also blank an adjacent channel's LED until that native actuator next reports its status).</li>
+<li><strong>Command telegram (<code>&lt;WHERE&gt; 00 12 &lt;00|01&gt;</code>) vs. Actuator Status broadcast (<code>B8 &lt;WHERE&gt; 12 &lt;00|01&gt;</code>)</strong>: Although OpenWebNet TCP uses <code>*1*1*WHERE##</code> / <code>*1*0*WHERE##</code> for both commands and status events, on the 2-wire SCS bus they are distinct telegram opcodes. Every OpenWebNet gateway firmware translates outbound TCP <code>*1*1*WHERE##</code> / <code>*1*0*WHERE##</code> into an SCS <strong>command</strong> telegram (<code>$03 &lt;WHERE&gt; 00 12 &lt;00|01&gt;\r</code>), never into a <code>0xB8</code> <strong>actuator status broadcast</strong> (<code>B8 &lt;WHERE&gt; 12 &lt;00|01&gt;</code>), which is only emitted by a physical SCS actuator. While wall touchscreens (<code>067292</code>, <code>H4890</code>, <code>L4684</code>, <code>10"</code> screens) update their UI tiles from command/translation frames, basic 2-wire pushbuttons only latch steady load-status LEDs from <code>0xB8</code> actuator status broadcasts.</li>
+<li><strong>How to avoid the LED error flash</strong>: Configure the pushbutton channel as <strong><code>CEN</code> (<code>WHO = 15</code>)</strong> or <strong><code>CEN+</code> (<code>WHO = 25</code>, <code>Object 406</code>)</strong> instead of <code>WHO = 1</code>. Scenario frames are connectionless broadcast events that expect no point-to-point actuator ACK on the 2-wire bus, so pressing the button never triggers an error flash (at the trade-off that <code>CEN</code>/<code>CEN+</code> buttons do not maintain stateful load LEDs).</li>
+<li><strong>External OpenWebNet TCP Clients (<code>iMyHome</code>, Third-Party Apps) &amp; Bus Monitor Injection</strong>:</li>
+<li>Physical 2-wire devices (wall switches and 2-wire wall screens) transmit on the 2-wire SCS wire, entering the gateway from the <strong>bus transceiver side</strong> (<code>$17 ...</code>) and forwarding to Home Assistant's TCP event monitor session (<code>*99*1##</code>) as <code>*1*1000#1*WHERE##</code> or <code>*#1*WHERE##</code>.</li>
+<li>By contrast, frames sent on a <strong>TCP command session (<code>*99*0##</code>)</strong> by external TCP clients (such as the <code>iMyHome</code> app) or by Home Assistant's <strong>Bus Monitor</strong> transmit tool (<code>ws_bus_monitor_send</code>) are written <strong>out</strong> to the 2-wire transceiver (<code>$03 &lt;WHERE&gt; 00 15 00\r</code> for <code>*#1*WHERE##</code>, <code>$03 &lt;WHERE&gt; 00 12 00\r</code> for <code>*1*1*WHERE##</code>). OpenWebNet gateways (<code>MH201</code>, <code>MH200N</code>, <code>F454</code>, <code>F461</code>, <code>MyHomeServer1</code>) do <strong>not</strong> loop TCP command-session status reads (<code>*#1*WHERE##</code>) or unpopulated <code>WHO = 1</code> commands back onto TCP event monitor sessions (<code>*99*1##</code>) unless a physical actuator on the 2-wire bus replies with <code>B8 &lt;WHERE&gt; 12 &lt;state&gt;</code>. Consequently, <code>iMyHome</code> receives <code>NACK (*#*0##)</code> on <code>*#1*WHERE##</code> (displaying the unpopulated light as greyed out), and Bus Monitor command-session injections (<code>*1*1*WHERE##</code>, <code>*#1*WHERE##</code>) record <code>TX</code> without reaching <code>ExposeManager</code>.</li>
+</ol>
 <hr />
 <h2 id="advanced-custom-script-actions">🎛️ Advanced: Custom Script Actions<a class="headerlink" href="#advanced-custom-script-actions" title="Permanent link">&para;</a></h2>
 <p>For complex integrations (such as cycling media playlists, executing sequences, or calling third-party services with conditions), you can configure <code>turn_on_action</code>, <code>turn_off_action</code>, <code>step_up_action</code>, and <code>step_down_action</code> either directly in the <strong>UI Config Subentry</strong> action pickers or in <code>myhome.yaml</code> using Home Assistant's native <code>Script</code> syntax:</p>
@@ -2527,7 +2560,7 @@ On <code>H4652/2</code> / <code>L4652/2</code> / <code>067552</code> / <code>K46
 <td style="text-align: left;"><strong><code>WHO = 1</code> (Lights / Switches)</strong></td>
 <td style="text-align: center;"><strong>All Gateways</strong></td>
 <td style="text-align: left;"><code>*#1*WHERE*#1*LEVEL*0##</code> (or <code>*1*1*WHERE##</code> / <code>*1*0*WHERE##</code>)</td>
-<td style="text-align: left;">Universal support across F454, F455, F459, MH200N, MH201, MH202, MHS1, F461, 067292, and H4890.</td>
+<td style="text-align: left;">Universal support for wall touchscreens (<code>067292</code>, <code>H4890</code>, <code>L4684</code>) and physical 2-wire wall-switch input (<code>*1*1000#1/0*WHERE##</code>) across F454, F455, F459, MH200N, MH201, MH202, MHS1, F461, 067292, and H4890. On unpopulated addresses without a physical SCS actuator, basic 2-wire pushbuttons (<code>H4652/2</code>, <code>H4652/3</code>) do not receive <code>0xB8</code> actuator status / link-layer ACKs for steady LEDs, and TCP command-session clients (<code>iMyHome</code>) are not looped back to event sessions.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong><code>WHO = 2</code> (Covers / Shutters)</strong></td>
