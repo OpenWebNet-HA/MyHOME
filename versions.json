@@ -9,16 +9,16 @@
     "title": "v2.0 (latest)",
     "aliases": [
       "beta",
-      "latest",
-      "stable"
+      "stable",
+      "latest"
     ]
   },
   {
     "version": "0.9.4",
     "title": "v0.9.4 (legacy)",
     "aliases": [
-      "v0.9",
-      "legacy"
+      "legacy",
+      "v0.9"
     ]
   }
 ]
