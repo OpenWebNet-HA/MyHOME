@@ -17,6 +17,8 @@ was changed in the lines.
 | `F461_who4_monitor_start_nothing_stored_2026-11-17.log` | The same window as the F461 delivered it. |
 | `F455_who4_monitor_poll_2026-11-17T08-00.log` | 08:00:46Z to 08:00:52Z, as the F455 delivered it: the answers to the poll of an earlier start the same day (state restored, so zone 2 was also asked `*0`). |
 | `F461_who4_monitor_poll_2026-11-17T08-00.log` | The same window as the F461 delivered it. |
+| `F455_who4_monitor_paced_poll_2026-11-17T11-47.log` | 11:47:44Z to 11:47:58Z, as the F455 delivered it. The poll of a start with nothing stored (core init 11:47:05Z) on the build that asks one zone after another and waits for a quiet bus: from 30 s after the startup sweep, zone 2 `*0`, `*13`, `*14`, `*12`, `#1*20`, then two reads zone 2 makes on its own once its actuator reported a fan coil (`*19`, `*11`), then zones 3 and 4 `*0`, `*13`, `*14`, `*12`, `#1*20`. |
+| `F461_who4_monitor_paced_poll_2026-11-17T11-47.log` | The same window as the F461 delivered it. |
 
 ## What the logs show
 
@@ -42,7 +44,13 @@ was changed in the lines.
   well, and five of them logged the warning: eight starts, the frame twice in every one, the
   warning in six. In one of the six it was for `*#4*3#1*20##` and zone 2, whose actuator frame
   `*#4*2#1*20*7##` had come twice, 0.06 s apart.
-- **The builds behind these logs sent the reads of all zones back to back.** Since then the poll
-  asks one zone after another and waits for the bus to be quiet (0.75 s without a frame) after
-  every answer, so that a second copy passes before the next read opens; a read the guard still
-  drops is sent once more, unless the zone's own answer arrived in the meantime.
+- **The builds behind the logs of 08:00Z and 08:31Z sent the reads of all zones back to back.**
+  Since then the poll asks one zone after another and waits for the bus to be quiet (0.75 s
+  without a frame) after every answer, so that a second copy passes before the next read opens; a
+  read the guard still drops is sent once more, unless the zone's own answer arrived in the
+  meantime.
+- **With the quiet time the second copy passes before the next read** (the logs of 11:47Z).
+  `*#4*3#1*20*0##` comes twice again, at 11:47:53.942Z and 11:47:54.021Z on the F455, and the
+  next frame, zone 4's answer `*#4*4*0*0257##`, follows 0.861 s after the second copy. All 15
+  reads of the poll and the two reads of zone 2's own were answered, and Home Assistant logged no
+  warning. In its log no read was written less than 0.75 s after a WHO 4 frame was received.

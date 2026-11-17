@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -431,6 +432,24 @@ async def test_the_capture_s_second_copy_is_what_the_guard_drops() -> None:
     assert _mismatched_who4_reply_zones("*#4*4#1*20##", collected) == {"3"}
     assert _mismatched_who4_reply_zones("*#4*4*0##", collected) == {"3"}
     assert _mismatched_who4_reply_zones("*#4*3#1*20##", collected) is None
+
+
+def test_the_paced_capture_has_the_second_copy_before_the_next_answer() -> None:
+    """The poll of 11:47:44Z, on the build with the quiet time (issue_932/README.md): the answers
+    come zone after zone, zone 3's actuator state comes twice again, and the next frame follows
+    the second copy by more than the quiet time of 0.75 s."""
+    capture = (
+        Path(__file__).parent / "fixtures" / "traces" / "issue_932" / "F455_who4_monitor_paced_poll_2026-11-17T11-47.log"
+    )
+    lines = [line.split(" ") for line in capture.read_text(encoding="utf-8").splitlines()]
+    frames = [(datetime.fromisoformat(line[0]), line[2]) for line in lines]
+    zones = [frame.split("*")[2][0] for _at, frame in frames if frame.startswith("*#4*")]
+    assert zones == sorted(zones) and set(zones) == {"2", "3", "4"}
+    copies = [at for at, frame in frames if frame == "*#4*3#1*20*0##"]
+    assert len(copies) == 2
+    following = min(at for at, _frame in frames if at > copies[1])
+    assert (copies[1] - copies[0]).total_seconds() == 0.079
+    assert (following - copies[1]).total_seconds() == 0.861
 
 
 async def test_a_zone_marked_unresponsive_is_left_alone(hass) -> None:
