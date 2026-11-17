@@ -1619,10 +1619,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             quantized = native.quantize_target(reported_position, timed_target)
 
             async def _handoff_timed_target() -> None:
-                # Yield once so Python 3.14's eager_task_factory does not run this
-                # before handle_event() finishes (where a stationary Dim 10 frame
-                # calls _end_echo_window()) or before a synchronous user takeover
-                # bumps _run_generation.
+                # Yield once so hass.async_create_task()'s eager_start=True does not
+                # run this before handle_event() finishes (where a stationary Dim 10
+                # frame calls _end_echo_window()) or before a synchronous user
+                # takeover bumps _run_generation.
                 await asyncio.sleep(0)
                 if hand_off_gen != self._run_generation:
                     return
@@ -2988,7 +2988,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     @callback
     def handle_event(self, message: OWNMessage) -> None:
-        """Handle an event message."""
+        """Handle an event message.
+
+        When a frame auto-promotes the cover mid-move (`promoted=True`) while
+        reporting the opposite direction from a stale pre-promotion estimate,
+        `if not promoted:` preserves `_run_generation` so Home Assistant's
+        in-flight target hand-off wins and reverses/retargets the shutter;
+        subsequent reversals after promotion increment `_run_generation` as an
+        external takeover.
+        """
         is_translation = getattr(message, "is_translation", None) is True
         if is_translation:
             effective_what = getattr(message, "effective_what", None)
