@@ -1,6 +1,6 @@
 sync_time:
-  name: Synchronize time
-  description: Synchronize gateway's time to HA local time.
+  name: Syncronize time
+  description: Syncronize gateway's time to HA local time.
   fields:
     gateway:
       name: Gateway
@@ -37,17 +37,8 @@ start_sending_instant_power:
       example: "sensor.general_power"
     duration:
       name: Duration
-      description: Duration in minutes (1–255) for automatic instant power updates; call myhome.stop_sending_instant_power to stop transmission early.
-      required: false
-      default: 65
-      example: 65
-      selector:
-        number:
-          min: 1
-          max: 255
-          step: 1
-          unit_of_measurement: min
-          mode: box
+      description: For how long the instant power information will be sent in minutes (0 to stop).
+      example: "60"
 
 stop_sending_instant_power:
   name: Stop sending instant power
@@ -299,7 +290,7 @@ tuner_store_station:
   fields:
     station:
       name: Station
-      description: Preset memory slot number (1–15). Preset slots 6–15 require WHO = 22 gateway support (1–5 on WHO = 16-only gateways).
+      description: Preset memory slot number (1–5 on F500, up to 1–15 on F500N).
       required: true
       example: 5
       selector:
@@ -356,6 +347,19 @@ acknowledge_cover_fault:
     Clears the fault latched when a gate or garage door did not reach the expected state
     after a pulse (possible obstacle or reversal). Only an allowed user who is at home
     may acknowledge it; until then closing from Home Assistant stays blocked.
+  target:
+    entity:
+      domain: cover
+      integration: myhome
+
+calibrate_cover_manual:
+  name: Calibrate cover travel time manually
+  description: >-
+    Times a cover's up and down travel without moving it from Home Assistant. After calling
+    this service, operate the cover with its physical pushbutton: once fully up, then once
+    fully down (either order). The integration only listens to the bus and stores the two
+    measured times; it never sends a movement command itself. The service waits up to 10
+    minutes for both runs; call stop_cover_calibration to cancel it early.
   target:
     entity:
       domain: cover

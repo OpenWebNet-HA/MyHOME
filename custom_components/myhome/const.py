@@ -208,12 +208,24 @@ SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
 SERVICE_CALIBRATE_COVER = "calibrate_cover"
+SERVICE_CALIBRATE_COVER_MANUAL = "calibrate_cover_manual"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
 SERVICE_SET_COVER_TRAVEL_TIME = "set_cover_travel_time"
 SERVICE_RESET_COVER_TRAVEL_TIME = "reset_cover_travel_time"
 SERVICE_SEND_SCENARIO_PLUS_COMMAND = "send_scenario_plus_command"
 EVENT_COVER_CALIBRATION = "myhome_cover_calibration"
 CALIBRATION_RUN_TIMEOUT = 180.0  # s to wait for the actuator's stop status per run
+
+# myhome.calibrate_cover_manual: the user drives the shutter with its physical
+# pushbuttons (long press up / short press down or stop, and vice versa) instead
+# of the integration sending the direction command itself. This is the fallback
+# for actuators that never report a real end-of-travel stop status on the bus
+# (e.g. a generic Legrand 067556 two-relay module): since a human decides the
+# exact moment the run ends (not the actuator's own, possibly broken, limit
+# detection), the measured time is always a real physical travel time. The
+# timeout is much longer than CALIBRATION_RUN_TIMEOUT because it also covers the
+# time a person needs to notice the shutter, walk to the switch, and react.
+MANUAL_CALIBRATION_TIMEOUT = 600.0  # s to wait for the user to start, then finish, a run
 CALIBRATION_MIN_RUN = 1.0        # s: anything shorter is not a full travel
 CALIBRATION_MAX_RUN = 300.0      # s: anything longer is an actuator with no run-time limit
 CALIBRATION_MIN_MOTOR_PULSE = 0.0  # s: 0.0 disables floor

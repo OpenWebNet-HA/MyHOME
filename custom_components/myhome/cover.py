@@ -66,6 +66,7 @@ from .const import (
     CALIBRATION_MIN_MOTOR_PULSE,
     CALIBRATION_MIN_RUN,
     CALIBRATION_RUN_TIMEOUT,
+    MANUAL_CALIBRATION_TIMEOUT,
     CALIBRATION_SETTLE,
     CONF_ACCESS,
     CONF_ADVANCED_SHUTTER,
@@ -102,6 +103,7 @@ from .const import (
     MIN_SLAT_TIME,
     SERVICE_ACKNOWLEDGE_COVER_FAULT,
     SERVICE_CALIBRATE_COVER,
+    SERVICE_CALIBRATE_COVER_MANUAL,
     SERVICE_CANCEL_COVER_REQUEST,
     SERVICE_RESET_COVER_TRAVEL_TIME,
     SERVICE_SET_COVER_TRAVEL_TIME,
@@ -388,6 +390,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             {},
             "async_acknowledge_fault",
         )
+        platform.async_register_entity_service(
+            SERVICE_CALIBRATE_COVER_MANUAL,
+            {},
+            "async_calibrate_manual",
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:  # pylint: disable=unused-argument
@@ -502,6 +509,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 raw_min_pulse = float(calibration["min_motor_pulse"])
         self._calibrating = False
         self._calibration_interrupted: str | None = None
+        # myhome.calibrate_cover_manual: armed while waiting for the user to drive
+        # the shutter with its physical pushbuttons (see async_calibrate_manual).
+        self._manual_calibrating: bool = False
+        self._manual_calibration_interrupted: str | None = None
+        self._manual_run_event: asyncio.Event | None = None
+        self._manual_runs: dict[str, float] = {}
+        self._last_manual_direction: str | None = None
         self._stopped_event: asyncio.Event = asyncio.Event()
         self._last_stop_at: float | None = None
         self._last_run: dict[str, Any] = {}  # the last completed run as measured, see _freeze_position
@@ -711,7 +725,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         attrs["last_run_ended_at"] = self._last_run.get("ended_at")
         attrs["copied_from"] = self._copied_from
 
-    # ── Echo model helpers ───────────────────────────────────────────────
+    # ── Echo model helpers ������─────────────────────────────────────────────
 
     def _begin_command(self, cmd: str) -> None:
         """Open an echo window for a command we are about to queue.
@@ -1231,7 +1245,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         await super().async_will_remove_from_hass()
 
 
-    # ── Calibration ──────────────────────────────────────────────────────
+    # ── Calibration ─────────────���────────────────────────────────────────
 
     def _interrupt_calibration(self, reason: str) -> None:
         if self._calibrating and not self._calibration_interrupted:
@@ -1427,6 +1441,179 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         return result
 
+    def _interrupt_manual_calibration(self, reason: str) -> None:
+        """Abort a manual calibration in progress (see async_calibrate_manual)."""
+        if self._manual_calibrating and not self._manual_calibration_interrupted:
+            self._manual_calibration_interrupted = reason
+            self._manual_run_event.set()
+
+    async def async_calibrate_manual(self) -> dict:  # type: ignore
+        """Measure this cover's travel times from runs driven by its physical pushbuttons.
+
+        Unlike ``async_calibrate``, the integration never sends a direction command:
+        it only arms itself and then passively times the runs the bus already
+        reports (the same ``_run_started_at`` / stop-frame bookkeeping that every
+        timed cover keeps for its normal operation). This is the fallback for an
+        actuator that never sends its own end-of-travel stop status, such as the
+        generic Legrand 067556 two-relay module (#466): since a person decides the
+        exact moment the run ends, by pressing the physical pushbutton, the
+        measured time is always a real physical travel time, whereas ``async_calibrate``
+        would hang (or time out) on such an actuator waiting for a stop status that
+        never comes.
+
+        Sequence: the user is expected to run the cover fully closed, then fully
+        open (or the reverse), each with a physical press, within
+        ``MANUAL_CALIBRATION_TIMEOUT`` of the service call and of each other. Both
+        runs must reach an actual end stop (a partial, reversed, or calibration
+        that stopped already is rejected by the existing plausibility bounds).
+        """
+        if self._advanced:
+            raise HomeAssistantError(
+                f"{self._display_name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it — if this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml",
+                translation_domain=DOMAIN,
+                translation_key="cover_reports_position",
+                translation_placeholders={"name": self._display_name},
+            )
+        if self._calibrating:
+            raise HomeAssistantError(
+                f"{self._display_name} is already being calibrated",
+                translation_domain=DOMAIN,
+                translation_key="calibration_in_progress",
+                translation_placeholders={"name": self._display_name},
+            )
+        if self._manual_calibrating:
+            raise HomeAssistantError(
+                f"{self._display_name} is already waiting for a manual calibration run",
+                translation_domain=DOMAIN,
+                translation_key="calibration_in_progress",
+                translation_placeholders={"name": self._display_name},
+            )
+
+        hub = self.calibration_hub
+        lock = hub.lock
+        if lock.locked():
+            raise HomeAssistantError(
+                f"{self._display_name}: another cover on this gateway is being calibrated",
+                translation_domain=DOMAIN,
+                translation_key="calibration_in_progress",
+                translation_placeholders={"name": self._display_name},
+            )
+
+        async with lock:
+            hub.active_cover = self
+            self._manual_calibrating = True
+            self._manual_calibration_interrupted = None
+            self._manual_runs = {}
+            self._manual_run_event = asyncio.Event()
+            self._fire_calibration_event("manual_waiting")
+            try:
+                while len(self._manual_runs) < 2:
+                    self._manual_run_event.clear()
+                    deadline = time.monotonic() + MANUAL_CALIBRATION_TIMEOUT
+                    remaining = deadline - time.monotonic()
+                    try:
+                        await asyncio.wait_for(self._manual_run_event.wait(), max(0.01, remaining))
+                    except TimeoutError as err:
+                        raise HomeAssistantError(
+                            f"{self._display_name}: no manual run detected within "
+                            f"{MANUAL_CALIBRATION_TIMEOUT:.0f} s; press the physical pushbutton to "
+                            "run the cover fully open and fully closed",
+                            translation_domain=DOMAIN,
+                            translation_key="manual_calibration_timeout",
+                            translation_placeholders={
+                                "name": self._display_name,
+                                "timeout": f"{MANUAL_CALIBRATION_TIMEOUT:.0f}",
+                            },
+                        ) from err
+                    if self._manual_calibration_interrupted:
+                        raise CalibrationInterrupted(self._display_name, self._manual_calibration_interrupted)
+            finally:
+                self._manual_calibrating = False
+                self._manual_run_event = None
+                hub.active_cover = None
+
+        down = self._manual_runs.get("close")
+        up = self._manual_runs.get("open")
+        self._manual_runs = {}
+        if down is None or up is None:
+            msg = f"{self._display_name}: manual calibration needs one full close and one full open run"
+            self._fire_calibration_event("failed", error=msg)
+            raise HomeAssistantError(
+                msg,
+                translation_domain=DOMAIN,
+                translation_key="manual_calibration_incomplete",
+                translation_placeholders={"name": self._display_name},
+            )
+
+        self._promote_to_timed_strategy()
+        self._travel_time_down = round(down, 2)
+        self._travel_time_up = round(up, 2)
+        self._travel_time = int(round(down))
+        self._calibration_source = "manual"
+        self._copied_from = None
+        self._calibrated_at = dt_util.utcnow().isoformat(timespec="seconds")
+        # The user's last run decides the final position: trust the direction of
+        # whichever of the two runs completed second (already enforced to be the
+        # opposite direction of the first, see _record_manual_run).
+        self._attr_current_cover_position = 100 if self._last_manual_direction == "open" else 0
+        self._start_position = self._attr_current_cover_position
+        self._strategy.on_position_confirmed(self, self._attr_current_cover_position, "calibration")
+        if self._slat_tilt:
+            self._attr_current_cover_tilt_position = self._attr_current_cover_position
+        self._attr_is_closed = self._attr_current_cover_position == 0
+        self._refresh_travel_attributes()
+        result: dict[str, Any] = {
+            "down": self._travel_time_down,
+            "up": self._travel_time_up,
+            "min_motor_pulse": self._min_motor_pulse,
+            "measured_at": self._calibrated_at,
+            "source": self._calibration_source,
+        }
+        if (stored := self._stored_record()) and stored.get(CONF_SLAT_TIME) is not None:
+            result[CONF_SLAT_TIME] = stored[CONF_SLAT_TIME]
+        self._persist_calibration(result)
+        if self.hass is not None:
+            self.async_write_ha_state()
+        self._fire_calibration_event("done", **result)
+        LOGGER.info(
+            "%s Cover %s manually calibrated: down %.1f s, up %.1f s.",
+            self._gateway_handler.log_id, self._full_where, down, up,
+        )
+        return result
+
+    def _record_manual_run(self, direction: str, seconds: float, now: float) -> None:
+        """Record one leg of a manual calibration run timed off a real stop frame.
+
+        Called from the bus-event handler, never from a command this integration
+        sent: ``async_calibrate_manual`` only arms itself and waits. Implausible
+        runs (too short/too long, i.e. not a full travel) are ignored rather than
+        failing the whole calibration, since a stray short press should not force
+        the user to start over -- they simply try that direction again.
+        """
+        if not self._manual_calibrating or self._manual_run_event is None:
+            return
+        if direction in self._manual_runs:
+            # A second run in the same direction: keep the latest attempt.
+            LOGGER.debug(
+                "%s Cover %s: repeated manual %s run (%.1f s), keeping the latest.",
+                self._gateway_handler.log_id, self._full_where, direction, seconds,
+            )
+        if not CALIBRATION_MIN_RUN <= seconds <= CALIBRATION_MAX_RUN:
+            LOGGER.debug(
+                "%s Cover %s: ignoring implausible manual %s run of %.2f s (not a full travel).",
+                self._gateway_handler.log_id, self._full_where, direction, seconds,
+            )
+            self._fire_calibration_event("manual_run_ignored", direction=direction, seconds=round(seconds, 2))
+            return
+        self._manual_runs[direction] = seconds
+        self._last_manual_direction = direction
+        LOGGER.info(
+            "%s Cover %s: manual %s run measured at %.2f s (%d/2).",
+            self._gateway_handler.log_id, self._full_where, direction, seconds, len(self._manual_runs),
+        )
+        self._fire_calibration_event("manual_run", direction=direction, seconds=round(seconds, 2))
+        self._manual_run_event.set()
+
     def _promote_to_timed_strategy(self) -> None:
         """Let the strategy pick its successor once travel times are calibrated.
 
@@ -1479,7 +1666,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._strategy.on_run_ended(self, "reversal", self._start_position, now)
 
     async def async_stop_calibration(self) -> None:
-        """Stop calibration on this cover's gateway."""
+        """Stop calibration on this cover's gateway (automatic or manual)."""
+        self._interrupt_manual_calibration("stop_cover_calibration was called")
         gw_mac = getattr(self._gateway_handler, "mac", None)
         await async_stop_cover_calibration(self.hass or self._hass, gateway_mac=gw_mac)
 
@@ -3012,6 +3200,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     )
                     stop_ctx = self._capture_stop_context(
                         scope_where=msg_where if (is_general and msg_where) else None
+                    )
+                if self._manual_calibrating and (was_opening or was_closing) and self._run_started_at is not None:
+                    self._record_manual_run(
+                        "open" if was_opening else "close",
+                        max(0.0, stop_at - self._run_started_at),
+                        stop_at,
                     )
                 self._freeze_position(stop_at, end_stop_tolerance=end_stop_tolerance)
                 if stop_ctx is not None:
