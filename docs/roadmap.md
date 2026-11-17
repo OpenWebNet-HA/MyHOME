@@ -11,7 +11,7 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ## 🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** for **v2.0.0** on `OWNd==2.0.0`.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** for **v2.0.0** on `OWNd==2.0.1`.
 
 ```mermaid
 gantt
@@ -64,8 +64,9 @@ gantt
     section Delivered in v2.0.0
     RestoreSensor kWh Fix, Dim 19/20 Idle & N4692 Knob (#913, #914, #921) :done, 2026-11-14, 2026-11-15
     Marketplace 2026.11, Apache-2.0 Docs & Golden Corpus (#906, #922, #923) :done, 2026-11-14, 2026-11-15
+    Dim 10 Auto-Detect, Silent-Zone Poll & OWNd 2.0.1 (#927, #931, #933, #935, #938, #939) :done, 2026-11-16, 2026-11-17
     section Final Stabilization
-    v2.0.0 Release Stabilization :done, 2026-10-05, 2026-11-15
+    v2.0.0 Release Stabilization :done, 2026-10-05, 2026-11-17
 ```
 
 ---
@@ -76,7 +77,7 @@ The following table summarizes the completed architectural features and protocol
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.0`) | Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.1`) | Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles. |
 | **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators, firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Multi-Gateway Isolation Architecture** | Core / Routing | ✅ **Shipped** (#453) | Namespaced dispatchers, independent session queues, and cross-gateway bus protection eliminating cross-talk in multi-gateway installations. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | Native Home Assistant UI device triggers with preserved 4-digit addressing (`"0001"`), parent gateway isolation, and all 8 press/held/release actions with repeat debouncing. |
@@ -166,7 +167,7 @@ graph LR
     - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
 
 4. **Platinum Tier**:
-    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.0`) on PyPI.
+    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.1`) on PyPI.
     - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
 
 ---
