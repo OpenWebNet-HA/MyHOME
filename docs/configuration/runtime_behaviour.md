@@ -140,7 +140,7 @@ Behaviour:
 
 - A probe entity starts **receive-only**: no request is sent when it is added.
 - The periodic update (every 5 minutes) only sends a poll if **no reading arrived within the last 15 minutes**, so a probe that goes silent (battery, radio) still recovers. Not every probe reports every few seconds: one on a physical F455 / F461 plant reported every 10 minutes, and with a 5-minute window every second update sent a read that the F455 NACKed only after about 9 s.
-- A read the gateway **refused** (a NACK, or no reply before the command timeout, while the gateway was connected and the probe sent nothing during the read) is **not sent again** until the entry is reloaded; the probe's own reports are still shown.
+- A read the gateway **refused** (a NACK, or no reply before the command timeout, while the gateway was connected and the probe sent nothing during the read) is **not sent again** until the entry is reloaded; the probe's own reports are still shown. A read that was not answered at all because the command session could not be opened or lost its connection is not a refusal, and neither is one that collected only another zone's frames (the guard of #886, which covers the read of a probe too).
 - Zone sensors (`WHERE < 100`) keep polling `*#4*Z*0##` as before.
 
 *(#308)*

@@ -1035,12 +1035,19 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
     def _fallback_read_done(self, written: asyncio.Future[Any], pushes_before: int) -> None:
         """Stop the fallback read of a probe once the gateway refused it.
 
-        Refused: the sender cancelled the read (a NACK, or no reply before the command timeout)
-        while the gateway was connected. Not a refusal: a read dropped because it collected
-        another zone's frame (``_gateway_desync``, #886), a read cancelled with the connection,
-        and a read during which the probe reported (the gateway then ACKs it).
+        Refused: the gateway answered the written read with a NACK (``_gateway_nack``), or with
+        nothing before the command timeout (``_command_timeout``), while it was connected. The
+        sender sets these marks. Not a refusal: every other cancelled read (the command session
+        could not be opened or lost its socket, the read was dropped because it collected another
+        zone's frame (#886), the queue was shut down), a read cancelled with the connection, and
+        a read during which the probe reported (the gateway then ACKs it).
         """
-        if not written.cancelled() or getattr(written, "_gateway_desync", False) is True:
+        if not written.cancelled():
+            return
+        if not (
+            getattr(written, "_gateway_nack", False) is True
+            or getattr(written, "_command_timeout", False) is True
+        ):
             return
         if getattr(self._gateway_handler, "is_connected", False) is not True:
             return

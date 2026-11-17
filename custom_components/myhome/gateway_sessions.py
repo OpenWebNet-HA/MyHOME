@@ -533,9 +533,15 @@ _WHO4_REPLY_RE = re.compile(
 
 
 def _who4_zone_token(where_field: str) -> str | None:
-    """Return canonical zone string ``'1'..'99'`` from a WHO 4 WHERE field, or None."""
+    """Return the zone ``'1'..'99'`` or the probe ``'100'..'900'`` of a WHO 4 WHERE field, or None.
+
+    A probe is a bare number, as in ``validate.py``: an external probe ``N00`` (``100``..``900``)
+    or a probe ``PZZ`` (``101``..``899``). ``12#1`` is actuator 1 of zone 12.
+    """
     if "#4#" in where_field:
         where_field, _, _ = where_field.rpartition("#4#")
+    if where_field.isdigit() and 100 <= int(where_field) <= 900:
+        return str(int(where_field))
     base = where_field.removeprefix("#").split("#", 1)[0]
     if base.isdigit() and 1 <= int(base) <= 99:
         return str(int(base))
@@ -548,8 +554,13 @@ def _mismatched_who4_reply_zones(request_msg: Any, collected: Any) -> set[str] |
     On multi-session gateways whose internal SCS bus-request FIFO overflows or times out
     (MyHomeServer1 3.87.13 in #886), a closed session's delayed bus replies + ``*#*1##``
     can flush onto the next open command session. Only point-to-point WHO 4 reads for a
-    concrete zone ``1..99`` are checked, and only when at least one zone-bearing WHO 4
-    frame was collected and zero frames match the queried zone.
+    concrete zone ``1..99`` or probe ``100..900`` are checked, and only when at least one
+    zone-bearing WHO 4 frame was collected and zero frames match the queried zone or probe.
+
+    A frame about a probe carries the probe's WHERE in every capture (``*#4*303*0*0232##``
+    on a physical F455 plant in issue_932, ``*#4*105*15*0*0000*0000##`` on an MH201 3.3.6
+    in issue_466, ``*#4*100*15*1*0200*0001##`` in #264), so the read of a probe is checked
+    like the read of a zone.
     """
     if not collected or not isinstance(collected, list):
         return None
@@ -1583,6 +1594,17 @@ class CommandWorkerPool:
                             if isinstance(written, asyncio.Future) and not written.done():
                                 setattr(written, "_command_timeout", True)
                             self._pause_status_after_desync()
+                        elif (
+                            task["is_status_request"]
+                            and getattr(last_error, "reason", None) == "nack"
+                            and isinstance(written, asyncio.Future)
+                            and not written.done()
+                        ):
+                            # The gateway answered the read with a NACK (OWNd's `OWNNackError` of
+                            # a written frame; a refused negotiation has another reason). Every
+                            # other cancellation here is a frame that was not written or whose
+                            # socket was lost: a probe's fallback read tells the two apart.
+                            setattr(written, "_gateway_nack", True)
                         _cancel_written(task)
                     else:
                         if (
