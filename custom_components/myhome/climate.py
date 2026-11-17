@@ -93,6 +93,7 @@ from .where_grammar import (
     canonical_thermo_zone,
     is_actuator_where,
     is_central_thermo_where,
+    is_central_unit_actuator_status,
     is_central_unit_report,
     is_probe,
     is_pump,
@@ -490,8 +491,14 @@ def _bus_zone(message: Any) -> int | None:
     call ``0#3``: #303, #333, #404), and ``0#4#<if>`` is WHERE=0 behind an
     F422 interface. Taken as zones, pump 2 switched zone 2 (#431) and the F422
     form became zone 4. ``#0#<n>`` (4-zone central unit) keeps OWNd's zone.
+
+    Not a zone's frame either: an actuator status with WHERE ``#0`` (``*#4*#0*20*V##``, an
+    F461's answer to the all-zone request ``*#4*#0*20##``, #944). OWNd reports zone 0 and
+    actuator 1 for it. Taken as the central unit's, a fan coil value (``*#4*#0*20*5##``)
+    discovered a central unit on a plant that has none, and on a plant that has one the
+    frame became an actuator of the central unit.
     """
-    if is_pump(message):
+    if is_pump(message) or is_central_unit_actuator_status(message):
         return None
     if is_probe(str(getattr(message, "where", None))):
         return None  # probe P of zone ZZ (105 = probe 1 of zone 5), not the zone's own frame
@@ -529,7 +536,14 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
         except (ValueError, TypeError):
             pass
     clean_raw = str(raw_where).split("-")[-1] if raw_where is not None else ""
-    if not zones and raw_where and not is_broadcast_where(clean_raw) and clean_raw != "" and not is_probe(str(raw_where)):
+    if (
+        not zones
+        and raw_where
+        and not is_broadcast_where(clean_raw)
+        and clean_raw != ""
+        and not is_probe(str(raw_where))
+        and not is_central_unit_actuator_status(message)
+    ):
         zones.append(str(raw_where))
     return zones, interface
 
@@ -547,9 +561,10 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
     zones, interface = _calling_zones(message)
     zone = _bus_zone(message)
     keys = [] if zone is None else [f"#{zone}" if zone == 0 else str(zone)]
-    # WHERE "0" with a parameter is pump ``0#N``, not the general "0" (#431).
+    # WHERE "0" with a parameter is pump ``0#N``, not the general "0" (#431); an actuator
+    # status with WHERE ``#0`` is not the central unit's (#944).
     if getattr(message, "where", None) and not is_probe(str(message.where)) and not (
-        is_pump(message)
+        is_pump(message) or is_central_unit_actuator_status(message)
     ):
         keys.append(str(message.where))
     for z in zones:
@@ -1372,8 +1387,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         valve's season too and NACKed after 2.1 s on the F461. Every gateway firmware of the
         oracle forwards ``*#4*Z*19##`` (own-firmware-oracle thermo-zone-requests).
         """
-        if self._fan_coil_sides or self._fan_coil_sides_pending():
-            return
+        if self._central or self._fan_coil_sides or self._fan_coil_sides_pending():
+            return  # not asked for a central unit, as on add and on restore
         if self._request_zone_dimension(19):
             self._fan_coil_sides_asked_at = time.monotonic()
             self._fan_coil_sides_held = self._zone_requests_held()

@@ -199,8 +199,10 @@ __all__ = [
     "canonical_thermo_zone",
     "expose_message_where",
     "is_actuator_where",
+    "is_actuator_status",
     "is_apl_address",
     "is_central_thermo_where",
+    "is_central_unit_actuator_status",
     "is_central_unit_report",
     "is_probe",
     "is_pump",
@@ -299,10 +301,29 @@ def is_central_thermo_where(message: Any) -> bool:
 _CENTRAL_ZONE_STATUS_WHATS = frozenset({"110", "210", "111", "211", "103", "203", "102", "202"})
 
 
-def _is_actuator_status(frame: str) -> bool:
-    """``*#4*WHERE*20##`` or ``*#4*WHERE*20*V##``: the actuator status dimension (WHO 4 p. 7, 1.5.8 p. 22, 1.9.1 p. 62)."""
-    fields = frame.removesuffix("##").split("*")
-    return len(fields) > 3 and fields[1] == "#4" and fields[3] == "20"
+def is_actuator_status(message: Any) -> bool:
+    """Whether a WHO=4 frame is an actuator status: dimension 20 (WHO 4 p. 7, 1.5.8 p. 22, 1.9.1 p. 62).
+
+    ``*#4*WHERE*20##`` and ``*#4*WHERE*20*V##``, and the write form ``*#4*WHERE*#20*V##`` that an
+    F461 shows before the status when an actuator switches (``*#4*2#1*#20*1##``, then
+    ``*#4*2#1*20*1##``: f461_actuators_live_2026-10-25).
+    """
+    if getattr(message, "dimension", None) == 20:
+        return True
+    fields = str(message).removesuffix("##").split("*")
+    return len(fields) > 3 and fields[1] == "#4" and fields[3].removeprefix("#") == "20"
+
+
+def is_central_unit_actuator_status(message: Any) -> bool:
+    """An actuator status with WHERE ``#0``: ``*#4*#0*20*V##`` (#944).
+
+    It names no zone and no actuator (OWNd falls back to actuator 1), and the central unit has
+    no actuator status of its own: the WHERE of dimension 20 is ``Z#N``, ``Z#0`` or ``0#0``
+    (WHO 4 p. 22, p. 62). So it discovers nothing and is delivered to no entity, like the pump
+    frames ``0#N``.
+    """
+    where = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
+    return where == "#0" and not where_param(message) and is_actuator_status(message)
 
 
 def is_central_unit_report(message: Any) -> bool:
@@ -313,20 +334,20 @@ def is_central_unit_report(message: Any) -> bool:
     not: an F455 puts ``*4*311*#2##`` on its event session after every status of a standalone
     thermostat, on a plant with or without a central unit (live, 2026-11-08).
 
-    An actuator status (dimension 20) with WHERE ``#0`` does not count either. The WHERE of an
-    actuator status is ``Z#N``, ``Z#0`` or ``0#0`` (WHO 4 p. 22, p. 62); this one is an answer
-    to the all-zone request ``*#4*#0*20##`` that the integration itself sends on an F461 and a
-    MyHomeServer1. An F461 2.0.11 on a plant with no central unit answered that request with
-    ``*#4*#0*20*1##`` between the actuator frames of its zones (#944), and with the central
-    unit taken as present its standalone zones wrote ``*#4*#6*#14*0225*3##``, which nothing
-    answered.
+    An actuator status (dimension 20) does not count on any of these WHEREs. The WHERE of an
+    actuator status is ``Z#N``, ``Z#0`` or ``0#0`` (WHO 4 p. 22, p. 62), and the one seen with
+    WHERE ``#0`` is an answer to the all-zone request ``*#4*#0*20##`` that the integration
+    itself sends on an F461 and a MyHomeServer1. An F461 2.0.11 on a plant with no central
+    unit answered that request with ``*#4*#0*20*1##`` between the actuator frames of its
+    zones (#944), and with the central unit taken as present its standalone zones wrote
+    ``*#4*#6*#14*0225*3##``, which nothing answered.
     """
-    if not is_central_thermo_where(message):
+    if not is_central_thermo_where(message) or is_actuator_status(message):
         return False
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
-    frame = str(message)
     if raw.removeprefix("#").split("#", 1)[0] == "0":
-        return not _is_actuator_status(frame)
+        return True
+    frame = str(message)
     if not frame.startswith("*4*"):
         return True
     what = frame.split("*")[2].split("#", 1)[0]

@@ -8,6 +8,11 @@ discovered zones (no ``standalone`` of their own) became zones of a central unit
 setpoint went out as ``*#4*#6*#14*0225*3##``, which nothing answered, and the mode list of a
 zone in heating lost ``cool``.
 
+The frame is also kept out of discovery and routing (review of the first commit): with a fan
+coil value (``*#4*#0*20*5##``, a case, not a frame of the report) it discovered a ``#0``
+central unit, whose constructor set the flag again, and on a plant with a central unit it
+was delivered to the ``#0`` entity as its actuator 1.
+
 ``ANSWER_BURST`` is the first answer of the diagnostics attached to the issue
 (``bus_monitor.recent_frames``, 21:04:12.168Z to 21:04:13.208Z), ``ZONE_6_POLL`` the answer of
 zone 6 to ``*#4*6##`` in the same file.
@@ -19,12 +24,22 @@ from unittest.mock import AsyncMock
 import pytest
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.core import HomeAssistant
-from OWNd.message import OWNEvent, OWNHeatingEvent
+from OWNd.message import OWNEvent, OWNHeatingCommand, OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
+from custom_components.myhome.climate import (
+    MyHOMEClimate,
+    _bus_zone,
+    _zone_address,
+    _zone_route_keys,
+    async_setup_entry,
+)
 from custom_components.myhome.const import DOMAIN
-from custom_components.myhome.where_grammar import is_central_unit_report
+from custom_components.myhome.where_grammar import (
+    is_actuator_status,
+    is_central_unit_actuator_status,
+    is_central_unit_report,
+)
 from tests.conftest import attach_runtime
 from tests.test_f455_zone_polling import MAC, _handler
 
@@ -105,6 +120,7 @@ async def test_a_discovered_zone_stays_standalone_after_the_actuator_answer(hass
     await _receive(hass, handler, [*ANSWER_BURST, *ZONE_6_POLL])
 
     assert sorted(zone._where for zone in zones) == ["1", "2", "3", "4", "5", "6"]  # no "#0", no "0"
+    assert {where for where, _dimension in handler._zone_requests} <= {"1", "2", "3", "4", "5", "6"}
     zone = next(zone for zone in zones if zone._where == "6")
     zone.hass = hass
     assert handler.has_central_unit is False
@@ -129,3 +145,92 @@ async def test_a_central_unit_seen_later_still_takes_the_zone(hass: HomeAssistan
     handler.send.reset_mock()
     await zone.async_set_temperature(temperature=22.5)
     assert _sent(handler) == ["*#4*#6*#14*0225*3##"]
+
+
+# Every value of an actuator status (WHO 4 p. 22): 5 to 9 are the fan coil ones, and OWNd also
+# decodes 14 to 16. A fan coil value is not deferred by the valve-only rule of #785.
+ACTUATOR_VALUES = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "14", "15", "16"]
+
+
+@pytest.mark.parametrize("value", ACTUATOR_VALUES)
+async def test_no_value_of_the_actuator_answer_discovers_a_central_unit(hass: HomeAssistant, value: str) -> None:
+    handler, zones = await _plant(hass)
+    await _receive(hass, handler, [f"*#4*#0*20*{value}##", *ZONE_6_POLL])
+
+    assert [zone._where for zone in zones] == ["6"]
+    assert handler.has_central_unit is False
+    assert handler._zone_requests == set()  # no *#4*#0*19##
+    zone = zones[0]
+    zone.hass = hass
+    assert zone._standalone is True
+
+    handler.send.reset_mock()
+    await zone.async_set_temperature(temperature=22.5)
+    assert _sent(handler) == ["*#4*6*#14*0225*3##"]
+
+
+@pytest.mark.parametrize("raw", ["*#4*#0*20*1##", "*#4*#0*20*5##", "*#4*#0*20*6##", "*#4*#0*#20*1##"])
+async def test_the_actuator_answer_does_not_reach_an_existing_central_unit(hass: HomeAssistant, raw: str) -> None:
+    handler, zones = await _plant(hass)
+    await _receive(hass, handler, ["*4*210#0240*#0##"])
+    assert [zone._where for zone in zones] == ["#0"]
+    central = zones[0]
+    central.hass = hass
+    assert central._central is True and handler.has_central_unit is True
+    action = central.hvac_action
+
+    await _receive(hass, handler, [raw])
+
+    assert [zone._where for zone in zones] == ["#0"]
+    assert central._actuator_states == {}
+    assert "actuators" not in central.extra_state_attributes
+    assert central.hvac_action == action
+    assert central._fan is False
+    assert handler._zone_requests == set()
+
+
+@pytest.mark.parametrize("raw", ["*#4*#0*20##", "*#4*#0*20*1##", "*#4*#0*20*5##", "*#4*#0*#20*1##"])
+def test_the_actuator_answer_names_no_zone(raw: str) -> None:
+    for message in (OWNEvent.parse(raw), OWNMessage.parse(raw)):
+        assert is_central_unit_actuator_status(message) is True
+        assert _bus_zone(message) is None
+        assert _zone_address(message) is None
+        assert _zone_route_keys(message, None) == []
+
+
+def test_the_write_form_is_an_actuator_status_too() -> None:
+    # OWNd 2.0.1: an event on the event session, a command where a command session reads it.
+    event, command = OWNEvent.parse("*#4*#0*#20*1##"), OWNMessage.parse("*#4*#0*#20*1##")
+    assert isinstance(event, OWNHeatingEvent) and isinstance(command, OWNHeatingCommand)
+    for message in (event, command):
+        assert is_actuator_status(message) is True
+        assert is_central_unit_report(message) is False
+
+
+@pytest.mark.parametrize("raw", ["*#4*#6*20*1##", "*#4*#6*#20*1##", "*#4*#0#1*20*1##"])
+def test_an_actuator_status_is_no_report_of_the_central_unit_on_any_where(raw: str) -> None:
+    assert is_central_unit_report(OWNEvent.parse(raw)) is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "address", "keys"),
+    [
+        ("*#4*6#1*20*1##", "6", ["6", "6", "6"]),  # actuator 1 of zone 6
+        ("*#4*0#1*20*1##", None, []),  # pump 1 (#431)
+        ("*4*210#0240*#0##", "#0", ["#0", "#0", "#0"]),  # a status of the central unit
+        ("*#4*#0*30*12*10*2026##", "#0", ["#0", "#0", "#0"]),  # another dimension of the central unit
+    ],
+)
+def test_other_frames_are_routed_as_before(raw: str, address: str | None, keys: list[str]) -> None:
+    message = OWNEvent.parse(raw)
+    assert is_central_unit_actuator_status(message) is False
+    found = _zone_address(message)
+    assert (found.where if found else None) == address
+    assert _zone_route_keys(message, found) == keys
+
+
+async def test_a_central_unit_does_not_ask_for_fan_coil_sides(hass: HomeAssistant) -> None:
+    handler, zones = await _plant(hass)
+    await _receive(hass, handler, ["*4*210#0240*#0##"])
+    zones[0]._ask_fan_coil_sides()
+    assert handler._zone_requests == set()
