@@ -754,6 +754,12 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         if self._attr_is_on == self._inverted:
             return
         now = dt_util.utcnow()
+        LOGGER.debug(
+            "%s Motion sensor %s cleared after %ss timeout expiry",
+            self._gateway_handler.log_id,
+            self._where,
+            self._effective_timeout.total_seconds(),
+        )
         self._attr_is_on = self._inverted
         self._last_updated = now
         self._cleared_by_timeout_at = now
@@ -800,8 +806,16 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         since_clear = now - self._cleared_by_timeout_at
         observed_cycle = now - self._last_motion_at
         if timedelta(0) < since_clear <= STALE_TIMEOUT_RETRIGGER_WINDOW and observed_cycle > self._timeout:
+            previous_timeout = self._timeout.total_seconds()
             self._timeout = observed_cycle + MOTION_TIMEOUT_GRACE
             self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
+            LOGGER.debug(
+                "%s Motion sensor %s adapted timeout from %ss to %ss after post-clear retrigger",
+                self._gateway_handler.log_id,
+                self._where,
+                previous_timeout,
+                self._timeout.total_seconds(),
+            )
             target_hass = self.hass or self._hass
             if target_hass is not None and (
                 self._last_timeout_query_at is None
