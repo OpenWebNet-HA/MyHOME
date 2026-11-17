@@ -300,7 +300,7 @@ Developed and maintained by the **[OpenWebNet-HA](https://github.com/OpenWebNet-
 
 Special thanks to:
 
-- **[@anotherjulien](https://github.com/anotherjulien)** for creating the original MyHOME integration and laying the protocol foundations.
+- **[@anotherjulien](https://github.com/anotherjulien)** for creating the original MyHOME integration, laying the `OWNd` protocol foundations, and authoring the **[OpenWebNet Encyclopedia](https://github.com/OpenWebNet-HA/OpenWebNet-Encyclopedia)** & Machine KB whose machine-readable protocol and device-model insights dramatically accelerated `v2.0.0` development.
 - **[@GreenGrassBlueOcean](https://github.com/GreenGrassBlueOcean)** for the modernized async architecture, gateway profiles, streaming proxy, and automated test suite.
 - **[@xtimmy86x](https://github.com/xtimmy86x)** for crafting the frontend user experience, administration panel, cover calibration interfaces, and hardware diagnostics.
 - **[@gdluck](https://github.com/gdluck)** for 328 commits of deep protocol engineering across `MyHOME`, `OWNd`, `own-firmware-oracle`, and `openwebnet-mcp`, live multi-gateway hardware lab verification (`F455`, `F459`, `F461`, `F524`, `MH200`, `3550`, `MyHomeServer1`, `3488 HOMETOUCH`), and the Encyclopedia & Firmware Oracle audits.
