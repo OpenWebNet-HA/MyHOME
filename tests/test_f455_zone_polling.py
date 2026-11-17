@@ -46,7 +46,7 @@ ZONE3 = Path(__file__).resolve().parent / "fixtures/traces/issue_466/F455_direct
 MAC = "00:03:50:00:11:06"
 # The poll waits for the bus to be quiet after every read; the mock gateways answer at once.
 pytestmark = pytest.mark.usefixtures("fast_bus_pacing")
-SILENT_READS = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+SILENT_READS = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]
 
 
 def _sent(path: Path = DIRECT) -> dict[str, dict]:
@@ -316,7 +316,7 @@ async def test_only_what_the_zone_did_not_report_is_asked(hass) -> None:
     zone = _zone(hass, handler, "4")
     zone.handle_event(OWNHeatingEvent("*#4*4*0*0255##"))
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+    assert _queued(handler) == ["*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##", "*#4*4*19##"]
 
 
 async def test_a_zone_with_temperature_and_setpoint_still_asks_for_mode_and_actuator(hass) -> None:
@@ -327,7 +327,7 @@ async def test_a_zone_with_temperature_and_setpoint_still_asks_for_mode_and_actu
     zone.handle_event(OWNHeatingEvent("*#4*2*0*0238##"))
     zone.handle_event(OWNHeatingEvent("*#4*2*14*0220*3##"))
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2*13##", "*#4*2*12##", "*#4*2#1*20##"]
+    assert _queued(handler) == ["*#4*2*13##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]
 
 
 # ------------------------------------------------------------------ restored state (review of 195fd13, 1)
@@ -348,7 +348,7 @@ async def test_a_restored_setpoint_and_mode_do_not_count_as_reported(hass) -> No
     zone.handle_event(OWNHeatingEvent("*#4*2*0*0238##"))
     assert zone._current_temperature_restored is False
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    assert _queued(handler) == ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]
 
 
 async def test_a_restored_zone_that_reported_nothing_is_asked_everything(hass) -> None:
@@ -416,7 +416,7 @@ async def test_behind_an_interface_the_actuator_comes_before_the_routing(hass) -
     zone = _zone(hass, handler, "2", interface="1")
     assert zone._interface_poll_refused is False
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2#4#01*0##", "*#4*2#4#01*13##", "*#4*2#4#01*14##", "*#4*2#4#01*12##", "*#4*2#1#4#01*20##"]
+    assert _queued(handler) == ["*#4*2#4#01*0##", "*#4*2#4#01*13##", "*#4*2#4#01*14##", "*#4*2#4#01*12##", "*#4*2#1#4#01*20##", "*#4*2#4#01*19##"]
 
 
 async def test_behind_an_interface_the_default_profile_asks_nothing(hass, monkeypatch) -> None:
@@ -470,7 +470,7 @@ async def test_a_zone_labelled_f455_but_corrected_in_band_is_still_asked_what_it
     handler.gateway.profile = get_gateway_profile("F454")  # corrected before the poll runs
     _ready(handler)
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == SILENT_READS
+    assert _queued(handler) == SILENT_READS[:-1]  # no dimension 19: an F454 is asked *#4*Z*20## for the zone
 
 
 async def test_a_zone_added_after_the_sweep_on_another_gateway_schedules_the_poll_too(hass, monkeypatch) -> None:
