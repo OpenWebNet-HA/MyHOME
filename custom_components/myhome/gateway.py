@@ -235,34 +235,22 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
 # so their zones keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
-# Gateways whose zones are not sent the zone status request (``*#4*Z##``) when the OWNd profile
-# has no ``supports_heating_zone_status`` flag, matched as substrings of the model name
-# (``supports_zone_status``; ``MH200`` also covers the ``MH200N``, ``F453`` the ``F453AV``).
-NO_ZONE_STATUS_REQUEST = (
-    "F450",
-    "F455",
-    "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
-    "MH200",
-    "MH201",
-    "F452",
-    "F453",
-    "F458",
-    "F459",
-    "H4684",
-)
-# The silent-zone poll (#466, #932). A gateway that is not sent the zone status request
-# (``supports_zone_status`` is False, the table above) has nothing that asks a zone for its
-# setpoint: the zone shows what its thermostat pushes, and a thermostat nobody touches pushes
-# nothing. So on every such gateway a zone that has not reported its temperature, setpoint, mode
-# and an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
-# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its knob
-# (*#4*Z*13##, unless the zone already asked for it when it was added), its setpoint
-# (*#4*Z*14##), its setpoint in force (*#4*Z*12##, followed by the zone's season frame) and
-# actuator 1 (*#4*Z#1*20##, not where the gateway drops the actuator request,
-# ``silent_zone_actuator_read_refused``). A value Home Assistant restored from before the restart is not
-# a report. The rule goes by the result, not by a model list: a zone that got everything from
-# the sweep or from its thermostat sends nothing, and the zones of a gateway that is sent
-# *#4*Z## are not polled a second time. Evidence:
+# The silent-zone poll (#466, #932), on every gateway. Whether a gateway answers the general
+# request (*#4*0##) or the zone status request (*#4*Z##) with the state of a zone is known for
+# the models in the tables above and unknown for any other, and a zone whose thermostat nobody
+# touches pushes nothing by itself. So the rule goes by the result, not by a model list: a zone
+# that has not reported its temperature, setpoint and mode SILENT_ZONE_GRACE seconds after the
+# startup sweep, and after its own startup poll, asks for what is missing, read by read: its
+# temperature (*#4*Z*0##), and only if that was answered its knob (*#4*Z*13##, unless the zone
+# already asked for it when it was added), its setpoint (*#4*Z*14##), its setpoint in force
+# (*#4*Z*12##, followed by the zone's season frame) and actuator 1 (*#4*Z#1*20##, not where the
+# gateway drops the actuator request, ``silent_zone_actuator_read_refused``). A value Home
+# Assistant restored from before the restart is not a report. A zone that got everything from
+# the sweep, from its status request or from its thermostat sends nothing; its actuators were
+# asked for when it was added (``watch_zone_actuators``), so a zone that only misses them asks
+# for actuator 1 here only where that request is not sent (``zone_actuator_request_refused``,
+# the F455). A zone that answered neither of its last two status requests is left alone
+# (``poll_health``). Evidence:
 # - F455 1.0.76 (physical): answers each read in ~0.1 s and ACKs *#4*Z## only after ~9 s
 #   (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
 #   standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
@@ -278,17 +266,17 @@ NO_ZONE_STATUS_REQUEST = (
 #   thermostat.
 # - own-firmware-oracle (main 3c1634b): all thirteen emulated gateways put *#4*Z*0##,
 #   *#4*Z*12##, *#4*Z*13## and *#4*Z*14## on the bus (verdict "out" in thermo-ts10.tsv,
-#   thermo-zone-requests.tsv and trace-corpus.tsv). For the SCS-only ones among them (F450,
-#   F453, F453AV, F459, H4684, MH200, MH200N) the poll is new: no physical capture of it yet.
-# The gate is read when the poll runs (the in-band identity may correct the model after the
-# entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
+#   thermo-zone-requests.tsv and trace-corpus.tsv). No physical capture of the poll exists for
+#   F450, F453, F453AV, F459, H4684, MH200 and MH200N.
+# The gate is read when the poll runs and through the gateway that serves WHO 4
+# (``silent_zone_poll_needed``).
 SILENT_ZONE_GRACE = 120.0
 # Gateways whose zones do not send the knob read (*#4*Z*13##) when they are added; it goes out
 # inside the silent-zone poll instead, after the temperature read (``_local_offset_read_pending``
 # in climate.py). The F455: its zones ask nothing on add (#674, sixteen *#4*Z## polls timing out
 # one after another), and a single-dimension read on a probe-less channel holds a command
-# session ~9 s before the NACK. The MH201: the configuration run on the reporter's plant (#932).
-KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455", "MH201"})
+# session ~9 s before the NACK.
+KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455"})
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -614,7 +602,22 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             _alnum(self.model),
             str(_profile_for_model(self.model).model_name).upper(),
         )
-        return not any(k in norm for norm in names for k in NO_ZONE_STATUS_REQUEST)
+        return not any(
+            k in norm
+            for norm in names
+            for k in (
+                "F450",
+                "F455",
+                "HL4684",  # "BTicino H/L4684" resolves to no profile and "H4684" is not a substring of it
+                "MH200",
+                "MH201",
+                "F452",
+                "F453",
+                "F458",
+                "F459",
+                "H4684",
+            )
+        )
 
     @property
     def _model_key(self) -> str:
@@ -845,27 +848,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def silent_zone_poll_needed(self) -> bool:
-        """Whether a zone silent after the startup sweep asks its own state once.
+        """Whether a zone still silent after the startup sweep asks its own state once.
 
-        On every gateway that is not sent the zone status request (``supports_zone_status`` is
-        False): there nothing else asks a zone for its setpoint (#466 on an F455, #932 on an
-        MH201). A gateway that answers ``*#4*Z##`` needs no second round.
-
-        Decided by the gateway the reads go through (``_who4_target``: a secondary WHO 4 is
-        delegated to, or the warm standby while this primary is down), like
-        ``humidity_request_refused``. A passive follower (a standby, or a secondary without
-        WHO 4) has no zones of its own to ask.
+        On every gateway that serves its zones, whatever its model: what a zone is asked when
+        it is added differs per gateway, and the poll only asks for what none of that brought
+        (#466 on an F455, #932 on an MH201). A passive follower (a standby, or a secondary
+        without WHO 4) has no zones of its own to ask.
         """
-        if self.is_follower and 4 not in self.delegated_whos:
-            return False
-        target = self._who4_target()
-        if not target.supports_zone_status:
-            return True
-        # The in-band identity (WHO 13 / WHO 1013) may have corrected the configured model after
-        # the zones were added: ``_model_key`` follows it, while ``supports_zone_status`` reads
-        # the configured name where the profile has no flag of its own.
-        flag = getattr(getattr(target.gateway, "profile", None), "supports_heating_zone_status", None)
-        return not isinstance(flag, bool) and any(model in target._model_key for model in NO_ZONE_STATUS_REQUEST)
+        return not (self.is_follower and 4 not in self.delegated_whos)
 
     @property
     def knob_read_in_silent_zone_poll(self) -> bool:
