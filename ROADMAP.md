@@ -49,7 +49,7 @@ gantt
     section Delivered in v2.0.0
     RestoreSensor kWh Fix, Dim 19/20 Idle & N4692 Knob (#913, #914, #921) :done, 2026-11-14, 2026-11-15
     Marketplace 2026.11, Apache-2.0 Docs & Golden Corpus (#906, #922, #923) :done, 2026-11-14, 2026-11-15
-    Dim 10 Auto-Detect, Silent-Zone Poll & OWNd 2.0.1 (#927, #931, #933, #935, #938, #939) :done, 2026-11-16, 2026-11-17
+    Dim 10 Auto-Detect, Silent-Zone Poll, Motion Timer & OWNd 2.0.1 (#927, #931, #933, #935, #938–#940, #942) :done, 2026-11-16, 2026-11-17
     section Active Community Collaboration
     RFC - Dedicated Admin Panel & Cover Travel Profiles (#374)      :active, 2026-09-16, 2026-10-15
     RFC - Scope Resolution for WHO 14, WHO 24 & WHO 22              :done, 2026-09-11, 2026-11-04
@@ -209,7 +209,7 @@ graph LR
 
 #### 2. 🥈 Silver Robustness & Quality Hardening — ✅ 100% Complete (10/10)
 
-* **`test-coverage` (100.0% Strict Statement Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (6,489 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
+* **`test-coverage` (100.0% Strict Statement Coverage)**: Surpasses the core >95% requirement. MyHOME enforces strict 100.0% statement coverage across all integration modules (6,554 automated tests passing with zero misses, guarded by `tests/test_coverage_enforcer.py` and CI).
 * **`action-exceptions`**: Service actions validate all inputs and raise `homeassistant.exceptions.ServiceValidationError` or `HomeAssistantError` mapped directly to localized translation keys under `exceptions` in `strings.json`.
 * **`parallel-updates`**: Declares explicit `PARALLEL_UPDATES = 0` across all 11 platform modules (`light.py`, `switch.py`, `cover.py`, `climate.py`, `sensor.py`, `binary_sensor.py`, `media_player.py`, `button.py`, `number.py`, `alarm_control_panel.py`, `lock.py`) for non-blocking local push stream processing.
 

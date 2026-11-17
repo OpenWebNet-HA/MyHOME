@@ -64,7 +64,7 @@ gantt
     section Delivered in v2.0.0
     RestoreSensor kWh Fix, Dim 19/20 Idle & N4692 Knob (#913, #914, #921) :done, 2026-11-14, 2026-11-15
     Marketplace 2026.11, Apache-2.0 Docs & Golden Corpus (#906, #922, #923) :done, 2026-11-14, 2026-11-15
-    Dim 10 Auto-Detect, Silent-Zone Poll & OWNd 2.0.1 (#927, #931, #933, #935, #938, #939) :done, 2026-11-16, 2026-11-17
+    Dim 10 Auto-Detect, Silent-Zone Poll, Motion Timer & OWNd 2.0.1 (#927, #931, #933, #935, #938–#940, #942) :done, 2026-11-16, 2026-11-17
     section Final Stabilization
     v2.0.0 Release Stabilization :done, 2026-10-05, 2026-11-17
 ```
@@ -85,7 +85,7 @@ The following table summarizes the completed architectural features and protocol
 | **Dynamic Command Worker Concurrency** | Transports | ✅ **Shipped** | User-configurable (1–4 workers) command concurrency automatically capped to hardware-safe limits per gateway model (e.g. 1 for MH200/MH201, 4 for F454/MHS1). |
 | **Native Hardware Bus Timers** | WHO=1 | ✅ **Shipped** | Offloaded countdown timers on Legrand DIN actuators (F411) via the dedicated `myhome.turn_on_timed` service action (`0.5–918,000` seconds). |
 | **Central Unit Coordination (P4)** | WHO=4 | ✅ **Shipped** (#817, #846, #909) | Dedicated master coordination for 99-zone Central Unit (`#0`, model 3550, including `*4*3100*#0##` auto restore) and 4-zone Central Unit (`#0#1`, model 4695). Master Seasonal switches propagate to subordinate zones. |
-| **Climate Zone State Diagnostics** | WHO=4 | ✅ **Shipped** (#404, #457, #908, #914, #921) | Dynamic HVAC action deduction (`heating`, `cooling`, `idle` incl. Dimension 19/20 codes `14..16` & `100`), `Dimension 11` / `20` fancoils, `Dimension 13` knob detents, fan mode persistence across restarts, and paced startup sweeps. |
+| **Climate Zone State Diagnostics** | WHO=4 | ✅ **Shipped** (#404, #457, #908, #914, #921, #933, #940) | Dynamic HVAC action deduction (`heating`, `cooling`, `idle` incl. Dimension 19/20 codes `14..16` & `100` and multi-actuator `F455` Dimension 19 status), `Dimension 11` / `20` fancoils, `Dimension 13` knob detents, fan mode persistence across restarts, and paced startup/silent-zone sweeps. |
 | **Real-World CI Trace Replay Engine (P5)** | Testing / CI | ✅ **Shipped** | Automated pytest fixture engine (`tests/test_trace_replay.py`) replaying authentic on-wire captures across 12 physical gateway families directly against Home Assistant state machines. |
 | **DALI Tunable White & Color** | WHO=1 | ✅ **Shipped** | DALI DT8 tunable white (Kelvin 2000K–6535K / mireds, Dimension 14), native HSV color promotion (Dimension 12), and smooth dimming speed curves. |
 | **Declared Groups & Assumed State** | WHO=1 | ✅ **Shipped** (#368, #376, #377) | Lighting groups declared under `light:` (`where: '#G'`, optional `members:`) with aggregate/assumed-state inference and 500 ms debounced targeted status sweeps (`broadcast_resync`) upon intercepting group (`WHERE=#1`), area, or general (`WHERE=0`) frames. |
