@@ -18,7 +18,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -1745,7 +1745,7 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
     cal_events: list[dict] = []
     unsub_events = hass.bus.async_listen(
         f"{DOMAIN}_cover_calibration",
-        lambda ev: cal_events.append(dict(ev.data)),
+        callback(lambda ev: cal_events.append(dict(ev.data))),
     )
 
     proceed_0110 = asyncio.Event()
@@ -1821,6 +1821,7 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
             with pytest.raises(HomeAssistantError) as batch_exc:
                 await asyncio.wait_for(task_0111, timeout=5.0)
             assert batch_exc.value.translation_key == "cover_reports_position"
+            await hass.async_block_till_done()
 
             # 0110 completed and saved travel times; 0111 NEVER swept its motor and NEVER wrote travel times.
             assert [w for w, _ in swept_covers] == ["0110", "0110", "0110"]
