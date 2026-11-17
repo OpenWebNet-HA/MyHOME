@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "custom-components-myhome"
-version = "2.0.0b18"
+version = "2.0.0"
 description = "Home Assistant custom integration for BTicino / Legrand MyHOME OpenWebNet gateways"
 readme = "README.md"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ authors = [
 ]
 requires-python = ">=3.14"
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
@@ -35,7 +35,7 @@ test = [
     "check-wheel-contents>=0.6.0",
     "validate-pyproject[all]>=0.16",
     "ruff>=0.4.0",
-    "OWNd==2.0.0b14",
+    "OWNd==2.0.1",
 ]
 
 [project.urls]

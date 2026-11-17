@@ -6,7 +6,7 @@ blueprint:
     rings the BTicino intercom entrance panel (`WHO=6` or `WHO=8` doorbell event). Motorized gates
     and garage doors (`cover.*`) are intentionally excluded for machinery safety.
   domain: automation
-  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/blueprints/automation/myhome/doorbell_intercom_notification.yaml
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/master/blueprints/automation/myhome/doorbell_intercom_notification.yaml
   input:
     notify_service:
       name: "Mobile App Notify Action"

@@ -856,8 +856,9 @@ def sync_version_references(update: bool = False) -> tuple[bool, list[str]]:
     safeguards_doc = DOCS_DIR / "architecture" / "anti-drift-safeguards.md"
     if safeguards_doc.exists() and ownd_req:
         content = safeguards_doc.read_text(encoding="utf-8")
-        if ownd_req not in content:
-            if update:
+        found_pins = set(re.findall(r"OWNd==[0-9a-zA-Z\.\-_+]+", content))
+        if not found_pins or found_pins != {ownd_req}:
+            if update and found_pins:
                 new_content = re.sub(r"OWNd==[0-9a-zA-Z\.\-_+]+", ownd_req, content)
                 safeguards_doc.write_text(new_content, encoding="utf-8")
                 messages.append(f"Updated OWNd pin to '{ownd_req}' in {rel_path(safeguards_doc)}")
