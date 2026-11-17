@@ -13,6 +13,7 @@ from homeassistant.helpers import selector
 from voluptuous import All, Coerce, In, Range, Required
 
 from .config_flow_audio import OptionsFlowAudioMixin
+from .config_flow_covers import OptionsFlowCoversMixin
 from .config_flow_topology import OptionsFlowTopologyMixin
 from .const import (
     CONF_ADDRESS,
@@ -35,9 +36,10 @@ from .typing_compat import flow_schema
 
 
 class MyhomeOptionsFlowHandler(
-    OptionsFlowAudioMixin, OptionsFlowTopologyMixin, OptionsFlowWithReload
+    OptionsFlowAudioMixin, OptionsFlowTopologyMixin, OptionsFlowCoversMixin,
+    OptionsFlowWithReload,
 ):
-    """Handle MyHome options (general settings + decoder mapping)."""
+    """Handle MyHome options (general settings + decoder mapping + cover behaviour)."""
 
     def __init__(self, config_entry: ConfigEntry = None):  # type: ignore
         """Initialize MyHome options flow."""
@@ -124,6 +126,7 @@ class MyhomeOptionsFlowHandler(
 
                 self._persist_audio_options(user_input)
                 self._apply_topology(user_input, errors)
+                self._persist_covers_options(user_input)
 
                 _model_update = False
                 if CONF_NAME in user_input and user_input[CONF_NAME] != self.data.get(
@@ -275,6 +278,7 @@ class MyhomeOptionsFlowHandler(
 
         self._append_audio_schema(schema_dict)
         self._append_topology_schema(schema_dict)
+        self._append_covers_schema(schema_dict)
 
         return self.async_show_form(
             step_id="user",
