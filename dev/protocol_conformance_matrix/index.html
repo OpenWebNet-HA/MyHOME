@@ -2099,8 +2099,8 @@
 <h1 id="openwebnet-protocol-conformance-capability-matrix">OpenWebNet Protocol Conformance &amp; Capability Matrix<a class="headerlink" href="#openwebnet-protocol-conformance-capability-matrix" title="Permanent link">&para;</a></h1>
 <blockquote>
 <p><strong>Authoritative Specification &amp; Verification Baseline</strong><br />
-<em>Last Updated: November 14, 2026</em><br />
-<em>Corpus Version: 2.0.0 (452 Fixtures, 21 Subsystems, 1,000+ Automated Conformance Assertions)</em></p>
+<em>Last Updated: November 17, 2026</em><br />
+<em>Corpus Version: 2.0.0 (455 Fixtures, 21 Subsystems, 1,100+ Automated Conformance Assertions)</em></p>
 </blockquote>
 <p>This document serves as the <strong>verifiable truth</strong> for OpenWebNet protocol conformance across the Home Assistant (<code>OpenWebNet-HA/MyHOME</code>) and Python protocol driver (<code>OpenWebNet-HA/OWNd</code>) ecosystem.</p>
 <hr />
@@ -2370,7 +2370,7 @@
 <hr />
 <h2 id="4-independent-local-verification">4. Independent Local Verification<a class="headerlink" href="#4-independent-local-verification" title="Permanent link">&para;</a></h2>
 <p>Any contributor or user can independently verify the conformance suite:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Run automated assertions against the 452-fixture golden corpus</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Run automated assertions against the 455-fixture golden corpus</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_golden_conformance.py<span class="w"> </span>tests/test_golden_privacy.py
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Run non-mutating schema, privacy &amp; corpus.json sync validation</span>
