@@ -2486,7 +2486,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
     subgraph Gateways["🏛️ Gateways &amp; Transports"]
         GW_MHS1["🟢 MyHomeServer1&lt;br/&gt;(47 captures · 6,879 rx)"]
         GW_F454["🟢 F454&lt;br/&gt;(23 captures · 4,447 rx)"]
-        GW_F455["🟢 F455&lt;br/&gt;(9 captures · 563 rx)"]
+        GW_F455["🟢 F455&lt;br/&gt;(10 captures · 565 rx)"]
         GW_F459["🟢 F459&lt;br/&gt;(1 capture · 898 rx)"]
         GW_F461["🟢 F461&lt;br/&gt;(18 captures · 2,846 rx)"]
         GW_MH202["🟢 MH202&lt;br/&gt;(9 captures · 672 rx)"]
@@ -2507,7 +2507,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
         SUB_COV_V["🟢 Covers Timed &amp; Calibrated (WHO 2)&lt;br/&gt;(1,404 rx · 55 captures)"]
         SUB_COV_H["🟢 Covers Dim 10 / 11 (WHO 2)&lt;br/&gt;(495 rx · 25 captures)"]
         SUB_COV_255["🟡 Uncalibrated Dim 10=255 (WHO 2)&lt;br/&gt;(Unit tests only)"]
-        SUB_THERMO_ZONES["🟢 Zone Thermostats &amp; Probes (WHO 4)&lt;br/&gt;(8,663 rx · 78 captures)"]
+        SUB_THERMO_ZONES["🟢 Zone Thermostats &amp; Probes (WHO 4)&lt;br/&gt;(8,665 rx · 79 captures)"]
         SUB_CU3550["🟢 Central Unit 3550 (WHO 4)&lt;br/&gt;(236 rx · 20 captures)"]
         SUB_CU4695["🔴 Central Unit 4695 (WHO 4)&lt;br/&gt;(Physical capture needed)"]
         SUB_FANCOIL["🟢 Fancoils Dim 11/20 (WHO 4)&lt;br/&gt;(342 rx · 25 captures)"]
@@ -2597,7 +2597,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <tr>
 <td style="text-align: left;"><strong>F455</strong></td>
 <td style="text-align: left;">🟢 <strong>Covered</strong></td>
-<td style="text-align: left;">9 physical captures (563 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 25, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/central_restore_3100_live_2026-11-12/</code></td>
+<td style="text-align: left;">10 physical captures (565 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 25, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/central_restore_3100_live_2026-11-12/</code></td>
 <td style="text-align: left;"><em>None needed — single-bus DIN IP gateway active in CI.</em></td>
 </tr>
 <tr>
@@ -2723,7 +2723,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <tr>
 <td style="text-align: left;"><strong>Thermoregulation (WHO = 4) — Zone Thermostats, Probes &amp; Humidity</strong></td>
 <td style="text-align: left;">🟢 <strong>Covered</strong></td>
-<td style="text-align: left;">8,663 physical <code>rx</code> frames across 78 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_429/</code></td>
+<td style="text-align: left;">8,665 physical <code>rx</code> frames across 79 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_429/</code></td>
 <td style="text-align: left;"><em>Baseline covered (zone temperature <code>Dim 0</code>, setpoints <code>Dim 12/14</code>, knob offsets <code>Dim 13</code> &amp; <code>Dim 60</code> humidity).</em></td>
 </tr>
 <tr>
