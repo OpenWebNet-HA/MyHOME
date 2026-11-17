@@ -19,6 +19,8 @@ was changed in the lines.
 | `F461_who4_monitor_poll_2026-11-17T08-00.log` | The same window as the F461 delivered it. |
 | `F455_who4_monitor_paced_poll_2026-11-17T11-47.log` | 11:47:44Z to 11:47:58Z, as the F455 delivered it. The poll of a start with nothing stored (core init 11:47:05Z) on the build that asks one zone after another and waits for a quiet bus: from 30 s after the startup sweep, zone 2 `*0`, `*13`, `*14`, `*12`, `#1*20`, then two reads zone 2 makes on its own once its actuator reported a fan coil (`*19`, `*11`), then zones 3 and 4 `*0`, `*13`, `*14`, `*12`, `#1*20`. |
 | `F461_who4_monitor_paced_poll_2026-11-17T11-47.log` | The same window as the F461 delivered it. |
+| `F455_who4_monitor_probe_303_2026-11-17T11-21.log` | 11:21:43Z and 11:31:44Z, as the F455 delivered it: two reports the slave probe `303` (zone 3, probe 03) sent by itself, 601.3 s apart. |
+| `F455_ha_log_probe_303_read_2026-11-17T11-31.log` | Not a monitor log: the six DEBUG / INFO lines of Home Assistant from the first of those reports to the second that concern probe 303, as logged (local time, UTC+2; the address of the gateway replaced by `<ip>`). The first report as Home Assistant received it, the fallback read `*#4*303*15##` of the temperature sensor of that probe on the build of that hour (a report kept the read back for 300 s), a restart of Home Assistant made for the test (the `Initializing` line), and the second report. |
 
 ## What the logs show
 
@@ -54,3 +56,10 @@ was changed in the lines.
   next frame, zone 4's answer `*#4*4*0*0257##`, follows 0.861 s after the second copy. All 15
   reads of the poll and the two reads of zone 2's own were answered, and Home Assistant logged no
   warning. In its log no read was written less than 0.75 s after a WHO 4 frame was received.
+- **A probe that reports every 10 minutes was asked in between, and the F455 refused the read
+  only after 9 s** (the two files of probe 303). The probe reported at 11:21:43.258Z and
+  11:31:44.563Z, and Home Assistant received the first report at 11:21:43.315Z. The sensor's
+  periodic update queued `*#4*303*15##` at 11:31:06.770Z, 563.5 s after that report, and the
+  F455 answered with a NACK at 11:31:16.094Z, 9.324 s after the read was queued and 8.938 s after
+  a worker took it. Since then a report of a probe keeps its fallback read back for 900 s, and a
+  refused read is not sent again until the entry is reloaded.
