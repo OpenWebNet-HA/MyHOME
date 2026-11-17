@@ -13,7 +13,7 @@ from OWNd.profiles import GatewayProfile, MH200NProfile, get_gateway_profile
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.light import MyHOMELight
-from custom_components.myhome.sensor import SCAN_INTERVAL, MyHOMETemperatureSensor
+from custom_components.myhome.sensor import PROBE_PUSH_FRESH, SCAN_INTERVAL, MyHOMETemperatureSensor
 
 
 @pytest.fixture
@@ -159,8 +159,14 @@ async def test_probe_sensor_polls_only_when_push_stream_is_silent(hass, mock_gat
     await probe.async_update()
     mock_gateway.send_status_request.assert_not_awaited()
 
-    # Push stream goes quiet for a full interval -> poll again
+    # One poll interval of silence is not enough for a probe (some report every 10 minutes)
     probe._last_push_at = time.monotonic() - SCAN_INTERVAL.total_seconds() - 1
+    assert probe._push_is_fresh() is True
+    await probe.async_update()
+    mock_gateway.send_status_request.assert_not_awaited()
+
+    # Push stream goes quiet for the probe window -> poll again
+    probe._last_push_at = time.monotonic() - PROBE_PUSH_FRESH - 1
     assert probe._push_is_fresh() is False
     await probe.async_update()
     mock_gateway.send_status_request.assert_awaited_once()

@@ -1,6 +1,7 @@
 """Support for MyHome sensors (power/energy, temperature, illuminance)."""
 from __future__ import annotations
 
+import asyncio
 import math
 import re
 import time
@@ -84,6 +85,13 @@ from .where_grammar import is_probe
 PARALLEL_UPDATES = 0
 
 SCAN_INTERVAL = timedelta(seconds=300)
+# How long a reading a probe (WHERE >= 100) sent by itself keeps its fallback read back. A probe
+# on a physical plant reported every 10 min (`*#4*303*0*0229##` 08:31:22Z, `*#4*303*0*0230##`
+# 08:41:23Z, 2026-11-17), so with the poll interval as the window every second update sent
+# `*#4*303*15##`; the F455 1.0.76 on that plant held a command session 9.3 to 9.4 s before it
+# NACKed each of them (sent directly to the F461 on the same bus: NACK after 2.1 s). Three
+# poll intervals cover that report interval with one update to spare.
+PROBE_PUSH_FRESH = 900.0
 
 SERVICE_SEND_INSTANT_POWER = "start_sending_instant_power"
 SERVICE_STOP_SENDING_INSTANT_POWER = "stop_sending_instant_power"
@@ -977,6 +985,11 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         # every few seconds and NACK explicit polls, so polling is only a
         # fallback for when the push stream goes quiet (issue #308).
         self._last_push_at: float | None = None
+        # Readings received from the bus, to tell whether one arrived while a fallback read was out.
+        self._pushes = 0
+        # Set when the gateway refused the fallback read of a probe: it is not sent again (until
+        # the entry is reloaded). The readings the probe sends by itself are all it has then.
+        self._fallback_read_refused = False
 
     @property
     def _is_probe(self) -> bool:
@@ -984,11 +997,9 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         return is_probe(str(self._where).split("#")[0])
 
     def _push_is_fresh(self) -> bool:
-        """Return True when a reading arrived within the last poll interval."""
-        return (
-            self._last_push_at is not None
-            and (time.monotonic() - self._last_push_at) < SCAN_INTERVAL.total_seconds()
-        )
+        """Return True when a reading arrived within the last poll interval (a probe: ``PROBE_PUSH_FRESH``)."""
+        window = PROBE_PUSH_FRESH if self._is_probe else SCAN_INTERVAL.total_seconds()
+        return self._last_push_at is not None and (time.monotonic() - self._last_push_at) < window
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
@@ -1007,13 +1018,41 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         if self._push_is_fresh():
             return
         if self._is_probe:
+            if self._fallback_read_refused:
+                return
             cmd = (
                 getattr(OWNHeatingCommand, "get_probe_temperature", None)
                 and OWNHeatingCommand.get_probe_temperature(self._where)
             ) or OWNHeatingCommand.get_temperature(self._where)
         else:
             cmd = OWNHeatingCommand.get_temperature(self._where)
-        await self._gateway_handler.send_status_request(cmd)
+        pushes_before = self._pushes
+        written = await self._gateway_handler.send_status_request(cmd)
+        if self._is_probe and isinstance(written, asyncio.Future):
+            # Not awaited here: a refusal can take 9 s (above), and the update must not wait for it.
+            written.add_done_callback(lambda future: self._fallback_read_done(future, pushes_before))
+
+    def _fallback_read_done(self, written: asyncio.Future[Any], pushes_before: int) -> None:
+        """Stop the fallback read of a probe once the gateway refused it.
+
+        Refused: the sender cancelled the read (a NACK, or no reply before the command timeout)
+        while the gateway was connected. Not a refusal: a read dropped because it collected
+        another zone's frame (``_gateway_desync``, #886), a read cancelled with the connection,
+        and a read during which the probe reported (the gateway then ACKs it).
+        """
+        if not written.cancelled() or getattr(written, "_gateway_desync", False) is True:
+            return
+        if getattr(self._gateway_handler, "is_connected", False) is not True:
+            return
+        if self._pushes != pushes_before:
+            return
+        self._fallback_read_refused = True
+        LOGGER.debug(
+            "%s %s: the gateway refused the read of probe %s; it is not asked again, its own reports are used",
+            self._gateway_handler.log_id,
+            self.entity_id,
+            self._where,
+        )
 
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
@@ -1052,6 +1091,7 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
                 )
             self._attr_native_value = val
             self._last_push_at = time.monotonic()
+            self._pushes += 1
             self._publish_state()
         return None
 
