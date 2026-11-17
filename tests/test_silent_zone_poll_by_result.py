@@ -8,8 +8,10 @@ for the models in the request tables and unknown for any other. So the poll has 
 any gateway asks for what it has not reported, read by read, and a refused read ends it.
 
 - A zone that reported its temperature, setpoint and mode sends nothing.
-- The knob read (``*#4*Z*13##``) is sent when the zone is added (#466 / #902) and the poll does
-  not repeat it. Only the F455 keeps it for the poll (``KNOB_READ_IN_SILENT_ZONE_POLL``, #674).
+- The knob read (``*#4*Z*13##``) is sent when the zone is added (#466 / #902). The poll does not
+  repeat a read that was answered; one that brought nothing is repeated once, as the last read of
+  a zone that is still silent. Only the F455 keeps the first knob read for the poll
+  (``KNOB_READ_IN_SILENT_ZONE_POLL``, #674).
 - Actuator 1 (``*#4*Z#1*20##``) is not asked where the gateway drops the actuator request, and a
   zone that misses nothing else asks for it only where its watch could not (the F455).
 - A zone marked unresponsive (``poll_health``) is left alone.
@@ -26,14 +28,19 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import State
-from OWNd.message import OWNHeatingEvent
+from OWNd.message import OWNCommand, OWNHeatingEvent, OWNMessage
 from OWNd.profiles import get_gateway_profile
 
 from custom_components.myhome.gateway import KNOB_READ_IN_SILENT_ZONE_POLL, MyHOMEGatewayHandler
+from custom_components.myhome.gateway_sessions import (
+    CommandWorkerPool,
+    _mismatched_who4_reply_zones,
+)
 from tests.test_f455_zone_polling import _handler, _queued, _ready, _spin, _zone
 
 TEMPERATURE = "*#4*2*0*0196##"
@@ -159,6 +166,127 @@ async def test_a_zone_that_refuses_the_first_read_is_asked_nothing_more(hass) ->
     assert _queued(handler) == ["*#4*2##", "*#4*2*0##"]
 
 
+def _acknowledged(hass, *, empty: bool) -> asyncio.Future:
+    """What the sender resolves for an ACK: marked when the command session carried no frame."""
+    written = hass.loop.create_future()
+    if empty:
+        written._empty_reply = True
+    written.set_result(0.0)
+    return written
+
+
+async def test_the_sender_marks_an_acknowledgement_that_carried_no_frame(hass) -> None:
+    """OWNd returns the collected frames for an answered request and ``True`` for a bare ACK."""
+    handler = _handler(hass, "F455")
+    handler.is_connected = True
+    pool = CommandWorkerPool(handler)
+    pool._event_session_ready.set()
+    session = MagicMock()
+    session.connect = AsyncMock(return_value={"Success": True})
+    session.is_connected = True
+    session.close = AsyncMock()
+    session._stream_reader = object()
+    session._stream_writer = object()
+    session.last_error = None
+
+    async def _send(message, is_status_request=False):
+        return [OWNMessage.parse(SETPOINT)] if str(message) == "*#4*2*14##" else True
+
+    session.send = AsyncMock(side_effect=_send)
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=session):
+        answered = await pool.send_status_request(OWNCommand("*#4*2*14##"))
+        bare_ack = await pool.send_status_request(OWNCommand("*#4*7*14##"))
+        command = await pool.send(OWNCommand("*1*1*11##"))
+        await pool.send_buffer.put(None)
+        await pool.sending_loop(0)
+    assert answered.done() and not answered.cancelled() and not getattr(answered, "_empty_reply", False)
+    assert bare_ack.done() and not bare_ack.cancelled() and bare_ack._empty_reply is True
+    assert not getattr(command, "_empty_reply", False)  # a command has no answer to wait for
+
+
+async def test_an_acknowledged_read_that_brought_nothing_ends_the_poll(hass, monkeypatch) -> None:
+    """An ACK alone is not an answer: the F455 ACKs `*#4*0##` after 9 s and sends nothing."""
+    monkeypatch.setattr("custom_components.myhome.climate.EMPTY_REPLY_SETTLE", 0)
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=[_acknowledged(hass, empty=False), _acknowledged(hass, empty=True)])
+    zone = _zone(hass, handler)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##"]
+
+
+async def test_an_answer_on_the_event_session_keeps_the_poll_going(hass, monkeypatch) -> None:
+    """The command session carried no frame, but the zone answered while the read was out."""
+    monkeypatch.setattr("custom_components.myhome.climate.EMPTY_REPLY_SETTLE", 0)
+    handler = _handler(hass, "F455")
+    zone = _zone(hass, handler)
+
+    async def _send(command):
+        if str(command) == "*#4*2*0##":
+            zone.handle_event(OWNHeatingEvent(TEMPERATURE))
+        return _acknowledged(hass, empty=True)
+
+    _ready(handler, side_effect=_send)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##"]  # *13 brought nothing in turn
+
+
+async def test_an_answer_within_the_settle_time_keeps_the_poll_going(hass, monkeypatch) -> None:
+    monkeypatch.setattr("custom_components.myhome.climate.EMPTY_REPLY_SETTLE", 0.01)
+    handler = _handler(hass, "F455")
+    zone = _zone(hass, handler)
+
+    async def _send(command):
+        frame = {"*#4*2*0##": TEMPERATURE, "*#4*2*13##": KNOB, "*#4*2*14##": SETPOINT, "*#4*2*12##": MODE}.get(str(command))
+        if frame is not None:
+            hass.loop.call_later(0.001, zone.handle_event, OWNHeatingEvent(frame))
+        return _acknowledged(hass, empty=True)
+
+    _ready(handler, side_effect=_send)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+
+
+def _dropped_by_the_desync_guard(hass) -> asyncio.Future:
+    """What the sender leaves of a read that collected only another zone's frames (#886)."""
+    written = hass.loop.create_future()
+    written._gateway_desync = True
+    written.cancel()
+    return written
+
+
+async def test_a_read_that_collected_another_zone_s_frame_is_sent_once_more(hass) -> None:
+    """issue_932/README.md: `*#4*3#1*20*0##` came a second time, inside the read that followed.
+
+    Zone 3 only misses its actuator, so its one read goes out just before zone 4's first one; the
+    second copy of its answer is collected by `*#4*4*0##`, which the guard drops. That is not an
+    answer of zone 4: without a second try its poll would end there, with no setpoint.
+    """
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=[_dropped_by_the_desync_guard(hass), *[_acknowledged(hass, empty=False)] * 5])
+    zone = _zone(hass, handler, "4")
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+
+
+async def test_a_read_dropped_twice_ends_the_poll(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler, side_effect=[_dropped_by_the_desync_guard(hass), _dropped_by_the_desync_guard(hass)])
+    zone = _zone(hass, handler, "4")
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*0##"]
+
+
+async def test_the_capture_s_second_copy_is_what_the_guard_drops() -> None:
+    """The frames of 08:00:49Z: zone 3's actuator state twice, the second before zone 4's own answer."""
+    capture = Path(__file__).parent / "fixtures" / "traces" / "issue_932" / "F455_who4_monitor_poll_2026-11-17T08-00.log"
+    actuators = [line.split(" ")[2] for line in capture.read_text(encoding="utf-8").splitlines() if "#1*20*" in line]
+    assert actuators == ["*#4*3#1*20*0##", "*#4*3#1*20*0##", "*#4*4#1*20*0##", "*#4*2#1*20*7##"]
+    collected = [OWNMessage.parse(actuators[1])]
+    assert _mismatched_who4_reply_zones("*#4*4#1*20##", collected) == {"3"}
+    assert _mismatched_who4_reply_zones("*#4*4*0##", collected) == {"3"}
+    assert _mismatched_who4_reply_zones("*#4*3#1*20##", collected) is None
+
+
 async def test_a_zone_marked_unresponsive_is_left_alone(hass) -> None:
     """Two status requests in a row without an answer or a frame: not asked again until the re-probe."""
     handler = _handler(hass, "MyHomeServer1")
@@ -204,9 +332,43 @@ async def test_the_reads_on_add_stay_and_the_poll_asks_the_rest(hass, model) -> 
     await zone.async_update()
     assert _queued(handler) == on_add
     zone.handle_event(OWNHeatingEvent(TEMPERATURE))
+    if on_add:
+        zone.handle_event(OWNHeatingEvent(KNOB))  # the answer to the knob read sent on add
     assert zone.current_temperature == 19.6 and zone.target_temperature is None
     await zone._poll_if_silent(grace=0)
     assert _queued(handler) == [*on_add, *poll]
+
+
+@pytest.mark.parametrize("model", sorted(set(SCS_ONLY) - {"F455"}))
+async def test_a_knob_read_that_brought_nothing_is_repeated_once_as_the_last_read(hass, model) -> None:
+    """A refusal of the repeated read cannot keep the setpoint reads from going out: it comes after them."""
+    on_add, poll = SCS_ONLY[model]
+    handler = _handler(hass, model)
+    _ready(handler)
+    zone = _zone(hass, handler)
+    await zone.async_update()
+    zone.handle_event(OWNHeatingEvent(TEMPERATURE))
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == [*on_add, *poll, "*#4*2*13##"]
+    for frame in (SETPOINT, MODE):
+        zone.handle_event(OWNHeatingEvent(frame))
+    before = _queued(handler)
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == before  # the zone is no longer silent: the knob alone is not asked for
+
+
+async def test_a_refused_setpoint_read_ends_the_poll_before_the_repeated_knob_read(hass) -> None:
+    handler = _handler(hass, "MH200")
+    refused = hass.loop.create_future()
+    _ready(handler, side_effect=[None, None, refused])  # *0 and *13 on add, then the poll's *14
+    zone = _zone(hass, handler)
+    await zone.async_update()
+    zone.handle_event(OWNHeatingEvent(TEMPERATURE))
+    task = asyncio.ensure_future(zone._poll_if_silent(grace=0))
+    await _spin()
+    refused.cancel()
+    await task
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##"]
 
 
 @pytest.mark.parametrize("model", ["F453", "MH200", "MH200N"])
@@ -218,6 +380,7 @@ async def test_a_zone_without_a_temperature_asks_for_it_first(hass, model) -> No
     await zone.async_update()
     on_add = _queued(handler)
     assert on_add == SCS_ONLY[model][0]
+    zone.handle_event(OWNHeatingEvent(KNOB))
     await zone._poll_if_silent(grace=0)
     assert _queued(handler)[len(on_add) :] == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
 
@@ -278,7 +441,8 @@ async def test_a_restored_setpoint_is_shown_at_once_and_still_read(hass) -> None
     assert zone.target_temperature == 20.5
     await zone.async_update()
     assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##"]
-    zone.handle_event(OWNHeatingEvent(TEMPERATURE))
+    for frame in (TEMPERATURE, KNOB):
+        zone.handle_event(OWNHeatingEvent(frame))
     await zone._poll_if_silent(grace=0)
     assert _queued(handler)[2:] == ["*#4*2*14##", "*#4*2*12##"]
     zone.handle_event(OWNHeatingEvent("*#4*2*14*0200*3##"))

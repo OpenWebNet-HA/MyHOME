@@ -244,8 +244,9 @@ ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
 # temperature (*#4*Z*0##), and only if that was answered its knob (*#4*Z*13##, unless the zone
 # already asked for it when it was added), its setpoint (*#4*Z*14##), its setpoint in force
 # (*#4*Z*12##, followed by the zone's season frame) and actuator 1 (*#4*Z#1*20##, not where the
-# gateway drops the actuator request, ``silent_zone_actuator_read_refused``). A value Home
-# Assistant restored from before the restart is not a report. A zone that got everything from
+# gateway drops the actuator request, ``silent_zone_actuator_read_refused``). A knob read that
+# was sent when the zone was added and brought nothing is repeated once, as the last read. A
+# value Home Assistant restored from before the restart is not a report. A zone that got everything from
 # the sweep, from its status request or from its thermostat sends nothing; its actuators were
 # asked for when it was added (``watch_zone_actuators``), so a zone that only misses them asks
 # for actuator 1 here only where that request is not sent (``zone_actuator_request_refused``,

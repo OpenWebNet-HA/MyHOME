@@ -14,7 +14,8 @@ What changes: MH201 zones run the silent-zone poll, as the zones of every gatewa
 ``SILENT_ZONE_GRACE`` seconds after the sweep a zone asks for what it has not reported, one read at
 a time: its setpoint (``*#4*Z*14##``), its setpoint in force (``*#4*Z*12##``) and actuator 1
 (``*#4*Z#1*20##``). The knob read (``*#4*Z*13##``) still goes out when the zone is added, as before
-#932, and the poll does not repeat it.
+#932; the reporter's zones showed their ``knob_pos``, so the poll has no reason to ask for it again.
+A knob read that brought nothing is repeated once, as the last read of the poll.
 
 The frames below are the ones quoted in the issue; the reporter's plant is the hardware evidence
 (the MH201 is catalogued but not emulated in own-firmware-oracle).
@@ -33,6 +34,7 @@ REPLY_SETPOINT = "*#4*2*14*0200*3##"  # to *#4*#2*14##
 # Issue 932: frames the same zone published by itself after a change on the touchscreen.
 PUSHED_TEMPERATURE = "*#4*2*0*0196##"
 PUSHED_SETPOINT_IN_FORCE = "*#4*2*12*0205*3##"
+KNOB = "*#4*2*13*00##"  # the zones of the issue showed ``knob_pos``
 
 ON_ADD = ["*#4*2*0##", "*#4*2*13##"]
 MH201_READS = ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
@@ -66,10 +68,22 @@ async def test_mh201_zone_with_a_temperature_asks_setpoints_and_actuator(hass) -
     _ready(handler)
     zone = _zone(hass, handler)
     await zone.async_update()
-    zone.handle_event(OWNHeatingEvent(PUSHED_TEMPERATURE))
+    for frame in (PUSHED_TEMPERATURE, KNOB):
+        zone.handle_event(OWNHeatingEvent(frame))
     assert zone.current_temperature == 19.6 and zone.target_temperature is None
     await zone._poll_if_silent(grace=0)
     assert _queued(handler) == [*ON_ADD, *MH201_READS]
+
+
+async def test_mh201_knob_read_that_brought_nothing_is_repeated_last(hass) -> None:
+    """The knob read on add went unanswered: a zone that is still silent asks once more, after the setpoints."""
+    handler = _handler(hass, "MH201")
+    _ready(handler)
+    zone = _zone(hass, handler)
+    await zone.async_update()
+    zone.handle_event(OWNHeatingEvent(PUSHED_TEMPERATURE))
+    await zone._poll_if_silent(grace=0)
+    assert _queued(handler) == [*ON_ADD, *MH201_READS, "*#4*2*13##"]
 
 
 async def test_mh201_zone_without_a_temperature_asks_for_it_first(hass) -> None:
@@ -77,6 +91,7 @@ async def test_mh201_zone_without_a_temperature_asks_for_it_first(hass) -> None:
     _ready(handler)
     zone = _zone(hass, handler)
     await zone.async_update()
+    zone.handle_event(OWNHeatingEvent(KNOB))
     await zone._poll_if_silent(grace=0)
     assert _queued(handler) == [*ON_ADD, "*#4*2*0##", *MH201_READS]
 

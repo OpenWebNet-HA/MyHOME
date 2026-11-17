@@ -1585,6 +1585,15 @@ class CommandWorkerPool:
                             self._pause_status_after_desync()
                         _cancel_written(task)
                     else:
+                        if (
+                            task["is_status_request"]
+                            and collected is True
+                            and isinstance(written, asyncio.Future)
+                            and not written.done()
+                        ):
+                            # OWNd returns True for an ACK that closed the request with no frame
+                            # on the command session. The silent-zone poll reads this mark.
+                            setattr(written, "_empty_reply", True)
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])
                     responses_to_dispatch: Any = collected

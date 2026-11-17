@@ -1,0 +1,27 @@
+2026-11-17T08:31:53.970Z EVT *4*210#0215*#0## [OWNHeatingEvent] Zone 0's mode is set to 'cool' at 21.5°C.
+2026-11-17T08:31:53.972Z EVT *4*21*#0## [OWNHeatingEvent] Zone 0's remote control is enabled.
+2026-11-17T08:31:53.973Z EVT *4*31*#0## [OWNHeatingEvent] Zone 0's central unit reports the central unit battery is KO.
+2026-11-17T08:33:10.737Z EVT *#4*2*0*0235## [OWNHeatingEvent] Zone 2's main sensor is reporting a temperature of 23.5°C.
+2026-11-17T08:33:53.446Z EVT *#4*2*13*00## [OWNHeatingEvent] Zone 2's local offset is set to 0°C.
+2026-11-17T08:33:53.561Z EVT *#4*3*0*0252## [OWNHeatingEvent] Zone 3's main sensor is reporting a temperature of 25.2°C.
+2026-11-17T08:33:53.704Z EVT *#4*4*0*0253## [OWNHeatingEvent] Zone 4's main sensor is reporting a temperature of 25.3°C.
+2026-11-17T08:33:53.960Z EVT *#4*2*14*0240*3## [OWNHeatingEvent] Zone 2's target temperature is set to 24.0°C.
+2026-11-17T08:33:54.000Z EVT *#4*3*13*00## [OWNHeatingEvent] Zone 3's local offset is set to 0°C.
+2026-11-17T08:33:54.136Z EVT *#4*4*13*00## [OWNHeatingEvent] Zone 4's local offset is set to 0°C.
+2026-11-17T08:33:54.272Z EVT *#4*2*12*0240*3## [OWNHeatingEvent] Zone 2's local target temperature is set to 24.0°C.
+2026-11-17T08:33:54.275Z EVT *4*1*2## [OWNHeatingEvent] Zone 2's season is heating.
+2026-11-17T08:33:54.416Z EVT *#4*3*14*0215*3## [OWNHeatingEvent] Zone 3's target temperature is set to 21.5°C.
+2026-11-17T08:33:54.561Z EVT *#4*4*14*0215*3## [OWNHeatingEvent] Zone 4's target temperature is set to 21.5°C.
+2026-11-17T08:33:54.696Z EVT *#4*2#1*20*7## [OWNHeatingEvent] Zone 2's fan is on at speed 2.
+2026-11-17T08:33:54.946Z EVT *#4*3*12*0215*3## [OWNHeatingEvent] Zone 3's local target temperature is set to 21.5°C.
+2026-11-17T08:33:54.948Z EVT *4*0*3## [OWNHeatingEvent] Zone 3's season is conditioning.
+2026-11-17T08:33:55.073Z EVT *#4*4*12*0215*3## [OWNHeatingEvent] Zone 4's local target temperature is set to 21.5°C.
+2026-11-17T08:33:55.075Z EVT *4*0*4## [OWNHeatingEvent] Zone 4's season is conditioning.
+2026-11-17T08:33:55.201Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T08:33:55.344Z EVT *#4*4#1*20*0## [OWNHeatingEvent] Zone 4's actuator 1 is off.
+2026-11-17T08:33:55.431Z EVT *#4*3#1*#20*0## [OWNHeatingCommand] *#4*3#1*#20*0##
+2026-11-17T08:33:55.471Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T08:33:56.416Z EVT *#4*2*19*5*7## [OWNHeatingEvent] Zone 2's cooling fan is off; heating fan is on at speed 2.
+2026-11-17T08:33:57.263Z EVT *#4*2*11*0## [OWNHeatingEvent] Zone 2's fan is on at 'Auto' speed.
+2026-11-17T08:34:01.567Z EVT *4*210*#4## [OWNHeatingEvent] Zone 4's mode is set to 'cool'.
+2026-11-17T08:34:01.571Z EVT *#4*#4*14*0215*2## [OWNHeatingEvent] Zone 4's target temperature is set to 21.5°C.
