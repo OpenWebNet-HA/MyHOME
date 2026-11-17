@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -190,3 +192,26 @@ async def test_a_gateway_double_that_returns_no_future_changes_nothing(hass, gat
     await probe.async_update()
     await probe.async_update()
     assert _sent(gateway) == [READ, READ] and probe._fallback_read_refused is False
+
+
+def test_the_capture_of_probe_303_is_covered_by_the_window() -> None:
+    """issue_932/README.md: the probe reported 601 s apart; the read queued 563 s after the report
+    Home Assistant had received (the window was the poll interval then) was NACKed 9.3 s later.
+    900 s covers the time between two reports."""
+    folder = Path(__file__).parent / "fixtures" / "traces" / "issue_932"
+    monitor = (folder / "F455_who4_monitor_probe_303_2026-11-17T11-21.log").read_text(encoding="utf-8").splitlines()
+    reports = [datetime.fromisoformat(line.split(" ")[0]) for line in monitor]
+    assert [line.split(" ")[2] for line in monitor] == ["*#4*303*0*0232##", "*#4*303*0*0232##"]
+    log = (folder / "F455_ha_log_probe_303_read_2026-11-17T11-31.log").read_text(encoding="utf-8").splitlines()
+    received, queued, _unqueued, refused, _restart, _next = (
+        datetime.fromisoformat(" ".join(line.split(" ")[:2])) for line in log
+    )
+    assert "Message received: `*#4*303*0*0232##`" in log[0]
+    assert f"Message `{READ}` was successfully queued." in log[1]
+    assert f"Gateway rejected status request {READ} (NACK, 0 response(s))" in log[3]
+    assert 0 < (received - reports[0]).total_seconds() < 1  # the report Home Assistant had is the monitor's first
+    between = (reports[1] - reports[0]).total_seconds()
+    asked_after = (queued - received).total_seconds()
+    assert (between, asked_after) == (601.305, 563.455)
+    assert SCAN_INTERVAL.total_seconds() < asked_after < between < PROBE_PUSH_FRESH
+    assert (refused - queued).total_seconds() == 9.324

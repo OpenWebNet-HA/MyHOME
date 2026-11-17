@@ -1,0 +1,6 @@
+2026-11-17 13:21:43.315+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - <ip>] Message received: `*#4*303*0*0232##`
+2026-11-17 13:31:06.770+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - <ip>] Message `*#4*303*15##` was successfully queued.
+2026-11-17 13:31:07.156+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - <ip>] Message `*#4*303*15##` was successfully unqueued by worker 0.
+2026-11-17 13:31:16.094+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - <ip>] Gateway rejected status request *#4*303*15## (NACK, 0 response(s)). Subsystem or device may not be present.
+2026-11-17 13:31:41.881+02:00 INFO (MainThread) [custom_components.myhome] Initializing MyHOME integration v2.0.0b18 (OWNd v2.0.0b14)
+2026-11-17 13:31:44.613+02:00 DEBUG (MainThread) [custom_components.myhome] [F455 gateway - <ip>] Message received: `*#4*303*0*0232##`
