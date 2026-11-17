@@ -28,6 +28,7 @@ from OWNd.message import (
 from pytest_homeassistant_custom_component.common import async_fire_time_changed_exact
 
 from custom_components.myhome.binary_sensor import (
+    MOTION_END_SAFETY_TIMEOUT,
     MOTION_TIMEOUT_GRACE,
     MyHOMEMotionSensor,
 )
@@ -262,3 +263,155 @@ async def test_restored_active_motion_arms_remaining_timer(hass) -> None:
     async_fire_time_changed_exact(hass, restored_at + timedelta(seconds=8.1))
     await hass.async_block_till_done()
     assert sensor.is_on is False
+
+
+@pytest.mark.asyncio
+async def test_what39_detector_uses_safety_timeout_during_long_occupancy_and_restores_flag(
+    hass, freezer
+) -> None:
+    """Once WHAT 39 is seen (#777), long occupancy gaps stay ON until WHAT 39 or 10 min safety."""
+    sensor = _make_motion_sensor(hass, where="52")
+    sensor.handle_event(OWNEvent.parse("*#1*52*7*0*0*45##"))
+    assert sensor._supports_motion_end is False
+
+    # First cycle ends with WHAT 39 -> sensor learns it is a Stand-alone WHAT 39 detector.
+    sensor.handle_event(OWNEvent.parse("*1*34*52##"))
+    sensor.handle_event(OWNEvent.parse("*1*39*52##"))
+    assert sensor.is_on is False
+    assert sensor._supports_motion_end is True
+    assert sensor.extra_state_attributes["Supports motion end"] is True
+    assert sensor._effective_timeout == MOTION_END_SAFETY_TIMEOUT
+
+    # Second cycle: room stays occupied for 243.3 s without intermediate WHAT 34 (#777 trace).
+    freezer.tick(timedelta(seconds=10))
+    t_enter = dt_util.utcnow()
+    sensor.handle_event(OWNEvent.parse("*1*34*52##"))
+    assert sensor.is_on is True
+
+    async_fire_time_changed_exact(hass, t_enter + timedelta(seconds=243.3))
+    await hass.async_block_till_done()
+    assert sensor.is_on is True
+
+    # If WHAT 39 is lost, the 10-minute safety timer still clears the sensor.
+    async_fire_time_changed_exact(hass, t_enter + MOTION_END_SAFETY_TIMEOUT + timedelta(seconds=0.1))
+    await hass.async_block_till_done()
+    assert sensor.is_on is False
+
+    # Restoring state with 'Supports motion end': True preserves the 10-minute safety hold.
+    restored_sensor = _make_motion_sensor(hass, where="52")
+    restored_sensor._timeout = timedelta(seconds=48)
+    restored_state = MagicMock()
+    restored_state.state = STATE_ON
+    restored_state.last_updated = dt_util.utcnow() - timedelta(seconds=120)
+    restored_state.attributes = {"Supports motion end": True}
+    restored_sensor.async_get_last_state = AsyncMock(return_value=restored_state)
+
+    await restored_sensor.async_added_to_hass()
+    assert restored_sensor._supports_motion_end is True
+    assert restored_sensor.is_on is True
+    assert restored_sensor._timeout_unsub is not None
+
+
+@pytest.mark.asyncio
+async def test_stale_timeout_adapts_and_requeries_dim7_on_post_clear_retrigger(
+    hass, freezer
+) -> None:
+    """If the user lengthens the K4659 delay in MyHOME_Suite, a post-clear repeat adapts _timeout."""
+    sensor = _make_motion_sensor(hass, where="1001")
+    await sensor.async_added_to_hass()
+    sensor._gateway_handler.send_status_request.reset_mock()
+
+    # Initially configured for 5 s (8 s hold).
+    sensor.handle_event(OWNEvent.parse("*#1*1001*7*0*0*5##"))
+    assert sensor._timeout == timedelta(seconds=8)
+
+    # Wait past the 60 s query rate-limit window, then start motion with device now set to 15 s.
+    freezer.tick(timedelta(seconds=65))
+    sensor.handle_event(OWNEvent.parse("*1*34*1001##"))
+    assert sensor.is_on is True
+
+    # Stale 8 s timer fires at t0 + 8.1 s and clears the sensor early.
+    freezer.tick(timedelta(seconds=8.1))
+    async_fire_time_changed_exact(hass, dt_util.utcnow())
+    await hass.async_block_till_done()
+    assert sensor.is_on is False
+
+    # At t0 + 15.0 s (6.9 s after clear), the K4659's 15 s repeat arrives:
+    # _timeout adapts to 15 s + 3 s = 18 s and re-queries *#1*1001*7##.
+    freezer.tick(timedelta(seconds=6.9))
+    t_repeat = dt_util.utcnow()
+    sensor.handle_event(OWNEvent.parse("*1*34*1001##"))
+    await hass.async_block_till_done()
+
+    assert sensor.is_on is True
+    assert sensor._timeout == timedelta(seconds=18)
+    assert sensor.extra_state_attributes["Timeout"] == 18.0
+    assert [str(c.args[0]) for c in sensor._gateway_handler.send_status_request.call_args_list] == [
+        "*#1*1001*7##"
+    ]
+
+    # Next 15.5 s cycle stays ON without flapping.
+    async_fire_time_changed_exact(hass, t_repeat + timedelta(seconds=15.5))
+    await hass.async_block_till_done()
+    assert sensor.is_on is True
+
+
+@pytest.mark.asyncio
+async def test_restored_state_clears_or_arms_immediately_while_startup_sweep_active(hass) -> None:
+    """During a deferred startup sweep, restored STATE_ON still expires or arms immediately."""
+    import asyncio
+
+    # 1. Expired restored state clears right in async_restore_last_state without waiting for sweep.
+    sensor_expired = _make_motion_sensor(hass, where="1001")
+    sensor_expired._gateway_handler.sweep_active = True
+    sensor_expired._gateway_handler.initial_discovery_pending = True
+    never_done = asyncio.Event()
+    sensor_expired._gateway_handler.wait_for_initial_discovery = AsyncMock(
+        side_effect=never_done.wait
+    )
+    expired_state = MagicMock()
+    expired_state.state = STATE_ON
+    expired_state.last_updated = dt_util.utcnow() - timedelta(seconds=500)
+    expired_state.attributes = {}
+    sensor_expired.async_get_last_state = AsyncMock(return_value=expired_state)
+
+    await sensor_expired.async_added_to_hass()
+    assert sensor_expired.is_on is False
+    sensor_expired.async_schedule_update_ha_state.assert_called()
+    await sensor_expired.async_will_remove_from_hass()
+
+    # 2. Fresh restored state arms _timeout_unsub immediately even while sweep_active is True.
+    sensor_active = _make_motion_sensor(hass, where="1002")
+    sensor_active._timeout = timedelta(seconds=8)
+    sensor_active._gateway_handler.sweep_active = True
+    sensor_active._gateway_handler.initial_discovery_pending = True
+    sensor_active._gateway_handler.wait_for_initial_discovery = AsyncMock(
+        side_effect=never_done.wait
+    )
+    active_state = MagicMock()
+    active_state.state = STATE_ON
+    active_state.last_updated = dt_util.utcnow() - timedelta(seconds=2)
+    active_state.attributes = {}
+    sensor_active.async_get_last_state = AsyncMock(return_value=active_state)
+
+    await sensor_active.async_added_to_hass()
+    assert sensor_active.is_on is True
+    assert sensor_active._timeout_unsub is not None
+
+    never_done.set()
+    await hass.async_block_till_done()
+
+
+def test_motion_timer_defensive_guards(hass) -> None:
+    """Defensive timer guards handle detached hass and already-cleared state."""
+    sensor = _make_motion_sensor(hass, where="1001")
+    sensor.hass = None
+    sensor._hass = None
+    sensor._schedule_timeout_timer()
+    assert sensor._timeout_unsub is None
+
+    # Calling _async_timeout_expired when already at idle polarity is a no-op.
+    sensor.async_write_ha_state.reset_mock()
+    sensor._async_timeout_expired()
+    sensor.async_write_ha_state.assert_not_called()
+
