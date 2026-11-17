@@ -401,7 +401,8 @@ async def test_role_change_reloads_once_the_options_are_saved(hass: HomeAssistan
 
 
 
-async def test_removing_the_primary_flags_its_standby(hass: HomeAssistant) -> None:
+async def test_removing_the_primary_promotes_its_standby(hass: HomeAssistant) -> None:
+    """The standby used to be flagged and left a follower of nothing (tests/test_orphaned_follower_promotion.py)."""
     p1, p2, p3 = _setup_patches()
     with p1, p2, p3:
         primary = await _set_up(
@@ -416,7 +417,8 @@ async def test_removing_the_primary_flags_its_standby(hass: HomeAssistant) -> No
 
         await hass.config_entries.async_remove(primary.entry_id)
         await hass.async_block_till_done()
-        assert _issue(hass, issue_id) is not None
+        assert _issue(hass, issue_id) is None
+        assert standby.runtime_data.gateway.is_follower is False
 
 
 # ── topology helpers ──────────────────────────────────────────────────────

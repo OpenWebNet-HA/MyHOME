@@ -278,6 +278,7 @@ Without proper coordination on a shared bus:
     - Set `bus_topology: shared` and `gateway_role: primary`.
     - Performs active startup sweeps and entity discovery for every subsystem not delegated to a secondary.
     - Cannot leave the primary role while a secondary or standby still points at it.
+    - **Removing the primary gateway from Home Assistant** hands the bus over: its only secondary or standby becomes a standalone gateway; of several followers the warm standby becomes the shared primary and the secondaries point at it, keeping their delegated subsystems. The gateways concerned are reloaded with their new role, run the startup sweep like any primary and keep their entities, and the log has one `WARNING` line per gateway that changed. The removed gateway's entities are deleted with it, as for any removed integration entry. Several secondaries without a standby are not changed: the `primary_gateway_missing` repair asks you to choose. A follower found without its primary when it is set up (the primary was removed with an earlier version) is handled the same way.
 - **Secondary Gateway (Subsystem Offloading)**:
     - Set `bus_topology: shared` and `gateway_role: secondary`.
     - Select the **Primary Gateway** in the dropdown.

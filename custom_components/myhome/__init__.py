@@ -36,7 +36,7 @@ from .legacy_yaml import load_legacy_myhome_yaml
 from .migrate import migrate_entry_and_registries, prune_stale_devices
 from .services import async_setup_services
 from .thermo_switch import load_thermo_switch_subentries
-from .topology import async_check_primary_links
+from .topology import async_check_primary_links, async_promote_orphaned_followers
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -234,6 +234,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
     if hass.data[DOMAIN].get("_lovelace_unregistered"):
         await _async_register_frontend(hass)
 
+    # A follower whose primary was removed (before this version, or while Home Assistant was
+    # stopped) gets a primary again before its handler reads its role.
+    async_promote_orphaned_followers(hass, setting_up=entry.entry_id)
+
     # Per-platform device configurations and entity objects; myhome.yaml and bus
     # discovery fill them, the platforms read them through entry.runtime_data.
     # A mapping pre-seeded under the deprecated hass.data[DOMAIN][mac] alias (see
@@ -408,13 +412,14 @@ async def async_remove_config_entry_device(
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> None:
-    """Drop what a removed gateway leaves behind: its store, its repair issues, and
-    flag the secondary/standby gateways it was the primary of (#453)."""
+    """Drop what a removed gateway leaves behind: its store and its repair issues, and give
+    the secondary/standby gateways it was the primary of a primary again (#453)."""
     await decoder_pool_store(hass, entry.entry_id).async_remove()
     issue_registry = ir.async_get(hass)
     for domain, issue_id in list(issue_registry.issues):
         if domain == DOMAIN and (issue_id.endswith(f"_{entry.entry_id}") or f"_{entry.entry_id}_" in issue_id):
             ir.async_delete_issue(hass, DOMAIN, issue_id)
+    async_promote_orphaned_followers(hass, removed=entry.entry_id)
     async_check_primary_links(hass, removed=entry.entry_id)
     if not [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]:
         domain_data = hass.data.setdefault(DOMAIN, {})

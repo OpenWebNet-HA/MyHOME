@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -500,6 +501,73 @@ def validate_shared_bus_topology(
     if not (shared and in_role == ROLE_PRIMARY) and my_mac and dependents(hass, my_mac):
         errors[CONF_GATEWAY_ROLE] = "gateway_has_dependents"
     return errors
+
+
+@callback
+def async_promote_orphaned_followers(
+    hass: HomeAssistant, *, removed: str | None = None, setting_up: str | None = None
+) -> list[Any]:
+    """Give the followers of a primary that has no config entry any more a primary again.
+
+    A secondary or standby whose primary was removed from Home Assistant would otherwise stay a
+    follower of nothing: it skips the startup sweep, asks its devices nothing and creates no
+    entities for the subsystems it left to that primary, and when it is the last MyHOME entry
+    its options form has no topology fields to change that. So:
+
+    - the only follower of the removed primary becomes a standalone gateway;
+    - of several followers the warm standby becomes the shared primary, and the secondaries
+      point at it and keep their delegated subsystems;
+    - several secondaries and no standby are left as they are: which one should lead is the
+      owner's choice (``async_check_primary_links`` raises the repair issue).
+
+    A primary that still has an entry (disabled, failing, or reconfigured) is not touched.
+    ``removed`` is an entry being deleted right now, ``setting_up`` the entry whose setup is
+    calling (it reads the new options itself); every other loaded entry that changed is
+    reloaded. Returns the entries whose options changed.
+    """
+    orphans: dict[str, list[Any]] = {}
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.entry_id == removed:
+            continue
+        primary = entry_primary_mac(entry)
+        if primary and entry_for_mac(hass, primary, exclude=removed) is None:
+            orphans.setdefault(primary, []).append(entry)
+
+    changed: list[Any] = []
+    for primary, followers in orphans.items():
+        standbys = [entry for entry in followers if entry_role(entry) == ROLE_STANDBY]
+        if len(followers) == 1:
+            successor = followers[0]
+        elif len(standbys) == 1:
+            successor = standbys[0]
+        else:
+            continue
+        others = [entry for entry in followers if entry is not successor]
+        options = dict(successor.options)
+        options[CONF_BUS_TOPOLOGY] = TOPOLOGY_SHARED if others else TOPOLOGY_STANDALONE
+        options[CONF_GATEWAY_ROLE] = ROLE_PRIMARY
+        options.pop(CONF_PRIMARY_GATEWAY, None)
+        options.pop(CONF_DELEGATED_WHOS, None)
+        LOGGER.warning(
+            "%s was the %s of gateway %s, which is no longer configured: it is now the %s gateway",
+            successor.title,
+            entry_role(successor),
+            primary,
+            "shared primary" if others else "standalone",
+        )
+        hass.config_entries.async_update_entry(successor, options=options)
+        changed.append(successor)
+        for other in others:
+            LOGGER.warning("%s now follows %s as its primary gateway", other.title, successor.title)
+            hass.config_entries.async_update_entry(
+                other, options={**other.options, CONF_PRIMARY_GATEWAY: entry_mac(successor)}
+            )
+            changed.append(other)
+
+    for entry in changed:
+        if entry.entry_id != setting_up and entry.state is ConfigEntryState.LOADED:
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+    return changed
 
 
 @callback

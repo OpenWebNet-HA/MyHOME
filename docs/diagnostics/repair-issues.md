@@ -307,7 +307,9 @@ If the standby goes offline as well, this issue clears and the primary's entitie
 **Auto-Resolving**: Yes (when the gateway points at a valid primary again, or is set to standalone)
 
 ### What it means
-A gateway configured as **Secondary** or **Warm Standby** points at a primary gateway that is no longer configured as a shared primary: it was removed from Home Assistant, or reconfigured. The secondary keeps suppressing discovery of the subsystems it leaves to that primary, so devices on those subsystems get no new entities.
+A gateway configured as **Secondary** or **Warm Standby** points at a primary gateway that is no longer configured as a shared primary. The secondary keeps suppressing discovery of the subsystems it leaves to that primary, so devices on those subsystems get no new entities.
+
+When the primary is **removed** from Home Assistant, its followers are normally reconfigured automatically and this issue does not appear: the only follower becomes a standalone gateway, and of several followers the warm standby becomes the shared primary (see [Gateways](../configuration/gateways.md)). The issue is raised where that is not possible: several secondaries and no standby were left behind, or the primary still exists but is no longer a shared primary.
 
 ### How to resolve
 1. Navigate to **Settings → Devices & Services → MyHOME** and click **Configure** on the gateway named in the issue.
