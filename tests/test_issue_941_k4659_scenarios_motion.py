@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from freezegun import freeze_time
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.const import STATE_ON
 from homeassistant.util import dt as dt_util
@@ -46,6 +47,13 @@ MAC = "00:03:50:aa:94:10"
 
 def _load_trace() -> dict:
     return json.loads(TRACE_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.fixture
+def freezer():
+    """Provide freezegun time control even when pytest-freezer is not installed (HA beta/dev CI)."""
+    with freeze_time() as frozen:
+        yield frozen
 
 
 def _make_motion_sensor(hass, *, where: str = "1001", inverted: bool = False) -> MyHOMEMotionSensor:
