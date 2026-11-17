@@ -1619,32 +1619,69 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             quantized = native.quantize_target(reported_position, timed_target)
 
             async def _handoff_timed_target() -> None:
+                # Yield once so Python 3.14's eager_task_factory does not run this
+                # before handle_event() finishes (where a stationary Dim 10 frame
+                # calls _end_echo_window()) or before a synchronous user takeover
+                # bumps _run_generation.
                 await asyncio.sleep(0)
                 if hand_off_gen != self._run_generation:
                     return
+                arm_echo = False
                 if reported_position is not None and quantized == reported_position:
-                    await self._gateway_handler.send(
-                        OWNAutomationCommand.stop_shutter(self._full_where),
-                        is_cancel=True,
-                    )
+                    command = OWNAutomationCommand.stop_shutter(self._full_where)
                 elif quantized <= 0:
-                    await self._gateway_handler.send(
-                        OWNAutomationCommand.lower_shutter(self._full_where),
-                        is_cancel=True,
-                    )
+                    command = OWNAutomationCommand.lower_shutter(self._full_where)
                 elif quantized >= 100:
-                    await self._gateway_handler.send(
-                        OWNAutomationCommand.raise_shutter(self._full_where),
-                        is_cancel=True,
-                    )
+                    command = OWNAutomationCommand.raise_shutter(self._full_where)
                 else:
-                    self._echo_until = time.monotonic() + ECHO_WINDOW
-                    await self._gateway_handler.send(
-                        OWNAutomationCommand.set_shutter_level(
-                            self._full_where, quantized
-                        ),
-                        is_cancel=True,
+                    arm_echo = True
+                    command = OWNAutomationCommand.set_shutter_level(
+                        self._full_where, quantized
                     )
+                    self._echo_until = time.monotonic() + ECHO_WINDOW
+
+                def _is_send_buffer_shutdown() -> bool:
+                    return (
+                        getattr(
+                            getattr(self._gateway_handler, "send_buffer", None),
+                            "_is_shutdown",
+                            False,
+                        )
+                        is True
+                    )
+
+                try:
+                    written = await self._gateway_handler.send(command, is_cancel=True)
+                except Exception as err:
+                    if arm_echo and hand_off_gen == self._run_generation:
+                        self._end_echo_window()
+                    if not _is_send_buffer_shutdown():
+                        LOGGER.warning(
+                            "%s Mid-move Dimension 10 promotion hand-off `%s` failed for cover %s: %s",
+                            self._gateway_handler.log_id,
+                            command,
+                            self._full_where,
+                            err,
+                        )
+                    return
+                if isinstance(written, asyncio.Future):
+
+                    @callback
+                    def _on_handoff_written(fut: asyncio.Future[float]) -> None:
+                        if hand_off_gen != self._run_generation:
+                            return
+                        if fut.cancelled() or fut.exception() is not None:
+                            if arm_echo:
+                                self._end_echo_window()
+                            if not _is_send_buffer_shutdown():
+                                LOGGER.warning(
+                                    "%s Mid-move Dimension 10 promotion hand-off `%s` did not reach the bus for cover %s.",
+                                    self._gateway_handler.log_id,
+                                    command,
+                                    self._full_where,
+                                )
+
+                    written.add_done_callback(_on_handoff_written)
 
             target_hass.async_create_task(_handoff_timed_target())
         LOGGER.debug(

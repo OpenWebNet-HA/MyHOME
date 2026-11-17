@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -1513,6 +1514,40 @@ async def test_deadband_zero_and_hundred_quantization_routes_to_plain_open_close
         await harness.stop()
 
 
+def _create_unit_cover(
+    hass: HomeAssistant,
+    where: str,
+    gw: MagicMock,
+    *,
+    pos: int | None = 100,
+) -> MyHOMECover:
+    """Create an isolated timed MyHOMECover with entity scaffolding mocked."""
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cov = MyHOMECover(
+            hass=hass,
+            name=f"Cover {where}",
+            entity_name=None,
+            device_id=where,
+            who="2",
+            where=where,
+            interface=None,
+            advanced=False,
+            allow_auto_advanced=True,
+            manufacturer="BTicino",
+            model="Shutter / Cover",
+            gateway=gw,
+        )
+    cov.hass = hass
+    cov.entity_id = f"cover.cover_{where}"
+    cov.async_schedule_update_ha_state = MagicMock()
+    cov.async_write_ha_state = MagicMock()
+    if pos is not None:
+        cov._attr_current_cover_position = pos
+        cov._start_position = pos
+        cov._attr_is_closed = pos == 0
+    return cov
+
+
 @pytest.mark.asyncio
 async def test_midmove_promotion_dangling_write_full_runs_and_user_supersede(
     hass: HomeAssistant,
@@ -1521,30 +1556,7 @@ async def test_midmove_promotion_dangling_write_full_runs_and_user_supersede(
     loop = asyncio.get_running_loop()
 
     def _build_unit_cover(where: str, gw: MagicMock, *, pos: int | None = 100) -> MyHOMECover:
-        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
-            cov = MyHOMECover(
-                hass=hass,
-                name=f"Cover {where}",
-                entity_name=None,
-                device_id=where,
-                who="2",
-                where=where,
-                interface=None,
-                advanced=False,
-                allow_auto_advanced=True,
-                manufacturer="BTicino",
-                model="Shutter / Cover",
-                gateway=gw,
-            )
-        cov.hass = hass
-        cov.entity_id = f"cover.cover_{where}"
-        cov.async_schedule_update_ha_state = MagicMock()
-        cov.async_write_ha_state = MagicMock()
-        if pos is not None:
-            cov._attr_current_cover_position = pos
-            cov._start_position = pos
-            cov._attr_is_closed = pos == 0
-        return cov
+        return _create_unit_cover(hass, where, gw, pos=pos)
 
     gw = MagicMock()
     gw.mac = MAC
@@ -1867,4 +1879,236 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_midmove_promotion_handoff_failure_and_delivery_paths(
+    hass: HomeAssistant,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify Stage 1 enqueue exceptions, Stage 2 written future outcomes, and shutdown/supersede guards."""
+    loop = asyncio.get_running_loop()
+
+    def _make_gw(*, is_shutdown: bool = False) -> MagicMock:
+        gw = MagicMock()
+        gw.mac = MAC
+        gw.log_id = "[test]"
+        gw.config_entry = None
+        gw.calibration_hub = None
+        gw.send_buffer = SimpleNamespace(_is_shutdown=is_shutdown)
+        return gw
+
+    def _relevant_logs() -> list[logging.LogRecord]:
+        return [
+            r
+            for r in caplog.records
+            if r.levelno >= logging.WARNING
+            and r.name.startswith(("custom_components.myhome", "asyncio"))
+        ]
+
+    # 1a. Stage 1: synchronous send() raising RuntimeError while not shut down
+    # -> caught cleanly, _echo_until cleared, warning logged ("failed").
+    gw_err = _make_gw(is_shutdown=False)
+    gw_err.send = AsyncMock(side_effect=[None, RuntimeError("enqueue failed")])
+    cov_err = _create_unit_cover(hass, "0760", gw_err, pos=100)
+    await cov_err.async_set_cover_position(position=40)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        cov_err.handle_event(OWNAutomationEvent.parse("*#2*0760*10*12*100*001*0##"))
+        await hass.async_block_till_done()
+    assert cov_err._echo_until is None
+    err_logs = _relevant_logs()
+    assert len(err_logs) == 1
+    assert err_logs[0].levelno == logging.WARNING
+    assert "Mid-move Dimension 10 promotion hand-off" in err_logs[0].message
+    assert "failed" in err_logs[0].message
+    assert "*#2*0760*#11#001*40##" in err_logs[0].message
+    assert "enqueue failed" in err_logs[0].message
+
+    # 1b. Stage 1 with arm_echo=False (already-at-target *2*0* stop_shutter) raising RuntimeError.
+    gw_stop_err = _make_gw(is_shutdown=False)
+    gw_stop_err.send = AsyncMock(side_effect=[None, RuntimeError("stop enqueue failed")])
+    cov_stop_err = _create_unit_cover(hass, "0761", gw_stop_err, pos=100)
+    await cov_stop_err.async_set_cover_position(position=40)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        cov_stop_err.handle_event(OWNAutomationEvent.parse("*#2*0761*10*11*40*001*0##"))
+        await hass.async_block_till_done()
+    assert cov_stop_err._echo_until is None
+    stop_err_logs = _relevant_logs()
+    assert len(stop_err_logs) == 1
+    assert "failed" in stop_err_logs[0].message
+    assert "*2*0*0761##" in stop_err_logs[0].message
+
+    # 1c. Stage 1 superseded while awaiting send() before raising -> newer _echo_until preserved.
+    entered_send = asyncio.Event()
+    release_send = asyncio.Event()
+
+    async def _slow_failing_send(cmd: object, *, is_cancel: bool = False) -> None:
+        if str(cmd) == "*#2*0762*#11#001*40##":
+            entered_send.set()
+            await release_send.wait()
+            raise RuntimeError("delayed enqueue failed")
+
+    gw_sup_err = _make_gw(is_shutdown=False)
+    gw_sup_err.send = AsyncMock(side_effect=_slow_failing_send)
+    cov_sup_err = _create_unit_cover(hass, "0762", gw_sup_err, pos=100)
+    await cov_sup_err.async_set_cover_position(position=40)
+    cov_sup_err.handle_event(OWNAutomationEvent.parse("*#2*0762*10*12*100*001*0##"))
+    await asyncio.wait_for(entered_send.wait(), timeout=2.0)
+
+    await cov_sup_err.async_set_cover_position(position=70)
+    newer_echo_stage1 = cov_sup_err._echo_until
+    assert newer_echo_stage1 is not None
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        release_send.set()
+        await hass.async_block_till_done()
+    assert cov_sup_err._echo_until == newer_echo_stage1
+    assert any("delayed enqueue failed" in r.message for r in _relevant_logs())
+
+    # 2. Stage 1: synchronous send() raising when send_buffer._is_shutdown = True
+    # -> _echo_until cleared, NO warning logged.
+    gw_shut_err = _make_gw(is_shutdown=True)
+    gw_shut_err.send = AsyncMock(side_effect=[None, RuntimeError("queue shut down")])
+    cov_shut_err = _create_unit_cover(hass, "0763", gw_shut_err, pos=100)
+    await cov_shut_err.async_set_cover_position(position=40)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        cov_shut_err.handle_event(OWNAutomationEvent.parse("*#2*0763*10*12*100*001*0##"))
+        await hass.async_block_till_done()
+    assert cov_shut_err._echo_until is None
+    assert _relevant_logs() == []
+
+    # 3a. Stage 2: written future cancelled while unsuperseded & _is_shutdown = False
+    # -> _echo_until cleared, warning logged ("did not reach the bus").
+    gw_fut_cancel = _make_gw(is_shutdown=False)
+    fut_cancel: asyncio.Future[float] = loop.create_future()
+    gw_fut_cancel.send = AsyncMock(side_effect=[None, fut_cancel])
+    cov_fut_cancel = _create_unit_cover(hass, "0764", gw_fut_cancel, pos=100)
+    await cov_fut_cancel.async_set_cover_position(position=40)
+    cov_fut_cancel.handle_event(OWNAutomationEvent.parse("*#2*0764*10*12*100*001*0##"))
+    await hass.async_block_till_done()
+    assert cov_fut_cancel._echo_until is not None
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        fut_cancel.cancel()
+        await hass.async_block_till_done()
+    assert cov_fut_cancel._echo_until is None
+    fut_cancel_logs = _relevant_logs()
+    assert len(fut_cancel_logs) == 1
+    assert "did not reach the bus" in fut_cancel_logs[0].message
+    assert "*#2*0764*#11#001*40##" in fut_cancel_logs[0].message
+
+    # 3b. Stage 2: written future failed via set_exception while unsuperseded & send_buffer=None
+    # -> _echo_until cleared, warning logged ("did not reach the bus"), exception retrieved cleanly.
+    gw_fut_exc = _make_gw(is_shutdown=False)
+    gw_fut_exc.send_buffer = None
+    fut_exc: asyncio.Future[float] = loop.create_future()
+    gw_fut_exc.send = AsyncMock(side_effect=[None, fut_exc])
+    cov_fut_exc = _create_unit_cover(hass, "0765", gw_fut_exc, pos=100)
+    await cov_fut_exc.async_set_cover_position(position=40)
+    cov_fut_exc.handle_event(OWNAutomationEvent.parse("*#2*0765*10*12*100*001*0##"))
+    await hass.async_block_till_done()
+    assert cov_fut_exc._echo_until is not None
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        fut_exc.set_exception(RuntimeError("bus write failed"))
+        await hass.async_block_till_done()
+    assert cov_fut_exc._echo_until is None
+    fut_exc_logs = _relevant_logs()
+    assert len(fut_exc_logs) == 1
+    assert fut_exc_logs[0].levelno == logging.WARNING
+    assert "did not reach the bus" in fut_exc_logs[0].message
+
+    # 3c. Stage 2 with arm_echo=False (stop_shutter) cancelled -> warning logged without touching echo.
+    gw_stop_fut = _make_gw(is_shutdown=False)
+    fut_stop_cancel: asyncio.Future[float] = loop.create_future()
+    gw_stop_fut.send = AsyncMock(side_effect=[None, fut_stop_cancel])
+    cov_stop_fut = _create_unit_cover(hass, "0766", gw_stop_fut, pos=100)
+    await cov_stop_fut.async_set_cover_position(position=40)
+    cov_stop_fut.handle_event(OWNAutomationEvent.parse("*#2*0766*10*11*40*001*0##"))
+    await hass.async_block_till_done()
+    assert cov_stop_fut._echo_until is None
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        fut_stop_cancel.cancel()
+        await hass.async_block_till_done()
+    assert cov_stop_fut._echo_until is None
+    stop_fut_logs = _relevant_logs()
+    assert len(stop_fut_logs) == 1
+    assert "did not reach the bus" in stop_fut_logs[0].message
+    assert "*2*0*0766##" in stop_fut_logs[0].message
+
+    # 3d. Stage 2: written future succeeds via set_result -> _echo_until preserved, no warning.
+    gw_fut_ok = _make_gw(is_shutdown=False)
+    fut_ok: asyncio.Future[float] = loop.create_future()
+    gw_fut_ok.send = AsyncMock(side_effect=[None, fut_ok])
+    cov_fut_ok = _create_unit_cover(hass, "0767", gw_fut_ok, pos=100)
+    await cov_fut_ok.async_set_cover_position(position=40)
+    cov_fut_ok.handle_event(OWNAutomationEvent.parse("*#2*0767*10*12*100*001*0##"))
+    await hass.async_block_till_done()
+    assert cov_fut_ok._echo_until is not None
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        fut_ok.set_result(time.monotonic())
+        await hass.async_block_till_done()
+    assert cov_fut_ok._echo_until is not None
+    assert _relevant_logs() == []
+
+    # 4a. Stage 2: written future cancelled when superseded by a newer user command
+    # -> NO warning logged, and newer _echo_until preserved.
+    gw_fut_sup = _make_gw(is_shutdown=False)
+    fut_old: asyncio.Future[float] = loop.create_future()
+    fut_new: asyncio.Future[float] = loop.create_future()
+    gw_fut_sup.send = AsyncMock(side_effect=[None, fut_old, fut_new])
+    cov_fut_sup = _create_unit_cover(hass, "0768", gw_fut_sup, pos=100)
+    await cov_fut_sup.async_set_cover_position(position=40)
+    cov_fut_sup.handle_event(OWNAutomationEvent.parse("*#2*0768*10*12*100*001*0##"))
+    await hass.async_block_till_done()
+
+    await cov_fut_sup.async_set_cover_position(position=70)
+    newer_echo = cov_fut_sup._echo_until
+    assert newer_echo is not None
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        fut_old.cancel()
+        await hass.async_block_till_done()
+    assert cov_fut_sup._echo_until == newer_echo
+    assert _relevant_logs() == []
+
+    # 4b. Stage 2: written future cancelled when send_buffer._is_shutdown = True
+    # -> _echo_until cleared, NO warning logged.
+    gw_fut_shut = _make_gw(is_shutdown=False)
+    fut_shut: asyncio.Future[float] = loop.create_future()
+    gw_fut_shut.send = AsyncMock(side_effect=[None, fut_shut])
+    cov_fut_shut = _create_unit_cover(hass, "0769", gw_fut_shut, pos=100)
+    await cov_fut_shut.async_set_cover_position(position=40)
+    cov_fut_shut.handle_event(OWNAutomationEvent.parse("*#2*0769*10*12*100*001*0##"))
+    await hass.async_block_till_done()
+    assert cov_fut_shut._echo_until is not None
+    gw_fut_shut.send_buffer._is_shutdown = True
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        fut_shut.cancel()
+        await hass.async_block_till_done()
+    assert cov_fut_shut._echo_until is None
+    assert _relevant_logs() == []
+
+    # 5. Non-Future return from send() (e.g. AsyncMock returning None) -> completes cleanly.
+    gw_none = _make_gw(is_shutdown=False)
+    gw_none.send = AsyncMock(return_value=None)
+    cov_none = _create_unit_cover(hass, "0770", gw_none, pos=100)
+    await cov_none.async_set_cover_position(position=40)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        cov_none.handle_event(OWNAutomationEvent.parse("*#2*0770*10*12*100*001*0##"))
+        await hass.async_block_till_done()
+    assert cov_none._advanced is True
+    assert cov_none._echo_until is not None
+    assert gw_none.send.await_count == 2
+    assert str(gw_none.send.await_args_list[1].args[0]) == "*#2*0770*#11#001*40##"
+    assert gw_none.send.await_args_list[1].kwargs == {"is_cancel": True}
+    assert _relevant_logs() == []
+
 
