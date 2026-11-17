@@ -299,6 +299,12 @@ def is_central_thermo_where(message: Any) -> bool:
 _CENTRAL_ZONE_STATUS_WHATS = frozenset({"110", "210", "111", "211", "103", "203", "102", "202"})
 
 
+def _is_actuator_status(frame: str) -> bool:
+    """``*#4*WHERE*20##`` or ``*#4*WHERE*20*V##``: the actuator status dimension (WHO 4 p. 7, 1.5.8 p. 22, 1.9.1 p. 62)."""
+    fields = frame.removesuffix("##").split("*")
+    return len(fields) > 3 and fields[1] == "#4" and fields[3] == "20"
+
+
 def is_central_unit_report(message: Any) -> bool:
     """Whether a WHO=4 frame shows that the plant has a central unit.
 
@@ -306,13 +312,21 @@ def is_central_unit_report(message: Any) -> bool:
     when it is a dimension or a zone status with its season (WHO 4 p. 65). A generic one does
     not: an F455 puts ``*4*311*#2##`` on its event session after every status of a standalone
     thermostat, on a plant with or without a central unit (live, 2026-11-08).
+
+    An actuator status (dimension 20) with WHERE ``#0`` does not count either. The WHERE of an
+    actuator status is ``Z#N``, ``Z#0`` or ``0#0`` (WHO 4 p. 22, p. 62); this one is an answer
+    to the all-zone request ``*#4*#0*20##`` that the integration itself sends on an F461 and a
+    MyHomeServer1. An F461 2.0.11 on a plant with no central unit answered that request with
+    ``*#4*#0*20*1##`` between the actuator frames of its zones (#944), and with the central
+    unit taken as present its standalone zones wrote ``*#4*#6*#14*0225*3##``, which nothing
+    answered.
     """
     if not is_central_thermo_where(message):
         return False
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
-    if raw.removeprefix("#").split("#", 1)[0] == "0":
-        return True
     frame = str(message)
+    if raw.removeprefix("#").split("#", 1)[0] == "0":
+        return not _is_actuator_status(frame)
     if not frame.startswith("*4*"):
         return True
     what = frame.split("*")[2].split("#", 1)[0]
