@@ -2228,8 +2228,8 @@
 <tr>
 <td style="text-align: left;"><strong>F455</strong></td>
 <td style="text-align: left;">WHO 1, 2, 4, 18</td>
-<td style="text-align: left;">WHO 1, 2, 4, 18</td>
-<td style="text-align: left;">Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.</td>
+<td style="text-align: left;">WHO 1, 2, 18 (firmware drops <code>*#4*0##</code>)</td>
+<td style="text-align: left;">Entry-level gateway: lighting, cover, and energy meter 51 queries. Not in own-firmware-oracle; a physical F455 1.0.76 ACKed <code>*#4*0##</code> after 9.1 s with no zone frame although its zones answer single reads (<code>tests/fixtures/traces/issue_466</code>), so the sweep leaves it out; a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>MyHomeServer1</strong></td>
