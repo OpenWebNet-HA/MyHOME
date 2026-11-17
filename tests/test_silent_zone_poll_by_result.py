@@ -60,7 +60,7 @@ SCS_ONLY = {
     "F452": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F453": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
     "F453AV": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
-    "F455": ([], ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
+    "F455": ([], ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]),
     "F458": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F459": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "H4684": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
@@ -273,7 +273,7 @@ async def test_a_read_that_collected_another_zone_s_frame_is_sent_once_more(hass
     _ready(handler, side_effect=[_dropped_by_the_desync_guard(hass), *[_acknowledged(hass, empty=False)] * 5])
     zone = _zone(hass, handler, "4")
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*4*0##", "*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##", "*#4*4*19##"]
 
 
 async def test_a_read_dropped_twice_ends_the_poll(hass) -> None:
@@ -311,7 +311,7 @@ async def test_a_dropped_read_is_not_repeated_when_the_zone_s_answer_came_all_th
 
     _ready(handler, side_effect=_send)
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##"]
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4#1*20##", "*#4*4*19##"]
 
 
 async def test_a_dropped_setpoint_in_force_read_needs_the_setpoint_and_the_mode(hass) -> None:
@@ -329,7 +329,7 @@ async def test_a_dropped_setpoint_in_force_read_needs_the_setpoint_and_the_mode(
 
     _ready(handler, side_effect=_send)
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4*12##", "*#4*4#1*20##"]
+    assert _queued(handler) == ["*#4*4*0##", "*#4*4*13##", "*#4*4*14##", "*#4*4*12##", "*#4*4*12##", "*#4*4#1*20##", "*#4*4*19##"]
 
 
 async def test_the_bus_is_quiet_before_the_next_read_goes_out(hass) -> None:
@@ -355,7 +355,7 @@ async def test_the_bus_is_quiet_before_the_next_read_goes_out(hass) -> None:
     assert _queued(handler) == ["*#4*2*0##"] and not task.done()  # held back by the quiet time
     gate.set()
     await task
-    reads = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    reads = ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]
     assert paced == [(read, reads[: index + 1]) for index, read in enumerate(reads)]
 
 
@@ -370,7 +370,7 @@ async def test_the_quiet_time_is_the_gateway_s_bus_quiet_period(hass, monkeypatc
 
     monkeypatch.setattr(handler, "_wait_for_bus_quiet", _quiet)
     await zone._poll_if_silent(grace=0)
-    assert len(waits) == len(_queued(handler)) == 5
+    assert len(waits) == len(_queued(handler)) == 6
 
 
 async def test_a_request_a_zone_made_on_its_own_goes_out_before_the_next_read(hass) -> None:
@@ -382,7 +382,7 @@ async def test_a_request_a_zone_made_on_its_own_goes_out_before_the_next_read(ha
 
     async def _send(command):
         if str(command) == "*#4*2*13##":
-            handler.request_zone_dimension("2", 19)  # what a fan coil report makes the zone do
+            zone._ask_fan_coil_sides()  # what a fan coil report makes the zone do
         return _acknowledged(hass, empty=False)
 
     _ready(handler, side_effect=_send)
@@ -398,7 +398,7 @@ async def test_the_zones_are_asked_one_after_another(hass) -> None:
     zones = [_zone(hass, handler, where) for where in ("3", "4", "2")]
     await asyncio.gather(*(zone._poll_if_silent(grace=0) for zone in zones))
     assert _queued(handler) == [
-        f"*#4*{where}{read}##" for where in ("3", "4", "2") for read in ("*0", "*13", "*14", "*12", "#1*20")
+        f"*#4*{where}{read}##" for where in ("3", "4", "2") for read in ("*0", "*13", "*14", "*12", "#1*20", "*19")
     ]
 
 
@@ -407,7 +407,7 @@ async def test_a_gateway_double_without_the_startup_lock_is_asked_all_the_same(h
     _ready(handler, side_effect=lambda command: _acknowledged(hass, empty=False))
     handler._who4_startup_poll_lock = None
     await _zone(hass, handler)._poll_if_silent(grace=0)
-    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]
 
 
 async def test_a_read_that_is_never_answered_ends_the_poll_without_the_quiet_time(hass, monkeypatch) -> None:

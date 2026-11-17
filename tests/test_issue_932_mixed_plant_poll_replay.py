@@ -105,8 +105,9 @@ async def test_central_unit_zones_and_a_standalone_zone_after_a_start_with_nothi
     assert standalone.current_temperature == 23.5
 
     # The log of that start: "asking ['*#4*2*13##', '*#4*2*14##', '*#4*2*12##', '*#4*2#1*20##']" and,
-    # for zones 3 and 4, the same reads after their temperature.
-    assert standalone._silent_zone_reads() == ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]
+    # for zones 3 and 4, the same reads after their temperature. The build of that start did not
+    # ask for dimension 19 yet; it is the last read now.
+    assert standalone._silent_zone_reads() == ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]
     for zone, number in zip(under_central, ("3", "4"), strict=True):
         assert zone._silent_zone_reads() == [
             f"*#4*{number}*0##",
@@ -114,6 +115,7 @@ async def test_central_unit_zones_and_a_standalone_zone_after_a_start_with_nothi
             f"*#4*{number}*14##",
             f"*#4*{number}*12##",
             f"*#4*{number}#1*20##",
+            f"*#4*{number}*19##",
         ]
 
     _replay([frame for frame in frames if frame[0] >= POLL_STARTED])
@@ -131,5 +133,8 @@ async def test_central_unit_zones_and_a_standalone_zone_after_a_start_with_nothi
         assert zone.hvac_action == HVACAction.IDLE
         assert zone.hvac_modes == [HVACMode.OFF, HVACMode.AUTO, HVACMode.COOL]
         assert zone.extra_state_attributes["actuators"] == {"1": "off"}
-    for zone in plant.values():  # nothing left to ask
-        assert zone._central or zone._silent_zone_reads() == []
+    # Nothing left to ask, but for the dimension 19 read that start did not send. Zone 2 has its
+    # answer in the capture (`*#4*2*19*5*7##`, asked because its actuator reported a fan coil).
+    assert standalone._silent_zone_reads() == []
+    for zone, number in zip(under_central, ("3", "4"), strict=True):
+        assert zone._silent_zone_reads() == [f"*#4*{number}*19##"]

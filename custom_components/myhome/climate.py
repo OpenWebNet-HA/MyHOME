@@ -644,6 +644,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._running_fan_speed: str | None = None
         # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
+        # The actuator numbers the zone reported before the restart (the keys of the saved
+        # ``actuators`` attribute; their states are not restored). The silent-zone poll asks
+        # for each of them instead of actuator 1 alone.
+        self._remembered_actuators: tuple[str, ...] = ()
         # Per-actuator fan speed from dimension 20 for actuators known to be fan coils.
         self._actuator_fan_speeds: dict[str, str | None] = {}
         # Zone-level fallback from dimension 19 (*#4*Z*19*C*H##): whether any valve or fan
@@ -991,6 +995,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._current_temperature_restored = True
                 except (ValueError, TypeError):
                     pass
+            saved_actuators = last_state.attributes.get("actuators")
+            if isinstance(saved_actuators, dict):
+                self._remembered_actuators = tuple(
+                    sorted(
+                        {
+                            str(int(str(actuator)))
+                            for actuator in saved_actuators
+                            if str(actuator).isascii() and str(actuator).isdigit() and 1 <= int(str(actuator)) <= 9
+                        },
+                        key=int,
+                    )
+                )
             restored_season = last_state.attributes.get("season")
             if restored_season in (SEASON_HEATING, "cooling", "conditioning"):
                 self._season = str(restored_season)
@@ -1628,13 +1644,34 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             reads.append(f"*#4*{zone}{routing}*14##")
         if not setpoint_known or not mode_known:
             reads.append(f"*#4*{zone}{routing}*12##")
+        zone_form_refused = getattr(self._gateway_handler, "zone_actuator_request_refused", False) is True
         if (
-            not self._actuator_states
-            and self._zone_active is None
+            self._zone_active is None
             and getattr(self._gateway_handler, "silent_zone_actuator_read_refused", False) is not True
-            and (reads or getattr(self._gateway_handler, "zone_actuator_request_refused", False) is True)
+            and (reads or zone_form_refused)
         ):
-            reads.append(f"*#4*{zone}#1{routing}*20##")
+            if self._remembered_actuators:
+                # The actuators the zone had before the restart, each one that has not reported
+                # since: a zone with a valve on actuator 1 and a fan coil on actuator 2 is then
+                # asked for both, and a zone with one actuator is never asked for a second one
+                # (a physical F455 1.0.76 NACKed the read of an absent actuator after 8.9 s).
+                reads.extend(
+                    f"*#4*{zone}#{actuator}{routing}*20##"
+                    for actuator in self._remembered_actuators
+                    if actuator not in self._actuator_states
+                )
+            elif not self._actuator_states:
+                reads.append(f"*#4*{zone}#1{routing}*20##")
+        if zone_form_refused and self._zone_active is None:
+            # Where the zone form of the actuator request is refused (the F455) nothing tells
+            # which actuators a zone has. Dimension 19 gives the state of both sides of the zone
+            # in one read, whatever their number: the action, the fan coil side and the running
+            # fan speed. After the actuator reads on purpose: the most recent of the two kinds
+            # of report drives ``hvac_action``, and an "off" of actuator 1 says nothing about a
+            # fan coil on actuator 2. The temperature read before it has shown that the zone
+            # has a probe; without one the F455 NACKs this read only after 9 s
+            # (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl).
+            reads.append(f"*#4*{zone}{routing}*19##")
         if knob_missing and self._local_offset_read_sent and silent:
             # The knob read went out when the zone was added and brought nothing. A zone that is
             # still silent asks for it once more, as the last read: a refusal of it must not
@@ -1654,7 +1691,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return setpoint_known
         if frame.endswith("*12##"):
             return setpoint_known and self._attr_hvac_mode is not None and not self._hvac_mode_restored
-        return bool(self._actuator_states) or self._zone_active is not None  # #1*20##
+        if frame.endswith("*19##"):
+            return self._zone_active is not None
+        where = frame.split("*")[2].split("#")  # Z#N*20## or Z#N#4#II*20##
+        return (len(where) > 1 and where[1] in self._actuator_states) or self._zone_active is not None
 
     async def _poll_if_silent(self, grace: float = SILENT_ZONE_GRACE) -> None:
         """Ask a zone that has not reported by itself since the startup sweep, read by read (#466, #932).
@@ -1710,6 +1750,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         pace = getattr(handler, "pace_startup_status_write", None)
         own_requests = getattr(handler, "wait_for_zone_requests", None)
         for frame in reads:
+            if frame.endswith("*19##") and (self._zone_active is not None or self._fan_coil_sides_pending()):
+                # Asked meanwhile because an actuator report showed a fan coil
+                # (``_ask_fan_coil_sides``), or already answered.
+                continue
             frames_before = self._poll_health.frames
             request = cast(OWNCommand, OWNHeatingCommand.parse(frame))
             written: object = None
