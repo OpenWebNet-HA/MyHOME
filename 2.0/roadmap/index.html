@@ -2488,7 +2488,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
         GW_F454["🟢 F454&lt;br/&gt;(23 captures · 4,447 rx)"]
         GW_F455["🟢 F455&lt;br/&gt;(10 captures · 565 rx)"]
         GW_F459["🟢 F459&lt;br/&gt;(1 capture · 898 rx)"]
-        GW_F461["🟢 F461&lt;br/&gt;(18 captures · 2,846 rx)"]
+        GW_F461["🟢 F461&lt;br/&gt;(19 captures · 2,872 rx)"]
         GW_MH202["🟢 MH202&lt;br/&gt;(9 captures · 672 rx)"]
         GW_MH201["🟢 MH201&lt;br/&gt;(9 captures · 970 rx)"]
         GW_MH200N["🟢 MH200N&lt;br/&gt;(16 captures · 1,664 rx)"]
@@ -2500,7 +2500,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
     end
 
     subgraph Subsystems["⚙️ Protocol Subsystems &amp; Edge Scenarios"]
-        SUB_LIGHT["🟢 Lighting &amp; Dimmers (WHO 1)&lt;br/&gt;(5,235 rx · 85 captures)"]
+        SUB_LIGHT["🟢 Lighting &amp; Dimmers (WHO 1)&lt;br/&gt;(5,244 rx · 86 captures)"]
         SUB_DALI["🟢 DALI DT8 &amp; HSV (WHO 1)&lt;br/&gt;(18 rx · 2 captures)"]
         SUB_TIMER["🟢 DIN Bus Timers (WHO 1)&lt;br/&gt;(8 rx · 5 captures)"]
         SUB_GRP["🟢 Lighting Groups (WHO 1)&lt;br/&gt;(27 rx · 10 captures)"]
@@ -2520,7 +2520,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
         SUB_WHO16["🟢 Audio Matrix (WHO 16)&lt;br/&gt;(431 rx · 22 captures)"]
         SUB_WHO22["🟢 Sound Diffusion &amp; RDS (WHO 22)&lt;br/&gt;(404 rx · 18 captures)"]
         SUB_ENERGY["🟢 Energy Metering (WHO 18)&lt;br/&gt;(1,425 rx · 27 captures)"]
-        SUB_DIAG["🟢 Gateway Identity (WHO 13/1013)&lt;br/&gt;(1,195 rx · 79 captures)"]
+        SUB_DIAG["🟢 Gateway Identity (WHO 13/1013)&lt;br/&gt;(1,204 rx · 80 captures)"]
         SUB_ROUTER["🟢 F422 Cross-Bus (#4#bus)&lt;br/&gt;(411 rx · 14 captures)"]
     end
 
@@ -2609,7 +2609,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <tr>
 <td style="text-align: left;"><strong>F461 Web Server</strong></td>
 <td style="text-align: left;">🟢 <strong>Covered</strong></td>
-<td style="text-align: left;">18 physical captures (2,846 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 14, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/f461_live_2026-10-24/</code>, <code>tests/fixtures/traces/f461_live_2026-10-15/</code></td>
+<td style="text-align: left;">19 physical captures (2,872 <code>rx</code> frames; <code>WHO = 1, 2, 4, 13, 14, 1001, 1013</code>) — e.g. <code>tests/fixtures/traces/f461_live_2026-10-24/</code>, <code>tests/fixtures/traces/f461_live_2026-10-15/</code></td>
 <td style="text-align: left;"><em>None needed — DIN Ethernet Web Server (DALI DT8 &amp; fancoils) active in CI.</em></td>
 </tr>
 <tr>
@@ -2681,7 +2681,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <tr>
 <td style="text-align: left;"><strong>Lighting (WHO = 1) — Relays &amp; Dimmers</strong></td>
 <td style="text-align: left;">🟢 <strong>Covered</strong></td>
-<td style="text-align: left;">5,235 physical <code>rx</code> frames across 85 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_629/</code></td>
+<td style="text-align: left;">5,244 physical <code>rx</code> frames across 86 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/issue_629/</code></td>
 <td style="text-align: left;"><em>Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.</em></td>
 </tr>
 <tr>
@@ -2801,7 +2801,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <tr>
 <td style="text-align: left;"><strong>Gateway Clock, Identity &amp; Diagnostics (WHO = 13 / 1001–1022)</strong></td>
 <td style="text-align: left;">🟢 <strong>Covered</strong></td>
-<td style="text-align: left;">1,195 physical <code>rx</code> frames across 79 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh200_sound_f441m/</code></td>
+<td style="text-align: left;">1,204 physical <code>rx</code> frames across 80 captures on 13 gateway models — e.g. <code>tests/fixtures/traces/issue_466/</code>, <code>tests/fixtures/traces/mh200_sound_f441m/</code></td>
 <td style="text-align: left;"><em>Baseline covered (<code>WHO = 13</code> device type/firmware/clock &amp; <code>WHO = 1013</code> <code>OBJECT_MODEL</code>).</em></td>
 </tr>
 <tr>
