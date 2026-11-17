@@ -14,8 +14,11 @@ The **MyHOME** integration provides monitoring for dry contact interfaces, PIR m
 * **Auto-Discovery**: Automatically discovered from SCS bus events and registered `3xxx` startup sweeps (`*#25*3xxx##`).
 
 ### 2. Motion / PIR Sensors (WHO = 1)
-* **Hardware**: Legrand `048822`, BTicino `BMSE1001` or standard SCS ceiling/wall motion sensors configured in scenario mode.
-* **Auto-Discovery**: Automatically discovered when movement broadcasts an event frame on `WHO = 1` (`on` on detection, returning to `off` when timeout expires).
+* **Hardware**: Legrand `048822` / `067226`, BTicino `BMSE1001` / `K4659`, or standard SCS ceiling/wall motion sensors.
+* **Auto-Discovery**: Automatically discovered when movement broadcasts an event frame on `WHO = 1` (`*1*34*WHERE##` / `*1*39*WHERE##`).
+* **Occupancy Clearing**:
+  * **Stand-alone mode (`WHAT = 39`)**: Detectors that emit end-of-movement (`*1*39*WHERE##`, #777) clear immediately on `WHAT = 39` and use a 10-minute safety fallback during continuous occupancy so multi-minute gaps between `WHAT = 34` frames do not drop the state early.
+  * **Scenarios mode (no `WHAT = 39`)**: Detectors configured in Scenarios mode (such as the BTicino `K4659` Object `128`/`165`, #941) repeat `*1*34*WHERE##` once per configured `DIMENSION 7` time delay and go silent when movement stops; they clear via an exact timer at `DIMENSION 7 + 3 s` (default `303 s` before `DIMENSION 7` is reported) and adapt automatically if a longer repeat cycle is observed.
 * **Address**: a WHO 1 point address; an area-0 point with PL 1..9 is spelled in two digits (`04`), so `where: "0004"` in `myhome.yaml` is resolved to `04` and a `…-1-0004-motion` entity is moved to `…-1-04-motion` at startup (#147).
 
 ### 3. Auxiliary Alarm Channels (WHO = 9 — Requires `myhome.yaml`)
