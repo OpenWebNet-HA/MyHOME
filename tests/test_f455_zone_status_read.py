@@ -163,6 +163,93 @@ async def test_a_refused_actuator_read_ends_the_poll_before_dimension_19(hass) -
     assert _queued(handler) == ["*#4*4#1*20##"]
 
 
+# ------------------------------------------------------------------ a repeated "off" after dimension 19
+
+
+def _zone_4_after_its_poll(hass):
+    """Zone 4 as the poll left it on the plant: actuator 1 off, dimension 19 says the cooling fan runs."""
+    handler = _handler(hass, "F455")
+    handler.request_zone_dimension = lambda where, dimension: None  # the fan speed read that follows
+    _ready(handler)
+    zone = _zone(hass, handler, "4")
+    _reported(zone)
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    zone.handle_event(OWNHeatingEvent("*#4*4*19*8*0##"))
+    return zone
+
+
+def _shown(zone) -> tuple:
+    return zone.hvac_action, zone.extra_state_attributes
+
+
+async def test_a_repeated_off_of_actuator_1_does_not_stop_the_fan_coil_on_actuator_2(hass) -> None:
+    """Plant, 2026-11-17 13:46:50Z: `*#4*4#1*20*0##` came again 23 s after `*#4*4*19*8*0##`."""
+    zone = _zone_4_after_its_poll(hass)
+    before = _shown(zone)
+    assert before[0] == HVACAction.COOLING and before[1]["running_fan_speed"] == "high"
+    assert before[1]["actuators"] == {"1": "off"}
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    assert _shown(zone) == before  # was: idle, running_fan_speed off, while actuator 2 ran
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    assert _shown(zone) == before
+
+
+async def test_the_first_report_of_an_actuator_takes_the_lead_as_before(hass) -> None:
+    """The read of actuator 2 is answered `*#4*4#2*20*0##` and then `*#4*4#2*20*8##` on that plant."""
+    zone = _zone_4_after_its_poll(hass)
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    zone.handle_event(OWNHeatingEvent("*#4*4#2*20*0##"))  # not known before: it may be the one that ran
+    assert zone.hvac_action == HVACAction.IDLE
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    zone.handle_event(OWNHeatingEvent("*#4*4#2*20*8##"))
+    assert zone.hvac_action == HVACAction.COOLING
+    attributes = zone.extra_state_attributes
+    assert attributes["running_fan_speed"] == "high" and attributes["actuators"] == {"1": "off", "2": "on"}
+
+
+async def test_the_off_of_the_actuator_that_ran_still_makes_the_zone_idle(hass) -> None:
+    """Dimension 19 is explained by actuator 2: its "off" is news, the "off" of actuator 1 is not."""
+    handler = _handler(hass, "F455")
+    handler.request_zone_dimension = lambda where, dimension: None
+    _ready(handler)
+    zone = _zone(hass, handler, "4")
+    _reported(zone)
+    for frame in ("*#4*4#1*20*0##", "*#4*4#2*20*8##", "*#4*4*19*8*0##", "*#4*4#1*20*0##"):
+        zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.hvac_action == HVACAction.COOLING and zone.extra_state_attributes["running_fan_speed"] == "high"
+    zone.handle_event(OWNHeatingEvent("*#4*4#2*20*5##"))  # the fan coil stopped
+    assert zone.hvac_action == HVACAction.IDLE
+    attributes = zone.extra_state_attributes
+    assert attributes["running_fan_speed"] == "off" and attributes["actuators"] == {"1": "off", "2": "off"}
+
+
+async def test_an_actuator_that_starts_takes_the_lead(hass) -> None:
+    zone = _zone_4_after_its_poll(hass)
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*1##"))
+    assert zone._active_source == "actuators" and zone.extra_state_attributes["actuators"] == {"1": "on"}
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))  # it was on: this "off" is news
+    assert zone.hvac_action == HVACAction.IDLE
+
+
+async def test_dimension_19_with_nothing_active_ends_it(hass) -> None:
+    zone = _zone_4_after_its_poll(hass)
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    zone.handle_event(OWNHeatingEvent("*#4*4*19*5*0##"))  # the cooling fan is off
+    assert zone.hvac_action == HVACAction.IDLE and zone.extra_state_attributes["running_fan_speed"] == "off"
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    assert zone.hvac_action == HVACAction.IDLE and zone._active_source == "actuators"
+
+
+async def test_a_repeated_off_without_dimension_19_is_idle_as_before(hass) -> None:
+    handler = _handler(hass, "F455")
+    _ready(handler)
+    zone = _zone(hass, handler, "4")
+    _reported(zone)
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    zone.handle_event(OWNHeatingEvent("*#4*4#1*20*0##"))
+    assert zone.hvac_action == HVACAction.IDLE and zone._active_source == "actuators"
+
+
 # ------------------------------------------------------------------ remembered actuators
 
 

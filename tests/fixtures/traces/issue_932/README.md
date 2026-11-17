@@ -20,6 +20,30 @@ was changed in the lines.
 | `F455_who4_monitor_paced_poll_2026-11-17T11-47.log` | 11:47:44Z to 11:47:58Z, as the F455 delivered it. The poll of a start with nothing stored (core init 11:47:05Z) on the build that asks one zone after another and waits for a quiet bus: from 30 s after the startup sweep, zone 2 `*0`, `*13`, `*14`, `*12`, `#1*20`, then two reads zone 2 makes on its own once its actuator reported a fan coil (`*19`, `*11`), then zones 3 and 4 `*0`, `*13`, `*14`, `*12`, `#1*20`. |
 | `F461_who4_monitor_paced_poll_2026-11-17T11-47.log` | The same window as the F461 delivered it. |
 
+## The zone status read and a repeated actuator "off", 13:46Z
+
+Three more files of the same plant and day. Zone 4 has two actuators, and the fan coil that cools
+it is on actuator 2.
+
+| File | What it is |
+|---|---|
+| `F455_who4_monitor_zone_status_read_2026-11-17T13-46.log` | 13:46:10Z to 13:46:27Z, as the F455 delivered it. The answers to the poll of a start with nothing stored, on the build whose poll ends a zone with `*#4*<zone>*19##`: zone 2 `*0`, `*13`, `*14`, `*12`, `#1*20`, `*19`, then `*11`, which zone 2 asks on its own; zones 3 and 4 `*0`, `*13`, `*14`, `*12`, `#1*20`, `*19`; then `*11` of zone 4, asked on its own. |
+| `F455_who4_monitor_actuator_reads_2026-11-17T13-46.log` | 13:46:50Z to 13:46:56Z, as the F455 delivered it: the answers to three reads a test client sent through the F461, about 3 s apart: `*#4*4#1*20##`, `*#4*4#2*20##`, `*#4*4*19##`. |
+| `F455_ha_states_zone_4_2026-11-17T13-46.jsonl` | Not a monitor log: the state of zone 4's climate entity in Home Assistant at three moments: before the answer to the first of those reads, after it, and after the answer to the second read (`t`: when the state was read; `last_updated`: Home Assistant's time of the last change). |
+
+- **Dimension 19 is the last answer of a zone's poll and tells what actuator 1 does not.** Zone 4:
+  `*#4*4#1*20*0##` (actuator 1 off) at 13:46:26.045Z, `*#4*4*19*8*0##` (the cooling fan at speed 3)
+  at 13:46:26.830Z. The entity then showed `cooling`, `running_fan_speed: high` and
+  `actuators: {"1": "off"}` (the first row of the states file). Zone 3: `*#4*3#1*20*0##` twice
+  (13:46:20.740Z, 13:46:20.819Z), then `*#4*3*19*0*0##` 0.84 s after the second copy.
+- **A read of actuator 1 by another client set the zone to idle.** `*#4*4#1*20*0##` came again at
+  13:46:50.248Z, 23.4 s after the dimension 19 answer, and the entity went to `idle`,
+  `running_fan_speed: off` (the second row). The read of actuator 2 was answered with two frames,
+  `*#4*4#2*20*0##` at 13:46:53.378Z and `*#4*4#2*20*8##` 0.039 s later, and the entity was back
+  to `cooling` and `high` with `actuators: {"1": "off", "2": "on"}` (the third row): 3.17 s of
+  `idle` while the fan coil ran, by the entity's `last_updated`. Since then an "off" of an actuator
+  that is already known to be off changes nothing while dimension 19 says a side is active.
+
 ## What the logs show
 
 - **Every read of the poll was answered**: 14 reads at 08:33:53Z to 08:33:55Z, 13 at 08:00:47Z to

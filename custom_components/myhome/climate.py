@@ -2911,7 +2911,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # value 5, fan off, carries no speed).
                 self._request_zone_dimension(11)
 
-            if dimension == 20:
+            # An "off" of an actuator that was already known to be off tells nothing new. While
+            # dimension 19 leads with an active side, the actuator that is running is one that
+            # has not reported: the repeated "off" must not make the zone idle. Physical F455
+            # plant, 2026-11-17, zone 4 with its fan coil on actuator 2: another client read
+            # actuator 1, 23 s after `*#4*4*19*8*0##`, and the answer `*#4*4#1*20*0##` set the
+            # zone to idle for 3 s while the fan coil ran (`tests/fixtures/traces/issue_932`).
+            # Anything else an actuator says takes the lead as before.
+            repeated_off = (
+                dimension == 20
+                and not is_active
+                and self._active_source == "zone"
+                and self._zone_active is True
+                and self._actuator_states.get(thermo_event_actuator(message)) is False
+            )
+            if repeated_off:
+                pass
+            elif dimension == 20:
                 actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
@@ -2974,7 +2990,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._running_fan_speed = "off"
             any_active = self._any_actuator_active()
 
-            if any_active:
+            if repeated_off:
+                pass  # hvac_action stays what dimension 19 made it
+            elif any_active:
                 if self._heating and self._cooling:
                     if heating_active:
                         self._attr_hvac_action = HVACAction.HEATING
