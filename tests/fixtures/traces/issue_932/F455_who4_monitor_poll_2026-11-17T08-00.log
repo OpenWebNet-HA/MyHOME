@@ -1,0 +1,22 @@
+2026-11-17T08:00:47.492Z EVT *#4*2*0*0236## [OWNHeatingEvent] Zone 2's main sensor is reporting a temperature of 23.6°C.
+2026-11-17T08:00:47.672Z EVT *#4*3*13*00## [OWNHeatingEvent] Zone 3's local offset is set to 0°C.
+2026-11-17T08:00:47.750Z EVT *4*311*#3## [OWNHeatingEvent] Zone 3's mode is set to 'auto'.
+2026-11-17T08:00:47.801Z EVT *4*210*#3## [OWNHeatingEvent] Zone 3's mode is set to 'cool'.
+2026-11-17T08:00:47.901Z EVT *#4*4*13*00## [OWNHeatingEvent] Zone 4's local offset is set to 0°C.
+2026-11-17T08:00:47.985Z EVT *4*311*#4## [OWNHeatingEvent] Zone 4's mode is set to 'auto'.
+2026-11-17T08:00:48.081Z EVT *#4*2*13*00## [OWNHeatingEvent] Zone 2's local offset is set to 0°C.
+2026-11-17T08:00:48.221Z EVT *#4*3*14*0215*3## [OWNHeatingEvent] Zone 3's target temperature is set to 21.5°C.
+2026-11-17T08:00:48.301Z EVT *4*210*#4## [OWNHeatingEvent] Zone 4's mode is set to 'cool'.
+2026-11-17T08:00:48.400Z EVT *4*311*#2## [OWNHeatingEvent] Zone 2's mode is set to 'auto'.
+2026-11-17T08:00:48.451Z EVT *#4*4*14*0215*3## [OWNHeatingEvent] Zone 4's target temperature is set to 21.5°C.
+2026-11-17T08:00:48.601Z EVT *#4*2*14*0240*3## [OWNHeatingEvent] Zone 2's target temperature is set to 24.0°C.
+2026-11-17T08:00:48.742Z EVT *#4*3*12*0215*3## [OWNHeatingEvent] Zone 3's local target temperature is set to 21.5°C.
+2026-11-17T08:00:48.742Z EVT *4*0*3## [OWNHeatingEvent] Zone 3's season is conditioning.
+2026-11-17T08:00:48.882Z EVT *#4*4*12*0215*3## [OWNHeatingEvent] Zone 4's local target temperature is set to 21.5°C.
+2026-11-17T08:00:48.882Z EVT *4*0*4## [OWNHeatingEvent] Zone 4's season is conditioning.
+2026-11-17T08:00:49.031Z EVT *#4*2*12*0240*3## [OWNHeatingEvent] Zone 2's local target temperature is set to 24.0°C.
+2026-11-17T08:00:49.032Z EVT *4*1*2## [OWNHeatingEvent] Zone 2's season is heating.
+2026-11-17T08:00:49.172Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T08:00:49.261Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T08:00:49.341Z EVT *#4*4#1*20*0## [OWNHeatingEvent] Zone 4's actuator 1 is off.
+2026-11-17T08:00:51.344Z EVT *#4*2#1*20*7## [OWNHeatingEvent] Zone 2's fan is on at speed 2.

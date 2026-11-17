@@ -35,6 +35,7 @@ def _gateway(
     supports_zone_status: bool,
     zone_temperature_poll_needed: bool = False,
     silent_zone_poll_needed: bool = False,
+    knob_read_in_silent_zone_poll: bool = False,
     humidity_request_refused: bool = True,
     interface_zone_request_refused: bool = False,
 ) -> MagicMock:
@@ -47,6 +48,7 @@ def _gateway(
     gw.supports_zone_status = supports_zone_status
     gw.zone_temperature_poll_needed = zone_temperature_poll_needed
     gw.silent_zone_poll_needed = silent_zone_poll_needed
+    gw.knob_read_in_silent_zone_poll = knob_read_in_silent_zone_poll
     gw.humidity_request_refused = humidity_request_refused
     gw.interface_zone_request_refused = interface_zone_request_refused
     gw.send = AsyncMock(return_value=None)
