@@ -1845,10 +1845,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#current-delivery-status-v200-release-readiness-b18-shipped" class="md-nav__link">
+  <a href="#current-delivery-status-v200-stable-release-ready" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)
+        🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)
       
     </span>
   </a>
@@ -2037,10 +2037,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#current-delivery-status-v200-release-readiness-b18-shipped" class="md-nav__link">
+  <a href="#current-delivery-status-v200-stable-release-ready" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)
+        🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)
       
     </span>
   </a>
@@ -2214,8 +2214,8 @@
 <p>For release-by-release changelogs, download assets, and direct GitHub compare links across published versions, see <a href="https://github.com/OpenWebNet-HA/MyHOME/releases"><strong>GitHub Releases</strong></a>.</p>
 </div>
 <hr />
-<h2 id="current-delivery-status-v200-release-readiness-b18-shipped">🗺️ Current Delivery Status (v2.0.0 Release Readiness — b18 Shipped)<a class="headerlink" href="#current-delivery-status-v200-release-readiness-b18-shipped" title="Permanent link">&para;</a></h2>
-<p>The major architectural milestones originally planned across Phases 1 through 4 have been <strong>consolidated, fully implemented, and validated with 100% statement and branch test coverage</strong> across <strong>v2.0.0b1 through v2.0.0b18</strong> on <code>OWNd==2.0.0b14</code>. The remaining work is final <strong>v2.0.0</strong> release stabilization: see <em>Final Stabilization</em> below.</p>
+<h2 id="current-delivery-status-v200-stable-release-ready">🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)<a class="headerlink" href="#current-delivery-status-v200-stable-release-ready" title="Permanent link">&para;</a></h2>
+<p>The major architectural milestones originally planned across Phases 1 through 4 have been <strong>consolidated, fully implemented, and validated with 100% statement and branch test coverage</strong> for <strong>v2.0.0</strong> on <code>OWNd==2.0.1</code>.</p>
 <pre class="mermaid"><code>gantt
     title MyHOME Integration Status &amp; Roadmap
     dateFormat  YYYY-MM-DD
@@ -2263,8 +2263,12 @@
     WHO 4 Startup Pacing, Offset Reads &amp; 3100 Auto (#887, #902, #909) :done, 2026-11-05, 2026-11-14
     Expose Virtual Dimmer Hold-Up &amp; Firmware Gates (#883, #904) :done, 2026-11-09, 2026-11-14
     OWNd 2.0.0b14 Pin &amp; BTicino F453 Identity (#901, #909) :done, 2026-11-13, 2026-11-14
+    section Delivered in v2.0.0
+    RestoreSensor kWh Fix, Dim 19/20 Idle &amp; N4692 Knob (#913, #914, #921) :done, 2026-11-14, 2026-11-15
+    Marketplace 2026.11, Apache-2.0 Docs &amp; Golden Corpus (#906, #922, #923) :done, 2026-11-14, 2026-11-15
+    Dim 10 Auto-Detect, Silent-Zone Poll, Motion Timer &amp; OWNd 2.0.1 (#927, #931, #933, #935, #938–#940, #942) :done, 2026-11-16, 2026-11-17
     section Final Stabilization
-    v2.0.0 Release Candidate &amp; Distribution Consultation :2026-10-05, 2026-11-30</code></pre>
+    v2.0.0 Release Stabilization :done, 2026-10-05, 2026-11-17</code></pre>
 <hr />
 <h2 id="what-is-shipped-operational-in-the-v200-series">📦 What is Shipped &amp; Operational in the v2.0.0 Series<a class="headerlink" href="#what-is-shipped-operational-in-the-v200-series" title="Permanent link">&para;</a></h2>
 <p>The following table summarizes the completed architectural features and protocol subsystems verified for the v2.0.0 release:</p>
@@ -2281,7 +2285,7 @@
 <tr>
 <td><strong>Standalone Protocol Engine (P1)</strong></td>
 <td>Core</td>
-<td>✅ <strong>Shipped</strong> (<code>OWNd==2.0.0b14</code>)</td>
+<td>✅ <strong>Shipped</strong> (<code>OWNd==2.0.1</code>)</td>
 <td>Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles.</td>
 </tr>
 <tr>
@@ -2329,8 +2333,8 @@
 <tr>
 <td><strong>Climate Zone State Diagnostics</strong></td>
 <td>WHO=4</td>
-<td>✅ <strong>Shipped</strong> (#404, #457, #908)</td>
-<td>Dynamic HVAC action deduction (<code>heating</code>, <code>cooling</code>, <code>idle</code>), <code>Dimension 11</code> / <code>20</code> fancoils, fan mode persistence across restarts, and paced startup sweeps.</td>
+<td>✅ <strong>Shipped</strong> (#404, #457, #908, #914, #921, #933, #940)</td>
+<td>Dynamic HVAC action deduction (<code>heating</code>, <code>cooling</code>, <code>idle</code> incl. Dimension 19/20 codes <code>14..16</code> &amp; <code>100</code> and multi-actuator <code>F455</code> Dimension 19 status), <code>Dimension 11</code> / <code>20</code> fancoils, <code>Dimension 13</code> knob detents, fan mode persistence across restarts, and paced startup/silent-zone sweeps.</td>
 </tr>
 <tr>
 <td><strong>Real-World CI Trace Replay Engine (P5)</strong></td>
@@ -2371,8 +2375,8 @@
 <tr>
 <td><strong>Energy Management &amp; Metering</strong></td>
 <td>WHO=18</td>
-<td>✅ <strong>Shipped</strong> (#494, #907)</td>
-<td>Instantaneous active power (W), cumulative total/daily/monthly Wh counters, and proactive bus sweeps for <code>F520</code> / <code>F521</code> / <code>3522</code> DIN meters.</td>
+<td>✅ <strong>Shipped</strong> (#494, #907, #913)</td>
+<td>Instantaneous active power (W), unit-safe <code>RestoreSensor</code> cumulative total/daily/monthly Wh/kWh counters, and proactive bus sweeps for <code>F520</code> / <code>F521</code> / <code>3522</code> DIN meters.</td>
 </tr>
 <tr>
 <td><strong>Burglar Alarm</strong></td>
@@ -2471,7 +2475,7 @@ While the integration strictly adheres to 100% of Home Assistant Core Platinum s
 <li>
 <p><strong>Platinum Tier</strong>:</p>
 <ul>
-<li><code>async-dependency</code>: Zero blocking network calls; standalone asynchronous client engine (<code>OWNd==2.0.0b14</code>) on PyPI.</li>
+<li><code>async-dependency</code>: Zero blocking network calls; standalone asynchronous client engine (<code>OWNd==2.0.1</code>) on PyPI.</li>
 <li><code>clean-separation</code>: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.</li>
 </ul>
 </li>
