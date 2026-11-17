@@ -88,3 +88,16 @@
   mcp_valid: true
   mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): General diagnostic status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
   roundtrip: true
+
+- id: lighting_diag.capture.dim1.object_model.43.01
+  frame: "*#1001*01*1*43*6*1*0##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "01"
+  dimension: 1
+  dimension_values: ["43", "6", "1", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Point-to-point Dimension 1 device identification reply (modobj=43, K4659 / OWN-DEV-0016; F461 2.0.11 capture, MyHOME#941)"
+  roundtrip: true

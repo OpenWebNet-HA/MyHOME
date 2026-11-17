@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import typing
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.binary_sensor import (  # type: ignore[attr-defined, unused-ignore]
@@ -19,13 +19,15 @@ from homeassistant.const import (
     CONF_NAME,
     STATE_ON,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
 )
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
+from homeassistant.util import dt as dt_util
 from OWNd.message import (
     MESSAGE_TYPE_MOTION,
     MESSAGE_TYPE_MOTION_TIMEOUT,
@@ -58,7 +60,17 @@ from .myhome_device import MyHOMEEntity
 
 PARALLEL_UPDATES = 0
 
-SCAN_INTERVAL = timedelta(seconds=30)
+# Grace margin above the detector's reported DIMENSION 7 timeout so continuous
+# motion re-triggers (e.g. K4659 in Scenarios mode, ~0.55 s jitter) do not flap.
+MOTION_TIMEOUT_GRACE = timedelta(seconds=3)
+DEFAULT_MOTION_TIMEOUT = timedelta(seconds=300) + MOTION_TIMEOUT_GRACE
+# Safety-net hold for Stand-alone detectors known to emit WHAT 39 (#777):
+# those detectors may stay silent for several minutes during continuous occupancy
+# (243.3 s observed on Legrand 067226) before emitting WHAT 39 at actual vacancy.
+MOTION_END_SAFETY_TIMEOUT = timedelta(minutes=10)
+# Window after a timer-driven clear within which a fresh WHAT 34 indicates the
+# device's configured Time delay is longer than our cached _timeout.
+STALE_TIMEOUT_RETRIGGER_WINDOW = timedelta(seconds=60)
 PIR_SENSITIVITY = ["low", "medium", "high", "very high"]
 
 ALL_DEVICE_CLASS_SUFFIXES = tuple(
@@ -646,13 +658,18 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
 
         self._inverted = inverted
         self._attr_force_update = False
-        self._last_updated = None
-        self._timeout = timedelta(seconds=315)
+        self._last_updated: datetime | None = None
+        self._last_motion_at: datetime | None = None
+        self._cleared_by_timeout_at: datetime | None = None
+        self._last_timeout_query_at: datetime | None = None
+        self._supports_motion_end: bool = False
+        self._timeout = DEFAULT_MOTION_TIMEOUT
+        self._timeout_unsub: CALLBACK_TYPE | None = None
 
         self._attr_device_class = device_class  # type: ignore
 
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
-        self._attr_should_poll = True
+        self._attr_should_poll = False
         self._attr_is_on = False
         where_str = str(self._where)
         half = len(where_str) // 2
@@ -665,32 +682,151 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             "Sensitivity": PIR_SENSITIVITY[1],
         }
 
+    @property
+    def _effective_timeout(self) -> timedelta:
+        """Hold duration before fallback clear (extended once WHAT 39 is known)."""
+        if self._supports_motion_end:
+            return max(self._timeout, MOTION_END_SAFETY_TIMEOUT)
+        return self._timeout
+
+    @callback
+    def _cancel_timeout_timer(self) -> None:
+        """Cancel any pending motion-clear timer."""
+        if self._timeout_unsub is not None:
+            self._timeout_unsub()
+            self._timeout_unsub = None
+
+    @callback
+    def _schedule_timeout_timer(self, delay_seconds: float | None = None) -> None:
+        """Schedule (or reschedule) the fallback off-timer."""
+        self._cancel_timeout_timer()
+        target_hass = self.hass or self._hass
+        if target_hass is None:
+            return
+        delay = max(
+            0.0,
+            self._effective_timeout.total_seconds() if delay_seconds is None else delay_seconds,
+        )
+        self._timeout_unsub = async_call_later(
+            target_hass,
+            delay,
+            HassJob(
+                self._async_timeout_expired,
+                f"myhome motion timeout {self._where}",
+                cancel_on_shutdown=True,
+            ),
+        )
+
+    @callback
+    def _sync_active_timeout(self, now: datetime, *, schedule_on_expire: bool = False) -> None:
+        """Clear immediately if the active hold has elapsed, otherwise re-arm for the remainder."""
+        if self._attr_is_on == self._inverted or self._last_updated is None:
+            return
+        remaining = (self._last_updated + self._effective_timeout) - now
+        if remaining <= timedelta(0):
+            self._cancel_timeout_timer()
+            self._attr_is_on = self._inverted
+            self._last_updated = now
+            self._cleared_by_timeout_at = now
+            if schedule_on_expire:
+                self.async_schedule_update_ha_state()
+        else:
+            self._schedule_timeout_timer(remaining.total_seconds())
+
+    @callback
+    def _write_motion_state(self, *, force_update: bool = False) -> None:
+        """Publish the current motion sensor state to Home Assistant."""
+        self._attr_force_update = force_update
+        try:
+            self.async_write_ha_state()
+        except Exception as err:
+            LOGGER.debug("Direct state write deferred for %s: %s", self._where, err)
+            try:
+                self.async_schedule_update_ha_state()
+            except Exception as sched_err:
+                LOGGER.debug("Scheduled state update skipped for %s: %s", self._where, sched_err)
+        self._attr_force_update = False
+
+    @callback
+    def _async_timeout_expired(self, _now: Any = None) -> None:
+        """Clear motion when the occupancy hold timer expires without WHAT 39 (#941)."""
+        self._timeout_unsub = None
+        if self._attr_is_on == self._inverted:
+            return
+        now = dt_util.utcnow()
+        LOGGER.debug(
+            "%s Motion sensor %s cleared after %ss timeout expiry",
+            self._gateway_handler.log_id,
+            self._where,
+            self._effective_timeout.total_seconds(),
+        )
+        self._attr_is_on = self._inverted
+        self._last_updated = now
+        self._cleared_by_timeout_at = now
+        self._write_motion_state()
+
     async def async_restore_last_state(self, last_state: typing.Any) -> None:
-        """Restore motion sensor state."""
+        """Restore motion sensor state and immediately arm or expire its hold timer."""
         if last_state is not None and last_state.state not in ("unknown", "unavailable"):
             self._attr_is_on = last_state.state == STATE_ON
             self._last_updated = last_state.last_updated
+            attrs = getattr(last_state, "attributes", None)
+            if isinstance(attrs, Mapping) and attrs.get("Supports motion end") is True:
+                self._supports_motion_end = True
+                self._attr_extra_state_attributes["Supports motion end"] = True
+            self._sync_active_timeout(dt_util.utcnow(), schedule_on_expire=True)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_entity_ref(self._attr_device_class)  # type: ignore
+        self.async_on_remove(self._cancel_timeout_timer)
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_pir_sensitivity(self._where))
         await self._gateway_handler.send_status_request(OWNLightingCommand.get_motion_timeout(self._where))
+        self._last_timeout_query_at = dt_util.utcnow()
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
+        self._cancel_timeout_timer()
         self._unregister_entity_ref(self._attr_device_class)  # type: ignore
 
     async def async_update(self) -> None:
-        """Update the entity.
+        """Clear expired motion state or arm the timer for restored active state."""
+        self._sync_active_timeout(dt_util.utcnow(), schedule_on_expire=True)
 
-        Only used by the generic entity update service.
-        """
-        if self._attr_is_on and self._last_updated and self._last_updated + self._timeout < datetime.now(timezone.utc):  # type: ignore
-            self._attr_is_on = False  # type: ignore
-            self._last_updated = datetime.now(timezone.utc)
-            self.async_schedule_update_ha_state()
+    @callback
+    def _maybe_adapt_stale_timeout(self, now: datetime) -> None:
+        """Adapt _timeout and re-query DIMENSION 7 if a WHAT 34 repeat arrives right after a timer clear."""
+        if (
+            self._supports_motion_end
+            or self._cleared_by_timeout_at is None
+            or self._last_motion_at is None
+        ):
+            return
+        since_clear = now - self._cleared_by_timeout_at
+        observed_cycle = now - self._last_motion_at
+        if timedelta(0) < since_clear <= STALE_TIMEOUT_RETRIGGER_WINDOW and observed_cycle > self._timeout:
+            previous_timeout = self._timeout.total_seconds()
+            self._timeout = observed_cycle + MOTION_TIMEOUT_GRACE
+            self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
+            LOGGER.debug(
+                "%s Motion sensor %s adapted timeout from %ss to %ss after post-clear retrigger",
+                self._gateway_handler.log_id,
+                self._where,
+                previous_timeout,
+                self._timeout.total_seconds(),
+            )
+            target_hass = self.hass or self._hass
+            if target_hass is not None and (
+                self._last_timeout_query_at is None
+                or (now - self._last_timeout_query_at) >= STALE_TIMEOUT_RETRIGGER_WINDOW
+            ):
+                self._last_timeout_query_at = now
+                target_hass.async_create_task(
+                    self._gateway_handler.send_status_request(
+                        OWNLightingCommand.get_motion_timeout(self._where)
+                    )
+                )
 
     @callback
     def handle_event(self, message: OWNLightingEvent) -> None:
@@ -708,25 +844,28 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
+        now = dt_util.utcnow()
         if motion_end:
             # WHAT 39: the detector's occupancy timer ran out (#777).
+            self._supports_motion_end = True
+            self._attr_extra_state_attributes["Supports motion end"] = True
+            self._cancel_timeout_timer()
+            self._cleared_by_timeout_at = None
             self._attr_is_on = self._inverted
+            self._last_updated = now
         elif message.message_type == MESSAGE_TYPE_MOTION and message.motion:
+            self._maybe_adapt_stale_timeout(now)
+            self._cleared_by_timeout_at = None
             self._attr_is_on = message.motion != self._inverted
+            self._last_updated = now
+            self._last_motion_at = now
+            self._schedule_timeout_timer()
         elif message.message_type == MESSAGE_TYPE_MOTION_TIMEOUT:
             if message.motion_timeout is not None:
-                self._timeout = message.motion_timeout + timedelta(seconds=15)
+                self._timeout = message.motion_timeout + MOTION_TIMEOUT_GRACE
                 self._attr_extra_state_attributes["Timeout"] = self._timeout.total_seconds()
+                self._sync_active_timeout(now)
         elif message.message_type == MESSAGE_TYPE_PIR_SENSITIVITY:
             if message.pir_sensitivity is not None and 0 <= message.pir_sensitivity < len(PIR_SENSITIVITY):
                 self._attr_extra_state_attributes["Sensitivity"] = PIR_SENSITIVITY[message.pir_sensitivity]
-        self._last_updated = datetime.now(timezone.utc)  # type: ignore
-        self._attr_force_update = True
-        try:
-            self.async_write_ha_state()
-        except Exception:
-            try:
-                self.async_schedule_update_ha_state()
-            except Exception:
-                pass
-        self._attr_force_update = False
+        self._write_motion_state(force_update=True)
