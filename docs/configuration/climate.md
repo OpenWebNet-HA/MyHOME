@@ -48,6 +48,7 @@ MyHOME installations typically deploy one of three climate topologies, all nativ
 * **Hardware**: Autonomous room thermostats (BTicino `H4691`, `LN4691`, `L4692`) acting as independent temperature controllers without a master central display.
 * **Operation**: Each thermostat is exposed directly as an independent `climate` entity with full target setpoint and mode control.
 * **Modes offered**: on a plant that also has a central unit, a standalone thermostat does not offer `auto` once the central unit is known (the central unit has no program for it: the live F461 ACKs `*4*311*#2##` and nothing answers; `auto` on zone 2 was refused on both gateway entries, 2026-11-12). A zone *of* the central unit does not offer the off-season mode while the season is reported (`heat` on zone 4 of a 3550 in conditioning was refused, 2026-11-12). The mode a zone shows is never dropped from the list.
+* **How a central unit is recognised**: by a frame of the central unit itself (such as `*4*WHAT*#0##`) or by a seasonal status or a dimension the central unit sends for one of its zones (`*4*110*#Z##`, `*#4*#Z*14*TTTT*M##`). An actuator status (dimension 20) is never one, and with WHERE `#0` it creates no entity and reaches none: an F461 2.0.11 on a plant with no central unit answered the all-zone actuator request `*#4*#0*20##` with `*#4*#0*20*1##` (#944), and its zones stay standalone (`*#4*Z*#14*TTTT*M##`).
 
 ---
 
