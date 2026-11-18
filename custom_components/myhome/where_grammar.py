@@ -486,18 +486,23 @@ def _decode_thermo_output_code(
     - Expanded discrete ``0..22``: ``MyHomeServer1`` (``028206``) and ``F461``
       (``020011``) across Dimension 19, Dimension 20, and ``#20``.
     - Proportional 0-10 V ``100..200`` (``0%..100%``, SCS ``0x80..0xE4`` as ``100 + pct``):
-      unsupported on ``MH200N`` (``010108``); supported on Dimension 20 only on ``F454``
-      (``020051``) and ``MH202`` (``010024``); supported on Dimension 19, Dimension 20,
-      and ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Short
-      4-byte inbound ``$17B7<DST>3<ACT><VAL>\r`` (2-digit UART PIC) /
+      unsupported on ``MH200N`` (``010108``); emulator-verified on Dimension 20 only on
+      ``F459`` (``020105``) and ``MH202`` (``010024``); ``F454`` (``020051``) is
+      Dimension 20 only by firmware reading, not observed on the emulator (the emulated
+      ``020051`` image emitted nothing on inbound ``$17B7...``, including the
+      ``17B40230F9`` control frame); supported on Dimension 19, Dimension 20, and
+      ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Short 4-byte
+      inbound ``$17B7<DST>3<ACT><VAL>\r`` (2-digit UART PIC) /
       ``$017B7<DST>3<ACT><VAL>\r`` (3-digit RPMsg PIC on ``F460``/``F461``) translates
       to Dimension 20 (``*#4*Z#N*20*...##``) only (``$04B7...`` is an outbound prefix);
       Dimension 19 ``100..200`` on ``MyHomeServer1`` ``028206`` / ``F461`` ``020011``
       comes only from extended 8-byte zone valve replies
       ``D2 <Z> 03 04 13 <HV> <CV> 00`` (``$18D2...`` / ``$018D2...``) in firmware
-      disassembly/emulation with no live capture yet. Live plant captures cover
-      Dimension 20 ``100`` (#908) and ``100, 120..200`` on ``MyHomeServer1`` ``2.87.13``
-      (#949); ``10..16`` and ``17..22`` are firmware-verified without a live capture yet.
+      disassembly/emulation with no live capture yet. Live ``MyHomeServer1``
+      (``2.87.13``) captures cover ``#908`` (``100``) and ``#949`` / ``#952``
+      (``100, 120..200``, including the full 221-frame heating ramp on ``F430V10`` /
+      ``F459``); ``10..16`` and ``17..22`` are firmware-verified without a live capture
+      yet.
 
     Per-code semantics:
     - ``0, 3, 4``: valve/actuator OFF, Closed, Stop -> ``(False, None, None)``
