@@ -211,10 +211,15 @@ __all__ = [
     "normalize_expose_where",
     "normalize_where",
     "parse_thermo_actuator_where",
+    "thermo_dim19_status",
+    "thermo_dim20_actuator_target",
     "thermo_dim20_is_active",
+    "thermo_dim20_level",
+    "thermo_dim20_status",
     "thermo_event_actuator",
     "thermo_event_interface",
     "thermo_event_zone",
+    "thermo_output_level",
     "validate_thermo_trigger_command",
     "where_param",
     "zone_number",
@@ -483,9 +488,16 @@ def _decode_thermo_output_code(
     - Proportional 0-10 V ``100..200`` (``0%..100%``, SCS ``0x80..0xE4`` as ``100 + pct``):
       unsupported on ``MH200N`` (``010108``); supported on Dimension 20 only on ``F454``
       (``020051``) and ``MH202`` (``010024``); supported on Dimension 19, Dimension 20,
-      and ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Note that
-      only ``100`` has a live plant capture; ``14..16``, ``101..200``, ``10..13``, and
-      ``17..22`` are firmware-verified without a live capture yet.
+      and ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Short
+      4-byte inbound ``$17B7<DST>3<ACT><VAL>\r`` (2-digit UART PIC) /
+      ``$017B7<DST>3<ACT><VAL>\r`` (3-digit RPMsg PIC on ``F460``/``F461``) translates
+      to Dimension 20 (``*#4*Z#N*20*...##``) only (``$04B7...`` is an outbound prefix);
+      Dimension 19 ``100..200`` on ``MyHomeServer1`` ``028206`` / ``F461`` ``020011``
+      comes only from extended 8-byte zone valve replies
+      ``D2 <Z> 03 04 13 <HV> <CV> 00`` (``$18D2...`` / ``$018D2...``) in firmware
+      disassembly/emulation with no live capture yet. Live plant captures cover
+      Dimension 20 ``100`` (#908) and ``100, 120..200`` on ``MyHomeServer1`` ``2.87.13``
+      (#949); ``10..16`` and ``17..22`` are firmware-verified without a live capture yet.
 
     Per-code semantics:
     - ``0, 3, 4``: valve/actuator OFF, Closed, Stop -> ``(False, None, None)``
@@ -615,6 +627,74 @@ def thermo_dim20_is_active(message: Any) -> bool | None:
     """
     status = thermo_dim20_status(message)
     return status[0] if status is not None else None
+
+
+def thermo_output_level(code: int) -> int | None:
+    """Return ``0..100`` percentage for a WHO=4 proportional 0-10 V code ``100..200``, else ``None``."""
+    if isinstance(code, bool) or not isinstance(code, int):
+        return None
+    if 100 <= code <= 200:
+        return code - 100
+    return None
+
+
+def thermo_dim20_level(message: Any) -> int | None:
+    """Return ``0..100`` percentage for a WHO=4 Dimension 20 event or ``#20`` write carrying ``100..200``, else ``None``."""
+    who = getattr(message, "who", None)
+    if isinstance(who, (int, str)) and str(who) != "4":
+        return None
+    if getattr(message, "dimension", None) != 20:
+        return None
+    is_action = getattr(message, "message_type", None) == "hvac_action"
+    if not is_action and not isinstance(message, OWNCommand):
+        return None
+    vals = getattr(message, "dimension_value", None)
+    if not isinstance(vals, (list, tuple)) or not vals:
+        return None
+    first = str(vals[0])
+    if not _is_ascii_uint(first):
+        return None
+    return thermo_output_level(int(first))
+
+
+def thermo_dim20_actuator_target(
+    message: Any,
+) -> tuple[str, str, str | None] | None:
+    """Return ``(zone, actuator, interface)`` for a point WHO=4 Dimension 20 actuator frame.
+
+    Requires an explicit actuator token ``Z#N`` (``1 <= Z <= 99`` and ``1 <= N <= 9``,
+    with an optional 2-digit F422 interface ``#4#00``..``#4#15``; ``WHO_4.pdf`` 1.5.8
+    p. 22 defines ``Z#N``, ``Z#0``, ``0#0`` for Dimension 20, never bare ``Z``). Rejects
+    bare zone addresses (``Z``, ``Z#4#II``), central-unit addresses (``#0``, ``#0#C``,
+    ``#Z``), pumps (``0#N``), probes (``>= 100``), all-actuators selectors (``Z#0``),
+    out-of-range actuators (``> 9``), 3-token split addresses (``3#Z#N``), and invalid
+    interfaces.
+    """
+    if is_central_thermo_where(message):
+        return None
+    zone = thermo_event_zone(message)
+    if zone is None:
+        return None
+    raw_tail = [str(p) for p in where_param(message)]
+    if len(raw_tail) == 3 and raw_tail[1] == "4":
+        base_tail = [raw_tail[0]]
+        raw_if: str | None = raw_tail[2]
+    else:
+        base_tail = raw_tail
+        raw_if = None
+    if len(base_tail) != 1:
+        return None
+    iface = thermo_event_interface(message)
+    if raw_if is not None and iface is None:
+        iface = raw_if.zfill(2) if _is_ascii_uint(raw_if) else raw_if
+    if iface is not None and (not _is_ascii_uint(iface) or int(iface) > 15):
+        return None
+    if not _is_ascii_uint(base_tail[0]):
+        return None
+    act_int = int(base_tail[0])
+    if not (1 <= act_int <= 9):
+        return None
+    return (zone, str(act_int), f"{int(iface):02d}" if iface is not None else None)
 
 
 def thermo_dim19_status(

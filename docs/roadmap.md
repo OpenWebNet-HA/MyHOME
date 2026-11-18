@@ -184,7 +184,7 @@ Below is the live, automatically synchronized status of real-world captures in C
 ```mermaid
 graph TD
     subgraph Gateways["🏛️ Gateways & Transports"]
-        GW_MHS1["🟢 MyHomeServer1<br/>(47 captures · 6,879 rx)"]
+        GW_MHS1["🟢 MyHomeServer1<br/>(48 captures · 6,888 rx)"]
         GW_F454["🟢 F454<br/>(23 captures · 4,447 rx)"]
         GW_F455["🟢 F455<br/>(10 captures · 565 rx)"]
         GW_F459["🟢 F459<br/>(1 capture · 898 rx)"]
@@ -277,7 +277,7 @@ graph TD
 <!-- ROADMAP_GATEWAY_TABLE_START -->
 | Gateway Model | Status | Current Evidence / Fixture | Community Trace Needed / Target Scenario |
 | :--- | :--- | :--- | :--- |
-| **MyHomeServer1 (MHS1)** | 🟢 **Covered** | 47 physical captures (6,879 `rx` frames; `WHO = 1, 2, 4, 7, 8, 9, 13, 14, 15, 18, 22, 25, 1000, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/myhomeserver1_live_2026-10-25/` | *None needed — cloud/local hybrid gateway plant active in CI.* |
+| **MyHomeServer1 (MHS1)** | 🟢 **Covered** | 48 physical captures (6,888 `rx` frames; `WHO = 1, 2, 4, 7, 8, 9, 13, 14, 15, 18, 22, 25, 1000, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/myhomeserver1_live_2026-10-25/` | *None needed — cloud/local hybrid gateway plant active in CI.* |
 | **F454** | 🟢 **Covered** | 23 physical captures (4,447 `rx` frames; `WHO = 0, 1, 2, 4, 5, 9, 13, 14, 18, 25, 1013`) — e.g. `tests/fixtures/traces/issue_429/`, `tests/fixtures/traces/issue_466/` | *None needed — high-speed multi-session IP webserver active in CI.* |
 | **F455** | 🟢 **Covered** | 10 physical captures (565 `rx` frames; `WHO = 1, 2, 4, 13, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/central_restore_3100_live_2026-11-12/` | *None needed — single-bus DIN IP gateway active in CI.* |
 | **F459** | 🟢 **Covered** | 1 physical capture (898 `rx` frames; `WHO = 1, 2, 4, 13, 1013`) — e.g. `tests/fixtures/traces/issue_466/` | *None needed — WHO 1013 code 65 & WHO 4 capture active in CI.* |

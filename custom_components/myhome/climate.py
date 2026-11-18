@@ -99,6 +99,8 @@ from .where_grammar import (
     is_pump,
     parse_thermo_actuator_where,
     thermo_dim19_status,
+    thermo_dim20_actuator_target,
+    thermo_dim20_level,
     thermo_dim20_status,
     thermo_event_actuator,
     thermo_event_interface,
@@ -587,6 +589,8 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
 
 
 class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
+    _unrecorded_attributes = frozenset({"actuator_levels"})
+
     def __init__(
         self,
         hass: HomeAssistant | None,
@@ -659,6 +663,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._running_fan_speed: str | None = None
         # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
+        # Per-actuator proportional 0-10 V output level (0..100 %) from dimension 20 codes
+        # 100..200 (*#4*Z#N*20*1xx##), exposed as ``actuator_levels`` (#949).
+        self._actuator_levels: dict[str, int] = {}
         # The actuator numbers the zone reported before the restart (the keys of the saved
         # ``actuators`` attribute; their states are not restored). The silent-zone poll asks
         # for each of them instead of actuator 1 alone.
@@ -906,6 +913,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._actuator_states:
             attrs["actuators"] = {
                 actuator: "on" if active else "off" for actuator, active in sorted(self._actuator_states.items())
+            }
+        if self._actuator_levels:
+            attrs["actuator_levels"] = {
+                actuator: level for actuator, level in sorted(self._actuator_levels.items())
             }
         if self._current_temperature_restored:
             attrs["current_temperature_restored"] = True
@@ -1467,6 +1478,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _mark_actuators_off(self) -> None:
         """The zone was switched OFF: every known actuator is off, the attribute stays."""
         self._actuator_states = dict.fromkeys(self._actuator_states, False)
+        self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
         self._actuator_fan_speeds = dict.fromkeys(self._actuator_fan_speeds, "off")
         if self._zone_active is not None:
             self._zone_active = False
@@ -2864,6 +2876,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             sides_resolved = False
             cooling_active = False
             heating_active = False
+            dim20_level: int | None = None
             if dimension == 19:
                 dim19 = thermo_dim19_status(message)
                 if dim19 is None:
@@ -2902,6 +2915,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if dim20 is None:
                     return
                 is_active, msg_fan_on, msg_fan_speed = dim20
+                dim20_level = thermo_dim20_level(message)
             else:
                 cooling_active = bool(message.is_cooling())
                 heating_active = bool(message.is_heating())
@@ -2939,6 +2953,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # actuator 1, 23 s after `*#4*4*19*8*0##`, and the answer `*#4*4#1*20*0##` set the
             # zone to idle for 3 s while the fan coil ran (`tests/fixtures/traces/issue_932`).
             # Anything else an actuator says takes the lead as before.
+            dim20_target = (
+                thermo_dim20_actuator_target(message) if dimension == 20 else None
+            )
             repeated_off = (
                 dimension == 20
                 and not is_active
@@ -2947,11 +2964,25 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and self._actuator_states.get(thermo_event_actuator(message)) is False
             )
             if repeated_off:
-                pass
+                if dim20_target is not None:
+                    target_actuator = dim20_target[1]
+                    if dim20_level is not None:
+                        self._actuator_levels[target_actuator] = dim20_level
+                    elif target_actuator in self._actuator_levels:
+                        self._actuator_levels[target_actuator] = 0
             elif dimension == 20:
                 actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
+                if dim20_target is not None:
+                    target_actuator = dim20_target[1]
+                    if dim20_level is not None:
+                        self._actuator_levels[target_actuator] = dim20_level
+                    elif target_actuator in self._actuator_levels:
+                        if is_active:
+                            self._actuator_levels.pop(target_actuator, None)
+                        else:
+                            self._actuator_levels[target_actuator] = 0
                 if is_fan:
                     self._actuator_fan_speeds.pop(actuator_id, None)
                     self._actuator_fan_speeds[actuator_id] = (
@@ -2975,6 +3006,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if not self._zone_active:
                     # Neither side is active: every actuator of the zone is off.
                     self._actuator_states = dict.fromkeys(self._actuator_states, False)
+                    self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
                     self._actuator_fan_speeds = dict.fromkeys(
                         self._actuator_fan_speeds, "off"
                     )

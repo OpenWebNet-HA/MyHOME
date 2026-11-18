@@ -128,10 +128,10 @@ Upgrading from the previous stable release? Follow the [upgrade guide](https://o
 | **`switch`** | WHO=1 / 4 / 9 / 25 | Relays & socket actuators (`WHO=1`, switch/outlet device classes), thermoregulation zone/actuator power switches (`WHO=4`), auxiliary & CEN+ contact invert switches (`WHO=9 / 25`), Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`) |
 | **`cover`** | WHO=1 / WHO=2 | Motorized shutters, blinds, roll-ups with state tracking, position-reporting actuators & virtual travel-time positioning; impulse gates & garage doors (`WHO=1`) with sensor feedback and an optional multi-factor approval workflow |
 | **`lock`** | WHO=6 | Native video door entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN authentication and auto-relock |
-| **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
+| **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, 0–10 V proportional actuator output levels (`0..100 %`), offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
 | **`alarm_control_panel`** | WHO=5 | Central units (3485/3486), read-only state (disarmed / armed away / triggered), zone 0 broadcast sync; arm/disarm via AUX frames ([docs](docs/configuration/alarm.md)) |
 | **`binary_sensor`** | WHO=1 / 9 / 25 | Magnetic contacts, door/window sensors, PIR motion, AUX channels (1–9), dry contacts (F482/3477), inverted contacts |
-| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), illuminance / lux sensors |
+| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), 0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), illuminance / lux sensors |
 | **`button`** | WHO=14 / 2 / 16 / 22 | Hardware actuator lock/unlock for lights, switches & covers (WHO=14), cover travel time calibration buttons (per cover & gateway-wide, WHO=2), F500/F500N FM tuner Seek up / Seek down buttons (WHO=16 / 22) |
 | **`number`** | WHO=16 / 22 | Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) for declared F500/F500N tuner sources (WHO=16 / 22) |
 | **`media_player`** | WHO=16 / 22 | F441/F441M audio zones, F500/F500N FM radio tuners (presets, RDS, Media Browser, manual frequency & preset storage on WHO=16 & WHO=22), volume normalization, software mute, streaming dynamic proxy (Music Assistant / Spotify Connect) |
@@ -207,7 +207,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### Code Coverage
 
-The integration maintains 6,554 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+The integration maintains 6,673 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
 
 <details>
 <summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>

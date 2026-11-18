@@ -807,6 +807,9 @@
       },
       "energy_month": {
         "name": "Energy (current month)"
+      },
+      "actuator_output_level": {
+        "name": "Actuator {actuator} output level"
       }
     },
     "switch": {

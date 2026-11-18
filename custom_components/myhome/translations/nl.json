@@ -710,6 +710,9 @@
       },
       "energy_month": {
         "name": "Energie (huidige maand)"
+      },
+      "actuator_output_level": {
+        "name": "Uitgangsniveau actuator {actuator}"
       }
     },
     "switch": {
