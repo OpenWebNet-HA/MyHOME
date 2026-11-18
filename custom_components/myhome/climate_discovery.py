@@ -259,7 +259,15 @@ class ZoneDiscovery:
         self._held: dict[ZonePair, dict[str, OWNHeatingEvent]] = {}
 
     def start_reads(self) -> None:
-        """Ask the zones known only from their actuators, once the start-up sweep is over."""
+        """Ask the zones known only from their actuators, once the start-up sweep is over.
+
+        Only where that sweep asks every actuator in place of the general request the firmware
+        drops (``asks_every_actuator_at_start``). Where the general request is forwarded every
+        thermostat has answered it, so a read of an address known only from its actuator would
+        be one nothing answers, at a cost nobody measured on those models.
+        """
+        if getattr(self._gateway, "asks_every_actuator_at_start", False) is not True:
+            return
         if inspect.iscoroutinefunction(getattr(self._gateway, "read_zone_temperature", None)):
             run = self._ask_actuator_only_zones()
             task: object = self._config_entry.async_create_background_task(

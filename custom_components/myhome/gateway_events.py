@@ -294,15 +294,25 @@ class GatewayEventDispatcher:
                     {"gateway": str(self.handler.gateway.host), "message": str(message)},
                 )
 
+        central_news = False
         if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
             # Before the entities see the frame: the central unit's entity hands its mode to its
             # zones while it handles it, and they compare their season with this one.
+            central_news = self.handler.has_central_unit is not True
             self.handler.has_central_unit = True
             season = central_unit_season(message)
             if season is not None:
+                central_news = central_news or getattr(self.handler, "central_season", None) != season
                 self.handler.central_season = season
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
+            if central_news:
+                # The central unit, or its season, has just become known. Its own ``#0`` frame
+                # reaches every zone through the central unit's entity; a report about one zone
+                # (``*4*110*#3##``, all a quarter-hour push brings) reaches that zone only, so
+                # the others are told here: a zone that reported its season earlier is compared
+                # now, and what a zone offers follows the plant it turns out to be on.
+                dispatcher_send(self.hass, f"myhome_central_season_{self.handler.mac}")
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:

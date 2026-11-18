@@ -176,8 +176,8 @@ def _sound_row_cells(profile_name: str) -> str:
     from OWNd.profiles import get_gateway_profile
 
     if get_gateway_profile(profile_name).supports_who(16):
-        return "WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`)"
-    return "WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`)"
+        return "WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`)"
+    return "WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`)"
 
 
 def test_generate_gateway_discovery_table_and_verify_oracle():
@@ -186,9 +186,9 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     assert ugp.DISCOVERY_START_MARKER in block
     assert ugp.DISCOVERY_END_MARKER in block
     # Rows whose profile has not changed between OWNd releases: the literal cells.
-    assert "| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
+    assert "| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`; `*#4*0#0*20##` sent in place of `*#4*0##`) |" in block
     assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
-    assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) |" in block
+    assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*0#0*20##` sent in place of `*#4*0##`) |" in block
     assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
     assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
     assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
@@ -272,10 +272,10 @@ def test_discovery_row_drops_who16_when_the_profile_does(monkeypatch: pytest.Mon
     assert rows["**MH202**"]["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
     block = ugp.build_discovery_block()
     assert (
-        "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | "
+        "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) | "
         "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only"
     ) in block
-    assert "| **MyHomeServer1** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | " in block
+    assert "| **MyHomeServer1** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) | " in block
 
 
 def test_discovery_table_without_ownd_uses_the_pinned_rows(monkeypatch: pytest.MonkeyPatch):
@@ -495,7 +495,7 @@ def test_discovery_table_without_ownd_follows_the_pinned_rows_at_the_pin_bump(mo
     assert calibrated["**MH202**"]["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
     monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
     block = ugp.build_discovery_block()
-    assert "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only" in block
+    assert "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) | Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only" in block
     assert "| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) |" in block
 
 

@@ -550,6 +550,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
         # When the startup sweep last asked every actuator (monotonic), 0 before it did.
         self._all_actuators_swept_at: float = 0.0
+        # The same for the central unit's status (``CENTRAL_STATUS_REQUEST``).
+        self._central_status_swept_at: float = 0.0
+        # Zones (number, interface) found not to be run by the plant's central unit
+        # (``climate._mark_standalone_detected``), for what else hangs on the zone's device.
+        self.standalone_detected_zones: set[tuple[str, str | None]] = set()
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -820,10 +825,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                     if BUS_ROUTING not in where and not (own_actuators and not _is_zone_level_where(where))
                 ]
                 if all_zones is not None and served:
-                    if not (
+                    # 0 is "no sweep asked yet", not a time: on a host whose monotonic clock is
+                    # itself under ALL_ACTUATORS_SWEEP_FRESH it would read as a sweep just sent.
+                    swept_at = getattr(target, "_all_actuators_swept_at", 0.0)
+                    just_swept = (
                         all_zones == ALL_ACTUATORS_REQUEST
-                        and 0 < time.monotonic() - getattr(target, "_all_actuators_swept_at", 0.0) < ALL_ACTUATORS_SWEEP_FRESH
-                    ):
+                        and swept_at > 0
+                        and time.monotonic() - swept_at < ALL_ACTUATORS_SWEEP_FRESH
+                    )
+                    if not just_swept:
                         frames.append(all_zones)
                     wheres = [where for where in wheres if where not in served]
                 if dimension == 20 and target.zone_actuator_request_refused:
@@ -874,6 +884,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         await self._wait_for_write(written, cmd)
         if not isinstance(written, asyncio.Future):
             return None  # a gateway double without delivery information
+        if not written.done():
+            # Still queued or unanswered: withdrawn, so it does not go out next to the read
+            # the caller repeats (the sender skips a cancelled frame).
+            written.cancel()
         if written.done() and not written.cancelled() and written.exception() is None:
             await self._wait_for_bus_quiet(time.monotonic())
             return True
@@ -1070,6 +1084,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 # and the central unit's season is not known until it reports again (a zone is
                 # not compared with a season that may have changed meanwhile).
                 self._all_actuators_swept_at = 0.0
+                self._central_status_swept_at = 0.0
                 self.central_season = None
             if not was_connected and self._initial_discovery_done.is_set():
                 runtime = getattr(self.config_entry, "runtime_data", None)
@@ -1299,6 +1314,27 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """
         return self._model_key in STARTUP_CENTRAL_STATUS_REQUEST
 
+    @property
+    def asks_every_actuator_at_start(self) -> bool:
+        """Whether the startup sweep asks every actuator in place of the general request it drops.
+
+        Only there are the zones known from their actuators alone asked for their temperature
+        (``climate_discovery.ZoneDiscovery.start_reads``): where the general request is
+        forwarded every thermostat has answered it, and an address still known only from its
+        actuator has none.
+        """
+        return self._model_key in STARTUP_ALL_ACTUATORS_REQUEST
+
+    @property
+    def central_status_just_asked(self) -> bool:
+        """Whether the startup sweep asked the central unit's status in the last ``ALL_ACTUATORS_SWEEP_FRESH`` s.
+
+        The central unit's entity is created from the answer and would ask the same again as
+        it is added (live F461, 2026-11-18: ``*#4*#0##`` at 16:00:58.889 and at 16:01:08.227).
+        """
+        asked_at = self._central_status_swept_at
+        return asked_at > 0 and time.monotonic() - asked_at < ALL_ACTUATORS_SWEEP_FRESH
+
     def _heating_startup_requests(self) -> list[str]:
         """What replaces ``*#4*0##`` at start on a gateway that drops it."""
         frames: list[str] = []
@@ -1344,6 +1380,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             swept = isinstance(delivered, list) and ALL_ACTUATORS_REQUEST in delivered
             if swept:
                 self._all_actuators_swept_at = time.monotonic()
+            if isinstance(delivered, list) and CENTRAL_STATUS_REQUEST in delivered:
+                self._central_status_swept_at = time.monotonic()
             if swept and self.all_zone_request(20) == ALL_ACTUATORS_REQUEST:
                 # The sweep has just asked every actuator: the zones that were waiting for it
                 # with their own actuator request (``watch_zone_actuators``) are served, and a

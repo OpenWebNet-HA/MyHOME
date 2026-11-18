@@ -81,6 +81,7 @@ from .const import (
     CONF_DEVICE_MODEL,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
+    CONF_STANDALONE_ZONES,
     CONF_WHERE,
     CONF_WHO,
     CONF_ZONE,
@@ -113,6 +114,7 @@ from .where_grammar import (
     thermo_dim20_status,
     thermo_event_interface,
     thermo_event_zone,
+    validate_standalone_zones,
 )
 
 PARALLEL_UPDATES = 0
@@ -225,6 +227,13 @@ async def async_setup_entry(
     _migrate_temperature_unique_ids(hass, config_entry.entry_id, gateway.mac, entry_mac)
 
     configured_climate = runtime.platforms.get("climate", {})
+    # Zones the owner marked as standalone thermostats in the gateway options (local bus),
+    # as the climate platform reads them.
+    standalone_zones = frozenset(
+        validate_standalone_zones(
+            (getattr(config_entry, "options", None) or {}).get(CONF_STANDALONE_ZONES)
+        )[0]
+    )
     thermo_switch_whole_zones: set[tuple[str, str | None]] = set()
     thermo_switch_actuator_zones: set[tuple[str, str | None]] = set()
     thermo_switch_actuators: set[tuple[str, str, str | None]] = set()
@@ -616,6 +625,8 @@ async def async_setup_entry(
         zone_dev_id, dev_name, manufacturer, model, standalone_cfg = (
             _resolve_climate_device_meta(zone, norm_if)
         )
+        if not norm_if and canonical_thermo_zone(zone) in standalone_zones:
+            standalone_cfg = True  # "Standalone thermostats" in the gateway options
         return MyHOMEActuatorOutputSensor(
             hass=hass,
             name=dev_name,
@@ -1534,7 +1545,12 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         """Whether zone mode follows standalone ``Z`` addressing rather than a central unit."""
         if self._standalone_config is not None:
             return self._standalone_config
-        return getattr(self._gateway_handler, "has_central_unit", False) is not True
+        if getattr(self._gateway_handler, "has_central_unit", False) is not True:
+            return True
+        # A zone the climate entity found not to be run by the central unit (by a setpoint
+        # only the direct form changed, or by its season): the central unit's off is not its.
+        detected = getattr(self._gateway_handler, "standalone_detected_zones", None)
+        return isinstance(detected, set) and (self._zone, self._interface) in detected
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
