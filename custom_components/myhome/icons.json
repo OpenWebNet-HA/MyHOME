@@ -31,6 +31,9 @@
       },
       "energy_month": {
         "default": "mdi:lightning-bolt"
+      },
+      "actuator_output_level": {
+        "default": "mdi:gauge"
       }
     },
     "switch": {

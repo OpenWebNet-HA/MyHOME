@@ -50,12 +50,13 @@ target:
 
 ---
 
-## 🌡️ Temperature Sensors (WHO = 4)
+## 🌡️ Temperature Sensors & 0–10 V Proportional Actuator Output Sensors (WHO = 4)
 
 Standalone and secondary temperature probes operating on `WHO = 4` are automatically discovered as `sensor` entities with `device_class: temperature`:
 
 * **Standalone & Secondary Probes (`WHERE ≥ 100`, i.e. `0101`–`0999` / `101`–`899`, or `Dimension 15`)**: Auto-discovered from SCS bus traffic (including battery-powered wireless probes such as BTicino `3455` behind `L4577` radio interfaces, and outdoor/slave probes `3475`/`3476`).
 * **Thermostat Zones (`WHERE = 1..99`)**: Zone addresses `1..99` belong to `climate.*` thermostat entities by default and do **not** spawn duplicate standalone temperature `sensor` entities unless explicitly declared under `sensor:` in `/config/myhome.yaml`.
+* **0–10 V Proportional Actuator Output Level (`*#4*Z#N*20*100..200##`, `1 <= Z <= 99`, `1 <= N <= 9`)**: Whenever a zone actuator reports a proportional 0–10 V output code (`100..200` → `0..100 %`, e.g. Sabiana 0–10 V fan coils or modulating valves), the integration automatically creates an enabled `sensor` entity (`Actuator <N> output level`, unit `%`, `state_class: measurement`, `mdi:gauge`) attached to the same Home Assistant Device as the zone's `climate` entity — with `generate_events` disabled. Standard discrete `0..22` valve and 3-speed fan-coil actuators never spawn extra entities.
 
 ---
 

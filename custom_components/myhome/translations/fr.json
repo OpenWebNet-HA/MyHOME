@@ -710,6 +710,9 @@
       },
       "energy_month": {
         "name": "Énergie (mois en cours)"
+      },
+      "actuator_output_level": {
+        "name": "Niveau de sortie actionneur {actuator}"
       }
     },
     "switch": {
