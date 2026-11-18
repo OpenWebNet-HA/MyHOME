@@ -19,6 +19,7 @@ import json
 import os
 import py_compile
 import re
+import struct
 import sys
 import tomllib
 from collections.abc import Iterator, Sequence
@@ -1503,6 +1504,22 @@ KNOWN_INTEGRATION_CATEGORIES = frozenset(
 )
 
 PNG_MAGIC_BYTES = b"\x89PNG\r\n\x1a\n"
+PNG_IHDR_START = b"\x00\x00\x00\x0dIHDR"
+PNG_HEADER_SIZE = 33
+ALLOWED_BRAND_IMAGES = frozenset(
+    {
+        "icon.png",
+        "icon@2x.png",
+        "dark_icon.png",
+        "dark_icon@2x.png",
+        "logo.png",
+        "logo@2x.png",
+        "dark_logo.png",
+        "dark_logo@2x.png",
+    }
+)
+BRAND_ICON_SIZES = {"icon.png": 256, "icon@2x.png": 512}
+BRAND_LOGO_SHORTEST_SIDE = {"logo.png": (128, 256), "logo@2x.png": (256, 512)}
 MIN_SUPPORTED_HA_VERSION = (2026, 8, 0)
 HA_CALVER_RE = re.compile(
     r"^(?P<year>[1-9]\d{3})\.(?P<month>[1-9]|1[0-2])\.(?P<patch>0|[1-9]\d*)(?:(?:a|b|rc)(?:0|[1-9]\d*))?$"
@@ -1608,22 +1625,86 @@ def _validate_manifest_categories_and_branding(
             "Local brand/ directory not found under custom_components/myhome/",
         )
     elif brand_dir.is_dir():
-        for asset_name in ("icon.png", "logo.png"):
-            asset_path = brand_dir / asset_name
-            if not asset_path.is_file():
+        _validate_brand_dir(checker, brand_dir)
+
+
+def _validate_brand_dir(checker: StandardsChecker, brand_dir: Path) -> None:
+    """Validate local brand/ assets against Home Assistant hassfest brand_images rules."""
+    present_files: dict[str, Path] = {}
+    for entry in sorted(brand_dir.iterdir()):
+        if entry.is_file():
+            present_files[entry.name] = entry
+        else:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                entry,
+                1,
+                f"Local brand entry 'brand/{entry.name}' is not a file",
+            )
+
+    for extra_name in sorted(present_files.keys() - ALLOWED_BRAND_IMAGES):
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            present_files[extra_name],
+            1,
+            f"Unexpected file 'brand/{extra_name}' in brand/; allowed are: {', '.join(sorted(ALLOWED_BRAND_IMAGES))}",
+        )
+
+    asset_bytes: dict[str, bytes] = {}
+    for asset_name in sorted(ALLOWED_BRAND_IMAGES, key=lambda name: (name.startswith("dark_"), name)):
+        asset_path = present_files.get(asset_name)
+        if asset_path is None:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                brand_dir / asset_name,
+                1,
+                f"Required local brand asset {asset_name!r} missing from brand/",
+            )
+            continue
+
+        raw_bytes = asset_path.read_bytes()
+        asset_bytes[asset_name] = raw_bytes
+        if (
+            len(raw_bytes) < PNG_HEADER_SIZE
+            or raw_bytes[:8] != PNG_MAGIC_BYTES
+            or raw_bytes[8:16] != PNG_IHDR_START
+        ):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                asset_path,
+                1,
+                f"Local brand asset {asset_name!r} is not a valid PNG file",
+            )
+            continue
+
+        width, height = struct.unpack(">II", raw_bytes[16:24])
+        base_name = asset_name.removeprefix("dark_")
+        if base_name in BRAND_ICON_SIZES:
+            expected = BRAND_ICON_SIZES[base_name]
+            if (width, height) != (expected, expected):
                 checker.log_error(
                     "RULE_MARKETPLACE_MANIFEST",
                     asset_path,
                     1,
-                    f"Required local brand asset {asset_name!r} missing from brand/",
+                    f"Local brand asset {asset_name!r} is {width}x{height}, expected {expected}x{expected}",
                 )
-            elif not asset_path.read_bytes().startswith(PNG_MAGIC_BYTES):
+        else:
+            low, high = BRAND_LOGO_SHORTEST_SIDE[base_name]
+            if not (low <= min(width, height) <= high):
                 checker.log_error(
                     "RULE_MARKETPLACE_MANIFEST",
                     asset_path,
                     1,
-                    f"Local brand asset {asset_name!r} is not a valid PNG file",
+                    f"Local brand asset {asset_name!r} is {width}x{height}, shortest side must be {low}..{high} px",
                 )
+
+        if asset_name.startswith("dark_") and base_name in asset_bytes and asset_bytes[base_name] == raw_bytes:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                asset_path,
+                1,
+                f"Dark brand asset {asset_name!r} is byte-identical to {base_name!r}; provide distinct dark-theme artwork",
+            )
 
 
 def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | None = None):
