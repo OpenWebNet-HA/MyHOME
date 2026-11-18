@@ -45,7 +45,12 @@ from .const import (
     LOGGER,
 )
 from .topology import peer_handles_who
-from .where_grammar import is_central_unit_report, is_probe, where_param
+from .where_grammar import (
+    effective_message_where,
+    is_central_unit_report,
+    is_probe,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -320,27 +325,43 @@ class GatewayEventDispatcher:
                 if isinstance(message, OWNHeatingEvent) and is_central_unit_report(message):
                     self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
+                    what_val = getattr(message, "what", None)
+                    is_toggle = (
+                        getattr(message, "is_toggle", False) is True
+                        or what_val == 32
+                    )
                     if (
                         not getattr(message, "is_group", False)
                         and not getattr(message, "is_area", False)
                         and not getattr(message, "is_general", False)
                         and message.is_on is not None
                         and message.dimension is None
-                        and getattr(message, "what", None) not in (30, 31)
+                        and what_val not in (30, 31, 32, 34, 39)
+                        and not is_toggle
                     ):
                         # Only an actuator's own on/off status is a member echo: motion
-                        # frames, illuminance / PIR dimension pushes and WHAT 30/31 dim
-                        # steps (relative commands, "on" only to OWNd 2.0.0b11) must not
-                        # cancel or count towards a resync sweep (#367).
+                        # frames, illuminance / PIR dimension pushes, WHAT 30/31 dim
+                        # steps, and ZigBee WHAT 32/34/39 events must not cancel or
+                        # count towards a resync sweep (#367, ownkb:record:r000288).
                         self.handler._resync_manager.handle_ptp_echo(message)
 
                     dim = getattr(message, "dimension", None)
                     is_not_dimension = not (isinstance(dim, int) and not isinstance(dim, bool))
 
+                    if is_toggle and is_not_dimension:
+                        self.hass.bus.async_fire(
+                            "myhome_zigbee_light_event",
+                            {
+                                "message": str(message),
+                                "where": effective_message_where(message),
+                                "event": "toggle",
+                            },
+                        )
+
                     # A dim step (WHAT 30/31) says the light changed, not that it is on (#367).
                     # It fires no on/off event but still resyncs its members, whether OWNd
                     # reports its `is_on` as True (2.0.0b11) or None.
-                    is_dim_step = getattr(message, "what", None) in (30, 31)
+                    is_dim_step = what_val in (30, 31)
 
                     if (message.is_on is not None or is_dim_step) and is_not_dimension:
                         event = "on" if message.is_on else "off"

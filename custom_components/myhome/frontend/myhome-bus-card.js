@@ -1071,7 +1071,12 @@ class MyHomeBusCard extends HTMLElement {
 
     // The bundle is meant to be pasted into a public issue: name the transport,
     // never the address (LAN IP / port) or the browser.
-    const conn = gw.host ? "Ethernet TCP" : "Unknown";
+    const conn =
+      gw.connection_type === "serial"
+        ? "USB / Serial"
+        : gw.connection_type === "tcp" || gw.host
+          ? "Ethernet TCP"
+          : "Unknown";
 
     const queuePacing = gw.queue_pacing != null ? `${gw.queue_pacing}s` : "0.0s";
     const workerCount = gw.worker_count != null ? gw.worker_count : 1;
@@ -1267,6 +1272,7 @@ ${framesText}
     const modelSlug = String((this._gatewayInfo && this._gatewayInfo.model) || "gateway").replace(/[^a-z0-9]+/gi, "");
 
     const tracePayload = {
+      context: (this._gatewayInfo && this._gatewayInfo.context) || "scs",
       capture: {
         kind,
         started_at: kind === "sweep"

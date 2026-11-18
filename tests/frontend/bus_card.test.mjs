@@ -286,3 +286,47 @@ test("markup: transmit bar disabled, arm checkbox and help panel present; help t
   assert.equal(el("help-panel").style.display, "none");
   assert.equal(el("btn-help").classList.contains("open"), false);
 });
+
+test("serial OpenZigBee diagnostic payload reports USB / Serial and zigbee context in trace export", async () => {
+  const card = create({ model: "3578" });
+  card._gatewayInfo = {
+    model: "3578",
+    manufacturer: "Legrand / BTicino",
+    firmware: "1.2.4",
+    host: "",
+    port: 0,
+    mac_prefix: "00:12:4b",
+    connection_type: "serial",
+    context: "zigbee",
+    integration_version: "2.1.0b1",
+    ownd_version: "2.1.0b1",
+    is_connected: true,
+  };
+  const bundle = card._generateDiagnosticPayload();
+  assert.match(bundle, /\*\*Connection:\*\* USB \/ Serial/);
+  assert.match(bundle, /\*\*MAC Prefix:\*\* 00:12:4b/);
+
+  card._frames = [frame("*1*1*32818401#9##", { timestamp: 200, who: "1", where: "32818401#9" })];
+  await card._handleExportTrace();
+  const { payload } = downloads.at(-1);
+  assert.equal(payload.context, "zigbee");
+  assert.equal(payload.gateway.connection_type, "serial");
+  assert.equal(payload.gateway.mac_prefix, "00:12:4b");
+});
+
+test("diagnostic payload connection fallback handles explicit tcp, legacy host, and unknown", async () => {
+  const card = create({ model: "F454" });
+  card._gatewayInfo = { model: "F454", connection_type: "tcp", host: "" };
+  assert.match(card._generateDiagnosticPayload(), /\*\*Connection:\*\* Ethernet TCP/);
+
+  card._gatewayInfo = { model: "F454", host: "192.0.2.10" };
+  assert.match(card._generateDiagnosticPayload(), /\*\*Connection:\*\* Ethernet TCP/);
+
+  card._gatewayInfo = { model: "Generic" };
+  assert.match(card._generateDiagnosticPayload(), /\*\*Connection:\*\* Unknown/);
+
+  await card._handleExportTrace();
+  const { payload } = downloads.at(-1);
+  assert.equal(payload.context, "scs");
+  assert.equal(payload.gateway.connection_type, "tcp");
+});

@@ -32,6 +32,7 @@ from OWNd.message import OWNMessage, OWNSignaling
 from .bus_monitor import BusFrame, BusMonitor
 from .const import (
     CONF_FIRMWARE,
+    CONF_SERIAL_PORT,
     CONF_WORKER_COUNT,
     DATA_OWND_VERSION,
     DOMAIN,
@@ -126,6 +127,22 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
     if not isinstance(config_data, Mapping):
         config_data = {}
 
+    gw_profile = profile if profile is not None else getattr(gw, "profile", None)
+    is_serial = (
+        getattr(gw, "is_serial_transport", False) is True
+        or getattr(gw_profile, "transport_type", None) == "serial"
+        or bool(config_data.get(CONF_SERIAL_PORT))
+    )
+    addr_family = getattr(gw_profile, "address_family", None)
+    if getattr(gw, "is_zigbee_address_family", False) is True or addr_family == "zigbee":
+        context = "zigbee"
+    elif addr_family == "scs":
+        context = "scs"
+    elif is_serial:
+        context = "zigbee"
+    else:
+        context = "scs"
+
     if not model and isinstance(config_data.get(CONF_NAME), str):
         model = config_data[CONF_NAME]
     if not model and isinstance(getattr(gw, "model", None), str):
@@ -133,10 +150,14 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
     if not model:
         model = "Generic"
 
-    if not host and isinstance(config_data.get(CONF_HOST), str):
-        host = config_data[CONF_HOST]
-    if port == 20000 and isinstance(config_data.get(CONF_PORT), int):
-        port = config_data[CONF_PORT]
+    if is_serial:
+        host = ""
+        port = 0
+    else:
+        if not host and isinstance(config_data.get(CONF_HOST), str):
+            host = config_data[CONF_HOST]
+        if port == 20000 and isinstance(config_data.get(CONF_PORT), int):
+            port = config_data[CONF_PORT]
     cfg_fw = config_data.get(CONF_FIRMWARE)
     if not firmware and isinstance(cfg_fw, str) and cfg_fw.strip().lower() not in ("", "none", "null", "unknown"):
         firmware = cfg_fw
@@ -146,11 +167,12 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         mac_val = config_data.get(CONF_MAC)
     mac_addr = mac_val if isinstance(mac_val, str) else ""
 
-    mac_prefix = (
-        ":".join(mac_addr.split(":")[:3])
-        if ":" in mac_addr
-        else (mac_addr[:8] if mac_addr else "Unknown")
-    )
+    if ":" in mac_addr:
+        mac_prefix = ":".join(mac_addr.split(":")[:3])
+    elif is_serial and len(mac_addr) >= 6:
+        mac_prefix = ":".join(mac_addr[i : i + 2].lower() for i in range(0, 6, 2))
+    else:
+        mac_prefix = mac_addr[:8] if mac_addr else "Unknown"
 
     queue_pacing = 0.0
     if profile is not None and isinstance(getattr(profile, "command_queue_delay", None), (int, float)):
@@ -192,6 +214,8 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         "host": host,
         "port": port,
         "mac_prefix": mac_prefix,
+        "connection_type": "serial" if is_serial else "tcp",
+        "context": context,
         "queue_pacing": queue_pacing,
         "worker_count": worker_count,
         "queue_depth": queue_depth,
@@ -381,10 +405,12 @@ async def ws_bus_monitor_send(
         return
 
     try:
-        parsed = OWNMessage.parse(frame_str)
-        if parsed is None:
-            parsed = OWNMessage(frame_str)
-        if isinstance(parsed, OWNSignaling) or not getattr(parsed, "is_valid", False):
+        parsed = OWNMessage.parse(frame_str, gateway=getattr(gateway, "profile", None))
+        if (
+            parsed is None
+            or isinstance(parsed, OWNSignaling)
+            or not getattr(parsed, "is_valid", False)
+        ):
             connection.send_error(
                 msg["id"],
                 ERR_INVALID_FORMAT,
