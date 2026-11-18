@@ -331,7 +331,7 @@ async def test_serial_gateway_handler_and_session_pipeline(hass) -> None:
     assert handler.command_session_idle_timeout is None
     assert isinstance(handler.gateway.profile, Legrand3578Profile)
 
-    # TCP profile setting command_session_idle_timeout=None also returns None.
+    # Profile advertising transport_type='serial' also disables idle close; TCP None uses default.
     tcp_entry = MockConfigEntry(
         domain=DOMAIN,
         data={CONF_MAC: "00:11:22:33:44:55", "host": "192.168.1.99", "port": 20000},
@@ -339,8 +339,11 @@ async def test_serial_gateway_handler_and_session_pipeline(hass) -> None:
     )
     tcp_entry.add_to_hass(hass)
     tcp_handler = MyHOMEGatewayHandler(hass=hass, config_entry=tcp_entry)
-    tcp_handler.gateway.profile = SimpleNamespace(command_session_idle_timeout=None)
+    tcp_handler.gateway.profile = SimpleNamespace(transport_type="serial")
+    assert tcp_handler.is_serial_transport is True
     assert tcp_handler.command_session_idle_timeout is None
+    tcp_handler.gateway.profile = SimpleNamespace(transport_type="tcp", command_session_idle_timeout=None)
+    assert tcp_handler.command_session_idle_timeout == 15.0
 
     # Mock test() goes through serial_runtime.
     assert await handler.test() == {"Success": True, "Message": "connected"}

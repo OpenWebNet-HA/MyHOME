@@ -90,8 +90,6 @@ from .topology import (
 )
 from .zigbee_inventory import ZigbeeInventoryManager
 
-_MISSING = object()
-
 __all__ = [
     "AVAILABILITY_GRACE",
     "COMMAND_SESSION_IDLE_TIMEOUT",
@@ -988,21 +986,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Idle timeout before releasing the command session socket (``None`` disables idle close)."""
         if self.is_serial_transport:
             return None
-        idle_timeout_default = float(COMMAND_SESSION_IDLE_TIMEOUT)
         profile = getattr(self.gateway, "profile", None)
-        profile_timeout: Any = (
-            getattr(profile, "command_session_idle_timeout", _MISSING)
-            if profile
-            else _MISSING
-        )
-        if profile_timeout is _MISSING:
-            return idle_timeout_default
-        if profile_timeout is None:
-            return None
-        val = float(profile_timeout)
-        if val == 15.0 and idle_timeout_default != 15.0:
-            return idle_timeout_default
-        return val
+        profile_timeout = getattr(profile, "command_session_idle_timeout", None) if profile else None
+        idle_timeout_default = float(COMMAND_SESSION_IDLE_TIMEOUT)
+        return float(profile_timeout) if profile_timeout is not None else idle_timeout_default
 
     async def test(self) -> dict[str, Any]:
         """Test gateway connection."""
