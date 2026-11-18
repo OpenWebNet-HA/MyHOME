@@ -45,7 +45,13 @@ from .const import (
     LOGGER,
 )
 from .topology import peer_handles_who
-from .where_grammar import is_central_unit_report, is_probe, where_param
+from .where_grammar import (
+    central_report_zone,
+    is_central_unit_report,
+    is_probe,
+    thermo_event_interface,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -319,6 +325,15 @@ class GatewayEventDispatcher:
             if not message.is_translation:
                 if isinstance(message, OWNHeatingEvent) and is_central_unit_report(message):
                     self.handler.has_central_unit = True
+                    season = getattr(message, "season", None)
+                    if (
+                        isinstance(season, str)
+                        and central_report_zone(message) is None
+                        and thermo_event_interface(message) is None
+                    ):
+                        # The central unit about itself (#0, #0#N), not about one of its zones,
+                        # on the gateway's own bus: a bus behind an interface has its own.
+                        self.handler.central_season = season
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
                         not getattr(message, "is_group", False)

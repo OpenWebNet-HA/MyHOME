@@ -504,6 +504,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.device_registry_id = None
         self.broadcast_resync = broadcast_resync
         self.has_central_unit = False
+        # The season the central unit last reported about itself (``*4*102*#0##`` heating,
+        # ``*4*202*#0##`` conditioning); None until it reports one. A thermostat that keeps
+        # reporting the other season is not following it (climate ``_check_season_against_central``).
+        self.central_season: str | None = None
 
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,

@@ -115,6 +115,14 @@ PLATFORM = Platform.CLIMATE
 # only from their actuators are left to report by themselves (``_ask_actuator_only_zones``):
 # an unanswered read holds a command session for 2.1 s on an F461 and about 9 s on an F455.
 ACTUATOR_ONLY_ZONE_MISSES = 2
+# A zone found on the bus that reports the season the central unit is not in: how long to wait
+# before its setpoint in force is read again (``*#4*Z*12##``, answered with the zone's season
+# frame) to see whether it still does. A zone of a central unit follows a season change of the
+# central unit: 0.53 s and 0.58 s on a 3550 (central_restore_3100_live_2026-11-12, both
+# monitors), 2.0 s on a MyHomeServer1 plant, where one status of the zone sent 0.66 s after
+# the change still carried the old season (issue_453, ``*4*202*#0##`` 19:39:28.629,
+# ``*4*1*4##`` 19:39:29.289, ``*4*202*4##`` 19:39:30.644).
+STANDALONE_SEASON_CONFIRM_DELAY = 10.0
 PARALLEL_UPDATES = 0
 # How long one read of the silent-zone poll (#466) waits for its answer before giving up.
 PACED_READ_TIMEOUT = 60.0
@@ -757,6 +765,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # until one came. Not the mode shown: an F455 turns that to AUTO for a moment with its
         # made-up ``*4*311*#Z##`` (``_asleep``).
         self._own_off: bool | None = None
+        # The season the zone last reported in its own (plain ``Z``) form, how many such frames
+        # came, and the running check of that season against the central unit's
+        # (``_check_season_against_central``).
+        self._own_season: str | None = None
+        self._own_season_frames = 0
+        self._season_check_task: asyncio.Task[None] | None = None
         # The setpoint write waiting for its confirmation: the nominal written, the value
         # dimension 12 would show for it, and the event a matching report sets.
         self._setpoint_check: tuple[float, float, asyncio.Event] | None = None
@@ -1730,6 +1744,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self.async_on_remove(self._cancel_central_flag_cycle)
             else:
                 self.async_on_remove(self._cancel_generic_zone_frame)
+                self.async_on_remove(self._cancel_season_check)
             if not self._central and self._standalone_config is not True:
                 self.async_on_remove(
                     async_dispatcher_connect(
@@ -2296,35 +2311,156 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             frame,
         )
 
-    def _mark_standalone_detected(self) -> None:
-        """A setpoint only the direct form changed: the central unit is not running this zone."""
+    def _mark_standalone_detected(self, *, by_season: bool = False) -> None:
+        """The central unit is not running this zone.
+
+        Found by a setpoint only the direct form changed (``_confirm_setpoint_write``), or
+        ``by_season``: the zone keeps reporting the season the central unit is not in
+        (``_confirm_season_against_central``).
+        """
         self._standalone_detected = True
         self._central_zone_seen = False
-        LOGGER.info(
-            "%s %s took its setpoint as `*#4*%s*#14*...` and not through the central unit: it is "
-            "handled as a standalone thermostat (list it under \"Standalone thermostats\" in the "
-            "gateway options to make that permanent)",
-            self._gateway_handler.log_id,
-            self._display_name,
-            zone_number(self._where),
-        )
+        if by_season:
+            LOGGER.info(
+                "%s %s runs in %s while the central unit is in %s and has not reported it: it is "
+                "handled as a standalone thermostat (list it under \"Standalone thermostats\" in "
+                "the gateway options to make that permanent)",
+                self._gateway_handler.log_id,
+                self._display_name,
+                self._own_season,
+                getattr(self._gateway_handler, "central_season", None),
+            )
+        else:
+            LOGGER.info(
+                "%s %s took its setpoint as `*#4*%s*#14*...` and not through the central unit: it is "
+                "handled as a standalone thermostat (list it under \"Standalone thermostats\" in the "
+                "gateway options to make that permanent)",
+                self._gateway_handler.log_id,
+                self._display_name,
+                zone_number(self._where),
+            )
         self._cancel_generic_zone_frame()
         self._refresh_hvac_modes()
         if (
             self._season_reported
             and self._season is not None
-            and (self._attr_hvac_mode != HVACMode.OFF or self._hvac_mode_restored)
+            and (
+                not self._own_off
+                if self._own_off is not None
+                else self._attr_hvac_mode != HVACMode.OFF or self._hvac_mode_restored
+            )
         ):
             # A standalone thermostat's season frame is its mode (#880): the mode shown so far
             # was a restored one, the AUTO of an F455's made-up *4*311*#Z##, or the mode of the
             # central unit the zone was taken to follow (live 2026-11-18: ``heat`` next to the
-            # zone's ``*4*0*2##``). A zone that is off stays off until its own frame says more.
+            # zone's ``*4*0*2##``). A zone whose own frame says off or protection
+            # (``*4*303*2##``, ``*4*102*2##``) keeps that: its season is not what it runs in.
             season_mode = HVACMode.HEAT if self._season == SEASON_HEATING else HVACMode.COOL
             if season_mode in self._configured_hvac_modes():
                 self._attr_hvac_mode = season_mode
                 self._hvac_mode_restored = False
                 self._refresh_hvac_modes()
         self._publish_state()  # the entry may have been unloaded during the wait
+
+    def _note_own_season(self, message: OWNHeatingEvent) -> None:
+        """Keep the season the zone reports in its own, plain ``Z`` form (``*4*0*2##``, ``*4*202*4##``)."""
+        season = getattr(message, "season", None)
+        if self._central or not isinstance(season, str) or is_central_thermo_where(message):
+            return
+        self._own_season = season
+        self._own_season_frames += 1
+        self._check_season_against_central()
+
+    def _season_against_central(self) -> bool:
+        """Whether this zone, found on the bus, reports the season the central unit is not in.
+
+        Only for a zone nobody configured, not yet found standalone, on a plant with a central
+        unit that has not reported it in the ``#Z`` form (``_central_zone_seen``). Only on the
+        gateway's own bus: the central unit whose season is kept is that bus's, and a zone
+        behind an interface may have another.
+        """
+        if (
+            self._central
+            or self._interface is not None
+            or self._standalone_config is not None
+            or self._standalone_detected
+            or self._central_zone_seen
+            or getattr(self._gateway_handler, "has_central_unit", False) is not True
+        ):
+            return False
+        central_season = getattr(self._gateway_handler, "central_season", None)
+        if not isinstance(central_season, str) or self._own_season is None:
+            return False
+        return self._season_side(self._own_season) != self._season_side(central_season)
+
+    def _check_season_against_central(self) -> None:
+        """Start the check of a zone that reports the season the central unit is not in.
+
+        A central unit runs its zones in its own season. In the 22 captures of tests/fixtures
+        with a central unit's season, the only zone a central unit reports (``*4*203*#4##``)
+        that is seen in the other season is zone 4 of issue_453, once, in the 2.0 s after a
+        season change (``STANDALONE_SEASON_CONFIRM_DELAY``); the other zones seen in the other
+        season are this plant's zone 2 on days the 3550 did not report it. Live plant,
+        2026-11-18: the 3550 in ``*4*102*#0##`` (heating), its zones 3 and 4 in ``*4*1*3##`` /
+        ``*4*1*4##``, and zone 2, which it is not running, in ``*4*0*2##``. Taken as a zone of
+        the central unit, zone 2 showed ``heat`` while it was cooling and offered no ``cool``,
+        until its first setpoint write found it standalone (``_confirm_setpoint_write``).
+        One frame proves nothing, so the zone is read again (``_confirm_season_against_central``).
+        """
+        if self._season_check_task is not None or not self._season_against_central():
+            return
+        if self.hass is None or self.platform is None or not self.entity_id:
+            return
+        self._season_check_task = self.hass.async_create_background_task(
+            self._confirm_season_against_central(),
+            name=f"myhome_{self._gateway_handler.mac}_{self._full_where}_season_check",
+        )
+
+    async def _confirm_season_against_central(self) -> None:
+        """Read the zone again; a second report of the other season makes it standalone.
+
+        After the startup requests and ``STANDALONE_SEASON_CONFIRM_DELAY`` seconds the zone is
+        asked its setpoint in force, ``*#4*Z*12##``: the thermostat answers with dimension 12
+        and its season frame (live 2026-11-18, ``*#4*2*12##`` -> ``*#4*2*12*0200*3##``,
+        ``*4*0*2##`` on F461 2.0.11 and F455 1.0.76; ``*#4*70*12##`` -> ``*#4*70*12*0230*3##``,
+        ``*4*1*70##`` on MyHomeServer1 3.87.13; every emulated firmware forwards the request,
+        own-firmware-oracle trace-corpus.tsv:57). Nothing is concluded from silence: no answer,
+        a zone that has moved to the central unit's season, or a report of the central unit
+        about the zone meanwhile, and the zone stays one of the central unit's. A zone found
+        standalone goes back under the central unit when it reports it
+        (``_note_central_zone_report``).
+        """
+        try:
+            wait = getattr(self._gateway_handler, "wait_for_initial_discovery", None)
+            if callable(wait):
+                await wait()
+            await asyncio.sleep(STANDALONE_SEASON_CONFIRM_DELAY)
+            if not self._season_against_central():
+                return
+            frames_before = self._own_season_frames
+            if not self._request_zone_dimension(12):
+                return
+            deadline = time.monotonic() + PACED_READ_TIMEOUT
+            while self._own_season_frames == frames_before and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+            if self._own_season_frames == frames_before:
+                LOGGER.debug(
+                    "%s %s did not answer `*#4*%s*12##` with its season; it stays a zone of the central unit",
+                    self._gateway_handler.log_id,
+                    self._display_name,
+                    self._full_where,
+                )
+                return
+            if self._season_against_central():
+                self._mark_standalone_detected(by_season=True)
+        finally:
+            self._season_check_task = None
+
+    def _cancel_season_check(self) -> None:
+        """Stop the running season check: the entity goes away."""
+        task, self._season_check_task = self._season_check_task, None
+        if task is not None:
+            task.cancel()
 
     def _refuse_interface_write(self) -> bool:
         """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
@@ -2347,6 +2483,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Update subordinate zone mode when central unit changes seasonal mode."""
         if self._standalone_detected:
             return  # found not to be run by the central unit: its own frames say what it does
+        self._check_season_against_central()
         prev_mode = self._attr_hvac_mode
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
@@ -3188,6 +3325,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             previous_season = self._season
             self._season = message.season
             self._season_reported = True
+            self._note_own_season(message)
             self._refresh_hvac_modes()
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
@@ -3226,6 +3364,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             prev_mode = self._attr_hvac_mode
             previous_season = self._season
             self._remember_season(message)
+            self._note_own_season(message)
             # OWNd releases without MESSAGE_TYPE_SEASON decode the zone operation mode
             # frame *4*1*Z## / *4*0*Z## as a plain heat / cool mode; it still tells the
             # season the thermostat runs in, which the fan coil poll needs.
@@ -3312,6 +3451,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._hvac_mode_restored = False
             prev_mode = self._attr_hvac_mode
             self._remember_season(message)
+            self._note_own_season(message)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
