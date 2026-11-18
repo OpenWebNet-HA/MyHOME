@@ -88,6 +88,9 @@ TRACE_DIR = Path(__file__).resolve().parent / "fixtures" / "traces" / "issue_949
 MHS1_RAMP_TRACE_PATH = (
     TRACE_DIR / "myhome_trace_MyHomeServer1_fancoil_dim20_ramp_2026-11-18.json"
 )
+MHS1_FULL_CYCLE_TRACE_PATH = (
+    TRACE_DIR / "myhome_trace_MyHomeServer1_fancoil_dim20_full_cycle_2026-11-18.json"
+)
 MAC = "00:03:50:00:09:08"
 
 
@@ -1736,4 +1739,179 @@ async def test_sensor_non_creation_and_pruning_with_dataclass_device_info(
     """Verify actuator output sensor discovery/pruning under HA 2026.12+ dataclass DeviceInfo."""
     monkeypatch.setattr(myhome_device, "DeviceInfo", StrictDataclassDeviceInfo)
     await test_sensor_non_creation_and_thermo_switch_pruning(hass)
+
+
+async def test_issue_952_full_221_frame_live_cycle_unseeded(
+    hass: HomeAssistant,
+) -> None:
+    """Replay the full 221-frame verbatim UTC bus-listener cycle from PR #952 comment #6984792289.
+
+    Starts from a completely blank MockConfigEntry with zero pre-registered entities
+    and zero seeded frames: verifies cold-start Zone 1 discovery, pump 0#1 exclusion,
+    36 s valve->fan delay, paired #20/20 deduplication across all 25 ramp steps
+    (20..100 %), interleaved multi-zone isolation (Zones 1, 2, 4, 5 + H4691 humidity),
+    and full return to 0 % / idle.
+    """
+    trace = json.loads(MHS1_FULL_CYCLE_TRACE_PATH.read_text(encoding="utf-8"))
+    assert trace["synthetic"] is False
+    assert trace["capture"]["kind"] == "bus_listener_log"
+    assert trace["gateway"]["model"] == "MyHomeServer1"
+    assert trace["gateway"]["firmware"] == "2.87.13"
+    assert trace["gateway"]["mac"] == MAC
+    assert "exported_at" not in trace
+    assert "exported_at" not in trace.get("environment", {})
+    assert trace["environment"]["home_assistant_version"] == "2026.11.2"
+    assert trace["environment"]["ownd_version"] == "2.0.1"
+
+    frames = trace["frames"]
+    assert len(frames) == 221
+    raw_frames = [f["raw"] for f in frames]
+    assert sum(1 for r in raw_frames if r.startswith("*#4*1#3*#20*")) == 31
+    assert sum(1 for r in raw_frames if r.startswith("*#4*1#3*20*")) == 63
+
+    gw = _make_gateway("MyHomeServer1", "2.87.13", mac=trace["gateway"]["mac"])
+    entry = _make_entry(hass, gw)
+
+    added_climates: list[MyHOMEClimate] = []
+    added_sensors: list[Any] = []
+    published_levels: list[int | None] = []
+
+    def _add_climates(entities: list[Any], update_before_add: bool = False) -> None:
+        for ent in entities:
+            ent.hass = hass
+            ent.entity_id = f"climate.zone_{ent._where}"
+            ent.async_write_ha_state = MagicMock()
+            added_climates.append(ent)
+
+    def _add_sensors(entities: list[Any], update_before_add: bool = False) -> None:
+        for ent in entities:
+            ent.hass = hass
+            ent.platform = MagicMock()
+            ent.entity_id = f"sensor.zone_{ent._where.replace('#', '_')}_output_level"
+
+            def _record_publish(*_args: Any, _e: Any = ent, **_kwargs: Any) -> None:
+                published_levels.append(_e.native_value)
+
+            ent.async_schedule_update_ha_state = MagicMock(side_effect=_record_publish)
+            added_sensors.append(ent)
+
+    await climate_setup_entry(hass, entry, _add_climates)
+    await sensor_setup_entry(hass, entry, _add_sensors)
+    assert added_climates == []
+    assert added_sensors == []
+
+    signal = f"myhome_message_{gw.mac}"
+
+    # 1) Pre-fan delay window (frames 0..36): Zone 1 heating with floor valve 1#1 + enable 1#2,
+    #    central pump 0#1 demand, and zero output-level sensors yet.
+    for raw in raw_frames[:37]:
+        async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
+    await hass.async_block_till_done()
+
+    assert [c._where for c in added_climates] == ["1"]
+    zone1 = added_climates[0]
+    assert zone1.current_temperature == 19.6
+    assert zone1.target_temperature == 23.0
+    assert zone1.hvac_mode == HVACMode.HEAT
+    assert zone1.hvac_action == HVACAction.HEATING
+    assert zone1.extra_state_attributes["actuators"] == {"1": "on", "2": "on"}
+    assert "actuator_levels" not in zone1.extra_state_attributes
+    assert added_sensors == []
+
+    # Frame 37: first *#4*1#3*#20*120## write alone does NOT spawn sensor or add "3" to actuators
+    assert raw_frames[37] == "*#4*1#3*#20*120##"
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[37]))
+    await hass.async_block_till_done()
+    assert added_sensors == []
+    assert "3" not in zone1.extra_state_attributes["actuators"]
+
+    # 2) Frame 38 (16:27:27.438): *#4*1#3*20*120## discovers SensorEntity at 20 % on Zone 1's device
+    assert raw_frames[38] == "*#4*1#3*20*120##"
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[38]))
+    await hass.async_block_till_done()
+
+    assert len(added_sensors) == 1
+    act3_sensor = added_sensors[0]
+    assert isinstance(act3_sensor, MyHOMEActuatorOutputSensor)
+    assert act3_sensor.unique_id == f"{gw.mac}-4-1#3-output-level"
+    assert act3_sensor.native_value == 20
+    assert (
+        device_info_to_dict(act3_sensor.device_info)["identifiers"]
+        == device_info_to_dict(zone1.device_info)["identifiers"]
+    )
+    assert zone1.extra_state_attributes["actuators"] == {
+        "1": "on",
+        "2": "on",
+        "3": "on",
+    }
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 20}
+    assert act3_sensor.async_schedule_update_ha_state.call_count == 1
+    assert published_levels == [20]
+
+    # 3) Full 25-step ramp + hold repeats + 3x 143 burst + interleaved Zones 2/4/5 & H4691 humidity (frames 39..207)
+    for raw in raw_frames[39:208]:
+        async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
+    await hass.async_block_till_done()
+
+    expected_ramp = [
+        20, 23, 26, 30, 33, 36, 40, 43, 46, 50, 53, 56, 60,
+        63, 66, 70, 73, 76, 80, 83, 86, 90, 93, 96, 100,
+    ]
+    assert published_levels == expected_ramp
+    assert act3_sensor.async_schedule_update_ha_state.call_count == 25
+    assert act3_sensor.native_value == 100
+    assert zone1.current_humidity == 61
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 100}
+
+    by_where = {c._where: c for c in added_climates}
+    assert set(by_where) == {"1", "2", "4", "5"}
+    zone2 = by_where["2"]
+    assert zone2.current_temperature == 19.3
+    assert zone2.target_temperature == 18.0
+    assert zone2.current_humidity == 63
+    assert zone2.hvac_mode == HVACMode.HEAT
+    assert zone2.hvac_action is None
+    assert "actuators" not in zone2.extra_state_attributes
+    assert "actuator_levels" not in zone2.extra_state_attributes
+    assert by_where["4"].current_temperature == 20.0
+    assert by_where["5"].current_temperature == 19.6
+    assert len(added_sensors) == 1
+
+    # 4) Shutdown (frames 208..220): setpoint back to 19.0 °C -> #20*100 ignored -> first 20*100 sets 0 %,
+    #    duplicate 20*100 writes 0 extra updates -> pump 0#1 release -> 1#1 off -> idle & all actuators off
+    for raw in raw_frames[208:212]:
+        async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
+    await hass.async_block_till_done()
+    assert raw_frames[211] == "*#4*1#3*#20*100##"
+    assert act3_sensor.native_value == 100
+    assert act3_sensor.async_schedule_update_ha_state.call_count == 25
+
+    assert raw_frames[212] == "*#4*1#3*20*100##"
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[212]))
+    await hass.async_block_till_done()
+    assert act3_sensor.native_value == 0
+    assert act3_sensor.async_schedule_update_ha_state.call_count == 26
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 0}
+
+    assert raw_frames[213] == "*#4*1#3*20*100##"
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[213]))
+    await hass.async_block_till_done()
+    assert act3_sensor.async_schedule_update_ha_state.call_count == 26
+
+    for raw in raw_frames[214:]:
+        async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
+    await hass.async_block_till_done()
+
+    assert act3_sensor.native_value == 0
+    assert published_levels == [*expected_ramp, 0]
+    assert zone1.target_temperature == 19.0
+    assert zone1.hvac_action == HVACAction.IDLE
+    assert zone1.extra_state_attributes["actuators"] == {
+        "1": "off",
+        "2": "off",
+        "3": "off",
+    }
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 0}
+    assert len(added_sensors) == 1
+
 
