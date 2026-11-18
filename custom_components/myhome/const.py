@@ -149,6 +149,10 @@ DEFAULT_MIN_MOTOR_PULSE = 0.4
 # Smallest level change (%) sent to an advanced cover; default MIN_POSITION_DELTA in cover_motion.py.
 CONF_MIN_POSITION_DELTA = "min_position_delta"
 MAX_MIN_POSITION_DELTA = 5
+# Send a stop before each open / close run of a timed cover (default off): for
+# actuators that only stop on an opposite command while running (BTicino L4671/2
+# on an MH201). Delay after the stop in cover_motion.STOP_BEFORE_MOVE_DELAY.
+CONF_STOP_BEFORE_MOVE = "stop_before_move"
 
 # Impulse cover / access controls (gates, garage doors, impulse relays)
 CONF_TYPE = "type"

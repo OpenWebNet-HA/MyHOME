@@ -5,6 +5,7 @@ import asyncio
 import inspect
 import time
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -87,6 +88,7 @@ from .const import (
     CONF_SLAT_TILT,
     CONF_SLAT_TIME,
     CONF_STATE_SENSOR,
+    CONF_STOP_BEFORE_MOVE,
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_WHO,
@@ -127,6 +129,7 @@ from .cover_motion import (
     END_STOP_TOLERANCE,
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
+    STOP_BEFORE_MOVE_DELAY,
     WRITE_TIMEOUT,
     compute_freeze_position,
     compute_interpolated_position,
@@ -170,6 +173,11 @@ OFF_RETRY_DELAY = 1.0
 OFF_SETTLE_DELAY = 0.2
 
 _clamp_slat_time = clamp_slat_time
+
+
+class _MoveSuperseded(Exception):
+    """A newer command arrived during a ``stop_before_move`` pause: drop this run."""
+
 
 # Known standard timed relay actuators that do not implement OpenWebNet Dimension 10 position reporting
 # (Encyclopedia OWN-DEV-0022/0023/0098/0141/0153: F411 family and flush-mounted 4671/2 / AM5851/2 relays).
@@ -375,6 +383,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             travel_time=int(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
             min_motor_pulse=float(cfg.get(CONF_MIN_MOTOR_PULSE, DEFAULT_MIN_MOTOR_PULSE)),
             min_position_delta=int(cfg.get(CONF_MIN_POSITION_DELTA, MIN_POSITION_DELTA)),
+            stop_before_move=bool(cfg.get(CONF_STOP_BEFORE_MOVE, False)),
             device_class=device_class,
             **kwargs,
         )
@@ -488,6 +497,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     # Full open / close runs on timed point covers settle on the travel timer;
     # a scope cover follows its members and has its own memberless run timeout.
     _settles_open_close = True
+    # A scope frame's stop would end the runs its members just opened
+    # (_async_run_members_to_end): only a point cover stops before a run.
+    _stops_before_move_supported = True
     _attr_device_class = CoverDeviceClass.SHUTTER
 
     def __init__(  # type: ignore
@@ -513,6 +525,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         strategy_name: str | None = None,
         device_class: CoverDeviceClass | None = None,
         allow_auto_advanced: bool = False,
+        stop_before_move: bool = False,
     ):
         super().__init__(
             hass=hass,
@@ -537,6 +550,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self.scope: CoverScope | None = None
         self._family: CoverFamily | None = None
         self._advanced = advanced
+        self._stop_before_move = bool(stop_before_move)
+        # Bumped by every run or stop about to be queued (own or a scope frame's).
+        self._command_seq = 0
         self._slat_tilt = bool(slat_tilt)
         raw_slat_time = _clamp_slat_time(slat_time)
         self._is_tilting: bool = False
@@ -2006,14 +2022,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._settles_full_run(True):
             await self._async_run_to_end(True)
             return
-        await self._async_move("open")
+        with suppress(_MoveSuperseded):
+            await self._async_move("open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Close cover."""
         if self._settles_full_run(False):
             await self._async_run_to_end(False)
             return
-        await self._async_move("close")
+        with suppress(_MoveSuperseded):
+            await self._async_move("close")
 
     def _settles_full_run(self, opening: bool) -> bool:
         """True when a full open / close run settles on the travel timer.
@@ -2035,6 +2053,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Open the run of a direction frame about to be queued: this cover's own, or a scope
         frame that moves it (the gateway relays that frame to every member, so it is the
         member's motor-start echo too)."""
+        self._command_seq += 1
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._end_run_from_unknown = False
@@ -2075,8 +2094,50 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         else:
             self._run_generation += 1
 
+    def _stops_before_move(self, is_tilting: bool) -> bool:
+        """True when a curtain run of this cover starts with a stop (``stop_before_move``).
+
+        Not for a slat pulse (a stop first would eat the short pulse), a native
+        cover (the actuator runs its own level write) or a calibration run (the
+        stop status would end the run being measured).
+        """
+        return (
+            self._stop_before_move
+            and self._stops_before_move_supported
+            and not is_tilting
+            and not self._advanced
+            and not self._calibrating
+        )
+
+    async def _async_stop_before_move(self) -> None:
+        """Stop the actuator and let it settle before the direction frame goes out.
+
+        Some actuators only stop when they get the opposite direction while they
+        run, also while they time out their run-time cutoff after the end stop
+        (BTicino L4671/2 behind an MH201: ~60 s on a 15 s shutter). The stop is
+        HA's own, so a run in progress freezes at its write as usual, and its
+        status arrives inside the stop's echo window, before the new run opens.
+        """
+        written = await self._async_stop()
+        seq = self._command_seq
+        if isinstance(written, asyncio.Future):
+            # Wait for the write, not the enqueue: behind a busy queue the two
+            # frames would otherwise reach the bus back to back. A stop that is
+            # never written leaves the direction frame to report the failure.
+            await asyncio.wait({written}, timeout=WRITE_TIMEOUT)
+        await asyncio.sleep(STOP_BEFORE_MOVE_DELAY)
+        if seq != self._command_seq:
+            # A stop or run asked for meanwhile is the latest intent; sending this
+            # direction after it would undo a stop, or stop the newer run.
+            raise _MoveSuperseded
+
     async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
-        """Queue a direction command and return its delivery future."""
+        """Queue a direction command and return its delivery future.
+
+        Raises ``_MoveSuperseded`` when a ``stop_before_move`` pause was overtaken.
+        """
+        if self._stops_before_move(is_tilting):
+            await self._async_stop_before_move()
         self._begin_run(direction, is_tilting)
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
@@ -2118,7 +2179,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         END_SETTLE_MARGIN has passed, publish the end position; the real stop
         status, if it comes, finds nothing left to change.
         """
-        written = await self._async_move("open" if opening else "close")
+        try:
+            written = await self._async_move("open" if opening else "close")
+        except _MoveSuperseded:
+            return
         self._settle_run_to_end(opening, written)
 
     def _follow_scope_run_to_end(self, opening: bool, written: asyncio.Future[Any] | None) -> None:
@@ -2386,6 +2450,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pending_timed_target = target_int
         try:
             written = await self._async_move(direction)
+        except _MoveSuperseded:
+            return
         finally:
             self._pending_timed_target = None
         if self._is_promoted_native():
@@ -2442,6 +2508,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _begin_stop(self, *, scope_where: str | None = None) -> None:
         """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
+        self._command_seq += 1
         self._cancel_stop_task()
         # HA asked for the stop: its status is never the end stop, whenever it arrives.
         self._full_run_to_end = False

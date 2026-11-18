@@ -115,6 +115,9 @@ class MyHOMEScopeCover(MyHOMECover):
     # No position of its own to settle: timed members settle on their own travel
     # timer, armed by _async_run_members_to_end for a scope frame the gateway relays.
     _settles_open_close = False
+    # stop_before_move is a point cover option: the scope frame's stop would end the
+    # runs _async_run_members_to_end opens for the members just before it is sent.
+    _stops_before_move_supported = False
 
     def __init__(self, *args: Any, scope: CoverScope, **kwargs: Any) -> None:
         self._run_timeout: CALLBACK_TYPE | None = None

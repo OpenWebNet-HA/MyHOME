@@ -46,6 +46,15 @@ MIN_MOTOR_PULSE: float = 0.4
 # default stays 2% (configurable in 1..5%).
 MIN_POSITION_DELTA: int = 2
 
+# Pause between the stop frame and the direction frame of a cover with
+# stop_before_move. A BTicino L4671/2 behind an MH201 (fw 3.3.6) that is still
+# running, or still timing out its ~60 s run-time cutoff after the shutter reached
+# its end stop, answers the opposite direction with a stop (*2*1*41## while moving
+# down -> *2*0*41##) and only reverses on a second command. Stopping first and
+# waiting 0.6 s after the stop is written made every reversal and every open
+# right after a full close work on that plant (2026-11-18).
+STOP_BEFORE_MOVE_DELAY: float = 0.6
+
 # Slack after the stored travel time before a timed full run (0% / 100%) is
 # reported as arrived. No stop frame is sent for those runs, and the actuator's
 # own stop status may come a minute late or never (#466 review, MyHOMEServer1).
