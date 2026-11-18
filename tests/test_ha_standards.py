@@ -3,7 +3,11 @@
 import json
 
 from scripts.verify_ha_standards import (
+    CUSTOM_COMPONENTS_DIR,
+    TESTS_DIR,
+    TYPING_COMPAT_FILE,
     StandardsChecker,
+    _resolve_device_info_scan_files,
     check_deprecated_constants,
     check_discovery_flows,
     check_future_annotations_and_syntax,
@@ -115,7 +119,7 @@ def test_update_listener_rule_catches_violations(tmp_path):
 
 
 def test_no_deprecated_device_info_mapping():
-    """Verify integration code never uses deprecated DeviceInfo mapping access (#930)."""
+    """Verify neither custom_components/myhome/ nor tests/ uses deprecated DeviceInfo mapping access (#930)."""
     checker = StandardsChecker()
     check_no_deprecated_device_info_mapping(checker)
     assert not checker.errors, f"DeviceInfo mapping violations found: {checker.errors}"
@@ -280,6 +284,163 @@ def test_deprecated_device_info_mapping_bare_name_plain_dict_vs_param(tmp_path):
         f"Expected 5 violations, got {len(checker_bad.errors)}: {checker_bad.errors}"
     )
     assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_bad.errors)
+
+
+def test_device_info_scan_covers_both_component_and_tests_excluding_typing_compat(tmp_path):
+    """Default scan covers both custom_components/myhome/ and tests/ while excluding typing_compat.py."""
+    default_files = {p.resolve() for p in _resolve_device_info_scan_files(None)}
+    assert (CUSTOM_COMPONENTS_DIR / "myhome_device.py").resolve() in default_files
+    assert (CUSTOM_COMPONENTS_DIR / "sensor.py").resolve() in default_files
+    assert (TESTS_DIR / "test_ha_standards.py").resolve() in default_files
+    assert (TESTS_DIR / "test_platforms.py").resolve() in default_files
+    assert TYPING_COMPAT_FILE.resolve() not in default_files
+
+    comp_dir = tmp_path / "custom_components" / "myhome"
+    tests_dir = tmp_path / "tests"
+    comp_dir.mkdir(parents=True)
+    tests_dir.mkdir(parents=True)
+
+    # typing_compat.py intentionally converts Mapping -> dict and must be excluded.
+    (comp_dir / "typing_compat.py").write_text(
+        "from collections.abc import Mapping\n"
+        "from typing import Any\n\n"
+        "def device_info_to_dict(device_info: Any) -> dict[str, Any]:\n"
+        "    if isinstance(device_info, Mapping):\n"
+        "        return dict(device_info)\n"
+        "    return {}\n",
+        encoding="utf-8",
+    )
+    (comp_dir / "sensor.py").write_text(
+        "from .typing_compat import device_info_to_dict\n\n"
+        "def read_sensor_ids(entity):\n"
+        "    return device_info_to_dict(entity.device_info).get('identifiers')\n",
+        encoding="utf-8",
+    )
+    # Exact PR #952 HA Compatibility (dev) failure patterns inside tests/:
+    (tests_dir / "test_pr952_regression.py").write_text(
+        "def test_shared_device_ids(act3_sensor, zone1, living_act3):\n"
+        "    assert act3_sensor.device_info['identifiers'] == zone1.device_info['identifiers']\n"
+        "    dev_info = living_act3.device_info\n"
+        "    assert dev_info['identifiers'] == {('myhome', 'mac-4-#1')}\n",
+        encoding="utf-8",
+    )
+
+    for target in (tmp_path, [comp_dir, tests_dir]):
+        checker = StandardsChecker()
+        check_no_deprecated_device_info_mapping(checker, target_dir=target)
+        assert len(checker.errors) == 3, (
+            f"Expected 3 test-suite violations for target={target!r}, got: {checker.errors}"
+        )
+        assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker.errors)
+        assert all("test_pr952_regression.py" in err for err in checker.errors)
+
+
+def test_deprecated_device_info_mapping_aliased_walrus_annotated_and_unpacking(tmp_path):
+    """Verify AST rule across passing idioms, direct mapping ops, and aliased/walrus/annotated/unpacked vars."""
+    clean_dir = tmp_path / "clean_ext"
+    clean_dir.mkdir()
+    (clean_dir / "clean_patterns.py").write_text(
+        "from typing import Any\n"
+        "from homeassistant.helpers.device_registry import DeviceInfo\n"
+        "from custom_components.myhome.typing_compat import device_info_to_dict\n\n"
+        "def clean_usages(entity, dev_reg, entities) -> None:\n"
+        "    assert entity.device_info is not None\n"
+        "    _ = device_info_to_dict(entity.device_info)['identifiers']\n"
+        "    built = DeviceInfo(identifiers={('myhome', '1')}, name='Zone 1', model='F459')\n"
+        "    assert built is not None\n"
+        "    info_dict = entity.device_info.as_dict()\n"
+        "    _ = info_dict['identifiers']\n"
+        "    device_info = entity.device_info.as_dict()\n"
+        "    _ = device_info['identifiers']\n"
+        "    dev_entry = dev_reg.async_get('dev-id')\n"
+        "    _ = (dev_entry.identifiers, dev_entry.name)\n"
+        "    plain_cfg: dict[str, Any] = {'identifiers': 'abc', 'model': 'F411'}\n"
+        "    _ = (plain_cfg['identifiers'], plain_cfg.get('model'), 'model' in plain_cfg)\n"
+        "    by_id: dict[str, DeviceInfo] = {}\n"
+        "    _ = by_id.get('k')\n"
+        "    info = {'items': entities}\n"
+        "    _ = [info.device_info for info in info['items']]\n",
+        encoding="utf-8",
+    )
+    checker_clean = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_clean, target_dir=clean_dir)
+    assert not checker_clean.errors, f"Unexpected errors on clean idioms: {checker_clean.errors}"
+
+    direct_bad_dir = tmp_path / "direct_bad"
+    direct_bad_dir.mkdir()
+    (direct_bad_dir / "direct_bad.py").write_text(
+        "from typing import Any, cast\n\n"
+        "def sink(**kwargs: Any) -> dict[str, Any]:\n"
+        "    return kwargs\n\n"
+        "def bad_direct(entity) -> None:\n"
+        "    _ = entity.device_info['identifiers']\n"
+        "    del entity.device_info['name']\n"
+        "    _ = entity._attr_device_info.get('model')\n"
+        "    _ = entity.device_info.values()\n"
+        "    _ = entity.device_info.setdefault('model', 'X')\n"
+        "    _ = entity.device_info.pop('model', None)\n"
+        "    _ = entity.device_info.copy()\n"
+        "    _ = 'identifiers' in entity.device_info\n"
+        "    _ = 'model' not in entity._attr_device_info\n"
+        "    _ = dict(entity.device_info)\n"
+        "    _ = {**entity.device_info}\n"
+        "    _ = sink(**entity._attr_device_info)\n"
+        "    _ = cast(dict[str, Any], entity.device_info)['identifiers']\n"
+        "    _ = getattr(entity, 'device_info')['identifiers']\n"
+        "    _ = len(entity.device_info)\n"
+        "    _ = list(entity.device_info)\n"
+        "    for _k in entity.device_info:\n"
+        "        pass\n"
+        "    _ = [k for k in entity.device_info]\n"
+        "    match entity.device_info:\n"
+        "        case {'identifiers': _ids}:\n"
+        "            pass\n",
+        encoding="utf-8",
+    )
+    checker_direct = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_direct, target_dir=direct_bad_dir)
+    assert len(checker_direct.errors) == 19, (
+        f"Expected 19 direct violations, got {len(checker_direct.errors)}: {checker_direct.errors}"
+    )
+    assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_direct.errors)
+
+    aliased_bad_dir = tmp_path / "aliased_bad"
+    aliased_bad_dir.mkdir()
+    (aliased_bad_dir / "aliased_bad.py").write_text(
+        "from typing import Any\n"
+        "from homeassistant.helpers.device_registry import DeviceInfo\n\n"
+        "def bad_aliased(entity, act3, zone1, source) -> None:\n"
+        "    info = entity.device_info\n"
+        "    _ = info['identifiers']\n"
+        "    _ = info.get('model')\n"
+        "    _ = info.keys()\n"
+        "    _ = info.values()\n"
+        "    _ = info.items()\n"
+        "    _ = 'name' in info\n"
+        "    _ = 'via_device_id' not in info\n"
+        "    _ = dict(info)\n"
+        "    _ = {**info}\n"
+        "    ann_info: Any = entity._attr_device_info\n"
+        "    _ = ann_info['identifiers']\n"
+        "    typed_local: DeviceInfo | None = source()\n"
+        "    _ = typed_local.get('name')\n"
+        "    assert (walrus_info := entity.device_info) is not None\n"
+        "    _ = walrus_info['identifiers']\n"
+        "    first, second = act3.device_info, zone1.device_info\n"
+        "    _ = (first['identifiers'], second.get('name'))\n"
+        "    for item in (act3.device_info, zone1.device_info):\n"
+        "        _ = item['identifiers']\n"
+        "    _ = [comp_item['identifiers'] for comp_item in (act3.device_info, zone1.device_info)]\n\n"
+        "def bad_typed_param(param_di: DeviceInfo | None) -> Any:\n"
+        "    return param_di['identifiers'] if param_di else None\n",
+        encoding="utf-8",
+    )
+    checker_aliased = StandardsChecker()
+    check_no_deprecated_device_info_mapping(checker_aliased, target_dir=aliased_bad_dir)
+    assert len(checker_aliased.errors) == 17, (
+        f"Expected 17 aliased violations, got {len(checker_aliased.errors)}: {checker_aliased.errors}"
+    )
+    assert all("RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING" in err for err in checker_aliased.errors)
 
 
 def test_marketplace_manifest_and_workflow_standards():
