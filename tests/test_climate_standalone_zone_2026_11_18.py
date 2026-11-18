@@ -33,7 +33,7 @@ import pytest
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.core import State
 from homeassistant.exceptions import HomeAssistantError
-from OWNd.message import OWNEvent
+from OWNd.message import OWNEvent, OWNHeatingEvent, OWNMessage
 
 from custom_components.myhome import climate as climate_module
 from custom_components.myhome.where_grammar import validate_standalone_zones
@@ -91,7 +91,9 @@ class _Plant:
         self.gateway.send_status_request = self.send_status_request
         self.sent: list[str] = []
         self.answers: dict[str, list[list[str]]] = {}
-        self.nack: set[str] = set()
+        self.nack: set[str] = set()  # refused by the gateway: cancelled, marked as a NACK
+        self.lost: set[str] = set()  # no reply in time: cancelled, nothing known
+        self.pending: set[str] = set()  # still queued: the future never resolves
         self.entity: Any = None
 
     def answer(self, frame: str, *replies: list[str]) -> None:
@@ -103,14 +105,23 @@ class _Plant:
         self.sent.append(frame)
         loop = asyncio.get_running_loop()
         written: asyncio.Future[float] = loop.create_future()
-        if frame in self.nack:
+        if frame in self.pending:
+            self.futures = [*getattr(self, "futures", []), written]
+            return written
+        if frame in self.nack or frame in self.lost:
+            if frame in self.nack:
+                written._gateway_nack = True  # type: ignore[attr-defined]  # as the gateway handler marks it
             written.cancel()
             return written
         written.set_result(loop.time())
         queued = self.answers.get(frame) or []
         replies = queued.pop(0) if queued else []
         for raw in replies:
-            loop.call_soon(self.entity.handle_event, OWNEvent.parse(raw))
+            # As the event session delivers them: a ``*#14*`` write seen on the bus is a command
+            # and never reaches the entity (``*#4*3*#14*0250*1##`` in the F455 captures).
+            message = OWNMessage.parse(raw)
+            if isinstance(message, OWNHeatingEvent):
+                loop.call_soon(self.entity.handle_event, message)
         return written
 
     async def send(self, message: Any, **_kwargs: Any) -> asyncio.Future[float]:
@@ -191,18 +202,37 @@ def test_the_f455_generic_frame_for_the_standalone_zone_is_not_a_central_report(
     assert zone2._central_zone_seen is False
 
 
-@pytest.mark.parametrize("trace", ["f461_zone3_setpoint_via_central", "f455_zone3_setpoint_via_central"])
-async def test_the_central_unit_answer_confirms_the_write_for_its_zone(trace: str) -> None:
-    """Zone 3 as either gateway showed it: the 3550's answer ends the check, nothing else is sent."""
+async def test_the_central_unit_s_report_of_the_setpoint_confirms_the_write() -> None:
+    """Zone 3 through the F461: the 3550's ``*#4*#3*14*0250*1##`` ends the check, nothing else is sent."""
     plant = _Plant()
     zone3 = _zone(plant, "3")
     zone3._target_temperature = 24.0
-    plant.answer("*#4*#3*#14*0250*3##", _rx(trace))
+    plant.answer("*#4*#3*#14*0250*3##", _rx("f461_zone3_setpoint_via_central"))
     await zone3.async_set_temperature(temperature=25.0)
     assert plant.sent == ["*#4*#3*#14*0250*3##"]  # no read, no direct write
     assert zone3._central_zone_seen is True
     assert zone3._standalone is False
     assert zone3._standalone_detected is False
+
+
+async def test_a_mode_frame_of_the_central_unit_leaves_the_read_back_to_confirm() -> None:
+    """Zone 3 through the F455: only ``*4*110*#3##`` comes (the ``*#14*`` write on the bus is a command).
+
+    The zone is then read, and its answer is what the entity shows (review of #951, F2). Live
+    F455 1.0.76, 2026-11-18 16:29: ``*#4*#3*#14*0250*3##`` .829, ``*4*110*#3##`` 35.443,
+    ``*#4*3*14*0250*3##`` 35.955.
+    """
+    plant = _Plant()
+    zone3 = _zone(plant, "3")
+    zone3._target_temperature = 24.0
+    assert type(OWNMessage.parse("*#4*3*#14*0250*1##")).__name__ == "OWNHeatingCommand"
+    plant.answer("*#4*#3*#14*0250*3##", _rx("f455_zone3_setpoint_via_central"))
+    plant.answer("*#4*3*14##", ["*#4*3*14*0250*3##"])
+    await zone3.async_set_temperature(temperature=25.0)
+    assert plant.sent == ["*#4*#3*#14*0250*3##", "*#4*3*14##"]  # the read, no direct write
+    assert zone3.target_temperature == 25.0
+    assert zone3._central_zone_seen is True
+    assert zone3._standalone is False
 
 
 async def test_a_late_answer_of_the_central_unit_does_not_make_the_zone_standalone() -> None:
@@ -357,7 +387,7 @@ async def test_a_read_that_cannot_be_sent_is_not_the_zone_answer() -> None:
     assert zone2._standalone_detected is False
 
 
-@pytest.mark.parametrize("overtaken_in", ["direct_wait", "second_read"])
+@pytest.mark.parametrize("overtaken_in", ["first_read", "direct_wait", "second_read"])
 async def test_a_newer_write_takes_over_the_check_of_the_direct_form(overtaken_in: str) -> None:
     """A second ``set_temperature`` while the direct form is checked: the first check stops, its own decides."""
     plant = _Plant()
@@ -380,13 +410,14 @@ async def test_a_newer_write_takes_over_the_check_of_the_direct_form(overtaken_i
         nonlocal reads
         reads += 1
         reported: float | None = await read(check)
-        if overtaken_in == "second_read" and reads == 2:
+        if (overtaken_in, reads) in (("first_read", 1), ("second_read", 2)):
             zone2._setpoint_check = newer
         return reported
 
     with patch.object(zone2, "_wait_for_setpoint", _wait), patch.object(zone2, "_read_back_setpoint", _read):
         await zone2.async_set_temperature(temperature=21.0)  # no error: the newer write's check reports
-    assert plant.sent[:3] == ["*#4*#2*#14*0210*3##", "*#4*2*14##", "*#4*2*#14*0210*3##"]
+    sent = ["*#4*#2*#14*0210*3##", "*#4*2*14##", "*#4*2*#14*0210*3##"]
+    assert plant.sent[:3] == (sent[:2] if overtaken_in == "first_read" else sent)
     assert zone2._standalone_detected is False
 
 
@@ -504,3 +535,185 @@ async def test_zones_of_the_gateway_option_are_built_standalone(hass: Any) -> No
     assert by_where["2"]._standalone_config is True
     assert by_where["3"]._standalone_config is None  # still found from the bus
     assert by_where["#0"]._standalone_config is False  # the central unit is never a standalone zone
+
+
+# Review of #951 (2026-11-18): what the checks must not conclude.
+
+
+async def test_the_central_unit_s_mode_does_not_reach_a_zone_found_standalone() -> None:
+    """F1, live on both gateways: zone 2 found standalone showed ``heat`` after ``*4*102*#0##``."""
+    zone2 = _zone(_zone2_plant(), "2")
+    zone2._standalone_detected = True
+    zone2._attr_hvac_mode = HVACMode.COOL
+    zone2._handle_central_mode_update(HVACMode.HEAT)
+    assert zone2.hvac_mode == HVACMode.COOL
+    zone2._handle_central_mode_update(HVACMode.OFF)
+    assert zone2.hvac_mode == HVACMode.COOL
+
+
+async def test_detection_replaces_the_mode_the_central_unit_gave() -> None:
+    """F1: the zone's season frame first, then the central unit's mode (not a restored one)."""
+    zone2 = _zone(_zone2_plant(), "2")
+    _replay(zone2, ["*4*0*2##"])
+    zone2._handle_central_mode_update(HVACMode.HEAT)
+    assert zone2.hvac_mode == HVACMode.HEAT
+    await zone2.async_set_temperature(temperature=21.0)
+    assert zone2._standalone is True
+    assert zone2.hvac_mode == HVACMode.COOL
+
+
+async def test_a_report_of_the_old_setpoint_by_the_central_unit_confirms_nothing() -> None:
+    """F2: the central unit answers for the zone, with the setpoint it had before."""
+    plant = _Plant()
+    zone3 = _zone(plant, "3")
+    zone3._target_temperature = 24.0
+    # Built from the captured *#4*#3*14*0250*1## with the old value: the 3550 reporting 24.0.
+    plant.answer("*#4*#3*#14*0250*3##", ["*#4*#3*14*0240*1##"])
+    plant.answer("*#4*3*14##", ["*#4*3*14*0240*3##"])
+    with pytest.raises(HomeAssistantError) as raised:
+        await zone3.async_set_temperature(temperature=25.0)
+    assert raised.value.translation_key == "setpoint_not_taken_via_central"
+    assert plant.sent == ["*#4*#3*#14*0250*3##", "*#4*3*14##"]  # its zone: no direct write
+    assert zone3._standalone_detected is False
+
+
+async def test_a_write_the_gateway_refused_is_an_error_and_goes_no_further() -> None:
+    """F3: nothing says the central unit ignored a frame that never reached it."""
+    plant = _zone2_plant()
+    plant.nack.add("*#4*#2*#14*0210*3##")
+    zone2 = _zone(plant, "2")
+    with pytest.raises(HomeAssistantError) as raised:
+        await zone2.async_set_temperature(temperature=21.0)
+    assert raised.value.translation_key == "setpoint_refused"
+    assert plant.sent == ["*#4*#2*#14*0210*3##"]  # no read, no direct write
+    assert zone2._standalone_detected is False
+
+
+async def test_a_write_without_a_reply_is_a_warning_and_goes_no_further(caplog: pytest.LogCaptureFixture) -> None:
+    plant = _zone2_plant()
+    plant.lost.add("*#4*#2*#14*0210*3##")
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.0)
+    assert "was not acknowledged by the gateway" in caplog.text
+    assert plant.sent == ["*#4*#2*#14*0210*3##"]
+    assert zone2._standalone_detected is False
+
+
+async def test_frames_still_queued_when_the_check_gives_up_are_withdrawn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F3: a write or a read that was never sent must not go out later."""
+    monkeypatch.setattr(climate_module, "SETPOINT_DELIVERY_TIMEOUT", 0.05)
+    monkeypatch.setattr(climate_module, "SETPOINT_READ_TIMEOUT", 0.05)
+    plant = _Plant()
+    plant.pending.add("*#4*#2*#14*0210*3##")
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.0)
+    assert [future.cancelled() for future in plant.futures] == [True]
+
+    plant = _Plant()
+    plant.pending.add("*#4*2*14##")
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.0)
+    assert plant.sent == ["*#4*#2*#14*0210*3##", "*#4*2*14##"]
+    assert [future.cancelled() for future in plant.futures] == [True]
+
+
+async def test_a_refused_direct_write_is_an_error(caplog: pytest.LogCaptureFixture) -> None:
+    """F4: a zone written directly (configured, listed or found standalone) is told of a NACK."""
+    plant = _Plant()
+    plant.nack.add("*#4*2*#14*0210*3##")
+    zone2 = _zone(plant, "2", standalone=True)
+    with pytest.raises(HomeAssistantError) as raised:
+        await zone2.async_set_temperature(temperature=21.0)
+    assert raised.value.translation_key == "setpoint_refused"
+
+    plant = _Plant()
+    plant.lost.add("*#4*2*#14*0210*3##")
+    zone2 = _zone(plant, "2", standalone=True)
+    await zone2.async_set_temperature(temperature=21.0)  # no reply is not a refusal
+    assert "was not acknowledged by the gateway" in caplog.text
+    assert climate_module._delivered(None) is True  # a gateway double without delivery information
+
+
+async def test_the_read_back_is_not_taken_for_a_knob_offset(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F5: with the real timeout and a knob that never reported, 21.0 then 20.0 wrote 19.0."""
+    monkeypatch.setattr(climate_module, "SETPOINT_CONFIRM_TIMEOUT", 3.0)
+    plant = _zone2_plant()
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.0)
+    assert zone2._standalone_detected is True
+    assert zone2._local_offset == 0
+    await zone2.async_set_temperature(temperature=20.0)
+    assert plant.sent[-1] == "*#4*2*#14*0200*3##"
+
+
+async def test_the_check_uses_the_setpoint_on_the_wire() -> None:
+    """F6: 21.3 is written as 21.5; a zone that reports 21.5 took it."""
+    plant = _Plant()
+    plant.answer("*#4*2*14##", ["*#4*2*14*0200*3##"])
+    # Built from the captured answer to the 21.0 write (*#4*2*12*0210*3##).
+    plant.answer("*#4*2*#14*0215*3##", ["*#4*2*12*0215*3##"])
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.3)
+    assert plant.sent == ["*#4*#2*#14*0215*3##", "*#4*2*14##", "*#4*2*#14*0215*3##"]
+    assert zone2._standalone_detected is True
+
+
+async def test_a_zone_that_is_off_is_not_confirmed_by_its_stored_setpoint() -> None:
+    """F7, live on both gateways: zone 2 off at 20.0, set 20.0, and it stayed ``*4*303*2##``."""
+    plant = _Plant()
+    plant.answer("*#4*2*14##", ["*#4*2*14*0200*3##"], ["*#4*2*14*0200*3##"])
+    # What the thermostat says once it is on again (the answer to *#4*2*12##, 2026-11-18).
+    plant.answer("*#4*2*#14*0200*3##", ["*#4*2*12*0200*3##", "*4*0*2##"])
+    # On an F455 another client's status request brings the stored setpoint during the wait, and
+    # the gateway's made-up *4*311*#2## shows the zone in AUTO for a moment (live 16:59:49-51).
+    plant.answer(
+        "*#4*#2*#14*0200*3##",
+        ["*#4*2*12*0200*3##", "*4*303*2##", "*#4*2*14*0200*3##", "*4*311*#2##", "*#4*2*12*0200*3##"],
+    )
+    zone2 = _zone(plant, "2")
+    _replay(zone2, ["*#4*2*14*0200*3##", "*4*303*2##"])
+    assert zone2.hvac_mode == HVACMode.OFF
+    await zone2.async_set_temperature(temperature=20.0)
+    assert plant.sent == ["*#4*#2*#14*0200*3##", "*#4*2*14##", "*#4*2*#14*0200*3##", "*#4*2*14##"]
+    assert zone2._standalone_detected is True
+    assert zone2.hvac_mode == HVACMode.COOL
+
+
+async def test_a_zone_of_the_central_unit_that_is_off_and_holds_the_setpoint_is_confirmed() -> None:
+    """The central unit answered for it (an F455: the mode frame only), and the zone reads the written value."""
+    plant = _Plant()
+    zone3 = _zone(plant, "3")
+    _replay(zone3, ["*#4*3*14*0240*3##", "*4*303*3##"])  # built from zone 2's frames: zone 3 off
+    # Nothing after the write; the read brings the zone's setpoint, then the central unit's frame.
+    plant.answer("*#4*3*14##", ["*#4*3*14*0250*3##", "*4*110*#3##"])
+    await zone3.async_set_temperature(temperature=25.0)
+    assert plant.sent == ["*#4*#3*#14*0250*3##", "*#4*3*14##"]
+    assert zone3._standalone_detected is False
+
+
+async def test_only_this_zone_on_this_bus_confirms() -> None:
+    """F8: zone 2 behind an interface is another zone 2; a split address is not read back."""
+    zone2 = _zone(_Plant(), "2")
+    check = (21.0, 21.0, asyncio.Event())
+    zone2._setpoint_check = check
+    zone2._note_setpoint_report(OWNEvent.parse("*#4*2#4#01*14*0210*3##"))  # built: the captured frame behind interface 01
+    assert not check[2].is_set()
+    zone2._note_setpoint_report(OWNEvent.parse("*#4*2*14*0210*3##"))
+    assert check[2].is_set()
+
+    plant = _Plant()
+    split = _zone(plant, "2#1")
+    await split.async_set_temperature(temperature=21.0)
+    assert len(plant.sent) == 1  # written, not checked: *#4*Z*14## would ask another address
+
+
+async def test_a_direct_write_without_a_reply_teaches_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    """F3: the direct form not known to have arrived: no second read, the zone is not marked."""
+    plant = _zone2_plant()
+    plant.answers.pop("*#4*2*#14*0210*3##")
+    plant.lost.add("*#4*2*#14*0210*3##")
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.0)
+    assert plant.sent == ["*#4*#2*#14*0210*3##", "*#4*2*14##", "*#4*2*#14*0210*3##"]
+    assert "`*#4*2*#14*0210*3##` was not acknowledged by the gateway" in caplog.text
+    assert zone2._standalone_detected is False

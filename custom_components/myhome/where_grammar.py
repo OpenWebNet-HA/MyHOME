@@ -197,6 +197,7 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 __all__ = [
     "area_of_where",
     "canonical_thermo_zone",
+    "central_report_zone",
     "expose_message_where",
     "is_actuator_where",
     "is_actuator_status",
@@ -215,6 +216,7 @@ __all__ = [
     "thermo_event_actuator",
     "thermo_event_interface",
     "thermo_event_zone",
+    "validate_standalone_zones",
     "validate_thermo_trigger_command",
     "where_param",
     "zone_number",
