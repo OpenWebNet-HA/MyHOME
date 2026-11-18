@@ -438,7 +438,11 @@ async def test_ssdp_rediscovery_only_updates_the_host(hass: HomeAssistant) -> No
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"host": "192.0.2.10", "port": 20001, "mac": "00:03:50:00:12:34", "name": "My own name"},
+        # Found over SSDP (it stores the location): a gateway added by hand is not followed (#947, #948).
+        data={
+            "host": "192.0.2.10", "port": 20001, "mac": "00:03:50:00:12:34", "name": "My own name",
+            "ssdp_location": "http://192.0.2.10:49153/description.xml",
+        },
         unique_id="00:03:50:00:12:34",
     )
     entry.add_to_hass(hass)

@@ -7,6 +7,7 @@ import ipaddress
 import logging
 import re
 import typing
+from typing import TYPE_CHECKING
 
 import voluptuous as vol
 from homeassistant.config_entries import SOURCE_IGNORE
@@ -48,6 +49,9 @@ from .identity import (
     select_inband_reading,
 )
 from .typing_compat import flow_schema
+
+if TYPE_CHECKING:
+    from OWNd.connection import OWNGateway
 
 TEST_CONNECTION_ABORT_REASONS = frozenset(
     {
@@ -224,6 +228,14 @@ class MACAddress:
         return ":".join(["%s" % (self.mac[i : i + 2]) for i in range(0, 12, 2)])
 
 
+def _no_stored_firmware(value: typing.Any) -> bool:
+    """Whether an entry holds no firmware: missing, empty, or a placeholder of an older version.
+
+    The same placeholders as ``websocket.py`` (``none``, ``null``, ``unknown``).
+    """
+    return not isinstance(value, str) or value.strip().lower() in ("", "none", "null", "unknown")
+
+
 class ConfigFlowDiscoveryMixin:
     """SSDP discovery, reconfigure, reauth, connection test, port, and password steps."""
 
@@ -256,10 +268,13 @@ class ConfigFlowDiscoveryMixin:
         if not gateway.unique_id or not gateway.serial:
             return self.async_abort(reason="no_serial")  # type: ignore[attr-defined]
         await self.async_set_unique_id(dr.format_mac(gateway.unique_id))  # type: ignore[attr-defined]
-        LOGGER.info("Found gateway: %s", gateway.address)
+        # An already configured or ignored gateway is announced again every few minutes, and
+        # Home Assistant's search finds it again every ten: DEBUG for those, INFO for a new one.
+        LOGGER.debug("SSDP announcement of gateway %s at %s", gateway.unique_id, gateway.address)
         self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
             updates=self._ssdp_entry_updates(gateway)
         )
+        LOGGER.info("Found gateway: %s", gateway.address)
 
         self.gateway_handler = gateway
         self.context.update(  # type: ignore[attr-defined]
@@ -277,26 +292,49 @@ class ConfigFlowDiscoveryMixin:
 
         return await self.async_step_discovery_confirm()  # type: ignore
 
-    def _ssdp_entry_updates(self, gateway: typing.Any) -> dict[str, typing.Any] | None:
+    def _ssdp_entry_updates(self, gateway: OWNGateway) -> dict[str, typing.Any] | None:
         """What an SSDP announcement may write to the existing entry of ``gateway`` (#947).
 
-        The address, the friendly name and the UDN follow the announcement, and a change
-        reloads the entry. The firmware does not follow it: the announcement carries the
-        UPnP ``modelNumber``, while a running entry stores the firmware the gateway reports
-        over WHO=13 dimension 16 (``identity.py``). Where the two differ, writing the
-        announced value back made them alternate, and every announcement reloaded the
-        entry. The announced value is stored only while the entry has no firmware.
-        An ignored gateway is not written at all.
+        Only a new address changes a configured entry, and that change reloads it. Home
+        Assistant reloads a loaded entry whose data a discovery step changed, so every other
+        field is written at most once, while the entry has no value for it:
+
+        - the firmware: the announcement carries the UPnP ``modelNumber``, while a running
+          entry stores the firmware the gateway reports over WHO=13 dimension 16
+          (``identity.py``). Where the two differ, writing the announced value back made them
+          alternate, and every announcement reloaded the entry;
+        - the friendly name and the UDN: nothing reads their value (the UDN only counts as
+          present or absent, ``identification_source``), so a gateway that announces more
+          than one of them must not reload the entry either.
+
+        A value the announcement does not carry (an empty ``<friendlyName/>`` or ``<UDN/>``)
+        is never written over a stored one. The port is not announced and stays as configured.
+
+        Not written at all: an ignored gateway, and a gateway that was added by hand (Custom
+        (IP Gateway): no SSDP location and no UDN in its entry). Its address is the one the
+        user typed, possibly a routed one, and a UDN written into it would turn its
+        identification source into ``ssdp`` without the announced model.
         """
         entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)  # type: ignore[attr-defined]
         if entry is None or entry.source == SOURCE_IGNORE:
             return None
-        updates = {
-            CONF_HOST: gateway.address,
-            CONF_FRIENDLY_NAME: gateway.friendly_name,
-            CONF_UDN: gateway.udn,
-        }
-        if gateway.firmware and not entry.data.get(CONF_FIRMWARE):
+        data = entry.data
+        if not data.get(CONF_SSDP_LOCATION) and not data.get(CONF_UDN):
+            return None
+        updates: dict[str, typing.Any] = {}
+        if gateway.address and gateway.address != data.get(CONF_HOST):
+            LOGGER.info(
+                "Gateway %s is announced at %s (stored: %s); the entry follows the new address",
+                gateway.unique_id,
+                gateway.address,
+                data.get(CONF_HOST),
+            )
+            updates[CONF_HOST] = gateway.address
+        if gateway.friendly_name and not data.get(CONF_FRIENDLY_NAME):
+            updates[CONF_FRIENDLY_NAME] = gateway.friendly_name
+        if gateway.udn and not data.get(CONF_UDN):
+            updates[CONF_UDN] = gateway.udn
+        if gateway.firmware and _no_stored_firmware(data.get(CONF_FIRMWARE)):
             updates[CONF_FIRMWARE] = gateway.firmware
         return updates
 
