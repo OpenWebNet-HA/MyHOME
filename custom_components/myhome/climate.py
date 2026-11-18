@@ -18,7 +18,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, State, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -64,6 +64,7 @@ from .const import (
     CONF_HUMIDITY_SUPPORT,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
+    CONF_STANDALONE_ZONES,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
@@ -91,6 +92,7 @@ from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
 from .where_grammar import (
     canonical_thermo_zone,
+    central_report_zone,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_actuator_status,
@@ -102,6 +104,7 @@ from .where_grammar import (
     thermo_dim20_status,
     thermo_event_actuator,
     thermo_event_interface,
+    validate_standalone_zones,
     zone_number,
 )
 
@@ -176,6 +179,23 @@ FAN_COIL_SIDES_WAIT = 30.0
 # codes (90/91/92 for a zone, C1 12/22/02 for the central unit). Writing generic
 # mode 3 in async_set_temperature keeps the plant's existing season.
 SETPOINT_WRITE_MODE = CLIMATE_MODE_AUTO
+
+# How long a zone setpoint written in the ``#Z`` form (``*#4*#Z*#14*T*M##``, zone via the
+# central unit, WHO 4 p. 6) waits for the plant to confirm it, and the direct form after it.
+# Live 3550 behind an F461 2.0.11 and an F455 1.0.76 (2026-11-17, zone 3, a zone of the 3550):
+# ``*#4*#3*#14*0250*3##`` was followed on the bus by the central unit's own ``*#4*3*#14*0250*1##``
+# 34 ms after the ACK and by ``*4*110*#3##`` / ``*#4*#3*14*0250*1##`` 0.55 s after it. The same
+# write for zone 2, a thermostat the 3550 was not running that day, was acknowledged by both
+# gateways and nothing answered (2026-11-18 03:01:57 through the F455, 03:03:19 through the F461);
+# the direct ``*#4*2*#14*0210*3##`` was answered by the thermostat's ``*#4*2*12*0210*3##`` 45 ms
+# after the ACK (tests/fixtures/traces/standalone_zone_2026_11_18).
+SETPOINT_CONFIRM_TIMEOUT = 3.0
+# How long the write itself may take to be acknowledged: as LOCK_WRITE_TIMEOUT (lock.py),
+# reopening an idle command session can take OWNd's whole reconnect loop before the frame goes out.
+SETPOINT_DELIVERY_TIMEOUT = 15.0
+# How long the read ``*#4*Z*14##`` that settles an unconfirmed write may take (a zone answered it
+# in 0.09-0.51 s on the F461 and the F455; a dead zone of a MyHomeServer1 was NACKed after ~6.4 s).
+SETPOINT_READ_TIMEOUT = 10.0
 
 # Core 2026.11 renames the ClimateEntity temperature API to native_* and logs the
 # old names as deprecated (unsupported from 2027.11). Older cores, down to the
@@ -299,6 +319,10 @@ async def async_setup_entry(
         return False
 
     pending_actions: dict[tuple[str, str | None], dict[str, OWNHeatingEvent]] = {}
+    # Zones the owner marked as standalone thermostats in the gateway options (local bus).
+    standalone_zones = frozenset(
+        validate_standalone_zones((getattr(config_entry, "options", None) or {}).get(CONF_STANDALONE_ZONES))[0]
+    )
 
     def build(ctx: DeviceContext) -> MyHOMEClimate:
         where, interface = ctx.address.where, ctx.address.interface
@@ -330,7 +354,11 @@ async def async_setup_entry(
             cooling=cfg.get(CONF_COOLING_SUPPORT, True),
             fan=cfg.get(CONF_FAN_SUPPORT, False),
             humidity=cfg.get(CONF_HUMIDITY_SUPPORT, False),
-            standalone=cfg.get(CONF_STANDALONE),
+            standalone=(
+                True
+                if not interface and not is_central and canonical_thermo_zone(where) in standalone_zones
+                else cfg.get(CONF_STANDALONE)
+            ),
             central=is_central,
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, default_model),
@@ -633,6 +661,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._central = True if self._where.removeprefix("4-") in ("0", "#0", *_FOUR_ZONE_CENTRAL) else central
         # None: not configured. A zone then follows the plant, see the standalone property.
         self._standalone_config = False if self._central else standalone
+        # A zone nobody configured, on a plant with a central unit: how it is written comes from
+        # the bus. ``_standalone_detected`` once a setpoint the zone did not take through the
+        # central unit was taken in the direct form (``_confirm_setpoint_write``), until the
+        # central unit reports the zone in the ``#Z`` form again (``_note_central_zone_report``,
+        # which sets ``_central_zone_seen``).
+        self._central_zone_seen = False
+        self._standalone_detected = False
+        # The setpoint write waiting for its confirmation: the nominal written, the value
+        # dimension 12 would show for it, and the event a matching report sets.
+        self._setpoint_check: tuple[float, float, asyncio.Event] | None = None
+        # The last dimension 14 the zone reported while a write was being checked, and whether
+        # the central unit answered for the zone meanwhile.
+        self._setpoint_check_reported: float | None = None
+        self._setpoint_check_by_central = False
         if self._central:
             gateway.has_central_unit = True
 
@@ -914,6 +956,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
         if self._interface is not None:
             attrs["Int"] = self._interface
+        if self._standalone_detected:
+            # Found from the bus, not configured: kept across restarts (``async_restore_last_state``).
+            attrs["standalone_detected"] = True
         if self._central:
             if self._central_operation is not None:
                 attrs["central_operation"] = self._central_operation
@@ -1025,6 +1070,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             restored_season = last_state.attributes.get("season")
             if restored_season in (SEASON_HEATING, "cooling", "conditioning"):
                 self._season = str(restored_season)
+            if (
+                last_state.attributes.get("standalone_detected") is True
+                and not self._central
+                and self._standalone_config is None
+            ):
+                # What a setpoint write found before the restart; a report of the central unit
+                # for this zone still overrides it (``_note_central_zone_report``).
+                self._standalone_detected = True
+                self._refresh_hvac_modes()
             restored_knob = last_state.attributes.get("knob_pos")
             if isinstance(restored_knob, str) and restored_knob and restored_knob != "UNKNOWN":
                 self._knob_pos = restored_knob
@@ -1477,13 +1531,27 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _standalone(self) -> bool:
         """Whether setpoints and modes are addressed as ``Z`` (thermostat alone) or ``#Z``.
 
-        A configured value wins. Otherwise a zone is standalone unless its plant has a
-        central unit: behind a 99-zone central the gateway rejects ``*#4*Z*#14*...`` and
-        wants ``*#4*#Z*#14*...`` (#697).
+        A configured value wins (``standalone:`` in ``myhome.yaml``, or the zone listed under
+        "Standalone thermostats" in the gateway options). Otherwise a zone is standalone unless
+        its plant has a central unit: behind a 99-zone central the gateway rejects
+        ``*#4*Z*#14*...`` and wants ``*#4*#Z*#14*...`` (#697).
+
+        A plant with a central unit can still have a thermostat the central unit is not running.
+        Live plant, a 3550 with zones 2, 3 and 4: on 2026-11-12 (conditioning, weekly program)
+        the 3550 wrote all three zones and reported ``*4*211*#2##``; on 2026-11-18 (the 3550 in
+        the heating season, zone 2 in conditioning) it wrote and reported zones 3 and 4 only,
+        ``*#4*#2*#14*0210*3##`` was acknowledged and ignored, and the direct
+        ``*#4*2*#14*0210*3##`` set the thermostat. Nothing on the bus lists the zones of a
+        central unit, so the form goes by the result: a zone that did not take a setpoint
+        through the central unit and took it directly is written directly
+        (``_confirm_setpoint_write``) until the central unit reports it again.
         """
         if self._standalone_config is not None:
             return self._standalone_config
-        return getattr(self._gateway_handler, "has_central_unit", False) is not True
+        if getattr(self._gateway_handler, "has_central_unit", False) is not True:
+            return True
+        # Read from the constructor (``_advertised_hvac_modes``) before the field exists.
+        return bool(getattr(self, "_standalone_detected", False))
 
     def _configured_hvac_modes(self) -> list[HVACMode]:
         """Every mode the zone's configuration allows, before the plant's topology is applied."""
@@ -1829,6 +1897,230 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                             frame,
                         )
                         return
+
+    def _note_central_zone_report(self, message: OWNHeatingEvent) -> None:
+        """The central unit reported this zone in the ``#Z`` form: it is running it.
+
+        Called for a frame ``is_central_unit_report`` accepts: a ``#Z`` dimension
+        (``*#4*#3*14*0250*1##``) or a ``#Z`` zone status with its season (``*4*110*#3##``), never
+        the generic ``*4*310*#Z##`` / ``*4*311*#Z##`` an F455 makes up for any thermostat. Live
+        3550 (F461 and F455, 2026-11-17 / 11-18): both frames follow every ``*#4*3##`` and every
+        setpoint written as ``*#4*#3*#14*T*M##``, and the mode frame comes with the central
+        unit's quarter-hour push, for the zones it is running. A zone found standalone by a
+        setpoint write goes back to the central form; a configured zone keeps its form.
+        """
+        if self._central:
+            return
+        zone = central_report_zone(message)
+        if zone is None or zone != canonical_thermo_zone(self._where):
+            return  # #0 / #0#N (the central unit itself), or another zone's frame
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return  # the same zone number on another bus
+        self._central_zone_seen = True
+        if self._standalone_detected:
+            self._standalone_detected = False
+            LOGGER.info(
+                "%s %s: the central unit reports this zone (%s); it is written through the central unit again",
+                self._gateway_handler.log_id,
+                self._display_name,
+                message,
+            )
+            self._refresh_hvac_modes()
+        check = self._setpoint_check
+        if check is not None:
+            self._setpoint_check_by_central = True
+            check[2].set()  # the central unit answered for the zone the setpoint went to
+
+    def _note_setpoint_report(self, message: OWNHeatingEvent) -> None:
+        """While a setpoint write is being checked: does this frame show the zone took it?
+
+        Dimension 14 is the commanded setpoint, dimension 12 the one in force (the commanded one
+        plus the knob offset). The value has to match: another client's status request brings
+        the old setpoint during the wait (live, 2026-11-18 03:01:58: ``*#4*2*14*0200*3##`` after
+        the unanswered ``*#4*#2*#14*0210*3##``).
+        """
+        check = self._setpoint_check
+        if check is None:
+            return
+        if message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
+            reported = getattr(message, "set_temperature", None)
+            expected = check[0]
+            if isinstance(reported, (int, float)) and not is_central_thermo_where(message):
+                self._setpoint_check_reported = float(reported)
+        elif message.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE:
+            reported = getattr(message, "local_set_temperature", None)
+            expected = check[1]
+        else:
+            return
+        if isinstance(reported, (int, float)) and abs(float(reported) - expected) < 0.05:
+            check[2].set()
+
+    async def _wait_for_setpoint(self, written: object, check: tuple[float, float, asyncio.Event]) -> bool:
+        """Whether the plant confirmed the write behind ``written`` within ``SETPOINT_CONFIRM_TIMEOUT``.
+
+        The time runs from the gateway's ACK (the delivery future), not from the queueing. A
+        frame the gateway refused or that was never written (the future is cancelled: an F454
+        NACKs the direct form for a zone of its central unit, #697) is not confirmed.
+        """
+        if isinstance(written, asyncio.Future):
+            await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
+            if not written.done() or written.cancelled() or written.exception() is not None:
+                return check[2].is_set()
+        try:
+            await asyncio.wait_for(check[2].wait(), timeout=SETPOINT_CONFIRM_TIMEOUT)
+        except TimeoutError:
+            return False
+        return True
+
+    async def _read_back_setpoint(self, check: tuple[float, float, asyncio.Event]) -> float | None:
+        """Ask the zone for its commanded setpoint (``*#4*Z*14##``) while a write is checked.
+
+        Returns what the zone reported, or ``None`` when nothing answered. The caller reads
+        ``check[2]`` for "the zone has the written setpoint".
+        """
+        handler = self._gateway_handler
+        self._setpoint_check_reported = None
+        frame = f"*#4*{zone_number(self._where)}*14##"
+        try:
+            read = await handler.send_status_request(cast(OWNCommand, OWNHeatingCommand.parse(frame)))
+        except Exception:  # a transport error is not the zone's answer
+            LOGGER.exception("%s %s: `%s` could not be sent", handler.log_id, self._display_name, frame)
+            return None
+        if isinstance(read, asyncio.Future):
+            await asyncio.wait([read], timeout=SETPOINT_READ_TIMEOUT)
+        if self._setpoint_check_reported is None and not check[2].is_set():
+            # The reply is handed to the entity right after the read's future resolves, or
+            # comes on the event session a moment later.
+            deadline = time.monotonic() + EMPTY_REPLY_SETTLE
+            while self._setpoint_check_reported is None and not check[2].is_set() and time.monotonic() < deadline:
+                await asyncio.sleep(0.05)
+        return self._setpoint_check_reported
+
+    async def _confirm_setpoint_write(self, written: object, frame: str, nominal: float) -> None:
+        """Make sure a setpoint written in the ``#Z`` form (through the central unit) reached the zone.
+
+        A central unit acknowledges that form for a thermostat it is not running and nothing
+        happens (``_standalone``). Only on a gateway that tells what became of the frame (the
+        delivery future). Every conclusion rests on a report of the zone, never on silence:
+
+        1. wait for the central unit's answer for this zone, or for the zone's own report of
+           the new setpoint: confirmed, nothing else is sent;
+        2. else read ``*#4*Z*14##``. The new setpoint: confirmed. No answer: nothing is known,
+           a warning is logged (the unresponsive-zone repair covers a dead zone). The old
+           setpoint: the zone did not take the write;
+        3. then, for a zone found on the bus (``standalone`` not configured), write the direct
+           form ``*#4*Z*#14*T*M##`` and check it the same way. A zone that takes it is written
+           directly from now on (``_standalone_detected``), until the central unit reports it;
+        4. a zone that still reports the old setpoint, or a zone configured as one of the
+           central unit's, gets an error instead of a dial that silently jumps back.
+        """
+        handler = self._gateway_handler
+        check = (nominal, round(nominal + self._local_offset, 1), asyncio.Event())
+        self._setpoint_check = check
+        self._setpoint_check_reported = None
+        self._setpoint_check_by_central = False
+        try:
+            if await self._wait_for_setpoint(written, check) or self._setpoint_check is not check:
+                return  # confirmed, or a newer write took over and its own check decides
+            reported = await self._read_back_setpoint(check)
+            if check[2].is_set() or self._setpoint_check is not check:
+                return
+            if reported is None:
+                LOGGER.warning(
+                    "%s %s did not confirm `%s` and did not answer a read of its setpoint",
+                    handler.log_id,
+                    self._display_name,
+                    frame,
+                )
+                return
+            if self._standalone_config is not None:
+                raise HomeAssistantError(
+                    f"{self._display_name} did not take the setpoint {nominal:.1f} °C sent through the "
+                    f"central unit ({frame}): it still reports {reported:.1f} °C",
+                    translation_domain=DOMAIN,
+                    translation_key="setpoint_not_taken_via_central",
+                    translation_placeholders={
+                        "name": self._display_name,
+                        "temperature": f"{nominal:.1f}",
+                        "reported": f"{reported:.1f}",
+                        "frame": frame,
+                    },
+                )
+            direct_command = OWNHeatingCommand.set_temperature(
+                where=self._where, temperature=nominal, mode=SETPOINT_WRITE_MODE, standalone=True
+            )
+            LOGGER.debug(
+                "%s %s still reports %.1f °C after `%s`; writing the thermostat directly (`%s`)",
+                handler.log_id,
+                self._display_name,
+                reported,
+                frame,
+                direct_command,
+            )
+            direct = await handler.send(direct_command)
+            taken = await self._wait_for_setpoint(direct, check)
+            if self._setpoint_check is not check:
+                return
+            if not taken:
+                reported = await self._read_back_setpoint(check)
+                if self._setpoint_check is not check:
+                    return
+                taken = check[2].is_set()
+            if taken:
+                if not self._setpoint_check_by_central:  # the thermostat's own report, not the central unit's
+                    self._mark_standalone_detected()
+                return
+            if reported is None:
+                LOGGER.warning(
+                    "%s %s did not confirm `%s` and did not answer a read of its setpoint",
+                    handler.log_id,
+                    self._display_name,
+                    direct_command,
+                )
+                return
+            raise HomeAssistantError(
+                f"{self._display_name} did not take the setpoint {nominal:.1f} °C ({frame}, {direct_command}): "
+                f"it still reports {reported:.1f} °C",
+                translation_domain=DOMAIN,
+                translation_key="setpoint_not_taken",
+                translation_placeholders={
+                    "name": self._display_name,
+                    "temperature": f"{nominal:.1f}",
+                    "reported": f"{reported:.1f}",
+                },
+            )
+        finally:
+            if self._setpoint_check is check:
+                self._setpoint_check = None
+
+    def _mark_standalone_detected(self) -> None:
+        """A setpoint only the direct form changed: the central unit is not running this zone."""
+        self._standalone_detected = True
+        self._central_zone_seen = False
+        LOGGER.info(
+            "%s %s took its setpoint as `*#4*%s*#14*...` and not through the central unit: it is "
+            "handled as a standalone thermostat (list it under \"Standalone thermostats\" in the "
+            "gateway options to make that permanent)",
+            self._gateway_handler.log_id,
+            self._display_name,
+            zone_number(self._where),
+        )
+        self._cancel_generic_zone_frame()
+        self._refresh_hvac_modes()
+        if (
+            self._season_reported
+            and self._season is not None
+            and (self._attr_hvac_mode == HVACMode.AUTO or self._hvac_mode_restored)
+        ):
+            # A standalone thermostat's season frame is its mode (#880): the mode shown so far
+            # was a restored one, or the AUTO of an F455's made-up *4*311*#Z##.
+            season_mode = HVACMode.HEAT if self._season == SEASON_HEATING else HVACMode.COOL
+            if season_mode in self._configured_hvac_modes():
+                self._attr_hvac_mode = season_mode
+                self._hvac_mode_restored = False
+                self._refresh_hvac_modes()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     def _refuse_interface_write(self) -> bool:
         """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
@@ -2227,14 +2519,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self.hass is not None:
                 self.async_write_ha_state()
             return
-        await self._gateway_handler.send(
-            OWNHeatingCommand.set_temperature(
-                where=self._where,
-                temperature=target_temperature,
-                mode=SETPOINT_WRITE_MODE,
-                standalone=self._standalone,
-            )
+        direct = self._standalone
+        command = OWNHeatingCommand.set_temperature(
+            where=self._where,
+            temperature=target_temperature,
+            mode=SETPOINT_WRITE_MODE,
+            standalone=direct,
         )
+        written = await self._gateway_handler.send(command)
         # The write's echo decides what is shown next: dimension 12 where the gateway reports
         # the setpoint in force (F461, MyHomeServer1), else the commanded dimension 14.
         self._local_target_reported = False
@@ -2243,6 +2535,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._unpaired_dim12_at = None
         self._paired_burst = None
         self._written_target_temperature = (target_temperature, time.monotonic())
+        if not direct and isinstance(written, asyncio.Future):
+            # Written through the central unit: a thermostat it is not running ignores that form
+            # and both gateways still acknowledge it. Returns as soon as the plant confirms.
+            await self._confirm_setpoint_write(written, str(command), target_temperature)
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
@@ -2468,6 +2764,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # a zone of the central before the standalone check below looks at it.
         if is_central_unit_report(message):
             self._gateway_handler.has_central_unit = True
+            self._note_central_zone_report(message)
+        self._note_setpoint_report(message)
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
         if self._is_central_addressed_mode_frame(message):
