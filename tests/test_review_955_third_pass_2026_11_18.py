@@ -411,6 +411,48 @@ def test_a_config_entry_double_that_schedules_nothing_leaves_no_pending_read(has
     gateway.read_zone_temperature.assert_not_awaited()  # and no "never awaited" warning: the run was closed
 
 
+async def test_the_zones_created_from_the_kept_answers_do_not_ask_every_actuator_again(
+    hass: HomeAssistant, fast_bus_pacing: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Live MyHomeServer1, 34 zones, 2026-11-18 21:02-21:04: the sweep's request, then 15 more in 40 s."""
+    handler = _acknowledged(_handler(hass, "MyHomeServer1"))
+    await handler.initial_discovery()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler).count("*#4*0#0*20##") == 1
+
+    monkeypatch.setattr(gateway_module, "ALL_ACTUATORS_SWEEP_FRESH", 0.0)  # the run outlasts the fresh window
+    handler.actuator_only_reads(True)
+    handler.watch_zone_actuators("47")  # a zone the run has just created
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+    handler.actuator_only_reads(False)
+    handler.watch_zone_actuators("48")  # later: a zone that spoke by itself
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == ["*#4*0#0*20##"]
+
+    monkeypatch.setattr(gateway_module, "ALL_ACTUATORS_SWEEP_FRESH", 30.0)
+    handler.watch_zone_actuators("49")  # right after that request: served by it
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+
+
+async def test_the_run_of_reads_is_marked_on_the_gateway_and_cleared_when_it_ends(hass: HomeAssistant) -> None:
+    seen: list[bool] = []
+    handler: Any = None
+
+    async def read(_where: str) -> bool | None:
+        seen.append(handler._actuator_only_reads_running)
+        return False
+
+    handler, _zones = await _start_plant(hass, read)  # an F461: every valve-only address is asked
+    handler._all_actuators_swept_at = 1.0  # the sweep asked every actuator long ago
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##"])
+    await _after_the_sweep(hass, handler)
+    assert seen == [True, True]
+    assert handler._actuator_only_reads_running is False
+    assert handler._all_actuators_swept_at > 1.0  # fresh once more for the zones the last reads created
+
+
 @pytest.mark.parametrize("model", sorted(gateway_module.STARTUP_ALL_ACTUATORS_REQUEST))
 def test_the_models_whose_valve_only_zones_are_read(hass: HomeAssistant, model: str) -> None:
     assert _handler(hass, model).asks_every_actuator_at_start is True

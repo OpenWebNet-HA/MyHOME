@@ -470,6 +470,16 @@ class ZoneDiscovery:
             # so a read of an address known only from its actuator would be one nothing
             # answers, at a cost nobody measured on those models.
             return
+        running = getattr(gateway, "actuator_only_reads", lambda _running: None)  # absent on a bare double
+        running(True)  # the zones created here take the kept actuator frames: no second request
+        try:
+            await self._read_actuator_only_zones()
+        finally:
+            running(False)
+
+    async def _read_actuator_only_zones(self) -> None:
+        """The reads of ``_ask_actuator_only_zones``, one zone at a time."""
+        gateway = self._gateway
         asked: set[tuple[str, str | None]] = set()
         silent = 0
         every_zone = getattr(gateway, "unanswered_zone_read_is_cheap", False) is True

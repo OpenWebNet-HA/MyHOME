@@ -557,6 +557,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         # Zones (number, interface) found not to be run by the plant's central unit
         # (``climate._mark_standalone_detected``), for what else hangs on the zone's device.
         self.standalone_detected_zones: set[tuple[str, str | None]] = set()
+        # While ``climate_discovery`` creates the zones known only from their actuators.
+        self._actuator_only_reads_running = False
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -833,7 +835,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                     just_swept = (
                         all_zones == ALL_ACTUATORS_REQUEST
                         and swept_at > 0
-                        and time.monotonic() - swept_at < ALL_ACTUATORS_SWEEP_FRESH
+                        and (
+                            time.monotonic() - swept_at < ALL_ACTUATORS_SWEEP_FRESH
+                            or getattr(target, "_actuator_only_reads_running", False) is True
+                        )
                     )
                     if not just_swept:
                         frames.append(all_zones)
@@ -859,7 +864,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             try:
                 if self._last_event_frame_at > 0:
                     await self._wait_for_bus_quiet(self._last_event_frame_at)
-                await self.send_paced(frames)
+                delivered = await self.send_paced(frames)
+                if isinstance(delivered, list) and ALL_ACTUATORS_REQUEST in delivered:
+                    # Asked for every zone: the zones added in the next moments are served too.
+                    target._all_actuators_swept_at = time.monotonic()
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
 
@@ -1336,6 +1344,20 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """
         asked_at = self._central_status_swept_at
         return asked_at > 0 and time.monotonic() - asked_at < ALL_ACTUATORS_SWEEP_FRESH
+
+    def actuator_only_reads(self, running: bool) -> None:
+        """``climate_discovery`` starts or ends its reads of the zones known only from their actuators.
+
+        Each zone it creates takes the actuator frames kept since the sweep's all-actuator
+        request, so none of them asks for every actuator again, however long the run takes.
+        Live on a MyHomeServer1 with 34 zones, 2026-11-18, before this: the sweep's request
+        at 21:02:44.195, then one more for each zone created later than
+        ``ALL_ACTUATORS_SWEEP_FRESH``, 15 between 21:04:05.313 and 21:04:45.393. At the end
+        the sweep counts as fresh once more, for the zones the last reads created.
+        """
+        self._actuator_only_reads_running = running
+        if not running and self._all_actuators_swept_at > 0:
+            self._all_actuators_swept_at = time.monotonic()
 
     @callback
     def request_central_status(self) -> None:
