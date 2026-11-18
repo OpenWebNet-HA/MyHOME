@@ -149,6 +149,11 @@
         }
       },
       "additionalProperties": false
+    },
+    "context": {
+      "type": "string",
+      "enum": ["scs", "zigbee"],
+      "description": "Optional addressing context when parsing the frame (defaults to 'scs')."
     }
   },
   "additionalProperties": false

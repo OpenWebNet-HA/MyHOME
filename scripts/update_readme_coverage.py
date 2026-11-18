@@ -58,6 +58,7 @@ COMPONENT_NOTES = {
     "custom_components/myhome/gateway.py": "Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle",
     "custom_components/myhome/gateway_events.py": "Inbound OpenWebNet frame classification, event bus emission, and doorbell routing",
     "custom_components/myhome/gateway_resync.py": "Debounced lighting status resync sweeps after group, area, and general broadcasts",
+    "custom_components/myhome/gateway_serial.py": "Shared AsyncSerialTransport runtime and refcounted serial event/command adapters",
     "custom_components/myhome/gateway_sessions.py": "Persistent event session watchdog, priority command queue, and paced worker pool",
     "custom_components/myhome/identity.py": "Multi-source gateway model and firmware resolution (SSDP, WHO=13, WHO=1013)",
     "custom_components/myhome/ignored.py": "WHO/WHERE address parser and filter silencing discovery, entities, and fault alerts",
@@ -92,6 +93,7 @@ COMPONENT_NOTES = {
     "custom_components/myhome/validate.py": "Voluptuous schemas for myhome.yaml devices, canonical WHERE rules, and access policies",
     "custom_components/myhome/websocket.py": "WebSocket API for real-time bus monitor streaming, frame history, and diagnostics",
     "custom_components/myhome/where_grammar.py": "Canonical OpenWebNet APL, F422 #4#bus, and WHO=4 zone/actuator WHERE grammar",
+    "custom_components/myhome/zigbee_inventory.py": "Cached OpenZigBee product inventory, yield-aware scanner, and diagnostic probe runner",
 }
 
 

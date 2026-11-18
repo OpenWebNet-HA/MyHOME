@@ -41,7 +41,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Colour temperature (DALI DT8) | ✅ | Dimension 14, 2000–6535 K; learned from the first colour frame. |
 | HS / RGB colour | ✅ | Learned from the first colour frame; modes accumulate, they never replace each other. |
 | Hardware timer | ✅ | `myhome.turn_on_timed`: the actuator switches off by itself. |
-| Group / area / general commands from wall switches | ✅ | `LightingResyncManager` runs a `500 ms` debounced status sweep (`broadcast_resync`, enabled by default), updates declared `light:` group entities (`where: '#1'`..`'#255'` with optional `members:`), and fires `myhome_group_light_event` / `myhome_area_light_event` / `myhome_general_light_event`. |
+| Group / area / general commands from wall switches | ✅ | `LightingResyncManager` runs a `500 ms` debounced status sweep (`broadcast_resync`, enabled by default), updates declared `light:` group entities (`where: '#1'`..`'#255'` with optional `members:`), and fires `myhome_group_light_event` / `myhome_area_light_event` / `myhome_general_light_event`. On OpenZigBee USB gateways, wireless `WHAT 32` toggle senders fire `myhome_zigbee_light_event` (`message`, `where`, `event: "toggle"`). |
 
 ### `switch` (WHO 1 / 4 / 9 / 25)
 

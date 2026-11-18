@@ -76,14 +76,28 @@ def is_pypi_released(package: str, version: str) -> bool:
     return False
 
 
+def _ha_constraint_args() -> List[str]:
+    """Return ['-c', path] when Home Assistant package_constraints.txt exists."""
+    try:
+        import homeassistant
+
+        constraints = Path(homeassistant.__file__).resolve().parent / "package_constraints.txt"
+        if constraints.is_file():
+            return ["-c", str(constraints)]
+    except Exception:
+        pass
+    return []
+
+
 def install_target(target: str, pinned_version: str, dev_ref: str = None) -> Tuple[bool, bool]:
     """Install the specified OWNd target.
 
     Returns (success, dev_fallback).
     """
     print(f"\n--- Installing OWNd target: '{target}' ---")
+    constraint_args = _ha_constraint_args()
     if target == "pinned":
-        cmd = [sys.executable, "-m", "pip", "install", f"OWNd=={pinned_version}"]
+        cmd = [sys.executable, "-m", "pip", "install", *constraint_args, f"OWNd=={pinned_version}"]
         res = run_cmd(cmd, check=False)
         if res.returncode == 0:
             return True, False
@@ -101,19 +115,20 @@ def install_target(target: str, pinned_version: str, dev_ref: str = None) -> Tup
             print("Falling back to installing development OWNd so PR validation can proceed...")
             dev_ok, _ = install_target("dev", pinned_version, dev_ref=dev_ref)
             return dev_ok, True
-        cmd = [sys.executable, "-m", "pip", "install", "--pre", "-U", "OWNd"]
+        cmd = [sys.executable, "-m", "pip", "install", *constraint_args, "--pre", "-U", "OWNd"]
         res = run_cmd(cmd, check=False)
         return res.returncode == 0, False
     elif target == "dev":
         ref = dev_ref or os.environ.get("OWND_REF") or os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME") or "master"
         # Try installing from matching branch/ref first if available
+        run_cmd([sys.executable, "-m", "pip", "install", *constraint_args, "aiohttp", "defusedxml", "serialx>=1.8.2"], check=False)
         print(f"Attempting to install OWNd@{ref}...")
-        cmd = [sys.executable, "-m", "pip", "install", "--force-reinstall", f"git+https://github.com/OpenWebNet-HA/OWNd.git@{ref}"]
+        cmd = [sys.executable, "-m", "pip", "install", *constraint_args, "--force-reinstall", "--no-deps", f"git+https://github.com/OpenWebNet-HA/OWNd.git@{ref}"]
         res = run_cmd(cmd, check=False)
         if res.returncode == 0:
             return True, False
         print(f"[WARN] Failed to install OWNd@{ref}, falling back to master branch...")
-        cmd = [sys.executable, "-m", "pip", "install", "--force-reinstall", "git+https://github.com/OpenWebNet-HA/OWNd.git@master"]
+        cmd = [sys.executable, "-m", "pip", "install", *constraint_args, "--force-reinstall", "--no-deps", "git+https://github.com/OpenWebNet-HA/OWNd.git@master"]
         res = run_cmd(cmd, check=False)
         return res.returncode == 0, False
     else:

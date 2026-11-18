@@ -110,6 +110,23 @@ action:
       entity_id: light.living_room_dali_lights
 ```
 
+### Wireless OpenZigBee Toggle Senders (`myhome_zigbee_light_event`)
+On USB OpenZigBee gateways (`BTicino 3578` / `Legrand 088328`), battery-powered wireless switches and senders emit `WHO = 1`, `WHAT = 32` toggle events (`*1*32*<ADDR><UNIT>#9##`) when pressed (`ownkb:record:r000288`). Because wireless senders are not controllable actuators and may sleep, they are never auto-discovered as `light` entities or polled. Instead, the integration fires `myhome_zigbee_light_event` onto the Home Assistant event bus with `message`, `where`, and `event: "toggle"`:
+
+```yaml
+alias: "React to OpenZigBee wireless toggle"
+trigger:
+  - platform: event
+    event_type: myhome_zigbee_light_event
+    event_data:
+      where: "32818401#9"
+      event: "toggle"
+action:
+  - service: light.toggle
+    target:
+      entity_id: light.hallway
+```
+
 ### Simultaneous Hardware Broadcasts (Eliminating Sequential Pacing)
 If you have a large DALI group and want to broadcast a simultaneous color temperature or dimming level across all ballasts in a single on-wire frame (avoiding sequential command pacing), you can send an OpenWebNet frame directly using `myhome.send_message`:
 

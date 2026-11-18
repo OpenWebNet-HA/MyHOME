@@ -7,7 +7,8 @@
         "title": "Kies uw \"MyHome\" gateway",
         "description": "MyHOME houdt één permanente eventverbinding open, plus één verbinding per commandoworker (standaard 1). Een gateway accepteert maar een handvol gelijktijdige OpenWebNet-verbindingen (5 bij een F455, minder bij een MH200N), gedeeld met alles wat er verbinding mee maakt: de Legrand/BTicino Home+Project-app, andere Home Assistant-installaties, andere integraties. Als de verbindingen op zijn, wordt MyHOME of de andere client geweigerd of verbroken. Sluit clients die u niet nodig hebt en houd het aantal commandoworkers laag.",
         "data": {
-          "host": "IP adres"
+          "host": "IP adres",
+          "serial": "Gateway"
         }
       },
       "port": {
@@ -66,6 +67,21 @@
           "gateway_role": "Voorgesteld op basis van de mogelijkheden van beide gateways: secundair als deze gateway subsystemen ondersteunt die de primaire mist, anders stand-by.",
           "delegated_whos": "Subsystemen waarvan deze gateway nieuwe apparaten detecteert. Apparaten die de primaire gateway al heeft, blijven bij de primaire."
         }
+      },
+      "serial": {
+        "title": "USB / Seriële OpenZigBee-gateway",
+        "description": "Selecteer de seriële USB-poort van de BTicino 3578 / Legrand 088328 (of voer een seriële URL in zoals socket://host:poort). Er mag slechts één OpenWebNet-supervisor tegelijk op een ZigBee-netwerk actief zijn; stop andere OpenWebNet-bridges voordat u doorgaat.",
+        "data": {
+          "serial_port": "Seriële poort of URL",
+          "name": "Gatewaymodel"
+        }
+      },
+      "reconfigure_serial": {
+        "title": "USB / Seriële {name}-gateway opnieuw configureren",
+        "description": "Werk de seriële poort of URL bij voor uw {name} OpenZigBee-gateway.",
+        "data": {
+          "serial_port": "Seriële poort of URL"
+        }
       }
     },
     "error": {
@@ -76,7 +92,11 @@
       "password_retry": "Gateway refusing password negotiation, wait 60s before retrying.",
       "password_error": "Ongeldig wachtwoord",
       "primary_gateway_required": "Voor de rollen secundair en stand-by op een gedeelde bus moet een primaire gateway worden gekozen.",
-      "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden."
+      "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden.",
+      "cannot_connect": "Kan geen verbinding maken met de gateway of seriële poort.",
+      "port_busy": "De seriële poort wordt al gebruikt door een ander proces of integratie.",
+      "no_zigbee_interface": "Het seriële apparaat reageerde niet als OpenZigBee-coördinator (*13*60*## / *#13**12##).",
+      "different_device": "Het seriële apparaat op deze poort heeft een ander IEEE EUI-64-adres dan deze gateway."
     },
     "abort": {
       "discovery_timeout": "Geen MyHome gateway gevonden",
@@ -715,6 +735,16 @@
     "switch": {
       "invert_state": {
         "name": "Status omkeren"
+      }
+    },
+    "light": {
+      "zigbee_unit": {
+        "name": "Eenheid {unit}"
+      }
+    },
+    "cover": {
+      "zigbee_unit": {
+        "name": "Eenheid {unit}"
       }
     }
   },

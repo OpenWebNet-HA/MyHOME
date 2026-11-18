@@ -169,6 +169,17 @@ GATEWAY_METADATA: list[dict[str, object]] = [
         "upnp": "✅ SSDP",
         "notes": "Colour touch screen IP gateway (Axolute / LivingLight)",
     },
+    {
+        "model": "**Legrand 3578 / BTicino 3578**",
+        "const_models": [],
+        "ssdp_models": [],
+        "profile_name": "3578",
+        "protocol": "Serial (USB)",
+        "max_workers": "1 worker",
+        "delay": "50 ms",
+        "upnp": "❌ Serial (USB)",
+        "notes": "OpenZigBee USB coordinator (`19200 8N1`, `WHO 1, 2, 13`; `Legrand 088328`)",
+    },
 ]
 
 # Startup discovery rows. With an importable OWNd the WHOs a row advertises are derived from
@@ -268,6 +279,13 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
         "notes": "Lighting, cover, climate, sound, and energy meter 51 queries (`bt_multi` WHO 22 also enabled on firmware >= `6.0.0`). Both `020054` (own-firmware-oracle) and live `6.0.11` (`tests/fixtures/traces/issue_466`) drop `*#4*0##`, so each climate zone asks `*#4*<WHERE>*0##` itself; the SSDP spellings `H/L4684` and `HL4684` resolve to `H4684Profile`. Alarm query omitted.",
+    },
+    {
+        "model": "**Legrand 3578 / BTicino 3578**",
+        "profile_name": "3578",
+        "pinned_whos": [1, 2],
+        "sweep_omits": [],
+        "notes": "OpenZigBee USB coordinator (`WHO 1, 2, 13`): boots from cached `.storage` inventory (`0` RF frames) and runs yield-aware `*13*65*##` / `*#13**66*<p>##` mesh scans with unicast `WHO 1 / 2` polling.",
     },
 ]
 
@@ -370,20 +388,25 @@ def calibrate_metadata_with_ownd(
     calibrated = copy.deepcopy(GATEWAY_METADATA if metadata is None else metadata)
 
     for gw in calibrated:
+        is_serial = gw.get("protocol") == "Serial (USB)"
         prof_name = gw.get("profile_name")
         if prof_name and get_gateway_profile is not None:
             prof = get_gateway_profile(str(prof_name))
             if prof is not None:
+                is_serial = is_serial or getattr(prof, "transport_type", "tcp") == "serial"
                 workers = int(prof.max_command_sessions)
                 gw["max_workers"] = f"{workers} {'workers' if workers > 1 else 'worker'}"
                 gw["delay"] = f"{int(round(prof.command_queue_delay * 1000))} ms"
-                gw["protocol"] = (
-                    "OpenWebNet / HMAC"
-                    if getattr(prof, "supports_hmac", False)
-                    else "OpenWebNet"
-                )
+                if not is_serial:
+                    gw["protocol"] = (
+                        "OpenWebNet / HMAC"
+                        if getattr(prof, "supports_hmac", False)
+                        else "OpenWebNet"
+                    )
 
         # Cross-reference UPnP / SSDP discovery
+        if is_serial:
+            continue
         explicit_ssdp = gw.get("ssdp_models", [])
         const_models = gw.get("const_models", [])
         has_ssdp = any(m in ssdp_models for m in explicit_ssdp) or any(

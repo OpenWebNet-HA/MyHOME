@@ -7,7 +7,8 @@
         "title": "Pick your \"MyHome\" gateway",
         "description": "MyHOME keeps one permanent event connection plus one connection per command worker (default 1) open to the gateway. A gateway only accepts a handful of simultaneous OpenWebNet connections (5 on an F455, fewer on an MH200N), shared with everything else that talks to it: the Legrand/BTicino Home+Project app, other Home Assistant instances, other integrations. If the connections run out, either MyHOME or the other client gets refused or dropped. Close other clients you do not need, and keep the command worker count low.",
         "data": {
-          "host": "IP address"
+          "host": "IP address",
+          "serial": "Gateway"
         }
       },
       "port": {
@@ -66,6 +67,21 @@
           "gateway_role": "Suggested from the capabilities of both gateways: secondary when this gateway supports subsystems the primary lacks, otherwise warm standby.",
           "delegated_whos": "Subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary."
         }
+      },
+      "serial": {
+        "title": "USB / Serial OpenZigBee gateway",
+        "description": "Select the BTicino 3578 / Legrand 088328 USB serial port (or enter a serial URL such as socket://host:port). Only one OpenWebNet Supervisor may run on a ZigBee mesh at a time; stop any other OpenWebNet bridge before continuing.",
+        "data": {
+          "serial_port": "Serial port or URL",
+          "name": "Gateway model"
+        }
+      },
+      "reconfigure_serial": {
+        "title": "Reconfigure USB / Serial {name} Gateway",
+        "description": "Update the serial port or URL for your {name} OpenZigBee gateway.",
+        "data": {
+          "serial_port": "Serial port or URL"
+        }
       }
     },
     "error": {
@@ -79,7 +95,11 @@
       "primary_gateway_not_found": "The selected primary gateway could not be found.",
       "overlapping_delegated_whos": "One or more of the selected WHOs are already delegated to another secondary gateway on this bus.",
       "who_not_supported_by_gateway": "One or more of the selected WHOs are not supported by this gateway model's profile.",
-      "multiple_standbys": "This primary gateway already has a standby configured. Only one standby is allowed per primary."
+      "multiple_standbys": "This primary gateway already has a standby configured. Only one standby is allowed per primary.",
+      "cannot_connect": "Cannot connect to the gateway or serial port.",
+      "port_busy": "Serial port is already in use by another process or integration.",
+      "no_zigbee_interface": "The serial device did not respond as an OpenZigBee coordinator (*13*60*## / *#13**12##).",
+      "different_device": "The serial device at this port has a different IEEE EUI-64 address than this gateway entry."
     },
     "abort": {
       "discovery_timeout": "Unable to discover MyHome gateways",
@@ -812,6 +832,16 @@
     "switch": {
       "invert_state": {
         "name": "Invert state"
+      }
+    },
+    "light": {
+      "zigbee_unit": {
+        "name": "Unit {unit}"
+      }
+    },
+    "cover": {
+      "zigbee_unit": {
+        "name": "Unit {unit}"
       }
     }
   },

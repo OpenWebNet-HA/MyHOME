@@ -41,7 +41,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest-homeassistant-custom-component pytest-cov pytest-socket time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml
+          pip install pytest-homeassistant-custom-component
+          HA_CONSTRAINTS=$(python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')
+          if [ -f "$HA_CONSTRAINTS" ]; then echo "PIP_CONSTRAINT=$HA_CONSTRAINTS" >> "$GITHUB_ENV"; fi
+          pip install -c "$HA_CONSTRAINTS" pytest-cov pytest-socket time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml
           python -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
 
       - name: Verify Home Assistant Architectural Standards
