@@ -300,7 +300,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     "so every dimension 22 frame is refused",
                 )
                 return
-            own_message = OWNCommand.parse(message)
+            own_message = OWNCommand.parse(message, gateway=handler.profile)
             if own_message is not None and own_message.is_valid:
                 _LOGGER.debug(
                     "%s Sending valid OpenWebNet Message: `%s`",
@@ -355,6 +355,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         for gw_mac, handler in target_gateways.items():
             _LOGGER.info("Executing diagnostic bus sweep on gateway %s (force=%s)", gw_mac, force)
+            zigbee_inv = getattr(handler, "zigbee_inventory", None)
+            if (
+                getattr(handler, "is_zigbee_address_family", False) is True
+                and zigbee_inv is not None
+            ):
+                await zigbee_inv.async_run_scan(include_diagnostic_probes=True)
+                continue
             gateway_queries = [
                 "*#13**0##",     # Gateway real-time clock
                 "*#13**15##",    # Gateway device model
@@ -417,7 +424,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         """Send one single-reply query of the sweep, paced like any command burst."""
         from OWNd.message import OWNCommand, OWNMessage
 
-        msg = OWNMessage.parse(query)
+        msg = OWNMessage.parse(query, gateway=handler.profile)
         if msg is not None:
             await handler.send_status_request(cast(OWNCommand, msg))
         await asyncio.sleep(0.05)

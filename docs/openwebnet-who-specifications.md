@@ -182,6 +182,7 @@ The table below outlines supported hardware gateways, session concurrency, inter
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
 | **F452 / F453 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
+| **Legrand 3578 / BTicino 3578** | Serial (USB) | 1 worker | 50 ms | ❌ Serial (USB) | OpenZigBee USB coordinator (`19200 8N1`, `WHO 1, 2, 13`; `Legrand 088328`) |
 <!-- GATEWAY_PROFILES_END -->
 
 ---

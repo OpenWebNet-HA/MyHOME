@@ -79,15 +79,17 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         hs: bool,
         icon: str | None = None,
         icon_on: str | None = None,
+        raw_where: str | None = None,
     ) -> None:
         """Initialize the group."""
+        base_where = raw_where if raw_where is not None else f"#{group}"
         super().__init__(
             hass=hass,
             name=name,
             platform="light",
             device_id=device_id,
             who="1",
-            where=f"#{group}",
+            where=base_where,
             manufacturer="BTicino S.p.A.",
             model="Lighting Group",
             gateway=gateway,
@@ -118,7 +120,7 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         self._interface: str | None = (
             raw_iface.zfill(2) if raw_iface.isdigit() else (raw_iface or None)
         )
-        self._full_where = f"#{group}{BUS_ROUTING}{self._interface}" if self._interface else f"#{group}"
+        self._full_where = f"{base_where}{BUS_ROUTING}{self._interface}" if self._interface else base_where
         # Last known brightness (0-100%), used as HSV "value" when only hue/saturation
         # are being set so a colour change never silently zeroes the group's level.
         # For groups with declared members the displayed brightness is derived from

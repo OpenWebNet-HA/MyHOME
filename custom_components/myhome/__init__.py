@@ -19,6 +19,7 @@ from .const import (
     CONF_EXPOSE,
     CONF_GENERATE_EVENTS,
     CONF_PLATFORMS,
+    CONF_SERIAL_PORT,
     CONF_WORKER_COUNT,
     DATA_OWND_VERSION,
     DOMAIN,
@@ -37,6 +38,7 @@ from .migrate import migrate_entry_and_registries, prune_stale_devices
 from .services import async_setup_services
 from .thermo_switch import load_thermo_switch_subentries
 from .topology import async_check_primary_links
+from .zigbee_inventory import zigbee_inventory_store
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -273,7 +275,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
         entities=configured_entities,
         expose=configured_expose,
     )
-    runtime.expose_manager = ExposeManager(hass, entry, gateway, configured_expose)
+    if getattr(gateway, "is_serial_transport", False) is not True:
+        runtime.expose_manager = ExposeManager(hass, entry, gateway, configured_expose)
 
     try:
         tests_results = await gateway.test()
@@ -281,6 +284,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
         LOGGER.warning("Gateway connection test failed: %s", e)
         tests_results = None
 
+    raw_serial = entry.data.get(CONF_SERIAL_PORT)
+    endpoint_label = (
+        raw_serial if isinstance(raw_serial, str) and raw_serial else None
+    ) or entry.data.get(CONF_HOST, "unknown")
     if tests_results is None:
         # entry.runtime_data and the legacy alias are only published below, after
         # the connection test. Do not leave a half-initialised gateway from a
@@ -290,7 +297,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
             stale.pop(CONF_ENTITY, None)
             stale.pop("bus_monitor", None)
         raise ConfigEntryNotReady(
-            f"Gateway could not be reached or connection failed at {entry.data[CONF_HOST]}. Home Assistant will natively retry caching."
+            f"Gateway could not be reached or connection failed at {endpoint_label}. Home Assistant will natively retry caching."
         )
 
     if not tests_results.get("Success", False):
@@ -299,7 +306,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
             # Home Assistant starts the reauth flow and shows the entry as
             # "Reauthentication required" instead of "Failed to set up".
             raise ConfigEntryAuthFailed(f"Gateway rejected the OpenWebNet password ({reason})")
-        raise ConfigEntryNotReady(f"Gateway connection test failed at {entry.data[CONF_HOST]}: {reason}")
+        raise ConfigEntryNotReady(
+            f"Gateway connection test failed at {endpoint_label}: {reason}"
+        )
+
+    zigbee_inv = getattr(gateway, "zigbee_inventory", None)
+    if (
+        getattr(gateway, "is_zigbee_address_family", False) is True
+        and zigbee_inv is not None
+    ):
+        await zigbee_inv.async_load()
+        zigbee_inv.seed_configured_platforms(configured_platforms)
 
     _command_worker_count = (
         int(entry.options[CONF_WORKER_COUNT])
@@ -330,9 +347,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
     _mfg = gateway.manufacturer or "BTicino S.p.A."
     _fw = gateway.firmware
 
+    conn_type = (
+        dr.CONNECTION_ZIGBEE
+        if getattr(gateway, "is_zigbee_address_family", False) is True
+        else dr.CONNECTION_NETWORK_MAC
+    )
     gateway_device_entry = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        connections={(dr.CONNECTION_NETWORK_MAC, entry.data[CONF_MAC])},
+        connections={(conn_type, entry.data[CONF_MAC])},
         identifiers={(DOMAIN, gateway.unique_id)},
         manufacturer=str(_mfg),
         name=gateway.name,
@@ -368,7 +390,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
             )
         )
 
-    await runtime.expose_manager.async_start()
+    if runtime.expose_manager is not None:
+        await runtime.expose_manager.async_start()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -396,10 +419,15 @@ async def async_remove_config_entry_device(
     """
     runtime = entry.runtime_data if isinstance(getattr(entry, "runtime_data", None), MyHOMERuntimeData) else None
     gateway_ids = {getattr(runtime.gateway, "unique_id", None), getattr(runtime.gateway, "id", None)} if runtime else set()
+    conn_type = (
+        dr.CONNECTION_ZIGBEE
+        if CONF_SERIAL_PORT in entry.data
+        else dr.CONNECTION_NETWORK_MAC
+    )
     if any(
         ident[0] == DOMAIN and ident[1] in gateway_ids
         for ident in device_entry.identifiers
-    ) or (dr.CONNECTION_NETWORK_MAC, str(entry.data.get(CONF_MAC, "")).lower()) in {
+    ) or (conn_type, str(entry.data.get(CONF_MAC, "")).lower()) in {
         (kind, str(value).lower()) for kind, value in device_entry.connections
     }:
         LOGGER.debug("Refusing to remove gateway device %s", device_entry.id)
@@ -411,6 +439,8 @@ async def async_remove_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> N
     """Drop what a removed gateway leaves behind: its store, its repair issues, and
     flag the secondary/standby gateways it was the primary of (#453)."""
     await decoder_pool_store(hass, entry.entry_id).async_remove()
+    if CONF_SERIAL_PORT in entry.data and entry.data.get(CONF_MAC):
+        await zigbee_inventory_store(hass, str(entry.data[CONF_MAC])).async_remove()
     issue_registry = ir.async_get(hass)
     for domain, issue_id in list(issue_registry.issues):
         if domain == DOMAIN and (issue_id.endswith(f"_{entry.entry_id}") or f"_{entry.entry_id}_" in issue_id):

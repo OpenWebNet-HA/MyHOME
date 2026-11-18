@@ -23,6 +23,12 @@ from .const import (
     normalize_where,
 )
 from .discovery import Address, parse_unique_id
+from .where_grammar import (
+    effective_message_where,
+    is_zigbee_where,
+    parse_zigbee_group_where,
+    parse_zigbee_where,
+)
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -90,9 +96,21 @@ class LightingResyncManager:
         return None
 
     @staticmethod
-    def _normalize_group_key(group_where: str | int, interface: str | None = None) -> str:
-        """Normalize a group address to ``#G`` or ``#G#4#<interface>``."""
+    def _normalize_group_key(
+        group_where: str | int,
+        interface: str | None = None,
+        *,
+        address_family: str | None = None,
+    ) -> str:
+        """Normalize a group address to ``#G``, ``#G#9`` (zigbee), or ``#G#4#<interface>``."""
         raw = str(group_where).strip()
+        if address_family == "zigbee" or is_zigbee_where(raw, address_family="zigbee"):
+            grp = parse_zigbee_group_where(raw, address_family="zigbee")
+            if grp is not None:
+                return f"#{grp}#9"
+            body = raw[1:] if raw.startswith("#") else raw
+            grp_norm = str(int(body)) if body.isdigit() else body
+            return f"#{grp_norm}#9"
         body = raw[1:] if raw.startswith("#") else raw
         grp_part, sep, iface_part = body.partition(BUS_ROUTING)
         grp_norm = str(int(grp_part)) if grp_part.isdigit() else grp_part
@@ -103,9 +121,16 @@ class LightingResyncManager:
         return f"#{grp_norm}"
 
     @staticmethod
-    def _normalize_ptp_where(raw_where: str | int | None, interface: str | None = None) -> str:
-        """Normalize a point-to-point WHERE while preserving any ``#4#<interface>`` suffix."""
+    def _normalize_ptp_where(
+        raw_where: str | int | None,
+        interface: str | None = None,
+        *,
+        address_family: str | None = None,
+    ) -> str:
+        """Normalize a point-to-point WHERE while preserving ZigBee ``#9`` or ``#4#<interface>``."""
         where_str = str(raw_where).strip()
+        if address_family == "zigbee" or is_zigbee_where(where_str, address_family="zigbee"):
+            return where_str
         base_part, sep, iface_part = where_str.partition(BUS_ROUTING)
         clean_base = str(normalize_where(base_part.split("#", 1)[0]))
         iface = iface_part if (sep and iface_part) else (str(interface).strip() if interface else "")
@@ -116,9 +141,18 @@ class LightingResyncManager:
 
     def register_group_members(self, group_where: str, members: list[str] | set[str]) -> None:
         """Register the point-to-point member WHERE addresses belonging to a group."""
-        key = self._normalize_group_key(group_where)
+        addr_family = (
+            "zigbee"
+            if getattr(self.handler, "is_zigbee_address_family", False) is True
+            else None
+        )
+        key = self._normalize_group_key(group_where, address_family=addr_family)
         grp_iface = key.partition(BUS_ROUTING)[2] or None
-        cleaned = {self._normalize_ptp_where(m, grp_iface) for m in members if str(m).strip()}
+        cleaned = {
+            self._normalize_ptp_where(m, grp_iface, address_family=addr_family)
+            for m in members
+            if str(m).strip()
+        }
         if cleaned:
             self._group_members[key] = cleaned
         else:
@@ -145,9 +179,15 @@ class LightingResyncManager:
         """Handle point-to-point lighting message echo cancellation."""
         now = float(self._time.monotonic())
         self._prune_recent_ptp(now)
-        ptp_where = self._normalize_ptp_where(message.where, self._message_interface(message))
-        clean_where = normalize_where(str(message.where).split("#", 1)[0])
-        area = area_of_where(clean_where)
+        if getattr(message, "is_zigbee", False) is True:
+            eff = effective_message_where(message)
+            ptp_where = eff if eff else str(message.where)
+            clean_where = ptp_where
+            area: str | None = ptp_where
+        else:
+            ptp_where = self._normalize_ptp_where(message.where, self._message_interface(message))
+            clean_where = normalize_where(str(message.where).split("#", 1)[0])
+            area = area_of_where(clean_where)
         msg_on = getattr(message, "is_on", None)
         self._recent_ptp.append((now, ptp_where, area))
         self._ptp_polarities[(now, ptp_where)] = msg_on
@@ -196,8 +236,14 @@ class LightingResyncManager:
                 self._resync_expected_on.pop(g, None)
 
     def _known_area_map(self) -> dict[str, set[str]]:
-        """Return mapping of area code to registered light/switch WHERE addresses."""
+        """Return mapping of area code (or reachable ZigBee unicast WHERE) to light WHEREs."""
         area_map: dict[str, set[str]] = {}
+        is_zigbee = getattr(self.handler, "is_zigbee_address_family", False) is True
+        inv = getattr(self.handler, "zigbee_inventory", None) if is_zigbee else None
+        if is_zigbee and inv is not None:
+            for zb_where in inv.reachable_light_wheres():
+                area_map.setdefault(zb_where, set()).add(zb_where)
+
         config_entry = getattr(self.handler, "config_entry", None)
         if not config_entry or not hasattr(config_entry, "entry_id") or not isinstance(config_entry.entry_id, str):
             return area_map
@@ -208,6 +254,15 @@ class LightingResyncManager:
             if entry.domain in ("light", "switch"):
                 who, key = parse_unique_id(entry.unique_id, self.handler.mac)
                 if not key or (who is not None and who.isdigit() and who != "1"):
+                    continue
+                if is_zigbee:
+                    parsed_zb = parse_zigbee_where(key, address_family="zigbee")
+                    if parsed_zb is None:
+                        continue
+                    addr, _unit = parsed_zb
+                    if inv is not None and addr in inv.products and not inv.is_reachable(addr):
+                        continue
+                    area_map.setdefault(key, set()).add(key)
                     continue
                 address = Address.from_device_id(key)
                 clean_where = normalize_where(address.clean_where)
@@ -267,7 +322,11 @@ class LightingResyncManager:
             for t, w, entry_a in self._recent_ptp:
                 if entry_a != target_area:
                     continue
-                clean_w = normalize_where(str(w).split("#", 1)[0])
+                clean_w = (
+                    str(w)
+                    if is_zigbee_where(str(w), address_family="zigbee")
+                    else normalize_where(str(w).split("#", 1)[0])
+                )
                 latest_pol[clean_w] = self._ptp_polarities.get((t, str(w)))
             return {
                 clean_w
@@ -279,11 +338,27 @@ class LightingResyncManager:
         area_seed_echoes: dict[str, set[str]] = {}
         group_seed_echoes: dict[str, set[str]] = {}
         if getattr(message, "is_group", False):
-            group_key = self._normalize_group_key(message.group, self._message_interface(message))
+            is_zb_msg = getattr(message, "is_zigbee", False) is True
+            addr_family = "zigbee" if is_zb_msg else None
+            if is_zb_msg:
+                zb_where = effective_message_where(message)
+                group_key = (
+                    zb_where
+                    if zb_where
+                    else self._normalize_group_key(
+                        message.group,
+                        self._message_interface(message),
+                        address_family="zigbee",
+                    )
+                )
+            else:
+                group_key = self._normalize_group_key(
+                    message.group, self._message_interface(message)
+                )
             members = self._group_members.get(group_key)
             latest_grp_pol: dict[str, bool | None] = {}
             for t, w, _ in self._recent_ptp:
-                ptp_w = self._normalize_ptp_where(w)
+                ptp_w = self._normalize_ptp_where(w, address_family=addr_family)
                 if members is not None:
                     if ptp_w not in members:
                         continue

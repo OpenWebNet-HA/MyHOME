@@ -23,7 +23,7 @@ ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 ATTR_WHERE = "where"
 ATTR_ACTION = "action"
-INTEGRATION_VERSION = "2.0.0"
+INTEGRATION_VERSION = "2.1.0b1"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -63,6 +63,10 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.LOCK,
 )
 CONF_ADDRESS = "address"
+CONF_SERIAL_PORT = "serial_port"
+CONF_BAUDRATE = "baudrate"
+DEFAULT_BAUDRATE = 19200
+SUPPORTED_SERIAL_MODELS: tuple[str, ...] = ("Legrand 3578", "BTicino 3578", "Legrand 088328")
 CONF_OWN_PASSWORD = "password"
 CONF_FIRMWARE = "firmware"
 CONF_SSDP_LOCATION = "ssdp_location"
@@ -543,6 +547,7 @@ GATEWAY_DEVICE_TYPE_MAP: dict[str, str] = {
 # How the configured gateway model was established.
 IDENTIFICATION_SSDP = "ssdp"        # the gateway announced its modelName over UPnP/SSDP
 IDENTIFICATION_MANUAL = "manual"    # the user picked the model in the config flow
+IDENTIFICATION_SERIAL = "serial"    # probed over USB/serial (Legrand 3578 / BTicino 3578)
 IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 dimension 15
 IDENTIFICATION_UNKNOWN = "unknown"
 

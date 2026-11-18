@@ -22,6 +22,7 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
 | **F452 / F453 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
+| **Legrand 3578 / BTicino 3578** | Serial (USB) | 1 worker | 50 ms | ❌ Serial (USB) | OpenZigBee USB coordinator (`19200 8N1`, `WHO 1, 2, 13`; `Legrand 088328`) |
 <!-- GATEWAY_PROFILES_END -->
 
 ---
@@ -30,8 +31,8 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 
 ### Step 1: Initial Discovery
 - On local networks, MyHOME gateways announce themselves via **SSDP / UPnP** (mDNS / `.local` hostnames are not used by OpenWebNet gateways).
-- If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to **Configure** the gateway, or lists discovered gateways in the setup picker alongside **"Custom (IP Gateway)"**.
-- If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME** -> choose **Custom (IP Gateway)**.
+- If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to **Configure** the gateway, or lists discovered gateways in the setup picker alongside **"Custom (IP Gateway)"** and **"USB / Serial Gateway (BTicino 3578 / Legrand 088328)"**.
+- If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME** -> choose **Custom (IP Gateway)** (or **USB / Serial Gateway** for `19200 8N1` OpenZigBee USB sticks and `socket://` / `rfc2217://` bridges; only one OpenWebNet Supervisor may be active on the ZigBee mesh at a time per `ownkb:claim:c001829`).
 
 ### Step 2: Installation Parameters Reference
 
@@ -140,7 +141,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 - **Dynamic Proxy Decoders (`decoder_1_entity`..`decoder_4_entity`, `decoder_1_source`..`decoder_4_source`, `decoder_1_pre_gain`..`decoder_4_pre_gain`, `decoder_1_companion`..`decoder_4_companion`)**: Map external streaming players (e.g. Music Assistant, Squeezelite, WiiM, DLNA DMR) to physical matrix inputs (`WHO = 16`), with integer pre-gain trim (`0–100%`).
 
 ### 6. Reconfigure vs Configure (Options Flow)
-- **Reconfigure (`⋮ → Reconfigure`)**: Updates connection transport settings in place — `host` (IPv4), `port`, and `password` — verifying connectivity before saving.
+- **Reconfigure (`⋮ → Reconfigure`)**: Updates connection transport settings in place — `host` (IPv4), `port`, and `password` on TCP gateways, or `serial_port` on USB/serial OpenZigBee gateways — verifying connectivity before saving.
 - **Configure (`Configure` button / Options Flow)**: Changes the gateway hardware **model** (`name`), runtime worker/fade/audio options, shared-bus topology, or `address` / `password` in place without deleting devices or breaking entity IDs.
 
 ---
@@ -188,6 +189,7 @@ The model label decides the gateway profile (command sessions, pacing, queue siz
 | :--- | :--- | :--- |
 | `ssdp` | The gateway announced its own `modelName` over UPnP/SSDP | Authoritative |
 | `manual` | You picked the model in the config flow | Trusted, but correctable by certain evidence |
+| `serial` | Probed over USB/serial (`Legrand 3578` / `BTicino 3578` / `Legrand 088328`) | Authoritative |
 | `who13` | No model was configured; labelled from the WHO=13 device-type reply | Best effort |
 
 **WHO=13 dimension 15 ("MODEL REQUEST", `*#13**15*<code>##`)** is the only in-band identity signal. Its official table — BTicino `OpenWebNet_Community_2_device` v1.0.0, 13 June 2006, §1.2.6 — is complete at six entries: `2` MHServer, `4` MH200, `6` F452, `7` F452V, `11` MHServer2, `13` H4684. Every gateway sold since (F454, F455, MH200N, MH202, MyHOMEServer1…) is absent and reuses or invents codes, so the reply can **corroborate** an identity but never establish one for a modern gateway. Field evidence: code `200` is reported by both the F454 (#370) and MyHOMEServer1 (#292/#297), corroborating modern gateway models without uniquely identifying either.

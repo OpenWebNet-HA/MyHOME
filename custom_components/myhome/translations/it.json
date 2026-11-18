@@ -7,7 +7,8 @@
         "title": "Scegli il tuo gateway \"MyHome\"",
         "description": "MyHOME mantiene aperta una connessione permanente per gli eventi, più una connessione per ogni worker di comando (1 di default). Un gateway accetta solo poche connessioni OpenWebNet contemporanee (5 su un F455, meno su un MH200N), condivise con tutto ciò che vi si collega: l'app Legrand/BTicino Home+Project, altre istanze di Home Assistant, altre integrazioni. Se le connessioni si esauriscono, MyHOME o l'altro client viene rifiutato o disconnesso. Chiudi i client non necessari e mantieni basso il numero di worker di comando.",
         "data": {
-          "host": "Indirizzo Ip"
+          "host": "Indirizzo Ip",
+          "serial": "Gateway"
         }
       },
       "port": {
@@ -66,6 +67,21 @@
           "gateway_role": "Suggerito in base alle capacità dei due gateway: secondario se questo gateway supporta sottosistemi che mancano al primario, altrimenti di riserva.",
           "delegated_whos": "Sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario."
         }
+      },
+      "serial": {
+        "title": "Gateway USB / Seriale OpenZigBee",
+        "description": "Seleziona la porta seriale USB BTicino 3578 / Legrand 088328 (o inserisci un URL seriale come socket://host:porta). Solo un supervisore OpenWebNet può essere attivo alla volta su una rete ZigBee; arresta eventuali altri bridge OpenWebNet prima di continuare.",
+        "data": {
+          "serial_port": "Porta seriale o URL",
+          "name": "Modello gateway"
+        }
+      },
+      "reconfigure_serial": {
+        "title": "Riconfigura gateway USB / Seriale {name}",
+        "description": "Aggiorna la porta seriale o l'URL del tuo gateway OpenZigBee {name}.",
+        "data": {
+          "serial_port": "Porta seriale o URL"
+        }
       }
     },
     "error": {
@@ -76,7 +92,11 @@
       "password_retry": "Il gateway non ha accettato la password, aspetta 60s prima di riprovare.",
       "password_error": "Password non valida",
       "primary_gateway_required": "Per i ruoli secondario o di riserva su un bus condiviso è necessario selezionare un gateway primario.",
-      "primary_gateway_not_found": "Il gateway primario selezionato non è stato trovato."
+      "primary_gateway_not_found": "Il gateway primario selezionato non è stato trovato.",
+      "cannot_connect": "Impossibile connettersi al gateway o alla porta seriale.",
+      "port_busy": "La porta seriale è già in uso da un altro processo o integrazione.",
+      "no_zigbee_interface": "Il dispositivo seriale non ha risposto come coordinatore OpenZigBee (*13*60*## / *#13**12##).",
+      "different_device": "Il dispositivo seriale su questa porta ha un indirizzo IEEE EUI-64 diverso da questa configurazione."
     },
     "abort": {
       "discovery_timeout": "Impossibile trovare il gateway MyHome",
@@ -715,6 +735,16 @@
     "switch": {
       "invert_state": {
         "name": "Inverti stato"
+      }
+    },
+    "light": {
+      "zigbee_unit": {
+        "name": "Unità {unit}"
+      }
+    },
+    "cover": {
+      "zigbee_unit": {
+        "name": "Unità {unit}"
       }
     }
   },

@@ -56,9 +56,9 @@ DOCS_URL = "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-iss
 EVIDENCE_WINDOW = 10.0
 # WHO 1001 dimensions carrying an autodiagnostic bitmask (OPEN.db: 7 on request, 11 pushed).
 AUTODIAG_DIMENSIONS = (7, 11)
-# Statuses outside the SCS WHO 1 table that are documented as events (ZigBee
-# OpenWebNet spec 4.0: 32 Toggle, 34 movement detected, 39 end of movement detected).
-# They neither raise nor clear an unmapped status fault.
+# Statuses outside the SCS WHO 1 table that are documented as events (paraphrased
+# per ownkb:record:r000288 and openwebnet4j: 32 toggle, 34 movement, 39 end of
+# movement). They neither raise nor clear an unmapped status fault.
 DOCUMENTED_EVENTS = frozenset({32, 34, 39})
 
 # Recognized actuator states outside the published WHO 1 table (19 dimmer no load /
@@ -130,7 +130,10 @@ def fault_issue_id(entry_id: str, kind: FaultKind, who: int | str, where: str) -
 
 
 def message_where(message: Any) -> str | None:
-    """WHERE of a frame with its F422 interface (``74#4#01``), or ``None``."""
+    """WHERE of a frame (``zigbee_where`` or SCS WHERE with F422 interface), or ``None``."""
+    if getattr(message, "is_zigbee", False) is True:
+        zb_where = getattr(message, "zigbee_where", None)
+        return zb_where if isinstance(zb_where, str) and zb_where else None
     where = getattr(message, "where", None)
     if not isinstance(where, str) or not where:
         return None

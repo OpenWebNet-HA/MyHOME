@@ -436,3 +436,54 @@ def test_sync_golden_corpus_live_and_staged_superset_contracts(tmp_path: Path) -
     assert sync_corpus._run_validate_corpus(no_js_dir, check_only=False) == 0
     assert (no_js_dir / "tests" / "golden" / "corpus.json").is_file()
     assert sync_corpus._run_validate_corpus(no_js_dir, check_only=True) == 0
+
+def test_zigbee_context_parsing_in_shape_gate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Context-aware shape gate passes Legrand3578Profile for context=zigbee traces and corpus."""
+    monkeypatch.setattr(shape_gate, "KNOWN_INVALID_OR_ADVERSARIAL_FRAMES", {})
+    monkeypatch.setattr(shape_gate, "UNIMPLEMENTED_PARSER_SHAPES", {})
+    zb_trace = tmp_path / "zigbee_trace.json"
+    zb_trace.write_text(
+        json.dumps(
+            {
+                "context": "zigbee",
+                "frames": [
+                    {"direction": "tx", "raw": "*13*66*##"},
+                    {"direction": "rx", "raw": "*1*1*12345601#9##"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    empty_baseline = tmp_path / "baseline.json"
+    empty_baseline.write_text(json.dumps({"shapes": {}}), encoding="utf-8")
+
+    # Without the zigbee corpus record, *13*66*## parses under zigbee context and flags as uncovered
+    audit = shape_gate.evaluate_trace_shape_coverage(
+        corpus_records=[],
+        baseline_path=empty_baseline,
+        fixtures_dir=tmp_path,
+        encyclopedia_evidence_dir=None,
+    )
+    assert not audit.ok
+    assert not audit.unexpected_invalid_frames
+
+    # Including the matching corpus records (with context=zigbee) covers both shapes cleanly
+    covered = shape_gate.evaluate_trace_shape_coverage(
+        corpus_records=[
+            {"frame": "*13*66*##", "context": "zigbee"},
+            {"frame": "*1*1*12345601#9##", "context": "zigbee"},
+        ],
+        baseline_path=empty_baseline,
+        fixtures_dir=tmp_path,
+        encyclopedia_evidence_dir=None,
+    )
+    assert covered.ok, shape_gate.format_audit_failures(covered)
+
+    assert shape_gate.suggest_for_trace(zb_trace) == 0
+    out = capsys.readouterr().out
+    parsed_yaml = yaml.safe_load(
+        "\n".join(line for line in out.splitlines() if not line.startswith("#"))
+    )
+    assert any(r["frame"] == "*13*66*##" and r["context"] == "zigbee" for r in parsed_yaml)

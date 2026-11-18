@@ -1,6 +1,7 @@
 """Diagnostics support for MyHOME."""
 from __future__ import annotations
 
+import collections
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -18,6 +19,7 @@ from .const import (
     CONF_FILE_PATH,
     CONF_PIN_CODE,
     CONF_PRIMARY_GATEWAY,
+    CONF_SERIAL_PORT,
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_TUNER_PICTURES,
@@ -72,7 +74,85 @@ TO_REDACT = {
     "secondary_mac",
     "peer_mac",
     "configured_primary",
+    CONF_SERIAL_PORT,
+    "device",
+    "serial_number",
+    "ieee_address",
+    "eui64",
 }
+
+_SERIAL_PATH_RE = re.compile(r"/dev/serial/by-(?:id|path)/[^\s\"']+")
+
+
+def _redact_serial_paths(obj: Any) -> Any:
+    """Replace ``/dev/serial/by-(id|path)/...`` substrings anywhere in diagnostics."""
+    if isinstance(obj, str):
+        return _SERIAL_PATH_RE.sub(REDACTED, obj)
+    if isinstance(obj, list):
+        return [_redact_serial_paths(item) for item in obj]
+    if isinstance(obj, Mapping):
+        return {k: _redact_serial_paths(v) for k, v in obj.items()}
+    return obj
+
+
+def _build_zigbee_inventory_diagnostics(inventory: Any) -> dict[str, Any] | None:
+    """Summarize ZigBee node inventory for diagnostics with gateway EUI-64 redacted."""
+    if inventory is None:
+        return None
+    as_diag = getattr(inventory, "as_diagnostics", None)
+    if callable(as_diag):
+        diag_res = as_diag()
+        if isinstance(diag_res, Mapping):
+            return async_redact_data(dict(diag_res), TO_REDACT)
+    raw_data = getattr(inventory, "data", None)
+    if not isinstance(raw_data, Mapping):
+        raw_data = getattr(inventory, "_data", None)
+    if isinstance(raw_data, Mapping):
+        products_raw = raw_data.get("products")
+        last_scan_at = raw_data.get("last_scan_at")
+        product_count_raw = raw_data.get("product_count")
+    else:
+        products_raw = getattr(inventory, "products", None)
+        last_scan_at = getattr(inventory, "last_scan_at", None)
+        product_count_raw = getattr(inventory, "product_count", None)
+    if not isinstance(products_raw, Mapping):
+        return None
+    products_summary: dict[str, dict[str, Any]] = {}
+    reachable_count = 0
+    unreachable_count = 0
+    for addr, prod in products_raw.items():
+        if not isinstance(prod, Mapping):
+            continue
+        reachable = bool(prod.get("reachable", False))
+        if reachable:
+            reachable_count += 1
+        else:
+            unreachable_count += 1
+        units_raw = prod.get("units")
+        units_map = units_raw if isinstance(units_raw, Mapping) else {}
+        first_unit = next(
+            (u for u in units_map.values() if isinstance(u, Mapping)),
+            {},
+        )
+        products_summary[str(addr)] = {
+            "reachable": reachable,
+            "unit_count": len(units_map),
+            "dev_id": prod.get("dev_id", first_unit.get("dev_id")),
+            "model": prod.get("model", first_unit.get("model")),
+        }
+    product_count = (
+        product_count_raw
+        if isinstance(product_count_raw, int) and not isinstance(product_count_raw, bool)
+        else len(products_summary)
+    )
+    return {
+        "eui64": REDACTED,
+        "product_count": product_count,
+        "reachable_count": reachable_count,
+        "unreachable_count": unreachable_count,
+        "last_scan_at": last_scan_at if isinstance(last_scan_at, str) or last_scan_at is None else None,
+        "products": products_summary,
+    }
 
 _SAFE_DEVICE_KEY_RE = re.compile(r"^(?:\d+-)?#?\d+(?:#\d+)*(?:#4#\d+)?$|^zone_\d+$")
 _WHO_PREFIX_RE = re.compile(r"^(\d+)-")
@@ -239,6 +319,8 @@ async def async_get_config_entry_diagnostics(
     profile_info: dict[str, Any] = {}
     queue_info: dict[str, Any] = {}
     bus_monitor_info: dict[str, Any] = {}
+    zigbee_inventory_info: dict[str, Any] | None = None
+    unparsed_raw_frames: list[str] | None = None
 
     if gateway_handler is not None:
         gw = getattr(gateway_handler, "gateway", None)
@@ -264,6 +346,8 @@ async def async_get_config_entry_diagnostics(
                 gw_info["identification"] = async_redact_data(identification(), TO_REDACT)
             if hasattr(gw, "profile") and gw.profile:
                 profile = gw.profile
+                t_type = getattr(profile, "transport_type", None)
+                a_fam = getattr(profile, "address_family", None)
                 # OWNd GatewayProfile fields; keepalive None means OS TCP keepalive only.
                 profile_info = {
                     "name": getattr(profile, "model_name", "Generic"),
@@ -272,6 +356,8 @@ async def async_get_config_entry_diagnostics(
                     "max_queue_size": getattr(profile, "max_queue_size", 250),
                     "keepalive_interval": getattr(profile, "event_keepalive_interval", None),
                     "keepalive_summary": getattr(profile, "keepalive_summary", None),
+                    "transport_type": t_type if isinstance(t_type, str) else "tcp",
+                    "address_family": a_fam if isinstance(a_fam, str) else "scs",
                 }
 
         send_buffer = getattr(gateway_handler, "send_buffer", None)
@@ -293,6 +379,18 @@ async def async_get_config_entry_diagnostics(
                 "recent_frames": bus_monitor.get_recent_frames(limit=bus_monitor.maxlen),
             }
 
+        zigbee_inventory_info = _build_zigbee_inventory_diagnostics(
+            getattr(gateway_handler, "zigbee_inventory", None)
+        )
+        serial_runtime = getattr(gateway_handler, "serial_runtime", None)
+        raw_unparsed = (
+            getattr(serial_runtime, "unparsed_raw_frames", None)
+            if serial_runtime is not None
+            else None
+        )
+        if isinstance(raw_unparsed, (collections.deque, list, tuple)):
+            unparsed_raw_frames = [str(f) for f in raw_unparsed]
+
     # Configured devices per platform (``runtime.entities`` is never filled)
     platforms_info: dict[str, int] = {}
     for platform_name, devices in (runtime.platforms if runtime is not None else {}).items():
@@ -304,7 +402,7 @@ async def async_get_config_entry_diagnostics(
 
     topology_inference = _build_topology_inference_diagnostics(hass, entry, profile_info)
 
-    return {
+    result: dict[str, Any] = {
         "integration_version": INTEGRATION_VERSION,
         "ownd_version": await hass.async_add_executor_job(get_ownd_version),
         "config_entry": {
@@ -329,6 +427,11 @@ async def async_get_config_entry_diagnostics(
         "bus_monitor": bus_monitor_info,
         "topology_inference": topology_inference,
     }
+    if zigbee_inventory_info is not None:
+        result["zigbee_inventory"] = zigbee_inventory_info
+    if unparsed_raw_frames is not None:
+        result["unparsed_raw_frames"] = unparsed_raw_frames
+    return dict(_redact_serial_paths(result))
 
 
 def _build_audio_diagnostics(

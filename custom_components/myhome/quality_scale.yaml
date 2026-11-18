@@ -25,7 +25,7 @@ rules:
     comment: tests/test_config_flow.py covers user, SSDP, reauth, reconfigure and error recovery paths (100% statement coverage of config_flow.py).
   config-flow:
     status: done
-    comment: ConfigFlow with SSDP discovery, manual entry, reauth and reconfigure.
+    comment: ConfigFlow with SSDP discovery, manual IP entry, USB/Serial OpenZigBee setup, reauth and reconfigure.
   dependency-transparency:
     status: done
     comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; Apache-2.0 licensed.
@@ -67,7 +67,7 @@ rules:
     comment: async_setup_entry runs gateway.test(); failures raise ConfigEntryNotReady, a rejected password raises ConfigEntryAuthFailed.
   unique-config-entry:
     status: done
-    comment: Config entry unique_id is the canonical gateway MAC address.
+    comment: Config entry unique_id is the canonical gateway MAC address (6-octet MAC or 8-octet IEEE EUI-64 for OpenZigBee serial gateways).
 
   # 🥈 Silver
   action-exceptions:
@@ -149,7 +149,7 @@ rules:
     comment: Audited in tests/test_entity_audit.py - the daily and monthly energy counters are disabled by default; all other entities are primary controls and stay enabled.
   entity-translations:
     status: done
-    comment: Translation keys for the lock / unlock / calibration buttons, the binary-sensor invert switch and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
+    comment: Translation keys for the lock / unlock / calibration buttons, ZigBee multi-unit endpoints (`zigbee_unit`), the binary-sensor invert switch and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
   exception-translations:
     status: done
     comment: HomeAssistantError/ServiceValidationError raised from cover calibration, travel-time services and the media player decoder proxy carry translation keys defined under `exceptions` in strings.json / translations/en.json (guarded by test_every_raised_translation_key_is_defined).
@@ -158,7 +158,7 @@ rules:
     comment: icons.json established for service actions and platform icons.
   reconfiguration-flow:
     status: done
-    comment: async_step_reconfigure implemented allowing in-place IP, port, and password updates.
+    comment: async_step_reconfigure implemented allowing in-place IP, port, password, and USB/serial port updates.
   repair-issues:
     status: done
     comment: gateway.py raises gateway_identity_mismatch / gateway_identity_corrected repair issues when the WHO=13 device type contradicts the configured model, and clears them when they agree; password rejection uses ConfigEntryAuthFailed (native reauth repair).
