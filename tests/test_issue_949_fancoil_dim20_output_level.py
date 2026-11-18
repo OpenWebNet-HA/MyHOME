@@ -2,25 +2,29 @@
 
 Covers:
 1. ``where_grammar`` proportional decoding helpers: ``thermo_output_level``,
-   ``thermo_dim20_level``, ``thermo_dim20_actuator_target``, and ``thermo_dim19_levels``.
+   ``thermo_dim20_level``, and ``thermo_dim20_actuator_target`` (strictly ``Z#N``,
+   rejecting bare ``Z`` and ``Z#0``).
 2. Live hardware capture replay from ``xmavgithub``'s ``MyHomeServer1`` ``2.87.13``
    Sabiana 0-10 V fan-coil plant (``tests/fixtures/traces/issue_949/``):
-   - ``MyHOMEClimate`` keeps ``actuators`` strictly ``"on"`` / ``"off"`` while exposing
-     ``actuator_levels: {"3": 20..100 -> 0}``.
-   - ``MyHOMEActuatorOutputSensor`` auto-discovers only for proportional actuator ``1#3``
-     (not discrete ``1#1`` or ``1#2``), attaches to the exact same Home Assistant Device
-     as ``MyHOMEClimate`` Zone 1, ignores paired ``#20`` write frames, and deduplicates
-     repeated ``*20*`` status frames with ``generate_events`` disabled.
+   - Unseeded 9-frame verbatim replay (``actuators`` ``{"2": "on", "3": "on"}`` during
+     heating, ``{"1": "off", "2": "off", "3": "off"}`` at rest, ``actuator_levels`` and
+     ``sensor`` stepping ``20 -> 23 -> 50 -> 80 -> 100 -> 0`` with zero sensors for
+     ``1#1`` and ``1#2``).
+   - Seeded replay with zone context, paired ``#20`` write frames, duplicate
+     ``*20*`` suppression, and shared HA Device linkage.
 3. ``MyHOMEClimate`` proportional edge cases: deferred ``#785`` Dimension 20 replay,
-   ``#932`` ``repeated_off`` at ``20*100``, ``Z#0`` group actuator handling, discrete
-   ``1..22`` transitions, zone OFF / Dimension 19 resets, and Dimension 19
-   ``cooling_output_level`` / ``heating_output_level``.
+   ``#932`` ``repeated_off`` at ``20*100``, ignoring ``Z#0`` and bare ``Z`` for
+   ``actuator_levels``, no Dimension 19 ``cooling_output_level`` / ``heating_output_level``,
+   ``_unrecorded_attributes`` recorder exclusion, and zone-wide resets.
 4. ``MyHOMEThermoSwitch`` ``output_level`` (single actuator) and ``actuator_levels``
-   (whole-zone) across ``*20*``, ``*#20*``, ``Z#0``, and inactive Dimension 19.
-5. ``MyHOMEActuatorOutputSensor`` lifecycle: ``thermo_switch`` exclusion and stale
-   registry pruning, YAML ``climate`` device linkage, ``RestoreSensor`` bounded integer
-   restoration, router key isolation, ``F455`` ``watch_zone_actuators``, ``async_update``
-   gateway guards, and all zone/central OFF resets.
+   (whole-zone) strictly on explicit ``Z#N`` (not ``Z#0`` or bare ``Z``), inactive
+   Dimension 19 resets, and ``_unrecorded_attributes`` recorder exclusion.
+5. ``MyHOMEActuatorOutputSensor`` lifecycle: ``SensorEntity`` (not ``RestoreSensor``),
+   ``unknown`` state after restart on ``MH202`` and climate-less zones, unconditional
+   ``watch_zone_actuators`` registration when ``not interface_refused`` and
+   ``_poll_on_add`` fallback, ``thermo_switch`` exclusion and stale registry pruning,
+   YAML ``climate`` device linkage, router key isolation, ``async_update`` gateway
+   guards, and zone-wide resets.
 """
 
 from __future__ import annotations
@@ -34,11 +38,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.climate.const import HVACAction, HVACMode
 from homeassistant.components.sensor import (
+    RestoreSensor,
+    SensorEntity,
     SensorExtraStoredData,
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import CONF_MAC, CONF_NAME, PERCENTAGE
+from homeassistant.const import CONF_MAC, CONF_NAME, PERCENTAGE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -63,6 +69,7 @@ from custom_components.myhome.const import (
 from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.sensor import (
     MyHOMEActuatorOutputSensor,
+    MyHOMESensorEntity,
 )
 from custom_components.myhome.sensor import async_setup_entry as sensor_setup_entry
 from custom_components.myhome.sensor import (
@@ -71,7 +78,6 @@ from custom_components.myhome.sensor import (
 from custom_components.myhome.switch import MyHOMEThermoSwitch
 from custom_components.myhome.typing_compat import device_info_to_dict
 from custom_components.myhome.where_grammar import (
-    thermo_dim19_levels,
     thermo_dim20_actuator_target,
     thermo_dim20_level,
     thermo_output_level,
@@ -82,7 +88,7 @@ TRACE_DIR = Path(__file__).resolve().parent / "fixtures" / "traces" / "issue_949
 MHS1_RAMP_TRACE_PATH = (
     TRACE_DIR / "myhome_trace_MyHomeServer1_fancoil_dim20_ramp_2026-11-18.json"
 )
-MAC = "00:03:50:00:09:49"
+MAC = "00:03:50:00:09:08"
 
 
 def _make_gateway(
@@ -253,11 +259,13 @@ def test_thermo_dim20_level_rejects_malformed_envelopes() -> None:
     ("raw", "expected"),
     [
         ("*#4*1#3*20*155##", ("1", "3", None)),
-        ("*#4*1*20*155##", ("1", "1", None)),
         ("*#4*99#9*20*200##", ("99", "9", None)),
         ("*#4*2#1#4#01*20*140##", ("2", "1", "01")),
-        ("*#4*2#4#01*20*140##", ("2", "1", "01")),
         ("*#4*2#3#4#1*20*140##", ("2", "3", "01")),
+        ("*#4*1*20*130##", None),
+        ("*#4*1*20*155##", None),
+        ("*#4*1#4#01*20*130##", None),
+        ("*#4*2#4#01*20*140##", None),
         ("*#4*1#0*20*100##", None),
         ("*#4*0#1*20*100##", None),
         ("*#4*#0*20*100##", None),
@@ -271,19 +279,22 @@ def test_thermo_dim20_level_rejects_malformed_envelopes() -> None:
 def test_thermo_dim20_actuator_target(
     raw: str, expected: tuple[str, str, str | None] | None
 ) -> None:
-    """thermo_dim20_actuator_target accepts Z#N (1..99, 1..9) and rejects group/central/pumps/probes."""
+    """thermo_dim20_actuator_target accepts explicit Z#N (1..99, 1..9) and rejects bare Z, group/central/pumps/probes."""
     msg = OWNMessage.parse(raw)
     assert thermo_dim20_actuator_target(msg) == expected
 
 
 def test_thermo_dim20_actuator_target_mock_edge_cases() -> None:
-    """thermo_dim20_actuator_target rejects non-digit tails and invalid actuator properties."""
+    """thermo_dim20_actuator_target rejects bare Z, non-digit tails, and invalid actuator properties."""
     bad_tail = SimpleNamespace(
         who=4, where="1", zone=1, where_param=["x"], actuator="x"
     )
     assert thermo_dim20_actuator_target(bad_tail) is None
 
-    bad_act = SimpleNamespace(who=4, where="1", zone=1, where_param=[], actuator="0")
+    bare_no_tail = SimpleNamespace(who=4, where="1", zone=1, where_param=[], actuator="1")
+    assert thermo_dim20_actuator_target(bare_no_tail) is None
+
+    bad_act = SimpleNamespace(who=4, where="1", zone=1, where_param=["0"], actuator="0")
     assert thermo_dim20_actuator_target(bad_act) is None
 
     raw_if_fallback = SimpleNamespace(
@@ -292,48 +303,137 @@ def test_thermo_dim20_actuator_target_mock_edge_cases() -> None:
     assert thermo_dim20_actuator_target(raw_if_fallback) == ("1", "3", "02")
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("*#4*1*19*100*155##", (0, 55)),
-        ("*#4*1*19*140*100##", (40, 0)),
-        ("*#4*1*19*200*200##", (100, 100)),
-        ("*#4*1*19*0*180##", (None, 80)),
-        ("*#4*1*19*125*0##", (25, None)),
-        ("*#4*1*19*0*1##", (None, None)),
-        ("*#4*1*19*155*23##", None),
-        ("*#4*1*19*99*100##", None),
-        ("*#4*1*19*0*##", None),
-        ("*#4*1*19##", None),
-        ("*#4*1#3*20*155##", None),
-        ("*#1*01*2*0*0*0##", None),
-    ],
-)
-def test_thermo_dim19_levels(
-    raw: str, expected: tuple[int | None, int | None] | None
-) -> None:
-    """thermo_dim19_levels decodes CV/HV proportional percentages and fails closed on invalid codes."""
-    msg = OWNMessage.parse(raw)
-    assert thermo_dim19_levels(msg) == expected
-
-
-def test_thermo_dim19_levels_rejects_malformed_hvac_action_values() -> None:
-    """thermo_dim19_levels returns None when hvac_action carries non-uint dimension_value tokens."""
-    bad = SimpleNamespace(
-        who=4, dimension=19, message_type="hvac_action", dimension_value=["0", ""]
-    )
-    assert thermo_dim19_levels(bad) is None
-
-
 # ---------------------------------------------------------------------------
 # 2. Live capture end-to-end replay (xmavgithub MyHomeServer1 2.87.13 #949)
 # ---------------------------------------------------------------------------
 
 
-async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
+async def test_issue_949_nine_captured_frames_unseeded(
     hass: HomeAssistant,
 ) -> None:
-    """Replay xmavgithub's Issue #949 9-frame verbatim live capture across climate and sensor."""
+    """Replay ONLY the 9 verbatim captured frames from Issue #949 with zero seeded frames."""
+    trace = json.loads(MHS1_RAMP_TRACE_PATH.read_text(encoding="utf-8"))
+    assert trace["synthetic"] is False
+    assert trace["capture"]["kind"] == "issue_log_excerpt"
+    assert trace["gateway"]["model"] == "MyHomeServer1"
+    assert trace["gateway"]["firmware"] == "2.87.13"
+    assert trace["gateway"]["mac"] == MAC
+    assert "exported_at" not in trace
+    assert "exported_at" not in trace.get("environment", {})
+    assert "home_assistant_version" not in trace.get("environment", {})
+    assert "ownd_version" not in trace.get("environment", {})
+    assert "started_at" not in trace["capture"]
+    assert "window" not in trace["capture"]
+    assert "clock_window" in trace["capture"]
+
+    frames = trace["frames"]
+    assert len(frames) == 9
+    assert all(
+        "clock_time" in f and "timestamp" not in f and "iso_time" not in f
+        for f in frames
+    )
+    raw_frames = [f["raw"] for f in frames]
+
+    gw = _make_gateway("MyHomeServer1", "2.87.13", mac=trace["gateway"]["mac"])
+    entry = _make_entry(hass, gw)
+
+    # Pre-register Zone 1 climate entity as an already-discovered zone (no seeded frames).
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create("climate", DOMAIN, f"{gw.mac}-4-1", config_entry=entry)
+
+    added_climates: list[MyHOMEClimate] = []
+    added_sensors: list[Any] = []
+
+    def _add_climates(entities: list[Any], update_before_add: bool = False) -> None:
+        for ent in entities:
+            ent.hass = hass
+            ent.entity_id = f"climate.zone_{ent._where}"
+            ent.async_write_ha_state = MagicMock()
+            added_climates.append(ent)
+
+    def _add_sensors(entities: list[Any], update_before_add: bool = False) -> None:
+        for ent in entities:
+            ent.hass = hass
+            ent.platform = MagicMock()
+            ent.entity_id = f"sensor.zone_{ent._where.replace('#', '_')}_output_level"
+            ent.async_schedule_update_ha_state = MagicMock()
+            added_sensors.append(ent)
+
+    await climate_setup_entry(hass, entry, _add_climates)
+    await sensor_setup_entry(hass, entry, _add_sensors)
+    assert len(added_climates) == 1
+    zone1 = added_climates[0]
+    assert added_sensors == []
+
+    signal = f"myhome_message_{gw.mac}"
+
+    # Frame 0: *#4*1#2*20*1## (discrete relay 1#2 on -> zero sensor created)
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[0]))
+    await hass.async_block_till_done()
+    assert zone1.extra_state_attributes["actuators"] == {"2": "on"}
+    assert "actuator_levels" not in zone1.extra_state_attributes
+    assert added_sensors == []
+
+    # Frame 1: *#4*1#3*20*120## (20 %) -> actuators {"2": "on", "3": "on"} + sensor 1#3 at 20 %
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[1]))
+    await hass.async_block_till_done()
+    assert len(added_sensors) == 1
+    act3_sensor = added_sensors[0]
+    assert isinstance(act3_sensor, MyHOMEActuatorOutputSensor)
+    assert act3_sensor.native_value == 20
+    assert zone1.extra_state_attributes["actuators"] == {"2": "on", "3": "on"}
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 20}
+
+    # Frames 2..5: ramp 23 -> 50 -> 80 -> 100 %
+    for idx, expected_pct in enumerate((23, 50, 80, 100), start=2):
+        async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[idx]))
+        await hass.async_block_till_done()
+        assert act3_sensor.native_value == expected_pct
+        assert zone1.extra_state_attributes["actuators"] == {"2": "on", "3": "on"}
+        assert zone1.extra_state_attributes["actuator_levels"] == {"3": expected_pct}
+        assert len(added_sensors) == 1
+
+    # Frame 6: *#4*1#3*20*100## (0 % off)
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[6]))
+    await hass.async_block_till_done()
+    assert act3_sensor.native_value == 0
+    assert zone1.extra_state_attributes["actuators"] == {"2": "on", "3": "off"}
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 0}
+
+    # Frame 7: *#4*1#2*20*0##
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[7]))
+    await hass.async_block_till_done()
+    assert act3_sensor.native_value == 0
+    assert zone1.extra_state_attributes["actuators"] == {"2": "off", "3": "off"}
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 0}
+
+    # Frame 8: *#4*1#1*20*0## (floor loop 1#1 off -> {"1": "off", "2": "off", "3": "off"}, zero sensors for 1#1/1#2)
+    async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[8]))
+    await hass.async_block_till_done()
+    assert act3_sensor.native_value == 0
+    assert zone1.extra_state_attributes["actuators"] == {
+        "1": "off",
+        "2": "off",
+        "3": "off",
+    }
+    assert zone1.extra_state_attributes["actuator_levels"] == {"3": 0}
+    assert len(added_sensors) == 1
+    assert not any(s._where in ("1#1", "1#2") for s in added_sensors)
+
+
+async def test_issue_949_ramp_with_seeded_zone_context_and_paired_writes(
+    hass: HomeAssistant,
+) -> None:
+    """Replay Issue #949 ramp with explicitly seeded zone context and paired #20 writes.
+
+    Seeded frames outside the 9-frame verbatim JSON capture:
+    - Zone discovery / heating context: ``*#4*1*0*0189##``, ``*#4*1*12*0240*1##``,
+      ``*4*1*1##``, ``*#4*1#1*20*1##``, and ``*#4*1*12*0190*1##``.
+    - Paired ``#20`` write frames (ignored by both climate and sensor):
+      ``*#4*1#3*#20*120##``, ``*#4*1#3*#20*123##``, ``*#4*1#3*#20*150##``,
+      ``*#4*1#3*#20*180##``, ``*#4*1#3*#20*200##``, and ``*#4*1#3*#20*100##``.
+    - Synthetic duplicate status frame for deduplication check: ``*#4*1#3*20*200##``.
+    """
     trace = json.loads(MHS1_RAMP_TRACE_PATH.read_text(encoding="utf-8"))
     assert trace["synthetic"] is False
     assert trace["capture"]["kind"] == "issue_log_excerpt"
@@ -466,7 +566,7 @@ async def test_shared_ha_device_registry_between_climate_and_actuator_sensor(
     hass: HomeAssistant,
 ) -> None:
     """Full HA entity/device registry registration attaches both entities to one DeviceEntry."""
-    mac = "00:03:50:00:09:49"
+    mac = MAC
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
@@ -575,44 +675,65 @@ async def test_climate_deferred_pending_actions_preserves_actuator_level(
     assert zone5.extra_state_attributes["actuator_levels"] == {"3": 65}
 
 
-def test_climate_repeated_off_dim19_resets_and_group_actuator_zero(
+def test_climate_repeated_off_dim19_resets_unrecorded_and_rejects_group_or_bare_levels(
     hass: HomeAssistant,
 ) -> None:
-    """Verify repeated_off (#932), Z#0 selector, discrete pop/zero, Dim 19 levels, and zone OFF resets."""
+    """Verify _unrecorded_attributes, repeated_off (#932), Z#0/bare-Z rejection, Dim 19 without levels, and zone resets."""
+    assert "actuator_levels" in MyHOMEClimate._Entity__combined_unrecorded_attributes
+
     gw = _make_gateway("MyHomeServer1", "2.87.13")
     zone = _make_zone(hass, gw, "1")
     zone.handle_event(OWNHeatingEvent.parse("*#4*1*0*0200##"))
     zone.handle_event(OWNHeatingEvent.parse("*4*1*1##"))
 
+    # Bare Z and Z#0 on fresh zone do NOT set actuator_levels
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1*20*130##"))
+    assert "actuator_levels" not in zone.extra_state_attributes
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*150##"))
+    assert "actuator_levels" not in zone.extra_state_attributes
+
     # Actuator 3 proportional 45% -> active
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*145##"))
-    assert zone.extra_state_attributes["actuators"] == {"3": "on"}
+    assert zone.extra_state_attributes["actuators"]["3"] == "on"
     assert zone.extra_state_attributes["actuator_levels"] == {"3": 45}
 
-    # Z#0 proportional 70% updates known actuator "3" without adding key "0"
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*170##"))
-    assert zone.extra_state_attributes["actuators"] == {"3": "on"}
-    assert zone.extra_state_attributes["actuator_levels"] == {"3": 70}
+    # Z#0 (*#4*1#0*20*150## and *#4*1#0*20*1##) do NOT modify actuator_levels
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*150##"))
+    assert zone.extra_state_attributes["actuator_levels"] == {"3": 45}
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*1##"))
+    assert zone.extra_state_attributes["actuator_levels"] == {"3": 45}
 
-    # Z#0 inactive 100 resets known actuator "3" to 0 without adding key "0"
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*100##"))
-    assert zone.extra_state_attributes["actuators"] == {"3": "off"}
-    assert zone.extra_state_attributes["actuator_levels"] == {"3": 0}
+    # Bare Z (*#4*1*20*130##) does NOT set or overwrite actuator_levels["1"]
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#1*20*125##"))
+    assert zone.extra_state_attributes["actuator_levels"] == {"1": 25, "3": 45}
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1*20*130##"))
+    assert zone.extra_state_attributes["actuator_levels"] == {"1": 25, "3": 45}
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#1*20*1##"))  # pop "1"
+    assert zone.extra_state_attributes["actuator_levels"] == {"3": 45}
 
-    # Dimension 19 active with proportional cooling=0%, heating=60% leads as "zone"
+    # Dimension 19 carrying 100..200 drives hvac_action ONLY; NEVER exposes cooling/heating_output_level
     zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*100*160##"))
     assert zone.hvac_action == HVACAction.HEATING
-    assert zone.extra_state_attributes["cooling_output_level"] == 0
-    assert zone.extra_state_attributes["heating_output_level"] == 60
+    assert "cooling_output_level" not in zone.extra_state_attributes
+    assert "heating_output_level" not in zone.extra_state_attributes
+    assert not hasattr(zone, "_cooling_output_level")
+    assert not hasattr(zone, "_heating_output_level")
 
-    # Actuator 1 reports discrete active 1 -> discrete active does not touch #3 level,
-    # then #1 reports 0 -> false, Dim 19 active again, then repeated_off on #3 at 20*100:
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*140*180##"))
+    assert "cooling_output_level" not in zone.extra_state_attributes
+    assert "heating_output_level" not in zone.extra_state_attributes
+
+    # repeated_off (#932) on explicit Z#N sets level to 0 while keeping _active_source == "zone";
+    # bare Z during repeated_off does NOT touch actuator_levels!
     zone._actuator_levels["3"] = 35
     zone._actuator_states["3"] = False
+    zone._actuator_levels["1"] = 35
+    zone._actuator_states["1"] = False
     zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*100*160##"))
     assert zone._active_source == "zone"
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1*20*100##"))
+    assert zone.extra_state_attributes["actuator_levels"]["1"] == 35
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*100##"))
-    # repeated_off keeps _active_source == "zone" (still HEATING) while updating #3 level to 0!
     assert zone._active_source == "zone"
     assert zone.hvac_action == HVACAction.HEATING
     assert zone.extra_state_attributes["actuator_levels"]["3"] == 0
@@ -621,6 +742,7 @@ def test_climate_repeated_off_dim19_resets_and_group_actuator_zero(
     zone._actuator_levels["3"] = 15
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*0##"))
     assert zone.extra_state_attributes["actuator_levels"]["3"] == 0
+    zone._actuator_levels.pop("1", None)
 
     # Discrete active *#4*1#3*20*1## pops "3" from actuator_levels
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*150##"))
@@ -633,62 +755,62 @@ def test_climate_repeated_off_dim19_resets_and_group_actuator_zero(
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*0##"))
     assert zone.extra_state_attributes["actuator_levels"] == {"3": 0}
 
-    # Z#0 discrete active *#4*1#0*20*1## clears actuator_levels
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*150##"))
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*1##"))
-    assert "actuator_levels" not in zone.extra_state_attributes
-
-    # Dimension 19 discrete active pops cooling_output_level / heating_output_level
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*140*180##"))
-    assert zone.extra_state_attributes["cooling_output_level"] == 40
-    assert zone.extra_state_attributes["heating_output_level"] == 80
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*1*1##"))
-    assert "cooling_output_level" not in zone.extra_state_attributes
-    assert "heating_output_level" not in zone.extra_state_attributes
-
-    # Dimension 19 discrete inactive sets known proportional levels to 0
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*140*180##"))
+    # Inactive Dimension 19 (*19*0*0 and *19*100*100) sets known proportional levels to 0
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*155##"))
     zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*0*0##"))
-    assert zone.extra_state_attributes["cooling_output_level"] == 0
-    assert zone.extra_state_attributes["heating_output_level"] == 0
+    assert zone.extra_state_attributes["actuator_levels"] == {"3": 0}
+    assert "cooling_output_level" not in zone.extra_state_attributes
+    assert "heating_output_level" not in zone.extra_state_attributes
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*165##"))
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*100*100##"))
     assert zone.extra_state_attributes["actuator_levels"] == {"3": 0}
 
     # Zone mode OFF resets all levels via _mark_actuators_off()
-    zone.handle_event(OWNHeatingEvent.parse("*#4*1*19*125*175##"))
     zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*190##"))
     zone.handle_event(OWNHeatingEvent.parse("*4*303*1##"))
     assert zone.hvac_mode == HVACMode.OFF
     assert zone.extra_state_attributes["actuator_levels"] == {"3": 0}
-    assert zone.extra_state_attributes["cooling_output_level"] == 0
-    assert zone.extra_state_attributes["heating_output_level"] == 0
 
-    # Fresh zone with empty _actuator_states receiving active Z#0 marks zone active
-    zone_empty = _make_zone(hass, gw, "2")
-    zone_empty.handle_event(OWNHeatingEvent.parse("*4*1*2##"))
-    zone_empty.handle_event(OWNHeatingEvent.parse("*#4*2#0*20*150##"))
-    assert zone_empty._zone_active is True
-    assert zone_empty._active_source == "zone"
-    assert zone_empty.hvac_action == HVACAction.HEATING
+    # Zone state Dimension 7 protection resets all levels via _mark_actuators_off()
+    zone.handle_event(OWNHeatingEvent.parse("*4*1*1##"))
+    zone.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*180##"))
+    dim7_off = SimpleNamespace(
+        who=4,
+        where="1",
+        zone=1,
+        where_param=[],
+        dimension=7,
+        message_type="zone_state",
+        zone_state="protection",
+        human_readable_log="Zone 1 protection",
+    )
+    zone.handle_event(dim7_off)  # type: ignore[arg-type]
+    assert zone.extra_state_attributes["actuator_levels"] == {"3": 0}
 
-    # Running fan-coil speed ("medium") is cleared to "off" on Z#0 inactive 100
+    # Pre-PR #952 Z#0 behavior preserved on actuators while not touching actuator_levels
     zone_fan = _make_zone(hass, gw, "3", fan=True)
     zone_fan.handle_event(OWNHeatingEvent.parse("*4*1*3##"))
     zone_fan.handle_event(OWNHeatingEvent.parse("*#4*3#2*20*7##"))
     assert zone_fan.extra_state_attributes["running_fan_speed"] == "medium"
-    zone_fan.handle_event(OWNHeatingEvent.parse("*#4*3#0*20*100##"))
+    zone_fan.handle_event(OWNHeatingEvent.parse("*#4*3#0*20*150##"))
+    assert "actuator_levels" not in zone_fan.extra_state_attributes
+    zone_fan.handle_event(OWNHeatingEvent.parse("*#4*3*19*0*0##"))
     assert zone_fan.extra_state_attributes["running_fan_speed"] == "off"
 
 
 # ---------------------------------------------------------------------------
-# 4. MyHOMEThermoSwitch proportional attributes
+# 4. MyHOMEThermoSwitch proportional attributes & _unrecorded_attributes
 # ---------------------------------------------------------------------------
 
 
 def test_thermo_switch_per_actuator_and_whole_zone_output_levels(
     hass: HomeAssistant,
 ) -> None:
-    """MyHOMEThermoSwitch exposes output_level (Z#N) and actuator_levels (Z) on 20 and #20."""
+    """MyHOMEThermoSwitch excludes output_level/actuator_levels from recorder and limits Dim 20 levels to Z#N."""
+    assert {"output_level", "actuator_levels"} <= (
+        MyHOMEThermoSwitch._Entity__combined_unrecorded_attributes
+    )
+
     gw = _make_gateway("MyHomeServer1", "2.87.13")
 
     # 1) Single-actuator switch 7#1
@@ -714,6 +836,14 @@ def test_thermo_switch_per_actuator_and_whole_zone_output_levels(
     sw_act.async_write_ha_state = MagicMock()
 
     assert "output_level" not in sw_act.extra_state_attributes
+    # Z#0 and bare Z on empty switch do NOT set output_level
+    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#0*20*150##"))
+    assert sw_act.is_on is True
+    assert "output_level" not in sw_act.extra_state_attributes
+    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7*20*130##"))
+    assert sw_act.is_on is True
+    assert "output_level" not in sw_act.extra_state_attributes
+
     # #20 write at 60 %
     sw_act.handle_event(OWNHeatingCommand.parse("*#4*7#1*#20*160##"))  # type: ignore[arg-type]
     assert sw_act.is_on is True
@@ -722,17 +852,16 @@ def test_thermo_switch_per_actuator_and_whole_zone_output_levels(
     sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#1*20*125##"))
     assert sw_act.is_on is True
     assert sw_act.extra_state_attributes["output_level"] == 25
-    # Group Z#0 proportional 80 %
-    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#0*20*180##"))
-    assert sw_act.extra_state_attributes["output_level"] == 80
-    # Group Z#0 discrete inactive resets to 0
+    # Group Z#0 (*#4*7#0*20*150## / *#4*7#0*20*1##) and bare Z (*#4*7*20*130##) do NOT mutate output_level
+    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#0*20*150##"))
+    assert sw_act.extra_state_attributes["output_level"] == 25
+    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#0*20*1##"))
+    assert sw_act.extra_state_attributes["output_level"] == 25
+    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7*20*130##"))
+    assert sw_act.extra_state_attributes["output_level"] == 25
     sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#0*20*0##"))
     assert sw_act.is_on is False
-    assert sw_act.extra_state_attributes["output_level"] == 0
-    # Group Z#0 discrete active pops output_level
-    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#1*20*140##"))
-    sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#0*20*1##"))
-    assert "output_level" not in sw_act.extra_state_attributes
+    assert sw_act.extra_state_attributes["output_level"] == 25
     # Point discrete active pops output_level; point discrete inactive sets 0
     sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#1*20*140##"))
     sw_act.handle_event(OWNHeatingEvent.parse("*#4*7#1*20*1##"))
@@ -772,21 +901,31 @@ def test_thermo_switch_per_actuator_and_whole_zone_output_levels(
     sw_zone.hass = hass
     sw_zone.async_write_ha_state = MagicMock()
 
-    # Empty state receiving Z#0 proportional initializes actuator "1"
-    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#0*20*130##"))
-    assert sw_zone.extra_state_attributes["actuator_levels"] == {"1": 30}
+    # Empty whole-zone switch receiving Z#0 or bare Z tracks #785 binary actuators only, NEVER actuator_levels
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#0*20*150##"))
+    assert sw_zone.extra_state_attributes["actuators"] == {"1": "on"}
+    assert "actuator_levels" not in sw_zone.extra_state_attributes
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8*20*130##"))
+    assert "actuator_levels" not in sw_zone.extra_state_attributes
+
+    # Explicit Z#3 sets actuator_levels["3"] = 90
     sw_zone.handle_event(OWNHeatingCommand.parse("*#4*8#3*#20*190##"))  # type: ignore[arg-type]
     assert sw_zone.extra_state_attributes["actuators"] == {"1": "on", "3": "on"}
-    assert sw_zone.extra_state_attributes["actuator_levels"] == {"1": 30, "3": 90}
-    # Z#0 proportional updates all known proportional keys
+    assert sw_zone.extra_state_attributes["actuator_levels"] == {"3": 90}
+
+    # Z#0 (*#4*8#0*20*150##, *#4*8#0*20*1##) and bare Z (*#4*8*20*130##) do NOT alter actuator_levels
     sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#0*20*150##"))
-    assert sw_zone.extra_state_attributes["actuator_levels"] == {"1": 50, "3": 50}
-    # Z#0 discrete inactive resets to 0
-    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#0*20*0##"))
-    assert sw_zone.extra_state_attributes["actuator_levels"] == {"1": 0, "3": 0}
-    # Z#0 discrete active clears actuator_levels
+    assert sw_zone.extra_state_attributes["actuator_levels"] == {"3": 90}
     sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#0*20*1##"))
+    assert sw_zone.extra_state_attributes["actuator_levels"] == {"3": 90}
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8*20*130##"))
+    assert sw_zone.extra_state_attributes["actuator_levels"] == {"3": 90}
+    # Explicit Z#3 discrete active pops "3"; discrete inactive sets 0
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#3*20*1##"))
     assert "actuator_levels" not in sw_zone.extra_state_attributes
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#3*20*140##"))
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#3*20*0##"))
+    assert sw_zone.extra_state_attributes["actuator_levels"] == {"3": 0}
     # Out-of-range actuator id (> 9) is ignored cleanly
     sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#10*20*1##"))
     assert "10" not in sw_zone.extra_state_attributes["actuators"]
@@ -925,7 +1064,11 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
         "*#4*3#1*20*8##",
         "*#4*3#1*20*14##",
         "*#4*3#1*20*22##",
+        "*#4*3*20*130##",
+        "*#4*1*20*130##",
+        "*#4*1#4#01*20*130##",
         "*#4*3#0*20*150##",
+        "*#4*3#0*20*1##",
         "*#4*0#1*20*150##",
         "*#4*#0*20*150##",
         "*#4*#3*20*150##",
@@ -977,23 +1120,10 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     assert await sensor_unload_entry(hass, entry)
 
 
-@pytest.mark.parametrize(
-    ("stored_val", "expected_val"),
-    [
-        (42, 42),
-        (0, 0),
-        (100, 100),
-        (75.0, 75),
-        (-1, None),
-        (101, None),
-        (42.5, None),
-        ("invalid", None),
-    ],
-)
-async def test_actuator_output_sensor_restore_state_bounds(
-    hass: HomeAssistant, stored_val: Any, expected_val: int | None
+async def test_actuator_output_sensor_is_plain_sensor_entity_not_restore_sensor(
+    hass: HomeAssistant,
 ) -> None:
-    """RestoreSensor restores only bounded integer 0..100 percentages across restarts."""
+    """MyHOMEActuatorOutputSensor inherits SensorEntity (not RestoreSensor) and ignores restore cache."""
     gw = _make_gateway("MyHomeServer1", "2.87.13")
     sensor = MyHOMEActuatorOutputSensor(
         hass=hass,
@@ -1008,6 +1138,10 @@ async def test_actuator_output_sensor_restore_state_bounds(
         model="Heating Zone",
         gateway=gw,
     )
+    assert isinstance(sensor, SensorEntity)
+    assert not isinstance(sensor, RestoreSensor)
+    assert not isinstance(sensor, MyHOMESensorEntity)
+
     sensor.hass = hass
     sensor.platform = MagicMock()
     sensor.platform_data = SimpleNamespace(
@@ -1022,16 +1156,186 @@ async def test_actuator_output_sensor_restore_state_bounds(
         hass,
         [
             (
-                State(sensor.entity_id, str(stored_val)),
+                State(sensor.entity_id, "60"),
                 SensorExtraStoredData(
-                    native_value=stored_val,
+                    native_value=60,
                     native_unit_of_measurement=PERCENTAGE,
                 ),
             )
         ],
     )
     await sensor.async_added_to_hass()
-    assert sensor.native_value == expected_val
+    assert sensor.native_value is None
+
+
+async def test_actuator_output_sensor_unknown_after_unload_and_resetup(
+    hass: HomeAssistant,
+) -> None:
+    """After unload + re-setup with '60' in restore cache, sensor is unknown on MH202 and climate-less zones."""
+    # 1) MH202 (ACTUATOR_REQUEST_REFUSED): Zone 1 (with climate) + Zone 2 (climate-less)
+    entry_mh202 = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "host": "192.0.2.98",
+            "port": 20000,
+            "password": "pass",
+            "mac": MAC,
+            "friendly_name": "MH202",
+            "manufacturer": "BTicino S.p.A.",
+            "name": "MH202",
+            "firmware": "1.0.24",
+        },
+        unique_id=MAC,
+    )
+    entry_mh202.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True, "Message": None},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+    ):
+        assert await hass.config_entries.async_setup(entry_mh202.entry_id)
+        await hass.async_block_till_done()
+        assert entry_mh202.runtime_data.gateway.actuator_request_refused is True
+        entry_mh202.runtime_data.gateway._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+
+        signal = f"myhome_message_{MAC}"
+        for raw in (
+            "*#4*1*0*0200##",
+            "*#4*1#3*20*160##",
+            "*#4*2#3*20*160##",
+        ):
+            async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
+        await hass.async_block_till_done()
+
+        ent_reg = er.async_get(hass)
+        assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-1") is not None
+        assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-2") is None
+        s1_eid = ent_reg.async_get_entity_id(
+            "sensor", DOMAIN, f"{MAC}-4-1#3-output-level"
+        )
+        s2_eid = ent_reg.async_get_entity_id(
+            "sensor", DOMAIN, f"{MAC}-4-2#3-output-level"
+        )
+        assert s1_eid is not None and s2_eid is not None
+        assert hass.states.get(s1_eid).state == "60"  # type: ignore[union-attr]
+        assert hass.states.get(s2_eid).state == "60"  # type: ignore[union-attr]
+
+        assert await hass.config_entries.async_unload(entry_mh202.entry_id)
+        await hass.async_block_till_done()
+
+        mock_restore_cache_with_extra_data(
+            hass,
+            [
+                (
+                    State(s1_eid, "60"),
+                    SensorExtraStoredData(
+                        native_value=60, native_unit_of_measurement=PERCENTAGE
+                    ),
+                ),
+                (
+                    State(s2_eid, "60"),
+                    SensorExtraStoredData(
+                        native_value=60, native_unit_of_measurement=PERCENTAGE
+                    ),
+                ),
+            ],
+        )
+
+        assert await hass.config_entries.async_setup(entry_mh202.entry_id)
+        await hass.async_block_till_done()
+        entry_mh202.runtime_data.gateway._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+
+        sensor_comp = hass.data["sensor"]
+        for eid in (s1_eid, s2_eid):
+            state_after = hass.states.get(eid)
+            assert state_after is not None
+            assert state_after.state == STATE_UNKNOWN
+            ent_after = sensor_comp.get_entity(eid)
+            assert ent_after is not None
+            assert ent_after.native_value is None
+
+        assert await hass.config_entries.async_unload(entry_mh202.entry_id)
+        await hass.async_block_till_done()
+
+    # 2) MyHomeServer1 climate-less zone 3#3 with prior "60" in restore cache also starts unknown
+    mac_mhs1 = "00:03:50:00:09:09"
+    entry_mhs1 = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "host": "192.0.2.99",
+            "port": 20000,
+            "password": "pass",
+            "mac": mac_mhs1,
+            "friendly_name": "MyHomeServer1",
+            "manufacturer": "BTicino S.p.A.",
+            "name": "MyHomeServer1",
+            "firmware": "2.87.13",
+        },
+        unique_id=mac_mhs1,
+    )
+    entry_mhs1.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True, "Message": None},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+    ):
+        assert await hass.config_entries.async_setup(entry_mhs1.entry_id)
+        await hass.async_block_till_done()
+        entry_mhs1.runtime_data.gateway._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+
+        async_dispatcher_send(
+            hass,
+            f"myhome_message_{mac_mhs1}",
+            OWNMessage.parse("*#4*3#3*20*160##"),
+        )
+        await hass.async_block_till_done()
+
+        s3_eid = er.async_get(hass).async_get_entity_id(
+            "sensor", DOMAIN, f"{mac_mhs1}-4-3#3-output-level"
+        )
+        assert s3_eid is not None
+        assert hass.states.get(s3_eid).state == "60"  # type: ignore[union-attr]
+
+        assert await hass.config_entries.async_unload(entry_mhs1.entry_id)
+        await hass.async_block_till_done()
+
+        mock_restore_cache_with_extra_data(
+            hass,
+            [
+                (
+                    State(s3_eid, "60"),
+                    SensorExtraStoredData(
+                        native_value=60, native_unit_of_measurement=PERCENTAGE
+                    ),
+                )
+            ],
+        )
+
+        assert await hass.config_entries.async_setup(entry_mhs1.entry_id)
+        await hass.async_block_till_done()
+        entry_mhs1.runtime_data.gateway._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+
+        s3_state = hass.states.get(s3_eid)
+        assert s3_state is not None
+        assert s3_state.state == STATE_UNKNOWN
+        s3_ent = hass.data["sensor"].get_entity(s3_eid)
+        assert s3_ent is not None
+        assert s3_ent.native_value is None
+
+        assert await hass.config_entries.async_unload(entry_mhs1.entry_id)
+        await hass.async_block_till_done()
 
 
 async def test_actuator_output_sensor_router_isolation(
@@ -1105,20 +1409,68 @@ async def test_actuator_output_sensor_router_isolation(
         assert spy_sensor.call_count == 1
 
 
-async def test_actuator_output_sensor_polling_f455_watch_and_interface_isolation(
+@pytest.mark.parametrize(
+    ("model", "firmware", "actuator_refused", "zone_actuator_refused"),
+    [
+        ("MyHomeServer1", "2.87.13", False, False),
+        ("MH202", "1.0.24", True, False),
+        ("F461", "2.0.11", False, False),
+        ("F455", "1.0.76", False, True),
+    ],
+)
+async def test_actuator_output_sensor_unconditional_watch_across_gateways(
+    hass: HomeAssistant,
+    model: str,
+    firmware: str,
+    actuator_refused: bool,
+    zone_actuator_refused: bool,
+) -> None:
+    """watch_zone_actuators('1#3') is registered unconditionally when not interface_refused."""
+    gw = _make_gateway(
+        model,
+        firmware,
+        actuator_refused=actuator_refused,
+        zone_actuator_refused=zone_actuator_refused,
+    )
+    unsub = MagicMock()
+    gw.watch_zone_actuators = MagicMock(return_value=unsub)
+
+    sensor = MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="1",
+        where="1#3",
+        zone="1",
+        actuator="3",
+        interface=None,
+        standalone=True,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw,
+    )
+    assert sensor._poll_on_add is False
+    sensor.hass = hass
+    sensor.entity_id = f"sensor.{model.lower()}_zone_1_act_3"
+    sensor.async_write_ha_state = MagicMock()
+
+    await sensor.async_added_to_hass()
+    gw.watch_zone_actuators.assert_called_once_with("1#3")
+
+    sensor._call_on_remove_callbacks()
+    unsub.assert_called_once()
+
+
+async def test_actuator_output_sensor_polling_guards_no_watch_fallback_and_interface_isolation(
     hass: HomeAssistant,
 ) -> None:
-    """Verify F455 watch_zone_actuators, async_update gateway guards, and #4#01 interface isolation."""
-    # 1) F455 (zone_actuator_request_refused=True) registers watch_zone_actuators("1#3")
+    """Verify async_update guards, _poll_on_add fallback without watch_zone_actuators, and #4#01 isolation."""
+    # 1) async_update sends *#4*1#3*20## (NEVER dimensionless *#4*1#3##!) when allowed
     gw_f455 = _make_gateway(
         "F455",
         "1.0.76",
         actuator_refused=False,
         zone_actuator_refused=True,
     )
-    unsub = MagicMock()
-    gw_f455.watch_zone_actuators = MagicMock(return_value=unsub)
-
     s_f455 = MyHOMEActuatorOutputSensor(
         hass=hass,
         name="Climate Zone 1",
@@ -1138,13 +1490,13 @@ async def test_actuator_output_sensor_polling_f455_watch_and_interface_isolation
     await s_f455.async_added_to_hass()
     gw_f455.watch_zone_actuators.assert_called_once_with("1#3")
 
-    # async_update sends *#4*1#3*20## (NEVER dimensionless *#4*1#3##!)
     await s_f455.async_update()
     gw_f455.send_status_request.assert_awaited_once()
     sent_cmd = gw_f455.send_status_request.await_args.args[0]
     assert str(sent_cmd) == "*#4*1#3*20##"
 
-    # 2) H4684 / MH200 (actuator_request_refused=True) skips async_update and watch_zone_actuators
+    # 2) H4684 / MH200 (actuator_request_refused=True) still registers watch_zone_actuators
+    #    (gateway gates sending) while async_update skips send_status_request
     gw_h4684 = _make_gateway(
         "H4684",
         "2.0.54",
@@ -1168,7 +1520,7 @@ async def test_actuator_output_sensor_polling_f455_watch_and_interface_isolation
     s_h4684.entity_id = "sensor.h4684_act_3"
     s_h4684.async_write_ha_state = MagicMock()
     await s_h4684.async_added_to_hass()
-    gw_h4684.watch_zone_actuators.assert_not_called()
+    gw_h4684.watch_zone_actuators.assert_called_once_with("1#3")
     await s_h4684.async_update()
     gw_h4684.send_status_request.assert_not_awaited()
 
@@ -1197,28 +1549,78 @@ async def test_actuator_output_sensor_polling_f455_watch_and_interface_isolation
     s_if.async_write_ha_state = MagicMock()
     assert s_if.unique_id == f"{gw_if.mac}-4-1#3#4#01-output-level"
     assert s_if.extra_state_attributes == {"zone": 1, "actuator": 3, "Int": "01"}
+    assert s_if._poll_on_add is False
 
     await s_if.async_added_to_hass()
     gw_if.watch_zone_actuators.assert_not_called()
     await s_if.async_update()
     gw_if.send_status_request.assert_not_awaited()
 
-    # When profile allows interface requests, async_update sends *#4*1#3#4#01*20##
+    # When profile allows interface requests, watch + async_update use *#4*1#3#4#01*20##
     gw_if.interface_zone_request_refused = False
+    await s_if.async_added_to_hass()
+    gw_if.watch_zone_actuators.assert_called_once_with("1#3#4#01")
     await s_if.async_update()
     assert str(gw_if.send_status_request.await_args.args[0]) == "*#4*1#3#4#01*20##"
 
-    # Main-bus 1#3 frame ignored; #4#01 frame accepted
+    # Main-bus 1#3 frame and bare 1#4#01 ignored; explicit 1#3#4#01 frame accepted
     s_if.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*155##"))
+    assert s_if.native_value is None
+    s_if.handle_event(OWNHeatingEvent.parse("*#4*1#4#01*20*130##"))
     assert s_if.native_value is None
     s_if.handle_event(OWNHeatingEvent.parse("*#4*1#3#4#01*20*145##"))
     assert s_if.native_value == 45
+
+    # 4) _poll_on_add fallback when watch_zone_actuators is absent on gateway
+    gw_no_watch = _make_gateway("MyHomeServer1", "2.87.13", interface_refused=True)
+    del gw_no_watch.watch_zone_actuators
+    s_no_watch = MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="1",
+        where="1#3",
+        zone="1",
+        actuator="3",
+        interface=None,
+        standalone=True,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw_no_watch,
+    )
+    assert s_no_watch._poll_on_add is True
+    s_no_watch.hass = hass
+    s_no_watch.entity_id = "sensor.no_watch_act_3"
+    s_no_watch.async_write_ha_state = MagicMock()
+    await s_no_watch.async_added_to_hass()
+    gw_no_watch.send_status_request.assert_awaited_once()
+    assert str(gw_no_watch.send_status_request.await_args.args[0]) == "*#4*1#3*20##"
+
+    # With interface_refused=True and watch_zone_actuators absent, _poll_on_add remains False
+    s_no_watch_if = MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Climate Zone 1 (Interface 01)",
+        device_id="1#4#01",
+        where="1#3",
+        zone="1",
+        actuator="3",
+        interface="01",
+        standalone=True,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw_no_watch,
+    )
+    assert s_no_watch_if._poll_on_add is False
+    s_no_watch_if.hass = hass
+    s_no_watch_if.entity_id = "sensor.no_watch_if01_act_3"
+    s_no_watch_if.async_write_ha_state = MagicMock()
+    await s_no_watch_if.async_added_to_hass()
+    gw_no_watch.send_status_request.assert_awaited_once()  # unchanged
 
 
 async def test_actuator_output_sensor_all_reset_paths(
     hass: HomeAssistant,
 ) -> None:
-    """Verify every reset-to-0 path on MyHOMEActuatorOutputSensor (standalone vs central)."""
+    """Verify Z#0/bare-Z are ignored and every zone-wide reset-to-0 path works (standalone vs central)."""
     gw = _make_gateway("MyHomeServer1", "2.87.13")
     sensor = MyHOMEActuatorOutputSensor(
         hass=hass,
@@ -1246,10 +1648,23 @@ async def test_actuator_output_sensor_all_reset_paths(
     sensor.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*0##"))
     assert sensor.native_value == 0
 
-    # 2) Group selector Z#0 proportional and inactive
-    sensor.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*145##"))
-    assert sensor.native_value == 45
-    sensor.handle_event(OWNHeatingEvent.parse("*#4*1#0*20*0##"))
+    # 2) Z#0 (*#4*1#0*20*145##, *#4*1#0*20*1##, *#4*1#0*20*0##) and bare Z (*#4*1*20*130##, *#4*1*20*0##)
+    #    never set or clear MyHOMEActuatorOutputSensor!
+    sensor.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*165##"))
+    assert sensor.native_value == 65
+    for ignored in (
+        "*#4*1#0*20*145##",
+        "*#4*1#0*20*1##",
+        "*#4*1#0*20*0##",
+        "*#4*1#0*20*100##",
+        "*#4*1*20*130##",
+        "*#4*1*20*0##",
+    ):
+        sensor.handle_event(OWNHeatingEvent.parse(ignored))
+        assert sensor.native_value == 65
+
+    # Explicit 1#3*20*100 resets to 0
+    sensor.handle_event(OWNHeatingEvent.parse("*#4*1#3*20*100##"))
     assert sensor.native_value == 0
 
     # 3) Inactive Dimension 19 -> 0 (while active Dim 19 leaves per-actuator level intact)
@@ -1309,9 +1724,9 @@ async def test_live_myhomeserver1_fancoil_ramp_with_dataclass_device_info(
     hass: HomeAssistant,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Replay live ramp trace under HA 2026.12+ slotted dataclass DeviceInfo (core#192323)."""
+    """Replay seeded ramp trace under HA 2026.12+ slotted dataclass DeviceInfo (core#192323)."""
     monkeypatch.setattr(myhome_device, "DeviceInfo", StrictDataclassDeviceInfo)
-    await test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(hass)
+    await test_issue_949_ramp_with_seeded_zone_context_and_paired_writes(hass)
 
 
 async def test_sensor_non_creation_and_pruning_with_dataclass_device_info(

@@ -15,6 +15,7 @@ from homeassistant.components.sensor import DOMAIN as PLATFORM
 from homeassistant.components.sensor import (
     RestoreSensor,
     SensorDeviceClass,
+    SensorEntity,
     SensorStateClass,
 )
 from homeassistant.components.sensor.const import (
@@ -110,7 +111,6 @@ from .where_grammar import (
     thermo_dim20_actuator_target,
     thermo_dim20_level,
     thermo_dim20_status,
-    thermo_event_actuator,
     thermo_event_interface,
     thermo_event_zone,
 )
@@ -1467,11 +1467,8 @@ class MyHOMEIlluminanceSensor(MyHOMESensorEntity):
         return None
 
 
-class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
+class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
     """Percentage output level (0-100 %) for a WHO=4 0-10 V proportional actuator (#949)."""
-
-    _integral_native_value = True
-    _poll_on_add = False
 
     def __init__(
         self,
@@ -1523,6 +1520,14 @@ class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
         if self._interface is not None:
             attrs["Int"] = self._interface
         self._attr_extra_state_attributes = attrs
+        who4_target = getattr(gateway, "_who4_target", lambda: gateway)()
+        interface_refused = (
+            self._interface is not None
+            and getattr(who4_target, "interface_zone_request_refused", False) is True
+        )
+        self._poll_on_add = not interface_refused and not callable(
+            getattr(gateway, "watch_zone_actuators", None)
+        )
 
     @property
     def _standalone(self) -> bool:
@@ -1530,17 +1535,6 @@ class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
         if self._standalone_config is not None:
             return self._standalone_config
         return getattr(self._gateway_handler, "has_central_unit", False) is not True
-
-    async def async_restore_last_state(self, last_state: State) -> None:
-        """Restore bounded integer percentage (0..100) across restarts."""
-        await super().async_restore_last_state(last_state)
-        val = self._attr_native_value
-        if isinstance(val, float):
-            val = int(val) if val.is_integer() else None
-        if not isinstance(val, int) or isinstance(val, bool) or not (0 <= val <= 100):
-            self._attr_native_value = None
-            return
-        self._attr_native_value = val
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
@@ -1552,7 +1546,7 @@ class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
             self._publish_state()
 
     async def async_added_to_hass(self) -> None:
-        """Subscribe to central mode OFF updates and F455 per-actuator Dimension 20 watches."""
+        """Subscribe to central mode OFF updates and Dimension 20 actuator watches."""
         target_hass = self.hass or self._hass
         if target_hass is not None and self._standalone_config is not True:
             self.async_on_remove(
@@ -1570,13 +1564,9 @@ class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
             self._interface is not None
             and getattr(who4_target, "interface_zone_request_refused", False) is True
         )
-        if (
-            not interface_refused
-            and getattr(who4_target, "zone_actuator_request_refused", False) is True
-        ):
-            watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
-            if callable(watch):
-                self.async_on_remove(watch(self._full_where))
+        watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
+        if callable(watch) and not interface_refused:
+            self.async_on_remove(watch(self._full_where))
 
     async def async_update(self) -> None:
         """Request Dimension 20 status for this actuator on gateways that forward it."""
@@ -1609,18 +1599,6 @@ class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
         if dimension == 20:
             target = thermo_dim20_actuator_target(message)
             if target == (self._zone, self._actuator, self._interface):
-                lvl = thermo_dim20_level(message)
-                if lvl is not None:
-                    new_val = lvl
-                else:
-                    status = thermo_dim20_status(message)
-                    if status is not None and not status[0]:
-                        new_val = 0
-            elif (
-                target is None
-                and not is_central_thermo_where(message)
-                and thermo_event_actuator(message) == "0"
-            ):
                 lvl = thermo_dim20_level(message)
                 if lvl is not None:
                     new_val = lvl
