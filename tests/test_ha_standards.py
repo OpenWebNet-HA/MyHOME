@@ -1,8 +1,12 @@
 """Automated test suite enforcing Home Assistant architectural standards."""
 
 import json
+import struct
+import zlib
+from pathlib import Path
 
 from scripts.verify_ha_standards import (
+    ALLOWED_BRAND_IMAGES,
     CUSTOM_COMPONENTS_DIR,
     TESTS_DIR,
     TYPING_COMPAT_FILE,
@@ -708,3 +712,253 @@ def test_marketplace_manifest_rule_catches_violations(tmp_path):
     check_marketplace_manifest_rule(checker_edge3, root_dir=tmp_path)
     assert any("must not contain duplicates" in err for err in checker_edge3.errors)
     assert any("Could not statically resolve OUTPUT_ZIP" in err for err in checker_edge3.errors)
+
+
+_ADAM7_PASSES = (
+    (0, 0, 8, 8),
+    (4, 0, 8, 8),
+    (0, 4, 4, 8),
+    (2, 0, 4, 4),
+    (0, 2, 2, 4),
+    (1, 0, 2, 2),
+    (0, 1, 1, 2),
+)
+
+
+def _paeth_predictor(a: int, b: int, c: int) -> int:
+    p = a + b - c
+    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    return b if pb <= pc else c
+
+
+def _unfilter_scanlines(raw: bytes, offset: int, width: int, height: int) -> tuple[bytearray, int]:
+    """Decode one PNG pass of 8-bit RGBA scanlines starting at ``offset``."""
+    stride = width * 4
+    out = bytearray(height * stride)
+    prev = bytearray(stride)
+    for y in range(height):
+        ftype = raw[offset]
+        offset += 1
+        row = bytearray(raw[offset : offset + stride])
+        offset += stride
+        for i in range(stride):
+            left = row[i - 4] if i >= 4 else 0
+            up = prev[i]
+            up_left = prev[i - 4] if i >= 4 else 0
+            if ftype == 1:
+                row[i] = (row[i] + left) & 0xFF
+            elif ftype == 2:
+                row[i] = (row[i] + up) & 0xFF
+            elif ftype == 3:
+                row[i] = (row[i] + ((left + up) >> 1)) & 0xFF
+            elif ftype == 4:
+                row[i] = (row[i] + _paeth_predictor(left, up, up_left)) & 0xFF
+            elif ftype != 0:
+                raise ValueError(f"Unsupported PNG filter type {ftype}")
+        out[y * stride : (y + 1) * stride] = row
+        prev = row
+    return out, offset
+
+
+def _parse_png(path: Path) -> tuple[tuple[int, int, int, int, int, int, int], dict[bytes, list[bytes]]]:
+    data = path.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    pos = 8
+    chunks: dict[bytes, list[bytes]] = {}
+    while pos < len(data):
+        length = struct.unpack(">I", data[pos : pos + 4])[0]
+        ctype = data[pos + 4 : pos + 8]
+        cdata = data[pos + 8 : pos + 8 + length]
+        chunks.setdefault(ctype, []).append(cdata)
+        pos += 12 + length
+    ihdr = struct.unpack(">IIBBBBB", chunks[b"IHDR"][0])
+    return ihdr, chunks
+
+
+def _decode_png_rgba(path: Path) -> tuple[int, int, bytearray]:
+    """Decode an 8-bit RGBA PNG (non-interlaced or Adam7 interlaced) using stdlib only."""
+    ihdr, chunks = _parse_png(path)
+    width, height, bit_depth, color_type, _comp, _filt, interlace = ihdr
+    assert (bit_depth, color_type) == (8, 6)
+    raw = zlib.decompress(b"".join(chunks[b"IDAT"]))
+    pixels = bytearray(width * height * 4)
+    if interlace == 0:
+        decoded, _ = _unfilter_scanlines(raw, 0, width, height)
+        return width, height, decoded
+
+    assert interlace == 1
+    offset = 0
+    for x0, y0, dx, dy in _ADAM7_PASSES:
+        pw = (width - x0 + dx - 1) // dx
+        ph = (height - y0 + dy - 1) // dy
+        if pw <= 0 or ph <= 0:
+            continue
+        sub, offset = _unfilter_scanlines(raw, offset, pw, ph)
+        for sy in range(ph):
+            dy_idx = y0 + sy * dy
+            for sx in range(pw):
+                dx_idx = x0 + sx * dx
+                s_idx = (sy * pw + sx) * 4
+                d_idx = (dy_idx * width + dx_idx) * 4
+                pixels[d_idx : d_idx + 4] = sub[s_idx : s_idx + 4]
+    return width, height, pixels
+
+
+def _contrast_ratio(rgb_a: tuple[int, int, int], rgb_b: tuple[int, int, int]) -> float:
+    def rel_lum(rgb: tuple[int, int, int]) -> float:
+        lin = [
+            (c / 255.0) / 12.92 if (c / 255.0) <= 0.03928 else ((c / 255.0 + 0.055) / 1.055) ** 2.4
+            for c in rgb
+        ]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    la, lb = rel_lum(rgb_a), rel_lum(rgb_b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _make_solid_png(width: int, height: int, rgba: tuple[int, int, int, int] = (255, 255, 255, 255)) -> bytes:
+    def chunk(ctype: bytes, cdata: bytes) -> bytes:
+        crc = zlib.crc32(ctype + cdata) & 0xFFFFFFFF
+        return struct.pack(">I", len(cdata)) + ctype + cdata + struct.pack(">I", crc)
+
+    row = b"\x00" + bytes(rgba) * width
+    compressed = zlib.compress(row * height)
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", compressed) + chunk(b"IEND", b"")
+
+
+def test_local_brand_assets_light_and_dark_compliance():
+    """Verify all 8 local brand PNGs match HA specifications, transparency, encoding, and dark contrast."""
+    brand_dir = CUSTOM_COMPONENTS_DIR / "brand"
+    assert sorted(p.name for p in brand_dir.iterdir()) == sorted(ALLOWED_BRAND_IMAGES)
+
+    expected_dims = {
+        "icon.png": (256, 256),
+        "icon@2x.png": (512, 512),
+        "dark_icon.png": (256, 256),
+        "dark_icon@2x.png": (512, 512),
+        "logo.png": (453, 128),
+        "logo@2x.png": (907, 256),
+        "dark_logo.png": (453, 128),
+        "dark_logo@2x.png": (907, 256),
+    }
+
+    decoded: dict[str, tuple[int, int, bytearray]] = {}
+    for name, dims in expected_dims.items():
+        path = brand_dir / name
+        ihdr, chunks = _parse_png(path)
+        width, height, bit_depth, color_type, comp, filt, interlace = ihdr
+        assert (width, height) == dims
+        assert (bit_depth, color_type, comp, filt) == (8, 6, 0, 0)
+        if name.startswith("dark_"):
+            assert interlace == 1, f"{name} should be Adam7 interlaced"
+            assert chunks.get(b"sRGB") == [b"\x00"], f"{name} must include sRGB perceptual chunk"
+            assert path.read_bytes() != (brand_dir / name.removeprefix("dark_")).read_bytes()
+
+        w, h, px = _decode_png_rgba(path)
+        for cx, cy in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+            assert px[(cy * w + cx) * 4 + 3] == 0, f"{name} corner ({cx},{cy}) must be transparent"
+        decoded[name] = (w, h, px)
+
+    # Dark icons: grey Legrand badge + (R) preserved verbatim; MyHOME typography recolored to #F2F2F2
+    for light_name, dark_name, half_y, badge_x in (
+        ("icon.png", "dark_icon.png", 128, 140),
+        ("icon@2x.png", "dark_icon@2x.png", 256, 280),
+    ):
+        w, h, l_px = decoded[light_name]
+        _, _, d_px = decoded[dark_name]
+        opaque_typo = 0
+        for y in range(h):
+            for x in range(w):
+                idx = (y * w + x) * 4
+                dr, dg, db, da = d_px[idx : idx + 4]
+                if y < half_y and x >= badge_x:
+                    assert d_px[idx : idx + 4] == l_px[idx : idx + 4]
+                elif da == 255:
+                    assert (dr, dg, db) == (242, 242, 242)
+                    opaque_typo += 1
+        assert opaque_typo > 1000
+        assert _contrast_ratio((242, 242, 242), (28, 28, 28)) >= 10.0
+
+    # Dark logos: Legrand red & BTicino orange 'b' preserved verbatim; MyHOME & 'ticino' recolored to #F2F2F2
+    for light_name, dark_name, row_y, red_bounds, orange_bounds, ticino_x in (
+        ("logo.png", "dark_logo.png", 89, (168, 280), (310, 333), 334),
+        ("logo@2x.png", "dark_logo@2x.png", 178, (335, 560), (620, 666), 667),
+    ):
+        w, h, l_px = decoded[light_name]
+        _, _, d_px = decoded[dark_name]
+        opaque_dark_typo = 0
+        for y in range(h):
+            for x in range(w):
+                idx = (y * w + x) * 4
+                dr, dg, db, da = d_px[idx : idx + 4]
+                if y >= row_y and (
+                    red_bounds[0] <= x <= red_bounds[1]
+                    or orange_bounds[0] <= x <= orange_bounds[1]
+                ):
+                    assert d_px[idx : idx + 4] == l_px[idx : idx + 4]
+                elif da == 255 and (y < row_y - 2 or x >= ticino_x):
+                    assert (dr, dg, db) == (242, 242, 242)
+                    opaque_dark_typo += 1
+        assert opaque_dark_typo > 1000
+
+
+def test_brand_dir_validation_catches_invalid_dark_and_size_variants(tmp_path):
+    """Verify check_marketplace_manifest_rule catches unknown files, bad dimensions, and identical dark fallbacks."""
+    (tmp_path / "hacs.json").write_text(
+        json.dumps(
+            {
+                "name": "MyHOME",
+                "zip_release": True,
+                "filename": "myhome.zip",
+                "homeassistant": "2026.8.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_dir = tmp_path / "custom_components" / "myhome"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "domain": "myhome",
+                "name": "MyHOME",
+                "categories": ["hubs_protocols.building_automation"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    wf_dir = tmp_path / ".github" / "workflows"
+    wf_dir.mkdir(parents=True)
+    (wf_dir / "validate.yml").write_text(
+        "jobs:\n"
+        "  validate:\n"
+        "    steps:\n"
+        "      - uses: hacs/action@d556e736723344f83838d08488c983a15381059a\n"
+        "        with:\n"
+        "          category: integration\n",
+        encoding="utf-8",
+    )
+
+    brand_dir = manifest_dir / "brand"
+    brand_dir.mkdir()
+    (brand_dir / "nested").mkdir()
+    (brand_dir / "extra.png").write_bytes(_make_solid_png(16, 16))
+    (brand_dir / "icon.png").write_bytes(_make_solid_png(128, 128))
+    (brand_dir / "logo.png").write_bytes(_make_solid_png(400, 64))
+    icon_2x_bytes = _make_solid_png(512, 512, (0, 0, 0, 255))
+    (brand_dir / "icon@2x.png").write_bytes(icon_2x_bytes)
+    (brand_dir / "dark_icon@2x.png").write_bytes(icon_2x_bytes)
+    (brand_dir / "logo@2x.png").write_bytes(_make_solid_png(907, 256))
+
+    checker = StandardsChecker()
+    check_marketplace_manifest_rule(checker, root_dir=tmp_path)
+    assert any("Local brand entry 'brand/nested' is not a file" in err for err in checker.errors)
+    assert any("Unexpected file 'brand/extra.png' in brand/" in err for err in checker.errors)
+    assert any("Local brand asset 'icon.png' is 128x128, expected 256x256" in err for err in checker.errors)
+    assert any("Local brand asset 'logo.png' is 400x64, shortest side must be 128..256 px" in err for err in checker.errors)
+    assert any("Dark brand asset 'dark_icon@2x.png' is byte-identical to 'icon@2x.png'" in err for err in checker.errors)
+    assert any("Required local brand asset 'dark_icon.png' missing from brand/" in err for err in checker.errors)
