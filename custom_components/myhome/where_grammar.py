@@ -270,6 +270,34 @@ def canonical_thermo_zone(where: str) -> str | None:
     return str(zone_int)
 
 
+def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
+    """Parse the "standalone thermostats" entry option: zone numbers 1..99 of the local bus.
+
+    Returns ``(zones, is_valid)``: the zones as ``canonical_thermo_zone`` spells them
+    (``"2"``, never ``"02"`` or ``"#2"``), sorted, without duplicates; ``is_valid`` is False
+    when an item is not a zone (the central unit ``#0``, a probe ``102``, ``0``, an actuator
+    ``2#1``, text). A string is split on commas, spaces and newlines.
+    """
+    if raw is None:
+        return [], True
+    if isinstance(raw, str):
+        items: list[Any] = [item for item in re.split(r"[\s,;]+", raw) if item]
+    elif isinstance(raw, (list, tuple, set, frozenset)):
+        items = [item for item in raw if str(item).strip()]
+    else:
+        return [], False
+    zones: set[str] = set()
+    for item in items:
+        text = str(item).strip()
+        if not text.isascii() or not text.isdigit() or is_probe(text):
+            return [], False
+        zone = canonical_thermo_zone(text)
+        if zone is None:
+            return [], False
+        zones.add(zone)
+    return sorted(zones, key=int), True
+
+
 def is_probe(where: str) -> bool:
     """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
 
@@ -357,6 +385,18 @@ def is_central_unit_report(message: Any) -> bool:
         return True
     what = frame.split("*")[2].split("#", 1)[0]
     return what in _CENTRAL_ZONE_STATUS_WHATS
+
+
+def central_report_zone(message: Any) -> str | None:
+    """The zone (``"1"``..``"99"``) a central unit's own report is about, else ``None``.
+
+    For a frame :func:`is_central_unit_report` accepts whose WHERE is ``#Z``: ``*4*110*#3##``
+    and ``*#4*#3*14*0250*1##`` give ``"3"``. ``#0`` / ``#0#N`` (the central unit itself) and the
+    generic ``*4*310*#Z##`` / ``*4*311*#Z##`` give ``None``.
+    """
+    if not is_central_unit_report(message):
+        return None
+    return canonical_thermo_zone(str(getattr(message, "where", None) or "").strip())
 
 
 def canonical_point_spelling(where: str) -> str:

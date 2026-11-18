@@ -633,12 +633,12 @@ def test_oracle_check_enforces_who16_pin_now_that_manifest_pins_ownd_2_0_0b13(
 
 
 def test_generate_gateway_options_table_introspects_and_validates_parity(tmp_path: Path):
-    """Options table introspects all 47 Options Flow keys and raises ValueError on any drift."""
+    """Options table introspects all 48 Options Flow keys and raises ValueError on any drift."""
     import json
 
     flow_keys = ugp.extract_options_flow_keys()
     strings_keys = ugp.extract_strings_options_keys()
-    assert len(flow_keys) == 47
+    assert len(flow_keys) == 48
     assert flow_keys == strings_keys
 
     table = ugp.generate_gateway_options_table()

@@ -524,6 +524,15 @@ GATEWAY_OPTIONS_SPECS: list[dict[str, object]] = [
         "description": "Newline- or comma-separated `WHO/WHERE` addresses (e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and fault tracking.",
     },
     {
+        "keys": ("standalone_zones",),
+        "option": "**Standalone Thermostats**",
+        "key_cell": "`standalone_zones`",
+        "selector": "Text",
+        "default": "`[]`",
+        "limits": "Zones `1`..`99` (local bus)",
+        "description": "Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`.",
+    },
+    {
         "keys": ("bus_topology",),
         "option": "**Bus Topology**",
         "key_cell": "`bus_topology`",
