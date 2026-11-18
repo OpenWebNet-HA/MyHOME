@@ -720,6 +720,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._failure_detected = bool(last_state.attributes.get("failure_detected", False))
                 self._battery_fault = bool(last_state.attributes.get("battery_fault", False))
         if last_state is not None and last_state.state is not None:
+            self._restore_cooling_seen(last_state)  # first: `cool` is then a mode the zone can be restored in
             try:
                 restored_mode = HVACMode(last_state.state)
                 # Any configured mode is restored (the plant's next frames replace it); the
@@ -800,9 +801,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # What a setpoint write found before the restart; a report of the central unit
                 # for this zone still overrides it (``_note_central_zone_report``).
                 self._set_standalone_detected(True)
-                self._refresh_hvac_modes()
-            if last_state.attributes.get("cooling_seen") is True and not self._cooling_configured:
-                self._cooling = True  # what the valve status showed before the restart
                 self._refresh_hvac_modes()
             restored_knob = last_state.attributes.get("knob_pos")
             if isinstance(restored_knob, str) and restored_knob and restored_knob != "UNKNOWN":
@@ -2177,6 +2175,32 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if changed:
             self._publish_state()
 
+    def _restore_cooling_seen(self, last_state: State) -> None:
+        """What the saved state of a zone found on the bus says about its cooling.
+
+        Looked at before the saved mode: a zone saved while it was cooling came back as ``off``,
+        because ``cool`` was not yet one of its modes when the saved mode was checked. Any of:
+
+        * ``cooling_seen``: what the bus had shown, saved since this rule exists;
+        * the saved mode ``cool``: the zone was in conditioning. A state saved by 2.0.0 has
+          no ``cooling_seen``, and a zone found on the bus could be in ``cool`` there;
+        * ``fan_coil_cooling``: a fan coil state on the conditioning side of its valve status.
+          With the fan coil sides restored that status is not asked again, so a state saved by
+          2.0.0 would leave a zone with a cooling fan coil without ``cool`` until it next reports.
+
+        Nothing else is taken from an older state: a zone saved in ``heat`` with none of these
+        learns it from the bus again (``_note_conditioning_side``, ``_note_conditioning_report``).
+        """
+        if self._cooling_configured or self._cooling:
+            return
+        attributes = last_state.attributes
+        if (
+            attributes.get("cooling_seen") is True
+            or attributes.get("fan_coil_cooling") is True
+            or last_state.state == HVACMode.COOL.value
+        ):
+            self._cooling = True
+
     def _note_conditioning_report(self, message: OWNHeatingEvent) -> None:
         """A zone found on the bus cools once the bus reports it in conditioning.
 
@@ -2204,9 +2228,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         heating-only zone 3 behind an F461 and an F455 ``*#4*3*19*0*1##``, the 29 heating-only
         zones behind a 3488 and a MyHomeServer1 ``*#4*49*19*0*0##``, while the zones with a
         cooling fan coil report its state, ``*#4*4*19*5*1##``, ``*#4*2*19*8*5##``,
-        ``*#4*47*19*5*0##``; in tests/fixtures the same holds for every zone with a dimension
-        19 frame (15 with a fan coil state on that side, 57 with 0, none with a plain valve
-        state). A cooling valve that is off reads 0 as well, so such a zone cools from the
+        ``*#4*47*19*5*0##``. In tests/fixtures every zone with a dimension 19 frame has 0 or
+        a fan coil state (5, 7, 8) on that side, none a plain valve state (counted by trace
+        folder and zone when this was written: 86 zones, 24 with a fan coil state, 62 with 0).
+        A cooling valve that is off reads 0 as well, so such a zone cools from the
         first time its valve is seen in any other state; ``cool: true`` in ``myhome.yaml``
         says it at once. Never unlearned: 0 is also a valve that is off.
         """

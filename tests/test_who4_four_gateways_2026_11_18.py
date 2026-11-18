@@ -196,14 +196,42 @@ async def test_an_active_actuator_is_not_called_heating_before_the_zone_says_wha
     assert zone2.hvac_action == HVACAction.COOLING
 
 
-async def test_what_the_valve_status_showed_is_kept_across_a_restart(no_entity_base: None) -> None:
+@pytest.mark.parametrize(
+    ("saved_mode", "attributes", "restored_mode", "cools"),
+    [
+        # saved by this version: what the bus had shown
+        ("heat", {"cooling_seen": True}, HVACMode.HEAT, True),
+        ("cool", {"cooling_seen": True}, HVACMode.COOL, True),  # not `off`: the zone was cooling
+        ("off", {"cooling_seen": True}, HVACMode.OFF, True),
+        # saved by 2.0.0, which has no `cooling_seen`
+        ("cool", {}, HVACMode.COOL, True),  # it was in conditioning
+        ("heat", {"fan_coil_cooling": True, "fan_coil_heating": False}, HVACMode.HEAT, True),  # a cooling fan coil
+        ("heat", {"fan_coil_cooling": False, "fan_coil_heating": False}, HVACMode.HEAT, False),
+        ("heat", {}, HVACMode.HEAT, False),  # nothing says it cools: learned from the bus again
+        ("off", {"season": "conditioning"}, HVACMode.OFF, False),  # a saved season alone is not taken
+    ],
+)
+async def test_what_the_saved_state_says_about_cooling_is_applied_before_the_saved_mode(
+    no_entity_base: None, saved_mode: str, attributes: dict[str, Any], restored_mode: HVACMode, cools: bool
+) -> None:
+    """A zone found on the bus and saved while cooling came back as ``off``; with ``cool: true`` it came back as ``cool``."""
     zone = _found_zone("47")
-    seen = State("climate.test", "heat", {"cooling_seen": True})
-    await zone.async_restore_last_state(seen)
-    assert HVACMode.COOL in zone.hvac_modes
+    await zone.async_restore_last_state(State("climate.test", saved_mode, attributes))
+    assert zone.hvac_mode == restored_mode
+    assert (HVACMode.COOL in zone.hvac_modes) is cools
+    assert zone.extra_state_attributes.get("cooling_seen") is (True if cools else None)  # saved again from now on
+
+    configured = _found_zone("47", cooling=True)  # the same zone with `cool: true` in myhome.yaml
+    await configured.async_restore_last_state(State("climate.test", saved_mode, attributes))
+    if cools:  # found on the bus and configured come back alike
+        assert (zone.hvac_mode, zone.hvac_modes) == (configured.hvac_mode, configured.hvac_modes)
+
+
+async def test_a_zone_configured_as_heating_only_stays_so_whatever_was_saved(no_entity_base: None) -> None:
     configured = _found_zone("47", cooling=False)
-    await configured.async_restore_last_state(seen)
+    await configured.async_restore_last_state(State("climate.test", "cool", {"cooling_seen": True, "fan_coil_cooling": True}))
     assert HVACMode.COOL not in configured.hvac_modes
+    assert configured.hvac_mode == HVACMode.OFF  # as before this change: a mode the zone is not configured for
 
 
 async def test_the_zones_and_the_central_unit_built_from_the_bus(hass: HomeAssistant) -> None:
