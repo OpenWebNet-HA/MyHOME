@@ -21,6 +21,7 @@ from .const import (
     CONF_FIRMWARE,
     CONF_GATEWAY_ROLE,
     CONF_PRIMARY_GATEWAY,
+    CONF_SERIAL_PORT,
     DOMAIN,
     LOGGER,
     ROLE_PRIMARY,
@@ -349,16 +350,28 @@ def entry_mac(entry: Any) -> str | None:
     return dr.format_mac(str(raw)) if raw else None
 
 
+def _is_serial_entry(entry: Any) -> bool:
+    """Return True if ``entry`` represents a standalone USB/serial gateway."""
+    data = getattr(entry, "data", None)
+    return isinstance(data, Mapping) and CONF_SERIAL_PORT in data
+
+
 def entry_topology(entry: Any) -> str:
+    if _is_serial_entry(entry):
+        return TOPOLOGY_STANDALONE
     return str(_setting(entry, CONF_BUS_TOPOLOGY) or TOPOLOGY_STANDALONE)
 
 
 def entry_role(entry: Any) -> str:
+    if _is_serial_entry(entry):
+        return ROLE_PRIMARY
     return str(_setting(entry, CONF_GATEWAY_ROLE) or ROLE_PRIMARY)
 
 
 def entry_is_follower(entry: Any) -> bool:
     """Secondary or standby on a shared bus."""
+    if _is_serial_entry(entry):
+        return False
     return entry_topology(entry) == TOPOLOGY_SHARED and entry_role(entry) in (ROLE_SECONDARY, ROLE_STANDBY)
 
 
@@ -779,7 +792,11 @@ class GatewayTopologyMixin:
 
     def _record_tx(self, written_at: float, message: Any) -> None:
         """Remember a written frame for shared-bus detection."""
-        if not getattr(self, "hass", None):
+        if (
+            not getattr(self, "hass", None)
+            or getattr(self, "is_serial_transport", False) is True
+            or getattr(self, "is_zigbee_address_family", False) is True
+        ):
             return
         domain_data = self.hass.data.setdefault(DOMAIN, {})
         recent_tx = domain_data.setdefault("_recent_tx", collections.deque(maxlen=50))
@@ -789,7 +806,13 @@ class GatewayTopologyMixin:
         """Correlate bus traffic with other gateways to detect unconfigured shared buses."""
         from . import gateway as _gw
 
-        if not getattr(self, "hass", None) or getattr(message, "who", None) in (13, 1013):
+        if (
+            not getattr(self, "hass", None)
+            or getattr(self, "is_serial_transport", False) is True
+            or getattr(self, "is_zigbee_address_family", False) is True
+            or getattr(message, "is_zigbee", False) is True
+            or getattr(message, "who", None) in (13, 1013)
+        ):
             return
         if getattr(message, "is_general", False) or getattr(message, "is_area", False) or getattr(message, "is_group", False):
             return

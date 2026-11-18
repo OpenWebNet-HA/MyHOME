@@ -21,6 +21,7 @@ from .const import (
     CONF_GENERATE_EVENTS,
     CONF_IGNORED_ADDRESSES,
     CONF_OWN_PASSWORD,
+    CONF_SERIAL_PORT,
     CONF_TRANSITION_MODE,
     CONF_TUNER_PICTURES,
     CONF_WORKER_COUNT,
@@ -86,16 +87,19 @@ class MyhomeOptionsFlowHandler(
         if self.data is None:
             self.data = dict(self.config_entry.data) if self.config_entry else {}
 
-        if user_input is not None:
-            self._validate_audio_decoders(user_input, errors)
+        is_serial = CONF_SERIAL_PORT in self.data
 
-            limit_model = user_input.get(CONF_NAME, self.data.get(CONF_NAME))
-            session_limit = command_session_limit(limit_model)
-            if (
-                session_limit is not None
-                and int(user_input[CONF_WORKER_COUNT]) > session_limit
-            ):
-                errors[CONF_WORKER_COUNT] = "worker_count_above_gateway_limit"
+        if user_input is not None:
+            if not is_serial:
+                self._validate_audio_decoders(user_input, errors)
+
+                limit_model = user_input.get(CONF_NAME, self.data.get(CONF_NAME))
+                session_limit = command_session_limit(limit_model)
+                if (
+                    session_limit is not None
+                    and int(user_input[CONF_WORKER_COUNT]) > session_limit
+                ):
+                    errors[CONF_WORKER_COUNT] = "worker_count_above_gateway_limit"
 
             # Home Assistant frontend (ha-selector-text / ha-form) omits non-required
             # fields from user_input when cleared. Defaulting to "" ensures self.options
@@ -108,7 +112,13 @@ class MyhomeOptionsFlowHandler(
                 self.options[CONF_IGNORED_ADDRESSES] = parsed_ignored
 
             if not errors:
-                self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})
+                self.options.update(
+                    {
+                        CONF_WORKER_COUNT: (
+                            1 if is_serial else user_input[CONF_WORKER_COUNT]
+                        )
+                    }
+                )
                 self.options.update(
                     {CONF_GENERATE_EVENTS: user_input[CONF_GENERATE_EVENTS]}
                 )
@@ -118,6 +128,9 @@ class MyhomeOptionsFlowHandler(
                 self.options[CONF_TRANSITION_MODE] = user_input.get(
                     CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE
                 )
+                if is_serial:
+                    return self.async_create_entry(title="", data=self.options)
+
                 self.options[CONF_AUTO_JOIN_STREAMING] = user_input.get(
                     CONF_AUTO_JOIN_STREAMING, DEFAULT_AUTO_JOIN_STREAMING
                 )
@@ -184,36 +197,46 @@ class MyhomeOptionsFlowHandler(
         if current_limit is not None:
             suggested_workers = min(suggested_workers, current_limit)
 
-        schema_dict: dict[typing.Any, typing.Any] = {
-            Required(
-                CONF_ADDRESS,
-                description={"suggested_value": self.data.get(CONF_HOST) or ""},
-            ): str,
-            vol.Optional(
-                CONF_NAME,
-                default=current_model,
-            ): vol.Any(In(model_options), cv.string),
-            vol.Optional(
-                CONF_OWN_PASSWORD,
-                description={"suggested_value": self.data.get(CONF_PASSWORD) or ""},
-            ): vol.Maybe(str),
-            Required(
-                CONF_WORKER_COUNT,
-                description={"suggested_value": suggested_workers},
-            ): All(Coerce(int), Range(min=1, max=10)),
+        if is_serial:
+            schema_dict: dict[typing.Any, typing.Any] = {}
+        else:
+            schema_dict = {
+                Required(
+                    CONF_ADDRESS,
+                    description={"suggested_value": self.data.get(CONF_HOST) or ""},
+                ): str,
+                vol.Optional(
+                    CONF_NAME,
+                    default=current_model,
+                ): vol.Any(In(model_options), cv.string),
+                vol.Optional(
+                    CONF_OWN_PASSWORD,
+                    description={"suggested_value": self.data.get(CONF_PASSWORD) or ""},
+                ): vol.Maybe(str),
+                Required(
+                    CONF_WORKER_COUNT,
+                    description={"suggested_value": suggested_workers},
+                ): All(Coerce(int), Range(min=1, max=10)),
+            }
+
+        schema_dict[
             Required(
                 CONF_GENERATE_EVENTS,
                 description={
                     "suggested_value": self.options.get(CONF_GENERATE_EVENTS, False)
                 },
-            ): bool,
+            )
+        ] = bool
+        schema_dict[
             vol.Optional(
                 CONF_BROADCAST_RESYNC,
                 description={
                     "suggested_value": self.options.get(CONF_BROADCAST_RESYNC, True)
                 },
                 default=True,
-            ): bool,
+            )
+        ] = bool
+        schema_dict[
             vol.Optional(
                 CONF_TRANSITION_MODE,
                 description={
@@ -221,34 +244,40 @@ class MyhomeOptionsFlowHandler(
                         CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE
                     )
                 },
-            ): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[  # type: ignore
-                        {
-                            "value": "software_stepped",
-                            "label": "software_stepped (recommended - reliable stepped fades)",
-                        },
-                        {
-                            "value": "native",
-                            "label": "native (pass through hardware speed param - only if your dimmers support it)",
-                        },
-                        {
-                            "value": "auto",
-                            "label": "auto (alias for software_stepped)",
-                        },
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[  # type: ignore
+                    {
+                        "value": "software_stepped",
+                        "label": "software_stepped (recommended - reliable stepped fades)",
+                    },
+                    {
+                        "value": "native",
+                        "label": "native (pass through hardware speed param - only if your dimmers support it)",
+                    },
+                    {
+                        "value": "auto",
+                        "label": "auto (alias for software_stepped)",
+                    },
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+        if not is_serial:
+            schema_dict[
+                vol.Optional(
+                    CONF_AUTO_JOIN_STREAMING,
+                    description={
+                        "suggested_value": self.options.get(
+                            CONF_AUTO_JOIN_STREAMING, DEFAULT_AUTO_JOIN_STREAMING
+                        )
+                    },
+                    default=DEFAULT_AUTO_JOIN_STREAMING,
                 )
-            ),
-            vol.Optional(
-                CONF_AUTO_JOIN_STREAMING,
-                description={
-                    "suggested_value": self.options.get(
-                        CONF_AUTO_JOIN_STREAMING, DEFAULT_AUTO_JOIN_STREAMING
-                    )
-                },
-                default=DEFAULT_AUTO_JOIN_STREAMING,
-            ): selector.BooleanSelector(),
+            ] = selector.BooleanSelector()
+
+        schema_dict[
             vol.Optional(
                 CONF_IGNORED_ADDRESSES,
                 description={
@@ -258,23 +287,26 @@ class MyhomeOptionsFlowHandler(
                     if isinstance(self.options.get(CONF_IGNORED_ADDRESSES), list)
                     else str(self.options.get(CONF_IGNORED_ADDRESSES) or "")
                 },
-            ): vol.Maybe(
-                selector.TextSelector(selector.TextSelectorConfig(multiline=True))
-            ),
-            vol.Optional(
-                CONF_TUNER_PICTURES,
-                description={
-                    "suggested_value": str(
-                        self.options.get(CONF_TUNER_PICTURES) or ""
-                    )
-                },
-            ): vol.Maybe(
-                selector.TextSelector(selector.TextSelectorConfig(multiline=True))
-            ),
-        }
+            )
+        ] = vol.Maybe(
+            selector.TextSelector(selector.TextSelectorConfig(multiline=True))
+        )
 
-        self._append_audio_schema(schema_dict)
-        self._append_topology_schema(schema_dict)
+        if not is_serial:
+            schema_dict[
+                vol.Optional(
+                    CONF_TUNER_PICTURES,
+                    description={
+                        "suggested_value": str(
+                            self.options.get(CONF_TUNER_PICTURES) or ""
+                        )
+                    },
+                )
+            ] = vol.Maybe(
+                selector.TextSelector(selector.TextSelectorConfig(multiline=True))
+            )
+            self._append_audio_schema(schema_dict)
+            self._append_topology_schema(schema_dict)
 
         return self.async_show_form(
             step_id="user",

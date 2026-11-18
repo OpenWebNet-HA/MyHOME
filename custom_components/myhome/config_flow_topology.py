@@ -17,6 +17,7 @@ from .const import (
     CONF_DELEGATED_WHOS,
     CONF_GATEWAY_ROLE,
     CONF_PRIMARY_GATEWAY,
+    CONF_SERIAL_PORT,
     DOMAIN,
     LOGGER,
     ROLE_PRIMARY,
@@ -50,7 +51,9 @@ class ConfigFlowTopologyMixin:
         return [
             entry
             for entry in self.hass.config_entries.async_entries(DOMAIN)
-            if entry.source != SOURCE_IGNORE and not entry_is_follower(entry)
+            if entry.source != SOURCE_IGNORE
+            and CONF_SERIAL_PORT not in entry.data
+            and not entry_is_follower(entry)
         ]
 
     async def async_step_bus_topology(
@@ -270,6 +273,7 @@ class OptionsFlowTopologyMixin:
             e
             for e in self.hass.config_entries.async_entries(DOMAIN)
             if e.entry_id != getattr(self.config_entry, "entry_id", None)
+            and CONF_SERIAL_PORT not in e.data
         ]
 
     def _append_topology_schema(

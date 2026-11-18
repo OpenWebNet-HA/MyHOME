@@ -30,18 +30,22 @@ from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 from .bus_monitor import BusMonitor
 from .const import (
     BUS_ROUTING,
+    CONF_BAUDRATE,
     CONF_DEVICE_TYPE,
     CONF_FIRMWARE,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
+    CONF_SERIAL_PORT,
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_UDN,
+    DEFAULT_BAUDRATE,
     LOGGER,
 )
 from .device_health import DeviceHealth
 from .gateway_events import GatewayEventDispatcher
 from .gateway_resync import LightingResyncManager
+from .gateway_serial import SharedSerialRuntime
 from .gateway_sessions import (
     COMMAND_SESSION_IDLE_TIMEOUT,
     EVENT_INACTIVITY_TIMEOUT,
@@ -84,6 +88,9 @@ from .topology import (
     GatewayTopologyMixin,
     peer_handles_who,
 )
+from .zigbee_inventory import ZigbeeInventoryManager
+
+_MISSING = object()
 
 __all__ = [
     "AVAILABILITY_GRACE",
@@ -433,6 +440,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         broadcast_resync: bool = True,
     ) -> None:
         """Initialize the MyHOME Gateway handler."""
+        raw_serial_port = config_entry.data.get(CONF_SERIAL_PORT)
+        serial_port: str | None = (
+            raw_serial_port
+            if isinstance(raw_serial_port, str) and raw_serial_port.strip()
+            else None
+        )
+        raw_host = config_entry.data.get(CONF_HOST)
+        has_host = isinstance(raw_host, str) and bool(raw_host.strip())
         build_info = {
             "address": config_entry.data.get(CONF_HOST),
             "port": config_entry.data.get(CONF_PORT, 20000),
@@ -443,7 +458,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             "friendlyName": config_entry.data.get(CONF_FRIENDLY_NAME, ""),
             "manufacturer": config_entry.data.get(CONF_MANUFACTURER, ""),
             "manufacturerURL": config_entry.data.get(CONF_MANUFACTURER_URL, ""),
-            "modelName": config_entry.data.get(CONF_NAME, "Generic"),
+            "modelName": config_entry.data.get(CONF_NAME)
+            or ("3578" if serial_port and not has_host else "Generic"),
             "modelNumber": config_entry.data.get(CONF_FIRMWARE, ""),
             "serialNumber": config_entry.data.get(CONF_MAC, ""),
             "UDN": config_entry.data.get(CONF_UDN, ""),
@@ -451,9 +467,19 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.hass = hass
         self.config_entry = config_entry
         self.generate_events = generate_events
+        self.serial_port: str | None = serial_port
+        raw_baudrate = config_entry.data.get(CONF_BAUDRATE, DEFAULT_BAUDRATE)
+        self.baudrate: int = (
+            int(raw_baudrate)
+            if isinstance(raw_baudrate, (int, float))
+            and not isinstance(raw_baudrate, bool)
+            else DEFAULT_BAUDRATE
+        )
         self.gateway = OWNGateway(build_info)
         if isinstance(self.gateway.profile, GenericGatewayProfile):
             self.gateway.profile = _profile_for_model(self.gateway.model_name, self.gateway.firmware)
+        if self.serial_port and not has_host:
+            self.gateway.log_id = f"[{self.gateway.model_name} - {self.serial_port}]"
         self.is_connected = False
         self._available = False
         self._failover_active = False
@@ -505,6 +531,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._zone_requests: set[tuple[str, int]] = set()
         self._zone_request_task: asyncio.Task[None] | None = None
         self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
+        self.serial_runtime: SharedSerialRuntime | None = (
+            SharedSerialRuntime(self, self.serial_port, self.baudrate, LOGGER)
+            if self.serial_port
+            else None
+        )
+        self.zigbee_inventory: ZigbeeInventoryManager | None = (
+            ZigbeeInventoryManager(self) if self.is_zigbee_address_family else None
+        )
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -938,15 +972,42 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return self.gateway.profile
 
     @property
-    def command_session_idle_timeout(self) -> float:
-        """Idle timeout before releasing the command session socket."""
-        profile = getattr(self.gateway, "profile", None)
-        profile_timeout = getattr(profile, "command_session_idle_timeout", None) if profile else None
+    def is_serial_transport(self) -> bool:
+        """Return True when this gateway uses a serial/USB transport."""
+        return (
+            isinstance(self.serial_port, str) and bool(self.serial_port)
+        ) or getattr(self.profile, "transport_type", "tcp") == "serial"
+
+    @property
+    def is_zigbee_address_family(self) -> bool:
+        """Return True when this gateway uses OpenZigBee ``#9`` addressing."""
+        return getattr(self.profile, "address_family", "scs") == "zigbee"
+
+    @property
+    def command_session_idle_timeout(self) -> float | None:
+        """Idle timeout before releasing the command session socket (``None`` disables idle close)."""
+        if self.is_serial_transport:
+            return None
         idle_timeout_default = float(COMMAND_SESSION_IDLE_TIMEOUT)
-        return float(profile_timeout) if profile_timeout is not None else idle_timeout_default
+        profile = getattr(self.gateway, "profile", None)
+        profile_timeout: Any = (
+            getattr(profile, "command_session_idle_timeout", _MISSING)
+            if profile
+            else _MISSING
+        )
+        if profile_timeout is _MISSING:
+            return idle_timeout_default
+        if profile_timeout is None:
+            return None
+        val = float(profile_timeout)
+        if val == 15.0 and idle_timeout_default != 15.0:
+            return idle_timeout_default
+        return val
 
     async def test(self) -> dict[str, Any]:
         """Test gateway connection."""
+        if self.serial_runtime is not None:
+            return await self.serial_runtime.test_connection()
         result: dict[str, Any] = await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
         return result
 
@@ -1070,6 +1131,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def _process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
+        if self.zigbee_inventory is not None and getattr(message, "is_zigbee", False) is True:
+            zb_addr = getattr(message, "zigbee_device_id", None)
+            if (
+                isinstance(zb_addr, str)
+                and zb_addr
+                and not getattr(message, "is_zigbee_product_unreachable", False)
+            ):
+                self.zigbee_inventory.mark_reachable(zb_addr)
         await self._event_dispatcher.process_message(message)
 
     async def sending_loop(self, worker_id: int) -> None:
@@ -1165,7 +1234,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         epoch = self._begin_sweep()
         try:
             for frame in frames:
-                cmd = OWNCommand.parse(frame)
+                cmd = OWNCommand.parse(frame, gateway=self.profile)
                 if cmd is None:
                     continue
                 written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
@@ -1210,6 +1279,16 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def initial_discovery(self) -> None:
         """Send the startup sweep that discovers devices missing from the config."""
+        if self.zigbee_inventory is not None:
+            try:
+                runtime = getattr(self.config_entry, "runtime_data", None)
+                platforms = getattr(runtime, "platforms", None)
+                if isinstance(platforms, dict):
+                    self.zigbee_inventory.seed_configured_platforms(platforms)
+            finally:
+                self._initial_discovery_done.set()
+            self.zigbee_inventory.schedule_background_refresh()
+            return
         try:
             await self.send_paced(self._discovery_frames())
         finally:
@@ -1263,8 +1342,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             if primary is not None:
                 async_dispatcher_send(self.hass, primary.availability_signal)
 
+        if self.zigbee_inventory is not None:
+            self.zigbee_inventory.cancel()
         self._event_runner.close()
         self._command_pool.close()
+        if self.serial_runtime is not None:
+            await self.serial_runtime.shutdown()
         return True
 
     async def send(self, message: OWNCommand, *, is_cancel: bool = False) -> asyncio.Future[float]:

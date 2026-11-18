@@ -166,18 +166,22 @@ async def test_apply_gateway_identity_refreshes_the_profile_and_log_id(hass: Hom
 
 
 @pytest.mark.parametrize(
-    "frame",
+    ("frame", "ownd_decodes"),
     [
-        "*#13**12*0*0*0*0*0*0##",  # six zeros: the factory value, and the UI sentinel of the first form
-        "*#13**12*255*255*255*255*255*255##",  # broadcast
-        "*#13**12*256*3*80*0*7*119##",  # an octet outside 0..255 (OWNd formats it as "100")
+        ("*#13**12*0*0*0*0*0*0##", True),  # six zeros: the factory value, and the UI sentinel of the first form
+        ("*#13**12*255*255*255*255*255*255##", True),  # broadcast
+        ("*#13**12*256*3*80*0*7*119##", False),  # an octet outside 0..255 (OWNd >= 2.1.0b1 leaves mac_address None)
     ],
 )
 async def test_manual_flow_keeps_the_typed_mac_when_the_reported_one_names_no_interface(
-    hass: HomeAssistant, frame: str
+    hass: HomeAssistant, frame: str, ownd_decodes: bool
 ) -> None:
-    reported = OWNMessage.parse(frame).mac_address
-    assert reported  # OWNd decodes all three; the flow is what must refuse them
+    parsed = OWNMessage.parse(frame)
+    reported = parsed.mac_address if parsed is not None else None
+    if ownd_decodes:
+        assert reported  # OWNd decodes all-zero / broadcast; the flow is what must refuse them
+    else:
+        assert reported is None
     identify = AsyncMock(return_value=(reported, "200", "134"))
 
     result = await _manual_flow(hass, _password_then_ok(), identify, mac="00:03:50:00:12:34")
