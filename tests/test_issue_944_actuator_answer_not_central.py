@@ -27,13 +27,8 @@ from homeassistant.core import HomeAssistant
 from OWNd.message import OWNEvent, OWNHeatingCommand, OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
-    _bus_zone,
-    _zone_address,
-    _zone_route_keys,
-    async_setup_entry,
-)
+from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
+from custom_components.myhome.climate_discovery import _bus_zone, _zone_address, _zone_route_keys
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.where_grammar import (
     is_actuator_status,

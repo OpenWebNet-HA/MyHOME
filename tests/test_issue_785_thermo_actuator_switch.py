@@ -38,13 +38,11 @@ from pytest_homeassistant_custom_component.common import (
 )
 
 from custom_components.myhome.button import async_setup_entry as button_setup_entry
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
-    _calling_zones,
-)
+from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.climate import (
     async_setup_entry as climate_setup_entry,
 )
+from custom_components.myhome.climate_discovery import _calling_zones
 from custom_components.myhome.config_flow import MyhomeFlowHandler
 from custom_components.myhome.config_flow_thermo_switch import (
     ThermoSwitchSubentryFlowHandler,

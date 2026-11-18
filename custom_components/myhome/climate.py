@@ -19,11 +19,9 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import (
     CLIMATE_MODE_AUTO,
     CLIMATE_MODE_COOL,
@@ -53,9 +51,9 @@ from OWNd.message import (
     OWNHeatingEvent,
 )
 
+from .climate_discovery import ZoneDiscovery, _two_digit_interface, _zone_address, _zone_route_keys
 from .const import (
     BUS_ROUTING,
-    CONF_BUS_INTERFACE,
     CONF_CENTRAL,
     CONF_COOLING_SUPPORT,
     CONF_DEVICE_MODEL,
@@ -65,22 +63,12 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     CONF_STANDALONE_ZONES,
-    CONF_WHERE,
-    CONF_WHO,
     DOMAIN,
     LOGGER,
 )
 from .data import get_runtime_data
 from .device_health import FaultKind
-from .discovery import (
-    Address,
-    DeviceContext,
-    PlatformDiscovery,
-    config_for,
-    default_known_keys,
-    is_broadcast_where,
-)
-from .expose import is_exposed_on_bus
+from .discovery import DeviceContext, PlatformDiscovery
 from .gateway import (
     _ZONE_WHERE,
     KNOB_READ_IN_SILENT_ZONE_POLL,
@@ -95,11 +83,8 @@ from .where_grammar import (
     central_report_zone,
     is_actuator_where,
     is_central_thermo_where,
-    is_central_unit_actuator_status,
     is_central_unit_report,
     is_probe,
-    is_pump,
-    parse_thermo_actuator_where,
     thermo_dim19_status,
     thermo_dim20_actuator_target,
     thermo_dim20_level,
@@ -111,10 +96,6 @@ from .where_grammar import (
 )
 
 PLATFORM = Platform.CLIMATE
-# How many zones in a row may leave their temperature read unanswered before the zones known
-# only from their actuators are left to report by themselves (``_ask_actuator_only_zones``):
-# an unanswered read holds a command session for 2.1 s on an F461 and about 9 s on an F455.
-ACTUATOR_ONLY_ZONE_MISSES = 2
 # A zone found on the bus that reports the season the central unit is not in: how long to wait
 # before its setpoint in force is read again (``*#4*Z*12##``, answered with the zone's season
 # frame) to see whether it still does. A zone of a central unit follows a season change of the
@@ -233,127 +214,26 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
-    """Set up the heating zones of a gateway (WHO=4): registry, myhome.yaml, then bus discovery.
+    """Set up the heating zones of a gateway (WHO=4).
 
-    A zone is WHERE 1-99 (the central unit is ``#0`` / ``#0#1``); WHERE >= 100
-    is a temperature probe, which belongs to the sensor platform. Heating
-    frames often carry the zone they concern in a parameter rather than in
-    WHERE (``*4*4001#5*0##``), so the address of a frame is derived here.
+    Which zones exist, and when a zone entity is created, is ``climate_discovery``: the
+    registry, ``myhome.yaml``, the bus, and the reads at start.
     """
     runtime = get_runtime_data(config_entry)
     if runtime is None or PLATFORM not in runtime.platforms:
         return True
     load_thermo_switch_subentries(config_entry, runtime.platforms)
     gateway = runtime.gateway
-    configured = runtime.platforms.get(PLATFORM, {})
-
-    thermo_switch_whole_zones: set[tuple[str, str | None]] = set()
-    thermo_switch_actuator_zones: set[tuple[str, str | None]] = set()
-    for sw_cfg in runtime.platforms.get("switch", {}).values():
-        if not isinstance(sw_cfg, dict) or str(sw_cfg.get(CONF_WHO)) != "4":
-            continue
-        try:
-            _nw, sw_zone, sw_act, sw_if = parse_thermo_actuator_where(
-                sw_cfg.get(CONF_WHERE), sw_cfg.get(CONF_BUS_INTERFACE)
-            )
-        except ValueError:
-            continue
-        zone_addr = Address(sw_zone, sw_if)
-        zpad_addr = Address(f"0{sw_zone}", sw_if) if len(sw_zone) == 1 else None
-        has_explicit_climate = bool(
-            _zone_config(configured, zone_addr, zone_addr.key)
-            or (zpad_addr is not None and _zone_config(configured, zpad_addr, zpad_addr.key))
-        )
-        if not has_explicit_climate:
-            if sw_act is None:
-                thermo_switch_whole_zones.add((sw_zone, sw_if))
-            else:
-                thermo_switch_actuator_zones.add((sw_zone, sw_if))
-
-    real_hvac_states = {
-        HVACMode.HEAT.value,
-        HVACMode.COOL.value,
-        HVACMode.HEAT_COOL.value,
-        HVACMode.AUTO.value,
-        HVACMode.DRY.value,
-        HVACMode.FAN_ONLY.value,
-    }
-
-    def has_real_thermostat_state(entity_id: str) -> bool:
-        # MyHOMEClimate.async_restore_last_state coerces STATE_UNKNOWN /
-        # STATE_UNAVAILABLE into HVACMode.OFF ("off"), which HA then persists in
-        # .storage/core.restore_state across restarts (#263). Bare state == "off"
-        # without thermostat telemetry is therefore not evidence of a physical
-        # thermostat (#785).
-        states_obj = getattr(hass, "states", None)
-        live = states_obj.get(entity_id) if states_obj is not None else None
-        hass_data = getattr(hass, "data", None)
-        restore_obj = hass_data.get(DATA_RESTORE_STATE) if isinstance(hass_data, dict) else None
-        # HA 2026.11+ (core#183906) indexes stored states by entity registry ID and
-        # exposes async_get_stored_state(entity_id); HA <= 2026.10 stores a dict on
-        # RestoreStateData.last_states keyed by entity_id.
-        get_stored = getattr(restore_obj, "async_get_stored_state", None)
-        if callable(get_stored):
-            stored = get_stored(entity_id)
-        else:
-            last_states = getattr(restore_obj, "last_states", None)
-            stored = last_states.get(entity_id) if isinstance(last_states, dict) else None
-        restored = getattr(stored, "state", None)
-        for st in (live, restored):
-            if st is None:
-                continue
-            attrs = getattr(st, "attributes", None) or {}
-            if (
-                attrs.get("current_temperature") is not None
-                or attrs.get("temperature") is not None
-                or attrs.get("current_humidity") is not None
-                or attrs.get("season") is not None
-                or attrs.get("program") is not None
-                or attrs.get("holiday_days") is not None
-                or attrs.get("scenario") is not None
-                or attrs.get("knob_pos") not in (None, "UNKNOWN")
-                or attrs.get("fan_coil_cooling") is True
-                or attrs.get("fan_coil_heating") is True
-                or getattr(st, "state", None) in real_hvac_states
-            ):
-                return True
-        return False
-
-    def thermo_zone_pair(address: Address) -> tuple[str, str | None] | None:
-        cz = canonical_thermo_zone(address.where)
-        if cz is None:
-            return None
-        return (cz, _two_digit_interface(address.interface))
-
-    def is_thermo_switch_whole_zone(address: Address) -> bool:
-        pair = thermo_zone_pair(address)
-        return pair is not None and pair in thermo_switch_whole_zones
-
-    def is_thermo_switch_actuator_zone(address: Address) -> bool:
-        pair = thermo_zone_pair(address)
-        return pair is not None and pair in thermo_switch_actuator_zones
-
-    def is_thermo_switch_ghost(entry: er.RegistryEntry, address: Address) -> bool:
-        pair = thermo_zone_pair(address)
-        if pair is None:
-            return False
-        if pair in thermo_switch_whole_zones:
-            return True
-        if pair in thermo_switch_actuator_zones:
-            return not has_real_thermostat_state(entry.entity_id)
-        return False
-
-    pending_actions: dict[tuple[str, str | None], dict[str, OWNHeatingEvent]] = {}
     # Zones the owner marked as standalone thermostats in the gateway options (local bus).
     standalone_zones = frozenset(
         validate_standalone_zones((getattr(config_entry, "options", None) or {}).get(CONF_STANDALONE_ZONES))[0]
     )
 
-    def build(ctx: DeviceContext) -> MyHOMEClimate:
+    def build(ctx: DeviceContext, cfg: dict[str, Any]) -> MyHOMEClimate:
+        """The entity of one zone or central unit, from its ``myhome.yaml`` entry where it has one."""
         where, interface = ctx.address.where, ctx.address.interface
         clean_where = where.removeprefix("4-")
         zone = zone_number(where)
-        cfg = _zone_config(configured, ctx.address, ctx.key) or ctx.cfg
         suffix = f"{zone}I{interface}" if interface else zone
         is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL) or (
             ctx.source != "bus" and bool(cfg.get(CONF_CENTRAL, False))
@@ -392,305 +272,19 @@ async def async_setup_entry(
             model=cfg.get(CONF_DEVICE_MODEL, default_model),
             gateway=gateway,
         )
-        zone_pair = thermo_zone_pair(ctx.address)
-        if zone_pair is not None:
-            for deferred in pending_actions.pop(zone_pair, {}).values():
-                entity.handle_event(deferred)
         return entity
 
-    def accept(ctx: DeviceContext) -> bool:
-        if is_probe(ctx.address.where):
-            LOGGER.debug("Skipping non-zone address %s for climate platform", ctx.address.where)
-            return False
-        if is_thermo_switch_whole_zone(ctx.address):
-            LOGGER.debug(
-                "Skipping climate zone %s: configured as WHO=4 thermo switch (#785)",
-                ctx.address.key,
-            )
-            return False
-        if (
-            not ctx.cfg
-            and ctx.source == "bus"
-            and getattr(ctx.message, "dimension", None) == 0
-        ):
-            full_where = (
-                f"{ctx.address.where}#4#{ctx.address.interface}"
-                if ctx.address.interface
-                else ctx.address.where
-            )
-            if is_exposed_on_bus(hass, config_entry, 4, full_where):
-                zone_pair = thermo_zone_pair(ctx.address)
-                if zone_pair is not None:
-                    pending_actions.setdefault(zone_pair, {})["dim0"] = ctx.message
-                LOGGER.debug(
-                    "Deferring climate zone %s creation on exposed WHO=4 virtual probe Dimension 0 frame",
-                    ctx.address.key,
-                )
-                return False
-        if (
-            ctx.source == "bus"
-            and is_thermo_switch_actuator_zone(ctx.address)
-            and getattr(ctx.message, "message_type", None) is None
-        ):
-            LOGGER.debug(
-                "Deferring climate zone %s creation on typeless WHO=4 frame (%s) for thermo switch zone (#785)",
-                ctx.address.key,
-                ctx.message,
-            )
-            return False
-        if (
-            ctx.source == "bus"
-            and is_thermo_switch_actuator_zone(ctx.address)
-            and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
-            and getattr(ctx.message, "dimension", None) == 19
-        ):
-            dim19 = thermo_dim19_status(ctx.message)
-            if dim19 is None or (
-                not isinstance(dim19[3], bool) and not isinstance(dim19[4], bool)
-            ):
-                zone_pair = thermo_zone_pair(ctx.address)
-                if dim19 is not None and zone_pair is not None:
-                    events = pending_actions.setdefault(zone_pair, {})
-                    if dim19[2]:
-                        events.pop("dim19", None)
-                        events["dim19"] = ctx.message
-                    else:
-                        events.pop("dim19", None)
-                        events.pop("dim19_off", None)
-                        events["dim19_off"] = ctx.message
-                LOGGER.debug(
-                    "Deferring climate zone %s creation on Dimension 19 valve-only frame (#785)",
-                    ctx.address.key,
-                )
-                return False
-        if (
-            ctx.source == "bus"
-            and getattr(ctx.message, "message_type", None) == MESSAGE_TYPE_ACTION
-            and getattr(ctx.message, "dimension", None) == 20
-        ):
-            dim20 = thermo_dim20_status(ctx.message)
-            if dim20 is None or (
-                not isinstance(dim20[2], int) and not isinstance(dim20[1], bool)
-            ):
-                zone_pair = thermo_zone_pair(ctx.address)
-                if dim20 is not None and zone_pair is not None:
-                    slot = f"act:{thermo_event_actuator(ctx.message)}"
-                    events = pending_actions.setdefault(zone_pair, {})
-                    events.pop(slot, None)
-                    events[slot] = ctx.message
-                LOGGER.debug(
-                    "Deferring climate zone %s creation on Dimension 20 actuator-only frame (#785)",
-                    ctx.address.key,
-                )
-                return False
-        return True
-
-    def duplicate_climate(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
-        if is_thermo_switch_ghost(entry, ctx.address):
-            LOGGER.info(
-                "climate: pruning probe-less zone %s claimed by WHO=4 thermo switch (#785)",
-                entry.entity_id,
-            )
-            return True
-        if ctx.cfg:
-            return False
-        return is_broadcast_where(ctx.address.clean_where)
-
-    def known_keys(ctx: DeviceContext) -> list[str]:
-        keys = [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where, ctx.config_id or ""]
-        if not ctx.address.interface and "#" not in ctx.address.clean_where.removeprefix("#"):
-            keys.append(zone_number(ctx.address.where))
-        return [k for k in keys if k]
-
+    zones = ZoneDiscovery(hass, config_entry, runtime, build)
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
-        platform=PLATFORM, who="4", event_type=OWNHeatingEvent, build=build,
-        accept=accept, reject_registry_entry=duplicate_climate, known_keys=known_keys,
+        platform=PLATFORM, who="4", event_type=OWNHeatingEvent, build=zones.build,
+        accept=zones.accept, reject_registry_entry=zones.duplicate, known_keys=zones.known_keys,
         address=_zone_address, route_keys=_zone_route_keys,
         general_is_device=True,  # WHERE=0 frames name their zone in a parameter; _zone_address decides
     ).start()
-
-    async def _ask_actuator_only_zones() -> None:
-        """Ask each zone known only from its actuators whether it is a thermostat.
-
-        The start-up sweep asks every actuator for its state (``gateway.ALL_ACTUATORS_REQUEST``)
-        where the gateway drops the general request. A fan coil's answer creates its zone; a
-        plain valve's is kept in ``pending_actions``, because that address may be a towel
-        warmer with no thermostat (#785). A thermostat tells the two apart: it answers a
-        read of its temperature (``*#4*Z*0##``: 0.09-0.25 s on an F461, an F455 and a
-        MyHomeServer1, 2026-11-18), and that frame creates the zone, which then takes the kept
-        actuator frames. An address with no thermostat answers nothing and stays as it is.
-
-        One zone at a time, each read after the bus went quiet. The run ends after two zones
-        in a row that did not answer, or when a read could not be told from a busy gateway
-        twice: what is left waits for its own report, as before. Not asked: a zone behind an
-        interface, and a zone that has a thermo switch configured.
-        """
-        await gateway.wait_for_initial_discovery()
-        asked: set[tuple[str, str | None]] = set()
-        silent = 0
-        while silent < ACTUATOR_ONLY_ZONE_MISSES:
-            pair = next(
-                (
-                    known
-                    for known, events in pending_actions.items()
-                    if known not in asked
-                    and known[1] is None
-                    and known not in thermo_switch_whole_zones
-                    and known not in thermo_switch_actuator_zones
-                    and events
-                    and all(slot.startswith(("act:", "dim19")) for slot in events)
-                ),
-                None,
-            )
-            if pair is None:
-                return
-            asked.add(pair)
-            answered: bool | None = None
-            for _attempt in range(2):
-                answered = await gateway.read_zone_temperature(pair[0])
-                if answered is not None:
-                    break
-            if pair not in pending_actions:
-                silent = 0  # built from its answer
-                continue
-            if answered is None:
-                LOGGER.debug(
-                    "%s Zone %s: its temperature could not be read while the gateway was busy; "
-                    "leaving it and the remaining actuator-only zones to their own reports",
-                    gateway.log_id,
-                    pair[0],
-                )
-                return
-            LOGGER.debug("%s Zone %s has actuators and no thermostat answered", gateway.log_id, pair[0])
-            silent += 1
-
-    if inspect.iscoroutinefunction(getattr(gateway, "read_zone_temperature", None)):
-        run = _ask_actuator_only_zones()
-        task = config_entry.async_create_background_task(
-            hass, run, name=f"myhome_{gateway.mac}_actuator_only_zones"
-        )
-        if not isinstance(task, asyncio.Future):
-            run.close()  # a config entry double that schedules nothing
+    zones.start_reads()
     return True
 
-
-def _zone_config(configured: dict[str, Any], address: Address, key: str) -> dict[str, Any]:
-    """The ``myhome.yaml`` entry of a zone under every spelling older versions accepted.
-
-    A routed zone only matches interface-qualified spellings: zone 1 exists
-    on every bus, so the bare ones name the local bus's zone (#408).
-    """
-    where, clean = address.where, address.clean_where
-    zone = zone_number(where) if "#" not in clean.removeprefix("#") else clean
-    if address.interface:
-        routing = f"{BUS_ROUTING}{address.interface}"
-        return config_for(configured, address, key, f"4-{zone}{routing}", f"4-{key}", f"#{zone}{routing}")
-    return config_for(
-        configured, address, key, zone,
-        f"4-{zone}", f"4-{where}", f"4-{key}", f"4-#{zone}", f"4-#{where}",
-        f"#{zone}", f"#{where}", f"zone_{zone}", f"zone_{where}",
-    )
-
-
-def _bus_zone(message: Any) -> int | None:
-    """OWNd's zone of a frame, or ``None`` where the frame names no heating zone.
-
-    Two different cases end in ``None``.
-
-    Not a zone's frame, though OWNd decodes it correctly: a bare WHERE >= 100 is
-    ``PZZ``, probe ``P`` (1-8) of zone ``ZZ`` (probe 105 -> sensor 1, zone 5).
-    Read as the zone's it was delivered to that zone and, where the zone is not a
-    heating zone (an external probe 105 beside zones 1-4), it discovered a
-    phantom one (#549). Probes belong to the sensor platform.
-
-    Misread by OWNd <= 2.0.0b8: on an unhashed WHERE ``0#<p>`` OWNd reports ``p`` as the zone, but ``p`` is
-    never one: ``0#<n>`` is actuator ``n`` of zone 0, the pump the zones call
-    with ``*4*4001#<zone>*0#<n>##`` (zones 1, 2, 3, 5 and 6 of one plant all
-    call ``0#3``: #303, #333, #404), and ``0#4#<if>`` is WHERE=0 behind an
-    F422 interface. Taken as zones, pump 2 switched zone 2 (#431) and the F422
-    form became zone 4. ``#0#<n>`` (4-zone central unit) keeps OWNd's zone.
-
-    Not a zone's frame either: an actuator status with WHERE ``#0`` (``*#4*#0*20*V##``, an
-    F461's answer to the all-zone request ``*#4*#0*20##`` of 2.0.0, #944). OWNd reports zone 0 and
-    actuator 1 for it. Taken as the central unit's, a fan coil value (``*#4*#0*20*5##``)
-    discovered a central unit on a plant that has none, and on a plant that has one the
-    frame became an actuator of the central unit.
-    """
-    if is_pump(message) or is_central_unit_actuator_status(message):
-        return None
-    if is_probe(str(getattr(message, "where", None))):
-        return None  # probe P of zone ZZ (105 = probe 1 of zone 5), not the zone's own frame
-    zone: int | None = getattr(message, "zone", None)
-    return zone
-
-
-def _two_digit_interface(interface: str | None) -> str | None:
-    """The F422 interface as the bus and the configuration validator spell it (``01``)."""
-    if interface is None:
-        return None
-    interface = str(interface)
-    return interface.zfill(2) if interface.isdigit() else interface
-
-
-def _calling_zones(message: Any) -> tuple[list[str], str | None]:
-    """Zones a heating frame concerns, and the F422 interface it came through."""
-    raw_where = getattr(message, "where", None)
-    zone = _bus_zone(message)
-    interface = thermo_event_interface(message)
-    # OWNHeatingEvent keeps WHAT only as ``_what``; it has no ``what`` property.
-    what = getattr(message, "what", None) or getattr(message, "_what", None)
-    what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
-
-    zones: list[str] = []
-    # WHERE ``<zone>#<n>`` names actuator <n> of the zone (``*#4*2#1*20*1##``
-    # = zone 2, actuator 1 is on), never zone <n>: routing it there made zone 1
-    # "heat" whenever any zone's actuator 1 opened (#333), and pump 2 (``0#2``)
-    # switch zone 2 (#431).
-    if zone is not None and zone > 0:
-        zones.append(str(zone))
-    if what in ("4001", "4002", 4001, 4002) and what_param:
-        try:
-            zones.append(str(int(what_param[0])))
-        except (ValueError, TypeError):
-            pass
-    clean_raw = str(raw_where).split("-")[-1] if raw_where is not None else ""
-    if (
-        not zones
-        and raw_where
-        and not is_broadcast_where(clean_raw)
-        and clean_raw != ""
-        and not is_probe(str(raw_where))
-        and not is_central_unit_actuator_status(message)
-    ):
-        zones.append(str(raw_where))
-    return zones, interface
-
-
-def _zone_address(message: Any) -> Address | None:
-    """The zone a frame discovers; ``None`` for broadcasts and probes."""
-    zones, interface = _calling_zones(message)
-    if not zones:
-        return None
-    return Address(zones[0], interface)
-
-
-def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
-    """Every key a heating frame is delivered under: the zone, WHERE, and the calling zones."""
-    zones, interface = _calling_zones(message)
-    zone = _bus_zone(message)
-    keys = [] if zone is None else [f"#{zone}" if zone == 0 else str(zone)]
-    # WHERE "0" with a parameter is pump ``0#N``, not the general "0" (#431); an actuator
-    # status with WHERE ``#0`` is not the central unit's (#944).
-    if getattr(message, "where", None) and not is_probe(str(message.where)) and not (
-        is_pump(message) or is_central_unit_actuator_status(message)
-    ):
-        keys.append(str(message.where))
-    for z in zones:
-        keys.append(z)
-        if interface:
-            keys.append(f"{z}{BUS_ROUTING}{interface}")
-    return keys
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:

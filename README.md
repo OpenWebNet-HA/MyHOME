@@ -223,6 +223,7 @@ The integration maintains 6699 automated unit tests (100% line coverage across a
 | [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra gateway sockets) |
 | [`button.py`](custom_components/myhome/button.py) | **100%** | WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek |
 | [`climate.py`](custom_components/myhome/climate.py) | **100%** | WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync |
+| [`climate_discovery.py`](custom_components/myhome/climate_discovery.py) | **100%** | WHO=4 zone discovery: registry, myhome.yaml and bus frames, held actuator-only frames (#785), and the thermostat reads at start |
 | [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Gateway onboarding, manual/SSDP setup, and subentry flow registration |
 | [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options |
 | [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | SSDP discovery, connection probing, reauthentication, and reconfiguration steps |

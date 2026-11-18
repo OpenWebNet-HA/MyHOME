@@ -25,7 +25,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNHeatingEvent, OWNMessage
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
-from custom_components.myhome.climate import MyHOMEClimate, _zone_address
+from custom_components.myhome.climate import MyHOMEClimate
+from custom_components.myhome.climate_discovery import _zone_address
 from custom_components.myhome.const import (
     CONF_ENTITY,
     CONF_FIRMWARE,

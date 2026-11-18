@@ -29,7 +29,8 @@ from OWNd.message import (
 from OWNd.profiles import GenericGatewayProfile
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import MyHOMEClimate, _zone_address
+from custom_components.myhome.climate import MyHOMEClimate
+from custom_components.myhome.climate_discovery import _zone_address
 from custom_components.myhome.const import (
     CONF_DEVICE_TYPE,
     CONF_ENTITY,

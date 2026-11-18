@@ -22,7 +22,7 @@ from homeassistant.core import HomeAssistant
 from OWNd.message import OWNHeatingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome import climate as climate_module
+from custom_components.myhome import climate_discovery
 from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.gateway import ALL_ACTUATORS_REQUEST, ALL_ZONE_REQUESTS
@@ -221,7 +221,7 @@ async def test_an_address_with_no_thermostat_stays_as_it_is_and_two_in_a_row_end
     await _after_the_sweep(hass, handler)
     assert asked == ["7", "8"]
     assert zones == []
-    assert climate_module.ACTUATOR_ONLY_ZONE_MISSES == 2
+    assert climate_discovery.ACTUATOR_ONLY_ZONE_MISSES == 2
 
 
 async def test_an_acknowledged_read_that_brings_no_frame_counts_as_no_answer(hass: HomeAssistant) -> None:

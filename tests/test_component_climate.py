@@ -27,12 +27,8 @@ from OWNd.message import (
     OWNHeatingEvent,
 )
 
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
-    _zone_config,
-    async_setup_entry,
-    async_unload_entry,
-)
+from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry, async_unload_entry
+from custom_components.myhome.climate_discovery import _zone_config
 from custom_components.myhome.discovery import Address
 from custom_components.myhome.typing_compat import device_info_to_dict
 from tests.conftest import attach_runtime
