@@ -92,9 +92,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest-homeassistant-custom-component
           HA_CONSTRAINTS=$(python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')
+          if [ -f "$HA_CONSTRAINTS" ]; then echo "PIP_CONSTRAINT=$HA_CONSTRAINTS" >> "$GITHUB_ENV"; fi
           pip install -c "$HA_CONSTRAINTS" "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}" \
             || pip install -c "$HA_CONSTRAINTS" "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
-          pip install -c "$HA_CONSTRAINTS" --no-deps -e .
+          pip install -c "$HA_CONSTRAINTS" --no-deps .
           pip install -c "$HA_CONSTRAINTS" pytest pytest-cov pytest-asyncio syrupy pyyaml jsonschema build twine check-wheel-contents "validate-pyproject[all]" ruff python-dateutil pytz pytest-socket
 
       - name: Run test suite with coverage tracking

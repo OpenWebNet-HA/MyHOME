@@ -37,6 +37,7 @@ from custom_components.myhome.myhome_device import (
     extra_where_attributes,
     gateway_address_family,
 )
+from custom_components.myhome.typing_compat import device_info_to_dict
 from tests.conftest import attach_runtime
 
 EUI64_MAC = "00:03:50:00:00:01:02:03"
@@ -130,11 +131,13 @@ def test_myhome_device_groups_zigbee_units_and_reads_inventory_model(hass: HomeA
     assert unit2.unique_id == f"{EUI64_MAC}-1-32818402#9"
     assert unit1.device_info is not None
     assert unit2.device_info is not None
-    assert unit1.device_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-328184")}
-    assert unit2.device_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-328184")}
-    assert unit1.device_info["name"] == "ZigBee 328184"
-    assert unit1.device_info["model"] == "Dimmer Switch"
-    assert unit1.device_info["via_device_id"] == "gw-reg-id"
+    unit1_info = device_info_to_dict(unit1.device_info)
+    unit2_info = device_info_to_dict(unit2.device_info)
+    assert unit1_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-328184")}
+    assert unit2_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-328184")}
+    assert unit1_info["name"] == "ZigBee 328184"
+    assert unit1_info["model"] == "Dimmer Switch"
+    assert unit1_info["via_device_id"] == "gw-reg-id"
     assert unit1.translation_key == "zigbee_unit"
     assert unit1._attr_translation_placeholders == {"unit": "1"}
     assert unit2.translation_key == "zigbee_unit"
@@ -156,8 +159,9 @@ def test_myhome_device_groups_zigbee_units_and_reads_inventory_model(hass: HomeA
         translation_key="calibrate_travel_time",
     )
     assert btn_like.device_info is not None
-    assert btn_like.device_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-700001")}
-    assert btn_like.device_info["model"] == "Shutter / Cover"
+    btn_like_info = device_info_to_dict(btn_like.device_info)
+    assert btn_like_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-700001")}
+    assert btn_like_info["model"] == "Shutter / Cover"
     assert btn_like.translation_key == "calibrate_travel_time"
 
     # SCS gateway never treats 012#9 as ZigBee.
@@ -178,8 +182,9 @@ def test_myhome_device_groups_zigbee_units_and_reads_inventory_model(hass: HomeA
         gateway=scs_gw,  # type: ignore[arg-type]
     )
     assert scs_ent.device_info is not None
-    assert scs_ent.device_info["identifiers"] == {(DOMAIN, "00:03:50:00:11:22-4-012#9")}
-    assert scs_ent.device_info["name"] == "Actuator 012#9"
+    scs_info = device_info_to_dict(scs_ent.device_info)
+    assert scs_info["identifiers"] == {(DOMAIN, "00:03:50:00:11:22-4-012#9")}
+    assert scs_info["name"] == "Actuator 012#9"
 
 
 async def test_zigbee_light_group_and_point_attributes(hass: HomeAssistant) -> None:
@@ -232,7 +237,7 @@ async def test_zigbee_light_group_and_point_attributes(hass: HomeAssistant) -> N
     assert "A" not in pt.extra_state_attributes
     assert "PL" not in pt.extra_state_attributes
     assert pt.device_info is not None
-    assert pt.device_info["name"] == "ZigBee 328184"
+    assert device_info_to_dict(pt.device_info)["name"] == "ZigBee 328184"
 
 
 async def test_zigbee_what_32_34_39_event_only_in_light_and_dispatcher(
@@ -366,7 +371,7 @@ async def test_zigbee_cover_attributes_point_matching_and_scope(hass: HomeAssist
     assert "A" not in cov._attr_extra_state_attributes
     assert "PL" not in cov._attr_extra_state_attributes
     assert cov.device_info is not None
-    assert cov.device_info["name"] == "ZigBee 328184"
+    assert device_info_to_dict(cov.device_info)["name"] == "ZigBee 328184"
 
     own_msg = OWNMessage.parse("*2*1*32818401#9##", gateway=gw.profile)
     other_msg = OWNMessage.parse("*2*1*32818402#9##", gateway=gw.profile)
@@ -503,6 +508,8 @@ async def test_zigbee_buttons_keep_cover_calibration_and_skip_who14_locks(
     assert len(cal_btns) == 1
     assert cal_btns[0].unique_id == f"{EUI64_MAC}-2-32818401#9-calibrate"
     assert cal_btns[0].device_info is not None
-    assert cal_btns[0].device_info["identifiers"] == {(DOMAIN, f"{EUI64_MAC}-zigbee-328184")}
+    assert device_info_to_dict(cal_btns[0].device_info)["identifiers"] == {
+        (DOMAIN, f"{EUI64_MAC}-zigbee-328184")
+    }
     assert cal_btns[0].translation_key == "calibrate_travel_time"
     assert lock_btns == []

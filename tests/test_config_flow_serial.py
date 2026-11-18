@@ -262,6 +262,7 @@ async def test_serial_user_flow_and_subentry_exclusion(hass) -> None:
                 result["flow_id"],
                 {CONF_SERIAL_PORT: TEST_PORT, CONF_NAME: "BTicino 3578"},
             )
+            await hass.async_block_till_done()
         assert result["type"] is FlowResultType.CREATE_ENTRY
         entry = result["result"]
         assert entry.unique_id == TEST_EUI64
@@ -276,14 +277,18 @@ async def test_serial_user_flow_and_subentry_exclusion(hass) -> None:
         result2 = await hass.config_entries.flow.async_configure(
             result2["flow_id"], {"serial": "serial"}
         )
-        with patch(
-            "custom_components.myhome.config_flow._async_probe_zigbee_serial",
-            return_value=(TEST_EUI64, "1.2.3", None),
+        with (
+            patch(
+                "custom_components.myhome.config_flow._async_probe_zigbee_serial",
+                return_value=(TEST_EUI64, "1.2.3", None),
+            ),
+            patch("custom_components.myhome.async_setup_entry", return_value=True),
         ):
             result2 = await hass.config_entries.flow.async_configure(
                 result2["flow_id"],
                 {CONF_SERIAL_PORT: ALT_PORT, CONF_NAME: "Legrand 088328"},
             )
+            await hass.async_block_till_done()
         assert result2["type"] is FlowResultType.ABORT
         assert result2["reason"] == "already_configured"
         assert entry.data[CONF_SERIAL_PORT] == ALT_PORT
@@ -366,6 +371,7 @@ async def test_serial_reconfigure_self_probe_skip_and_mismatch(hass) -> None:
         assert result2["reason"] == "reconfigure_successful"
         assert entry.data[CONF_SERIAL_PORT] == ALT_PORT
         assert entry.data[CONF_FIRMWARE] == "2.0.0"
+        await hass.async_block_till_done()
 
     # async_step_reconfigure_serial aborts with "unknown" when entry cannot be resolved
     flow = MyhomeConfigFlow()
@@ -442,6 +448,7 @@ async def test_serial_options_flow_and_topology_exclusions(hass) -> None:
                 CONF_IGNORED_ADDRESSES: "",
             },
         )
+        await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_WORKER_COUNT] == 1
     assert result["data"][CONF_GENERATE_EVENTS] is True
