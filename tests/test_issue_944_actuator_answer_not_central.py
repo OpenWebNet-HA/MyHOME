@@ -121,7 +121,9 @@ async def test_a_discovered_zone_stays_standalone_after_the_actuator_answer(hass
     assert handler.has_central_unit is False
     assert zone._standalone is True
     assert zone.hvac_mode == HVACMode.HEAT
-    assert zone.hvac_modes == [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT, HVACMode.COOL]
+    # No frame here shows a conditioning side of zone 6 (its valve status was not captured), so
+    # `cool` is not offered yet: a zone found on the bus cools once the bus shows it does.
+    assert zone.hvac_modes == [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT]
 
     handler.send.reset_mock()
     await zone.async_set_temperature(temperature=22.5)

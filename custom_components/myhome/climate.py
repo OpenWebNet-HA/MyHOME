@@ -257,7 +257,10 @@ async def async_setup_entry(
             interface=interface,
             name=name,
             heating=cfg.get(CONF_HEATING_SUPPORT, True),
-            cooling=cfg.get(CONF_COOLING_SUPPORT, True),
+            # ``myhome.yaml`` says whether a zone cools (``cool:``, False unless stated). A zone
+            # found on the bus has no such entry: it learns it from its valve status (None here).
+            # A central unit has no valve status and runs both seasons, as before.
+            cooling=cfg.get(CONF_COOLING_SUPPORT, True) if is_central else cfg.get(CONF_COOLING_SUPPORT),
             fan=cfg.get(CONF_FAN_SUPPORT, False),
             humidity=cfg.get(CONF_HUMIDITY_SUPPORT, False),
             standalone=(
@@ -311,7 +314,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         who: str,
         where: str,
         heating: bool,
-        cooling: bool,
+        cooling: bool | None,
         fan: bool,
         standalone: bool | None,
         central: bool,
@@ -393,7 +396,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # advertised explicitly (mandatory since core 2025.1).
         self._attr_supported_features = ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
         self._heating = heating
-        self._cooling = cooling
+        # ``None``: not configured. The zone then cools once the bus has shown an actuator on
+        # its conditioning side (``_note_conditioning_side``), as ``cool: true`` says in
+        # ``myhome.yaml``; until then it is a heating zone, as ``myhome.yaml`` takes it by default.
+        self._cooling_configured = cooling is not None
+        self._cooling = bool(cooling)
         if heating or cooling:
             self._attr_supported_features |= ClimateEntityFeature.TARGET_TEMPERATURE
         self._attr_hvac_modes = self._advertised_hvac_modes()
@@ -671,6 +678,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self._standalone_detected:
             # Found from the bus, not configured: kept across restarts (``async_restore_last_state``).
             attrs["standalone_detected"] = True
+        if self._cooling and not self._cooling_configured:
+            # Learned from the bus, not configured: kept across restarts as well.
+            attrs["cooling_seen"] = True
         if self._central:
             if self._central_operation is not None:
                 attrs["central_operation"] = self._central_operation
@@ -790,6 +800,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # What a setpoint write found before the restart; a report of the central unit
                 # for this zone still overrides it (``_note_central_zone_report``).
                 self._set_standalone_detected(True)
+                self._refresh_hvac_modes()
+            if last_state.attributes.get("cooling_seen") is True and not self._cooling_configured:
+                self._cooling = True  # what the valve status showed before the restart
                 self._refresh_hvac_modes()
             restored_knob = last_state.attributes.get("knob_pos")
             if isinstance(restored_knob, str) and restored_knob and restored_knob != "UNKNOWN":
@@ -2164,6 +2177,47 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if changed:
             self._publish_state()
 
+    def _note_conditioning_report(self, message: OWNHeatingEvent) -> None:
+        """A zone found on the bus cools once the bus reports it in conditioning.
+
+        Its own season or mode frame (``*4*0*2##``) or the central unit's report about it
+        (``*4*210*#5##``: zones 5 and 12 of the F454 plant of #629 are put in manual
+        conditioning that way and must show ``cool``). Not the central unit's own frames:
+        its season says nothing about one zone's actuators.
+        """
+        if self._cooling_configured or self._cooling or self._central:
+            return
+        if getattr(message, "season", None) not in _CONDITIONING_SEASONS:
+            return
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return  # the same zone number on another bus
+        if is_central_thermo_where(message) and central_report_zone(message) != canonical_thermo_zone(self._where):
+            return  # #0 / #0#N, or the central unit about another zone
+        self._cooling = True
+        self._refresh_hvac_modes()
+
+    def _note_conditioning_side(self, message: OWNHeatingEvent) -> None:
+        """A zone found on the bus cools once its valve status shows a conditioning actuator.
+
+        ``*#4*Z*19*CV*HV##``: ``CV`` is the conditioning side (WHO 4 document, 1.5.7). A zone
+        with no actuator on that side reports 0 there and nothing else: live 2026-11-18, the
+        heating-only zone 3 behind an F461 and an F455 ``*#4*3*19*0*1##``, the 29 heating-only
+        zones behind a 3488 and a MyHomeServer1 ``*#4*49*19*0*0##``, while the zones with a
+        cooling fan coil report its state, ``*#4*4*19*5*1##``, ``*#4*2*19*8*5##``,
+        ``*#4*47*19*5*0##``; in tests/fixtures the same holds for every zone with a dimension
+        19 frame (15 with a fan coil state on that side, 57 with 0, none with a plain valve
+        state). A cooling valve that is off reads 0 as well, so such a zone cools from the
+        first time its valve is seen in any other state; ``cool: true`` in ``myhome.yaml``
+        says it at once. Never unlearned: 0 is also a valve that is off.
+        """
+        if self._cooling_configured or self._cooling:
+            return
+        values = getattr(message, "dimension_value", None)
+        side = str(values[0]) if isinstance(values, (list, tuple)) and values else ""
+        if side.isdigit() and int(side) != 0:
+            self._cooling = True
+            self._refresh_hvac_modes()
+
     def _set_standalone_detected(self, detected: bool) -> None:
         """Keep the finding, and share it with what else hangs on this zone's device.
 
@@ -2835,6 +2889,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         teaches the knob offset it is shown with (a knob at +1 that had not reported: 21.0
         written, ``*#4*2*12*0220*3##`` back).
         """
+        self._note_conditioning_report(message)  # first: the frame is then read as a cooling zone's
         try:
             self._handle_event(message)
         finally:
@@ -3270,6 +3325,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 dim19 = thermo_dim19_status(message)
                 if dim19 is None:
                     return
+                self._note_conditioning_side(message)
                 (
                     cooling_active,
                     heating_active,
@@ -3435,7 +3491,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if repeated_off:
                 pass  # hvac_action stays what dimension 19 made it
             elif any_active:
-                if self._heating and self._cooling:
+                # A zone found on the bus that has not shown a conditioning side yet may still
+                # have one: its active actuator is not called heating before the frame says so.
+                if self._heating and (self._cooling or not self._cooling_configured):
                     if heating_active:
                         self._attr_hvac_action = HVACAction.HEATING
                     elif cooling_active:
