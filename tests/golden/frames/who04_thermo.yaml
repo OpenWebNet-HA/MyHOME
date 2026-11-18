@@ -1138,3 +1138,31 @@
     trace; MyHOME trace discussion_770_f453_n4692/myhome_sweep_F453_all_2026-11-14T13-34-42.json,
     @DinoMesina Discussion #770 comment 19616515)'
   roundtrip: true
+
+- id: thermo.capture.dim20.proportional_20pct.zone1.act3
+  frame: "*#4*1#3*20*120##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "1"
+  where_param: ["3"]
+  dimension: 20
+  dimension_values: ["120"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Dimension 20 proportional 0-10 V 20% active output (code 120 in 101..200) on zone 1 actuator 3 from @xmavgithub's live MyHomeServer1 2.87.13 Sabiana fan-coil heating ramp (120 -> 123 -> 150 -> 180 -> 200 -> 100, paired with #20 writes; MyHOME#949)"
+  roundtrip: true
+
+- id: thermo.capture.dim20.proportional_100pct.zone1.act3
+  frame: "*#4*1#3*20*200##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "1"
+  where_param: ["3"]
+  dimension: 20
+  dimension_values: ["200"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Dimension 20 proportional 0-10 V 100% full output (code 200) on zone 1 actuator 3 from @xmavgithub's live MyHomeServer1 2.87.13 Sabiana fan-coil heating ramp (MyHOME#949)"
+  roundtrip: true

@@ -492,12 +492,8 @@ async def async_setup_entry(
 
     # ── WHO 4: 0-10 V proportional actuator output level sensors (#949) ──
     def _has_climate_zone_entity(zone: str, iface: str | None) -> bool:
-        try:
-            reg = er.async_get(hass)
-            entries = er.async_entries_for_config_entry(reg, config_entry.entry_id)
-        except Exception:
-            return False
-        for ent in entries:
+        reg = er.async_get(hass)
+        for ent in er.async_entries_for_config_entry(reg, config_entry.entry_id):
             if ent.domain != "climate" or not ent.unique_id:
                 continue
             c_who, c_dev_id = parse_unique_id(ent.unique_id, gateway.mac, entry_mac)
@@ -537,37 +533,43 @@ async def async_setup_entry(
             manufacturer = str(cfg.get(CONF_MANUFACTURER) or "BTicino")
             model = str(cfg.get(CONF_DEVICE_MODEL) or "Heating Zone")
             return (cfg_addr.key, dev_name, manufacturer, model, standalone_cfg)
-        try:
-            reg = er.async_get(hass)
-            dev_reg = dr.async_get(hass)
-            for ent in er.async_entries_for_config_entry(reg, config_entry.entry_id):
-                if ent.domain != "climate" or not ent.unique_id:
-                    continue
-                c_who, c_dev_id = parse_unique_id(ent.unique_id, gateway.mac, entry_mac)
-                if c_who != "4":
-                    continue
-                c_addr = Address.from_device_id(c_dev_id)
-                if canonical_thermo_zone(c_addr.where) == zone and c_addr.interface == iface:
-                    dev = dev_reg.async_get(ent.device_id) if ent.device_id else None
-                    dev_name = (
-                        str(dev.name)
-                        if dev and isinstance(dev.name, str) and dev.name
-                        else default_name
-                    )
-                    manufacturer = (
-                        str(dev.manufacturer)
-                        if dev and isinstance(dev.manufacturer, str) and dev.manufacturer
-                        else "BTicino"
-                    )
-                    model = (
-                        str(dev.model)
-                        if dev and isinstance(dev.model, str) and dev.model
-                        else "Heating Zone"
-                    )
-                    return (c_dev_id, dev_name, manufacturer, model, None)
-        except Exception:
-            pass
+        reg = er.async_get(hass)
+        dev_reg = dr.async_get(hass)
+        for ent in er.async_entries_for_config_entry(reg, config_entry.entry_id):
+            if ent.domain != "climate" or not ent.unique_id:
+                continue
+            c_who, c_dev_id = parse_unique_id(ent.unique_id, gateway.mac, entry_mac)
+            if c_who != "4":
+                continue
+            c_addr = Address.from_device_id(c_dev_id)
+            if canonical_thermo_zone(c_addr.where) == zone and c_addr.interface == iface:
+                dev = dev_reg.async_get(ent.device_id) if ent.device_id else None
+                raw_name = getattr(dev, "name", None)
+                raw_mfg = getattr(dev, "manufacturer", None)
+                raw_model = getattr(dev, "model", None)
+                dev_name = (
+                    raw_name
+                    if isinstance(raw_name, str) and raw_name
+                    else default_name
+                )
+                manufacturer = (
+                    raw_mfg
+                    if isinstance(raw_mfg, str) and raw_mfg
+                    else "BTicino"
+                )
+                model = (
+                    raw_model
+                    if isinstance(raw_model, str) and raw_model
+                    else "Heating Zone"
+                )
+                return (c_dev_id, dev_name, manufacturer, model, None)
         return (default_dev_id, default_name, "BTicino", "Heating Zone", None)
+
+    def _unpack_actuator_ctx(ctx: DeviceContext) -> tuple[str, str, str, str | None]:
+        norm_where, zone, actuator, norm_if = parse_thermo_actuator_where(
+            ctx.address.where, ctx.address.interface
+        )
+        return (norm_where, zone, cast(str, actuator), norm_if)
 
     def actuator_output_registry_address(entry: er.RegistryEntry) -> Address | None:
         after_mac = entry.unique_id.replace(f"{gateway.mac}-", "", 1)
@@ -589,14 +591,7 @@ async def async_setup_entry(
         return Address(f"{zone}#{actuator}", iface, key_suffix="-output-level")
 
     def duplicate_actuator_output(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
-        try:
-            _nw, zone, actuator, norm_if = parse_thermo_actuator_where(
-                ctx.address.where, ctx.address.interface
-            )
-        except ValueError:
-            return True
-        if actuator is None:
-            return True
+        _nw, zone, actuator, norm_if = _unpack_actuator_ctx(ctx)
         if _is_thermo_switch_claimed(zone, actuator, norm_if):
             LOGGER.info(
                 "sensor: pruning actuator output sensor %s claimed by WHO=4 thermo switch (#785)",
@@ -608,30 +603,16 @@ async def async_setup_entry(
     def accept_actuator_output(ctx: DeviceContext) -> bool:
         if ctx.source == "yaml":
             return False
-        try:
-            _nw, zone, actuator, norm_if = parse_thermo_actuator_where(
-                ctx.address.where, ctx.address.interface
-            )
-        except ValueError:
-            return False
-        if actuator is None:
-            return False
+        norm_where, zone, actuator, norm_if = _unpack_actuator_ctx(ctx)
         if _is_thermo_switch_claimed(zone, actuator, norm_if):
             return False
         if ctx.source == "registry":
-            full_act = f"{_nw}{BUS_ROUTING}{norm_if}" if norm_if else _nw
+            full_act = f"{norm_where}{BUS_ROUTING}{norm_if}" if norm_if else norm_where
             return f"{full_act}-output-level" not in discovery_for["4_actuator"].known
         return True
 
-    def build_actuator_output(ctx: DeviceContext) -> MyHOMEActuatorOutputSensor | None:
-        try:
-            norm_where, zone, actuator, norm_if = parse_thermo_actuator_where(
-                ctx.address.where, ctx.address.interface
-            )
-        except ValueError:
-            return None
-        if actuator is None:
-            return None
+    def build_actuator_output(ctx: DeviceContext) -> MyHOMEActuatorOutputSensor:
+        norm_where, zone, actuator, norm_if = _unpack_actuator_ctx(ctx)
         zone_dev_id, dev_name, manufacturer, model, standalone_cfg = (
             _resolve_climate_device_meta(zone, norm_if)
         )
@@ -1554,17 +1535,9 @@ class MyHOMEActuatorOutputSensor(MyHOMESensorEntity):
         """Restore bounded integer percentage (0..100) across restarts."""
         await super().async_restore_last_state(last_state)
         val = self._attr_native_value
-        if val is None:
-            return
-        if isinstance(val, bool) or not isinstance(val, (int, float)):
-            self._attr_native_value = None
-            return
         if isinstance(val, float):
-            if not math.isfinite(val) or not val.is_integer():
-                self._attr_native_value = None
-                return
-            val = int(val)
-        if not (0 <= val <= 100):
+            val = int(val) if val.is_integer() else None
+        if not isinstance(val, int) or isinstance(val, bool) or not (0 <= val <= 100):
             self._attr_native_value = None
             return
         self._attr_native_value = val

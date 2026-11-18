@@ -40,6 +40,7 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_MAC, CONF_NAME, PERCENTAGE
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNHeatingCommand, OWNHeatingEvent, OWNMessage
@@ -313,6 +314,14 @@ def test_thermo_dim19_levels(
     assert thermo_dim19_levels(msg) == expected
 
 
+def test_thermo_dim19_levels_rejects_malformed_hvac_action_values() -> None:
+    """thermo_dim19_levels returns None when hvac_action carries non-uint dimension_value tokens."""
+    bad = SimpleNamespace(
+        who=4, dimension=19, message_type="hvac_action", dimension_value=["0", ""]
+    )
+    assert thermo_dim19_levels(bad) is None
+
+
 # ---------------------------------------------------------------------------
 # 2. Live capture end-to-end replay (xmavgithub MyHomeServer1 2.87.13 #949)
 # ---------------------------------------------------------------------------
@@ -321,9 +330,10 @@ def test_thermo_dim19_levels(
 async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
     hass: HomeAssistant,
 ) -> None:
-    """Replay xmavgithub's Issue #949 live capture across climate and sensor platforms."""
+    """Replay xmavgithub's Issue #949 9-frame verbatim live capture across climate and sensor."""
     trace = json.loads(MHS1_RAMP_TRACE_PATH.read_text(encoding="utf-8"))
     assert trace["synthetic"] is False
+    assert trace["capture"]["kind"] == "issue_log_excerpt"
     assert trace["gateway"]["model"] == "MyHomeServer1"
     assert trace["gateway"]["firmware"] == "2.87.13"
 
@@ -353,9 +363,16 @@ async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
 
     signal = f"myhome_message_{gw.mac}"
     frames = [item["raw"] for item in trace["frames"]]
+    assert len(frames) == 9
 
-    # 1) Initial ambient + setpoint + season + discrete actuators 1#2 and 1#1 turning ON
-    for raw in frames[:7]:
+    # 1) Seed Zone 1 ambient 18.9 °C + raised setpoint 24.0 °C + floor valve 1#1 ON + trace[0] (1#2*20*1)
+    for raw in (
+        "*#4*1*0*0189##",
+        "*#4*1*12*0240*1##",
+        "*4*1*1##",
+        "*#4*1#1*20*1##",
+        frames[0],
+    ):
         async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
     await hass.async_block_till_done()
 
@@ -368,13 +385,13 @@ async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
     assert added_sensors == []
 
     # 2) Paired *#4*1#3*#20*120## write frame alone: ignored by both climate and sensor
-    async_dispatcher_send(hass, signal, OWNMessage.parse(frames[7]))
+    async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*1#3*#20*120##"))
     await hass.async_block_till_done()
     assert added_sensors == []
     assert "3" not in zone1.extra_state_attributes["actuators"]
 
-    # 3) *#4*1#3*20*120## status frame: discovers sensor at 20 % and sets actuator_levels["3"] = 20
-    async_dispatcher_send(hass, signal, OWNMessage.parse(frames[8]))
+    # 3) trace[1] (*#4*1#3*20*120##): discovers sensor at 20 % and sets actuator_levels["3"] = 20
+    async_dispatcher_send(hass, signal, OWNMessage.parse(frames[1]))
     await hass.async_block_till_done()
     assert len(added_sensors) == 1
     act3_sensor = added_sensors[0]
@@ -396,19 +413,20 @@ async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
     }
     assert zone1.extra_state_attributes["actuator_levels"] == {"3": 20}
 
-    # 4) Ramp 123 -> 150 -> 180 -> 200 (each preceded by #20 write)
-    expected_ramp = [23, 50, 80, 100]
-    for step_idx, expected_pct in enumerate(expected_ramp):
-        write_frame = frames[9 + step_idx * 2]
-        status_frame = frames[10 + step_idx * 2]
+    # 4) Ramp trace[2..5]: 123 -> 150 -> 180 -> 200 (each paired with preceding #20 write)
+    expected_ramp = [(123, 23), (150, 50), (180, 80), (200, 100)]
+    for step_idx, (code, expected_pct) in enumerate(expected_ramp):
+        status_frame = frames[2 + step_idx]
         writes_before = act3_sensor.async_schedule_update_ha_state.call_count
 
-        # #20 write frame must not write sensor state
-        async_dispatcher_send(hass, signal, OWNMessage.parse(write_frame))
+        # Paired #20 write frame must not write sensor state
+        async_dispatcher_send(
+            hass, signal, OWNMessage.parse(f"*#4*1#3*#20*{code}##")
+        )
         await hass.async_block_till_done()
         assert act3_sensor.async_schedule_update_ha_state.call_count == writes_before
 
-        # *20* status frame updates sensor and climate once
+        # Verbatim *20* status frame updates sensor and climate once
         async_dispatcher_send(hass, signal, OWNMessage.parse(status_frame))
         await hass.async_block_till_done()
         assert act3_sensor.native_value == expected_pct
@@ -422,8 +440,8 @@ async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
     await hass.async_block_till_done()
     assert act3_sensor.async_schedule_update_ha_state.call_count == writes_at_100
 
-    # 5) Setpoint restored to 19.0 °C -> *#4*1#3*#20*100## + *#4*1#3*20*100## -> 1#2*20*0 -> 1#1*20*0
-    for raw in frames[17:]:
+    # 5) Setpoint restored to 19.0 °C -> paired #20*100 + trace[6..8] (1#3*20*100, 1#2*20*0, 1#1*20*0)
+    for raw in ("*#4*1*12*0190*1##", "*#4*1#3*#20*100##", *frames[6:]):
         async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
     await hass.async_block_till_done()
 
@@ -639,6 +657,22 @@ def test_climate_repeated_off_dim19_resets_and_group_actuator_zero(
     assert zone.extra_state_attributes["cooling_output_level"] == 0
     assert zone.extra_state_attributes["heating_output_level"] == 0
 
+    # Fresh zone with empty _actuator_states receiving active Z#0 marks zone active
+    zone_empty = _make_zone(hass, gw, "2")
+    zone_empty.handle_event(OWNHeatingEvent.parse("*4*1*2##"))
+    zone_empty.handle_event(OWNHeatingEvent.parse("*#4*2#0*20*150##"))
+    assert zone_empty._zone_active is True
+    assert zone_empty._active_source == "zone"
+    assert zone_empty.hvac_action == HVACAction.HEATING
+
+    # Running fan-coil speed ("medium") is cleared to "off" on Z#0 inactive 100
+    zone_fan = _make_zone(hass, gw, "3", fan=True)
+    zone_fan.handle_event(OWNHeatingEvent.parse("*4*1*3##"))
+    zone_fan.handle_event(OWNHeatingEvent.parse("*#4*3#2*20*7##"))
+    assert zone_fan.extra_state_attributes["running_fan_speed"] == "medium"
+    zone_fan.handle_event(OWNHeatingEvent.parse("*#4*3#0*20*100##"))
+    assert zone_fan.extra_state_attributes["running_fan_speed"] == "off"
+
 
 # ---------------------------------------------------------------------------
 # 4. MyHOMEThermoSwitch proportional attributes
@@ -747,6 +781,10 @@ def test_thermo_switch_per_actuator_and_whole_zone_output_levels(
     # Z#0 discrete active clears actuator_levels
     sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#0*20*1##"))
     assert "actuator_levels" not in sw_zone.extra_state_attributes
+    # Out-of-range actuator id (> 9) is ignored cleanly
+    sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#10*20*1##"))
+    assert "10" not in sw_zone.extra_state_attributes["actuators"]
+
     # Inactive Dim 19 resets known levels to 0
     sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8#3*20*165##"))
     sw_zone.handle_event(OWNHeatingEvent.parse("*#4*8*19*100*100##"))
@@ -763,22 +801,11 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
 ) -> None:
     """Discrete 0..22, Z#0, pumps, probes, central, and probe-less thermo_switch zones are excluded."""
     gw = _make_gateway("MyHomeServer1", "2.87.13")
-    entry = _make_entry(
-        hass,
-        gw,
-        platforms={
-            "climate": {
-                "living": {
-                    CONF_WHO: "4",
-                    CONF_WHERE: "#1",
-                    CONF_NAME: "Living Room",
-                    CONF_STANDALONE: False,
-                }
-            },
-            "switch": {
-                "zone8_whole": {CONF_WHO: "4", CONF_WHERE: "8"},
-            },
-        },
+    alt_entry_mac = "00:03:50:00:99:99"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: alt_entry_mac},
+        unique_id=gw.mac,
         subentries_data=[
             {
                 "data": {CONF_WHO: "4", CONF_WHERE: "7#1"},
@@ -792,11 +819,70 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
                 "title": "Hybrid Relay 1#2",
                 "unique_id": "thermo_switch_4_1#2",
             },
+            {
+                "data": {CONF_WHO: "4", CONF_WHERE: "2#1"},
+                "subentry_type": SUBENTRY_TYPE_THERMO_SWITCH,
+                "title": "Bedroom Towel Warmer 2#1",
+                "unique_id": "thermo_switch_4_2#1",
+            },
         ],
     )
+    entry.add_to_hass(hass)
+    plat_map: dict[str, dict[str, Any]] = {p: {} for p in PLATFORMS}
+    plat_map["climate"] = {
+        "bad_non_dict": "ignored",  # type: ignore[dict-item]
+        "missing_where": {CONF_NAME: "Orphan"},
+        "living": {
+            CONF_WHO: "4",
+            CONF_WHERE: "#1",
+            CONF_NAME: "Living Room",
+            CONF_STANDALONE: False,
+        },
+        "4": {
+            CONF_WHO: "4",
+            CONF_WHERE: "4",
+            CONF_NAME: "Direct Zone 4",
+        },
+        "5#4#01": {
+            CONF_WHO: "4",
+            CONF_WHERE: "5#4#01",
+            CONF_NAME: "Subbus Zone 5",
+        },
+    }
+    plat_map["switch"] = {
+        "zone8_whole": {CONF_WHO: "4", CONF_WHERE: "8"},
+        "invalid_where_sw": {CONF_WHO: "4", CONF_WHERE: "bad#where#99"},
+    }
+    plat_map["sensor"] = {
+        "yaml_sensor_ignored_by_4_actuator": {CONF_WHO: "4", CONF_WHERE: "9#1"},
+    }
+    entry.runtime_data = MyHOMERuntimeData(gateway=gw, platforms=plat_map)
 
-    # Seed a stale registry entry on probe-less thermo_switch 7#1 AND a valid registry entry on 2#3
+    dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
+    # Seed non-WHO-4, non-matching Zone 9, and matching Zone 2 climate entities in registry
+    ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{gw.mac}-1-99", config_entry=entry
+    )
+    ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{gw.mac}-4-9", config_entry=entry
+    )
+    z2_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{gw.mac}-4-2")},
+        name="Master Bedroom",
+        manufacturer="Legrand",
+        model="Smarter",
+    )
+    ent_reg.async_get_or_create(
+        "climate",
+        DOMAIN,
+        f"{gw.mac}-4-2",
+        config_entry=entry,
+        device_id=z2_dev.id,
+    )
+
+    # Seed a stale registry entry on probe-less thermo_switch 7#1 AND a valid registry entry on 6#3 (using alt_entry_mac)
     stale_entry = ent_reg.async_get_or_create(
         "sensor",
         DOMAIN,
@@ -806,7 +892,7 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     restored_entry = ent_reg.async_get_or_create(
         "sensor",
         DOMAIN,
-        f"{gw.mac}-4-2#3-output-level",
+        f"{alt_entry_mac}-4-6#3-output-level",
         config_entry=entry,
     )
 
@@ -821,10 +907,10 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
 
     await sensor_setup_entry(hass, entry, _add)
 
-    # Stale 7#1 entry was pruned from entity registry; valid 2#3 was restored!
+    # Stale 7#1 entry was pruned from entity registry; valid 6#3 was restored!
     assert ent_reg.async_get(stale_entry.entity_id) is None
     assert ent_reg.async_get(restored_entry.entity_id) is not None
-    assert [e.unique_id for e in added] == [f"{gw.mac}-4-2#3-output-level"]
+    assert [e.unique_id for e in added] == [f"{gw.mac}-4-6#3-output-level"]
 
     signal = f"myhome_message_{gw.mac}"
     ignored_frames = [
@@ -842,6 +928,8 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
         # Claimed by probe-less thermo_switch 7#1 (including sibling 7#2 on probe-less zone 7)
         "*#4*7#1*20*150##",
         "*#4*7#2*20*150##",
+        # Claimed by per-actuator thermo_switch 2#1 even though Zone 2 has a climate entity
+        "*#4*2#1*20*150##",
         # Claimed by whole-zone thermo_switch 8
         "*#4*8#1*20*150##",
     ]
@@ -852,8 +940,14 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
 
     # Zone 1 HAS explicit climate config ("#1", "Living Room"), so 1#3 discovers and links to "#1"!
     async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*1#3*20*175##"))
+    # Zone 2 has a registry climate entity ("Master Bedroom"), so 2#3 discovers and adopts its DeviceEntry metadata!
+    async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*2#3*20*140##"))
+    # Zone 4 & 5#4#01 hit direct config_for branches
+    async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*4#1*20*130##"))
+    async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*5#1#4#01*20*120##"))
     await hass.async_block_till_done()
-    assert len(added) == 2
+    assert len(added) == 5
+
     living_act3 = added[1]
     assert living_act3.unique_id == f"{gw.mac}-4-1#3-output-level"
     assert living_act3._device_id == "#1"
@@ -861,6 +955,16 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     assert living_act3._device_name == "Living Room"
     assert living_act3.native_value == 75
     assert living_act3._standalone is False
+
+    bed_act3 = added[2]
+    assert bed_act3.unique_id == f"{gw.mac}-4-2#3-output-level"
+    assert bed_act3._device_name == "Master Bedroom"
+    assert bed_act3._manufacturer == "Legrand"
+    assert bed_act3._model == "Smarter"
+    assert bed_act3.native_value == 40
+
+    assert added[3]._device_name == "Direct Zone 4"
+    assert added[4]._device_name == "Subbus Zone 5"
 
     assert await sensor_unload_entry(hass, entry)
 
