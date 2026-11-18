@@ -530,7 +530,7 @@ GATEWAY_OPTIONS_SPECS: list[dict[str, object]] = [
         "selector": "Text",
         "default": "`[]`",
         "limits": "Zones `1`..`99` (local bus)",
-        "description": "Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`.",
+        "description": "Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`. The emulated firmware of F453, F453AV, H4684, MH200 and MH200N refuses that direct form (own-firmware-oracle `trace-corpus.tsv:55`; not yet seen on a real gateway): a refused write fails the service call.",
     },
     {
         "keys": ("bus_topology",),
