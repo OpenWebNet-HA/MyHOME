@@ -627,6 +627,9 @@
     "setpoint_not_taken": {
       "message": "{name} did not take the setpoint {temperature} °C, neither through the central unit nor directly: it still reports {reported} °C"
     },
+    "setpoint_refused": {
+      "message": "{name}: the gateway refused the setpoint write ({frame})"
+    },
     "setpoint_not_taken_via_central": {
       "message": "{name} did not take the setpoint {temperature} °C sent through the central unit ({frame}): it still reports {reported} °C. If it is a standalone thermostat, list its zone under \"Standalone thermostats\" in the gateway options (or set `standalone: true` in myhome.yaml)"
     },

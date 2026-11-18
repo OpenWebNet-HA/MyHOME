@@ -195,6 +195,10 @@ SETPOINT_CONFIRM_TIMEOUT = 3.0
 # How long the write itself may take to be acknowledged: as LOCK_WRITE_TIMEOUT (lock.py),
 # reopening an idle command session can take OWNd's whole reconnect loop before the frame goes out.
 SETPOINT_DELIVERY_TIMEOUT = 15.0
+# After the central unit answered for the zone without the written setpoint: how long its
+# setpoint report may still follow before the zone is read (2 ms after the mode frame on an
+# F461, 03:34:22.797 / .799 in standalone_zone_2026_11_18; an F455 does not show it).
+SETPOINT_CENTRAL_REPORT_GRACE = 0.5
 # How long the read ``*#4*Z*14##`` that settles an unconfirmed write may take (a zone answered it
 # in 0.09-0.51 s on the F461 and the F455; a dead zone of a MyHomeServer1 was NACKed after ~6.4 s).
 SETPOINT_READ_TIMEOUT = 10.0
@@ -203,6 +207,13 @@ SETPOINT_READ_TIMEOUT = 10.0
 # old names as deprecated (unsupported from 2027.11). Older cores, down to the
 # minimum 2026.8, only read the old names; MyHOMEClimate bridges them while they do.
 _NATIVE_TEMPERATURE_API = hasattr(ClimateEntity, "native_temperature_unit")
+
+
+def _delivered(written: object) -> bool:
+    """Whether a frame's delivery future says the gateway acknowledged it (no future: assumed so)."""
+    if not isinstance(written, asyncio.Future):
+        return True
+    return written.done() and not written.cancelled() and written.exception() is None
 
 
 async def async_setup_entry(
@@ -358,7 +369,10 @@ async def async_setup_entry(
             humidity=cfg.get(CONF_HUMIDITY_SUPPORT, False),
             standalone=(
                 True
-                if not interface and not is_central and canonical_thermo_zone(where) in standalone_zones
+                if not interface
+                and not is_central
+                and not is_actuator_where(where)
+                and canonical_thermo_zone(where) in standalone_zones
                 else cfg.get(CONF_STANDALONE)
             ),
             central=is_central,
@@ -672,6 +686,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # which sets ``_central_zone_seen``).
         self._central_zone_seen = False
         self._standalone_detected = False
+        # Whether the zone's own (plain ``Z``) frames last said it is off or in protection; None
+        # until one came. Not the mode shown: an F455 turns that to AUTO for a moment with its
+        # made-up ``*4*311*#Z##`` (``_asleep``).
+        self._own_off: bool | None = None
         # The setpoint write waiting for its confirmation: the nominal written, the value
         # dimension 12 would show for it, and the event a matching report sets.
         self._setpoint_check: tuple[float, float, asyncio.Event] | None = None
@@ -1940,8 +1958,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._refresh_hvac_modes()
         check = self._setpoint_check
         if check is not None:
+            # The central unit answered for the zone the setpoint went to: it is one of its
+            # zones. Only its report of the written setpoint confirms the write. A mode frame
+            # (all an F455 shows, ``*4*110*#3##``) or the setpoint it had before leaves the
+            # read-back to decide.
             self._setpoint_check_by_central = True
-            check[2].set()  # the central unit answered for the zone the setpoint went to
+            reported = getattr(message, "set_temperature", None)
+            if (
+                message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+                and isinstance(reported, (int, float))
+                and abs(float(reported) - check[0]) < 0.05
+            ):
+                check[2].set()
 
     def _note_setpoint_report(self, message: OWNHeatingEvent) -> None:
         """While a setpoint write is being checked: does this frame show the zone took it?
@@ -1954,18 +1982,51 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         check = self._setpoint_check
         if check is None:
             return
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return  # the same zone number on another bus
         if message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
             reported = getattr(message, "set_temperature", None)
             expected = check[0]
             if isinstance(reported, (int, float)) and not is_central_thermo_where(message):
                 self._setpoint_check_reported = float(reported)
         elif message.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE:
+            if self._is_off():
+                return  # what a zone that is off keeps to, not the setpoint that was written
             reported = getattr(message, "local_set_temperature", None)
             expected = check[1]
         else:
             return
+        if self._asleep():
+            return  # its own report shows what it holds, not that the write arrived
         if isinstance(reported, (int, float)) and abs(float(reported) - expected) < 0.05:
             check[2].set()
+
+    def _note_own_state(self, message: OWNHeatingEvent) -> None:
+        """Keep whether the zone's own frame says it is off (``*4*303*2##``) or running (``*4*0*2##``)."""
+        if self._central or is_central_thermo_where(message):
+            return
+        if message.message_type == MESSAGE_TYPE_SEASON:
+            self._own_off = False
+        elif message.message_type == MESSAGE_TYPE_MODE:
+            self._own_off = getattr(message, "mode", None) == CLIMATE_MODE_OFF
+
+    def _is_off(self) -> bool:
+        """Off by the zone's own last frame; by the mode shown while none has come."""
+        if self._own_off is None:
+            return self._attr_hvac_mode == HVACMode.OFF
+        return self._own_off
+
+    def _asleep(self) -> bool:
+        """Whether this zone, found on the bus, is off and the central unit has not answered for it.
+
+        A thermostat that is off still holds its setpoint: its report of the requested value
+        does not show that a write arrived. Live 2026-11-18, zone 2 off at 20.0, 20.0 written as
+        ``*#4*#2*#14*0200*3##``: ``*#4*2*14*0200*3##`` came (its own read-back on an F461,
+        another client's status request on an F455) and the zone stayed ``*4*303*2##``. On the
+        F455 the entity showed AUTO for 0.1 s in between (the gateway's ``*4*311*#2##``), so
+        the zone's own frames decide, not the mode shown.
+        """
+        return self._is_off() and self._standalone_config is None and not self._setpoint_check_by_central
 
     async def _wait_for_setpoint(self, written: object, check: tuple[float, float, asyncio.Event]) -> bool:
         """Whether the plant confirmed the write behind ``written`` within ``SETPOINT_CONFIRM_TIMEOUT``.
@@ -1976,13 +2037,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         if isinstance(written, asyncio.Future):
             await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
-            if not written.done() or written.cancelled() or written.exception() is not None:
-                return check[2].is_set()
-        try:
-            await asyncio.wait_for(check[2].wait(), timeout=SETPOINT_CONFIRM_TIMEOUT)
-        except TimeoutError:
-            return False
-        return True
+            if not written.done():
+                written.cancel()  # withdrawn: it must not go out after the check has given up
+            if not _delivered(written):
+                return False
+        deadline = time.monotonic() + SETPOINT_CONFIRM_TIMEOUT
+        central_answered = False
+        while not check[2].is_set() and time.monotonic() < deadline:
+            if self._setpoint_check_by_central and not central_answered:
+                # The central unit answered without the written setpoint. Where it reports the
+                # setpoint, that frame follows its mode frame at once (2 ms on an F461), so the
+                # read-back does not have to wait for the whole timeout.
+                central_answered = True
+                deadline = min(deadline, time.monotonic() + SETPOINT_CENTRAL_REPORT_GRACE)
+            await asyncio.sleep(0.02)
+        return check[2].is_set()
 
     async def _read_back_setpoint(self, check: tuple[float, float, asyncio.Event]) -> float | None:
         """Ask the zone for its commanded setpoint (``*#4*Z*14##``) while a write is checked.
@@ -1992,7 +2061,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         handler = self._gateway_handler
         self._setpoint_check_reported = None
-        frame = f"*#4*{zone_number(self._where)}*14##"
+        frame = f"*#4*{canonical_thermo_zone(self._where) or zone_number(self._where)}*14##"
         try:
             read = await handler.send_status_request(cast(OWNCommand, OWNHeatingCommand.parse(frame)))
         except Exception:  # a transport error is not the zone's answer
@@ -2000,6 +2069,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return None
         if isinstance(read, asyncio.Future):
             await asyncio.wait([read], timeout=SETPOINT_READ_TIMEOUT)
+            if not read.done():
+                read.cancel()  # withdrawn, as the write above
         if self._setpoint_check_reported is None and not check[2].is_set():
             # The reply is handed to the entity right after the read's future resolves, or
             # comes on the event session a moment later.
@@ -2034,9 +2105,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         try:
             if await self._wait_for_setpoint(written, check) or self._setpoint_check is not check:
                 return  # confirmed, or a newer write took over and its own check decides
-            reported = await self._read_back_setpoint(check)
-            if check[2].is_set() or self._setpoint_check is not check:
+            if not _delivered(written):
+                # Not known to have reached the plant: nothing says the central unit ignored it,
+                # so no read-back and no direct write follow.
+                self._setpoint_not_delivered(written, frame)
                 return
+            reported = await self._read_back_setpoint(check)
+            if self._setpoint_check is not check:
+                return
+            if check[2].is_set():
+                return
+            holds_it = reported is not None and abs(reported - nominal) < 0.05
+            if holds_it and not self._asleep():
+                return  # a zone that is off, answered for by the central unit or configured
             if reported is None:
                 LOGGER.warning(
                     "%s %s did not confirm `%s` and did not answer a read of its setpoint",
@@ -2045,7 +2126,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     frame,
                 )
                 return
-            if self._standalone_config is not None:
+            if self._standalone_config is not None or self._setpoint_check_by_central:
+                # Configured as a zone of the central unit, or the central unit answered for it:
+                # the direct form would leave it on a setpoint the central unit does not know.
                 raise HomeAssistantError(
                     f"{self._display_name} did not take the setpoint {nominal:.1f} °C sent through the "
                     f"central unit ({frame}): it still reports {reported:.1f} °C",
@@ -2069,9 +2152,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 frame,
                 direct_command,
             )
+            check[2].clear()  # only a report that follows the direct write counts
+            self._arm_setpoint_echo(nominal)
             direct = await handler.send(direct_command)
             taken = await self._wait_for_setpoint(direct, check)
             if self._setpoint_check is not check:
+                return
+            if not _delivered(direct):
+                self._setpoint_not_delivered(direct, str(direct_command))
                 return
             if not taken:
                 reported = await self._read_back_setpoint(check)
@@ -2105,6 +2193,42 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._setpoint_check is check:
                 self._setpoint_check = None
 
+    def _arm_setpoint_echo(self, nominal: float) -> None:
+        """Forget what the previous write and its read-back left, before the direct write.
+
+        The read-back's dimension 14 (the old setpoint) would otherwise be paired with the
+        dimension 12 the direct write brings, and read as a knob offset: with a knob that had
+        not reported yet, 21.0 after 20.0 gave an offset of +1 and the next 20.0 went out as
+        ``*#4*2*#14*0190*3##``.
+        """
+        self._local_target_reported = False
+        self._local_target_base = None
+        self._dim13_at = None
+        self._dim14_at = None
+        self._unpaired_dim12_at = None
+        self._paired_burst = None
+        self._written_target_temperature = (nominal, time.monotonic())
+
+    def _setpoint_not_delivered(self, written: object, frame: str) -> None:
+        """A setpoint write that is not known to have reached the plant.
+
+        Refused by the gateway (a NACK): an error. Anything else (no reply in time, a reply
+        out of step, a transport error): a warning, since the frame may still have arrived.
+        """
+        if getattr(written, "_gateway_nack", False) is True:
+            raise HomeAssistantError(
+                f"{self._display_name}: the gateway refused the setpoint write ({frame})",
+                translation_domain=DOMAIN,
+                translation_key="setpoint_refused",
+                translation_placeholders={"name": self._display_name, "frame": frame},
+            )
+        LOGGER.warning(
+            "%s %s: `%s` was not acknowledged by the gateway; the setpoint is not known to have arrived",
+            self._gateway_handler.log_id,
+            self._display_name,
+            frame,
+        )
+
     def _mark_standalone_detected(self) -> None:
         """A setpoint only the direct form changed: the central unit is not running this zone."""
         self._standalone_detected = True
@@ -2122,17 +2246,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if (
             self._season_reported
             and self._season is not None
-            and (self._attr_hvac_mode == HVACMode.AUTO or self._hvac_mode_restored)
+            and (self._attr_hvac_mode != HVACMode.OFF or self._hvac_mode_restored)
         ):
             # A standalone thermostat's season frame is its mode (#880): the mode shown so far
-            # was a restored one, or the AUTO of an F455's made-up *4*311*#Z##.
+            # was a restored one, the AUTO of an F455's made-up *4*311*#Z##, or the mode of the
+            # central unit the zone was taken to follow (live 2026-11-18: ``heat`` next to the
+            # zone's ``*4*0*2##``). A zone that is off stays off until its own frame says more.
             season_mode = HVACMode.HEAT if self._season == SEASON_HEATING else HVACMode.COOL
             if season_mode in self._configured_hvac_modes():
                 self._attr_hvac_mode = season_mode
                 self._hvac_mode_restored = False
                 self._refresh_hvac_modes()
-        if self.hass is not None:
-            self.async_write_ha_state()
+        self._publish_state()  # the entry may have been unloaded during the wait
 
     def _refuse_interface_write(self) -> bool:
         """Refuse WHO 4 writes that would strip ``#4#II`` and hit local main-bus ``_where``."""
@@ -2153,6 +2278,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
         """Update subordinate zone mode when central unit changes seasonal mode."""
+        if self._standalone_detected:
+            return  # found not to be run by the central unit: its own frames say what it does
         prev_mode = self._attr_hvac_mode
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
@@ -2547,10 +2674,23 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._unpaired_dim12_at = None
         self._paired_burst = None
         self._written_target_temperature = (target_temperature, time.monotonic())
-        if not direct and isinstance(written, asyncio.Future):
-            # Written through the central unit: a thermostat it is not running ignores that form
-            # and both gateways still acknowledge it. Returns as soon as the plant confirms.
-            await self._confirm_setpoint_write(written, str(command), target_temperature)
+        if not isinstance(written, asyncio.Future) or is_actuator_where(self._where) or self._interface is not None:
+            # No delivery information; or an address whose setpoint is not read back as
+            # ``*#4*Z*14##``: one actuator or split (``Z#N``), a zone behind an interface.
+            return
+        if direct:
+            # A gateway that refuses the direct form says so with a NACK (an F454 for a zone of
+            # its central unit, #697; the emulated F453, F453AV, H4684, MH200 and MH200N for any
+            # zone, own-firmware-oracle trace-corpus.tsv:55, not yet seen on a real one).
+            await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
+            if not _delivered(written):
+                self._setpoint_not_delivered(written, str(command))
+            return
+        # Written through the central unit: a thermostat it is not running ignores that form
+        # and both gateways still acknowledge it. Returns as soon as the plant confirms. The
+        # value checked is the one on the wire (0.5 steps, 5.0 to 40.0, as OWNd writes it).
+        on_the_wire = min(40.0, max(5.0, round(target_temperature * 2) / 2))
+        await self._confirm_setpoint_write(written, str(command), on_the_wire)
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
@@ -2777,6 +2917,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if is_central_unit_report(message):
             self._gateway_handler.has_central_unit = True
             self._note_central_zone_report(message)
+        self._note_own_state(message)
         self._note_setpoint_report(message)
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
