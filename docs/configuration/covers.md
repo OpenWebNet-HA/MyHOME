@@ -84,6 +84,25 @@ For standard covers without hardware position feedback, the integration provides
 > [!WARNING]
 > **Half the time is not half the height.** The estimate is linear: 50 % means the motor ran for half of the stored travel time. A roller shutter does not move at constant speed — coming down from the top the curtain runs fast on a full roll and is well past the middle at half time; going up from the bottom the first seconds go into gathering the slats and the curtain barely moves. Measured on a 107 cm shutter with exact travel times: `set_cover_position: 50` stopped at 27 cm from the sill coming down and at 37 cm going up, against a true midpoint of about 53 cm, while Home Assistant reported 50 % both times. The end positions (0 % / 100 %) are exact; intermediate positions are approximate and differ by direction. Treat the slider as "roughly there", not as a measurement — this applies to calibrated and manually set times alike.
 
+### Actuators that only stop on an opposite command (`stop_before_move`)
+
+Some timed actuators do not reverse when they get the opposite direction while they run: they stop, and only a second command in the new direction starts them. They also keep "running" until their own run-time cutoff, after the shutter has reached its end stop. Captured on a BTicino `L4671/2` behind an MH201 (firmware `3.3.6`, 15 s shutter, `WHERE 41`; [`mh201_l4671_reversal_2026-11-18`](https://github.com/OpenWebNet-HA/MyHOME/tree/master/tests/fixtures/traces/mh201_l4671_reversal_2026-11-18)): `*2*1*41##` sent 5 s into a closing run was answered by `*2*0*41##` and the shutter stood still; a second `*2*1*41##` opened it; the actuator's own `*2*0*41##` came 61 s after that start. So an open sent within about a minute of a full close does nothing either. Home Assistant cannot tell that stop from the momentary stop status that gateways relay before a motor start, so the entity reported `opening` while the shutter did not move.
+
+With `stop_before_move: true`, every open, close and `set_cover_position` run of that cover first sends a stop (`*2*0*<WHERE>##`), waits until the stop has been written to the gateway plus 0.6 s, and then sends the direction frame. A run in progress freezes at the stop as usual, so a reversal continues from where the shutter stopped. Every run starts 0.6 s later, and the stop goes out also when the cover is idle. A stop or another command for the same cover during that pause replaces the run, whose direction frame is then not sent.
+
+```yaml
+# /config/myhome.yaml
+cover:
+  bedroom_shutter:
+    where: '41'
+    name: Bedroom Shutter
+    strategy: timed
+    travel_time: 15
+    stop_before_move: true
+```
+
+The option is off by default and only applies to point-to-point WHO 2 covers on the timed model (`timed`, `venetian`, `simple`); it is rejected on `advanced` / `strategy: native` covers and on general, area and group covers. A slat tilt pulse is sent without a stop first, and so is each run of `myhome.calibrate_cover`, which times the actuator's own stop status. An area or group cover behind an F422 interface commands its members one by one, so members with the option stop first there too; a scope frame on the local bus does not.
+
 **Advanced covers** track their own level (`Dimension = 10` at motor start and motor stop; no intermediate frames are emitted while the motor runs), and the actuator turns a `Dimension = 11` level write (`*#2*<WHERE>*#11#001*<LEVEL>##`) into a timed run proportional to its learned travel time. On a short-travel shutter (~20 s, ~0.2 s per percent) a 1 % change is too brief to move the curtain ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)), so by default the integration widens any change smaller than 2 % to 2 % (50 % → 51 % is sent as 52 %), except while the cover is moving (it then reports the level it started from, so the request goes out as asked). Target levels `0 %` and `100 %` — including a move near an end whose widened target clamps to `0 %` or `100 %` (e.g. `98 %` → `99 %` widened to `100 %` at `min_position_delta: 2`) — are sent as plain close / open full runs so the motor stops on its limit switch.
 
 The smallest change is set per cover with `min_position_delta` in `/config/myhome.yaml` (whole percent, `1`–`5`, default `2`; a timed cover with it is rejected, it uses `min_motor_pulse` instead). On a long-travel shutter each percent is a longer run: on a 3.75 m F401 shutter behind an F454 (`91.3 s` up / `87.8 s` down, ~0.9 s per percent; [discussion #770](https://github.com/orgs/OpenWebNet-HA/discussions/770#discussioncomment-19144038)), captured `*#2*21*#11#001*<LEVEL>##` 2 % steps ran 1.7–1.8 s each — already past the ~1.4 s mechanical slat pivot (`3` short `H4660M2` keypad pulses all reported `2 %`) — so `min_position_delta: 1` (~0.9 s per 1 % step) is needed to reach intermediate slat angles before the curtain lifts. `1` sends every change as asked; a very fast motor may need `3`–`5`. The active value is shown as the `min_position_delta` attribute.
