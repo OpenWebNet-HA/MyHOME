@@ -110,7 +110,7 @@ rules:
     comment: Native diagnostics.py sanitizes credentials and exports gateway and bus telemetry.
   discovery-update-info:
     status: done
-    comment: Updates gateway host and port dynamically if IP changes on rediscovery.
+    comment: A gateway found over SSDP that is announced at a new address gets the address updated and the entry reloaded; the port is not announced and is kept. A gateway added by hand and an ignored gateway are not updated.
   discovery:
     status: done
     comment: Automatically discovers F454, MyHomeServer1, and MH200 gateways via SSDP/UPnP.
