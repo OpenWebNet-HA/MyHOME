@@ -9,6 +9,7 @@ import re
 import typing
 
 import voluptuous as vol
+from homeassistant.config_entries import SOURCE_IGNORE
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -256,14 +257,9 @@ class ConfigFlowDiscoveryMixin:
             return self.async_abort(reason="no_serial")  # type: ignore[attr-defined]
         await self.async_set_unique_id(dr.format_mac(gateway.unique_id))  # type: ignore[attr-defined]
         LOGGER.info("Found gateway: %s", gateway.address)
-        updatable = {
-            CONF_HOST: gateway.address,
-            CONF_FRIENDLY_NAME: gateway.friendly_name,
-            CONF_UDN: gateway.udn,
-            CONF_FIRMWARE: gateway.firmware,
-        }
-
-        self._abort_if_unique_id_configured(updates=updatable)  # type: ignore[attr-defined]
+        self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+            updates=self._ssdp_entry_updates(gateway)
+        )
 
         self.gateway_handler = gateway
         self.context.update(  # type: ignore[attr-defined]
@@ -280,6 +276,29 @@ class ConfigFlowDiscoveryMixin:
         )
 
         return await self.async_step_discovery_confirm()  # type: ignore
+
+    def _ssdp_entry_updates(self, gateway: typing.Any) -> dict[str, typing.Any] | None:
+        """What an SSDP announcement may write to the existing entry of ``gateway`` (#947).
+
+        The address, the friendly name and the UDN follow the announcement, and a change
+        reloads the entry. The firmware does not follow it: the announcement carries the
+        UPnP ``modelNumber``, while a running entry stores the firmware the gateway reports
+        over WHO=13 dimension 16 (``identity.py``). Where the two differ, writing the
+        announced value back made them alternate, and every announcement reloaded the
+        entry. The announced value is stored only while the entry has no firmware.
+        An ignored gateway is not written at all.
+        """
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)  # type: ignore[attr-defined]
+        if entry is None or entry.source == SOURCE_IGNORE:
+            return None
+        updates = {
+            CONF_HOST: gateway.address,
+            CONF_FRIENDLY_NAME: gateway.friendly_name,
+            CONF_UDN: gateway.udn,
+        }
+        if gateway.firmware and not entry.data.get(CONF_FIRMWARE):
+            updates[CONF_FIRMWARE] = gateway.firmware
+        return updates
 
     async def async_step_discovery_confirm(self, user_input=None):  # type: ignore
         """Handle user confirmation of discovered gateway."""

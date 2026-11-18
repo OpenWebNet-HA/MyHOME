@@ -32,6 +32,7 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 - On local networks, MyHOME gateways announce themselves via **SSDP / UPnP** (mDNS / `.local` hostnames are not used by OpenWebNet gateways).
 - If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to **Configure** the gateway, or lists discovered gateways in the setup picker alongside **"Custom (IP Gateway)"**.
 - If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME** -> choose **Custom (IP Gateway)**.
+- A later announcement of an already configured gateway updates its address, friendly name and UDN, and a change reloads the entry. It does not replace the stored firmware: that is the version the gateway reports over `WHO=13` dimension 16, and the announced UPnP `modelNumber` is stored only while the entry has none. An ignored gateway is not updated.
 
 ### Step 2: Installation Parameters Reference
 
