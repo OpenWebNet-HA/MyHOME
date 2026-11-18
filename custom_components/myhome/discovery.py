@@ -73,6 +73,9 @@ class Address:
     @classmethod
     def from_message(cls, message: Any) -> Address | None:
         """Address of an OWNd event, or ``None`` when it carries no WHERE."""
+        if getattr(message, "is_zigbee", False) is True:
+            zb_where = getattr(message, "zigbee_where", None)
+            return cls(str(zb_where), None) if zb_where else None
         where = getattr(message, "where", None)
         if not where:
             return None
