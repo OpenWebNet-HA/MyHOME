@@ -164,7 +164,7 @@ async def test_f461_asks_every_zone_s_actuators_with_one_frame(hass, fast_bus_pa
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("5")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
 
 async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in(hass, fast_bus_pacing):
@@ -173,7 +173,7 @@ async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("3#4#01")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
     handler.gateway.profile = SimpleNamespace(
         model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
@@ -181,7 +181,7 @@ async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in
     handler.request_zone_dimension("2", 20)
     handler.request_zone_dimension("3#4#01", 20)
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##", "*#4*3#4#01*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##", "*#4*3#4#01*20##"]
 
 
 async def test_forwarding_gateway_asks_each_zone(hass, fast_bus_pacing):
@@ -229,8 +229,10 @@ async def test_actuators_are_asked_after_the_startup_sweep(hass, fast_bus_pacing
     await handler.initial_discovery()
     await _settle(hass)
     queued = _drain(handler)
-    assert queued[-1] == "*#4*#0*20##"
-    assert queued.count("*#4*#0*20##") == 1
+    # The sweep itself asks every actuator in the place of the dropped *#4*0##: the zone that
+    # was waiting for it is served by that request and does not put a second burst on the bus.
+    assert queued.count("*#4*0#0*20##") == 1
+    assert queued[-1] == "*#18*51*113##"
 
 
 async def test_reconnect_asks_the_actuators_again(hass, fast_bus_pacing):
@@ -650,13 +652,13 @@ async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pa
     handler.gateway.profile = get_gateway_profile("F461")
     await handler.initial_discovery()
     await _settle(hass)
-    assert _drain(handler)[-1] == "*#4*#0*20##"
+    assert _drain(handler).count("*#4*0#0*20##") == 1  # asked by the sweep of the corrected model
 
     handler.is_connected = True
     handler._on_event_connection_state_change(False)
     handler._on_event_connection_state_change(True)
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
 
 # ------------------------------------------------------------------ gateway: profile, topology and probes (review 5639409551, 5)
@@ -666,7 +668,7 @@ def test_a_generic_profile_with_a_vendor_prefixed_name_still_finds_its_tables(ha
     handler = _handler(hass, "BTicino F461")
     assert isinstance(handler.gateway.profile, GenericGatewayProfile)
     assert handler._model_key == "F461"
-    assert handler.all_zone_request(20) == "*#4*#0*20##"
+    assert handler.all_zone_request(20) == "*#4*0#0*20##"
     assert handler.actuator_request_refused is False
 
 
@@ -735,7 +737,7 @@ async def test_myhomeserver1_asks_every_zone_s_actuators_with_one_frame(hass, fa
     handler.watch_zone_actuators("35")
     handler.watch_zone_actuators("36")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
 
 # ------------------------------------------------------------------ gateway: coalescing after the sweep (review 5639409551, 6)
@@ -754,7 +756,7 @@ async def test_zones_discovered_after_the_sweep_share_one_all_zone_request(hass,
     await asyncio.sleep(0.05)
     handler.watch_zone_actuators("7#4#01")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##", "*#4*7#4#01*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##", "*#4*7#4#01*20##"]
 
 
 async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_pacing, monkeypatch):
@@ -762,11 +764,11 @@ async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
     monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 5.0)
     handler = _handler(hass, "F461")
-    handler.watch_zone_actuators("2")
+    handler.request_zone_dimension("2", 60)  # the actuators are asked by the sweep itself
     await hass.async_block_till_done()
     await handler.initial_discovery()
     await _settle(hass)
-    assert _drain(handler)[-1] == "*#4*#0*20##"
+    assert _drain(handler)[-1] == "*#4*0*60##"
 
 
 # ------------------------------------------------------------------ cross-check follow-ups
@@ -1256,7 +1258,7 @@ async def test_actuator_where_never_sends_status_or_zone_dimension_polls(hass, f
         if where == "3#2#1" or model in ("MH202", "H4684"):
             expected: list[str] = []
         elif where == "2#1" and model == "F461":
-            expected = ["*#4*#0*20##"]
+            expected = ["*#4*0#0*20##"]
         else:
             expected = [f"*#4*{where}*20##"]
         assert sent == expected

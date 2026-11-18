@@ -371,8 +371,8 @@ def is_central_unit_report(message: Any) -> bool:
 
     An actuator status (dimension 20) does not count on any of these WHEREs. The WHERE of an
     actuator status is ``Z#N``, ``Z#0`` or ``0#0`` (WHO 4 p. 22, p. 62), and the one seen with
-    WHERE ``#0`` is an answer to the all-zone request ``*#4*#0*20##`` that the integration
-    itself sends on an F461 and a MyHomeServer1. An F461 2.0.11 on a plant with no central
+    WHERE ``#0`` is an answer to the all-zone request that 2.0.0 sent on an F461 and a
+    MyHomeServer1 (``*#4*#0*20##``; the published ``*#4*0#0*20##`` since). An F461 2.0.11 on a plant with no central
     unit answered that request with ``*#4*#0*20*1##`` between the actuator frames of its
     zones (#944), and with the central unit taken as present its standalone zones wrote
     ``*#4*#6*#14*0225*3##``, which nothing answered.

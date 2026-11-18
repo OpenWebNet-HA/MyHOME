@@ -214,7 +214,7 @@ def test_all_zone_humidity_sweep_enabled_for_oracle_verified_gateways(
     handler = _make_handler(hass, model)
     assert handler.all_zone_request(60) == "*#4*0*60##"
     if model in ("F461", "MyHomeServer1"):
-        assert handler.all_zone_request(20) == "*#4*#0*20##"
+        assert handler.all_zone_request(20) == "*#4*0#0*20##"
 
 
 def test_humidity_refusing_gateway_skips_zone_dimension_60(hass: Any) -> None:
@@ -288,7 +288,7 @@ async def test_41_zone_myhomeserver1_startup_coalesces_sweeps_and_paces_only_sil
     if handler._zone_request_task is not None:
         await handler._zone_request_task
 
-    assert wire_log[:2] == ["*#4*#0*20##", "*#4*0*60##"]
+    assert wire_log[:2] == ["*#4*0#0*20##", "*#4*0*60##"]
     # Zero per-zone `*#4*Z*60##` queries (even for the 3 humidity-restored zones that lacked a physical probe!)
     assert not any(f.endswith("*60##") and f != "*#4*0*60##" for f in wire_log)
     # Only the 3 silent zones need point-to-point `*#4*Z##` polls (down from 66 WHO 4 startup
@@ -722,7 +722,7 @@ async def test_restored_zones_without_live_reports_still_poll_while_live_reporte
     if handler._zone_request_task is not None:
         await handler._zone_request_task
 
-    assert wire_log[:2] == ["*#4*#0*20##", "*#4*0*60##"]
+    assert wire_log[:2] == ["*#4*0#0*20##", "*#4*0*60##"]
     # The 3 zones whose core state was only restored (or partially reported) poll `*#4*Z##`; the
     # 38 zones with live post-restart bus reports skip `*#4*Z##` and instead ask their local knob
     # offset once (`*#4*Z*13##`) in the post-discovery pass (#466).
@@ -755,7 +755,7 @@ async def test_send_zone_requests_waits_for_active_sweep_and_who4_recovery_drain
     handler.request_zone_dimension("7", 20)
     await handler.wait_for_zone_requests()
     assert quiet_calls == [handler._last_event_frame_at]
-    handler.send_paced.assert_awaited_once_with(["*#4*#0*20##"])
+    handler.send_paced.assert_awaited_once_with(["*#4*0#0*20##"])
 
     # 2. `_wait_for_who4_recovery` guards: non-Future, normal Future, and idle bus return immediately
     handler2 = _make_handler(hass, "MyHomeServer1")
@@ -790,7 +790,7 @@ async def test_send_zone_requests_waits_for_active_sweep_and_who4_recovery_drain
     active_timeout_fut.cancel()
     handler2.send_status_request = AsyncMock(return_value=active_timeout_fut)  # type: ignore[method-assign]
 
-    await handler2.send_paced(["*#4*#0*20##"])
+    await handler2.send_paced(["*#4*0#0*20##"])
     # 1 initial `_wait_for_bus_quiet` + 2 recovery windows before `_last_event_frame_at` cleared
     assert len(recovery_waits) == 3
 

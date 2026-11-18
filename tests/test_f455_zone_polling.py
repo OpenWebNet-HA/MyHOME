@@ -216,13 +216,37 @@ def test_capture_backs_the_f455_refusing_the_zone_actuator_and_humidity_reads() 
     assert _sent(ZONE3)["*#4*3*20##"]["ack"] is False and _sent(ZONE3)["*#4*3#1*20##"]["ack"] is True
 
 
-async def test_f455_asks_its_actuators_not_its_zones_for_dimension_20(hass, fast_bus_pacing) -> None:
-    """A climate zone's watch is not sent to the F455; a thermo actuator switch (``Z#N``) still asks."""
-    only_zone = _handler(hass, "F455")
-    only_zone._initial_discovery_done.set()
-    only_zone.watch_zone_actuators("2")
+# The published "all the actuators" request (WHERE ``0#0``, WHO 4 p. 22) on the physical F455 1.0.76 of
+# the test plant (3550 with zones 3 and 4, standalone fan-coil zone 2), 2026-11-18 01:52:47.487: seven
+# frames in 0.4 s (below, in the order received), ACK after 1.36 s; a second run at 02:09:30 was ACKed after
+# 1.47 s with seven frames. ``*#4*#0*20##``, the form the F461 and MyHomeServer1 are asked, was NACKed
+# 3 ms after it was written (01:52:48.845), as in #933 / #940.
+F455_ALL_ACTUATORS_REQUEST = "*#4*0#0*20##"
+F455_ALL_ACTUATORS_REPLY = [
+    "*#4*4#2*20*5##",
+    "*#4*3#1*20*0##",
+    "*#4*3#2*20*0##",
+    "*#4*3#1*20*0##",
+    "*#4*4#1*20*0##",
+    "*#4*2#1*20*8##",
+    "*#4*4#2*20*0##",
+]
+
+
+async def test_f455_asks_every_actuator_in_one_request_not_its_zones(hass, fast_bus_pacing) -> None:
+    """The zone form is not sent to the F455; one ``0#0`` request serves every zone's watch.
+
+    A thermo actuator switch (``Z#N``) still asks for its own actuator as well (#873).
+    """
+    from custom_components.myhome.gateway import ALL_ZONE_REQUESTS
+
+    assert ALL_ZONE_REQUESTS["F455"] == {20: F455_ALL_ACTUATORS_REQUEST}
+    zones = _handler(hass, "F455")
+    zones._initial_discovery_done.set()
+    for where in ("2", "3", "4"):
+        zones.watch_zone_actuators(where)
     await hass.async_block_till_done(wait_background_tasks=True)
-    assert _drain(only_zone) == []
+    assert _drain(zones) == [F455_ALL_ACTUATORS_REQUEST]  # once, and no *#4*Z*20##
 
     handler = _handler(hass, "F455")
     handler._initial_discovery_done.set()
@@ -230,8 +254,34 @@ async def test_f455_asks_its_actuators_not_its_zones_for_dimension_20(hass, fast
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("2#1")
     await hass.async_block_till_done(wait_background_tasks=True)
-    assert _drain(handler) == ["*#4*2#1*20##"]
+    assert _drain(handler) == [F455_ALL_ACTUATORS_REQUEST, "*#4*2#1*20##"]
     assert handler._actuator_zones == {"2": 1, "2#1": 1}  # kept: the model may still be corrected in band
+
+    only_switch = _handler(hass, "F455")
+    only_switch._initial_discovery_done.set()
+    only_switch.watch_zone_actuators("2#1")
+    await hass.async_block_till_done(wait_background_tasks=True)
+    # A thermo switch's actuator alone does not call for every actuator of the plant.
+    assert _drain(only_switch) == ["*#4*2#1*20##"]
+
+
+async def test_the_f455_reply_names_every_actuator_and_spares_the_silent_poll_its_actuator_reads(hass) -> None:
+    """With the captured reply each zone knows its actuators: the poll's ``*#4*Z#N*20##`` reads are not needed."""
+    handler = _handler(hass, "F455")
+    _ready(handler)
+    zones = {where: _zone(hass, handler, where) for where in ("2", "3", "4")}
+    for zone in zones.values():
+        assert f"*#4*{zone._where}#1*20##" in zone._silent_zone_reads()  # before: actuator 1, by guess (#940)
+    for raw in F455_ALL_ACTUATORS_REPLY:
+        message = OWNHeatingEvent(raw)
+        zones[str(message.zone)].handle_event(message)
+    assert zones["2"].extra_state_attributes["actuators"] == {"1": "on"}
+    assert zones["3"].extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    assert zones["4"].extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    for zone in zones.values():
+        reads = zone._silent_zone_reads()
+        assert not [frame for frame in reads if frame.endswith("*20##")], reads
+        assert reads[-1] == f"*#4*{zone._where}*19##"  # the fan coil's side still comes from dimension 19
 
 
 async def test_a_forwarding_gateway_still_asks_its_zones_for_dimension_20(hass, fast_bus_pacing) -> None:

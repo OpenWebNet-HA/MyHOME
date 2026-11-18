@@ -111,6 +111,10 @@ from .where_grammar import (
 )
 
 PLATFORM = Platform.CLIMATE
+# How many zones in a row may leave their temperature read unanswered before the zones known
+# only from their actuators are left to report by themselves (``_ask_actuator_only_zones``):
+# an unanswered read holds a command session for 2.1 s on an F461 and about 9 s on an F455.
+ACTUATOR_ONLY_ZONE_MISSES = 2
 PARALLEL_UPDATES = 0
 # How long one read of the silent-zone poll (#466) waits for its answer before giving up.
 PACED_READ_TIMEOUT = 60.0
@@ -497,6 +501,69 @@ async def async_setup_entry(
         address=_zone_address, route_keys=_zone_route_keys,
         general_is_device=True,  # WHERE=0 frames name their zone in a parameter; _zone_address decides
     ).start()
+
+    async def _ask_actuator_only_zones() -> None:
+        """Ask each zone known only from its actuators whether it is a thermostat.
+
+        The start-up sweep asks every actuator for its state (``gateway.ALL_ACTUATORS_REQUEST``)
+        where the gateway drops the general request. A fan coil's answer creates its zone; a
+        plain valve's is kept in ``pending_actions``, because that address may be a towel
+        warmer with no thermostat (#785). A thermostat tells the two apart: it answers a
+        read of its temperature (``*#4*Z*0##``: 0.09-0.25 s on an F461, an F455 and a
+        MyHomeServer1, 2026-11-18), and that frame creates the zone, which then takes the kept
+        actuator frames. An address with no thermostat answers nothing and stays as it is.
+
+        One zone at a time, each read after the bus went quiet. The run ends after two zones
+        in a row that did not answer, or when a read could not be told from a busy gateway
+        twice: what is left waits for its own report, as before. Not asked: a zone behind an
+        interface, and a zone that has a thermo switch configured.
+        """
+        await gateway.wait_for_initial_discovery()
+        asked: set[tuple[str, str | None]] = set()
+        silent = 0
+        while silent < ACTUATOR_ONLY_ZONE_MISSES:
+            pair = next(
+                (
+                    known
+                    for known, events in pending_actions.items()
+                    if known not in asked
+                    and known[1] is None
+                    and known not in thermo_switch_whole_zones
+                    and known not in thermo_switch_actuator_zones
+                    and events
+                    and all(slot.startswith(("act:", "dim19")) for slot in events)
+                ),
+                None,
+            )
+            if pair is None:
+                return
+            asked.add(pair)
+            answered: bool | None = None
+            for _attempt in range(2):
+                answered = await gateway.read_zone_temperature(pair[0])
+                if answered is not None:
+                    break
+            if pair not in pending_actions:
+                silent = 0  # built from its answer
+                continue
+            if answered is None:
+                LOGGER.debug(
+                    "%s Zone %s: its temperature could not be read while the gateway was busy; "
+                    "leaving it and the remaining actuator-only zones to their own reports",
+                    gateway.log_id,
+                    pair[0],
+                )
+                return
+            LOGGER.debug("%s Zone %s has actuators and no thermostat answered", gateway.log_id, pair[0])
+            silent += 1
+
+    if inspect.iscoroutinefunction(getattr(gateway, "read_zone_temperature", None)):
+        run = _ask_actuator_only_zones()
+        task = config_entry.async_create_background_task(
+            hass, run, name=f"myhome_{gateway.mac}_actuator_only_zones"
+        )
+        if not isinstance(task, asyncio.Future):
+            run.close()  # a config entry double that schedules nothing
     return True
 
 
@@ -537,7 +604,7 @@ def _bus_zone(message: Any) -> int | None:
     form became zone 4. ``#0#<n>`` (4-zone central unit) keeps OWNd's zone.
 
     Not a zone's frame either: an actuator status with WHERE ``#0`` (``*#4*#0*20*V##``, an
-    F461's answer to the all-zone request ``*#4*#0*20##``, #944). OWNd reports zone 0 and
+    F461's answer to the all-zone request ``*#4*#0*20##`` of 2.0.0, #944). OWNd reports zone 0 and
     actuator 1 for it. Taken as the central unit's, a fan coil value (``*#4*#0*20*5##``)
     discovered a central unit on a plant that has none, and on a plant that has one the
     frame became an actuator of the central unit.
