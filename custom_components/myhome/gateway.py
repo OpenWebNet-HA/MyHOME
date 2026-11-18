@@ -547,10 +547,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._actuator_zones: dict[str, int] = {}
         self._zone_requests: set[tuple[str, int]] = set()
         self._zone_request_task: asyncio.Task[None] | None = None
+        self._central_status_task: asyncio.Task[None] | None = None
         self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
         # When the startup sweep last asked every actuator (monotonic), 0 before it did.
         self._all_actuators_swept_at: float = 0.0
-        # The same for the central unit's status (``CENTRAL_STATUS_REQUEST``).
+        # The same for the central unit's status (``CENTRAL_STATUS_REQUEST``), asked by the
+        # sweep or by ``request_central_status``.
         self._central_status_swept_at: float = 0.0
         # Zones (number, interface) found not to be run by the plant's central unit
         # (``climate._mark_standalone_detected``), for what else hangs on the zone's device.
@@ -1335,6 +1337,37 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         asked_at = self._central_status_swept_at
         return asked_at > 0 and time.monotonic() - asked_at < ALL_ACTUATORS_SWEEP_FRESH
 
+    @callback
+    def request_central_status(self) -> None:
+        """Ask the central unit's status once a report about one of its zones shows it is there.
+
+        The sweep asks it only where a request nothing answers is cheap
+        (``STARTUP_CENTRAL_STATUS_REQUEST``). Elsewhere the central unit becomes known from its
+        report about a zone (``*4*110*#3##``), and its quarter-hour push names zones only: on
+        a live F455 alone on the bus, 2026-11-18, zones 2, 3 and 4 were found, no ``#0`` frame
+        came, and the central unit had no entity. Once it is known to exist the request is
+        answered (the F455 in 1.07 s on that plant; every emulated firmware puts it on the
+        bus, own-firmware-oracle trace-corpus.tsv:50), and the answer creates its entity. Not
+        sent when the sweep, or an earlier call, has just asked.
+        """
+        if self._central_status_task is None or self._central_status_task.done():
+            run = self._ask_central_status()
+            task: object = self.hass.async_create_background_task(run, name=f"myhome_{self.mac}_central_status")
+            if isinstance(task, asyncio.Task):
+                self._central_status_task = task
+            else:
+                run.close()  # a hass double that schedules nothing
+
+    async def _ask_central_status(self) -> None:
+        """After the sweep, under the start-up poll lock (an F455 mixes up crossing WHO 4 reads)."""
+        await self.wait_for_initial_discovery()
+        async with self._who4_startup_poll_lock:
+            if self.central_status_just_asked:
+                return
+            delivered = await self.send_paced([CENTRAL_STATUS_REQUEST])
+            if CENTRAL_STATUS_REQUEST in delivered:
+                self._central_status_swept_at = time.monotonic()
+
     def _heating_startup_requests(self) -> list[str]:
         """What replaces ``*#4*0##`` at start on a gateway that drops it."""
         frames: list[str] = []
@@ -1428,6 +1461,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self._zone_request_task is not None:
             self._zone_request_task.cancel()
             self._zone_request_task = None
+        if self._central_status_task is not None:
+            self._central_status_task.cancel()
+            self._central_status_task = None
         self._zone_requests.clear()
         self._unavailable_timer = None
         self.is_connected = False

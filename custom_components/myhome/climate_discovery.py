@@ -261,13 +261,10 @@ class ZoneDiscovery:
     def start_reads(self) -> None:
         """Ask the zones known only from their actuators, once the start-up sweep is over.
 
-        Only where that sweep asks every actuator in place of the general request the firmware
-        drops (``asks_every_actuator_at_start``). Where the general request is forwarded every
-        thermostat has answered it, so a read of an address known only from its actuator would
-        be one nothing answers, at a cost nobody measured on those models.
+        Which gateways are asked is decided when the sweep is over (``_ask_actuator_only_zones``),
+        as the sweep's own frames are: the model may be corrected in band after the entities
+        were set up.
         """
-        if getattr(self._gateway, "asks_every_actuator_at_start", False) is not True:
-            return
         if inspect.iscoroutinefunction(getattr(self._gateway, "read_zone_temperature", None)):
             run = self._ask_actuator_only_zones()
             task: object = self._config_entry.async_create_background_task(
@@ -467,6 +464,12 @@ class ZoneDiscovery:
         """
         gateway = self._gateway
         await gateway.wait_for_initial_discovery()
+        if getattr(gateway, "asks_every_actuator_at_start", False) is not True:
+            # Only where the sweep asks every actuator in place of the general request the
+            # firmware drops. Where that request is forwarded every thermostat has answered it,
+            # so a read of an address known only from its actuator would be one nothing
+            # answers, at a cost nobody measured on those models.
+            return
         asked: set[tuple[str, str | None]] = set()
         silent = 0
         every_zone = getattr(gateway, "unanswered_zone_read_is_cheap", False) is True

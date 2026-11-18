@@ -153,6 +153,102 @@ def test_what_a_zone_offers_follows_the_central_unit_that_became_known(no_entity
     zone3.async_schedule_update_ha_state.assert_not_called()
 
 
+# ---------------------------------------------------------------- the central unit's own entity
+
+
+async def test_a_central_unit_known_only_from_a_zone_report_is_asked_for_its_status_once(
+    hass: HomeAssistant, fast_bus_pacing: None
+) -> None:
+    """Live F455 alone on the bus, 2026-11-18 19:57-19:58: zones 2, 3 and 4 found, no `#0` frame, no central unit entity."""
+
+    async def read(_where: str) -> bool | None:  # pragma: no cover - no valve-only zone here
+        return False
+
+    handler, zones = await _start_plant(hass, read, model="F455")
+    handler._initial_discovery_done.set()
+    await _receive(hass, handler, ZONE_2_READ)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    handler.send_status_request.assert_not_awaited()  # nothing shows a central unit yet
+
+    await _receive(hass, handler, QUARTER_HOUR_PUSH)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == ["*#4*#0##"]
+    assert handler.central_status_just_asked is True
+
+    # Its answer (the F461's of 2026-11-18 19:56:52) creates the entity, which does not ask again.
+    await _receive(hass, handler, ["*4*102*#0##", "*4*21*#0##"])
+    central = next(zone for zone in zones if zone._central)
+    await central._async_send_zone_polls()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert handler.send_status_request.await_count == 1
+
+
+async def test_a_central_unit_that_spoke_itself_is_not_asked(hass: HomeAssistant, fast_bus_pacing: None) -> None:
+    handler, _zones = await _bus_plant(hass)
+    handler._initial_discovery_done.set()
+    await _receive(hass, handler, ["*4*102*#0##", *QUARTER_HOUR_PUSH])
+    await hass.async_block_till_done(wait_background_tasks=True)
+    handler.send_status_request.assert_not_awaited()
+
+
+async def test_the_central_unit_is_not_asked_when_the_sweep_has_just_asked(
+    hass: HomeAssistant, fast_bus_pacing: None
+) -> None:
+    """The sweep's request was lost or is still unanswered: the zone report does not double it."""
+    handler, _zones = await _bus_plant(hass)
+    handler._initial_discovery_done.set()
+    handler._central_status_swept_at = time.monotonic()
+    await _receive(hass, handler, QUARTER_HOUR_PUSH)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    handler.send_status_request.assert_not_awaited()
+    handler.request_central_status()
+    handler.request_central_status()  # while the first is still waiting: one task
+    await hass.async_block_till_done(wait_background_tasks=True)
+    handler.send_status_request.assert_not_awaited()
+
+    handler._initial_discovery_done.clear()
+    handler.request_central_status()  # waiting for the sweep when the gateway is unloaded
+    task = handler._central_status_task
+    await handler.close_listener()
+    assert handler._central_status_task is None
+    await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()
+
+
+def test_a_hass_double_that_schedules_nothing_leaves_no_pending_request(hass: HomeAssistant) -> None:
+    handler = _handler(hass, "F455")
+    handler.hass = MagicMock()  # async_create_background_task returns no task
+    handler.request_central_status()  # no "never awaited" warning: the run was closed
+    assert handler._central_status_task is None
+
+
+def test_a_zone_report_collected_on_the_command_session_asks_for_the_central_unit_too(no_entity_base: None) -> None:
+    plant = _Plant(has_central_unit=False)
+    plant.gateway.central_season = None
+    zone3 = _zone(plant, "3")
+    _replay(zone3, ["*4*110*#3##", "*4*110*#3##"])
+    plant.gateway.request_central_status.assert_called_once_with()
+    plant.gateway.request_central_status = None  # a gateway double without it
+    plant.gateway.has_central_unit = False
+    _replay(zone3, ["*4*110*#3##"])
+
+
+async def test_the_gateway_model_is_read_when_the_sweep_is_over_not_when_the_zones_are_set_up(hass: HomeAssistant) -> None:
+    """The in-band identity may correct the model after the platform was set up."""
+    asked: list[str] = []
+
+    async def read(where: str) -> bool | None:
+        asked.append(where)
+        return False
+
+    handler, _zones = await _start_plant(hass, read, model="MH200N")
+    assert handler.asks_every_actuator_at_start is False
+    with patch.object(type(handler), "asks_every_actuator_at_start", new=True):  # corrected to an F455, say
+        await _receive(hass, handler, ["*#4*7#1*20*0##"])  # a valve frame of the two-misses test
+        await _after_the_sweep(hass, handler)
+    assert asked == ["7"]
+
+
 # ---------------------------------------------------------------- S2
 
 

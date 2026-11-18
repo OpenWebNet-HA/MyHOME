@@ -45,7 +45,13 @@ from .const import (
     LOGGER,
 )
 from .topology import peer_handles_who
-from .where_grammar import central_unit_season, is_central_unit_report, is_probe, where_param
+from .where_grammar import (
+    central_report_zone,
+    central_unit_season,
+    is_central_unit_report,
+    is_probe,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -294,11 +300,12 @@ class GatewayEventDispatcher:
                     {"gateway": str(self.handler.gateway.host), "message": str(message)},
                 )
 
-        central_news = False
+        central_news = central_found_by_zone = False
         if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
             # Before the entities see the frame: the central unit's entity hands its mode to its
             # zones while it handles it, and they compare their season with this one.
             central_news = self.handler.has_central_unit is not True
+            central_found_by_zone = central_news and central_report_zone(message) is not None
             self.handler.has_central_unit = True
             season = central_unit_season(message)
             if season is not None:
@@ -313,6 +320,10 @@ class GatewayEventDispatcher:
                 # the others are told here: a zone that reported its season earlier is compared
                 # now, and what a zone offers follows the plant it turns out to be on.
                 dispatcher_send(self.hass, f"myhome_central_season_{self.handler.mac}")
+            if central_found_by_zone and self._is_active_for_who(who_int):
+                # Known from its report about a zone, with no frame of its own: asked for its
+                # status once, so that it gets its entity (``request_central_status``).
+                self.handler.request_central_status()
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:

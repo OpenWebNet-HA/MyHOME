@@ -2840,6 +2840,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # passing the event session's bookkeeping (``gateway_events``), which tells the
             # other zones when this is news.
             central_news = getattr(self._gateway_handler, "has_central_unit", False) is not True
+            central_found_by_zone = central_news and central_report_zone(message) is not None
             self._gateway_handler.has_central_unit = True
             season = central_unit_season(message)
             if season is not None:
@@ -2848,6 +2849,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._note_central_zone_report(message)
             if central_news and self.hass is not None:
                 async_dispatcher_send(self.hass, f"myhome_central_season_{self._gateway_handler.mac}")
+            if central_found_by_zone:
+                ask = getattr(self._gateway_handler, "request_central_status", None)
+                if callable(ask):
+                    ask()  # the central unit has no entity until a frame of its own comes
         self._note_own_state(message)
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
