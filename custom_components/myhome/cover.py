@@ -153,7 +153,8 @@ from .discovery import (
     parse_unique_id,
 )
 from .gateway import FrameScheduler, MyHOMEGatewayHandler
-from .myhome_device import MyHOMEEntity
+from .myhome_device import MyHOMEEntity, extra_where_attributes
+from .where_grammar import effective_message_where
 
 if TYPE_CHECKING:
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
@@ -629,12 +630,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_assumed_state = self._strategy.assumed_state
         self._gateway_handler = gateway
 
-        self._attr_extra_state_attributes = {
-            "A": where[: len(where) // 2],
-            "PL": where[len(where) // 2 :],
-        }
-        if self._interface is not None:
-            self._attr_extra_state_attributes["Int"] = self._interface
+        self._attr_extra_state_attributes = extra_where_attributes(
+            where,
+            self._interface,
+            gateway,
+        )
         if self._slat_tilt:
             self._enable_slat_tilt()
         if not self._advanced:
@@ -2886,13 +2886,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ):
             return False
         raw_where = getattr(message, "where", None)
-        if not isinstance(raw_where, (str, int)) or isinstance(raw_where, bool):
+        eff_where = effective_message_where(message) or (
+            str(raw_where)
+            if isinstance(raw_where, (str, int)) and not isinstance(raw_where, bool) and str(raw_where)
+            else None
+        )
+        if eff_where is None:
             return False
         own_where = str(self._where)
         if own_where.startswith(f"{self._who}-"):
             own_where = own_where[len(f"{self._who}-") :]
         return (
-            str(raw_where) == own_where
+            eff_where == own_where
             and _normalize_bus_interface(getattr(message, "interface", None))
             == _normalize_bus_interface(self._interface)
         )
@@ -2934,8 +2939,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._end_echo_window()
             return False
         # Pending stop command:
+        raw_where = getattr(message, "where", None)
         msg_where, is_general = self._format_where_and_scope(
-            getattr(message, "where", None), message
+            effective_message_where(message) or raw_where,
+            message,
         )
         is_translation = getattr(message, "is_translation", None) is True
         ctx = self._pending_stop_context

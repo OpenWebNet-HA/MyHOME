@@ -83,11 +83,23 @@ from .gateway import MyHOMEGatewayHandler
 from .light_dali import DaliFeatureLock
 from .light_fade import SoftwareFadeEngine
 from .light_group import MyHOMELightGroup, _color_modes_from_flags
-from .myhome_device import MyHOMEEntity
+from .myhome_device import MyHOMEEntity, extra_where_attributes, gateway_address_family
 from .services import async_register_turn_on_timed_service
-from .where_grammar import is_valid_hs_tuple, is_valid_rgb_tuple
+from .where_grammar import (
+    is_valid_hs_tuple,
+    is_valid_rgb_tuple,
+    parse_zigbee_group_where,
+)
 
 PARALLEL_UPDATES = 0
+
+
+def _is_zigbee_toggle(message: Any) -> bool:
+    """Return True when ``message`` is a ZigBee toggle event (WHO 1 WHAT 32)."""
+    return (
+        getattr(message, "is_toggle", False) is True
+        or getattr(message, "what", None) == 32
+    )
 
 # OWNd's DIMMER_SPEED_COARSE_ONLY: the speed slot a pre-09W29 coarse-only dimmer
 # reports on Dimension 1 (#767); such a dimmer stays on the preset table (#851).
@@ -122,7 +134,11 @@ async def async_setup_entry(
         where = ctx.address.where
 
         if where.startswith("#"):
-            group = int(where[1:])
+            zb_group = parse_zigbee_group_where(
+                where,
+                address_family=gateway_address_family(gateway),
+            )
+            group = zb_group if zb_group is not None else int(where[1:])
             members = cfg.get(CONF_MEMBERS, [])
             return MyHOMELightGroup(
                 hass,
@@ -137,6 +153,7 @@ async def async_setup_entry(
                 hs=cfg.get(CONF_HS, False),
                 icon=cfg.get(CONF_ICON),
                 icon_on=cfg.get(CONF_ICON_ON),
+                raw_where=where,
             )
 
         if where in ("0", "00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"):
@@ -225,6 +242,10 @@ async def async_setup_entry(
         sensor platforms themselves; switches do not listen to the bus, so
         their frames are published from here.
         """
+        if _is_zigbee_toggle(message) and address.key not in known:
+            # Wireless ZigBee toggle senders (WHAT 32, ownkb:record:r000288 /
+            # openwebnet4j) are event-only: never auto-discover or poll them.
+            return True
         if foreign.is_sensor_frame(message):
             foreign.mark_sensor(address)
             if not foreign.is_configured_light(address):
@@ -417,6 +438,7 @@ class _ForeignAddresses:
             or getattr(message, "message_type", None) in cls.SENSOR_MESSAGE_TYPES
             or getattr(message, "dimension", None) in (5, 6, 7)
             or getattr(message, "_state", None) == 34
+            or getattr(message, "what", None) in (34, 39)
             or is_motion_end(message)
         )
 
@@ -511,12 +533,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._attr_hs_color: tuple[float, float] | None = None
         self._attr_rgb_color: tuple[int, int, int] | None = None
 
-        self._attr_extra_state_attributes: dict[str, Any] = {
-            "A": where[: len(where) // 2],
-            "PL": where[len(where) // 2 :],
-        }
-        if self._interface is not None:
-            self._attr_extra_state_attributes["Int"] = self._interface
+        self._attr_extra_state_attributes = extra_where_attributes(
+            where,
+            self._interface,
+            gateway,
+        )
 
         self._on_icon = icon_on
         self._off_icon = icon
@@ -1129,6 +1150,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # A detector sharing this address (Legrand 067226 + F411, #777) reports motion,
             # end of movement and dimensions 5-7 here; the binary_sensor and sensor platforms
             # route them to this light's address key too. None of them is the light's state.
+            return
+        if _is_zigbee_toggle(message):
+            # Toggle frames (WHAT 32, ownkb:record:r000288 / ownkb:claim:c001823) are
+            # event-only; bound actuators report their own authoritative state.
             return
 
         LOGGER.debug(

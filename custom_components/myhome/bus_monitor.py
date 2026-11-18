@@ -51,17 +51,26 @@ class BusFrame:
 
         # Extract semantics if parsed message is available
         self.who = getattr(parsed, "who", getattr(parsed, "_who", None)) if parsed else None
-        self.where = getattr(parsed, "where", getattr(parsed, "_where", None)) if parsed else None
+        raw_where = getattr(parsed, "where", getattr(parsed, "_where", None)) if parsed else None
+        zb_where = (
+            getattr(parsed, "zigbee_where", None)
+            if parsed is not None and getattr(parsed, "is_zigbee", False) is True
+            else None
+        )
+        self.where = zb_where or raw_where
         self.what = getattr(parsed, "what", getattr(parsed, "_what", None)) if parsed else None
         self.dimension = getattr(parsed, "dimension", getattr(parsed, "_dimension", None)) if parsed else None
 
         if isinstance(parsed, OWNSignaling):
             self.is_ack = parsed.is_ack()
-            self.is_nack = parsed.is_nack()
+            is_busy_nack = getattr(parsed, "is_busy_nack", None)
+            self.is_nack = parsed.is_nack() or (
+                callable(is_busy_nack) and is_busy_nack() is True
+            )
         elif self.raw in ("*#*1##", "*#*1"):
             self.is_ack = True
             self.is_nack = False
-        elif self.raw in ("*#*0##", "*#*0"):
+        elif self.raw in ("*#*0##", "*#*0", "*#*6##", "*#*6"):
             self.is_ack = False
             self.is_nack = True
         else:

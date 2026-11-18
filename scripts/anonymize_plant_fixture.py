@@ -46,7 +46,10 @@ from typing import Any
 import yaml
 
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
-MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
+EUI64 = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}\b")
+MAC = re.compile(r"(?<![0-9A-Fa-f]{2}:)\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b(?!:[0-9A-Fa-f]{2})")
+SERIAL_BY_ID = re.compile(r"/dev/serial/by-(?:id|path)/[^\s\"',]+")
+SYNTHETIC_SERIAL_BY_ID = "/dev/serial/by-id/usb-0000_0000-if00"
 YAML_KEY = re.compile(r"^(\s*)([^\s#][^:]*):(\s*)(.*)$")
 
 LABELS = {
@@ -81,24 +84,38 @@ class Anonymizer:
         self.plant = plant
         self.ips: dict[str, str] = {}
         self.macs: dict[str, str] = {}
+        self.eui64s: dict[str, str] = {}
         self.entity_ids: dict[str, str] = {}
         #: (platform, old device key) -> (new device key, new name)
         self.devices: dict[tuple[str, str], tuple[str, str]] = {}
 
     # ── scalars ──────────────────────────────────────────────────────
 
+    def _plant_offset(self, seen_count: int) -> int:
+        # Plant-specific so fixtures never share a gateway identity: the first number in
+        # the plant name (the issue number) fills the last two octets, later entries count up.
+        number = re.search(r"\d+", self.plant)
+        return int((number.group(0) if number else "0")[-4:], 16) + seen_count
+
     def ip(self, match: re.Match[str]) -> str:
         return self.ips.setdefault(match.group(0), f"192.0.2.{len(self.ips) + 1}")
 
+    def eui64(self, match: re.Match[str]) -> str:
+        base = self._plant_offset(len(self.eui64s))
+        return self.eui64s.setdefault(
+            match.group(0).lower(),
+            f"00:03:50:00:00:00:{base >> 8:02x}:{base & 0xFF:02x}",
+        )
+
     def mac(self, match: re.Match[str]) -> str:
-        # Plant-specific so fixtures never share a gateway identity: the first number in
-        # the plant name (the issue number) fills the last two octets, later MACs count up.
-        number = re.search(r"\d+", self.plant)
-        base = int((number.group(0) if number else "0")[-4:], 16) + len(self.macs)
+        base = self._plant_offset(len(self.macs))
         return self.macs.setdefault(match.group(0).lower(), f"00:03:50:00:{base >> 8:02x}:{base & 0xFF:02x}")
 
     def scrub_text(self, text: str) -> str:
-        return MAC.sub(self.mac, IPV4.sub(self.ip, text))
+        text = SERIAL_BY_ID.sub(SYNTHETIC_SERIAL_BY_ID, text)
+        text = EUI64.sub(self.eui64, text)
+        text = MAC.sub(self.mac, text)
+        return IPV4.sub(self.ip, text)
 
     # ── myhome.yaml ──────────────────────────────────────────────────
 
@@ -214,6 +231,8 @@ class Anonymizer:
                 return "UTC"
             if key == "file_path" and isinstance(value, str):
                 return "/config/myhome.yaml"
+            if key == "serial_port" and isinstance(value, str):
+                return value if value == "**REDACTED**" else "/dev/ttyUSB0"
             if key == "copied_from" and isinstance(value, str):
                 return self.entity_ids.get(value, "cover.cover_11i02")
             if isinstance(value, str):
@@ -227,7 +246,7 @@ class Anonymizer:
         return walk(diag)
 
 
-SECRET_KEYS = frozenset({"password", "pin", "token", "secret", "UDN", "friendly_name"})
+SECRET_KEYS = frozenset({"password", "pin", "token", "secret", "UDN", "friendly_name", "serial_number"})
 
 
 def dump_json(value: Any, indent: int = 0) -> str:
@@ -285,8 +304,13 @@ def findings(text: str, data_file: bool = True) -> list[str]:
         return found
     if data_file and PRIVATE_IP.search(text):
         found.append("LAN address")
-    if data_file and any(not m.lower().startswith("00:03:50:00:") for m in MAC.findall(text)):
+    if data_file and any(
+        not m.lower().startswith("00:03:50:00:")
+        for m in EUI64.findall(text) + MAC.findall(text)
+    ):
         found.append("non-synthetic MAC")
+    if data_file and any(m != SYNTHETIC_SERIAL_BY_ID for m in SERIAL_BY_ID.findall(text)):
+        found.append("serial by-id path")
     if data_file and SECRET.search(text):
         found.append("secret value")
     if LOCAL_PATH.search(text):
