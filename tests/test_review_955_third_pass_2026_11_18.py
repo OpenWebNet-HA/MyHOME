@@ -512,3 +512,74 @@ def test_the_hardware_table_names_what_the_sweep_sends_in_place_of_the_general_r
     table = ugp.generate_gateway_discovery_table()
     assert "WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) |" in table
     assert "WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in table  # an MH200: nothing is sent in its place
+
+
+# ---------------------------------------------------------------- an outside audit of faed68d3
+
+
+async def test_the_marks_of_this_gateway_count_when_another_one_serves_who_4(
+    hass: HomeAssistant, fast_bus_pacing: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shared bus: WHO 4 goes through a delegated secondary or the standby, the zones are this entry's."""
+    handler = _acknowledged(_handler(hass, "F461"))
+    other = _handler(hass, "MyHomeServer1")
+    monkeypatch.setattr(type(handler), "_who4_target", lambda self: other if self is handler else self)
+    handler._initial_discovery_done.set()
+
+    handler._all_actuators_swept_at = time.monotonic()  # this gateway's sweep asked every actuator
+    handler.watch_zone_actuators("2")
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+
+    monkeypatch.setattr(gateway_module, "ALL_ACTUATORS_SWEEP_FRESH", 0.0)
+    handler.actuator_only_reads(True)  # its read run is on: the mark is on this gateway, not on the other
+    handler.watch_zone_actuators("3")
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+    handler.actuator_only_reads(False)
+
+    handler._all_actuators_swept_at = 0.0
+    other._all_actuators_swept_at = time.monotonic()  # the other gateway's sweep asked
+    monkeypatch.setattr(gateway_module, "ALL_ACTUATORS_SWEEP_FRESH", 30.0)
+    handler.watch_zone_actuators("4")
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+
+
+async def test_a_zone_that_lost_its_actuators_is_asked_again_although_every_actuator_was_just_asked(
+    hass: HomeAssistant, fast_bus_pacing: None
+) -> None:
+    handler = _acknowledged(_handler(hass, "F461"))
+    await handler.initial_discovery()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler).count("*#4*0#0*20##") == 1
+
+    handler.request_zone_dimension("2", 20)  # served by the sweep
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+    handler.request_zone_dimension("2", 20, again=True)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == ["*#4*0#0*20##"]
+    handler.request_zone_dimension("2", 20)  # and the mark does not stay
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == []
+
+
+def test_a_zone_found_standalone_after_the_central_unit_s_off_asks_its_actuators_again(no_entity_base: None) -> None:
+    """The off marked its actuators off and set its 0-10 V output sensor to 0 %: neither was the plant's state."""
+    zone2 = _zone(_Plant(), "2")
+    _replay(zone2, ["*#4*2#1*20*8##", "*4*0*2##"])
+    assert zone2.extra_state_attributes["actuators"] == {"1": "on"}
+    zone2._handle_central_mode_update(HVACMode.OFF)
+    assert zone2.extra_state_attributes["actuators"] == {"1": "off"}
+    ask = zone2._gateway_handler.request_zone_dimension
+    ask.reset_mock()
+    zone2._mark_standalone_detected()
+    ask.assert_called_once_with("2", 20, again=True)
+    ask.reset_mock()
+    zone2._mark_standalone_detected()  # once: nothing to ask the second time
+    ask.assert_not_called()
+
+    untouched = _zone(_Plant(), "2")
+    untouched._mark_standalone_detected()  # the central unit never switched it off: nothing to ask
+    untouched._gateway_handler.request_zone_dimension.assert_not_called()

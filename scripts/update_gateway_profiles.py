@@ -186,7 +186,7 @@ GATEWAY_METADATA: list[dict[str, object]] = [
 # verify_profiles_against_oracle checks them against ``pinned_whos``); a request of a WHO the row
 # does not advertise is not an omission (nothing is sent for that WHO at all) and is left out of
 # the generated row. ``sweep_replaces`` lists what the sweep sends in place of an omitted general
-# request (``_heating_startup_requests`` in gateway.py; tests/test_thermo_discovery_at_start.py
+# request (``_heating_startup_requests`` in gateway.py; tests/test_review_955_third_pass_2026_11_18.py
 # checks the lists against the sweep itself), so the column does not read as "no WHO 4 request".
 # ``notes`` describes the row; where a profile may list or drop WHO 16 between
 # OWNd releases, ``notes_without_who16`` is used instead when the row does not carry WHO 16.

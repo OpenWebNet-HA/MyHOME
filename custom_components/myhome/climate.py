@@ -376,6 +376,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._setpoint_check_reported: float | None = None
         # What the zone reported, other than the value written, before the direct write.
         self._setpoint_check_before: float | None = None
+        # The central unit's off marked this zone's actuators off (``_handle_central_mode_update``).
+        self._actuators_off_by_central = False
         self._setpoint_check_by_central = False
         self._setpoint_check_central_reports = 0
         if self._central:
@@ -1161,14 +1163,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._fan_coil_sides_asked_at = time.monotonic()
             self._fan_coil_sides_held = self._zone_requests_held()
 
-    def _request_zone_dimension(self, dimension: int) -> bool:
+    def _request_zone_dimension(self, dimension: int, *, again: bool = False) -> bool:
         """Queue ``*#4*Z*DIM##`` through the gateway's paced sender; False on an older handler."""
         if self._interface_poll_refused or is_actuator_where(self._where):
             return False
         request = getattr(self._gateway_handler, "request_zone_dimension", None)
         if not callable(request):
             return False
-        request(self._full_where, dimension)
+        if again:
+            request(self._full_where, dimension, again=True)
+        else:
+            request(self._full_where, dimension)
         return True
 
     def _fan_coil_sides_pending(self) -> bool:
@@ -2017,6 +2022,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     # that runs is idle until its actuators report, as on every other way out of off.
                     self._attr_hvac_action = HVACAction.IDLE
                 self._refresh_hvac_modes()
+        if self._actuators_off_by_central:
+            # The off of a central unit that does not run this zone marked its actuators off
+            # here and set the zone's 0-10 V output sensor to 0 %. Its actuators are asked
+            # again, so both show what the plant does and not what that off implied.
+            self._actuators_off_by_central = False
+            self._request_zone_dimension(20, again=True)
         self._publish_state()  # the entry may have been unloaded during the wait
 
     def _note_own_season(self, message: OWNHeatingEvent) -> None:
@@ -2186,6 +2197,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._attr_hvac_mode = HVACMode.OFF
             self._attr_hvac_action = HVACAction.OFF
             self._mark_actuators_off()
+            self._actuators_off_by_central = True
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode

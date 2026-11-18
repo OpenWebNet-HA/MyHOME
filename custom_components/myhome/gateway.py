@@ -358,7 +358,9 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 #   answered it in 0.16 s with the 3550's state, and a MyHomeServer1 with no central unit
 #   NACKed it after 2.09 s. Not on the F455: it answered in 1.07 s on a plant with a 3550, but
 #   it holds a WHO 4 read that nothing answers for about 9 s (``*#4*9*0##``: NACK after
-#   8.95 s), the reason ``*#4*0##`` is not sent there. Not on models nobody tried it on.
+#   8.95 s), the reason ``*#4*0##`` is not sent there. Not in the sweep of the models nobody
+#   tried it on. On every model the same request is sent once later, when a report about a
+#   zone shows that a central unit is there to answer it (``request_central_status``).
 STARTUP_ALL_ACTUATORS_REQUEST = frozenset({"F450", "F454", "F455", "F459", "F460", "F461", "MYHOMESERVER1"})
 STARTUP_CENTRAL_STATUS_REQUEST = frozenset({"F461", "MYHOMESERVER1"})
 # A zone created from the answers to the sweep's all-actuator request asks for its actuators as
@@ -546,6 +548,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         # and the (zone, dimension) requests waiting for the next paced run.
         self._actuator_zones: dict[str, int] = {}
         self._zone_requests: set[tuple[str, int]] = set()
+        # Zones whose actuator request goes out although every actuator was asked a moment ago.
+        self._zone_requests_again: set[str] = set()
         self._zone_request_task: asyncio.Task[None] | None = None
         self._central_status_task: asyncio.Task[None] | None = None
         self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
@@ -760,11 +764,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return _unwatch
 
     @callback
-    def request_zone_dimension(self, where: str, dimension: int) -> None:
+    def request_zone_dimension(self, where: str, dimension: int, *, again: bool = False) -> None:
         """Ask a heating zone for one dimension once the startup sweep is over.
 
         Zones asking together share one paced run; where the gateway answers one request
         for every zone (``all_zone_request``), that frame replaces the local zones' own.
+        ``again``: the zone lost what it knew (its actuators, wiped by the off of a central
+        unit that turned out not to run it), so the request is not taken as served by the one
+        that asked every actuator a moment ago.
         """
         if dimension == 22:
             # A zone WHERE has no actuator token, so *#4*Z*22## is the crash form:
@@ -772,7 +779,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             # The published split form *#4*3#Z#N*22## goes through send_message once
             # the installed OWNd (>= 2.0.0b12) can tell the forms apart.
             raise ValueError("WHO 4 dimension 22 is never requested for a zone")
-        self._zone_requests.add((_validate_zone_where(where), dimension))
+        where = _validate_zone_where(where)
+        self._zone_requests.add((where, dimension))
+        if again:
+            self._zone_requests_again.add(where)
         if self._zone_request_task is None or self._zone_request_task.done():
             self._zone_request_task = self.hass.async_create_background_task(
                 self._send_zone_requests(), name=f"myhome_{self.mac}_zone_requests"
@@ -789,6 +799,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             await asyncio.sleep(ZONE_REQUEST_COALESCE if coalesce else 0)
             coalesce = True
             pending, self._zone_requests = self._zone_requests, set()
+            again, self._zone_requests_again = self._zone_requests_again, set()
             frames: list[str] = []
             target = self._who4_target()
             for dimension in sorted({dim for _where, dim in pending}):
@@ -831,14 +842,19 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 if all_zones is not None and served:
                     # 0 is "no sweep asked yet", not a time: on a host whose monotonic clock is
                     # itself under ALL_ACTUATORS_SWEEP_FRESH it would read as a sweep just sent.
-                    swept_at = getattr(target, "_all_actuators_swept_at", 0.0)
+                    # Every actuator of the bus was asked, by this gateway or by the one that
+                    # serves WHO 4 for it (a delegated secondary, the warm standby): the answers
+                    # reached this entry's zones either way, so both gateways' marks count.
+                    swept_at = max(self._all_actuators_swept_at, getattr(target, "_all_actuators_swept_at", 0.0))
+                    reads_running = (
+                        self._actuator_only_reads_running
+                        or getattr(target, "_actuator_only_reads_running", False) is True
+                    )
                     just_swept = (
                         all_zones == ALL_ACTUATORS_REQUEST
                         and swept_at > 0
-                        and (
-                            time.monotonic() - swept_at < ALL_ACTUATORS_SWEEP_FRESH
-                            or getattr(target, "_actuator_only_reads_running", False) is True
-                        )
+                        and (time.monotonic() - swept_at < ALL_ACTUATORS_SWEEP_FRESH or reads_running)
+                        and again.isdisjoint(served)
                     )
                     if not just_swept:
                         frames.append(all_zones)
@@ -867,7 +883,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 delivered = await self.send_paced(frames)
                 if isinstance(delivered, list) and ALL_ACTUATORS_REQUEST in delivered:
                     # Asked for every zone: the zones added in the next moments are served too.
-                    target._all_actuators_swept_at = time.monotonic()
+                    self._all_actuators_swept_at = target._all_actuators_swept_at = time.monotonic()
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
 
