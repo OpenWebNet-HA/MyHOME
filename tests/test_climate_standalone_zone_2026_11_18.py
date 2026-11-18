@@ -638,6 +638,9 @@ async def test_the_read_back_is_not_taken_for_a_knob_offset(monkeypatch: pytest.
     """F5: with the real timeout and a knob that never reported, 21.0 then 20.0 wrote 19.0."""
     monkeypatch.setattr(climate_module, "SETPOINT_CONFIRM_TIMEOUT", 3.0)
     plant = _zone2_plant()
+    # The mode is not known yet, so the dimension 12 of the direct write could be a protection
+    # setpoint and confirms nothing: the zone is read once more (the captured read after it).
+    plant.answer("*#4*2*14##", _rx("f455_view_zone2_read_after_direct"))
     zone2 = _zone(plant, "2")
     await zone2.async_set_temperature(temperature=21.0)
     assert zone2._standalone_detected is True
@@ -650,9 +653,10 @@ async def test_the_check_uses_the_setpoint_on_the_wire() -> None:
     """F6: 21.3 is written as 21.5; a zone that reports 21.5 took it."""
     plant = _Plant()
     plant.answer("*#4*2*14##", ["*#4*2*14*0200*3##"])
-    # Built from the captured answer to the 21.0 write (*#4*2*12*0210*3##).
+    # Built from the captured answer to the 21.0 write (*#4*2*12*0210*3##, *4*0*2##).
     plant.answer("*#4*2*#14*0215*3##", ["*#4*2*12*0215*3##"])
     zone2 = _zone(plant, "2")
+    _replay(zone2, ["*4*0*2##"])  # the zone runs: its setpoint in force is not a protection one
     await zone2.async_set_temperature(temperature=21.3)
     assert plant.sent == ["*#4*#2*#14*0215*3##", "*#4*2*14##", "*#4*2*#14*0215*3##"]
     assert zone2._standalone_detected is True
@@ -717,3 +721,86 @@ async def test_a_direct_write_without_a_reply_teaches_nothing(caplog: pytest.Log
     assert plant.sent == ["*#4*#2*#14*0210*3##", "*#4*2*14##", "*#4*2*#14*0210*3##"]
     assert "`*#4*2*#14*0210*3##` was not acknowledged by the gateway" in caplog.text
     assert zone2._standalone_detected is False
+
+
+# Second review of #951 (2026-11-18T15:54): R2 to R5.
+
+
+async def test_a_direct_write_still_queued_is_withdrawn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """R2: after the delivery timeout the frame must not go out behind the user's back."""
+    monkeypatch.setattr(climate_module, "SETPOINT_DELIVERY_TIMEOUT", 0.05)
+    plant = _Plant()
+    plant.pending.add("*#4*2*#14*0210*3##")
+    zone2 = _zone(plant, "2", standalone=True)
+    await zone2.async_set_temperature(temperature=21.0)
+    assert [future.cancelled() for future in plant.futures] == [True]
+
+
+async def test_a_knob_that_had_not_reported_does_not_hold_the_confirmation_back() -> None:
+    """R3: 21.0 written, the knob at +1: the frame that shows 22.0 also teaches the offset."""
+    plant = _Plant()
+    plant.answer("*#4*2*14##", ["*#4*2*14*0200*3##"])
+    # Built from the captured answer to the direct write (*#4*2*12*0210*3##, *4*0*2##) with the knob at +1.
+    plant.answer("*#4*2*#14*0210*3##", ["*#4*2*12*0220*3##", "*4*0*2##"])
+    zone2 = _zone(plant, "2")
+    _replay(zone2, ["*4*0*2##"])  # running; dimension 13 was never read
+    await zone2.async_set_temperature(temperature=21.0)
+    assert plant.sent == ["*#4*#2*#14*0210*3##", "*#4*2*14##", "*#4*2*#14*0210*3##"]  # no second read
+    assert zone2._standalone_detected is True
+    assert zone2._local_offset == 1
+    assert zone2.target_temperature == 22.0  # what the thermostat keeps to, as it reports it
+
+
+async def test_a_status_answer_during_an_ignored_write_is_not_its_echo() -> None:
+    """R3: another client's ``*#4*2*12##`` answered 0.72 s after the ignored ``#Z`` write (F455 capture)."""
+    plant = _Plant()
+    plant.answer("*#4*#2*#14*0210*3##", ["*#4*2*12*0200*3##", "*4*0*2##"])  # no dimension 13
+    plant.answer("*#4*2*14##", ["*#4*2*14*0200*3##"], _rx("f455_view_zone2_read_after_direct"))
+    zone2 = _zone(plant, "2")
+    await zone2.async_set_temperature(temperature=21.0)
+    assert zone2._local_offset == 0  # not read as a knob at -1
+    await zone2.async_set_temperature(temperature=20.0)
+    assert plant.sent[-1] == "*#4*2*#14*0200*3##"  # and not 21.0
+
+
+def test_what_the_zone_s_own_frames_say_about_off() -> None:
+    """R4: its own bus only; a mode with a setpoint and a dimension 7 state count; a restored mode proves nothing."""
+    zone2 = _zone(_Plant(), "2")
+    zone2._hvac_mode_restored = True
+    zone2._attr_hvac_mode = HVACMode.HEAT
+    assert zone2._is_off() is True  # restored: the thermostat may have been switched off meanwhile
+    zone2._hvac_mode_restored = False
+    assert zone2._is_off() is False
+    zone2.handle_event(OWNEvent.parse("*4*303*2#4#01##"))  # built: zone 2 behind interface 01
+    assert zone2._own_off is None
+    _replay(zone2, ["*4*303*2##"])
+    assert zone2._own_off is True
+    _replay(zone2, ["*#4*2*7*1*1*0170##"])  # dimension 7, "setpoint" (issue_429 capture)
+    assert zone2._own_off is False
+    _replay(zone2, ["*4*303*2##", "*4*110#0210*2##"])  # built: the zone's own mode with its setpoint
+    assert zone2._own_off is False
+
+
+async def test_a_report_of_the_central_unit_before_the_ack_does_not_shorten_the_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R5: only an answer that follows the write starts the short wait for the setpoint report."""
+    monkeypatch.setattr(climate_module, "SETPOINT_CONFIRM_TIMEOUT", 0.3)
+    monkeypatch.setattr(climate_module, "SETPOINT_CENTRAL_REPORT_GRACE", 0.01)
+    zone3 = _zone(_Plant(), "3")
+    check = (25.0, 25.0, asyncio.Event())
+    zone3._setpoint_check = check
+    _replay(zone3, ["*4*110*#3##"])  # the quarter-hour report, while the write was still queued
+    assert zone3._setpoint_check_by_central is True
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    assert await zone3._wait_for_setpoint(None, check) is False
+    assert loop.time() - started >= 0.25  # the whole timeout, not the grace
+
+    started = loop.time()
+    loop.call_later(0.05, zone3.handle_event, OWNEvent.parse("*4*110*#3##"))  # the answer to the write
+    assert await zone3._wait_for_setpoint(None, check) is False
+    assert loop.time() - started < 0.25
+    # A mode frame that carries the written setpoint confirms as the dimension 14 report does.
+    zone3.handle_event(OWNEvent.parse("*4*110#0250*#3##"))  # built from *4*110#0200*#0## for zone 3
+    assert check[2].is_set()

@@ -367,12 +367,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._own_season_reported: asyncio.Event | None = None
         self._season_check_task: asyncio.Task[None] | None = None
         # The setpoint write waiting for its confirmation: the nominal written, the value
-        # dimension 12 would show for it, and the event a matching report sets.
+        # dimension 12 would have shown for it when it was written (the check itself follows
+        # the knob offset as it is known when a report comes), and the event a matching
+        # report sets.
         self._setpoint_check: tuple[float, float, asyncio.Event] | None = None
         # The last dimension 14 the zone reported while a write was being checked, and whether
         # the central unit answered for the zone meanwhile.
         self._setpoint_check_reported: float | None = None
         self._setpoint_check_by_central = False
+        self._setpoint_check_central_reports = 0
         if self._central:
             gateway.has_central_unit = True
 
@@ -1642,9 +1645,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # (all an F455 shows, ``*4*110*#3##``) or the setpoint it had before leaves the
             # read-back to decide.
             self._setpoint_check_by_central = True
+            self._setpoint_check_central_reports += 1
             reported = getattr(message, "set_temperature", None)
             if (
-                message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE
+                message.message_type in (MESSAGE_TYPE_TARGET_TEMPERATURE, MESSAGE_TYPE_MODE_TARGET)
                 and isinstance(reported, (int, float))
                 and abs(float(reported) - check[0]) < 0.05
             ):
@@ -1669,10 +1673,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if isinstance(reported, (int, float)) and not is_central_thermo_where(message):
                 self._setpoint_check_reported = float(reported)
         elif message.message_type == MESSAGE_TYPE_LOCAL_TARGET_TEMPERATURE:
-            if self._is_off():
-                return  # what a zone that is off keeps to, not the setpoint that was written
+            if self._is_off() or self._dimension_3_is_protection(message):
+                # What a zone that is off keeps to, not the setpoint that was written; also
+                # while the mode is not known yet (the protection frame follows its setpoint).
+                return
             reported = getattr(message, "local_set_temperature", None)
-            expected = check[1]
+            expected = round(check[0] + self._local_offset, 1)  # with the knob as it is known now
         else:
             return
         if self._asleep():
@@ -1688,13 +1694,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return  # the same zone number on another bus
         if message.message_type == MESSAGE_TYPE_SEASON:
             self._own_off = False
-        elif message.message_type == MESSAGE_TYPE_MODE:
+        elif message.message_type in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET):
             self._own_off = getattr(message, "mode", None) == CLIMATE_MODE_OFF
+        elif message.message_type == MESSAGE_TYPE_ZONE_STATE:
+            state = getattr(message, "zone_state", None)  # dimension 7, a MyHomeServer1 zone
+            if state in _ZONE_STATES_OFF:
+                self._own_off = True
+            elif state in _ZONE_STATES_ON:
+                self._own_off = False
 
     def _is_off(self) -> bool:
-        """Off by the zone's own last frame; by the mode shown while none has come."""
+        """Off by the zone's own last frame. While none has come: by the mode shown, and a mode
+        Home Assistant restored says nothing about a thermostat that may have been switched off."""
         if self._own_off is None:
-            return self._attr_hvac_mode == HVACMode.OFF
+            return self._attr_hvac_mode == HVACMode.OFF or self._hvac_mode_restored
         return self._own_off
 
     def _asleep(self) -> bool:
@@ -1723,9 +1736,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if not _delivered(written):
                 return False
         deadline = time.monotonic() + SETPOINT_CONFIRM_TIMEOUT
+        # Reports of the central unit that came while the frame was still queued (its
+        # quarter-hour report, another client's poll) are not answers to it.
+        reports_before = self._setpoint_check_central_reports
         central_answered = False
         while not check[2].is_set() and time.monotonic() < deadline:
-            if self._setpoint_check_by_central and not central_answered:
+            if self._setpoint_check_central_reports > reports_before and not central_answered:
                 # The central unit answered without the written setpoint. Where it reports the
                 # setpoint, that frame follows its mode frame at once (2 ms on an F461), so the
                 # read-back does not have to wait for the whole timeout.
@@ -2479,7 +2495,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._dim13_at = None
         self._unpaired_dim12_at = None
         self._paired_burst = None
-        self._written_target_temperature = (target_temperature, time.monotonic())
+        on_the_wire = min(40.0, max(5.0, round(target_temperature * 2) / 2))  # as OWNd writes it
+        checked = isinstance(written, asyncio.Future) and not is_actuator_where(self._where) and self._interface is None
+        if direct or not checked:
+            self._written_target_temperature = (on_the_wire, time.monotonic())
+        # else: written through the central unit and about to be checked. Until the plant
+        # confirms it, a setpoint in force that comes back is not this write's echo: another
+        # client's status answer 0.72 s after an ignored ``*#4*#2*#14*0210*3##`` was read as a
+        # knob at -1, and the next 20.0 went out as 21.0.
         if not isinstance(written, asyncio.Future) or is_actuator_where(self._where) or self._interface is not None:
             # No delivery information; or an address whose setpoint is not read back as
             # ``*#4*Z*14##``: one actuator or split (``Z#N``), a zone behind an interface.
@@ -2489,13 +2512,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # its central unit, #697; the emulated F453, F453AV, H4684, MH200 and MH200N for any
             # zone, own-firmware-oracle trace-corpus.tsv:55, not yet seen on a real one).
             await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
+            if not written.done():
+                written.cancel()  # withdrawn: it must not go out after the call has returned
             if not _delivered(written):
                 self._setpoint_not_delivered(written, str(command))
             return
         # Written through the central unit: a thermostat it is not running ignores that form
         # and both gateways still acknowledge it. Returns as soon as the plant confirms. The
-        # value checked is the one on the wire (0.5 steps, 5.0 to 40.0, as OWNd writes it).
-        on_the_wire = min(40.0, max(5.0, round(target_temperature * 2) / 2))
+        # value checked is the one on the wire (0.5 steps, 5.0 to 40.0).
         await self._confirm_setpoint_write(written, str(command), on_the_wire)
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
@@ -2714,7 +2738,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._generic_zone_frame_unsub = None
 
     def handle_event(self, message: OWNHeatingEvent) -> None:
-        """Handle an event message."""
+        """Handle an event message, then see whether it confirms a setpoint write being checked.
+
+        After, not before: the frame that shows the written setpoint can be the one that
+        teaches the knob offset it is shown with (a knob at +1 that had not reported: 21.0
+        written, ``*#4*2*12*0220*3##`` back).
+        """
+        try:
+            self._handle_event(message)
+        finally:
+            self._note_setpoint_report(message)
+
+    def _handle_event(self, message: OWNHeatingEvent) -> None:
+        """Take what the frame says about this zone or central unit."""
         if self._central and self._is_own_central_echo(message):
             LOGGER.debug("%s %s: own command echoed by the gateway, not a central unit report", self._gateway_handler.log_id, message)
             return
@@ -2729,7 +2765,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._gateway_handler.central_season = season
             self._note_central_zone_report(message)
         self._note_own_state(message)
-        self._note_setpoint_report(message)
         if self._poll_health.frame_seen():
             self._clear_unresponsive_issue()
         if self._is_central_addressed_mode_frame(message):
