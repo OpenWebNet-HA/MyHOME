@@ -49,6 +49,7 @@ from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
 )
 
+from custom_components.myhome import myhome_device
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.climate import async_setup_entry as climate_setup_entry
 from custom_components.myhome.const import (
@@ -68,12 +69,14 @@ from custom_components.myhome.sensor import (
     async_unload_entry as sensor_unload_entry,
 )
 from custom_components.myhome.switch import MyHOMEThermoSwitch
+from custom_components.myhome.typing_compat import device_info_to_dict
 from custom_components.myhome.where_grammar import (
     thermo_dim19_levels,
     thermo_dim20_actuator_target,
     thermo_dim20_level,
     thermo_output_level,
 )
+from tests.test_issue_930_device_info_dataclass import StrictDataclassDeviceInfo
 
 TRACE_DIR = Path(__file__).resolve().parent / "fixtures" / "traces" / "issue_949"
 MHS1_RAMP_TRACE_PATH = (
@@ -405,7 +408,10 @@ async def test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(
     assert act3_sensor.native_value == 20
     assert act3_sensor.extra_state_attributes == {"zone": 1, "actuator": 3}
     # Shared HA Device with MyHOMEClimate Zone 1
-    assert act3_sensor.device_info["identifiers"] == zone1.device_info["identifiers"]
+    assert (
+        device_info_to_dict(act3_sensor.device_info)["identifiers"]
+        == device_info_to_dict(zone1.device_info)["identifiers"]
+    )
     assert zone1.extra_state_attributes["actuators"] == {
         "1": "on",
         "2": "on",
@@ -951,7 +957,9 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     living_act3 = added[1]
     assert living_act3.unique_id == f"{gw.mac}-4-1#3-output-level"
     assert living_act3._device_id == "#1"
-    assert living_act3.device_info["identifiers"] == {(DOMAIN, f"{gw.mac}-4-#1")}
+    assert device_info_to_dict(living_act3.device_info)["identifiers"] == {
+        (DOMAIN, f"{gw.mac}-4-#1")
+    }
     assert living_act3._device_name == "Living Room"
     assert living_act3.native_value == 75
     assert living_act3._standalone is False
@@ -1295,3 +1303,22 @@ async def test_actuator_output_sensor_all_reset_paths(
     assert sensor.native_value == 0
 
     await sensor.async_will_remove_from_hass()
+
+
+async def test_live_myhomeserver1_fancoil_ramp_with_dataclass_device_info(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replay live ramp trace under HA 2026.12+ slotted dataclass DeviceInfo (core#192323)."""
+    monkeypatch.setattr(myhome_device, "DeviceInfo", StrictDataclassDeviceInfo)
+    await test_live_myhomeserver1_fancoil_ramp_trace_end_to_end(hass)
+
+
+async def test_sensor_non_creation_and_pruning_with_dataclass_device_info(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify actuator output sensor discovery/pruning under HA 2026.12+ dataclass DeviceInfo."""
+    monkeypatch.setattr(myhome_device, "DeviceInfo", StrictDataclassDeviceInfo)
+    await test_sensor_non_creation_and_thermo_switch_pruning(hass)
+
