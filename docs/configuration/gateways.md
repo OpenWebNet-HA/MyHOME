@@ -33,6 +33,7 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 - If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to **Configure** the gateway, or lists discovered gateways in the setup picker alongside **"Custom (IP Gateway)"**.
 - If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME** -> choose **Custom (IP Gateway)**.
 - A later announcement of a configured gateway that was found over SSDP updates its address when that changed, and the change reloads the entry. The port is not announced and stays as configured. The friendly name, the UDN and the firmware are stored only while the entry has none: the firmware kept is the version the gateway reports over `WHO=13` dimension 16, not the announced UPnP `modelNumber`. A gateway added by hand (**Custom (IP Gateway)**) and an ignored gateway are not updated by SSDP.
+- An `F455` is found under the manufacturer names `BTicino S.p.A.` and `Legrand S.p.A.`. An F455 1.0.76 that reports `Legrand S.p.A.` answers Home Assistant's search with `ST: ssdp:all` and announces itself with `NT: upnp:rootdevice` every 6 to 7 minutes; it has a matcher for each of the two.
 
 ### Step 2: Installation Parameters Reference
 
