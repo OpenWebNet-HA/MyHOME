@@ -198,6 +198,7 @@ __all__ = [
     "area_of_where",
     "canonical_thermo_zone",
     "central_report_zone",
+    "central_unit_season",
     "expose_message_where",
     "is_actuator_where",
     "is_actuator_status",
@@ -387,6 +388,22 @@ def is_central_unit_report(message: Any) -> bool:
         return True
     what = frame.split("*")[2].split("#", 1)[0]
     return what in _CENTRAL_ZONE_STATUS_WHATS
+
+
+def central_unit_season(message: Any) -> str | None:
+    """The season a central unit's report carries, for the gateway's own bus; else ``None``.
+
+    Its own status (``*4*102*#0##`` heating, ``*4*202*#0##`` conditioning) and its status of one
+    of its zones (``*4*110*#3##``, ``*4*203*#4##``): a central unit runs its zones in its own
+    season, and its quarter-hour report names only zones, so a gateway that is not asked for
+    the central unit's status (an F455) learns the season from those. A frame from behind an
+    interface is another bus's central unit. A report with no season (``*4*21*#0##``,
+    ``*4*303*#0##``, a dimension) gives ``None``.
+    """
+    if not is_central_unit_report(message) or thermo_event_interface(message) is not None:
+        return None
+    season = getattr(message, "season", None)
+    return season if isinstance(season, str) else None
 
 
 def central_report_zone(message: Any) -> str | None:

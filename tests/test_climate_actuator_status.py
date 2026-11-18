@@ -37,6 +37,7 @@ from custom_components.myhome.const import (
 from custom_components.myhome.discovery import Address
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from tests.conftest import attach_platform, attach_runtime
+from tests.test_thermo_discovery_at_start import _acknowledged
 
 MAC = "00:03:50:00:00:44"
 
@@ -223,7 +224,7 @@ def test_profile_flag_wins_over_the_table(hass, flag):
 async def test_actuators_are_asked_after_the_startup_sweep(hass, fast_bus_pacing, monkeypatch):
     # A quiet bus never waits for the cap; it only sizes how long a request waits for the sweep.
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)
-    handler = _handler(hass, "F461")
+    handler = _acknowledged(_handler(hass, "F461"))
     handler.watch_zone_actuators("2")
     await hass.async_block_till_done()
     assert _drain(handler) == []  # waiting for the sweep
@@ -238,6 +239,7 @@ async def test_actuators_are_asked_after_the_startup_sweep(hass, fast_bus_pacing
 
 async def test_reconnect_asks_the_actuators_again(hass, fast_bus_pacing):
     handler = _handler(hass, "F454")
+    handler.central_season = "heating"  # forgotten with the connection: it may change meanwhile
     handler._initial_discovery_done.set()
     handler.is_connected = True
     unwatch = handler.watch_zone_actuators("2")
@@ -247,11 +249,13 @@ async def test_reconnect_asks_the_actuators_again(hass, fast_bus_pacing):
     handler._on_event_connection_state_change(True)  # already connected: nothing new
     await _settle(hass)
     assert _drain(handler) == []
+    assert handler.central_season == "heating"
 
     handler._on_event_connection_state_change(False)
     handler._on_event_connection_state_change(True)
     await _settle(hass)
     assert _drain(handler) == ["*#4*2*20##"]
+    assert handler.central_season is None
 
     unwatch()
     handler._on_event_connection_state_change(False)
@@ -647,7 +651,7 @@ async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus
 async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pacing, monkeypatch):
     """Entities are added as a misconfigured MH200N; WHO 13 then corrects it to F461."""
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
-    handler = _handler(hass, "MH200N")
+    handler = _acknowledged(_handler(hass, "MH200N"))
     handler.watch_zone_actuators("2")
     await hass.async_block_till_done()
     handler.gateway.profile = get_gateway_profile("F461")

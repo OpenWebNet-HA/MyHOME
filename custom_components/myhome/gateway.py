@@ -822,7 +822,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 if all_zones is not None and served:
                     if not (
                         all_zones == ALL_ACTUATORS_REQUEST
-                        and 0 < time.monotonic() - self._all_actuators_swept_at < ALL_ACTUATORS_SWEEP_FRESH
+                        and 0 < time.monotonic() - getattr(target, "_all_actuators_swept_at", 0.0) < ALL_ACTUATORS_SWEEP_FRESH
                     ):
                         frames.append(all_zones)
                     wheres = [where for where in wheres if where not in served]
@@ -1066,8 +1066,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 self._notify_availability()
             if not was_connected:
                 # Frames may have been missed while the event session was down: the zones'
-                # actuator requests that follow are not taken as served by the startup sweep.
+                # actuator requests that follow are not taken as served by the startup sweep,
+                # and the central unit's season is not known until it reports again (a zone is
+                # not compared with a season that may have changed meanwhile).
                 self._all_actuators_swept_at = 0.0
+                self.central_season = None
             if not was_connected and self._initial_discovery_done.is_set():
                 runtime = getattr(self.config_entry, "runtime_data", None)
                 expose_mgr = getattr(runtime, "expose_manager", None)
@@ -1253,21 +1256,31 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 return
             await self._wait_for_bus_quiet(self._last_event_frame_at)
 
-    async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
-        """Send general requests one at a time, each once the bus finished answering the last."""
+    async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> list[str]:
+        """Send general requests one at a time, each once the bus finished answering the last.
+
+        Returns the frames the gateway did not refuse or lose: acknowledged, or written through
+        a sender that tells nothing about the delivery.
+        """
         epoch = self._begin_sweep()
+        delivered: list[str] = []
         try:
             for frame in frames:
                 cmd = OWNCommand.parse(frame)
                 if cmd is None:
                     continue
-                written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
+                written: object = await (self.send_status_request(cmd) if status_request else self.send(cmd))
                 await self._wait_for_write(written, cmd)
+                if not isinstance(written, asyncio.Future) or (
+                    written.done() and not written.cancelled() and written.exception() is None
+                ):
+                    delivered.append(frame)
                 await self._wait_for_bus_quiet(time.monotonic())
                 if getattr(cmd, "who", None) == 4:
                     await self._wait_for_who4_recovery(written)
         finally:
             self._end_sweep(epoch)
+        return delivered
 
     def _refused_by_gateway(self, frame: str) -> bool:
         """Whether this gateway's firmware drops the startup request instead of forwarding it."""
@@ -1276,6 +1289,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if frame == "*#16*0*5##":
             return self.sound_status_request_refused
         return False
+
+    @property
+    def unanswered_zone_read_is_cheap(self) -> bool:
+        """Whether a WHO 4 read nothing answers costs about 2 s here (``STARTUP_CENTRAL_STATUS_REQUEST``).
+
+        An F461 and a MyHomeServer1 NACK it after 2.1 s; an F455 holds the command session for
+        about 9 s; the other models were not measured.
+        """
+        return self._model_key in STARTUP_CENTRAL_STATUS_REQUEST
 
     def _heating_startup_requests(self) -> list[str]:
         """What replaces ``*#4*0##`` at start on a gateway that drops it."""
@@ -1316,10 +1338,13 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Send the startup sweep that discovers devices missing from the config."""
         frames = self._discovery_frames()
         try:
-            await self.send_paced(frames)
-            if ALL_ACTUATORS_REQUEST in frames:
+            delivered = await self.send_paced(frames)
+            # Only a request the gateway took counts as asked: after a refused or lost one the
+            # zones' own actuator requests still go out.
+            swept = isinstance(delivered, list) and ALL_ACTUATORS_REQUEST in delivered
+            if swept:
                 self._all_actuators_swept_at = time.monotonic()
-            if ALL_ACTUATORS_REQUEST in frames and self.all_zone_request(20) == ALL_ACTUATORS_REQUEST:
+            if swept and self.all_zone_request(20) == ALL_ACTUATORS_REQUEST:
                 # The sweep has just asked every actuator: the zones that were waiting for it
                 # with their own actuator request (``watch_zone_actuators``) are served, and a
                 # second burst is not put on the bus (43 actuators on one MyHomeServer1 plant).

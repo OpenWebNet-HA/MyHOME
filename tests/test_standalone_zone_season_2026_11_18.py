@@ -269,9 +269,13 @@ async def test_the_gateway_keeps_the_season_the_central_unit_reports_about_itsel
     assert handler.has_central_unit is True and handler.central_season is None
     await _receive(hass, handler, ["*4*102*#0##"])  # the 3550, 2026-11-18
     assert handler.central_season == "heating"
-    await _receive(hass, handler, ["*4*210*#4##"])  # the 3550 about its zone 4 (central_flags_f455_poll_2026_11_09)
-    assert handler.central_season == "heating"
     await _receive(hass, handler, ["*4*202*#0##"])  # #453
+    assert handler.central_season == "conditioning"
+    # The 3550 about one of its zones carries its season too: all an F455 sees of it in the
+    # quarter-hour report (*4*110*#3##, standalone_zone_2026_11_18).
+    await _receive(hass, handler, ["*4*110*#3##"])
+    assert handler.central_season == "heating"
+    await _receive(hass, handler, ["*4*210*#4##"])  # central_flags_f455_poll_2026_11_09
     assert handler.central_season == "conditioning"
     await _receive(hass, handler, ["*4*0*2##"])  # a zone's own season
     assert handler.central_season == "conditioning"
@@ -298,10 +302,16 @@ async def test_the_confirmation_read_goes_out_on_every_gateway_model(
 async def test_a_zone_behind_an_interface_is_not_checked_against_the_local_central_unit() -> None:
     """Another bus may have its own central unit, in its own season."""
     zone2 = _live_zone("2", central_season="heating", answer=ZONE_2_READ)
-    zone2._interface = "01"
     _replay(zone2, ZONE_2_READ)
+    zone2._cancel_season_check()
+    zone2._interface = "01"
     assert zone2._own_season == "conditioning"
+    zone2._check_season_against_central()
     assert zone2._season_check_task is None
+    # And the local zone 2 does not take the season of zone 2 behind an interface.
+    local = _live_zone("2", central_season="conditioning")
+    local.handle_event(OWNEvent.parse("*4*1*2#4#01##"))  # built from *4*1*2## and the interface suffix
+    assert local._own_season is None and local._own_off is None
 
 
 async def test_a_central_unit_behind_an_interface_does_not_set_the_local_season(hass: HomeAssistant) -> None:
@@ -310,3 +320,32 @@ async def test_a_central_unit_behind_an_interface_does_not_set_the_local_season(
     assert handler.central_season is None
     await _receive(hass, handler, ["*4*102*#0##"])
     assert handler.central_season == "heating"
+
+
+async def test_the_season_is_kept_before_the_entities_see_the_frame(hass: HomeAssistant) -> None:
+    """Review of #955, N1: the central unit's entity hands its mode to the zones while it handles the frame."""
+    from homeassistant.core import callback
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+    handler, _zones = await _plant(hass)
+    seen: list[Any] = []
+
+    @callback
+    def _seen(_message: Any) -> None:  # in the event loop, as the entities' handlers are
+        seen.append(handler.central_season)
+
+    async_dispatcher_connect(hass, f"myhome_message_{handler.mac}", _seen)
+    await _receive(hass, handler, ["*4*102*#0##", "*4*202*#0##"])
+    assert seen == ["heating", "conditioning"]
+
+
+async def test_a_standalone_zone_in_protection_is_found_and_stays_off() -> None:
+    """Review of #955, N2: ``*4*102*2##`` is antifreeze, a zone that is off in the heating season."""
+    # Built from zone 2's captured read (*#4*2*12*0200*3##, *4*0*2##) with the protection frame.
+    protection = ["*#4*2*12*0070*3##", "*4*102*2##"]
+    zone2 = _live_zone("2", central_season="conditioning", answer=protection)
+    _replay(zone2, protection)
+    assert zone2.hvac_mode == HVACMode.OFF
+    await _checked(zone2)
+    assert zone2._standalone is True
+    assert zone2.hvac_mode == HVACMode.OFF  # not turned to heat by the detection

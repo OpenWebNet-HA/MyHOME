@@ -78,7 +78,7 @@ def _drain(handler: Any) -> list[str]:
 
 async def test_the_sweep_serves_the_zones_that_waited_for_it(hass: HomeAssistant, fast_bus_pacing: None) -> None:
     """One actuator burst at start, not two; a routed zone and a thermo switch's actuator still ask."""
-    handler = _handler(hass, "F455")
+    handler = _acknowledged(_handler(hass, "F455"))
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("3#4#01")
     handler.watch_zone_actuators("7#1")
@@ -97,7 +97,7 @@ async def test_a_zone_found_from_the_sweep_s_answers_does_not_ask_every_actuator
     hass: HomeAssistant, fast_bus_pacing: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Live F461: the zones created from the answers repeated the request 18 s after the sweep."""
-    handler = _handler(hass, "F461")
+    handler = _acknowledged(_handler(hass, "F461"))
     await handler.initial_discovery()
     await hass.async_block_till_done(wait_background_tasks=True)
     assert _drain(handler).count("*#4*0#0*20##") == 1
@@ -161,11 +161,27 @@ async def test_read_zone_temperature_without_delivery_information_is_not_known(h
 # ---------------------------------------------------------------- zones known only from their actuators
 
 
-async def _plant(hass: HomeAssistant, read: Any, **options: Any) -> tuple[Any, list[MyHOMEClimate]]:
-    """An F461 entry with no climate configured: every zone comes from the bus."""
+def _acknowledged(handler: Any) -> Any:
+    """As a connected gateway does: every status request written is acknowledged at once."""
+    send = handler.send_status_request
+
+    async def _send(message: Any) -> Any:
+        written = await send(message)
+        if isinstance(written, asyncio.Future) and not written.done():
+            written.set_result(0.0)
+        return written
+
+    handler.send_status_request = _send
+    return handler
+
+
+async def _plant(
+    hass: HomeAssistant, read: Any, *, model: str = "F461", **options: Any
+) -> tuple[Any, list[MyHOMEClimate]]:
+    """An entry with no climate configured (an F461 unless said): every zone comes from the bus."""
     entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, options=options, unique_id=MAC)
     entry.add_to_hass(hass)
-    handler = _handler(hass, "F461")
+    handler = _handler(hass, model)
     handler.send = AsyncMock()
     handler.send_status_request = AsyncMock()
     handler.read_zone_temperature = read
@@ -216,12 +232,45 @@ async def test_an_address_with_no_thermostat_stays_as_it_is_and_two_in_a_row_end
         asked.append(where)
         return False  # NACK: nothing answers for that zone
 
-    handler, zones = await _plant(hass, read)
+    handler, zones = await _plant(hass, read, model="F455")  # an unanswered read holds it for about 9 s
     await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])
     await _after_the_sweep(hass, handler)
     assert asked == ["7", "8"]
     assert zones == []
     assert climate_discovery.ACTUATOR_ONLY_ZONE_MISSES == 2
+
+
+async def test_where_an_unanswered_read_is_cheap_every_actuator_only_zone_is_asked(hass: HomeAssistant) -> None:
+    """Two towel warmers must not hide a thermostat with plain valves behind them (review of #955, N4)."""
+    asked: list[str] = []
+
+    async def read(where: str) -> bool | None:
+        asked.append(where)
+        if where == "9":
+            await _receive(hass, handler, ["*#4*9*0*0255##"])  # built from *#4*3*0*0255##: zone 9's thermostat
+            return True
+        return False  # NACK after 2.1 s on an F461
+
+    handler, zones = await _plant(hass, read)
+    handler._who4_startup_poll_lock = None  # a gateway double without the start-up poll lock
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])
+    await _after_the_sweep(hass, handler)
+    assert asked == ["7", "8", "9"]
+    assert [zone._where for zone in zones] == ["9"]
+    assert handler.unanswered_zone_read_is_cheap is True
+    assert _handler(hass, "F455").unanswered_zone_read_is_cheap is False
+
+
+async def test_a_sweep_request_the_gateway_did_not_take_is_not_counted_as_asked(
+    hass: HomeAssistant, fast_bus_pacing: None
+) -> None:
+    """N5: with no acknowledgement of the sweep's request, the waiting zone still asks for its actuators."""
+    handler = _handler(hass, "F461")  # nothing acknowledges
+    handler.watch_zone_actuators("2")
+    await hass.async_block_till_done()
+    await handler.initial_discovery()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler).count("*#4*0#0*20##") == 2  # the sweep's, then the zone's own
 
 
 async def test_an_acknowledged_read_that_brings_no_frame_counts_as_no_answer(hass: HomeAssistant) -> None:
@@ -231,7 +280,7 @@ async def test_an_acknowledged_read_that_brings_no_frame_counts_as_no_answer(has
         asked.append(where)
         return True
 
-    handler, zones = await _plant(hass, read)
+    handler, zones = await _plant(hass, read, model="F455")
     await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])
     await _after_the_sweep(hass, handler)
     assert asked == ["7", "8"]

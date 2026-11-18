@@ -448,16 +448,22 @@ class ZoneDiscovery:
         MyHomeServer1, 2026-11-18), and that frame creates the zone, which then takes the kept
         actuator frames. An address with no thermostat answers nothing and stays as it is.
 
-        One zone at a time, each read after the bus went quiet. The run ends after two zones
-        in a row that did not answer, or when a read could not be told from a busy gateway
-        twice: what is left waits for its own report, as before. Not asked: a zone behind an
+        One zone at a time, each read after the bus went quiet and under the gateway's start-up
+        poll lock, so it does not cross the status polls of the zones being added (on an F455
+        a read crossing one got the other zone's reply, 2026-11-18 16:01:05). Where a read
+        nothing answers is cheap (``unanswered_zone_read_is_cheap``) every such zone is asked.
+        Elsewhere the run ends after two zones in a row that did not answer; it also ends when
+        a read could not be told from a busy gateway twice. What is left waits for its own
+        report, as before. Not asked: a zone behind an
         interface, and a zone that has a thermo switch configured.
         """
         gateway = self._gateway
         await gateway.wait_for_initial_discovery()
         asked: set[tuple[str, str | None]] = set()
         silent = 0
-        while silent < ACTUATOR_ONLY_ZONE_MISSES:
+        every_zone = getattr(gateway, "unanswered_zone_read_is_cheap", False) is True
+        lock = getattr(gateway, "_who4_startup_poll_lock", None)
+        while every_zone or silent < ACTUATOR_ONLY_ZONE_MISSES:
             pair = next(
                 (
                     known
@@ -476,7 +482,11 @@ class ZoneDiscovery:
             asked.add(pair)
             answered: bool | None = None
             for _attempt in range(2):
-                answered = await gateway.read_zone_temperature(pair[0])
+                if isinstance(lock, asyncio.Lock):
+                    async with lock:
+                        answered = await gateway.read_zone_temperature(pair[0])
+                else:
+                    answered = await gateway.read_zone_temperature(pair[0])
                 if answered is not None:
                     break
             if pair not in self._held:

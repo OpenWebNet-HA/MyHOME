@@ -45,13 +45,7 @@ from .const import (
     LOGGER,
 )
 from .topology import peer_handles_who
-from .where_grammar import (
-    central_report_zone,
-    is_central_unit_report,
-    is_probe,
-    thermo_event_interface,
-    where_param,
-)
+from .where_grammar import central_unit_season, is_central_unit_report, is_probe, where_param
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -300,6 +294,13 @@ class GatewayEventDispatcher:
                     {"gateway": str(self.handler.gateway.host), "message": str(message)},
                 )
 
+        if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
+            # Before the entities see the frame: the central unit's entity hands its mode to its
+            # zones while it handles it, and they compare their season with this one.
+            self.handler.has_central_unit = True
+            season = central_unit_season(message)
+            if season is not None:
+                self.handler.central_season = season
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
             self.handler._correlate_shared_bus_traffic(message)
@@ -323,17 +324,6 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and is_central_unit_report(message):
-                    self.handler.has_central_unit = True
-                    season = getattr(message, "season", None)
-                    if (
-                        isinstance(season, str)
-                        and central_report_zone(message) is None
-                        and thermo_event_interface(message) is None
-                    ):
-                        # The central unit about itself (#0, #0#N), not about one of its zones,
-                        # on the gateway's own bus: a bus behind an interface has its own.
-                        self.handler.central_season = season
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
                         not getattr(message, "is_group", False)

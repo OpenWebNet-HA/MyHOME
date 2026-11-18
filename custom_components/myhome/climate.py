@@ -81,6 +81,7 @@ from .thermo_switch import load_thermo_switch_subentries
 from .where_grammar import (
     canonical_thermo_zone,
     central_report_zone,
+    central_unit_season,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_report,
@@ -363,7 +364,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # came, and the running check of that season against the central unit's
         # (``_check_season_against_central``).
         self._own_season: str | None = None
-        self._own_season_frames = 0
+        self._own_season_reported: asyncio.Event | None = None
         self._season_check_task: asyncio.Task[None] | None = None
         # The setpoint write waiting for its confirmation: the nominal written, the value
         # dimension 12 would show for it, and the event a matching report sets.
@@ -1354,6 +1355,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
             self._ask_fan_coil_sides()
         await super().async_added_to_hass()
+        # A zone created from its own season frame handled that frame before it was live.
+        self._check_season_against_central()
         if zone_requests and _ZONE_WHERE.match(self._full_where):
             # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
             # until one of them switches. The gateway asks again after a reconnect. A secondary
@@ -1681,6 +1684,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Keep whether the zone's own frame says it is off (``*4*303*2##``) or running (``*4*0*2##``)."""
         if self._central or is_central_thermo_where(message):
             return
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return  # the same zone number on another bus
         if message.message_type == MESSAGE_TYPE_SEASON:
             self._own_off = False
         elif message.message_type == MESSAGE_TYPE_MODE:
@@ -1961,8 +1966,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         season = getattr(message, "season", None)
         if self._central or not isinstance(season, str) or is_central_thermo_where(message):
             return
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return  # the same zone number on another bus
         self._own_season = season
-        self._own_season_frames += 1
+        if self._own_season_reported is not None:
+            self._own_season_reported.set()
         self._check_season_against_central()
 
     def _season_against_central(self) -> bool:
@@ -2031,13 +2039,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             await asyncio.sleep(STANDALONE_SEASON_CONFIRM_DELAY)
             if not self._season_against_central():
                 return
-            frames_before = self._own_season_frames
+            reported = self._own_season_reported = asyncio.Event()
             if not self._request_zone_dimension(12):
                 return
-            deadline = time.monotonic() + PACED_READ_TIMEOUT
-            while self._own_season_frames == frames_before and time.monotonic() < deadline:
-                await asyncio.sleep(0.05)
-            if self._own_season_frames == frames_before:
+            try:
+                await asyncio.wait_for(reported.wait(), timeout=PACED_READ_TIMEOUT)
+            except TimeoutError:
                 LOGGER.debug(
                     "%s %s did not answer `*#4*%s*12##` with its season; it stays a zone of the central unit",
                     self._gateway_handler.log_id,
@@ -2049,6 +2056,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._mark_standalone_detected(by_season=True)
         finally:
             self._season_check_task = None
+            self._own_season_reported = None
 
     def _cancel_season_check(self) -> None:
         """Stop the running season check: the entity goes away."""
@@ -2714,6 +2722,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # a zone of the central before the standalone check below looks at it.
         if is_central_unit_report(message):
             self._gateway_handler.has_central_unit = True
+            season = central_unit_season(message)
+            if season is not None:
+                # Also here: a reply collected on the command session reaches the entity
+                # without passing the event session's bookkeeping.
+                self._gateway_handler.central_season = season
             self._note_central_zone_report(message)
         self._note_own_state(message)
         self._note_setpoint_report(message)
