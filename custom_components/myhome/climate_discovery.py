@@ -5,7 +5,7 @@ One place for what used to be spread over the platform's setup:
 1. Zones come from the entity registry, from ``myhome.yaml`` and from frames on the bus
    (the platform's ``PlatformDiscovery``, with the rules of ``ZoneDiscovery``). A zone is WHERE 1-99, the central unit ``#0`` / ``#0#1``; WHERE >= 100
    is a temperature probe, which belongs to the sensor platform. Heating frames often carry
-   the zone they concern in a parameter rather than in WHERE (``*4*4001#5*0##``), so the
+   the zone they concern in a parameter rather than in WHERE (``*4*4001#5*0#3##``), so the
    address of a frame is derived here (``_zone_address``, ``_zone_route_keys``).
 2. Not every frame of a zone address proves a thermostat (#785): the state of a plain valve,
    a typeless frame or a virtual probe's temperature may belong to an address that has only

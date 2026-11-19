@@ -70,8 +70,8 @@ def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
     zone (``*4*110*#3##``), so it has no entity yet and its status is asked once
     (``request_central_status``).
 
-    A report from behind an interface (``*4*110*#3#4#01##``) is another bus's central unit and
-    says nothing about this one: the zones of the gateway's own bus stay what they are (a
+    A report from behind an interface (built, no capture holds one: ``*4*110*#3#4#01##``) is
+    another bus's central unit and says nothing about this one: the zones of the gateway's own bus stay what they are (a
     plant with no central unit of its own keeps its standalone thermostats), nothing is asked
     and nobody is told. ``has_central_unit`` is the gateway's own bus only.
     Called for the event session and for the replies of the command session

@@ -427,12 +427,35 @@ async def test_a_zone_in_antifreeze_raises_no_error_either(no_entity_base: None)
 
 
 async def test_a_write_that_did_not_arrive_still_raises(no_entity_base: None) -> None:
-    """The zone reports the setpoint it had: neither form changed it, and the user is told."""
+    """The zone reports the setpoint it had: neither form changed it, and the user is told.
+
+    The error names the write that was asked for (through the central unit), as when the
+    direct form is refused first; not the direct frame the check tried on its own.
+    """
     plant = _f454_plant(setpoint_read="*#4*3*14*0170*3##")  # BUILT: 17.0, what it held
     plant.answers[_setpoint("3", 14.5, direct=False)] = []  # and nothing answers the write
     zone3 = await _restored(plant)
-    with pytest.raises(HomeAssistantError, match="the gateway refused the setpoint write"):
+    with pytest.raises(HomeAssistantError) as raised:
         await zone3.async_set_temperature(temperature=14.5)
+    assert raised.value.translation_key == "setpoint_not_taken_via_central"
+    assert raised.value.translation_placeholders is not None
+    assert raised.value.translation_placeholders["frame"] == _setpoint("3", 14.5, direct=False)
+    assert raised.value.translation_placeholders["reported"] == "17.0"
+    assert plant.sent == [_setpoint("3", 14.5, direct=False), "*#4*3*14##", _setpoint("3", 14.5, direct=True)]
+    assert zone3._standalone_detected is False
+
+
+async def test_a_direct_form_without_a_reply_after_an_untaken_write_is_a_warning(
+    no_entity_base: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Not refused, only unanswered: the direct write may still have arrived, so no error."""
+    plant = _f454_plant(setpoint_read="*#4*3*14*0170*3##")  # BUILT: 17.0, what it held
+    plant.answers[_setpoint("3", 14.5, direct=False)] = []
+    plant.nack.discard(_setpoint("3", 14.5, direct=True))
+    plant.lost.add(_setpoint("3", 14.5, direct=True))
+    zone3 = await _restored(plant)
+    await zone3.async_set_temperature(temperature=14.5)
+    assert "was not acknowledged by the gateway" in caplog.text
     assert zone3._standalone_detected is False
 
 

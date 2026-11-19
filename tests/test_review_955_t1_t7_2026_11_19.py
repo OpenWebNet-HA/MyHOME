@@ -340,15 +340,55 @@ async def test_a_central_unit_first_seen_on_the_command_session_tells_the_zones(
     assert events.note_central_unit(OWNMessage.parse("*#4*2*0*0238##")) == (False, False)  # not a central unit's frame
 
 
-async def test_the_command_session_notes_a_central_units_reply(hass: HomeAssistant) -> None:
-    """``CommandWorkerPool`` hands a collected reply to the same two steps as the event session."""
-    import inspect
+async def test_the_command_session_notes_a_central_units_reply() -> None:
+    """A central unit first seen in a reply on the command session, through the real session.
 
-    from custom_components.myhome import gateway_sessions
+    Worker -> OWNCommandSession -> TCP -> mock gateway, which answers ``*#4*#3##`` as the live
+    F461 did (thermo_discovery_at_start_2026_11_18/user_actions_discovered_F461.log:76). The
+    central unit is noted before the entities are handed the frame, the zones are told and
+    its status is asked once, after the frame was handed over: the order of the event session.
+    """
+    from tests.mock_gateway_harness import MockGatewayHarness
+    from tests.test_command_session_contract import _handler, _run_one_frame
 
-    source = inspect.getsource(gateway_sessions.CommandWorkerPool)
-    noted, dispatched, told = (source.index(text) for text in ("events.note_central_unit(resp)", 'f"myhome_message_{self.mac}", resp', "events.tell_central_unit(resp, *central)"))
-    assert noted < dispatched < told
+    replies = ["*4*110*#3##", "*#4*#3*14*0265*1##"]
+    actions = (_TRACES / "thermo_discovery_at_start_2026_11_18" / "user_actions_discovered_F461.log").read_text(encoding="utf-8")
+    assert f"READ via F461 *#4*#3## -> ('ack', {replies!r})" in actions
+
+    def _gateway(frame: str, _writer: Any) -> str | None:
+        if frame == "*99*0##":
+            return "*#*1##"
+        if frame == "*#4*#3##":
+            return "".join(replies) + "*#*1##"
+        return None
+
+    harness = MockGatewayHarness()
+    harness.set_custom_handler(_gateway)
+    port = await harness.start()
+    steps: list[tuple[Any, ...]] = []
+    try:
+        handler = _handler(port)
+        mac = handler.mac
+        handler.request_central_status = lambda: steps.append(("central status asked",))  # type: ignore[method-assign]
+        assert handler.has_central_unit is False and handler.central_season is None
+
+        def _dispatched(_hass: Any, signal: str, *args: Any) -> None:
+            steps.append((signal, *(str(arg) for arg in args), handler.has_central_unit, handler.central_season))
+
+        with patch("custom_components.myhome.gateway.async_dispatcher_send", _dispatched):
+            await _run_one_frame(handler, "*#4*#3##")
+    finally:
+        await harness.stop()
+
+    assert "*#4*#3##" in harness.received_messages
+    assert handler.has_central_unit is True and handler.central_season == "heating"
+    # Already known when the entities are handed the frame; told and asked once, after it.
+    assert steps == [
+        (f"myhome_message_{mac}", "*4*110*#3##", True, "heating"),
+        (f"myhome_central_season_{mac}", True, "heating"),
+        ("central status asked",),
+        (f"myhome_message_{mac}", "*#4*#3*14*0265*1##", True, "heating"),
+    ]
 
 
 async def test_a_season_change_while_the_zone_is_read_cannot_mark_it(no_entity_base: None) -> None:

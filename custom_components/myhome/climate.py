@@ -1930,7 +1930,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
            form ``*#4*Z*#14*T*M##`` and check it the same way. A zone that takes it is written
            directly from now on (``_standalone_detected``), until the central unit reports it;
         4. a zone that still reports the old setpoint, or a zone configured as one of the
-           central unit's, gets an error instead of a dial that silently jumps back.
+           central unit's, gets an error instead of a dial that silently jumps back. When the
+           gateway refuses the direct form of step 3 (NACK), the error is the one of the
+           write through the central unit, the frame that was asked for.
 
         ``allow_direct`` is False when the gateway has just refused the direct form for this
         zone (``_drop_refused_standalone_finding``): step 3 is left out, so the refused frame
@@ -1974,18 +1976,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # Configured as a zone of the central unit, or the central unit answered for it:
                 # the direct form would leave it on a setpoint the central unit does not know.
                 # Or the gateway has just refused that form for this zone.
-                raise HomeAssistantError(
-                    f"{self._display_name} did not take the setpoint {nominal:.1f} °C sent through the "
-                    f"central unit ({frame}): it still reports {reported:.1f} °C",
-                    translation_domain=DOMAIN,
-                    translation_key="setpoint_not_taken_via_central",
-                    translation_placeholders={
-                        "name": self._display_name,
-                        "temperature": f"{nominal:.1f}",
-                        "reported": f"{reported:.1f}",
-                        "frame": frame,
-                    },
-                )
+                raise self._not_taken_via_central(frame, nominal, reported)
             direct_command = OWNHeatingCommand.set_temperature(
                 where=self._where, temperature=nominal, mode=SETPOINT_WRITE_MODE, standalone=True
             )
@@ -2023,6 +2014,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         direct_command,
                     )
                     return
+                if getattr(direct, "_gateway_nack", False) is True:
+                    # The zone still reports another setpoint after the write through the
+                    # central unit, and the gateway refuses the direct form for it: the write
+                    # that failed is the one that was asked for, as when the direct form was
+                    # refused first (``allow_direct``). Not "the gateway refused" a frame
+                    # nobody asked for.
+                    LOGGER.debug(
+                        "%s %s: the gateway refused `%s` after `%s` was not taken",
+                        handler.log_id,
+                        self._display_name,
+                        direct_command,
+                        frame,
+                    )
+                    raise self._not_taken_via_central(frame, nominal, reported)
                 self._setpoint_not_delivered(direct, str(direct_command))
                 return
             if not taken:
@@ -2075,8 +2080,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
         The read-back's dimension 14 (the old setpoint) would otherwise be paired with the
         dimension 12 the direct write brings, and read as a knob offset: with a knob that had
-        not reported yet, 21.0 after 20.0 gave an offset of +1 and the next 20.0 went out as
-        ``*#4*2*#14*0190*3##``.
+        not reported yet, 21.0 after 20.0 gave an offset of +1 and the next 20.0 would have
+        been written as 19.0.
         """
         self._local_target_reported = False
         self._local_target_base = None
@@ -2085,6 +2090,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._unpaired_dim12_at = None
         self._paired_burst = None
         self._written_target_temperature = (nominal, time.monotonic())
+
+    def _not_taken_via_central(self, frame: str, nominal: float, reported: float) -> HomeAssistantError:
+        """The error for a zone that still reports ``reported`` after ``frame`` (the ``#Z`` form)."""
+        return HomeAssistantError(
+            f"{self._display_name} did not take the setpoint {nominal:.1f} °C sent through the "
+            f"central unit ({frame}): it still reports {reported:.1f} °C",
+            translation_domain=DOMAIN,
+            translation_key="setpoint_not_taken_via_central",
+            translation_placeholders={
+                "name": self._display_name,
+                "temperature": f"{nominal:.1f}",
+                "reported": f"{reported:.1f}",
+                "frame": frame,
+            },
+        )
 
     def _setpoint_not_delivered(self, written: object, frame: str) -> None:
         """A setpoint write that is not known to have reached the plant.
@@ -2115,7 +2135,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         ``*#4*#3*#14*0145*1##`` answered with ``*#4*3*12*0145*3##``), so a zone held standalone
         there by mistake would have every setpoint refused, with nothing to end it but a report
         of the central unit. A zone that really is standalone is found again by the check of
-        the write that follows (``_confirm_setpoint_write``). A configured zone keeps its form,
+        the next setpoint write (``_confirm_setpoint_write``). A configured zone keeps its form,
         and so does any zone after a frame that was merely not acknowledged in time.
         """
         if not self._standalone_detected or self._standalone_config is not None:

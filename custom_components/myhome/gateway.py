@@ -321,7 +321,8 @@ ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
 # sender takes about 32 s). The two forms are answered alike wherever both were tried, and
 # ``#0`` is not a WHERE of dimension 20 in the document:
 # - own-firmware-oracle, thermo-zone-requests.tsv:16 and :17, all 13 images: the same row for
-#   both (10 images put one telegram on the bus, ``4B 90 03 01 0``; H4684, MH200 and MH202 drop both);
+#   both (10 images put the same telegram on the bus for either form; H4684, MH200 and MH202
+#   drop both);
 # - live 2026-11-18, three rounds with a monitor session, the two forms in turn: F461 2.0.11
 #   the same 5 actuators of its plant after each; MyHomeServer1 3.87.13 the same 43 actuators
 #   after each (ACK after 0.37-0.47 s on both, the first 8 frames on the command session and
