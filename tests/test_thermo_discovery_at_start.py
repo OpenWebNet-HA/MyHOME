@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.core import HomeAssistant
-from OWNd.message import OWNHeatingEvent
+from OWNd.message import OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome import climate_discovery
@@ -194,7 +194,9 @@ async def _plant(
 
 async def _receive(hass: HomeAssistant, handler: Any, frames: list[str]) -> None:
     for raw in frames:
-        await handler._event_dispatcher.process_message(OWNHeatingEvent(raw))
+        message = OWNMessage.parse(raw)  # as the event session parses it; a command seen on the bus is not an event
+        if isinstance(message, OWNHeatingEvent):
+            await handler._event_dispatcher.process_message(message)
     await hass.async_block_till_done()
 
 
@@ -233,7 +235,7 @@ async def test_an_address_with_no_thermostat_stays_as_it_is_and_two_in_a_row_end
         return False  # NACK: nothing answers for that zone
 
     handler, zones = await _plant(hass, read, model="F455")  # an unanswered read holds it for about 9 s
-    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])  # BUILT: valves of zones with no thermostat
     await _after_the_sweep(hass, handler)
     assert asked == ["7", "8"]
     assert zones == []
@@ -253,7 +255,7 @@ async def test_where_an_unanswered_read_is_cheap_every_actuator_only_zone_is_ask
 
     handler, zones = await _plant(hass, read)
     handler._who4_startup_poll_lock = None  # a gateway double without the start-up poll lock
-    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])  # BUILT: valves of zones with no thermostat
     await _after_the_sweep(hass, handler)
     assert asked == ["7", "8", "9"]
     assert [zone._where for zone in zones] == ["9"]
@@ -281,7 +283,7 @@ async def test_an_acknowledged_read_that_brings_no_frame_counts_as_no_answer(has
         return True
 
     handler, zones = await _plant(hass, read, model="F455")
-    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##", "*#4*9#1*20*0##"])  # BUILT: valves of zones with no thermostat
     await _after_the_sweep(hass, handler)
     assert asked == ["7", "8"]
     assert zones == []
@@ -329,7 +331,7 @@ async def test_a_gateway_that_stays_busy_ends_the_run_without_a_verdict(
 async def test_a_zone_behind_an_interface_is_not_asked(hass: HomeAssistant) -> None:
     read = AsyncMock(return_value=False)
     handler, zones = await _plant(hass, read)
-    await _receive(hass, handler, ["*#4*3#1#4#01*20*0##"])
+    await _receive(hass, handler, ["*#4*3#1#4#01*20*0##"])  # BUILT: a valve of zone 3 behind interface 01
     await _after_the_sweep(hass, handler)
     read.assert_not_awaited()
     assert zones == []

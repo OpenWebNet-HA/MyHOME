@@ -279,13 +279,7 @@ class MyHOMEEntity(RestoreEntity):
         """Poll initial status if requested, deferring until any active discovery sweep finishes."""
         if not self._poll_on_add:
             return
-        if (
-            hasattr(self._gateway_handler, "wait_for_initial_discovery")
-            and (
-                getattr(self._gateway_handler, "sweep_active", False) is True
-                or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
-            )
-        ):
+        if self._poll_on_add_waits():
             target_hass = self.hass or self._hass
             if target_hass is not None:
                 poll_task = target_hass.async_create_background_task(
@@ -300,6 +294,13 @@ class MyHOMEEntity(RestoreEntity):
                 self.async_on_remove(_cancel_poll)
                 return
         await self.async_update()
+
+    def _poll_on_add_waits(self) -> bool:
+        """Whether the poll on add is left to ``_async_poll_after_discovery``; platforms extend."""
+        return hasattr(self._gateway_handler, "wait_for_initial_discovery") and (
+            getattr(self._gateway_handler, "sweep_active", False) is True
+            or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+        )
 
     async def _async_poll_after_discovery(self) -> None:
         """Poll device status once initial discovery has completed."""

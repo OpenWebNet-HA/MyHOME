@@ -469,9 +469,6 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     # ``__init__`` reads them too.
     _central_season: str | None = None
     central_season_changed_at: float | None = None
-    # A central unit is known only from a report that came through an interface: the one of
-    # the gateway's own bus, if there is one, is still to be found (``note_central_unit_report``).
-    central_unit_known_from_interface: bool = False
 
     def __init__(
         self,
@@ -1382,6 +1379,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """
         asked_at = self._central_status_swept_at
         return asked_at > 0 and time.monotonic() - asked_at < ALL_ACTUATORS_SWEEP_FRESH
+
+    @property
+    def actuator_only_reads_running(self) -> bool:
+        """While ``climate_discovery`` reads the zones known only from their actuators."""
+        return self._actuator_only_reads_running
 
     def actuator_only_reads(self, running: bool) -> None:
         """``climate_discovery`` starts or ends its reads of the zones known only from their actuators.

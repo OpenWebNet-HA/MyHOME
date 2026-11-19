@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import time
+from collections.abc import Callable
 from typing import Any, cast
 
 from homeassistant.components.climate import (
@@ -438,6 +439,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # drives hvac_action, so a stale one cannot keep the zone "heating".
         self._zone_active: bool | None = None
         self._active_source: str | None = None  # "actuators" (dimension 20) or "zone" (19)
+        # The sides (heating, cooling) the last report of an active actuator named; None while
+        # none is active or none has reported (``_settle_action_of_active_actuators``).
+        self._active_sides: tuple[bool, bool] | None = None
         # Which side of the zone drives a fan coil, from dimension 19
         # (*#4*Z*19*COOLING*HEATING##: a value of 5..8 on a side is a fan coil, 0..4 a valve).
         # Empty until a dimension 19 frame has been seen.
@@ -740,9 +744,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode = restored_mode
                 else:
                     self._attr_hvac_mode = HVACMode.OFF
-                self._refresh_hvac_modes()
             except (ValueError, TypeError):
                 self._attr_hvac_mode = HVACMode.OFF
+            # Also for a state that is no mode (``unavailable``, ``unknown``): the cooling the
+            # saved attributes showed is offered either way.
+            self._refresh_hvac_modes()
             self._hvac_mode_restored = True
             target_temp = last_state.attributes.get("temperature")
             if target_temp is not None:
@@ -1091,6 +1097,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         hum_ok = not wants_humidity or self._humidity_reported
         self._bus_state_complete = bool(core_ok and fan_ok and hum_ok)
 
+    def _poll_on_add_waits(self) -> bool:
+        """Also while the zones known only from their actuators are being read.
+
+        A zone those reads create is added after the start-up sweep, when the poll on add no
+        longer waits for anything: it ran next to the following zone's read, outside the
+        start-up poll lock that read holds (``climate_discovery._ask_actuator_only_zones``),
+        and an F455 hands a reply to the wrong one of two crossing reads. Left to
+        ``_async_poll_after_discovery`` it takes its turn under that lock.
+        """
+        return super()._poll_on_add_waits() or (
+            hasattr(self._gateway_handler, "wait_for_initial_discovery")
+            and getattr(self._gateway_handler, "actuator_only_reads_running", False) is True
+        )
+
     async def _async_poll_after_discovery(self) -> None:
         """Poll WHO 4 zone state after discovery, coalescing humidity and pacing per-zone reads (#886)."""
         handler = self._gateway_handler
@@ -1247,23 +1267,46 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         ):
             if self._attr_native_current_temperature < self._target_temperature:
                 return HVACAction.HEATING
-            return HVACAction.COOLING
+            if self._cooling:
+                return HVACAction.COOLING
+            # Above its setpoint and not known to cool: nothing says what the actuator does.
         return None
 
-    def _settle_action_of_active_actuators(self) -> None:
-        """An actuator was reported active before the zone had said what it runs in; now it may have.
+    def _action_of_active_actuators(self, heating_active: bool, cooling_active: bool) -> HVACAction | None:
+        """What a zone with an active actuator is doing; ``None`` while nothing says it.
 
-        A plain valve reports "on" with no side (``*#4*40#1*20*1##``). On a zone that can only
-        heat that is heating at once; on a zone found on the bus, which may also cool, nothing
-        is shown until the season or the mode is known. The valve does not report again until
-        it changes, so the action is decided here, by the same rule, when that frame comes.
-        Live 2026-11-19, MyHomeServer1 and 3488, zones found on the bus: zones 40 and 53 (valve
-        open at start, ``*4*1*40##`` a minute later) showed ``heat`` with no action, and
-        ``heating`` with the same zones in ``myhome.yaml``.
+        ``heating_active`` / ``cooling_active``: the side the report itself named (the valve
+        status, dimension 19). An actuator status (dimension 20) names none.
         """
-        if self._attr_hvac_action is not None or not self._any_actuator_active():
+        # A zone found on the bus that has not shown a conditioning side yet may still
+        # have one: its active actuator is not called heating before the frame says so.
+        if self._heating and (self._cooling or not self._cooling_configured):
+            if heating_active:
+                return HVACAction.HEATING
+            if cooling_active:
+                return HVACAction.COOLING
+            return self._action_by_season_or_mode()
+        if self._heating:
+            return HVACAction.HEATING
+        return HVACAction.COOLING if self._cooling else None
+
+    def _settle_action_of_active_actuators(self) -> None:
+        """Decide again what an active actuator is doing, with what the zone has said since.
+
+        A plain valve reports "on" with no side (``*#4*40#1*20*1##``) and does not report again
+        until it changes. What that means goes by the zone's season, else its mode
+        (``_action_of_active_actuators``), and those may come or change after the valve's
+        frame: a zone found on the bus whose valve was open before its status was read
+        (live 2026-11-19, MyHomeServer1 and 3488, zones 40 and 53: ``heat`` with no action,
+        ``heating`` with the same zones in ``myhome.yaml``); a zone that was off, or whose
+        other valve had reported "off", when the open valve reported; a zone restored in one
+        season that turns out to run in the other. So the same rule is applied before every
+        state is published, with the sides the last active report named. Nothing is done
+        while no actuator is active: off, idle and protection are the mode frames' business.
+        """
+        if self._active_sides is None or not self._any_actuator_active():
             return
-        action = self._action_by_season_or_mode()
+        action = self._action_of_active_actuators(*self._active_sides)
         if action is not None:
             self._attr_hvac_action = action
 
@@ -1397,8 +1440,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         season = getattr(message, "season", None)
         if isinstance(season, str):
+            changed = season != self._season or not self._season_reported
             self._season = season
             self._season_reported = True
+            if changed:
+                # What a zone of the central unit offers goes by the season (``heat`` is not
+                # offered in conditioning), and the frame's own mode is checked against the
+                # list right after this: ``*4*210*#4##`` on a zone last seen in heating was
+                # dropped because ``cool`` was not in a list made for the heating season.
+                self._refresh_hvac_modes()
 
     def _raise_unresponsive_issue(self) -> None:
         self._report_fault(FaultKind.UNRESPONSIVE)
@@ -1862,7 +1912,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 await asyncio.sleep(0.05)
         return self._setpoint_check_reported
 
-    async def _confirm_setpoint_write(self, written: object, frame: str, nominal: float) -> None:
+    async def _confirm_setpoint_write(
+        self, written: object, frame: str, nominal: float, *, allow_direct: bool = True
+    ) -> None:
         """Make sure a setpoint written in the ``#Z`` form (through the central unit) reached the zone.
 
         A central unit acknowledges that form for a thermostat it is not running and nothing
@@ -1879,6 +1931,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
            directly from now on (``_standalone_detected``), until the central unit reports it;
         4. a zone that still reports the old setpoint, or a zone configured as one of the
            central unit's, gets an error instead of a dial that silently jumps back.
+
+        ``allow_direct`` is False when the gateway has just refused the direct form for this
+        zone (``_drop_refused_standalone_finding``): step 3 is left out, so the refused frame
+        is not sent a second time, and a write the zone did not take is reported as not
+        taken through the central unit.
         """
         handler = self._gateway_handler
         check = (nominal, round(nominal + self._local_offset, 1), asyncio.Event())
@@ -1900,8 +1957,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if check[2].is_set():
                 return
             holds_it = reported is not None and abs(reported - nominal) < 0.05
-            if holds_it and not self._asleep():
-                return  # a zone that is off, answered for by the central unit or configured
+            if holds_it and not (allow_direct and self._asleep()):
+                # A zone that is running, answered for by the central unit or configured; or
+                # one whose direct form the gateway has just refused: it holds the setpoint
+                # and there is no other form to try.
+                return
             if reported is None:
                 LOGGER.warning(
                     "%s %s did not confirm `%s` and did not answer a read of its setpoint",
@@ -1910,9 +1970,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     frame,
                 )
                 return
-            if self._standalone_config is not None or self._setpoint_check_by_central:
+            if self._standalone_config is not None or self._setpoint_check_by_central or not allow_direct:
                 # Configured as a zone of the central unit, or the central unit answered for it:
                 # the direct form would leave it on a setpoint the central unit does not know.
+                # Or the gateway has just refused that form for this zone.
                 raise HomeAssistantError(
                     f"{self._display_name} did not take the setpoint {nominal:.1f} °C sent through the "
                     f"central unit ({frame}): it still reports {reported:.1f} °C",
@@ -2240,6 +2301,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._full_where,
                 )
                 return
+            # A season change of the central unit while the read was out needs no second look:
+            # the zone was in the season the central unit was not in, so after the change the
+            # two agree and nothing is concluded below.
             if self._season_against_central():
                 self._mark_standalone_detected(by_season=True)
         finally:
@@ -2655,13 +2719,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
 
         if hvac_mode == HVACMode.OFF:
-            cmd = OWNHeatingCommand.set_mode(
-                where=self._where,
-                mode=CLIMATE_MODE_OFF,
-                standalone=self._standalone,
+            await self._send_in_zone_form(
+                lambda direct: OWNHeatingCommand.set_mode(where=self._where, mode=CLIMATE_MODE_OFF, standalone=direct)
             )
-            if cmd is not None:
-                await self._gateway_handler.send(cmd)
         elif hvac_mode == HVACMode.AUTO:
             if self._standalone and getattr(self._gateway_handler, "has_central_unit", False) is not True:
                 # Automatic is the central unit's program. On a plant without one the
@@ -2725,14 +2785,41 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
             nominal = self._effective_nominal_temperature()
             if nominal is not None:
-                await self._gateway_handler.send(
-                    OWNHeatingCommand.set_temperature(
-                        where=self._where,
-                        temperature=nominal,
-                        mode=CLIMATE_MODE_HEAT if heat else CLIMATE_MODE_COOL,
-                        standalone=self._standalone,
+                season_mode = CLIMATE_MODE_HEAT if heat else CLIMATE_MODE_COOL
+                await self._send_in_zone_form(
+                    lambda direct: OWNHeatingCommand.set_temperature(
+                        where=self._where, temperature=nominal, mode=season_mode, standalone=direct
                     )
                 )
+
+    async def _send_in_zone_form(self, build: Callable[[bool], Any]) -> None:
+        """Send a mode command in the form this zone is written in: ``Z``, or ``#Z`` through the central unit.
+
+        ``build(direct)`` makes the frame. For a zone that was only found standalone, a
+        refusal of the direct form by the gateway drops the finding and the same command
+        goes through the central unit, as for a setpoint (``_drop_refused_standalone_finding``):
+        the F454 of #697 refused ``*4*303*3##`` ("Could not send message") and took
+        ``*4*303*#3##``, answered by ``*4*303*3##`` and ``*4*103*#3##``. Every other zone is
+        written once and not waited for, as before.
+        """
+        direct = self._standalone
+        command = build(direct)
+        if command is None:
+            return
+        written = await self._gateway_handler.send(command)
+        if not (
+            direct
+            and self._standalone_detected
+            and self._standalone_config is None
+            and isinstance(written, asyncio.Future)
+        ):
+            return
+        await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
+        if not self._drop_refused_standalone_finding(written, str(command)):
+            return
+        command = build(False)
+        if command is not None:
+            await self._gateway_handler.send(command)
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
@@ -2813,7 +2900,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # Written through the central unit: a thermostat it is not running ignores that form
         # and both gateways still acknowledge it. Returns as soon as the plant confirms. The
         # value checked is the one on the wire (0.5 steps, 5.0 to 40.0).
-        await self._confirm_setpoint_write(written, str(command), on_the_wire)
+        await self._confirm_setpoint_write(written, str(command), on_the_wire, allow_direct=not direct)
 
     def _dimension_3_is_protection(self, message: OWNHeatingEvent) -> bool:
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
@@ -3630,22 +3717,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._running_fan_speed = "off"
             any_active = self._any_actuator_active()
 
+            if not any_active:
+                self._active_sides = None
+            elif is_active:
+                # The sides this report named, for the frames that follow it
+                # (``_settle_action_of_active_actuators``). An "off" of one actuator while
+                # another is on leaves what the active one said.
+                self._active_sides = (heating_active, cooling_active)
             if repeated_off:
                 pass  # hvac_action stays what dimension 19 made it
             elif any_active:
-                # A zone found on the bus that has not shown a conditioning side yet may still
-                # have one: its active actuator is not called heating before the frame says so.
-                if self._heating and (self._cooling or not self._cooling_configured):
-                    if heating_active:
-                        self._attr_hvac_action = HVACAction.HEATING
-                    elif cooling_active:
-                        self._attr_hvac_action = HVACAction.COOLING
-                    elif (action := self._action_by_season_or_mode()) is not None:
-                        self._attr_hvac_action = action
-                elif self._heating:
-                    self._attr_hvac_action = HVACAction.HEATING
-                elif self._cooling:
-                    self._attr_hvac_action = HVACAction.COOLING
+                action = self._action_of_active_actuators(heating_active, cooling_active)
+                if action is not None:
+                    self._attr_hvac_action = action
             elif self._attr_hvac_mode == HVACMode.OFF:
                 self._attr_hvac_action = HVACAction.OFF
             else:
@@ -3700,5 +3784,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
 
         self._settle_action_of_active_actuators()
+        # The list goes by the season, the plant and the mode shown: whatever the frame changed.
+        self._refresh_hvac_modes()
         self._refresh_bus_state_complete()
         self._publish_state()

@@ -82,7 +82,9 @@ async def _plant(hass: HomeAssistant) -> tuple[Any, list[MyHOMEClimate]]:
 async def _receive(hass: HomeAssistant, handler: Any, frames: list[str]) -> None:
     """Frames of the event session, through the gateway's own message processing."""
     for raw in frames:
-        await handler._event_dispatcher.process_message(OWNHeatingEvent(raw))
+        message = OWNMessage.parse(raw)  # as the event session parses it; a command seen on the bus is not an event
+        if isinstance(message, OWNHeatingEvent):
+            await handler._event_dispatcher.process_message(message)
     await hass.async_block_till_done()
 
 

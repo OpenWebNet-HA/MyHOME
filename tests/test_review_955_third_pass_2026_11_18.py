@@ -393,7 +393,7 @@ async def test_valve_only_zones_are_read_only_where_the_sweep_asks_every_actuato
 
     handler, zones = await _start_plant(hass, read, model=model)
     assert handler.asks_every_actuator_at_start is False
-    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##"])  # the valve frames of the two-misses test
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##"])  # the valve frames of the two-misses test (BUILT)
     await _after_the_sweep(hass, handler)
     assert asked == []
     assert zones == []
@@ -446,7 +446,7 @@ async def test_the_run_of_reads_is_marked_on_the_gateway_and_cleared_when_it_end
 
     handler, _zones = await _start_plant(hass, read)  # an F461: every valve-only address is asked
     handler._all_actuators_swept_at = 1.0  # the sweep asked every actuator long ago
-    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##"])
+    await _receive(hass, handler, ["*#4*7#1*20*0##", "*#4*8#1*20*1##"])  # BUILT
     await _after_the_sweep(hass, handler)
     assert seen == [True, True]
     assert handler._actuator_only_reads_running is False

@@ -176,7 +176,13 @@ def _zone_address(message: Any) -> Address | None:
 
 
 def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
-    """Every key a heating frame is delivered under: the zone, WHERE, and the calling zones."""
+    """Every key a heating frame is delivered under: the zone, WHERE, and the calling zones.
+
+    A frame that came through an interface is delivered under interface-qualified keys only
+    (``4#4#01``): zone 4 exists on every bus, and the bare key is the local bus's zone (#408).
+    Under both, the temperature, the mode and the valve status of the zone behind the
+    interface were written into the local zone with the same number.
+    """
     zones, interface = _calling_zones(message)
     zone = _bus_zone(message)
     keys = [] if zone is None else [f"#{zone}" if zone == 0 else str(zone)]
@@ -186,10 +192,9 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
         is_pump(message) or is_central_unit_actuator_status(message)
     ):
         keys.append(str(message.where))
-    for z in zones:
-        keys.append(z)
-        if interface:
-            keys.append(f"{z}{BUS_ROUTING}{interface}")
+    keys.extend(zones)
+    if interface:
+        return list(dict.fromkeys(f"{key}{BUS_ROUTING}{interface}" for key in keys))
     return keys
 
 
@@ -394,10 +399,17 @@ class ZoneDiscovery:
 
     @staticmethod
     def known_keys(ctx: DeviceContext) -> list[str]:
-        """Every key a zone may be stored under in the registry and in ``myhome.yaml``."""
-        keys = [*default_known_keys(ctx), ctx.address.where, ctx.address.clean_where, ctx.config_id or ""]
-        if not ctx.address.interface and "#" not in ctx.address.clean_where.removeprefix("#"):
-            keys.append(zone_number(ctx.address.where))
+        """Every key a zone may be stored under in the registry and in ``myhome.yaml``.
+
+        A zone behind an interface is known under its interface-qualified keys only: under the
+        bare zone number it took the frames of the local zone with that number, and where it
+        was seen first no local zone was ever created.
+        """
+        keys = [*default_known_keys(ctx), ctx.config_id or ""]
+        if not ctx.address.interface:
+            keys += [ctx.address.where, ctx.address.clean_where]
+            if "#" not in ctx.address.clean_where.removeprefix("#"):
+                keys.append(zone_number(ctx.address.where))
         return [k for k in keys if k]
 
     def _has_thermostat_state(self, entity_id: str) -> bool:
@@ -493,6 +505,10 @@ class ZoneDiscovery:
                     and known[1] is None
                     and known not in self._switch_zones
                     and known not in self._switch_actuator_zones
+                    # An address exposed on the bus as a virtual probe: its own temperature frame
+                    # is held like the actuator frames (``accept``), so the read would count
+                    # as one nothing answered.
+                    and not is_exposed_on_bus(self._hass, self._config_entry, 4, known[0])
                     and events
                     and all(slot.startswith(("act:", "dim19")) for slot in events)
                 ),

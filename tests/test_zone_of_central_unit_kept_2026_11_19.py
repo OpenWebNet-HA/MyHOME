@@ -321,7 +321,7 @@ async def test_a_zone_held_standalone_by_mistake_is_written_through_the_central_
 
 
 async def test_the_same_for_a_zone_left_in_protection_by_the_season_switch(no_entity_base: None) -> None:
-    """Its report of a setpoint shows what it holds, so the check reads it and tries the direct form once more."""
+    """Its report of a setpoint shows what it holds, so the check reads it; the refused form is not sent again."""
     plant = _f454_plant()
     zone3 = _zone(plant, "3")
     _replay(zone3, [ZONE_3_IN_CONDITIONING])  # `*4*202*3##`, where the switch to Estate left it
@@ -330,32 +330,32 @@ async def test_the_same_for_a_zone_left_in_protection_by_the_season_switch(no_en
     await zone3.async_set_temperature(temperature=14.5)  # no error
 
     direct, via_central = _setpoint("3", 14.5, direct=True), _setpoint("3", 14.5, direct=False)
-    assert plant.sent == [direct, via_central, "*#4*3*14##", direct]
+    assert plant.sent == [direct, via_central, "*#4*3*14##"]
     assert zone3._standalone_detected is False and ("3", None) not in plant.gateway.standalone_detected_zones
 
 
 async def test_a_thermostat_that_is_standalone_is_found_again(no_entity_base: None) -> None:
-    """One refusal on the live plant's zone 2 (a busy gateway): the check of the next form decides."""
+    """One refusal on the live plant's zone 2: that write fails, and the next one finds the zone again."""
     plant = _zone2_plant()
     plant.gateway.standalone_detected_zones = set()
-    direct = _tx("f455_view_zone2_setpoint_direct")[0]
+    direct, via_central = _tx("f455_view_zone2_setpoint_direct")[0], _setpoint("2", 21.0, direct=False)
     assert direct == _setpoint("2", 21.0, direct=True)
+    plant.answer("*#4*2*14##", ["*#4*2*14*0200*3##"])  # a second read while it still holds 20.0
     plant.nack.add(direct)
-    write = plant._write
-
-    async def _refused_once(message: Any) -> asyncio.Future[float]:
-        written = await write(message)
-        plant.nack.discard(str(message))
-        return written
-
-    plant._write = _refused_once  # type: ignore[method-assign]
     zone2 = _zone(plant, "2")
     _replay(zone2, ZONE_2_READ)
     zone2._mark_standalone_detected(by_season=True)
 
-    await zone2.async_set_temperature(temperature=21.0)
+    with pytest.raises(HomeAssistantError) as raised:
+        await zone2.async_set_temperature(temperature=21.0)
+    assert raised.value.translation_key == "setpoint_not_taken_via_central"
+    assert plant.sent == [direct, via_central, "*#4*2*14##"]  # the refused form is not sent a second time
+    assert zone2._standalone_detected is False
 
-    assert plant.sent == [direct, _setpoint("2", 21.0, direct=False), "*#4*2*14##", direct]
+    plant.nack.clear()
+    plant.sent.clear()
+    await zone2.async_set_temperature(temperature=21.0)
+    assert plant.sent == [via_central, "*#4*2*14##", direct]  # ignored by the central unit, taken directly
     assert zone2._standalone_detected is True and ("2", None) in plant.gateway.standalone_detected_zones
 
 
@@ -468,7 +468,8 @@ async def test_a_central_unit_behind_an_interface_is_not_asked_on_the_local_bus(
     await _receive(hass, handler, [CENTRAL_REPORT_BEHIND_INTERFACE])
     await hass.async_block_till_done(wait_background_tasks=True)
     assert [str(call.args[0]) for call in handler.send_status_request.await_args_list] == []
-    assert handler.central_season is None  # another bus's season is not this bus's
+    assert handler.has_central_unit is False  # another bus's central unit is not this bus's
+    assert handler.central_season is None  # nor is its season
 
     await _receive(hass, handler, [CENTRAL_REPORTS_ZONE_3])  # the local central unit: asked once
     await hass.async_block_till_done(wait_background_tasks=True)
@@ -484,10 +485,10 @@ def test_the_same_for_a_report_that_reaches_the_entity_directly(no_entity_base: 
     with patch("custom_components.myhome.climate.async_dispatcher_send"):
         zone3.handle_event(OWNEvent.parse(CENTRAL_REPORT_BEHIND_INTERFACE))
         plant.gateway.request_central_status.assert_not_called()
-        assert plant.gateway.central_unit_known_from_interface is True
+        assert plant.gateway.has_central_unit is False
         zone3.handle_event(OWNEvent.parse(CENTRAL_REPORTS_ZONE_3))  # the local one is still found
         plant.gateway.request_central_status.assert_called_once_with()
-        assert plant.gateway.central_unit_known_from_interface is False
+        assert plant.gateway.has_central_unit is True
         zone3.handle_event(OWNEvent.parse(CENTRAL_REPORTS_ZONE_3))
         zone3.handle_event(OWNEvent.parse(CENTRAL_REPORT_BEHIND_INTERFACE))
         plant.gateway.request_central_status.assert_called_once_with()  # once

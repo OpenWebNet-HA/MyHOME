@@ -70,23 +70,24 @@ def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
     zone (``*4*110*#3##``), so it has no entity yet and its status is asked once
     (``request_central_status``).
 
-    A report from behind an interface is another bus's central unit: it asks nothing on this
-    bus, where the request would go to the local central unit or to nobody, and it leaves the
-    local one to be found by its own first report (``central_unit_known_from_interface``).
-    Called for the event session (below) and for a reply collected on the command session,
-    which reaches the entity without passing here (``climate._handle_event``).
+    A report from behind an interface (``*4*110*#3#4#01##``) is another bus's central unit and
+    says nothing about this one: the zones of the gateway's own bus stay what they are (a
+    plant with no central unit of its own keeps its standalone thermostats), nothing is asked
+    and nobody is told. ``has_central_unit`` is the gateway's own bus only.
+    Called for the event session and for the replies of the command session
+    (``GatewayEventDispatcher.note_central_unit``), and by the entity for a frame handed to
+    it directly (``climate._handle_event``).
     """
-    local = thermo_event_interface(message) is None
+    if thermo_event_interface(message) is not None:
+        return False, False
     news = getattr(handler, "has_central_unit", False) is not True
-    local_news = local and (news or getattr(handler, "central_unit_known_from_interface", False) is True)
-    if news or local:
-        handler.central_unit_known_from_interface = not local
+    found_by_zone = news and central_report_zone(message) is not None
     handler.has_central_unit = True
     season = central_unit_season(message)
     if season is not None:
         news = news or getattr(handler, "central_season", None) != season
         handler.central_season = season
-    return news, local_news and central_report_zone(message) is not None
+    return news, found_by_zone
 
 
 class GatewayEventDispatcher:
@@ -290,6 +291,39 @@ class GatewayEventDispatcher:
         except Exception:
             self._logger.exception("%s Device health could not process `%s`", self.handler.log_id, message)
 
+    def note_central_unit(self, message: Any) -> tuple[bool, bool]:
+        """``note_central_unit_report`` for a frame that is a central unit's report, else nothing.
+
+        For both sessions: the event session's frames (``process_message``) and the replies
+        the command session collected and the event session did not show
+        (``gateway_sessions``). Without the second, a central unit first seen in the reply
+        to its status request got its entity, whose constructor marks the plant as having a
+        central unit, and the zones were never told.
+        """
+        if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
+            return note_central_unit_report(self.handler, message)
+        return False, False
+
+    def tell_central_unit(self, message: Any, news: bool, found_by_zone: bool) -> None:
+        """After the frame was dispatched: pass on what ``note_central_unit`` found."""
+        from . import gateway as gw_module
+
+        dispatcher_send = getattr(gw_module, "async_dispatcher_send", async_dispatcher_send)
+        if news:
+            # The central unit, or its season, has just become known. Its own ``#0`` frame
+            # reaches every zone through the central unit's entity; a report about one zone
+            # (``*4*110*#3##``, all a quarter-hour push brings) reaches that zone only, so
+            # the others are told here: a zone that reported its season earlier is compared
+            # now, and what a zone offers follows the plant it turns out to be on.
+            dispatcher_send(self.hass, f"myhome_central_season_{self.handler.mac}")
+        if found_by_zone:
+            msg_who = getattr(message, "who", getattr(message, "_who", None))
+            who_int = int(msg_who) if msg_who is not None and str(msg_who).isdigit() else None
+            if self._is_active_for_who(who_int):
+                # Known from its report about a zone, with no frame of its own: asked for its
+                # status once, so that it gets its entity (``request_central_status``).
+                self.handler.request_central_status()
+
     async def process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
         from . import gateway as gw_module
@@ -329,24 +363,12 @@ class GatewayEventDispatcher:
                     {"gateway": str(self.handler.gateway.host), "message": str(message)},
                 )
 
-        central_news = central_found_by_zone = False
-        if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
-            # Before the entities see the frame: the central unit's entity hands its mode to its
-            # zones while it handles it, and they compare their season with this one.
-            central_news, central_found_by_zone = note_central_unit_report(self.handler, message)
+        # Before the entities see the frame: the central unit's entity hands its mode to its
+        # zones while it handles it, and they compare their season with this one.
+        central = self.note_central_unit(message)
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
-            if central_news:
-                # The central unit, or its season, has just become known. Its own ``#0`` frame
-                # reaches every zone through the central unit's entity; a report about one zone
-                # (``*4*110*#3##``, all a quarter-hour push brings) reaches that zone only, so
-                # the others are told here: a zone that reported its season earlier is compared
-                # now, and what a zone offers follows the plant it turns out to be on.
-                dispatcher_send(self.hass, f"myhome_central_season_{self.handler.mac}")
-            if central_found_by_zone and self._is_active_for_who(who_int):
-                # Known from its report about a zone, with no frame of its own: asked for its
-                # status once, so that it gets its entity (``request_central_status``).
-                self.handler.request_central_status()
+            self.tell_central_unit(message, *central)
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:

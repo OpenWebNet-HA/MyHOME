@@ -85,7 +85,8 @@ async def test_setup_and_unload_entry(hass):
 
 async def test_legacy_routed_zone_listens_under_clean_spellings(hass):
     """A zone restored from a legacy ``4-`` prefixed id behind an F422 interface is
-    reached under the spellings a frame is published under (``1#4#01``, ``1``)."""
+    reached under the spelling its frames are published under (``1#4#01``), and not under
+    the bare zone number: zone 1 exists on every bus, and ``1`` is the local bus's (#408)."""
     hass.data = {"myhome": {"mac": {"platforms": {"climate": {}}, "entity": MagicMock()}}}
     config_entry = MagicMock()
     config_entry.data = {"mac": "mac"}
@@ -106,7 +107,7 @@ async def test_legacy_routed_zone_listens_under_clean_spellings(hass):
     router = config_entry.runtime_data.router
     assert router.subscribers("4", "4-1#4#01") == 1  # the id it was restored under
     assert router.subscribers("4", "1#4#01") == 1  # the frame's key
-    assert router.subscribers("4", "1") == 1  # the bare zone
+    assert router.subscribers("4", "1") == 0  # the bare zone is the local bus's zone 1
 
 
 def test_zone_config_routed_zone_never_matches_local_bus():

@@ -22,6 +22,7 @@ from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
+from .gateway_events import GatewayEventDispatcher
 from .where_grammar import expose_message_where, normalize_where, where_param
 
 if TYPE_CHECKING:
@@ -1653,9 +1654,19 @@ class CommandWorkerPool:
                                     and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
                                 ):
                                     self.handler._handle_gateway_identity_diagnostics(resp)
+                                # A central unit's report among the replies is noted before
+                                # the entities see it, as on the event session.
+                                events = getattr(self.handler, "_event_dispatcher", None)
+                                central = (
+                                    events.note_central_unit(resp)
+                                    if isinstance(events, GatewayEventDispatcher)
+                                    else (False, False)
+                                )
                                 dispatcher_send(
                                     self.hass, f"myhome_message_{self.mac}", resp
                                 )
+                                if isinstance(events, GatewayEventDispatcher):
+                                    events.tell_central_unit(resp, *central)
                                 # A reply to a request sent for an offline primary
                                 self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:

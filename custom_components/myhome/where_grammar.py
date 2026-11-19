@@ -356,10 +356,14 @@ def is_central_unit_actuator_status(message: Any) -> bool:
     It names no zone and no actuator (OWNd falls back to actuator 1), and the central unit has
     no actuator status of its own: the WHERE of dimension 20 is ``Z#N``, ``Z#0`` or ``0#0``
     (WHO 4 p. 22, p. 62). So it discovers nothing and is delivered to no entity, like the pump
-    frames ``0#N``.
+    frames ``0#N``. The same frame from behind an interface (``*#4*#0#4#01*20*1##``, where the
+    WHERE's tail is the interface and not a zone of a 4-zone central unit) is the same thing.
     """
     where = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
-    return where == "#0" and not where_param(message) and is_actuator_status(message)
+    tail = [str(part) for part in where_param(message)]
+    interface = thermo_event_interface(message)
+    routed_only = interface is not None and len(tail) == 2 and tail[0] == "4" and tail[1].zfill(2) == interface
+    return where == "#0" and (not tail or routed_only) and is_actuator_status(message)
 
 
 def is_central_unit_report(message: Any) -> bool:

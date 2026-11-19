@@ -154,9 +154,9 @@ def _zone(plant: Any, where: str, *, standalone: bool | None = None) -> Any:
 def _replay(entity: Any, frames: list[str]) -> None:
     """Hand the zone its own frames of a capture, as the platform's routing does."""
     for raw in frames:
-        message = OWNEvent.parse(raw)
+        message = OWNMessage.parse(raw)
         # A *#14* write seen on the bus is a command, not an event; other zones' frames are not routed here.
-        if type(message).__name__ == "OWNHeatingEvent" and str(message.zone) == entity._where:
+        if isinstance(message, OWNHeatingEvent) and str(message.zone) == entity._where:
             entity.handle_event(message)
 
 
