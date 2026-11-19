@@ -40,10 +40,10 @@ from custom_components.myhome.const import (
 )
 from custom_components.myhome.cover import CoverFamily, CoverScope, MyHOMECover
 from custom_components.myhome.cover_motion import (
-    ACTUATOR_RELAY_HOLD_WINDOW,
     ECHO_WINDOW,
     END_SETTLE_MARGIN,
-    STOP_BEFORE_MOVE_DELAY,
+    M0_RELAY_HOLD_WINDOW,
+    PRE_MOVE_STOP_SETTLE_DELAY,
 )
 from custom_components.myhome.cover_scope import MyHOMEScopeCover
 from custom_components.myhome.cover_strategies import NativePositionStrategy
@@ -579,14 +579,14 @@ async def test_bug_a_mh201_mh202_automatic_pre_stop_and_65s_relay_hold_lifecycle
         fake_clock.clear()
         await cover.async_close_cover()
         assert [f for f, _ in gw.sent] == ["*2*2*41##"]
-        assert STOP_BEFORE_MOVE_DELAY not in fake_clock
+        assert PRE_MOVE_STOP_SETTLE_DELAY not in fake_clock
 
         # 2. Mid-run reversal at +5 s -> automatic pre-STOP + 0.6 s + *2*1*41##!
         gw.sent.clear()
         clock.now += 5.0
         await cover.async_open_cover()
         assert [f for f, _ in gw.sent] == ["*2*0*41##", "*2*1*41##"]
-        assert STOP_BEFORE_MOVE_DELAY in fake_clock
+        assert PRE_MOVE_STOP_SETTLE_DELAY in fake_clock
 
         # Settle opening run at 100% (15 + 2.0 = 17 s): physical shutter arrived, relay STILL energized!
         assert cover._stop_task is not None
@@ -600,7 +600,7 @@ async def test_bug_a_mh201_mh202_automatic_pre_stop_and_65s_relay_hold_lifecycle
         clock.now += 15.0
         await cover.async_close_cover()
         assert [f for f, _ in gw.sent] == ["*2*0*41##", "*2*2*41##"]
-        assert STOP_BEFORE_MOVE_DELAY in fake_clock
+        assert PRE_MOVE_STOP_SETTLE_DELAY in fake_clock
         assert cover._stop_task is not None
         await cover._stop_task
         assert cover.current_cover_position == 0
@@ -608,10 +608,10 @@ async def test_bug_a_mh201_mh202_automatic_pre_stop_and_65s_relay_hold_lifecycle
         # 4a. Past 65 s without cutoff frame -> relay hold expires naturally -> zero pre-stop!
         gw.sent.clear()
         fake_clock.clear()
-        clock.now += ACTUATOR_RELAY_HOLD_WINDOW + 5.0
+        clock.now += M0_RELAY_HOLD_WINDOW + 5.0
         await cover.async_open_cover()
         assert [f for f, _ in gw.sent] == ["*2*1*41##"]
-        assert STOP_BEFORE_MOVE_DELAY not in fake_clock
+        assert PRE_MOVE_STOP_SETTLE_DELAY not in fake_clock
         assert cover._stop_task is not None
         await cover._stop_task
 
@@ -623,7 +623,7 @@ async def test_bug_a_mh201_mh202_automatic_pre_stop_and_65s_relay_hold_lifecycle
         clock.now += 1.0
         await cover.async_close_cover()
         assert [f for f, _ in gw.sent] == ["*2*2*41##"]
-        assert STOP_BEFORE_MOVE_DELAY not in fake_clock
+        assert PRE_MOVE_STOP_SETTLE_DELAY not in fake_clock
         if cover._stop_task is not None:
             await cover._stop_task
 
@@ -701,8 +701,8 @@ async def test_supersession_wall_switch_user_commands_removal_and_dim10_promotio
     clock: _Clock,
 ) -> None:
     """Verify _run_generation supersession on wall switch, user stop, write-wait, removal, and Dim 10 promotion."""
-    # Use controlled real event-loop sleeps (monkeypatched STOP_BEFORE_MOVE_DELAY=0.05) to interleave events mid-pause
-    with patch("custom_components.myhome.cover.STOP_BEFORE_MOVE_DELAY", 0.05):
+    # Use controlled real event-loop sleeps (monkeypatched PRE_MOVE_STOP_SETTLE_DELAY=0.05) to interleave events mid-pause
+    with patch("custom_components.myhome.cover.PRE_MOVE_STOP_SETTLE_DELAY", 0.05):
         # 1. Wall-switch press (*2*1*41##) during the 0.6 s pause (after *2*0*41## closed echo window!)
         gw1 = _make_gateway(model="MH201", immediate_write=True, clock=clock)
         cov1 = _make_cover(hass, gw1, "41", stop_before_move=True, pos=50)
@@ -901,7 +901,7 @@ async def test_scope_cover_pre_move_stop_reversal_and_options(
     fake_clock.clear()
     await group.async_close_cover()
     assert [f for f, _ in gw.sent] == ["*2*2*#1##"]
-    assert STOP_BEFORE_MOVE_DELAY not in fake_clock
+    assert PRE_MOVE_STOP_SETTLE_DELAY not in fake_clock
     assert m41.is_closing is True and m42.is_closing is True
 
     # 2. Mid-run scope reversal -> ONE *2*0*#1## + 0.6 s + ONE *2*1*#1##, and all members open!
@@ -910,7 +910,7 @@ async def test_scope_cover_pre_move_stop_reversal_and_options(
     clock.now += 5.0
     await group.async_open_cover()
     assert [f for f, _ in gw.sent] == ["*2*0*#1##", "*2*1*#1##"]
-    assert STOP_BEFORE_MOVE_DELAY in fake_clock
+    assert PRE_MOVE_STOP_SETTLE_DELAY in fake_clock
     assert m41.is_opening is True and m42.is_opening is True
     for m in (m41, m42):
         if m._stop_task is not None:

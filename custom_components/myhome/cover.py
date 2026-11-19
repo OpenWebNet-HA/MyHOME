@@ -124,13 +124,13 @@ from .cover_calibration import (
     get_last_calibration_trace,
 )
 from .cover_motion import (
-    ACTUATOR_RELAY_HOLD_WINDOW,
     ECHO_WINDOW,
     END_SETTLE_MARGIN,
     END_STOP_TOLERANCE,
+    M0_RELAY_HOLD_WINDOW,
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
-    STOP_BEFORE_MOVE_DELAY,
+    PRE_MOVE_STOP_SETTLE_DELAY,
     WRITE_TIMEOUT,
     compute_freeze_position,
     compute_interpolated_position,
@@ -814,10 +814,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     # ── Echo model & relay-hold helpers ──────────────────────────────────
 
     def _arm_relay_hold(self, at: float, *, opening: bool | None = None) -> None:
-        """Record until when a timed actuator's internal relay timer may stay energized (#959)."""
+        """Record until when a timed actuator's factory M=0 relay timer may stay energized (#959)."""
         if self._advanced:
             return
-        window = ACTUATOR_RELAY_HOLD_WINDOW
+        # 65.0 s covers factory M=0 STOP_TIME=60 s + 1.38-1.5 s drift + 3.5 s margin (cover_motion.py).
+        window = M0_RELAY_HOLD_WINDOW
         if opening is not None:
             travel = self._travel_for(opening)
             if travel + END_SETTLE_MARGIN > window:
@@ -912,7 +913,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             elif self._pending_cmd == "stop":
                 if self._relay_hold_until is not None:
                     self._relay_hold_until = min(
-                        self._relay_hold_until, write_ts + STOP_BEFORE_MOVE_DELAY
+                        self._relay_hold_until, write_ts + PRE_MOVE_STOP_SETTLE_DELAY
                     )
                 if not self._motor_started.is_set():
                     # Motion stops within ~0.04-0.12 s of the write on measured
@@ -1416,8 +1417,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
                 if isinstance(raw_ts, str) and (parsed_dt := dt_util.parse_datetime(raw_ts)) is not None:
                     age = (dt_util.utcnow() - parsed_dt).total_seconds()
-                    if 0.0 <= age < ACTUATOR_RELAY_HOLD_WINDOW:
-                        deadline = time.monotonic() + (ACTUATOR_RELAY_HOLD_WINDOW - age)
+                    if 0.0 <= age < M0_RELAY_HOLD_WINDOW:
+                        deadline = time.monotonic() + (M0_RELAY_HOLD_WINDOW - age)
                         if self._relay_hold_until is None or deadline > self._relay_hold_until:
                             self._relay_hold_until = deadline
         await self._async_restore_strategy_state()
@@ -2253,7 +2254,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             delivered = bool(done) and not written.cancelled() and written.exception() is None
         if not delivered:
             return
-        await asyncio.sleep(STOP_BEFORE_MOVE_DELAY)
+        # 0.6 s matches native MH201 scenario STOP->MOVE spacing (0.587 s) & live L4671/2 settle (#959).
+        await asyncio.sleep(PRE_MOVE_STOP_SETTLE_DELAY)
         if gen != self._run_generation:
             raise _MoveSuperseded
 
