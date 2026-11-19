@@ -46,6 +46,22 @@ MIN_MOTOR_PULSE: float = 0.4
 # default stays 2% (configurable in 1..5%).
 MIN_POSITION_DELTA: int = 2
 
+# Pause between a pre-move stop frame's socket write and the subsequent direction
+# frame (#959). Timed interlocked relay actuators (BTicino L4671/2, H4671/2, F411/2,
+# F411/4, F411U2; Encyclopedia OWN-DEV-0098/0022/0023/0153) answer an opposite
+# direction command with a stop (*2*0*WHERE##) while their relay coil is energized —
+# both mid-travel and while timing out their ~60 s factory M=0 cutoff after reaching
+# a mechanical limit switch. Gateways that do not synthesize an SCS pre-move STOP
+# (MH201, MH202) therefore stop first and wait 0.6 s after write (matching live
+# MH201 + L4671/2 plant verification and MH201 group scenario STOP->MOVE spacing).
+STOP_BEFORE_MOVE_DELAY: float = 0.6
+
+# Window from motor start during which a factory M=0 timed relay actuator's coil
+# (~60-61.5 s cutoff, 60 s + 5 s RC drift margin; see const.CALIBRATION_CUTOFFS)
+# may still be energized after HA settled the curtain at 0% / 100% (#959). Cleared
+# immediately as soon as a non-translation *2*0*WHERE## stop frame arrives.
+ACTUATOR_RELAY_HOLD_WINDOW: float = 65.0
+
 # Slack after the stored travel time before a timed full run (0% / 100%) is
 # reported as arrived. No stop frame is sent for those runs, and the actuator's
 # own stop status may come a minute late or never (#466 review, MyHOMEServer1).

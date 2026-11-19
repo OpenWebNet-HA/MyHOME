@@ -5,6 +5,7 @@ import asyncio
 import inspect
 import time
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -87,6 +88,7 @@ from .const import (
     CONF_SLAT_TILT,
     CONF_SLAT_TIME,
     CONF_STATE_SENSOR,
+    CONF_STOP_BEFORE_MOVE,
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_WHO,
@@ -122,11 +124,13 @@ from .cover_calibration import (
     get_last_calibration_trace,
 )
 from .cover_motion import (
+    ACTUATOR_RELAY_HOLD_WINDOW,
     ECHO_WINDOW,
     END_SETTLE_MARGIN,
     END_STOP_TOLERANCE,
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
+    STOP_BEFORE_MOVE_DELAY,
     WRITE_TIMEOUT,
     compute_freeze_position,
     compute_interpolated_position,
@@ -152,7 +156,11 @@ from .discovery import (
     default_known_keys,
     parse_unique_id,
 )
-from .gateway import FrameScheduler, MyHOMEGatewayHandler
+from .gateway import (
+    FrameScheduler,
+    MyHOMEGatewayHandler,
+    gateway_emits_cover_pre_move_stop,
+)
 from .myhome_device import MyHOMEEntity
 
 if TYPE_CHECKING:
@@ -170,6 +178,10 @@ OFF_RETRY_DELAY = 1.0
 OFF_SETTLE_DELAY = 0.2
 
 _clamp_slat_time = clamp_slat_time
+
+
+class _MoveSuperseded(Exception):
+    """An in-flight pre-move stop or echo-window wait ended without starting motion."""
 
 # Known standard timed relay actuators that do not implement OpenWebNet Dimension 10 position reporting
 # (Encyclopedia OWN-DEV-0022/0023/0098/0141/0153: F411 family and flush-mounted 4671/2 / AM5851/2 relays).
@@ -376,6 +388,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             min_motor_pulse=float(cfg.get(CONF_MIN_MOTOR_PULSE, DEFAULT_MIN_MOTOR_PULSE)),
             min_position_delta=int(cfg.get(CONF_MIN_POSITION_DELTA, MIN_POSITION_DELTA)),
             device_class=device_class,
+            stop_before_move=cfg.get(CONF_STOP_BEFORE_MOVE),
             **kwargs,
         )
         if detected_on_build and not stored_advanced:
@@ -513,6 +526,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         strategy_name: str | None = None,
         device_class: CoverDeviceClass | None = None,
         allow_auto_advanced: bool = False,
+        stop_before_move: bool | None = None,
     ):
         super().__init__(
             hass=hass,
@@ -537,6 +551,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self.scope: CoverScope | None = None
         self._family: CoverFamily | None = None
         self._advanced = advanced
+        self._stop_before_move: bool | None = stop_before_move if isinstance(stop_before_move, bool) else None
+        self._learned_stop_before_move: bool = False
+        self._relay_hold_until: float | None = None
+        self._last_stop_generation: int = 0
         self._slat_tilt = bool(slat_tilt)
         raw_slat_time = _clamp_slat_time(slat_time)
         self._is_tilting: bool = False
@@ -683,6 +701,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._echo_until: float | None = None
         self._motor_started: asyncio.Event = asyncio.Event()
         self._stop_translation_seen: bool = False
+        self._echo_stop_at: float | None = None
+        self._echo_stop_unsub: CALLBACK_TYPE | None = None
         self._run_generation: int = 0
         self._run_start_position: int | None = None
         self._run_start_tilt: int | None = None
@@ -791,7 +811,50 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         attrs["last_run_direction"] = self._last_run.get("direction")
         attrs["last_run_ended_at"] = self._last_run.get("ended_at")
 
-    # ── Echo model helpers ───────────────────────────────────────────────
+    # ── Echo model & relay-hold helpers ──────────────────────────────────
+
+    def _arm_relay_hold(self, at: float, *, opening: bool | None = None) -> None:
+        """Record until when a timed actuator's internal relay timer may stay energized (#959)."""
+        if self._advanced:
+            return
+        window = ACTUATOR_RELAY_HOLD_WINDOW
+        if opening is not None:
+            travel = self._travel_for(opening)
+            if travel + END_SETTLE_MARGIN > window:
+                window = travel + END_SETTLE_MARGIN
+        deadline = at + window
+        if self._relay_hold_until is None or deadline > self._relay_hold_until:
+            self._relay_hold_until = deadline
+
+    def _clear_relay_hold(self) -> None:
+        """Clear the relay-hold window once a non-translation stop proves the relay opened."""
+        self._relay_hold_until = None
+
+    def _actuator_relay_may_be_energized(self, now: float) -> bool:
+        """Return True when a timed actuator's motor relay may currently be energized."""
+        if self._attr_is_opening or self._attr_is_closing:
+            return True
+        if self._relay_hold_until is not None:
+            if now < self._relay_hold_until:
+                return True
+            self._relay_hold_until = None
+        return False
+
+    def _gateway_emits_pre_move_stop(self) -> bool | None:
+        """Return whether the gateway serving this cover injects an SCS pre-move STOP."""
+        emits = getattr(self._gateway_handler, "emits_cover_pre_move_stop", None)
+        if isinstance(emits, bool):
+            return emits
+        model = getattr(self._gateway_handler, "model", None)
+        if isinstance(model, str):
+            return gateway_emits_cover_pre_move_stop(model)
+        return None
+
+    def _cancel_echo_stop_timer(self) -> None:
+        """Cancel any pending ECHO_WINDOW terminal-stop fallback timer."""
+        if self._echo_stop_unsub is not None:
+            self._echo_stop_unsub()
+            self._echo_stop_unsub = None
 
     def _begin_command(self, cmd: str) -> None:
         """Open an echo window for a command we are about to queue.
@@ -801,11 +864,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         (queue flushed on shutdown, refused connection) must not leave the
         window open, or every later stop frame would be taken for an echo.
         """
+        self._cancel_echo_stop_timer()
         self._run_generation += 1
         self._pending_cmd = cmd
         self._echo_until = time.monotonic() + WRITE_TIMEOUT + ECHO_WINDOW
         self._motor_started = asyncio.Event()
         self._stop_translation_seen = False
+        self._echo_stop_at = None
 
     def _track_write(self, written) -> None:  # type: ignore
         """Anchor the echo window (and the clock) on the real write time."""
@@ -813,7 +878,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # No delivery information (legacy gateway object): bound the window
             # from enqueue so an external frame can never be mistaken for an
             # echo indefinitely.
-            self._echo_until = time.monotonic() + ECHO_WINDOW
+            now = time.monotonic()
+            self._echo_until = now + ECHO_WINDOW
+            if self._pending_cmd in ("open", "close") and not self._is_tilting:
+                self._arm_relay_hold(now, opening=self._pending_cmd == "open")
             return
         generation = self._run_generation
 
@@ -832,6 +900,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 return
             write_ts = fut.result()
             self._echo_until = write_ts + ECHO_WINDOW
+            if self._echo_stop_at is not None:
+                self._arm_echo_stop_timer(write_ts)
             if self._is_tilting:
                 # A slat pulse never moves the curtain: no travel clock to start.
                 return
@@ -839,13 +909,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # Provisional anchor: the motor starts shortly after the write.
                 # The direction echo re-anchors precisely if the gateway relays it.
                 self._anchor_run(write_ts)
-            elif self._pending_cmd == "stop" and not self._motor_started.is_set():
-                # Motion stops within ~0.04-0.12 s of the write on measured
-                # gateways (MyHOMEServer1 34-47 ms, F461 64-120 ms; #302, #705).
-                # Freeze provisionally at write_ts (+ MOTOR_STOP_DELAY) while
-                # _handle_echo re-anchors to the stop status arrival if relayed.
-                self._freeze_position(write_ts + MOTOR_STOP_DELAY)
-                self._motor_started.set()
+            elif self._pending_cmd == "stop":
+                if self._relay_hold_until is not None:
+                    self._relay_hold_until = min(
+                        self._relay_hold_until, write_ts + STOP_BEFORE_MOVE_DELAY
+                    )
+                if not self._motor_started.is_set():
+                    # Motion stops within ~0.04-0.12 s of the write on measured
+                    # gateways (MyHOMEServer1 34-47 ms, F461 64-120 ms; #302, #705).
+                    # Freeze provisionally at write_ts (+ MOTOR_STOP_DELAY) while
+                    # _handle_echo re-anchors to the stop status arrival if relayed.
+                    self._freeze_position(write_ts + MOTOR_STOP_DELAY)
+                    self._motor_started.set()
             # The estimate changed (clock started, or frozen): show it. Not every
             # gateway relays the stop status that would otherwise repaint it.
             self._publish_state()
@@ -860,10 +935,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         return False
 
     def _end_echo_window(self) -> None:
+        self._cancel_echo_stop_timer()
         self._pending_cmd = None
         self._echo_until = None
         self._pending_stop_context = None
         self._stop_translation_seen = False
+        self._echo_stop_at = None
 
     def _tracks_own_live_refresh(self) -> bool:
         """Whether this entity runs its own 1 s position-refresh ticker during a timed run."""
@@ -949,6 +1026,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # The strategy owns the lead of every run, with or without slat tilt.
         self._run_lead = self._move_lead = self._slat_lead_time(is_opening, is_closing)
         if is_opening or is_closing:
+            self._arm_relay_hold(at, opening=is_opening)
             self._strategy.on_run_started(self, "open" if is_opening else "close", self._run_start_position, at)
             self._start_live_refresh()
         started = dt_util.utcnow() - timedelta(seconds=max(0.0, time.monotonic() - at))
@@ -1100,6 +1178,46 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         elif not self._advanced:
             self._abort_motion()
 
+    def _arm_echo_stop_timer(self, now: float) -> None:
+        """Ensure ECHO_WINDOW expiry settles a terminal stop even without an active _stop_task."""
+        self._cancel_echo_stop_timer()
+        if self.hass is None or (self._stop_task is not None and not self._stop_task.done()):
+            return
+        generation = self._run_generation
+        delay = max(0.0, (self._echo_until - now) if self._echo_until is not None else ECHO_WINDOW)
+
+        @callback
+        def _on_echo_stop_expired(_now: Any) -> None:
+            self._echo_stop_unsub = None
+            if (
+                generation == self._run_generation
+                and not self._motor_started.is_set()
+                and self._echo_stop_at is not None
+            ):
+                self._apply_echo_window_stop()
+
+        self._echo_stop_unsub = async_call_later(
+            self.hass,
+            delay,
+            HassJob(_on_echo_stop_expired, f"myhome cover echo stop {self._full_where}", cancel_on_shutdown=True),
+        )
+
+    def _apply_echo_window_stop(self) -> None:
+        """Settle an unfollowed *2*0*WHERE## inside ECHO_WINDOW as a terminal stop (#959)."""
+        stop_at = self._echo_stop_at if self._echo_stop_at is not None else time.monotonic()
+        if self._gateway_emits_pre_move_stop() is None:
+            self._learned_stop_before_move = True
+        self._clear_relay_hold()
+        self._run_generation += 1
+        self._last_stop_at = stop_at
+        self._stopped_event.set()
+        LOGGER.debug(
+            "%s Stop frame for %s inside echo window was not followed by motor start; cover stopped.",
+            self._gateway_handler.log_id,
+            self._full_where,
+        )
+        self._abort_motion()
+
     async def _await_motion_anchor(self, written) -> float:  # type: ignore
         """Wait for our frame to be written and for the motor-start echo.
 
@@ -1155,6 +1273,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 pass
         if generation != self._run_generation:
             return self._move_start_time if self._move_start_time is not None else time.monotonic()
+        if not motor_started.is_set() and self._echo_stop_at is not None:
+            self._apply_echo_window_stop()
+            raise _MoveSuperseded
         if not motor_started.is_set() and write_ts is not None and self._move_start_time == write_ts:
             # No direction status relayed (not every gateway does): the motor
             # started a measured MOTOR_START_DELAY after the write, not at it.
@@ -1288,6 +1409,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
                 except (ValueError, TypeError):
                     pass
+        if not self._advanced:
+            if last_state.state in ("opening", "closing"):
+                self._arm_relay_hold(time.monotonic(), opening=last_state.state == "opening")
+            else:
+                raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
+                if isinstance(raw_ts, str) and (parsed_dt := dt_util.parse_datetime(raw_ts)) is not None:
+                    age = (dt_util.utcnow() - parsed_dt).total_seconds()
+                    if 0.0 <= age < ACTUATOR_RELAY_HOLD_WINDOW:
+                        deadline = time.monotonic() + (ACTUATOR_RELAY_HOLD_WINDOW - age)
+                        if self._relay_hold_until is None or deadline > self._relay_hold_until:
+                            self._relay_hold_until = deadline
         await self._async_restore_strategy_state()
 
     @property
@@ -1311,6 +1443,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity will be removed from hass."""
         self._run_generation += 1  # a run in flight must not act on a removed entity
+        self._cancel_echo_stop_timer()
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._pending_stop_context = None
@@ -1581,13 +1714,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._cancel_wall_settle()
         timed_target: int | None = None
         if not self._is_tilting:
-            timed_target = self._timed_target_position
+            timed_target = (
+                self._timed_target_position
+                if self._timed_target_position is not None
+                else self._pending_timed_target
+            )
+            self._pending_timed_target = None
             self._cancel_stop_task()
             self._run_generation += 1
             self._end_echo_window()
             self._run_start_position = None
             self._run_start_tilt = None
             self._run_lead = self._move_lead = 0.0
+        self._clear_relay_hold()
         self._auto_stop_duration = None
         self._full_run_to_end = False
         self._end_run_from_unknown = False
@@ -2006,14 +2145,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._settles_full_run(True):
             await self._async_run_to_end(True)
             return
-        await self._async_move("open")
+        with suppress(_MoveSuperseded):
+            await self._async_move("open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Close cover."""
         if self._settles_full_run(False):
             await self._async_run_to_end(False)
             return
-        await self._async_move("close")
+        with suppress(_MoveSuperseded):
+            await self._async_move("close")
 
     def _settles_full_run(self, opening: bool) -> bool:
         """True when a full open / close run settles on the travel timer.
@@ -2075,8 +2216,57 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         else:
             self._run_generation += 1
 
-    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
+    def _stops_before_move(self, is_tilting: bool) -> bool:
+        """Return True when a curtain run of this cover must send a stop first (#959).
+
+        Skipped for slat-tilt pulses, native covers, and calibration runs. Otherwise
+        honours an explicit ``stop_before_move`` YAML flag, or automatically stops first
+        when the gateway omits an SCS pre-move STOP (``MH201``, ``MH202``, or learned via
+        an unfollowed stop inside ``ECHO_WINDOW``) and the actuator relay may be energized.
+        """
+        if is_tilting or self._advanced or self._calibrating:
+            return False
+        if self._stop_before_move is True:
+            return True
+        if self._stop_before_move is False:
+            return False
+        emits = self._gateway_emits_pre_move_stop()
+        if emits is False or self._learned_stop_before_move:
+            return self._actuator_relay_may_be_energized(time.monotonic())
+        return False
+
+    async def _async_send_stop_for_pre_move(self) -> tuple[Any, int]:
+        """Queue a pre-move stop and return ``(written, stop_generation)``."""
+        written = await self._async_stop()
+        return written, self._last_stop_generation
+
+    async def _async_stop_before_move(self) -> None:
+        """Stop an energized timed actuator and let its relay settle before moving (#959)."""
+        written, gen = await self._async_send_stop_for_pre_move()
+        if gen != self._run_generation:
+            raise _MoveSuperseded
+        delivered = True
+        if isinstance(written, asyncio.Future):
+            done, _ = await asyncio.wait({written}, timeout=WRITE_TIMEOUT)
+            if gen != self._run_generation:
+                raise _MoveSuperseded
+            delivered = bool(done) and not written.cancelled() and written.exception() is None
+        if not delivered:
+            return
+        await asyncio.sleep(STOP_BEFORE_MOVE_DELAY)
+        if gen != self._run_generation:
+            raise _MoveSuperseded
+
+    async def _async_move(
+        self,
+        direction: str,
+        is_tilting: bool = False,
+        *,
+        pre_stopped: bool = False,
+    ) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
+        if not pre_stopped and self._stops_before_move(is_tilting):
+            await self._async_stop_before_move()
         self._begin_run(direction, is_tilting)
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
@@ -2108,7 +2298,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self.async_write_ha_state()
         return written
 
-    async def _async_run_to_end(self, opening: bool) -> None:
+    async def _async_run_to_end(self, opening: bool, *, pre_stopped: bool = False) -> None:
         """Run a timed cover to its limit switch and settle the state on a timer.
 
         No stop frame is sent: the motor stops itself. The actuator's own stop
@@ -2118,7 +2308,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         END_SETTLE_MARGIN has passed, publish the end position; the real stop
         status, if it comes, finds nothing left to change.
         """
-        written = await self._async_move("open" if opening else "close")
+        if not pre_stopped and self._stops_before_move(False):
+            self._pending_timed_target = 100 if opening else 0
+            try:
+                await self._async_stop_before_move()
+            except _MoveSuperseded:
+                return
+            finally:
+                self._pending_timed_target = None
+            pre_stopped = True
+        written = await self._async_move("open" if opening else "close", pre_stopped=pre_stopped)
+        if self._is_promoted_native():
+            return
         self._settle_run_to_end(opening, written)
 
     def _follow_scope_run_to_end(self, opening: bool, written: asyncio.Future[Any] | None) -> None:
@@ -2208,8 +2409,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             except HomeAssistantError as err:
                 self._end_run_from_unknown = False
                 LOGGER.error("%s End-of-run settle aborted for %s: %s", self._gateway_handler.log_id, self._full_where, err)
-            except asyncio.CancelledError:
-                pass
+            except (asyncio.CancelledError, _MoveSuperseded):
+                self._end_run_from_unknown = False
 
         self._stop_task = asyncio.create_task(_settle())
 
@@ -2360,8 +2561,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
 
         self._cancel_stop_task()
-
         self._end_pulse_for_takeover()
+
+        pre_stopped = False
+        target_int = int(round(target_position))
+        if self._stops_before_move(False):
+            self._pending_timed_target = target_int
+            try:
+                await self._async_stop_before_move()
+            except _MoveSuperseded:
+                return
+            finally:
+                self._pending_timed_target = None
+            pre_stopped = True
+            if (post_pos := self.current_cover_position) is not None:
+                curr_pos = post_pos
+            diff = target_position - curr_pos
+            if diff == 0:
+                return
+
         self._end_curtain_for_takeover(time.monotonic())
         opening = diff > 0
         direction = "open" if opening else "close"
@@ -2376,16 +2594,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         achieved_position = achieved_pos if (achieved_pos is not None and travel_time > 0) else target_position
         if achieved_position >= 100:
-            await self._async_run_to_end(True)
+            await self._async_run_to_end(True, pre_stopped=pre_stopped)
             return
         if achieved_position <= 0:
-            await self._async_run_to_end(False)
+            await self._async_run_to_end(False, pre_stopped=pre_stopped)
             return
 
-        target_int = int(round(target_position))
         self._pending_timed_target = target_int
         try:
-            written = await self._async_move(direction)
+            written = await self._async_move(direction, pre_stopped=True)
         finally:
             self._pending_timed_target = None
         if self._is_promoted_native():
@@ -2418,7 +2635,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self.async_write_ha_state()
             except HomeAssistantError as err:
                 LOGGER.error("%s Auto-stop aborted for %s: %s", self._gateway_handler.log_id, self._full_where, err)
-            except asyncio.CancelledError:
+            except (asyncio.CancelledError, _MoveSuperseded):
                 pass
 
         self._stop_task = asyncio.create_task(_auto_stop())
@@ -2474,6 +2691,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         at = kwargs.get("at")
         self._begin_stop()
         generation = self._run_generation
+        self._last_stop_generation = generation
         queued_at = time.monotonic()
         cmd = OWNAutomationCommand.stop_shutter(self._full_where)
         written = await self._gateway_handler.send(cmd)
@@ -2927,7 +3145,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 return True
             if is_stop:
                 # Gateway relays a stop status before or shortly after our direction frame,
-                # before the motor starts: an echo, not a keypad stop.
+                # before the motor starts: an echo, not a keypad stop — unless no motor-start
+                # frame ever follows inside ECHO_WINDOW (#959).
+                is_translation = getattr(message, "is_translation", None) is True
+                if not is_translation:
+                    self._clear_relay_hold()
+                    if (
+                        not self._is_tilting
+                        and not self._calibrating
+                        and not self._motor_started.is_set()
+                    ):
+                        self._echo_stop_at = now
+                        self._arm_echo_stop_timer(now)
                 LOGGER.debug("%s Ignoring stop echo for %s.", self._gateway_handler.log_id, self._full_where)
                 return True
             # Opposite direction inside the window: somebody else took over.
@@ -2959,6 +3188,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._stopped_event.set()
             return True
         if matches_own_stop:
+            self._clear_relay_hold()
             if not self._motor_started.is_set():
                 self._freeze_position(now)
                 self._motor_started.set()
@@ -2975,6 +3205,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # async_stop_cover(): freeze provisionally if write completion has not run
             # yet, and keep the stop echo window open so a subsequent per-actuator
             # *2*0*<member>## still re-anchors to the actuator's own stop time (#770).
+            self._clear_relay_hold()
             if not self._motor_started.is_set():
                 stopped_at = now + MOTOR_STOP_DELAY
                 self._freeze_position(stopped_at)
@@ -3180,7 +3411,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._attr_is_opening = True
                 self._attr_is_closing = False
                 self._attr_is_closed = False
+                if not self._advanced:
+                    self._arm_relay_hold(now, opening=True)
                 if not was_already_opening:
+                    if not was_closing and not self._is_tilting and not self._advanced and not promoted:
+                        self._run_generation += 1
                     if self._run_started_at is None:
                         self._run_started_at = now
                     if self._advanced:
@@ -3220,7 +3455,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._attr_is_opening = False
                 self._attr_is_closing = True
                 self._attr_is_closed = False
+                if not self._advanced:
+                    self._arm_relay_hold(now, opening=False)
                 if not was_already_closing:
+                    if not was_opening and not self._is_tilting and not self._advanced and not promoted:
+                        self._run_generation += 1
                     if self._run_started_at is None:
                         self._run_started_at = now
                     if self._advanced:
@@ -3235,6 +3474,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._arm_wall_settle(False)
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
+            if not is_translation:
+                self._clear_relay_hold()
             was_tilting = self._is_tilting
             was_opening = bool(self._attr_is_opening)
             was_closing = bool(self._attr_is_closing)
