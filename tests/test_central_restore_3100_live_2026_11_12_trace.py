@@ -243,7 +243,7 @@ def test_the_central_unit_frames_of_the_run() -> None:
 
 @pytest.mark.parametrize("model", GATEWAYS)
 def test_central_entity_agrees_with_every_read_back(model: str) -> None:
-    from custom_components.myhome.climate import _zone_route_keys
+    from custom_components.myhome.climate_discovery import _zone_route_keys
 
     shown = {"*4*203*#0##": HVACMode.OFF, "*4*2101*#0##": HVACMode.COOL}
     central = _central_entity()
@@ -273,7 +273,7 @@ def test_central_entity_agrees_with_every_read_back(model: str) -> None:
 
 @pytest.mark.parametrize("model", GATEWAYS)
 def test_central_entity_shows_the_restored_program_before_any_read_back(model: str) -> None:
-    from custom_components.myhome.climate import _zone_route_keys
+    from custom_components.myhome.climate_discovery import _zone_route_keys
 
     central = _central_entity()
     router = FrameRouter()

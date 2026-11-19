@@ -274,6 +274,7 @@
           "delegated_whos": "Delegated subsystems",
           "auto_join_streaming": "Auto-join streaming groups",
           "ignored_addresses": "Ignored addresses",
+          "standalone_zones": "Standalone thermostats",
           "tuner_pictures": "Tuner pictures"
         },
         "data_description": {
@@ -281,6 +282,7 @@
           "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
           "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
           "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
+          "standalone_zones": "Thermostat zones (1-99, e.g. 2, 7) that are not managed by the central unit although the plant has one: their setpoint and mode are written to the thermostat itself (`*#4*Z*#14*...`) instead of through the central unit (`*#4*#Z*#14*...`). Leave empty to let the integration find out from the bus. Same as `standalone: true` in myhome.yaml.",
           "tuner_pictures": "One MHz=URL per line (e.g. 96.2=/local/radio/one.png): the picture shown while a tuner is on that frequency. Your own images; none are bundled.",
           "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
         }
@@ -290,6 +292,7 @@
       "invalid_ip": "Invalid IP address",
       "invalid_worker_count": "Workers must be between 1 and 10",
       "worker_count_above_gateway_limit": "The {model} accepts at most {session_limit} command session(s) at a time; with more it stops answering.",
+      "invalid_standalone_zone": "Standalone thermostats must be zone numbers from 1 to 99, separated by commas (e.g. 2, 7).",
       "invalid_config_path": "Configuration file does not exist at this path",
       "invalid_password": "Invalid password",
       "password_error": "Invalid password",
@@ -620,6 +623,15 @@
     },
     "auto_standalone_zone": {
       "message": "{name} is a standalone thermostat: the central unit has no program for it"
+    },
+    "setpoint_not_taken": {
+      "message": "{name} did not take the setpoint {temperature} °C, neither through the central unit nor directly: it still reports {reported} °C"
+    },
+    "setpoint_refused": {
+      "message": "{name}: the gateway refused the setpoint write ({frame})"
+    },
+    "setpoint_not_taken_via_central": {
+      "message": "{name} did not take the setpoint {temperature} °C sent through the central unit ({frame}): it still reports {reported} °C. If it is a standalone thermostat, list its zone under \"Standalone thermostats\" in the gateway options (or set `standalone: true` in myhome.yaml)"
     },
     "zone_heat_in_conditioning_season": {
       "message": "{name} follows the central unit, which is in the conditioning season: change the season on the central unit"

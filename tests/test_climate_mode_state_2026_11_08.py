@@ -204,7 +204,9 @@ def test_central_protection_does_not_switch_the_zones_off() -> None:
     central = _climate(gateway, "#0", standalone=None, central=True)
     with patch("custom_components.myhome.climate.async_dispatcher_send") as dispatch:
         _replay(central, _rx("f461_central_cool"))
-    assert [call.args[2] for call in dispatch.call_args_list] == [HVACMode.COOL]
+    # The mode handed to the zones; the "central unit known" signal has no payload.
+    modes = [call.args[2] for call in dispatch.call_args_list if "central_mode" in call.args[1]]
+    assert modes == [HVACMode.COOL]
 
 
 def test_central_operation_clears_on_a_manual_mode_report() -> None:

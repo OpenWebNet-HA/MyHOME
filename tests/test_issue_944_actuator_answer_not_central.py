@@ -27,13 +27,8 @@ from homeassistant.core import HomeAssistant
 from OWNd.message import OWNEvent, OWNHeatingCommand, OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
-    _bus_zone,
-    _zone_address,
-    _zone_route_keys,
-    async_setup_entry,
-)
+from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
+from custom_components.myhome.climate_discovery import _bus_zone, _zone_address, _zone_route_keys
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.where_grammar import (
     is_actuator_status,
@@ -87,7 +82,9 @@ async def _plant(hass: HomeAssistant) -> tuple[Any, list[MyHOMEClimate]]:
 async def _receive(hass: HomeAssistant, handler: Any, frames: list[str]) -> None:
     """Frames of the event session, through the gateway's own message processing."""
     for raw in frames:
-        await handler._event_dispatcher.process_message(OWNHeatingEvent(raw))
+        message = OWNMessage.parse(raw)  # as the event session parses it; a command seen on the bus is not an event
+        if isinstance(message, OWNHeatingEvent):
+            await handler._event_dispatcher.process_message(message)
     await hass.async_block_till_done()
 
 
@@ -126,7 +123,9 @@ async def test_a_discovered_zone_stays_standalone_after_the_actuator_answer(hass
     assert handler.has_central_unit is False
     assert zone._standalone is True
     assert zone.hvac_mode == HVACMode.HEAT
-    assert zone.hvac_modes == [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT, HVACMode.COOL]
+    # No frame here shows a conditioning side of zone 6 (its valve status was not captured), so
+    # `cool` is not offered yet: a zone found on the bus cools once the bus shows it does.
+    assert zone.hvac_modes == [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT]
 
     handler.send.reset_mock()
     await zone.async_set_temperature(temperature=22.5)

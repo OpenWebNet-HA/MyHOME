@@ -197,6 +197,8 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 __all__ = [
     "area_of_where",
     "canonical_thermo_zone",
+    "central_report_zone",
+    "central_unit_season",
     "expose_message_where",
     "is_actuator_where",
     "is_actuator_status",
@@ -220,6 +222,7 @@ __all__ = [
     "thermo_event_interface",
     "thermo_event_zone",
     "thermo_output_level",
+    "validate_standalone_zones",
     "validate_thermo_trigger_command",
     "where_param",
     "zone_number",
@@ -268,6 +271,34 @@ def canonical_thermo_zone(where: str) -> str | None:
     if not (1 <= zone_int <= 99):
         return None
     return str(zone_int)
+
+
+def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
+    """Parse the "standalone thermostats" entry option: zone numbers 1..99 of the local bus.
+
+    Returns ``(zones, is_valid)``: the zones as ``canonical_thermo_zone`` spells them
+    (``"2"``, never ``"02"`` or ``"#2"``), sorted, without duplicates; ``is_valid`` is False
+    when an item is not a zone (the central unit ``#0``, a probe ``102``, ``0``, an actuator
+    ``2#1``, text). A string is split on commas, spaces and newlines.
+    """
+    if raw is None:
+        return [], True
+    if isinstance(raw, str):
+        items: list[Any] = [item for item in re.split(r"[\s,;]+", raw) if item]
+    elif isinstance(raw, (list, tuple, set, frozenset)):
+        items = [item for item in raw if str(item).strip()]
+    else:
+        return [], False
+    zones: set[str] = set()
+    for item in items:
+        text = str(item).strip()
+        if not text.isascii() or not text.isdigit() or is_probe(text):
+            return [], False
+        zone = canonical_thermo_zone(text)
+        if zone is None:
+            return [], False
+        zones.add(zone)
+    return sorted(zones, key=int), True
 
 
 def is_probe(where: str) -> bool:
@@ -325,10 +356,15 @@ def is_central_unit_actuator_status(message: Any) -> bool:
     It names no zone and no actuator (OWNd falls back to actuator 1), and the central unit has
     no actuator status of its own: the WHERE of dimension 20 is ``Z#N``, ``Z#0`` or ``0#0``
     (WHO 4 p. 22, p. 62). So it discovers nothing and is delivered to no entity, like the pump
-    frames ``0#N``.
+    frames ``0#N``. The same frame from behind an interface (built, no capture holds one:
+    ``*#4*#0#4#01*20*1##``, where the WHERE's tail is the interface and not a zone of a
+    4-zone central unit) is the same thing.
     """
     where = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
-    return where == "#0" and not where_param(message) and is_actuator_status(message)
+    tail = [str(part) for part in where_param(message)]
+    interface = thermo_event_interface(message)
+    routed_only = interface is not None and len(tail) == 2 and tail[0] == "4" and tail[1].zfill(2) == interface
+    return where == "#0" and (not tail or routed_only) and is_actuator_status(message)
 
 
 def is_central_unit_report(message: Any) -> bool:
@@ -341,8 +377,8 @@ def is_central_unit_report(message: Any) -> bool:
 
     An actuator status (dimension 20) does not count on any of these WHEREs. The WHERE of an
     actuator status is ``Z#N``, ``Z#0`` or ``0#0`` (WHO 4 p. 22, p. 62), and the one seen with
-    WHERE ``#0`` is an answer to the all-zone request ``*#4*#0*20##`` that the integration
-    itself sends on an F461 and a MyHomeServer1. An F461 2.0.11 on a plant with no central
+    WHERE ``#0`` is an answer to the all-zone request that 2.0.0 sent on an F461 and a
+    MyHomeServer1 (``*#4*#0*20##``; the published ``*#4*0#0*20##`` since). An F461 2.0.11 on a plant with no central
     unit answered that request with ``*#4*#0*20*1##`` between the actuator frames of its
     zones (#944), and with the central unit taken as present its standalone zones wrote
     ``*#4*#6*#14*0225*3##``, which nothing answered.
@@ -357,6 +393,34 @@ def is_central_unit_report(message: Any) -> bool:
         return True
     what = frame.split("*")[2].split("#", 1)[0]
     return what in _CENTRAL_ZONE_STATUS_WHATS
+
+
+def central_unit_season(message: Any) -> str | None:
+    """The season a central unit's report carries, for the gateway's own bus; else ``None``.
+
+    Its own status (``*4*102*#0##`` heating, ``*4*202*#0##`` conditioning) and its status of one
+    of its zones (``*4*110*#3##``, ``*4*203*#4##``): a central unit runs its zones in its own
+    season, and its quarter-hour report names only zones, so a gateway that is not asked for
+    the central unit's status (an F455) learns the season from those. A frame from behind an
+    interface is another bus's central unit. A report with no season (``*4*21*#0##``,
+    ``*4*303*#0##``, a dimension) gives ``None``.
+    """
+    if not is_central_unit_report(message) or thermo_event_interface(message) is not None:
+        return None
+    season = getattr(message, "season", None)
+    return season if isinstance(season, str) else None
+
+
+def central_report_zone(message: Any) -> str | None:
+    """The zone (``"1"``..``"99"``) a central unit's own report is about, else ``None``.
+
+    For a frame :func:`is_central_unit_report` accepts whose WHERE is ``#Z``: ``*4*110*#3##``
+    and ``*#4*#3*14*0250*1##`` give ``"3"``. ``#0`` / ``#0#N`` (the central unit itself) and the
+    generic ``*4*310*#Z##`` / ``*4*311*#Z##`` give ``None``.
+    """
+    if not is_central_unit_report(message):
+        return None
+    return canonical_thermo_zone(str(getattr(message, "where", None) or "").strip())
 
 
 def canonical_point_spelling(where: str) -> str:

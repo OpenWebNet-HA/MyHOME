@@ -28,6 +28,7 @@ COMPONENT_NOTES = {
     "custom_components/myhome/bus_monitor.py": "In-band 500-frame circular ring buffer tap (0 extra gateway sockets)",
     "custom_components/myhome/button.py": "WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek",
     "custom_components/myhome/climate.py": "WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync",
+    "custom_components/myhome/climate_discovery.py": "WHO=4 zone discovery: registry, myhome.yaml and bus frames, held actuator-only frames (#785), and the thermostat reads at start",
     "custom_components/myhome/config_flow.py": "Gateway onboarding, manual/SSDP setup, and subentry flow registration",
     "custom_components/myhome/config_flow_audio.py": "Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options",
     "custom_components/myhome/config_flow_discovery.py": "SSDP discovery, connection probing, reauthentication, and reconfiguration steps",

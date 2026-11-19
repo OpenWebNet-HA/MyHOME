@@ -17,12 +17,11 @@ from homeassistant.const import CONF_MAC
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNEvent
 
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
+from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
+from custom_components.myhome.climate_discovery import (
     _calling_zones,
     _zone_address,
     _zone_route_keys,
-    async_setup_entry,
 )
 from custom_components.myhome.const import CONF_ENTITY, CONF_PLATFORMS, DOMAIN
 from custom_components.myhome.where_grammar import is_probe
