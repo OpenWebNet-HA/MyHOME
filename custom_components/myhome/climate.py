@@ -393,6 +393,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._setpoint_check_before: float | None = None
         # The central unit's off marked this zone's actuators off (``_handle_central_mode_update``).
         self._actuators_off_by_central = False
+        # Actuators that had reported activity when the zone's off marked them off, and have
+        # not reported since ("zone": activity known from the valve status only, dimension
+        # 19). Asked again once the zone runs (``_ask_actuators_assumed_off``).
+        self._actuators_assumed_off: set[str] = set()
         self._setpoint_check_by_central = False
         self._setpoint_check_central_reports = 0
         if self._central:
@@ -1343,7 +1347,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._running_fan_speed = "off"
 
     def _mark_actuators_off(self) -> None:
-        """The zone was switched OFF: every known actuator is off, the attribute stays."""
+        """The zone was switched OFF: every known actuator is off, the attribute stays.
+
+        An assumption until the actuator says so itself: the ones that had reported activity
+        are remembered (``_ask_actuators_assumed_off``).
+        """
+        running = {actuator for actuator, active in self._actuator_states.items() if active}
+        if not running and self._zone_active:
+            running = {"zone"}  # known from the valve status only: no actuator to name
+        self._actuators_assumed_off |= running
         self._actuator_states = dict.fromkeys(self._actuator_states, False)
         self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
         self._actuator_fan_speeds = dict.fromkeys(self._actuator_fan_speeds, "off")
@@ -1351,6 +1363,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._zone_active = False
         if self._actuator_fan_speeds or self._running_fan_speed in ("low", "medium", "high"):
             self._running_fan_speed = "off"
+
+    def _ask_actuators_assumed_off(self) -> None:
+        """Ask the zone's actuators again once it runs, where its off had only assumed them off.
+
+        An actuator reports when it changes. A zone that is switched off and on again before
+        its thermostat has stopped the actuator gets no report at all
+        (tests/fixtures/traces/zone_short_off_2026_11_19, zone 2, a fan coil thermostat behind
+        an F461 and an F455): off for 1.2 s, no ``*#4*2#1*20*...##`` followed ``*4*303*2##`` or
+        ``*4*0*2##``, the zone was shown idle, and another client's request 98.7 s later was
+        answered ``*#4*2#1*20*8##``, fan speed 3, as before the off. Off for 8.3 s, the same
+        actuator reported ``*#4*2#1*20*5##`` 3.1 s after the off and ``*#4*2#1*20*8##`` 4.9 s
+        after the zone ran again. So the actuators that were marked off without having said so
+        are asked once the zone shows a running mode, with the request the gateway takes
+        (``request_zone_dimension``). Nothing is asked for a zone whose actuators reported
+        their off, or had none active.
+        """
+        if not self._actuators_assumed_off:
+            return
+        if self._attr_hvac_mode in (None, HVACMode.OFF) or self._own_off is True:
+            return
+        self._actuators_assumed_off.clear()
+        self._request_zone_dimension(20, again=True)
 
     @property
     def _standalone(self) -> bool:
@@ -2211,6 +2245,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # here and set the zone's 0-10 V output sensor to 0 %. Its actuators are asked
             # again, so both show what the plant does and not what that off implied.
             self._actuators_off_by_central = False
+            self._actuators_assumed_off.clear()
             self._request_zone_dimension(20, again=True)
         self._publish_state()  # the entry may have been unloaded during the wait
 
@@ -3668,6 +3703,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 actuator_id = thermo_event_actuator(message)
                 self._actuator_states[actuator_id] = is_active
                 self._active_source = "actuators"
+                self._actuators_assumed_off -= {actuator_id, "zone"}  # it has said so itself
                 if dim20_target is not None:
                     target_actuator = dim20_target[1]
                     if dim20_level is not None:
@@ -3697,6 +3733,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             else:
                 self._zone_active = is_active
                 self._active_source = "zone"
+                self._actuators_assumed_off.clear()  # the zone's valve status speaks for both sides
                 if not self._zone_active:
                     # Neither side is active: every actuator of the zone is off.
                     self._actuator_states = dict.fromkeys(self._actuator_states, False)
@@ -3804,6 +3841,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
 
         self._settle_action_of_active_actuators()
+        self._ask_actuators_assumed_off()
         # The list goes by the season, the plant and the mode shown: whatever the frame changed.
         self._refresh_hvac_modes()
         self._refresh_bus_state_complete()
