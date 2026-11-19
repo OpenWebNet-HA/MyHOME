@@ -29,7 +29,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.climate.const import HVACMode
+from homeassistant.components.climate.const import HVACAction, HVACMode
 from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNEvent, OWNHeatingCommand, OWNHeatingEvent
@@ -491,3 +491,57 @@ def test_the_same_for_a_report_that_reaches_the_entity_directly(no_entity_base: 
         zone3.handle_event(OWNEvent.parse(CENTRAL_REPORTS_ZONE_3))
         zone3.handle_event(OWNEvent.parse(CENTRAL_REPORT_BEHIND_INTERFACE))
         plant.gateway.request_central_status.assert_called_once_with()  # once
+
+
+# ------------------------------------------------- a valve that was open before the zone said its mode
+
+
+def _blank_start(trace: str) -> list[str]:
+    """What the gateway sent during a start with no zone known (who4_four_gateways_2026_11_18), in order."""
+    return [raw for _stamp, direction, raw in _FOUR_GATEWAYS_FRAMES[trace] if direction == "rx"]
+
+
+def test_an_open_valve_is_called_heating_once_the_zone_says_it_heats(no_entity_base: None) -> None:
+    """A MyHomeServer1 and a 3488 on one bus, zones found on the bus (the captures of 2026-11-18; seen again live on 2026-11-19).
+
+    Zone 40's valve answers the sweep (``*#4*40#1*20*1##``) before the zone's status is read
+    (``*4*1*40##``). A plain valve does not say which side it is on and does not report again
+    until it changes, so the zone showed ``heat`` with no action, while the same zone in
+    ``myhome.yaml`` (heating only) showed ``heating`` at once.
+    """
+    capture = _blank_start("myhomeserver1_blank_start")
+    assert capture.index("*#4*40#1*20*1##") < capture.index("*4*1*40##")
+    zone40 = _found_zone("40")
+    _replay(zone40, ["*#4*40#1*20*1##"])
+    assert zone40.hvac_action is None  # it may also cool: nothing is claimed yet
+    _replay(zone40, [raw for raw in capture if raw.startswith(("*#4*40*0*", "*#4*40*12*"))][:2])
+    assert zone40.hvac_action is None  # a temperature and a setpoint do not say it either
+    _replay(zone40, ["*4*1*40##"])
+    assert zone40.hvac_mode == HVACMode.HEAT and zone40.hvac_action == HVACAction.HEATING
+
+    configured = _found_zone("40", cooling=False)  # `cool: false` in myhome.yaml
+    _replay(configured, ["*#4*40#1*20*1##"])
+    assert configured.hvac_action == HVACAction.HEATING
+    _replay(configured, ["*4*1*40##"])
+    assert configured.hvac_mode == HVACMode.HEAT and configured.hvac_action == HVACAction.HEATING
+
+
+@pytest.mark.parametrize("trace", ["myhomeserver1_blank_start", "g3488_blank_start"])
+@pytest.mark.parametrize(("zone", "action"), [("36", "heating"), ("40", "heating"), ("53", "heating"), ("49", "idle")])
+def test_the_whole_blank_start_ends_the_same_for_a_found_and_a_configured_zone(
+    no_entity_base: None, trace: str, zone: str, action: str
+) -> None:
+    """Zones 36, 40 and 53 had their valve open in that capture, zone 49 had it closed; all four only heat."""
+    found, configured = _found_zone(zone), _found_zone(zone, cooling=False)
+    for entity in (found, configured):
+        _replay(entity, _blank_start(trace))
+    assert found.hvac_mode == configured.hvac_mode == HVACMode.HEAT
+    assert found.hvac_action == configured.hvac_action == action
+
+
+def test_an_action_that_is_known_is_not_touched(no_entity_base: None) -> None:
+    zone2 = _found_zone("2")
+    _replay(zone2, ["*#4*2#1*20*8##", "*4*0*2##"])  # the live plant's zone 2: a fan coil at speed 3, then conditioning
+    assert zone2.hvac_action == HVACAction.COOLING
+    _replay(zone2, ["*#4*2*0*0235##"])
+    assert zone2.hvac_action == HVACAction.COOLING

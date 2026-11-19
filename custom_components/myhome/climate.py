@@ -1227,6 +1227,46 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             or getattr(handler, "sweep_active", False) is True
         )
 
+    def _action_by_season_or_mode(self) -> HVACAction | None:
+        """What an active actuator is doing when its own frame does not say which side it is on.
+
+        By the zone's season, else by its mode; ``None`` while neither is known.
+        """
+        if self._season == SEASON_HEATING:
+            return HVACAction.HEATING
+        if self._season in (SEASON_CONDITIONING, "cooling"):
+            return HVACAction.COOLING
+        if self._attr_hvac_mode == HVACMode.COOL:
+            return HVACAction.COOLING
+        if self._attr_hvac_mode == HVACMode.HEAT:
+            return HVACAction.HEATING
+        if (
+            self._attr_hvac_mode == HVACMode.AUTO
+            and self._target_temperature is not None
+            and self._attr_native_current_temperature is not None
+        ):
+            if self._attr_native_current_temperature < self._target_temperature:
+                return HVACAction.HEATING
+            return HVACAction.COOLING
+        return None
+
+    def _settle_action_of_active_actuators(self) -> None:
+        """An actuator was reported active before the zone had said what it runs in; now it may have.
+
+        A plain valve reports "on" with no side (``*#4*40#1*20*1##``). On a zone that can only
+        heat that is heating at once; on a zone found on the bus, which may also cool, nothing
+        is shown until the season or the mode is known. The valve does not report again until
+        it changes, so the action is decided here, by the same rule, when that frame comes.
+        Live 2026-11-19, MyHomeServer1 and 3488, zones found on the bus: zones 40 and 53 (valve
+        open at start, ``*4*1*40##`` a minute later) showed ``heat`` with no action, and
+        ``heating`` with the same zones in ``myhome.yaml``.
+        """
+        if self._attr_hvac_action is not None or not self._any_actuator_active():
+            return
+        action = self._action_by_season_or_mode()
+        if action is not None:
+            self._attr_hvac_action = action
+
     def _any_actuator_active(self) -> bool:
         """Whether the most recent actuator report (dimension 20 or 19) shows activity."""
         if self._active_source == "zone":
@@ -3600,23 +3640,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._attr_hvac_action = HVACAction.HEATING
                     elif cooling_active:
                         self._attr_hvac_action = HVACAction.COOLING
-                    elif self._season == SEASON_HEATING:
-                        self._attr_hvac_action = HVACAction.HEATING
-                    elif self._season in (SEASON_CONDITIONING, "cooling"):
-                        self._attr_hvac_action = HVACAction.COOLING
-                    elif self._attr_hvac_mode == HVACMode.COOL:
-                        self._attr_hvac_action = HVACAction.COOLING
-                    elif self._attr_hvac_mode == HVACMode.HEAT:
-                        self._attr_hvac_action = HVACAction.HEATING
-                    elif self._attr_hvac_mode == HVACMode.AUTO:
-                        if (
-                            self._target_temperature is not None
-                            and self._attr_native_current_temperature is not None
-                        ):
-                            if self._attr_native_current_temperature < self._target_temperature:
-                                self._attr_hvac_action = HVACAction.HEATING
-                            else:
-                                self._attr_hvac_action = HVACAction.COOLING
+                    elif (action := self._action_by_season_or_mode()) is not None:
+                        self._attr_hvac_action = action
                 elif self._heating:
                     self._attr_hvac_action = HVACAction.HEATING
                 elif self._cooling:
@@ -3674,5 +3699,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._battery_fault = True
                 self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
 
+        self._settle_action_of_active_actuators()
         self._refresh_bus_state_complete()
         self._publish_state()
