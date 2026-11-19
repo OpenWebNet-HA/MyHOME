@@ -50,6 +50,7 @@ from .where_grammar import (
     central_unit_season,
     is_central_unit_report,
     is_probe,
+    thermo_event_interface,
     where_param,
 )
 
@@ -58,6 +59,34 @@ if TYPE_CHECKING:
 
 # WHO 8 call kinds of the entrance panels PE1..PE4 (6: handset to handset, 14: pager).
 ENTRANCE_PANEL_KINDS = frozenset({1, 2, 3, 4})
+
+
+def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
+    """Keep what a report of a central unit (``is_central_unit_report``) says about the plant.
+
+    Returns ``(news, found_by_zone)``. ``news``: a central unit, or the season of the one on
+    the gateway's own bus, has just become known, and the zones are told. ``found_by_zone``:
+    the central unit of the gateway's own bus has just become known from its report about a
+    zone (``*4*110*#3##``), so it has no entity yet and its status is asked once
+    (``request_central_status``).
+
+    A report from behind an interface is another bus's central unit: it asks nothing on this
+    bus, where the request would go to the local central unit or to nobody, and it leaves the
+    local one to be found by its own first report (``central_unit_known_from_interface``).
+    Called for the event session (below) and for a reply collected on the command session,
+    which reaches the entity without passing here (``climate._handle_event``).
+    """
+    local = thermo_event_interface(message) is None
+    news = getattr(handler, "has_central_unit", False) is not True
+    local_news = local and (news or getattr(handler, "central_unit_known_from_interface", False) is True)
+    if news or local:
+        handler.central_unit_known_from_interface = not local
+    handler.has_central_unit = True
+    season = central_unit_season(message)
+    if season is not None:
+        news = news or getattr(handler, "central_season", None) != season
+        handler.central_season = season
+    return news, local_news and central_report_zone(message) is not None
 
 
 class GatewayEventDispatcher:
@@ -304,13 +333,7 @@ class GatewayEventDispatcher:
         if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
             # Before the entities see the frame: the central unit's entity hands its mode to its
             # zones while it handles it, and they compare their season with this one.
-            central_news = self.handler.has_central_unit is not True
-            central_found_by_zone = central_news and central_report_zone(message) is not None
-            self.handler.has_central_unit = True
-            season = central_unit_season(message)
-            if season is not None:
-                central_news = central_news or getattr(self.handler, "central_season", None) != season
-                self.handler.central_season = season
+            central_news, central_found_by_zone = note_central_unit_report(self.handler, message)
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
             if central_news:

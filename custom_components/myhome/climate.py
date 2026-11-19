@@ -75,13 +75,13 @@ from .gateway import (
     SILENT_ZONE_GRACE,
     MyHOMEGatewayHandler,
 )
+from .gateway_events import note_central_unit_report
 from .myhome_device import MyHOMEEntity
 from .poll_health import PollHealth
 from .thermo_switch import load_thermo_switch_subentries
 from .where_grammar import (
     canonical_thermo_zone,
     central_report_zone,
-    central_unit_season,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_report,
@@ -105,6 +105,17 @@ PLATFORM = Platform.CLIMATE
 # the change still carried the old season (issue_453, ``*4*202*#0##`` 19:39:28.629,
 # ``*4*1*4##`` 19:39:29.289, ``*4*202*4##`` 19:39:30.644).
 STANDALONE_SEASON_CONFIRM_DELAY = 10.0
+# After the central unit changes season its zones report the new state one after the other
+# (3550 with two zones, five timed changes on 2026-11-17 / 11-18: zone 3, then zone 4 about
+# 0.5 s later, each zone's first frame 0.42 to 1.15 s after the central unit's), and a zone
+# asked before it has followed still answers in the old season (issue_453 above, 0.66 s after
+# the change). For a large plant the only figure is one sentence of #697, an F454 with a
+# 99-zone central unit, two changes 8 s apart and no frame times: "The zones follow the
+# central within about 14 seconds." So no zone is compared with a season the central unit
+# changed to less than this long ago (four times that figure): read too early, a zone of the
+# central unit would be taken as standalone and written directly, which that F454 refuses.
+# Not waited when the season is only learned (at start, after a reconnect): no zone is moving.
+CENTRAL_SEASON_SETTLE = 60.0
 PARALLEL_UPDATES = 0
 # How long one read of the silent-zone poll (#466) waits for its answer before giving up.
 PACED_READ_TIMEOUT = 60.0
@@ -1897,6 +1908,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if self._setpoint_check is not check:
                 return
             if not _delivered(direct):
+                if holds_it:
+                    # The zone holds the requested setpoint after the write through the central
+                    # unit, and the direct form did not get through (an F454 refuses it for a
+                    # zone of its central unit, #697). Nothing is left undone, and nothing
+                    # shows a standalone thermostat: no error for a write that arrived.
+                    LOGGER.debug(
+                        "%s %s holds %.1f °C after `%s`; `%s` was not taken by the gateway and is not needed",
+                        handler.log_id,
+                        self._display_name,
+                        nominal,
+                        frame,
+                        direct_command,
+                    )
+                    return
                 self._setpoint_not_delivered(direct, str(direct_command))
                 return
             if not taken:
@@ -1979,6 +2004,33 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._display_name,
             frame,
         )
+
+    def _drop_refused_standalone_finding(self, written: object, frame: str) -> bool:
+        """Whether the gateway refused the direct form for a zone that was only found standalone.
+
+        The finding is dropped then, and the caller writes through the central unit again. An
+        F454 NACKs ``*#4*Z*#14*T*M##`` for a zone of its central unit and takes
+        ``*#4*#Z*#14*T*M##`` (#697: ``*#4*3*#14*0160*1##`` "Could not send message",
+        ``*#4*#3*#14*0145*1##`` answered with ``*#4*3*12*0145*3##``), so a zone held standalone
+        there by mistake would have every setpoint refused, with nothing to end it but a report
+        of the central unit. A zone that really is standalone is found again by the check of
+        the write that follows (``_confirm_setpoint_write``). A configured zone keeps its form,
+        and so does any zone after a frame that was merely not acknowledged in time.
+        """
+        if not self._standalone_detected or self._standalone_config is not None:
+            return False
+        if getattr(written, "_gateway_nack", False) is not True:
+            return False
+        self._set_standalone_detected(False)
+        LOGGER.info(
+            "%s %s: the gateway refused `%s`; the zone is written through the central unit again",
+            self._gateway_handler.log_id,
+            self._display_name,
+            frame,
+        )
+        self._refresh_hvac_modes()
+        self._publish_state()
+        return True
 
     def _mark_standalone_detected(self, *, by_season: bool = False) -> None:
         """The central unit is not running this zone.
@@ -2075,6 +2127,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return False
         return self._season_side(self._own_season) != self._season_side(central_season)
 
+    def _central_season_settling(self) -> float:
+        """Seconds left before a zone is compared with a season the central unit has just changed to.
+
+        0 when the season has only been learned, or changed ``CENTRAL_SEASON_SETTLE`` ago.
+        """
+        changed_at = getattr(self._gateway_handler, "central_season_changed_at", None)
+        if not isinstance(changed_at, (int, float)):
+            return 0.0
+        return max(0.0, changed_at + CENTRAL_SEASON_SETTLE - time.monotonic())
+
     def _check_season_against_central(self) -> None:
         """Start the check of a zone that reports the season the central unit is not in.
 
@@ -2101,7 +2163,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     async def _confirm_season_against_central(self) -> None:
         """Read the zone again; a second report of the other season makes it standalone.
 
-        After the startup requests and ``STANDALONE_SEASON_CONFIRM_DELAY`` seconds the zone is
+        After the startup requests and ``STANDALONE_SEASON_CONFIRM_DELAY`` seconds, and not
+        before the zones have had the time to follow a season change of the central unit
+        (``CENTRAL_SEASON_SETTLE``), the zone is
         asked its setpoint in force, ``*#4*Z*12##``: the thermostat answers with dimension 12
         and its season frame (live 2026-11-18, ``*#4*2*12##`` -> ``*#4*2*12*0200*3##``,
         ``*4*0*2##`` on F461 2.0.11 and F455 1.0.76; ``*#4*70*12##`` -> ``*#4*70*12*0230*3##``,
@@ -2117,6 +2181,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             if callable(wait):
                 await wait()
             await asyncio.sleep(STANDALONE_SEASON_CONFIRM_DELAY)
+            while (settling := self._central_season_settling()) > 0:
+                # The central unit changed season a moment ago and its zones are still
+                # following it; a second change meanwhile starts the wait again.
+                await asyncio.sleep(settling)
             if not self._season_against_central():
                 return
             reported = self._own_season_reported = asyncio.Event()
@@ -2237,6 +2305,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         if self._cooling_configured or self._cooling:
             return
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return  # the same zone number on another bus
         values = getattr(message, "dimension_value", None)
         side = str(values[0]) if isinstance(values, (list, tuple)) and values else ""
         if side.isdigit() and int(side) != 0:
@@ -2657,6 +2727,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             mode=SETPOINT_WRITE_MODE,
             standalone=direct,
         )
+        written_before = self._written_target_temperature
         written = await self._gateway_handler.send(command)
         # The write's echo decides what is shown next: dimension 12 where the gateway reports
         # the setpoint in force (F461, MyHomeServer1), else the commanded dimension 14.
@@ -2684,9 +2755,21 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
             if not written.done():
                 written.cancel()  # withdrawn: it must not go out after the call has returned
-            if not _delivered(written):
+            if _delivered(written):
+                return
+            if not self._drop_refused_standalone_finding(written, str(command)):
                 self._setpoint_not_delivered(written, str(command))
-            return
+                return
+            # Found standalone, and the gateway refuses the direct form for it: the same
+            # setpoint goes through the central unit, checked like any write in that form.
+            command = OWNHeatingCommand.set_temperature(
+                where=self._where,
+                temperature=target_temperature,
+                mode=SETPOINT_WRITE_MODE,
+                standalone=False,
+            )
+            self._written_target_temperature = written_before  # as before a write in that form
+            written = await self._gateway_handler.send(command)
         # Written through the central unit: a thermostat it is not running ignores that form
         # and both gateways still acknowledge it. Returns as soon as the plant confirms. The
         # value checked is the one on the wire (0.5 steps, 5.0 to 40.0).
@@ -2931,13 +3014,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # Also here: a reply collected on the command session reaches the entity without
             # passing the event session's bookkeeping (``gateway_events``), which tells the
             # other zones when this is news.
-            central_news = getattr(self._gateway_handler, "has_central_unit", False) is not True
-            central_found_by_zone = central_news and central_report_zone(message) is not None
-            self._gateway_handler.has_central_unit = True
-            season = central_unit_season(message)
-            if season is not None:
-                central_news = central_news or getattr(self._gateway_handler, "central_season", None) != season
-                self._gateway_handler.central_season = season
+            central_news, central_found_by_zone = note_central_unit_report(self._gateway_handler, message)
             self._note_central_zone_report(message)
             if central_news and self.hass is not None:
                 async_dispatcher_send(self.hass, f"myhome_central_season_{self._gateway_handler.mac}")

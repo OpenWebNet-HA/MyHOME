@@ -465,6 +465,13 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     """Manages a single MyHOME Gateway."""
 
     device_registry_id: str | None = None
+    # Behind the ``central_season`` property. Class defaults, so that a handler built without
+    # ``__init__`` reads them too.
+    _central_season: str | None = None
+    central_season_changed_at: float | None = None
+    # A central unit is known only from a report that came through an interface: the one of
+    # the gateway's own bus, if there is one, is still to be found (``note_central_unit_report``).
+    central_unit_known_from_interface: bool = False
 
     def __init__(
         self,
@@ -509,7 +516,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         # The season the central unit last reported about itself (``*4*102*#0##`` heating,
         # ``*4*202*#0##`` conditioning); None until it reports one. A thermostat that keeps
         # reporting the other season is not following it (climate ``_check_season_against_central``).
-        self.central_season: str | None = None
+        self._central_season = None
+        # When that season last changed from one to the other (``time.monotonic()``); None while
+        # it has only been learned. Its zones follow a change one after the other, so none is
+        # compared with the new season at once (climate ``CENTRAL_SEASON_SETTLE``).
+        self.central_season_changed_at = None
 
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,
@@ -563,6 +574,17 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.standalone_detected_zones: set[tuple[str, str | None]] = set()
         # While ``climate_discovery`` creates the zones known only from their actuators.
         self._actuator_only_reads_running = False
+
+    @property
+    def central_season(self) -> str | None:
+        """The season the central unit of this gateway's own bus last reported, None until it does."""
+        return self._central_season
+
+    @central_season.setter
+    def central_season(self, season: str | None) -> None:
+        if season is not None and self._central_season is not None and season != self._central_season:
+            self.central_season_changed_at = time.monotonic()
+        self._central_season = season
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:

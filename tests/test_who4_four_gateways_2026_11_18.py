@@ -178,10 +178,15 @@ def test_what_myhome_yaml_says_is_not_changed_by_the_bus(no_entity_base: None) -
 
 def test_frames_that_show_no_conditioning_side(no_entity_base: None) -> None:
     zone = _found_zone("47")
-    zone.handle_event(OWNEvent.parse("*#4*47*19*5*0#4#01##"))  # BUILT: zone 47 behind interface 01 is another zone
-    zone.handle_event(OWNEvent.parse("*4*0*47#4#01##"))  # BUILT: the same, its season
+    # BUILT: zone 47 behind interface 01 is another zone. Its valve status (the captured
+    # `*#4*47*19*5*0##` with the interface on its WHERE) and its season.
+    for raw in ("*#4*47#4#01*19*5*0##", "*4*0*47#4#01##"):
+        other_bus = OWNEvent.parse(raw)
+        assert isinstance(other_bus, OWNHeatingEvent) and other_bus.interface == "01", raw
+        zone.handle_event(other_bus)
     assert HVACMode.COOL not in zone.hvac_modes
     empty = MagicMock(spec=OWNHeatingEvent)
+    empty.interface = None
     empty.dimension_value = []
     zone._note_conditioning_side(empty)  # a frame with no value: nothing learned
     assert HVACMode.COOL not in zone.hvac_modes
