@@ -519,17 +519,34 @@ async def test_exposed_virtual_probe_and_direct_zone_discovery_unit_edges(
 
     with patch(
         "custom_components.myhome.climate_discovery.is_exposed_on_bus",
-        side_effect=lambda _hass, _entry, _who, where: str(where) == "9",
+        side_effect=lambda _hass, _entry, _who, where: str(where) in {"9", "10"},
     ):
-        # Non-dim0 frame for exposed zone 9 must NOT trigger read_zone_temperature.
+        # Order A (Zone 9): non-dim0 frame held without active read; exposed dim0 alone does not confirm; 2nd non-dim0 confirms.
         await _receive(hass, gw, ["*#4*9*12*0210*3##"])
         assert zones == []
         await _settle(hass, gw)
         gw.read_zone_temperature.assert_not_awaited()
 
-        # dim0 for exposed zone 9 is held by virtual probe check; a non-dim0 frame confirms.
-        await _receive(hass, gw, ["*#4*9*0*0205##", "*#4*9*13*00##"])
+        await _receive(hass, gw, ["*#4*9*0*0205##"])
+        assert zones == []
+        await _receive(hass, gw, ["*#4*9*13*00##"])
         assert [z._where for z in zones] == ["9"]
+        assert zones[0].current_temperature == 20.5
+        assert zones[0].target_temperature == 21.0
+
+        # Order B (Zone 10): exposed dim0 held first; 1st non-dim0 frame stays held without active read; 2nd non-dim0 confirms.
+        await _receive(hass, gw, ["*#4*10*0*0215##"])
+        assert [z._where for z in zones] == ["9"]
+        await _receive(hass, gw, ["*#4*10*12*0220*3##"])
+        assert [z._where for z in zones] == ["9"]
+        await _settle(hass, gw)
+        gw.read_zone_temperature.assert_not_awaited()
+
+        await _receive(hass, gw, ["*#4*10*13*00##"])
+        assert sorted(z._where for z in zones) == ["10", "9"]
+        z10 = next(z for z in zones if z._where == "10")
+        assert z10.current_temperature == 21.5
+        assert z10.target_temperature == 22.0
 
     # Direct ZoneDiscovery unit edges: non-bus accept, _zone_config match, non-Future task, _drop_candidate_held.
     mock_entry = MagicMock()
@@ -555,14 +572,15 @@ async def test_exposed_virtual_probe_and_direct_zone_discovery_unit_edges(
     assert zd.accept(DeviceContext(Address("51"), "4", source="bus", message=msg_51)) is False
     assert zd._candidate_task is None
 
-    # Direct _drop_candidate_held: empty/missing pair, and preserving act:/dim19 while dropping candidate slot.
+    # Direct _drop_candidate_held: empty/missing pair, and preserving act:/dim19/dim0 while dropping candidate slot.
     zd._drop_candidate_held(("99", None))
     zd._held[("52", None)] = {
         "act:1": OWNMessage.parse("*#4*52#1*20*0##"),
+        "dim0": OWNMessage.parse("*#4*52*0*0215##"),
         "dim:0": OWNMessage.parse("*#4*52*0*0200##"),
     }
     zd._drop_candidate_held(("52", None))
-    assert list(zd._held[("52", None)]) == ["act:1"]
+    assert list(zd._held[("52", None)]) == ["act:1", "dim0"]
 
     # build() with central #0 (pair is None).
     built_central = zd.build(DeviceContext(Address("#0"), "4", source="bus", message=OWNMessage.parse("*#4*#0*0*0215##")))

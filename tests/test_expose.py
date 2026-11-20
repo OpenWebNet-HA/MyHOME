@@ -3256,13 +3256,17 @@ async def test_climate_discovery_defers_exposed_who4_master_probe_until_real_zon
     await _emit("*4*1*8##")
     assert [ent._where for ent in added_climates] == ["8"]
 
-    # 2. Zone 5 receives exposed master-probe temperature first, then a real zone setpoint report ->
-    #    Zone 5 discovers normally AND retains the deferred 21.5°C probe temperature!
+    # 2. Zone 5 receives exposed master-probe temperature first, then two real zone frames ->
+    #    1st real frame is held as a candidate (#966); 2nd confirms Zone 5 AND replays both
+    #    the deferred 21.5°C probe temperature and the held 21.0°C setpoint!
     await _emit("*#4*5*0*0215##")
     assert [ent._where for ent in added_climates] == ["8"]
     await _emit("*#4*5*14*0210*1##")
+    assert [ent._where for ent in added_climates] == ["8"]
+    await _emit("*4*1*5##")
     assert [ent._where for ent in added_climates] == ["8", "5"]
     assert added_climates[1].current_temperature == 21.5
+    assert added_climates[1].target_temperature == 21.0
 
 
 @pytest.mark.asyncio

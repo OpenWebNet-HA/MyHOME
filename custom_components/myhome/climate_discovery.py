@@ -319,11 +319,11 @@ class ZoneDiscovery:
         return entity
 
     def _drop_candidate_held(self, pair: ZonePair) -> None:
-        """Drop held non-actuator candidate frames for ``pair``, keeping valve/actuator slots."""
+        """Drop held non-actuator candidate frames for ``pair``, keeping valve/virtual-probe slots."""
         held = self._held.get(pair)
         if not held:
             return
-        for slot in [s for s in held if not s.startswith(("act:", "dim19"))]:
+        for slot in [s for s in held if not s.startswith(("act:", "dim19")) and s != "dim0"]:
             held.pop(slot, None)
         if not held:
             self._held.pop(pair, None)
@@ -460,7 +460,7 @@ class ZoneDiscovery:
                 self._candidates.pop(pair, None)
                 return True
             return False
-        if pair in self._held and self._held[pair]:
+        if any(s.startswith(("act:", "dim19")) for s in self._held.get(pair, ())):
             return True
         self._held.setdefault(pair, {})[_thermo_hold_slot(ctx.message)] = ctx.message
         self._candidates[pair] = (now, raw)
