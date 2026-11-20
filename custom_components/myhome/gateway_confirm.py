@@ -22,6 +22,12 @@ answers it on the command session (F455 and F461 both do) and the reply is dispa
 the entities like any status frame. A read never arms the watchdog, so a light that does
 not answer costs one request per command and nothing more.
 
+Every gateway entry has this watchdog and nothing in it looks at the gateway model: the F455
+is where the loss was measured, not a condition. A gateway that relays every status (the
+F461, the traces above) is never sent a request; any gateway that acknowledges a command and
+leaves the status out, whatever its model or the load on its bus, gets the same read-back
+(``tests/test_light_echo_confirm.py`` runs the worker path once per supported model).
+
 Not covered on purpose: general / area / group commands (``LightingResyncManager`` sweeps
 their members) and WHO 2 covers (their position model is anchored on the write time and
 does not depend on the relayed status, ``cover.py`` ``_track_write``).

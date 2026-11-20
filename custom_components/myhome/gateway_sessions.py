@@ -1628,7 +1628,8 @@ class CommandWorkerPool:
                         echo_watchdog = echo_watchdog_of(self.handler)
                         if echo_watchdog is not None and not task["is_status_request"] and not is_exposed:
                             # An acknowledged light command whose status never arrives is
-                            # read back (an F455 leaves statuses out of a burst).
+                            # read back, on every gateway model (measured on an F455, which
+                            # leaves statuses out of a burst).
                             echo_watchdog.command_acknowledged(task["message"], written_at)
                     responses_to_dispatch: Any = collected
                     if responses_to_dispatch is None and task["is_status_request"]:

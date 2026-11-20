@@ -234,6 +234,7 @@ A `WHO = 1` light or switch takes its state from the actuator's status frame on 
 
 The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged point-to-point `WHO = 1` command. If no matching status of that light arrived `1.5 s` (`ECHO_CONFIRM_DELAY_S`) after the `ACK`, it sends one status request `*#1*<where>##`; the answer comes back on the command session and updates the entity.
 
+- **Every gateway model.** The read-back does not look at the model: each gateway entry notes its own acknowledged commands, and the `F455` is where the loss was measured, not a condition. A gateway that drops a status under load (a large plant, a slower model) gets the same read-back.
 - **No extra traffic where the status arrives.** On a physical `F461` and in the real-user traces of `F454`, `F461`, `MH200N`, `MH201`, `MH202` and `MyHomeServer1` every status followed its command within `0.33 s`, so nothing is sent there.
 - **One request at most per command.** A status request never arms the read-back, so an address that does not answer costs one request and nothing more.
 - **A status of the other polarity is not the answer.** After `ON` then `OFF` in quick succession, a late `ON` status does not cancel the read-back of the `OFF`.

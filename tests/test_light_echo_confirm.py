@@ -46,6 +46,7 @@ from custom_components.myhome.const import (
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_UDN,
+    SUPPORTED_GATEWAY_MODELS,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.gateway_confirm import LightEchoWatchdog, echo_watchdog_of
@@ -307,7 +308,7 @@ def test_a_handler_double_without_a_watchdog_is_skipped() -> None:
 # ── end to end: real handler, worker and OWNd session against a mock gateway ──────────
 
 
-def _entry(port: int) -> MagicMock:
+def _entry(port: int, model: str = "F455") -> MagicMock:
     entry = MagicMock()
     entry.data = {
         CONF_HOST: "127.0.0.1",
@@ -319,7 +320,7 @@ def _entry(port: int) -> MagicMock:
         CONF_FRIENDLY_NAME: "GW",
         CONF_MANUFACTURER: "Bticino",
         CONF_MANUFACTURER_URL: "",
-        CONF_NAME: "F455",
+        CONF_NAME: model,
         CONF_FIRMWARE: "1.0.76",
         CONF_MAC: "00:03:50:00:04:55",
         CONF_UDN: "1234",
@@ -369,6 +370,54 @@ async def test_worker_reads_back_an_acknowledged_command_and_dispatches_the_answ
         assert handler._echo_watchdog.pending == {"07": "*1*0*07##"}
         await handler.close_listener()
         assert handler._echo_watchdog.pending == {}
+    finally:
+        unsub()
+        handler._command_pool.close()
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+        await harness.stop()
+
+
+
+@pytest.mark.parametrize("model", SUPPORTED_GATEWAY_MODELS)
+async def test_the_read_back_is_the_same_on_every_gateway_model(hass, monkeypatch, model: str) -> None:
+    """Nothing in the read-back looks at the model: every supported one gets it, and none is asked needlessly.
+
+    Light 05: the gateway acknowledges the command and relays no status, so it is asked once and
+    its answer reaches the entities. Light 07: its status follows the acknowledgement, so nothing
+    is asked.
+    """
+    monkeypatch.setattr(gateway_confirm, "ECHO_CONFIRM_DELAY_S", 0.05)
+    harness = MockGatewayHarness()
+
+    def _gateway(frame: str, _writer) -> str:
+        return "*1*1*05##*#*1##" if frame == "*#1*05##" else "*#*1##"
+
+    harness.set_custom_handler(_gateway)
+    port = await harness.start()
+    handler = MyHOMEGatewayHandler(hass, _entry(port, model))
+    assert echo_watchdog_of(handler) is handler._echo_watchdog
+    handler._event_session_ready.set()
+    received: list[str] = []
+    unsub = async_dispatcher_connect(hass, f"myhome_message_{handler.mac}", lambda msg: received.append(str(msg)))
+    worker = asyncio.create_task(handler.sending_loop(0))
+    try:
+        await asyncio.wait_for(await handler.send(OWNCommand.parse("*1*1*05##")), 5)
+        assert handler._echo_watchdog.pending == {"05": "*1*1*05##"}
+        for _ in range(250):
+            if received:
+                break
+            await asyncio.sleep(0.02)
+        assert harness.received_messages.count("*#1*05##") == 1
+        assert received == ["*1*1*05##"]
+        assert handler._echo_watchdog.pending == {}
+
+        await asyncio.wait_for(await handler.send(OWNCommand.parse("*1*1*07##")), 5)
+        assert handler._echo_watchdog.pending == {"07": "*1*1*07##"}
+        handler._echo_watchdog.status_seen(OWNMessage.parse("*1*1*07##"))  # the status came by itself
+        assert handler._echo_watchdog.pending == {}
+        await asyncio.sleep(0.2)
+        assert "*#1*07##" not in harness.received_messages
     finally:
         unsub()
         handler._command_pool.close()
