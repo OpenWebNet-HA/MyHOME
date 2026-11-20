@@ -255,7 +255,7 @@ async def test_frames_that_are_no_light_status_or_no_light_command_are_ignored(h
     ):
         watchdog.command_acknowledged(OWNCommand.parse(frame), now)
     watchdog.command_acknowledged("*1*1*07##", now)  # not a parsed message
-    nameless = MagicMock(spec=OWNMessage, who=1, is_general=False, is_area=False, is_group=False, entity=None)
+    nameless = MagicMock(spec=OWNMessage, who=1, is_general=False, is_area=False, is_group=False, entity=None, where=None)
     watchdog.command_acknowledged(nameless, now)  # a WHO 1 frame that names no address
     assert watchdog.pending == {}
 
@@ -296,6 +296,141 @@ async def test_remembered_statuses_are_pruned(hass, watchdog, monkeypatch) -> No
     for point in range(1, 8):
         watchdog.status_seen(OWNMessage.parse(f"*1*0*8{point}##"))
     assert sorted(watchdog._recent_status) == ["81", "82", "83", "84", "85", "86", "87"]
+
+
+# ── review of MyHOME#964 (2026-11-20): polarity of a level write, what counts as a status,
+#    the WHERE of the read-back, a gateway that is closing ──────────────────────────────────
+#
+# Frames of light 32 (an F418U2 dimmer) are from
+# tests/fixtures/traces/issue_466/myhome_trace_MH202_f418u2_dimmer_2026-09-27T09-43-45.json: the MH202
+# relays each write on its event session (`*#1*32*#1*130*0##`, then `*#1*32*#13*2*130*0*0##`) about
+# 30 ms before the dimmer's status `*#1*32*1*130*5##`.
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected"),
+    [
+        ("*#1*32*#1*130*0##", True),  # level 30 %
+        ("*#1*32*#1*100*0##", False),  # level 0: off
+        ("*#1*32*#4*130*0##", True),  # the 100-level form
+        ("*#1*32*#4*100*0##", False),
+        ("*#1*62*#12*120*50*80##", True),  # BUILT by OWNd's set_hsv_color: V 80
+        ("*#1*62*#12*120*50*0##", False),  # BUILT: V 0
+        ("*#1*0010*1##", None),  # a read says nothing
+        ("*1*30*0010##", None),  # a dim step
+    ],
+)
+def test_a_level_write_says_whether_it_turns_the_light_on(frame: str, expected: bool | None) -> None:
+    assert gateway_confirm._commanded_on(OWNCommand.parse(frame)) is expected
+
+
+def test_the_hsv_frames_are_what_ownd_builds() -> None:
+    from OWNd.message import OWNLightingCommand
+
+    assert str(OWNLightingCommand.set_hsv_color("62", 120, 50, 80)) == "*#1*62*#12*120*50*80##"
+    assert str(OWNLightingCommand.set_hsv_color("62", 120, 50, 0)) == "*#1*62*#12*120*50*0##"
+
+
+async def test_a_level_write_is_not_answered_by_the_off_before_it(hass, watchdog, monkeypatch) -> None:
+    """Off, then a level write: the off's status came between the write and its ACK.
+
+    Seen live on an MH200 with an F418U2 (review of MyHOME#964): `*1*0*62##` was on the event
+    session 61 ms after the level write was written and 49 ms before its ACK. That "off" is the
+    answer of the command before, not of the level write, which must stay watched.
+    """
+    clock = [1000.0]
+    monkeypatch.setattr(gateway_confirm.time, "monotonic", lambda: clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*1*0*32##"), clock[0])
+    written_at = clock[0] + 0.042  # the level write goes out
+    clock[0] += 0.103
+    watchdog.status_seen(OWNMessage.parse("*1*0*32##"))  # the off's status, late
+    assert watchdog.pending == {}  # it answered the off
+    clock[0] += 0.049
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*32*#1*130*0##"), written_at)
+    assert watchdog.pending == {"32": "*#1*32*#1*130*0##"}  # an "off" is not its answer
+
+    watchdog.status_seen(OWNMessage.parse("*#1*32*1*130*5##"))  # the dimmer at 30 %
+    assert watchdog.pending == {}
+    await _expire(hass)
+    assert _requests(watchdog) == []
+
+    # The same when the dimmer's status never comes: it is asked.
+    clock[0] += 5  # a later write: the status above is older than it
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*32*#1*130*0##"), clock[0])
+    await _expire(hass)
+    assert _requests(watchdog) == ["*#1*32##"]
+
+
+async def test_an_echoed_write_and_frames_without_on_or_off_are_no_status(hass, watchdog) -> None:
+    """What the MH202 relays before the dimmer's status does not end the watch of the write."""
+    now = time.monotonic()
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*32*#1*130*0##"), now)
+    for relayed in ("*#1*32*#1*130*0##", "*#1*32*#13*2*130*0*0##", "*#1*32*13*2*130*5*0##"):
+        watchdog.status_seen(OWNMessage.parse(relayed))  # the write, its #13 echo, a frame with no on / off
+        assert watchdog.pending == {"32": "*#1*32*#1*130*0##"}, relayed
+    assert "32" not in watchdog._recent_status
+    watchdog.status_seen(OWNMessage.parse("*#1*32*1*130*5##"))
+    assert watchdog.pending == {}
+
+    # A command with no polarity (a dim step) is not answered by a colour frame, an anomaly or a
+    # motion frame, nor by a request relayed on the event session; a level status answers it.
+    watchdog.command_acknowledged(OWNCommand.parse("*1*30*0010##"), now)
+    for frame in ("*#1*0010*12*511*127*255##", "*#1*0010*1##", "*#1*0010##"):
+        watchdog.status_seen(OWNMessage.parse(frame))
+        assert watchdog.pending == {"0010": "*1*30*0010##"}, frame
+    watchdog.status_seen(OWNMessage.parse("*1*8*0010##"))
+    assert watchdog.pending == {}
+
+    # A dim step relayed for the light (OWNd reads it as "on", the light entity ignores it) does
+    # not answer an "on", and does not replace the status remembered for the light.
+    watchdog.status_seen(OWNMessage.parse("*1*0*0010##"))
+    remembered = watchdog._recent_status["0010"]
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*0010##"), time.monotonic())
+    for step in ("*1*30*0010##", "*1*31*0010##"):
+        watchdog.status_seen(OWNMessage.parse(step))
+    assert watchdog.pending == {"0010": "*1*1*0010##"}
+    assert watchdog._recent_status["0010"] == remembered
+    for frame in ("*1*19*74##", "*1*34*52##"):  # anomaly, motion: nothing is remembered for them
+        watchdog.status_seen(OWNMessage.parse(frame))
+    assert "74" not in watchdog._recent_status and "52" not in watchdog._recent_status
+    await _expire(hass)
+    assert _requests(watchdog) == ["*#1*0010##"]
+
+
+async def test_the_read_back_carries_the_whole_where(hass, watchdog) -> None:
+    """A Zigbee address keeps its `#9`, an address behind an interface its `#4#II`.
+
+    The Zigbee frames are BUILT (no capture holds a WHO 1 frame with `#9`): the address is the
+    example of the review of MyHOME#964. `message.entity` is `1-701234501` for it, without the `#9`.
+    """
+    assert OWNCommand.parse("*1*1*701234501#9##").entity == "1-701234501"
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*701234501#9##"), time.monotonic())
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*09#4#01##"), time.monotonic())
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*0#01#9##"), time.monotonic())  # BUILT: unit broadcast
+    assert watchdog.pending == {"701234501#9": "*1*1*701234501#9##", "09#4#01": "*1*1*09#4#01##"}
+    watchdog.status_seen(OWNMessage.parse("*1*1*09#4#01##"))  # the same key for command and status
+    assert watchdog.pending == {"701234501#9": "*1*1*701234501#9##"}
+    await _expire(hass)
+    assert _requests(watchdog) == ["*#1*701234501#9##"]
+
+    watchdog.command_acknowledged(OWNCommand.parse("*1*0*701234501#9##"), time.monotonic())
+    watchdog.status_seen(OWNMessage.parse("*1*0*701234501#9##"))
+    assert watchdog.pending == {}
+
+
+async def test_nothing_is_armed_or_sent_once_the_sender_is_closing(hass, watchdog) -> None:
+    """A send that finishes right after the gateway was closed arms no timer; a timer that runs out sends nothing."""
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*07##"), time.monotonic())
+    watchdog.handler._terminate_sender = True
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*05##"), time.monotonic())
+    assert watchdog.pending == {"07": "*1*1*07##"}  # 05 was not armed
+    await _expire(hass)
+    assert _requests(watchdog) == [] and watchdog.pending == {}
+
+    watchdog.handler._terminate_sender = False
+    watchdog.handler._terminate_listener = True
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*05##"), time.monotonic())
+    assert watchdog.pending == {}
 
 
 def test_a_handler_double_without_a_watchdog_is_skipped() -> None:

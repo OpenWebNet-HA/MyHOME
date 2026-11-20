@@ -34,15 +34,17 @@ does not depend on the relayed status, ``cover.py`` ``_track_write``).
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
-from OWNd.message import OWNLightingCommand, OWNMessage
+from OWNd.message import OWNLightingCommand, OWNLightingEvent, OWNMessage
 
 from .const import LOGGER
+from .where_grammar import expose_message_where
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -56,6 +58,9 @@ ECHO_CONFIRM_DELAY_S = 1.5
 # (a gateway that acknowledges only after the device did may relay the status first).
 _RECENT_STATUS_TTL_S = 10.0
 _RECENT_STATUS_PRUNE_AT = 64
+# A point-to-point WHERE as written on the wire: digits, then ``#``-separated numeric tails
+# (``09#4#01``, ``701234501#9``). Anything else (no address, a group ``#1``) is not watched.
+_POINT_WHERE = re.compile(r"[0-9]+(?:#[0-9]+)*")
 
 
 @dataclass(slots=True)
@@ -68,7 +73,12 @@ class _Watch:
 
 
 def _light_where(message: Any) -> str | None:
-    """Full point-to-point WHERE (``09#4#01``) of a WHO 1 frame, None for any other frame."""
+    """Full point-to-point WHERE of a WHO 1 frame as it is written on the wire, None for any other frame.
+
+    With its tail: ``09#4#01`` behind an interface, ``701234501#9`` on a Zigbee gateway
+    (``message.entity`` drops the ``#9``, and the read-back has to carry it). The same string
+    for the command and for the status of one light, so that the two meet under one key.
+    """
     if not isinstance(message, OWNMessage) or getattr(message, "who", None) != 1:
         return None
     if (
@@ -77,25 +87,37 @@ def _light_where(message: Any) -> str | None:
         or getattr(message, "is_group", False)
     ):
         return None
-    entity = getattr(message, "entity", None)
-    if not isinstance(entity, str) or not entity.startswith("1-") or len(entity) <= 2:
-        return None
-    return entity[2:]
+    where = expose_message_where(message)
+    if not _POINT_WHERE.fullmatch(where) or where.split("#", 1)[0].strip("0") == "":
+        return None  # no address, or a broadcast (``0``, the Zigbee unit broadcast ``0#01#9``)
+    return where
 
 
 def _commanded_on(message: Any) -> bool | None:
     """Whether a WHO 1 command turns the light on (True), off (False) or does not say (None)."""
     what = getattr(message, "what", None)
-    if isinstance(what, bool) or not isinstance(what, int):
-        return None  # a dimension write: the level decides
-    if what == 0:
-        return False
-    if 1 <= what <= 18:
-        return True  # on, dimmer level 2..10, timed on 11..18
-    return None  # blink 20..29, dim step 30 / 31
+    if isinstance(what, int) and not isinstance(what, bool):
+        if what == 0:
+            return False
+        if 1 <= what <= 18:
+            return True  # on, dimmer level 2..10, timed on 11..18
+        return None  # blink 20..29, dim step 30 / 31
+    # A dimension write: its level decides. Without it, a late status of the command before
+    # (an "off" between the write and the ACK of a level write, MyHOME#964 review, MH200)
+    # would be taken as this one's answer.
+    dimension = getattr(message, "dimension", None)
+    if dimension in (1, 4):  # ``*#1*<where>*#1*<100 + level>*<speed>##``, level 0 is off
+        level = getattr(message, "brightness", None)
+        if isinstance(level, int) and not isinstance(level, bool):
+            return level > 0
+    elif dimension == 12:  # ``*#1*<where>*#12*<H>*<S>*<V>##``, V 0 is off
+        values = getattr(message, "dimension_value", None)
+        if isinstance(values, (list, tuple)) and len(values) > 2 and str(values[2]).isdigit():
+            return int(values[2]) > 0
+    return None
 
 
-def _matches(expected_on: bool | None, reported_on: bool | None) -> bool:
+def _matches(expected_on: bool | None, reported_on: bool) -> bool:
     """Whether a status with ``reported_on`` can be the answer to a command expecting ``expected_on``."""
     if expected_on is None:
         return True
@@ -115,7 +137,7 @@ class LightEchoWatchdog:
         """Initialize the watchdog of one gateway."""
         self.handler = handler
         self._watches: dict[str, _Watch] = {}
-        self._recent_status: dict[str, tuple[float, bool | None]] = {}
+        self._recent_status: dict[str, tuple[float, bool]] = {}
 
     @property
     def hass(self) -> HomeAssistant:
@@ -131,8 +153,8 @@ class LightEchoWatchdog:
     def command_acknowledged(self, message: Any, written_at: float) -> None:
         """Note a command the gateway acknowledged; ``written_at`` is its monotonic write time."""
         where = _light_where(message)
-        if where is None:
-            return
+        if where is None or self._closing():
+            return  # nothing is armed for a send that finished after the gateway was closed
         if getattr(message, "is_status_request", False) or getattr(message, "is_dimension_request", False):
             return
         expected_on = _commanded_on(message)
@@ -159,12 +181,24 @@ class LightEchoWatchdog:
 
     @callback
     def status_seen(self, message: Any) -> None:
-        """Note a frame received from the gateway (event session or command-session reply)."""
+        """Note a frame received from the gateway (event session or command-session reply).
+
+        Only a status that says on or off counts. Not a request or a write echoed on the event
+        session (an MH202 relays ``*#1*32*#1*130*0##`` 30 ms before the dimmer's status,
+        tests/fixtures/traces/issue_466), not a frame with no on / off meaning (colour,
+        ``*#1*32*13*...##``, toggle 32, motion 34 / 39, anomaly 19), not a command translation,
+        and not a dim step (``*1*30*<where>##`` / ``*1*31*<where>##``), which OWNd reads as "on"
+        and the light entity ignores. Any of these would otherwise end a watch, or replace the
+        status remembered for a command whose ACK is still to come.
+        """
+        if not isinstance(message, OWNLightingEvent):
+            return
         where = _light_where(message)
         if where is None or getattr(message, "is_translation", None) is True:
             return
-        # True / False for an on / off or level status, None for a frame that says neither.
-        reported_on: bool | None = getattr(message, "is_on", None)
+        reported_on = getattr(message, "is_on", None)
+        if not isinstance(reported_on, bool) or getattr(message, "what", None) in (30, 31):
+            return
         now = time.monotonic()
         self._recent_status[where] = (now, reported_on)
         if len(self._recent_status) > _RECENT_STATUS_PRUNE_AT:
@@ -180,7 +214,7 @@ class LightEchoWatchdog:
     def _confirm(self, where: str) -> None:
         """The status of ``where`` did not arrive: request it once."""
         watch = self._watches.pop(where, None)
-        if watch is None or getattr(self.handler, "_terminate_listener", False):
+        if watch is None or self._closing():
             return
         LOGGER.debug(
             "%s No status of light %s %.1f s after `%s`; requesting it.",
@@ -192,6 +226,13 @@ class LightEchoWatchdog:
         self.hass.async_create_task(
             self.handler.send_status_request(OWNLightingCommand.status(where)),
             name=f"myhome_light_{where}_echo_confirm",
+        )
+
+    def _closing(self) -> bool:
+        """Whether the gateway's listener or its sender is being closed: nothing is armed or sent."""
+        return (
+            getattr(self.handler, "_terminate_listener", False) is True
+            or getattr(self.handler, "_terminate_sender", False) is True
         )
 
     def cancel_all(self) -> None:
