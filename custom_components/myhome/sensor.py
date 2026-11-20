@@ -127,6 +127,12 @@ SCAN_INTERVAL = timedelta(seconds=300)
 # NACKed each of them (sent directly to the F461 on the same bus: NACK after 2.1 s). Three
 # poll intervals cover that report interval with one update to spare.
 PROBE_PUSH_FRESH = 900.0
+# A single corrupted frame (e.g. zone 1 bit-7 flip -> 129) must not register a
+# permanent phantom probe sensor (#967). Unconfigured bus probes confirm passively
+# on a second independent reading within MAX_AGE; identical echoes within
+# ECHO_WINDOW (MyHomeServer1 duplicates) are ignored without resetting the timer.
+PROBE_DISCOVERY_ECHO_WINDOW = 5.0
+PROBE_DISCOVERY_MAX_AGE = 3600.0
 
 SERVICE_SEND_INSTANT_POWER = "start_sending_instant_power"
 SERVICE_STOP_SENDING_INSTANT_POWER = "stop_sending_instant_power"
@@ -144,11 +150,22 @@ ENERGY_MEASUREMENTS = {
 }
 
 
+def _canonical_temperature_where(where: str) -> str:
+    """Return canonical WHERE for a WHO=4 temperature probe (e.g. ``0105`` -> ``105``)."""
+    norm = normalize_where(where) or where
+    base, sep, rest = norm.partition("#")
+    if is_probe(base) and base.isdigit():
+        return f"{int(base)}{sep}{rest}"
+    return norm
+
+
 def _sensor_address(who: str | int, where: str | int) -> tuple[str, str]:
     """Match energy replies with and without local-bus suffix, and normalize numeric where."""
     who, where = str(who), str(where)
     if who == "18":
         return who, where.removesuffix("#0")
+    if who == "4":
+        return who, _canonical_temperature_where(where)
     return who, normalize_where(where)
 
 
@@ -296,6 +313,7 @@ async def async_setup_entry(
             )
 
     discovery_for: dict[str, PlatformDiscovery] = {}
+    pending_temperature_probes: dict[str, tuple[float, str]] = {}
 
     def yaml_class(*classes: str) -> Callable[[DeviceContext], bool]:
         def accept(ctx: DeviceContext) -> bool:
@@ -458,7 +476,40 @@ async def async_setup_entry(
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
             return None
-        return Address(normalize_where(where) or where)
+        return Address(_canonical_temperature_where(where))
+
+    temperature_yaml_or_registry_accept = yaml_class(SensorDeviceClass.TEMPERATURE)
+
+    def accept_temperature(ctx: DeviceContext) -> bool:
+        """Confirm unconfigured WHO=4 bus probes passively on a second independent reading (#967)."""
+        if ctx.source != "bus" or bool(ctx.cfg):
+            return temperature_yaml_or_registry_accept(ctx)
+        probe_key = Address(
+            _canonical_temperature_where(ctx.address.where),
+            ctx.address.interface,
+        ).key
+        now = time.monotonic()
+        raw = str(ctx.message)
+        expired = [
+            key
+            for key, (first_at, _) in pending_temperature_probes.items()
+            if (now - first_at) > PROBE_DISCOVERY_MAX_AGE
+        ]
+        for key in expired:
+            del pending_temperature_probes[key]
+        if probe_key not in pending_temperature_probes:
+            pending_temperature_probes[probe_key] = (now, raw)
+            LOGGER.debug(
+                "Deferring WHO=4 temperature sensor %s creation until confirmed by a second reading (%s)",
+                probe_key,
+                raw,
+            )
+            return False
+        first_at, first_raw = pending_temperature_probes[probe_key]
+        if raw == first_raw and (now - first_at) < PROBE_DISCOVERY_ECHO_WINDOW:
+            return False
+        pending_temperature_probes.pop(probe_key, None)
+        return True
 
     def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         if ctx.cfg:
@@ -680,7 +731,7 @@ async def async_setup_entry(
         reject_registry_entry=duplicate_illuminance, address=illuminance_bus_address, known_keys=known_keys, **common_args,
     )
     discovery_for["4"] = PlatformDiscovery(
-        who="4", event_type=OWNHeatingEvent, build=build_temperature, accept=yaml_class(SensorDeviceClass.TEMPERATURE),
+        who="4", event_type=OWNHeatingEvent, build=build_temperature, accept=accept_temperature,
         registry_address=class_registry_address("-temperature", SensorDeviceClass.TEMPERATURE),
         reject_registry_entry=duplicate_temperature,
         address=temperature_bus_address, known_keys=known_keys, **common_args,
