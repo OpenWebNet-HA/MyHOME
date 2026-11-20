@@ -215,8 +215,8 @@ async def test_a_valve_only_zone_is_created_once_its_thermostat_answers(hass: Ho
         return True
 
     handler, zones = await _plant(hass, read)
-    await _receive(hass, handler, ACTUATOR_ANSWER)
-    assert sorted(zone._where for zone in zones) == ["2", "4"]  # the fan coils; zone 3 is kept back (#785)
+    await _receive(hass, handler, [*ACTUATOR_ANSWER, "*#4*2*0*0239##"])
+    assert sorted(zone._where for zone in zones) == ["2", "4"]  # the fan coils (confirmed); zone 3 is kept back (#785)
 
     await _after_the_sweep(hass, handler)
     assert asked == ["3"]
@@ -340,7 +340,11 @@ async def test_a_zone_behind_an_interface_is_not_asked(hass: HomeAssistant) -> N
 async def test_nothing_is_asked_when_every_zone_came_with_its_own_frames(hass: HomeAssistant) -> None:
     read = AsyncMock(return_value=False)
     handler, zones = await _plant(hass, read)
-    await _receive(hass, handler, ["*#4*2#1*20*8##", "*#4*4#2*20*5##"])
+    await _receive(
+        hass,
+        handler,
+        ["*#4*2#1*20*8##", "*#4*2*0*0239##", "*#4*4#2*20*5##", "*#4*4*0*0215##"],
+    )
     await _after_the_sweep(hass, handler)
     read.assert_not_awaited()
     assert sorted(zone._where for zone in zones) == ["2", "4"]

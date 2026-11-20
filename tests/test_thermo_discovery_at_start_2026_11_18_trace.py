@@ -63,7 +63,7 @@ async def test_the_zones_are_found_from_the_start_up_answers(hass: HomeAssistant
 
     await _receive(hass, handler, frames[:answer])
     found = {zone._where for zone in zones}
-    assert {"#0", "2", "4"} <= found  # the 3550 by its status, zones 2 and 4 by their fan coils
+    assert {"#0", "4"} <= found  # the 3550 by its status, zone 4 by its two actuator frames (#966: zone 2 awaits its 2nd frame)
     assert "3" not in found  # plain valves only: held, the address may have no thermostat (#785)
     assert handler.has_central_unit is True
     assert handler.central_season == "heating"  # *4*102*#0##
