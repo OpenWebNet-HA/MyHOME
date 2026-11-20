@@ -132,6 +132,8 @@ from .cover_motion import (
     MOTOR_STOP_DELAY,
     PRE_MOVE_STOP_SETTLE_DELAY,
     WRITE_TIMEOUT,
+    accumulate_drift_bound,
+    compute_bounded_settle_travel,
     compute_freeze_position,
     compute_interpolated_position,
     compute_run_duration,
@@ -141,10 +143,17 @@ from .cover_motion import (
 from .cover_motion import (
     MIN_POSITION_DELTA as MIN_POSITION_DELTA,
 )
+from .cover_motion import (
+    SEGMENT_STOP_DRIFT as SEGMENT_STOP_DRIFT,
+)
+from .cover_motion import (
+    SEGMENT_TRAVEL_DRIFT_FACTOR as SEGMENT_TRAVEL_DRIFT_FACTOR,
+)
 from .cover_strategies import (
     CoverKinematicsStrategy,
     NativePositionStrategy,
     SimpleUpDownStopStrategy,
+    TimedCurtainStrategy,
     VenetianTiltStrategy,
     clamp_slat_time,
     resolve_cover_strategy,
@@ -672,6 +681,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # re-anchor: the last completed run is measured from it (stopwatch).
         self._run_started_at: float | None = None
         self._start_position: int | None = None
+        # Bounded position drift (seconds) accumulated since the last confirmed end
+        # stop, calibration, or bus report; None means unbounded (full travel).
+        self._position_drift_bound: float | None = None
         # is_closed before the last direction command: restored when its frame
         # never reaches the bus and there is no position to derive it from.
         self._is_closed_before_move: bool | None = None
@@ -788,6 +800,53 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _curtain_travel_for(self, opening: bool) -> float:
         """Curtain-only travel seconds for the given direction (end-to-end travel minus slat rotation)."""
         return self._strategy.curtain_travel_for(opening)
+
+    @callback
+    def _handle_availability_update(self) -> None:
+        """Invalidate drift bound when unavailable so reconnect full runs re-home safely."""
+        if not self._advanced and not self.available:
+            self._position_drift_bound = None
+        super()._handle_availability_update()
+
+    def _uses_bounded_settle(self) -> bool:
+        """Return True for built-in linear timed/Venetian strategies (#973)."""
+        return type(self._strategy) in (TimedCurtainStrategy, VenetianTiltStrategy)
+
+    def _accumulate_position_drift(self, segment_seconds: float, opening: bool) -> None:
+        """Widen the position-drift bound after an unconfirmed timed movement segment."""
+        if self._advanced or self._strategy.assumed_state:
+            return
+        max_travel = max(self._travel_for(opening), self._travel_for(not opening))
+        self._position_drift_bound = accumulate_drift_bound(
+            self._position_drift_bound,
+            segment_seconds,
+            max_travel,
+        )
+
+    def _full_run_settle_travel(self, opening: bool) -> float:
+        """Return full-run settle seconds (before ``END_SETTLE_MARGIN``) for the active run (#973)."""
+        full_travel = self._travel_for(opening)
+        if not self._uses_bounded_settle():
+            return full_travel
+        start_pos = (
+            self._run_start_position
+            if self._run_start_position is not None
+            else self._start_position
+        )
+        if start_pos is None or self._position_drift_bound is None:
+            return full_travel
+        target = 100 if opening else 0
+        direction = "open" if opening else "close"
+        nominal_remaining = self._strategy.duration_for(
+            start_pos, target, direction, entity=self
+        )
+        return compute_bounded_settle_travel(
+            start_pos,
+            opening,
+            full_travel,
+            nominal_remaining,
+            self._position_drift_bound,
+        )
 
     def _refresh_travel_attributes(self) -> None:
         attrs = self._attr_extra_state_attributes
@@ -1122,6 +1181,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._strategy.on_run_ended(self, "end_stop" if end_stop else "stop", frozen, at)
             if end_stop and frozen is not None:
                 self._strategy.on_position_confirmed(self, frozen, "end_stop")
+                if not self._calibrating:
+                    self._position_drift_bound = 0.0
+            elif frozen is None:
+                self._position_drift_bound = None
+            else:
+                self._accumulate_position_drift(max(0.0, at - run_started_at), is_opening)
         self._attr_is_opening = False
         self._attr_is_closing = False
         self._run_start_position = None
@@ -1168,6 +1233,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # No position to derive the state from (unknown, or an assumed-state
             # cover): nothing moved, so the state is what it was before the command.
             self._start_position = None
+            self._position_drift_bound = None
             self._attr_is_closed = self._is_closed_before_move
         self._refresh_travel_attributes()
         self._publish_state()
@@ -1480,6 +1546,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._calibrating and not self._calibration_interrupted:
             self._calibration_interrupted = reason
             self._settles_on_timer = True
+            self._position_drift_bound = None
             self._motor_started.set()
             self._stopped_event.set()
 
@@ -1611,6 +1678,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     raise CalibrationInterrupted(self._display_name, self._calibration_interrupted)
                 hub.active_cover = self
                 self._calibrating = True
+                self._position_drift_bound = None
                 self._stop_live_refresh()
                 self._cancel_stop_task()
                 self._fire_calibration_event("start")
@@ -1662,6 +1730,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_current_cover_position = 100
         self._start_position = 100
         self._strategy.on_position_confirmed(self, 100, "calibration")
+        self._position_drift_bound = 0.0
         if self._slat_tilt:
             self._attr_current_cover_tilt_position = 100
         self._attr_is_closed = False
@@ -1733,6 +1802,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._end_run_from_unknown = False
         self._move_start_time = None
         self._start_position = None
+        self._position_drift_bound = None
         self._motion_started_at = None
         native = NativePositionStrategy(
             min_position_delta=self._min_position_delta,
@@ -1847,10 +1917,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ) & ~CoverEntityFeature.SET_POSITION
         self._attr_current_cover_position = None
         self._start_position = None
+        self._position_drift_bound = None
 
     def _end_run_on_reversal(self, now: float) -> None:
         """Tell the strategy the opposite direction on the bus ended the running run."""
         if not self._advanced and self._run_started_at is not None:
+            self._accumulate_position_drift(
+                max(0.0, now - self._run_started_at),
+                bool(self._attr_is_opening),
+            )
             self._strategy.on_run_ended(self, "reversal", self._start_position, now)
 
     async def async_stop_calibration(self) -> None:
@@ -1934,6 +2009,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._travel_time_down = round(float(down), 2)
             self._travel_time_up = round(float(up), 2)
             self._travel_time = int(round(self._travel_time_down))
+            self._position_drift_bound = None
             self._recompute_active_settle()
 
         if slat_time is not None:
@@ -2054,6 +2130,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_down = base_travel
         self._travel_time_up = base_travel
         self._travel_time = int(round(base_travel))
+        self._position_drift_bound = None
         self._recompute_active_settle()
         self._calibration_source = source
         self._calibrated_at = None
@@ -2344,6 +2421,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_current_cover_tilt_position = 100 if opening else 0
         self._strategy.on_run_ended(self, "end_stop", self._start_position, time.monotonic())
         self._strategy.on_position_confirmed(self, self._start_position, "end_stop")
+        self._position_drift_bound = 0.0
         self._move_start_time = None
         self._run_started_at = None
         self._motion_started_at = None
@@ -2381,7 +2459,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._end_run_from_unknown = False
                         return
                     self._travel_recomputed.clear()
-                    delay = self._travel_for(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
+                    delay = self._full_run_settle_travel(opening) + END_SETTLE_MARGIN - (time.monotonic() - anchor)
                     if delay <= 0:
                         break
                     sleep_task = asyncio.create_task(asyncio.sleep(delay))
@@ -2424,7 +2502,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         generation = self._run_generation
         elapsed = max(0.0, time.monotonic() - self._run_started_at) if self._run_started_at is not None else 0.0
-        delay = max(0.0, self._travel_for(opening) + END_SETTLE_MARGIN - elapsed)
+        delay = max(0.0, self._full_run_settle_travel(opening) + END_SETTLE_MARGIN - elapsed)
         self._full_run_to_end = True
 
         @callback
@@ -2794,6 +2872,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
             self._attr_current_cover_position = self._start_position = position
             self._attr_is_closed = position == 0
+            self._accumulate_position_drift(elapsed, direction == "open")
 
     def _abort_tilt(self) -> None:
         """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
@@ -2892,6 +2971,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._start_position = self.current_cover_position if self.current_cover_position is not None else self._start_position
             self._attr_current_cover_position = self._start_position
             self._turn_slats_for_run(now, self._run_started_at, bool(self._attr_is_opening), bool(self._attr_is_closing))
+            self._accumulate_position_drift(max(0.0, now - self._run_started_at), bool(self._attr_is_opening))
             self._strategy.on_run_ended(self, "takeover", self._start_position, now)
             self._move_start_time = None
             self._run_started_at = None
@@ -3340,6 +3420,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_position = position
                     if not self._advanced:
                         self._start_position = position
+                        self._position_drift_bound = 0.0
                     if (is_closed := getattr(message, "is_closed", None)) is not None:
                         self._attr_is_closed = bool(is_closed)
                     else:
@@ -3355,6 +3436,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_current_cover_position = position
             if not self._advanced:
                 self._start_position = position
+                self._position_drift_bound = 0.0
             self._move_start_time = None
             self._attr_is_opening = False
             self._attr_is_closing = False
