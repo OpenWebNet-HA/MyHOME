@@ -1864,6 +1864,14 @@ async def test_issue_952_full_221_frame_live_cycle_unseeded(
     assert zone1.extra_state_attributes["actuator_levels"] == {"3": 100}
 
     by_where = {c._where: c for c in added_climates}
+    # Zones 4 and 5 only emit one temperature frame each in the capture, so they stay
+    # held as candidates until confirmed by a second frame (#966).
+    assert set(by_where) == {"1", "2"}
+    for raw in ("*4*1*4##", "*4*1*5##"):
+        async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
+    await hass.async_block_till_done()
+
+    by_where = {c._where: c for c in added_climates}
     assert set(by_where) == {"1", "2", "4", "5"}
     zone2 = by_where["2"]
     assert zone2.current_temperature == 19.3

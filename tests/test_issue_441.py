@@ -104,9 +104,13 @@ async def test_probe_restored_from_registry_keeps_its_yaml_unique_id(hass: HomeA
 
 
 async def test_probe_discovered_from_bus_matches_the_yaml_unique_id(hass: HomeAssistant):
-    """No YAML, no registry: a pushed reading creates the probe under the same unique id."""
+    """No YAML, no registry: a second independent reading creates the probe under the same unique id."""
     entry, added = await _setup(hass, {})
     await _start(hass, entry, added)
+    assert added == []
+
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105*0*0210##"))
+    await hass.async_block_till_done()
     assert added == []
 
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105*0*0215##"))

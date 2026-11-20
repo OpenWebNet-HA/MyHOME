@@ -150,8 +150,10 @@ async def test_3550_bus_traffic_never_discovers_phantom_climate_zone_99(hass: Ho
     assert not any(getattr(e, "_where", None) == "99" for e in discovered_entities)
     assert not any("99" in (getattr(e, "_device_name", "") or "") for e in discovered_entities)
 
-    # 4. Positive control: genuine subordinate zone traffic (e.g. Zone 5) MUST trigger dynamic discovery
+    # 4. Positive control: genuine subordinate zone traffic (e.g. Zone 5) confirms on 2nd frame
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*5##"))
+    assert len(discovered_entities) == 1
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*5*0*0210##"))
     assert len(discovered_entities) == 2
     assert any(getattr(e, "_where", None) == "5" for e in discovered_entities)
 
@@ -251,9 +253,11 @@ async def test_ghost_zone_99_deletion_permanently_clears_repair_and_prevents_res
     assert issue_reg.async_get_issue(DOMAIN, issue_id) is None
     assert entity_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-99") is None
 
-    # Positive control: if genuine on-wire traffic for Zone 99 arrives (*4*110*99##),
+    # Positive control: if genuine on-wire traffic for Zone 99 arrives (*4*110*99## + confirmation),
     # discovery recognizes it as a valid subordinate zone.
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*99##"))
+    assert len(reloaded_entities) == 1
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*99*0*0210##"))
     assert len(reloaded_entities) == 2
     discovered_z99 = reloaded_entities[-1]
     assert discovered_z99._where == "99"
@@ -432,8 +436,10 @@ async def test_yaml_central_unit_and_bus_traffic_coalesce_without_duplicate_enti
     assert not any(getattr(e, "_where", None) == "99" for e in entities)
     assert not any(getattr(e, "_device_name", None) == "Climate Zone 0" for e in entities)
 
-    # 4. Bus frame for subordinate zone (Zone 5) creates Zone 5 alongside the central unit
+    # 4. Bus frame for subordinate zone (Zone 5) creates Zone 5 once confirmed alongside the central unit
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*5##"))
+    assert len(entities) == 1
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*5*0*0210##"))
     assert len(entities) == 2
     assert any(getattr(e, "_where", None) == "5" for e in entities)
     assert any(getattr(e, "_where", None) == "#0" for e in entities)
