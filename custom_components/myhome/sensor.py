@@ -169,10 +169,13 @@ def _sensor_address(who: str | int, where: str | int) -> tuple[str, str]:
     return who, normalize_where(where)
 
 
-def _spellings(where: str) -> list[str]:
-    """``0021`` may also appear as ``21``, and a legacy ``1-0021`` as either."""
+def _spellings(where: str, who: str | None = None) -> list[str]:
+    """``0021`` may also appear as ``21``, a legacy ``1-0021`` as either, and WHO=4 ``0105`` as ``105``."""
     clean = where.split("-")[-1]
-    return [k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k]
+    items = [where, normalize_where(where), clean, normalize_where(clean)]
+    if who == "4":
+        items.extend((_canonical_temperature_where(where), _canonical_temperature_where(clean)))
+    return [k for k in items if k]
 
 
 ENERGY_UNIQUE_ID = re.compile(r"([0-9#]+)-(power|total-energy|daily-energy|monthly-energy)")
@@ -279,13 +282,33 @@ async def async_setup_entry(
 
     # Device class of every configured (WHO, WHERE) under each of its spellings
     configured_class: dict[tuple[str, str], str | None] = {}
-    for cfg in runtime.platforms[PLATFORM].values():
+    for cfg_id, cfg in runtime.platforms[PLATFORM].items():
         if isinstance(cfg, dict) and CONF_WHERE in cfg:
-            for spelling in _spellings(str(cfg[CONF_WHERE])):
-                configured_class[(str(cfg.get(CONF_WHO)), spelling)] = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
+            who_str = str(cfg.get(CONF_WHO))
+            cfg_addr = Address.from_config(str(cfg_id), cfg)
+            for spelling in _spellings(cfg_addr.where, who_str):
+                key = (
+                    Address(spelling, cfg_addr.interface).key
+                    if cfg_addr.interface and BUS_ROUTING not in spelling
+                    else spelling
+                )
+                configured_class[(who_str, key)] = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
 
-    def is_configured(who: str, where: str, *classes: str) -> bool:
-        return any(configured_class.get((who, spelling)) in classes for spelling in _spellings(where))
+    def is_configured(
+        who: str, where: str, *classes: str, interface: str | None = None
+    ) -> bool:
+        return any(
+            configured_class.get(
+                (
+                    who,
+                    Address(spelling, interface).key
+                    if interface and BUS_ROUTING not in spelling
+                    else spelling,
+                )
+            )
+            in classes
+            for spelling in _spellings(where, who)
+        )
 
     platform = entity_platform.current_platform.get()
     power_service_registered = False
@@ -322,8 +345,11 @@ async def async_setup_entry(
             if ctx.source == "registry":
                 # myhome.yaml wins over the registry: a configured address is not restored,
                 # nor is a second registry entry for a restored address (another spelling)
-                return not is_configured(ctx.who, ctx.address.where, *classes) and (
-                    ctx.who == "18" or normalize_where(ctx.address.where) not in discovery_for[ctx.who].known
+                return not is_configured(
+                    ctx.who, ctx.address.where, *classes, interface=ctx.address.interface
+                ) and (
+                    ctx.who == "18"
+                    or _sensor_address(ctx.who, ctx.address.key)[1] not in discovery_for[ctx.who].known
                 )
             return True
 
@@ -412,7 +438,7 @@ async def async_setup_entry(
             if marker not in entry.unique_id and entry.original_device_class != device_class:
                 return None
             after_mac = entry.unique_id.replace(f"{gateway.mac}-", "", 1).replace(f"{entry_mac}-", "", 1)
-            return Address(after_mac.replace(marker, "").split("-")[-1])
+            return Address.from_device_id(after_mac.replace(marker, "").split("-")[-1])
 
         return address_of
 
@@ -420,8 +446,8 @@ async def async_setup_entry(
         # Broadcast address or obsolete second registry entry, or an address that myhome.yaml configures
         if is_broadcast_where(ctx.address.clean_where):
             return True
-        return normalize_where(ctx.address.where) in discovery_for["1"].known or is_configured(
-            "1", ctx.address.where, SensorDeviceClass.ILLUMINANCE
+        return _sensor_address("1", ctx.address.key)[1] in discovery_for["1"].known or is_configured(
+            "1", ctx.address.where, SensorDeviceClass.ILLUMINANCE, interface=ctx.address.interface
         )
 
     def illuminance_bus_address(message: Any) -> Address | None:
@@ -447,7 +473,7 @@ async def async_setup_entry(
                 name=cfg[CONF_NAME], device_class=SensorDeviceClass.ILLUMINANCE, manufacturer=cfg[CONF_MANUFACTURER],
                 model=cfg[CONF_DEVICE_MODEL], gateway=gateway,
             )
-        where = ctx.address.where
+        where = ctx.address.key
         clean = where.split("-")[-1]
         primary = normalize_where(where) or normalize_where(clean) or where
         if primary in ("0", "00"):
@@ -476,7 +502,8 @@ async def async_setup_entry(
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
             return None
-        return Address(_canonical_temperature_where(where))
+        addr = Address.from_device_id(_canonical_temperature_where(where))
+        return Address(addr.where, thermo_event_interface(message) or addr.interface)
 
     temperature_yaml_or_registry_accept = yaml_class(SensorDeviceClass.TEMPERATURE)
 
@@ -509,6 +536,11 @@ async def async_setup_entry(
         if raw == first_raw and (now - first_at) < PROBE_DISCOVERY_ECHO_WINDOW:
             return False
         pending_temperature_probes.pop(probe_key, None)
+        LOGGER.debug(
+            "Confirmed WHO=4 temperature sensor %s on second reading (%s)",
+            probe_key,
+            raw,
+        )
         return True
 
     def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
@@ -519,36 +551,61 @@ async def async_setup_entry(
     def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor | None:
         if ctx.source == "yaml":
             cfg = ctx.cfg
+            yaml_addr = Address.from_config(ctx.config_id or ctx.key, cfg)
+            canon_key = Address(
+                _canonical_temperature_where(yaml_addr.clean_where),
+                yaml_addr.interface,
+            ).key
+            raw_dev_id = ctx.config_id or ctx.key
+            dev_id = f"4-{canon_key}" if raw_dev_id.startswith("4-") else raw_dev_id
             return MyHOMETemperatureSensor(
-                hass=hass, device_id=ctx.config_id or ctx.key, who=cfg[CONF_WHO], where=cfg[CONF_WHERE],
+                hass=hass, device_id=dev_id, who=cfg[CONF_WHO], where=canon_key,
                 name=cfg[CONF_NAME], device_class=SensorDeviceClass.TEMPERATURE, manufacturer=cfg[CONF_MANUFACTURER],
                 model=cfg[CONF_DEVICE_MODEL], gateway=gateway,
             )
         where = ctx.address.where
         clean = where.split("-")[-1].split("#")[0]
-        primary = normalize_where(where) or normalize_where(clean) or where
+        primary = _canonical_temperature_where(where) or _canonical_temperature_where(clean)
         if is_broadcast_where(primary) or is_broadcast_where(clean):
             return None
-        label = normalize_where(clean) or clean
+        canon_addr = Address(primary, ctx.address.interface)
+        label = canon_addr.suffix
         name = f"Probe {label}" if is_probe(clean) else f"Zone {label}"
         # ``4-<where>``, the id validate.py gives a myhome.yaml probe: one unique id either way (#441)
         sensor = MyHOMETemperatureSensor(
-            hass=hass, device_id=f"4-{primary}", who="4", where=primary, name=name,
+            hass=hass, device_id=f"4-{canon_addr.key}", who="4", where=canon_addr.key, name=name,
             device_class=SensorDeviceClass.TEMPERATURE, manufacturer="BTicino", model="Temperature Probe", gateway=gateway,
         )
         return sensor
 
     def known_keys(ctx: DeviceContext) -> list[str]:
-        where = ctx.address.where if ctx.source != "yaml" else str(ctx.cfg[CONF_WHERE])
-        keys = [ctx.key, ctx.config_id or "", *_spellings(where), _sensor_address(ctx.who, where)[1]]
+        addr = (
+            Address.from_config(ctx.config_id or ctx.key, ctx.cfg)
+            if ctx.source == "yaml"
+            else ctx.address
+        )
+        where = addr.where
+        iface = addr.interface
+        raw_keys = [*_spellings(where, ctx.who), _sensor_address(ctx.who, where)[1]]
         if ctx.source != "yaml":
             clean = where.split("-")[-1].split("#")[0]
-            keys.append(normalize_where(where) or normalize_where(clean) or where)
-        return [k for k in keys if k]
+            raw_keys.append(_sensor_address(ctx.who, clean)[1] or clean)
+        qualified = [
+            Address(k, iface).key if iface and BUS_ROUTING not in k else k
+            for k in raw_keys
+            if k
+        ]
+        return [k for k in (ctx.key, ctx.config_id or "", *qualified) if k]
 
     def route_keys(message: Any, address: Address | None) -> list[str]:
         where = str(message.where)
-        return [_sensor_address(message.who, where)[1], where, normalize_where(where)]
+        iface = address.interface if address is not None else thermo_event_interface(message)
+        raw_keys = [_sensor_address(message.who, where)[1], where, normalize_where(where)]
+        return [
+            Address(k, iface).key if iface and BUS_ROUTING not in k else k
+            for k in raw_keys
+            if k
+        ]
 
     # ── WHO 4: 0-10 V proportional actuator output level sensors (#949) ──
     def _has_climate_zone_entity(zone: str, iface: str | None) -> bool:
@@ -809,9 +866,11 @@ def _migrate_temperature_unique_ids(hass: HomeAssistant, entry_id: str, mac: str
         if prefix is None:
             continue
         where = entry.unique_id[len(prefix) : -len(marker)]
-        if not where or "-" in where:
-            continue  # already ``4-<where>``
-        target = f"{mac}-4-{where}{marker}"
+        raw_where = where.removeprefix("4-")
+        canon_where = _canonical_temperature_where(raw_where)
+        if not raw_where or "-" in raw_where or (where.startswith("4-") and canon_where == raw_where):
+            continue
+        target = f"{mac}-4-{canon_where}{marker}"
         canonical = registry.async_get_entity_id(PLATFORM, DOMAIN, target)
         try:
             if canonical is not None:
@@ -1354,7 +1413,7 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         self._register_entity_ref(str(self._attr_device_class))
         # Probes start receive-only: no initial poll, the push stream fills in
         # and the periodic update only polls if it stays silent (issue #308).
-        self._poll_on_add = not self._is_probe
+        self._poll_on_add = self._poll_on_add and not self._is_probe
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self) -> None:

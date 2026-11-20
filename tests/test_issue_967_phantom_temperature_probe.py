@@ -175,9 +175,10 @@ async def test_pending_candidate_expires_after_max_age_and_requires_fresh_pair(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("interval", [601.3, PROBE_DISCOVERY_ECHO_WINDOW])
 async def test_periodic_constant_probe_confirms_on_second_report(
-    hass: HomeAssistant, interval: float
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture, interval: float
 ) -> None:
     """Real probe 303 pushing constant 22.9 C confirms on its 2nd report (>= 5.0 s, e.g. 601.3 s)."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.myhome")
     clock = _FakeClock()
     entry, gateway, added = await _setup_sensor_platform(hass)
 
@@ -205,6 +206,10 @@ async def test_periodic_constant_probe_confirms_on_second_report(
         assert sensor.native_value == 22.9
         assert sensor.unique_id == f"{MAC}-4-303-temperature"
         assert sensor._poll_on_add is False
+        assert (
+            "Confirmed WHO=4 temperature sensor 303 on second reading (*#4*303*0*0229##)"
+            in caplog.text
+        )
 
         # 3rd report updates existing entity without duplicating
         clock.advance(interval)
@@ -325,6 +330,12 @@ async def test_dimension_15_on_zone_where_requires_second_reading(
         assert added[0].unique_id == f"{MAC}-4-5-temperature"
         assert added[0].native_value == 20.5
 
+        added[0].hass = hass
+        added[0].entity_id = "sensor.zone_5_temperature"
+        with patch.object(added[0], "async_get_last_state", AsyncMock(return_value=None)):
+            await added[0].async_added_to_hass()
+        assert added[0]._poll_on_add is False
+
     gateway.send_status_request.assert_not_awaited()
 
 
@@ -399,25 +410,209 @@ async def test_yaml_and_registry_and_configured_bus_probes_remain_immediate(
     )
     assert accept_temp(ctx_cfg_bus) is True
 
-    # Routed interface key isolation (0105#4#01 vs 105#4#02)
-    ctx_routed_1 = DeviceContext(
-        address=Address("0105", "01"),
-        who="4",
-        source="bus",
-        message=OWNEvent.parse("*#4*0105#4#01*0*0210##"),
+
+@pytest.mark.asyncio
+async def test_f422_routed_probe_interface_isolation_end_to_end(
+    hass: HomeAssistant,
+) -> None:
+    """F422 #4#II probe discovery, routing, and registry restore isolate interfaces end-to-end."""
+    clock = _FakeClock()
+    entry, gateway, added = await _setup_sensor_platform(hass)
+
+    with patch("custom_components.myhome.sensor.time.monotonic", side_effect=clock):
+        assert await async_setup_entry(hass, entry, added.extend) is True
+        await hass.async_block_till_done()
+
+        # First reading on bus 01, then bus 02, then local bus: none cross-confirm each other
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*0105#4#01*0*0210##")
+        )
+        await hass.async_block_till_done()
+        assert added == []
+
+        clock.advance(0.5)
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105#4#02*0*0215##")
+        )
+        await hass.async_block_till_done()
+        assert added == []
+
+        clock.advance(0.5)
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105*0*0195##")
+        )
+        await hass.async_block_till_done()
+        assert added == []
+
+        # Second reading on bus 01 confirms only probe 105#4#01
+        clock.advance(0.5)
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105#4#01*0*0212##")
+        )
+        await hass.async_block_till_done()
+        assert len(added) == 1
+        assert added[0].unique_id == f"{MAC}-4-105#4#01-temperature"
+        assert added[0]._where == "105#4#01"
+        assert added[0]._display_name == "Probe 105I01 Temperature"
+        assert added[0].native_value == 21.2
+
+        # Second reading on bus 02 confirms probe 105#4#02 without affecting bus 01
+        clock.advance(0.5)
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105#4#02*0*0220##")
+        )
+        await hass.async_block_till_done()
+        assert len(added) == 2
+        assert added[1].unique_id == f"{MAC}-4-105#4#02-temperature"
+        assert added[1]._where == "105#4#02"
+        assert added[1]._display_name == "Probe 105I02 Temperature"
+        assert added[1].native_value == 22.0
+        assert added[0].native_value == 21.2
+
+    gateway.send_status_request.assert_not_awaited()
+
+    # Restoring {mac}-4-105#4#01-temperature leaves bus 02 unconfirmed on its first frame
+    mac_reg2 = "00:03:50:a6:02:d3"
+    gw_reg2 = _gateway()
+    gw_reg2.mac = mac_reg2
+    entry_reg2 = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac_reg2}, unique_id=mac_reg2)
+    entry_reg2.add_to_hass(hass)
+    er.async_get(hass).async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mac_reg2}-4-105#4#01-temperature",
+        suggested_object_id="probe_105_01_temperature",
+        config_entry=entry_reg2,
+        original_device_class=SensorDeviceClass.TEMPERATURE,
     )
-    ctx_routed_2 = DeviceContext(
-        address=Address("105", "02"),
-        who="4",
-        source="bus",
-        message=OWNEvent.parse("*#4*105#4#02*0*0215##"),
+    hass.data.setdefault(DOMAIN, {})[mac_reg2] = {
+        CONF_PLATFORMS: {"sensor": {}},
+        CONF_ENTITY: gw_reg2,
+    }
+    attach_runtime(hass, entry_reg2)
+    added_reg2: list[MyHOMETemperatureSensor] = []
+    with patch("custom_components.myhome.sensor.time.monotonic", side_effect=clock):
+        assert await async_setup_entry(hass, entry_reg2, added_reg2.extend) is True
+        await hass.async_block_till_done()
+        assert [e.unique_id for e in added_reg2] == [f"{mac_reg2}-4-105#4#01-temperature"]
+
+        async_dispatcher_send(
+            hass, f"myhome_message_{mac_reg2}", OWNEvent.parse("*#4*105#4#02*0*0220##")
+        )
+        await hass.async_block_till_done()
+        assert len(added_reg2) == 1
+
+
+@pytest.mark.asyncio
+async def test_zero_padded_probe_yaml_and_registry_canonicalization(
+    hass: HomeAssistant,
+) -> None:
+    """Zero-padded probe 0105 in myhome.yaml and entity registry canonicalizes to 105 without duplicates."""
+    # Sub-case A: myhome.yaml "4-0105" with existing canonical registry entry {mac}-4-105-temperature
+    mac_a = "00:03:50:a6:02:e1"
+    gw_a = _gateway()
+    gw_a.mac = mac_a
+    entry_a = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac_a}, unique_id=mac_a)
+    entry_a.add_to_hass(hass)
+    reg = er.async_get(hass)
+    reg_a = reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mac_a}-4-105-temperature",
+        suggested_object_id="garden_probe",
+        config_entry=entry_a,
+        original_device_class=SensorDeviceClass.TEMPERATURE,
+        disabled_by=er.RegistryEntryDisabler.USER,
     )
-    ctx_routed_1_confirm = DeviceContext(
-        address=Address("105", "01"),
-        who="4",
-        source="bus",
-        message=OWNEvent.parse("*#4*105#4#01*0*0215##"),
+    hass.data.setdefault(DOMAIN, {})[mac_a] = {
+        CONF_PLATFORMS: {
+            "sensor": {
+                "4-0105": {
+                    CONF_WHO: "4",
+                    CONF_WHERE: "0105",
+                    CONF_NAME: "Garden Probe",
+                    CONF_DEVICE_CLASS: SensorDeviceClass.TEMPERATURE,
+                    CONF_MANUFACTURER: "BTicino",
+                    CONF_DEVICE_MODEL: "3455",
+                }
+            }
+        },
+        CONF_ENTITY: gw_a,
+    }
+    attach_runtime(hass, entry_a)
+    added_a: list[MyHOMETemperatureSensor] = []
+    assert await async_setup_entry(hass, entry_a, added_a.extend) is True
+    await hass.async_block_till_done()
+    assert [e.unique_id for e in added_a] == [f"{mac_a}-4-105-temperature"]
+    assert added_a[0]._where == "105"
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{mac_a}-4-105-temperature") == reg_a.entity_id
+
+    async_dispatcher_send(hass, f"myhome_message_{mac_a}", OWNEvent.parse("*#4*105*0*0210##"))
+    await hass.async_block_till_done()
+    assert len(added_a) == 1
+    assert added_a[0].native_value == 21.0
+
+    async_dispatcher_send(hass, f"myhome_message_{mac_a}", OWNEvent.parse("*#4*0105*0*0215##"))
+    await hass.async_block_till_done()
+    assert len(added_a) == 1
+    assert added_a[0].native_value == 21.5
+
+    # Sub-case B1: registry-only {mac}-4-0105-temperature migrates in place to {mac}-4-105-temperature
+    mac_b1 = "00:03:50:a6:02:e2"
+    gw_b1 = _gateway()
+    gw_b1.mac = mac_b1
+    entry_b1 = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac_b1}, unique_id=mac_b1)
+    entry_b1.add_to_hass(hass)
+    reg_b1 = reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mac_b1}-4-0105-temperature",
+        suggested_object_id="probe_0105_temperature",
+        config_entry=entry_b1,
+        original_device_class=SensorDeviceClass.TEMPERATURE,
     )
-    assert accept_temp(ctx_routed_1) is False
-    assert accept_temp(ctx_routed_2) is False
-    assert accept_temp(ctx_routed_1_confirm) is True
+    hass.data.setdefault(DOMAIN, {})[mac_b1] = {
+        CONF_PLATFORMS: {"sensor": {}},
+        CONF_ENTITY: gw_b1,
+    }
+    attach_runtime(hass, entry_b1)
+    added_b1: list[MyHOMETemperatureSensor] = []
+    assert await async_setup_entry(hass, entry_b1, added_b1.extend) is True
+    await hass.async_block_till_done()
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{mac_b1}-4-0105-temperature") is None
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{mac_b1}-4-105-temperature") == reg_b1.entity_id
+    assert [e.unique_id for e in added_b1] == [f"{mac_b1}-4-105-temperature"]
+
+    # Sub-case B2: both {mac}-4-0105-temperature and {mac}-4-105-temperature in registry -> duplicate removed
+    mac_b2 = "00:03:50:a6:02:e3"
+    gw_b2 = _gateway()
+    gw_b2.mac = mac_b2
+    entry_b2 = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac_b2}, unique_id=mac_b2)
+    entry_b2.add_to_hass(hass)
+    reg_b2_canon = reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mac_b2}-4-105-temperature",
+        suggested_object_id="probe_105_canon",
+        config_entry=entry_b2,
+        original_device_class=SensorDeviceClass.TEMPERATURE,
+    )
+    reg_b2_dup = reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mac_b2}-4-0105-temperature",
+        suggested_object_id="probe_0105_dup",
+        config_entry=entry_b2,
+        original_device_class=SensorDeviceClass.TEMPERATURE,
+    )
+    hass.data.setdefault(DOMAIN, {})[mac_b2] = {
+        CONF_PLATFORMS: {"sensor": {}},
+        CONF_ENTITY: gw_b2,
+    }
+    attach_runtime(hass, entry_b2)
+    added_b2: list[MyHOMETemperatureSensor] = []
+    assert await async_setup_entry(hass, entry_b2, added_b2.extend) is True
+    await hass.async_block_till_done()
+    assert reg.async_get(reg_b2_dup.entity_id) is None
+    assert reg.async_get_entity_id("sensor", DOMAIN, f"{mac_b2}-4-105-temperature") == reg_b2_canon.entity_id
+    assert [e.unique_id for e in added_b2] == [f"{mac_b2}-4-105-temperature"]
