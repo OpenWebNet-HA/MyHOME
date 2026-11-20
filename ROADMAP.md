@@ -251,9 +251,9 @@ graph TD
     subgraph Gateways["🏛️ Gateways & Transports"]
         GW_MHS1["🟢 MyHomeServer1<br/>(52 captures · 8,342 rx)"]
         GW_F454["🟢 F454<br/>(23 captures · 4,447 rx)"]
-        GW_F455["🟢 F455<br/>(14 captures · 812 rx)"]
+        GW_F455["🟢 F455<br/>(15 captures · 817 rx)"]
         GW_F459["🟢 F459<br/>(1 capture · 898 rx)"]
-        GW_F461["🟢 F461<br/>(23 captures · 3,212 rx)"]
+        GW_F461["🟢 F461<br/>(24 captures · 3,383 rx)"]
         GW_MH202["🟢 MH202<br/>(9 captures · 672 rx)"]
         GW_MH201["🟢 MH201<br/>(10 captures · 976 rx)"]
         GW_MH200N["🟢 MH200N<br/>(16 captures · 1,664 rx)"]
@@ -265,7 +265,7 @@ graph TD
     end
 
     subgraph Subsystems["⚙️ Protocol Subsystems & Edge Scenarios"]
-        SUB_LIGHT["🟢 Lighting & Dimmers (WHO 1)<br/>(5,244 rx · 86 captures)"]
+        SUB_LIGHT["🟢 Lighting & Dimmers (WHO 1)<br/>(5,420 rx · 87 captures)"]
         SUB_DALI["🟢 DALI DT8 & HSV (WHO 1)<br/>(18 rx · 2 captures)"]
         SUB_TIMER["🟢 DIN Bus Timers (WHO 1)<br/>(8 rx · 5 captures)"]
         SUB_GRP["🟢 Lighting Groups (WHO 1)<br/>(27 rx · 10 captures)"]
@@ -344,9 +344,9 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **MyHomeServer1 (MHS1)** | 🟢 **Covered** | 52 physical captures (8,342 `rx` frames; `WHO = 1, 2, 4, 7, 8, 9, 13, 14, 15, 18, 22, 25, 1000, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/who4_four_gateways_2026_11_18/` | *None needed — cloud/local hybrid gateway plant active in CI.* |
 | **F454** | 🟢 **Covered** | 23 physical captures (4,447 `rx` frames; `WHO = 0, 1, 2, 4, 5, 9, 13, 14, 18, 25, 1013`) — e.g. `tests/fixtures/traces/issue_429/`, `tests/fixtures/traces/issue_466/` | *None needed — high-speed multi-session IP webserver active in CI.* |
-| **F455** | 🟢 **Covered** | 14 physical captures (812 `rx` frames; `WHO = 1, 2, 4, 13, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/central_restore_3100_live_2026-11-12/` | *None needed — single-bus DIN IP gateway active in CI.* |
+| **F455** | 🟢 **Covered** | 15 physical captures (817 `rx` frames; `WHO = 1, 2, 4, 13, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/central_restore_3100_live_2026-11-12/` | *None needed — single-bus DIN IP gateway active in CI.* |
 | **F459** | 🟢 **Covered** | 1 physical capture (898 `rx` frames; `WHO = 1, 2, 4, 13, 1013`) — e.g. `tests/fixtures/traces/issue_466/` | *None needed — WHO 1013 code 65 & WHO 4 capture active in CI.* |
-| **F461 Web Server** | 🟢 **Covered** | 23 physical captures (3,212 `rx` frames; `WHO = 1, 2, 4, 13, 14, 1001, 1013`) — e.g. `tests/fixtures/traces/f461_live_2026-10-24/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — DIN Ethernet Web Server (DALI DT8 & fancoils) active in CI.* |
+| **F461 Web Server** | 🟢 **Covered** | 24 physical captures (3,383 `rx` frames; `WHO = 1, 2, 4, 13, 14, 1001, 1013`) — e.g. `tests/fixtures/traces/f461_live_2026-10-24/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — DIN Ethernet Web Server (DALI DT8 & fancoils) active in CI.* |
 | **MH202** | 🟢 **Covered** | 9 physical captures (672 `rx` frames; `WHO = 1, 2, 4, 5, 6, 8, 9, 13, 14, 16, 18, 22, 25, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *None needed — modern scenario programmer plant active in CI.* |
 | **MH201** | 🟢 **Covered** | 10 physical captures (976 `rx` frames; `WHO = 0, 1, 2, 4, 13, 15, 18, 25`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh201-fresh-discovery-20260930.log` | *None needed — single-worker scenario programmer plant active in CI.* |
 | **MH200N** | 🟢 **Covered** | 16 physical captures (1,664 `rx` frames; `WHO = 0, 1, 2, 4, 5, 9, 13, 15, 16, 17, 18, 22, 25, 1001, 1013, 1022`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f500_tuner/` | *None needed — second-generation scenario programmer active in CI.* |
@@ -366,7 +366,7 @@ graph TD
 <!-- ROADMAP_SUBSYSTEM_TABLE_START -->
 | Subsystem & Domain | Status | Current Evidence / Fixture | Community Trace Needed / Target Scenario |
 | :--- | :--- | :--- | :--- |
-| **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | 5,244 physical `rx` frames across 86 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_629/` | *Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.* |
+| **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | 5,420 physical `rx` frames across 87 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_629/` | *Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.* |
 | **Lighting (WHO = 1) — DALI Tunable White & HSV Color** | 🟢 **Covered** | 18 physical `rx` frames across 2 captures on 1 gateway model — e.g. `tests/fixtures/plants/issue_288_f461_dali_dt8/`, `tests/fixtures/traces/issue_466/` | *Baseline covered (`Dimension 12` HSV & `Dimension 14` Kelvin/mireds).* |
 | **Lighting (WHO = 1) — Native DIN Timers** | 🟢 **Covered** | 8 physical `rx` frames across 5 captures on 3 gateway models — e.g. `tests/fixtures/plants/issue_311_f454/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *Preset temporization & `Dimension 2` replies covered; optional mid-countdown `*#1*WHERE*2*H*M*S##` (`H/M/S > 0`) trace welcomed.* |
 | **Lighting (WHO = 1) — Groups & General Broadcasts (P7)** | 🟢 **Covered** | 27 physical `rx` frames across 10 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — group (`#G`) and general (`WHERE=0`) resync engine active in CI.* |
