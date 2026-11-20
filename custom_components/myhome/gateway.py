@@ -40,6 +40,7 @@ from .const import (
     LOGGER,
 )
 from .device_health import DeviceHealth
+from .gateway_confirm import LightEchoWatchdog
 from .gateway_events import GatewayEventDispatcher
 from .gateway_resync import LightingResyncManager
 from .gateway_sessions import (
@@ -581,6 +582,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
         self._event_dispatcher = GatewayEventDispatcher(self)
         self._resync_manager = LightingResyncManager(self)
+        self._echo_watchdog = LightEchoWatchdog(self)
         self._event_runner = EventSessionRunner(self)
         self._command_pool = CommandWorkerPool(
             self,
@@ -1575,6 +1577,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self._unavailable_timer is not None:
             self._unavailable_timer()
         self._resync_manager.cancel_all()
+        self._echo_watchdog.cancel_all()
         if self._zone_request_task is not None:
             self._zone_request_task.cancel()
             self._zone_request_task = None

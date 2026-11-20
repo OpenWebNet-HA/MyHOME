@@ -228,6 +228,23 @@ Trade-off: on gateways that do not relay a stop status on keypad presses, a wall
 
 ---
 
+## 💡 A light that does not report after a command is read back once
+
+A `WHO = 1` light or switch takes its state from the actuator's status frame on the event session, never from the command or its `ACK`. Some gateways leave that status out: a physical `F455` (firmware `1.0.76`) acknowledges a command in about 4 ms and, when several commands follow each other within tens of milliseconds (a scene, "all off", tiles tapped in a row), its event session omits some of the statuses although the lights switched. Home Assistant then kept the old state until the light changed again, and the header toggle of an entities card, which only commands the entities not yet shown in the target state, left such a light on at the next "all off" (live 2026-11-20, six lights in one call: the `F455` left out 1 or 2 statuses in 5 of 8 steps and a light stayed on in 3 of 4 on / off cycles; through the `F461` on the same bus none was left out).
+
+The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged point-to-point `WHO = 1` command. If no matching status of that light arrived `1.5 s` (`ECHO_CONFIRM_DELAY_S`) after the `ACK`, it sends one status request `*#1*<where>##`; the answer comes back on the command session and updates the entity.
+
+- **Every gateway model.** The read-back does not look at the model: each gateway entry notes its own acknowledged commands, and the `F455` is where the loss was measured, not a condition. A gateway that drops a status under load (a large plant, a slower model) gets the same read-back.
+- **No extra traffic where the status arrives.** On a physical `F461` and in the real-user traces of `F454`, `F461`, `MH200N`, `MH201`, `MH202` and `MyHomeServer1` every status followed its command within `0.33 s`, so nothing is sent there. On a physical `MH200` (firmware `2.1.0`) the same six-light bursts lost no status in 192 commands, with one or two command sessions (measured by a maintainer in the review of #964): that gateway acknowledges a command only after the bus telegram, where the `F455` acknowledges in about 4 ms.
+- **One request at most per command.** A status request never arms the read-back, so an address that does not answer costs one request and nothing more.
+- **A status of the other polarity is not the answer.** After `ON` then `OFF` in quick succession, a late `ON` status does not cancel the read-back of the `OFF`. A level write says its polarity too (`*#1*<where>*#1*<100 + level>*<speed>##` and the `#4` form: level `0` is off; `*#1*<where>*#12*<H>*<S>*<V>##`: `V = 0` is off), so the late `OFF` of the command before does not answer it (seen on an `MH200` with an `F418U2`).
+- **Only a status that says on or off counts.** A request or a write that the gateway relays on its event session (an `MH202` relays a level write about 30 ms before the dimmer's status), a frame with no on / off meaning (colour, toggle, motion, anomaly) and a dim step (`*1*30*<where>##` / `*1*31*<where>##`, which the light entity ignores) neither end the wait nor replace the status remembered for the light.
+- **The read-back carries the whole `WHERE`**: `09#4#01` behind an interface, `<id>#9` on a Zigbee gateway.
+- **Only for commands this gateway entry sent.** When another client switches several lights at once (another gateway, a scenario module), the `F455` leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.
+- **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, and `WHO = 2` covers, whose position model is anchored on the write time.
+
+---
+
 ## 🎨 Lights learn colour capabilities additively
 
 Colour modes are promoted from bus frames, and never removed:
