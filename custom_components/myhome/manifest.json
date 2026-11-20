@@ -78,6 +78,16 @@
       "modelName": "F455"
     },
     {
+      "st": "ssdp:all",
+      "manufacturer": "Legrand S.p.A.",
+      "modelName": "F455"
+    },
+    {
+      "nt": "upnp:rootdevice",
+      "manufacturer": "Legrand S.p.A.",
+      "modelName": "F455"
+    },
+    {
       "st": "upnp:rootdevice",
       "manufacturer": "BTicino S.p.A.",
       "modelName": "F454"
@@ -118,5 +128,5 @@
       "modelName": "MH201"
     }
   ],
-  "version": "2.0.0"
+  "version": "2.0.1"
 }

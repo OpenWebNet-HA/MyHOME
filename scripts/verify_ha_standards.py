@@ -2,7 +2,7 @@
 """Automated Home Assistant Architectural Standards Validator.
 
 This script enforces Home Assistant Integration Quality Scale and Core
-architectural standards across custom_components/myhome/:
+architectural standards across custom_components/myhome/ and tests/:
 1. Discovery flows (SSDP, Zeroconf, DHCP, USB, etc.) MUST NOT create config
    entries automatically; they must present a confirmation step (e.g. discovery_confirm).
 2. Discovery flows must enforce unique ID registration and abort on duplicates.
@@ -10,6 +10,8 @@ architectural standards across custom_components/myhome/:
    complete translations in translations/en.json.
 4. No synchronous blocking calls (e.g. time.sleep, requests.*) in async coroutines.
 5. No unhandled top-level imports of deprecated homeassistant.const symbols.
+6. No deprecated DeviceInfo / ChildDeviceInfo mapping access (_DeviceInfoMapping,
+   HA 2026.12+ core#192323) across custom_components/myhome/ and tests/.
 """
 
 import ast
@@ -17,20 +19,24 @@ import json
 import os
 import py_compile
 import re
+import struct
 import sys
 import tomllib
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import List
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 CUSTOM_COMPONENTS_DIR = ROOT_DIR / "custom_components" / "myhome"
+TESTS_DIR = ROOT_DIR / "tests"
+TYPING_COMPAT_FILE = CUSTOM_COMPONENTS_DIR / "typing_compat.py"
 
 # Modules that read per-config-entry state; audited by the runtime-data check.
 RUNTIME_DATA_READERS = [
     "light.py", "switch.py", "cover.py", "climate.py", "binary_sensor.py", "sensor.py",
     "media_player.py", "button.py", "number.py", "alarm_control_panel.py", "lock.py",
     "services.py", "websocket.py", "diagnostics.py", "myhome_device.py", "decoder_pool.py",
-    "decoder_allocation.py", "cover_calibration.py",
+    "decoder_allocation.py", "cover_calibration.py", "climate_discovery.py",
 ]
 TRANSLATIONS_DIR = CUSTOM_COMPONENTS_DIR / "translations"
 
@@ -366,6 +372,8 @@ DEPRECATED_DEVICE_INFO_CLASS_ATTRS = frozenset(
 
 
 _DEVICE_INFO_SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_COMPREHENSION_NODES = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+_DEVICE_INFO_ITER_BUILTINS = frozenset({"len", "iter", "list", "tuple", "set", "frozenset"})
 
 
 def _is_device_info_class(expr: ast.AST, class_names: set[str]) -> bool:
@@ -386,14 +394,79 @@ def _is_self_attr(expr: ast.AST) -> str | None:
     return None
 
 
+def _unwrap_cast_expr(expr: ast.AST, cast_names: set[str]) -> ast.AST:
+    """Unwrap ``typing.cast(T, value)`` calls to their runtime ``value`` operand."""
+    while (
+        isinstance(expr, ast.Call)
+        and len(expr.args) == 2
+        and not expr.keywords
+        and (
+            (isinstance(expr.func, ast.Name) and expr.func.id in cast_names)
+            or (isinstance(expr.func, ast.Attribute) and expr.func.attr == "cast")
+        )
+    ):
+        expr = expr.args[1]
+    return expr
+
+
+def _is_getattr_device_info(expr: ast.AST) -> bool:
+    """Return True when ``expr`` is ``getattr(obj, 'device_info' | '_attr_device_info', ...)``."""
+    return (
+        isinstance(expr, ast.Call)
+        and isinstance(expr.func, ast.Name)
+        and expr.func.id == "getattr"
+        and 2 <= len(expr.args) <= 3
+        and not expr.keywords
+        and isinstance(expr.args[1], ast.Constant)
+        and expr.args[1].value in {"device_info", "_attr_device_info"}
+    )
+
+
+def _is_device_info_type_annotation(ann: ast.AST | None, class_names: set[str]) -> bool:
+    """Return True when ``ann`` annotates a ``DeviceInfo`` / ``ChildDeviceInfo`` value."""
+    if ann is None:
+        return False
+    if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+        try:
+            parsed = ast.parse(ann.value, mode="eval").body
+        except SyntaxError:
+            return False
+        return _is_device_info_type_annotation(parsed, class_names)
+    if _is_device_info_class(ann, class_names):
+        return True
+    if isinstance(ann, ast.BinOp) and isinstance(ann.op, ast.BitOr):
+        return _is_device_info_type_annotation(
+            ann.left, class_names
+        ) or _is_device_info_type_annotation(ann.right, class_names)
+    if isinstance(ann, ast.Subscript):
+        wrapper_name = (
+            ann.value.id
+            if isinstance(ann.value, ast.Name)
+            else ann.value.attr
+            if isinstance(ann.value, ast.Attribute)
+            else None
+        )
+        if wrapper_name == "Optional":
+            return _is_device_info_type_annotation(ann.slice, class_names)
+        if wrapper_name == "Union":
+            elts = ann.slice.elts if isinstance(ann.slice, ast.Tuple) else [ann.slice]
+            return any(_is_device_info_type_annotation(e, class_names) for e in elts)
+        if wrapper_name == "Annotated":
+            first = ann.slice.elts[0] if isinstance(ann.slice, ast.Tuple) and ann.slice.elts else ann.slice
+            return _is_device_info_type_annotation(first, class_names)
+    return False
+
+
 def _is_device_info_expr(
     expr: ast.AST,
     device_info_vars: set[str],
     self_device_info_attrs: set[str],
     class_names: set[str],
     plain_dict_vars: set[str],
+    cast_names: set[str],
 ) -> bool:
     """Return True when ``expr`` evaluates to a ``DeviceInfo`` / ``ChildDeviceInfo`` value."""
+    expr = _unwrap_cast_expr(expr, cast_names)
     if isinstance(expr, ast.Attribute):
         if expr.attr in {"device_info", "_attr_device_info"}:
             return True
@@ -405,43 +478,80 @@ def _is_device_info_expr(
         or expr.id in device_info_vars
     ):
         return True
-    if isinstance(expr, ast.Call) and _is_device_info_class(expr.func, class_names):
+    if isinstance(expr, ast.Call) and (
+        _is_device_info_class(expr.func, class_names) or _is_getattr_device_info(expr)
+    ):
         return True
     if isinstance(expr, ast.BoolOp):
         return any(
             _is_device_info_expr(
-                v, device_info_vars, self_device_info_attrs, class_names, plain_dict_vars
+                v,
+                device_info_vars,
+                self_device_info_attrs,
+                class_names,
+                plain_dict_vars,
+                cast_names,
             )
             for v in expr.values
         )
     if isinstance(expr, ast.IfExp):
         return _is_device_info_expr(
-            expr.body, device_info_vars, self_device_info_attrs, class_names, plain_dict_vars
+            expr.body,
+            device_info_vars,
+            self_device_info_attrs,
+            class_names,
+            plain_dict_vars,
+            cast_names,
         ) or _is_device_info_expr(
-            expr.orelse, device_info_vars, self_device_info_attrs, class_names, plain_dict_vars
+            expr.orelse,
+            device_info_vars,
+            self_device_info_attrs,
+            class_names,
+            plain_dict_vars,
+            cast_names,
         )
     if isinstance(expr, ast.NamedExpr):
         return _is_device_info_expr(
-            expr.value, device_info_vars, self_device_info_attrs, class_names, plain_dict_vars
+            expr.value,
+            device_info_vars,
+            self_device_info_attrs,
+            class_names,
+            plain_dict_vars,
+            cast_names,
         )
     return False
 
 
 def _is_dict_call(expr: ast.AST, dict_helper_names: set[str]) -> bool:
-    """Return True when ``expr`` is ``dict(...)`` or a ``device_info_to_dict(...)`` call."""
+    """Return True when ``expr`` is ``dict(...)``, ``device_info_to_dict(...)``, or ``.as_dict()``."""
     if not isinstance(expr, ast.Call):
         return False
     if isinstance(expr.func, ast.Name) and (
         expr.func.id == "dict" or expr.func.id in dict_helper_names
     ):
         return True
-    return isinstance(expr.func, ast.Attribute) and expr.func.attr == "device_info_to_dict"
+    if isinstance(expr.func, ast.Attribute):
+        if expr.func.attr == "device_info_to_dict":
+            return True
+        if expr.func.attr == "as_dict" and not expr.args and not expr.keywords:
+            return True
+        if (
+            isinstance(expr.func.value, ast.Name)
+            and expr.func.value.id == "builtins"
+            and expr.func.attr == "dict"
+        ):
+            return True
+    return False
 
 
 def _is_dict_expr(
-    expr: ast.AST, plain_dict_vars: set[str], dict_helper_names: set[str]
+    expr: ast.AST,
+    plain_dict_vars: set[str],
+    dict_helper_names: set[str],
+    cast_names: set[str],
 ) -> bool:
     """Return True when ``expr`` evaluates to a plain ``dict`` value."""
+    expr = _unwrap_cast_expr(expr, cast_names)
     if isinstance(expr, ast.Dict):
         return True
     if _is_dict_call(expr, dict_helper_names):
@@ -449,14 +559,68 @@ def _is_dict_expr(
     if isinstance(expr, ast.Name) and expr.id in plain_dict_vars:
         return True
     if isinstance(expr, ast.IfExp):
-        return _is_dict_expr(expr.body, plain_dict_vars, dict_helper_names) and _is_dict_expr(
-            expr.orelse, plain_dict_vars, dict_helper_names
-        )
+        return _is_dict_expr(
+            expr.body, plain_dict_vars, dict_helper_names, cast_names
+        ) and _is_dict_expr(expr.orelse, plain_dict_vars, dict_helper_names, cast_names)
     if isinstance(expr, ast.BoolOp):
-        return all(_is_dict_expr(v, plain_dict_vars, dict_helper_names) for v in expr.values)
+        return all(
+            _is_dict_expr(v, plain_dict_vars, dict_helper_names, cast_names) for v in expr.values
+        )
     if isinstance(expr, ast.NamedExpr):
-        return _is_dict_expr(expr.value, plain_dict_vars, dict_helper_names)
+        return _is_dict_expr(expr.value, plain_dict_vars, dict_helper_names, cast_names)
     return False
+
+
+def _is_device_info_sequence_expr(
+    expr: ast.AST,
+    device_info_vars: set[str],
+    device_info_seq_vars: set[str],
+    self_device_info_attrs: set[str],
+    class_names: set[str],
+    plain_dict_vars: set[str],
+    cast_names: set[str],
+) -> bool:
+    """Return True when ``expr`` is an iterable of ``DeviceInfo`` items."""
+    expr = _unwrap_cast_expr(expr, cast_names)
+    if isinstance(expr, ast.Name) and expr.id in device_info_seq_vars:
+        return True
+    if isinstance(expr, (ast.Tuple, ast.List, ast.Set)) and expr.elts:
+        return any(
+            _is_device_info_expr(
+                elt,
+                device_info_vars,
+                self_device_info_attrs,
+                class_names,
+                plain_dict_vars,
+                cast_names,
+            )
+            for elt in expr.elts
+        )
+    if isinstance(expr, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
+        return _is_device_info_expr(
+            expr.elt,
+            device_info_vars,
+            self_device_info_attrs,
+            class_names,
+            plain_dict_vars,
+            cast_names,
+        )
+    return False
+
+
+def _iter_assign_pairs(target: ast.AST, value: ast.AST) -> Iterator[tuple[ast.AST, ast.AST]]:
+    """Yield ``(target, value)`` pairs, destructuring matching tuple/list assignments."""
+    if (
+        isinstance(target, (ast.Tuple, ast.List))
+        and isinstance(value, (ast.Tuple, ast.List))
+        and len(target.elts) == len(value.elts)
+        and not any(isinstance(t, ast.Starred) for t in target.elts)
+        and not any(isinstance(v, ast.Starred) for v in value.elts)
+    ):
+        for t_elt, v_elt in zip(target.elts, value.elts):
+            yield from _iter_assign_pairs(t_elt, v_elt)
+        return
+    yield target, value
 
 
 def _split_device_info_scope(
@@ -480,41 +644,50 @@ def _split_device_info_scope(
     return direct_nodes, child_scopes
 
 
-def _extract_scope_param_names(
+def _extract_scope_params(
     scope_node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | None,
-) -> set[str]:
-    """Return parameter names bound by ``scope_node`` when it is a function or method."""
+    class_names: set[str],
+) -> tuple[set[str], set[str]]:
+    """Return ``(all_param_names, annotated_device_info_params)`` for ``scope_node``."""
     if not isinstance(scope_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return set()
+        return set(), set()
     args = scope_node.args
-    names = {
+    positional_and_kw = (*args.posonlyargs, *args.args, *args.kwonlyargs)
+    names = {a.arg for a in positional_and_kw}
+    annotated_di = {
         a.arg
-        for a in (*args.posonlyargs, *args.args, *args.kwonlyargs)
+        for a in positional_and_kw
+        if _is_device_info_type_annotation(a.annotation, class_names)
     }
     if args.vararg is not None:
         names.add(args.vararg.arg)
     if args.kwarg is not None:
         names.add(args.kwarg.arg)
-    return names
+    return names, annotated_di
 
 
 def _resolve_device_info_scope_bindings(
     direct_nodes: list[ast.AST],
     child_scopes: list[ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef],
     param_names: set[str],
+    annotated_di_params: set[str],
     inherited_di_vars: set[str],
     inherited_plain_dict_vars: set[str],
+    inherited_di_seq_vars: set[str],
     self_di_attrs: set[str],
     class_names: set[str],
     dict_helper_names: set[str],
-) -> tuple[set[str], set[str]]:
-    """Resolve ``DeviceInfo`` local vars and strictly plain-dict local vars within one scope.
+    cast_names: set[str],
+) -> tuple[set[str], set[str], set[str]]:
+    """Resolve ``DeviceInfo`` local vars, plain-dict vars, and sequence vars within one scope.
 
     Updates ``self_di_attrs`` in place when ``self.<attr>`` is assigned a ``DeviceInfo``
     expression so class scopes can share ``self.<attr>`` tracking across methods.
     """
     rebound_outer: set[str] = set()
     assign_pairs: list[tuple[ast.AST, ast.AST]] = []
+    for_iter_pairs: list[tuple[ast.AST, ast.AST]] = []
+    annotated_di_locals: set[str] = set()
     simple_store_name_ids: set[int] = set()
     type_only_ann_name_ids: set[int] = set()
     non_plain_bound_names: set[str] = {ch.name for ch in child_scopes}
@@ -523,21 +696,29 @@ def _resolve_device_info_scope_bindings(
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             rebound_outer.update(node.names)
         elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                assign_pairs.append((target, node.value))
-                if isinstance(target, ast.Name):
-                    simple_store_name_ids.add(id(target))
+            for raw_target in node.targets:
+                for target, value in _iter_assign_pairs(raw_target, node.value):
+                    assign_pairs.append((target, value))
+                    if isinstance(target, ast.Name):
+                        simple_store_name_ids.add(id(target))
         elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and _is_device_info_type_annotation(
+                node.annotation, class_names
+            ):
+                annotated_di_locals.add(node.target.id)
             if node.value is not None:
-                assign_pairs.append((node.target, node.value))
-                if isinstance(node.target, ast.Name):
-                    simple_store_name_ids.add(id(node.target))
+                for target, value in _iter_assign_pairs(node.target, node.value):
+                    assign_pairs.append((target, value))
+                    if isinstance(target, ast.Name):
+                        simple_store_name_ids.add(id(target))
             elif isinstance(node.target, ast.Name):
                 type_only_ann_name_ids.add(id(node.target))
         elif isinstance(node, ast.NamedExpr):
             assign_pairs.append((node.target, node.value))
             if isinstance(node.target, ast.Name):
                 simple_store_name_ids.add(id(node.target))
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            for_iter_pairs.append((node.target, node.iter))
         elif isinstance(node, ast.ExceptHandler) and node.name is not None:
             non_plain_bound_names.add(node.name)
         elif isinstance(node, ast.Import):
@@ -563,7 +744,8 @@ def _resolve_device_info_scope_bindings(
             assigned_values_by_name.setdefault(target.id, []).append(value)
 
     locally_bound = set(param_names) | (
-        (set(assigned_values_by_name) | non_plain_bound_names) - rebound_outer
+        (set(assigned_values_by_name) | non_plain_bound_names | annotated_di_locals)
+        - rebound_outer
     )
 
     plain_dict_vars: set[str] = set(inherited_plain_dict_vars - locally_bound)
@@ -574,40 +756,120 @@ def _resolve_device_info_scope_bindings(
         and name not in param_names
         and name not in rebound_outer
         and name not in non_plain_bound_names
+        and name not in annotated_di_locals
     }
     changed = True
     while changed:
         changed = False
         for name, values in candidate_plain_names.items():
             if name not in plain_dict_vars and all(
-                _is_dict_expr(val, plain_dict_vars, dict_helper_names) for val in values
+                _is_dict_expr(val, plain_dict_vars, dict_helper_names, cast_names)
+                for val in values
             ):
                 plain_dict_vars.add(name)
                 changed = True
 
-    di_vars: set[str] = set(inherited_di_vars - locally_bound)
+    di_vars: set[str] = set(
+        (inherited_di_vars - locally_bound)
+        | annotated_di_params
+        | (annotated_di_locals - rebound_outer)
+    )
+    for name in di_vars:
+        plain_dict_vars.discard(name)
+    di_seq_vars: set[str] = set(inherited_di_seq_vars - locally_bound)
+
     changed = True
     while changed:
         changed = False
         for target, value in assign_pairs:
             if _is_device_info_expr(
-                value, di_vars, self_di_attrs, class_names, plain_dict_vars
+                value, di_vars, self_di_attrs, class_names, plain_dict_vars, cast_names
             ):
-                if isinstance(target, ast.Name) and target.id not in di_vars:
-                    di_vars.add(target.id)
-                    plain_dict_vars.discard(target.id)
-                    changed = True
+                if isinstance(target, ast.Name) and target.id not in rebound_outer:
+                    if target.id not in di_vars:
+                        di_vars.add(target.id)
+                        plain_dict_vars.discard(target.id)
+                        changed = True
                 else:
                     self_attr = _is_self_attr(target)
                     if self_attr is not None and self_attr not in self_di_attrs:
                         self_di_attrs.add(self_attr)
                         changed = True
+            elif (
+                isinstance(target, ast.Name)
+                and target.id not in rebound_outer
+                and target.id not in di_seq_vars
+                and _is_device_info_sequence_expr(
+                    value,
+                    di_vars,
+                    di_seq_vars,
+                    self_di_attrs,
+                    class_names,
+                    plain_dict_vars,
+                    cast_names,
+                )
+            ):
+                di_seq_vars.add(target.id)
+                changed = True
 
-    return di_vars, plain_dict_vars
+        for target, iter_expr in for_iter_pairs:
+            if (
+                isinstance(target, ast.Name)
+                and target.id not in rebound_outer
+                and target.id not in di_vars
+                and _is_device_info_sequence_expr(
+                    iter_expr,
+                    di_vars,
+                    di_seq_vars,
+                    self_di_attrs,
+                    class_names,
+                    plain_dict_vars,
+                    cast_names,
+                )
+            ):
+                di_vars.add(target.id)
+                plain_dict_vars.discard(target.id)
+                changed = True
+
+    return di_vars, plain_dict_vars, di_seq_vars
+
+
+def _resolve_device_info_scan_files(
+    target_dir: Path | Sequence[Path] | None,
+) -> list[Path]:
+    """Return sorted Python files to audit for ``DeviceInfo`` mapping operations."""
+    excluded_paths: set[Path] = {TYPING_COMPAT_FILE.resolve()}
+    if target_dir is None:
+        roots = [d for d in (CUSTOM_COMPONENTS_DIR, TESTS_DIR) if d.exists()]
+    elif isinstance(target_dir, Path):
+        roots = [target_dir] if target_dir.exists() else []
+        excluded_paths.add((target_dir / "typing_compat.py").resolve())
+        excluded_paths.add(
+            (target_dir / "custom_components" / "myhome" / "typing_compat.py").resolve()
+        )
+    else:
+        roots = [d for d in target_dir if d.exists()]
+        for root in roots:
+            excluded_paths.add((root / "typing_compat.py").resolve())
+            excluded_paths.add(
+                (root / "custom_components" / "myhome" / "typing_compat.py").resolve()
+            )
+
+    py_files: list[Path] = []
+    seen_resolved: set[Path] = set()
+    for root in roots:
+        for candidate in sorted(root.rglob("*.py")):
+            resolved = candidate.resolve()
+            if resolved in excluded_paths or resolved in seen_resolved:
+                continue
+            seen_resolved.add(resolved)
+            py_files.append(candidate)
+    return py_files
 
 
 def check_no_deprecated_device_info_mapping(
-    checker: StandardsChecker, target_dir: Path | None = None
+    checker: StandardsChecker,
+    target_dir: Path | Sequence[Path] | None = None,
 ) -> None:
     """Forbid deprecated mapping operations on ``DeviceInfo`` / ``ChildDeviceInfo`` (#930).
 
@@ -618,19 +880,21 @@ def check_no_deprecated_device_info_mapping(
     - ``2026.12`` (``home-assistant/core#192323``): ``_DeviceInfoMapping`` emits
       ``frame.report_usage`` deprecations (removal scheduled for ``2027.12.0``).
 
-    Because MyHOME supports Home Assistant 2026.8+, code must pass fields directly to
-    ``DeviceInfo(...)`` at construction time and read existing instances via
-    ``typing_compat.device_info_to_dict()``.
+    Because MyHOME supports Home Assistant 2026.8+, code across both
+    ``custom_components/myhome/`` and ``tests/`` (excluding ``typing_compat.py``)
+    must pass fields directly to ``DeviceInfo(...)`` at construction time and read
+    existing instances via ``typing_compat.device_info_to_dict()``.
 
     Note: ``.device_info`` and ``._attr_device_info`` attributes always count as
     ``DeviceInfo`` expressions, and bare ``device_info`` / ``_attr_device_info`` names
     count conservatively as ``DeviceInfo`` variables unless locally bound exclusively to
-    plain-dict expressions (``{...}``, ``dict(...)``, or ``device_info_to_dict(...)``).
+    plain-dict expressions (``{...}``, ``dict(...)``, ``device_info_to_dict(...)``, or
+    ``.as_dict()``).
     """
-    base = target_dir or CUSTOM_COMPONENTS_DIR
+    py_files = _resolve_device_info_scan_files(target_dir)
     errors_before = len(checker.errors)
 
-    for py_path in sorted(base.rglob("*.py")):
+    for py_path in py_files:
         try:
             tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
         except SyntaxError:
@@ -638,6 +902,7 @@ def check_no_deprecated_device_info_mapping(
 
         class_names: set[str] = {"DeviceInfo", "ChildDeviceInfo"}
         dict_helper_names: set[str] = {"device_info_to_dict"}
+        cast_names: set[str] = {"cast"}
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
@@ -645,12 +910,15 @@ def check_no_deprecated_device_info_mapping(
                         class_names.add(alias.asname or alias.name)
                     elif alias.name == "device_info_to_dict":
                         dict_helper_names.add(alias.asname or alias.name)
+                    elif node.module == "typing" and alias.name == "cast":
+                        cast_names.add(alias.asname or alias.name)
 
         def _audit_scope(
             stmts: list[ast.stmt],
             scope_node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | None,
             inherited_di_vars: set[str],
             inherited_plain_dict_vars: set[str],
+            inherited_di_seq_vars: set[str],
             inherited_self_attrs: set[str],
         ) -> None:
             direct_nodes, child_scopes = _split_device_info_scope(stmts)
@@ -667,40 +935,79 @@ def check_no_deprecated_device_info_mapping(
                         direct_nodes,
                         child_scopes,
                         set(),
+                        set(),
                         inherited_di_vars,
                         inherited_plain_dict_vars,
+                        inherited_di_seq_vars,
                         active_self_attrs,
                         class_names,
                         dict_helper_names,
+                        cast_names,
                     )
                     for method_node, method_direct, method_children in method_splits:
+                        m_params, m_ann_di = _extract_scope_params(method_node, class_names)
                         _resolve_device_info_scope_bindings(
                             method_direct,
                             method_children,
-                            _extract_scope_param_names(method_node),
+                            m_params,
+                            m_ann_di,
                             inherited_di_vars,
                             inherited_plain_dict_vars,
+                            inherited_di_seq_vars,
                             active_self_attrs,
                             class_names,
                             dict_helper_names,
+                            cast_names,
                         )
             else:
                 active_self_attrs = set(inherited_self_attrs)
 
-            di_vars, plain_dict_vars = _resolve_device_info_scope_bindings(
+            s_params, s_ann_di = _extract_scope_params(scope_node, class_names)
+            di_vars, plain_dict_vars, di_seq_vars = _resolve_device_info_scope_bindings(
                 direct_nodes,
                 child_scopes,
-                _extract_scope_param_names(scope_node),
+                s_params,
+                s_ann_di,
                 inherited_di_vars,
                 inherited_plain_dict_vars,
+                inherited_di_seq_vars,
                 active_self_attrs,
                 class_names,
                 dict_helper_names,
+                cast_names,
             )
 
+            # Track comprehension-scoped DeviceInfo loop targets without leaking into outer scope.
+            comp_di_vars_by_node: dict[int, set[str]] = {}
             for node in direct_nodes:
+                if not isinstance(node, _COMPREHENSION_NODES) or not node.generators:
+                    continue
+                comp_extra = set(comp_di_vars_by_node.get(id(node), set()))
+                for gen in node.generators:
+                    if isinstance(gen.target, ast.Name) and _is_device_info_sequence_expr(
+                        gen.iter,
+                        di_vars | comp_extra,
+                        di_seq_vars,
+                        active_self_attrs,
+                        class_names,
+                        plain_dict_vars - comp_extra,
+                        cast_names,
+                    ):
+                        comp_extra.add(gen.target.id)
+                if comp_extra:
+                    outermost_iter_ids = {id(sub) for sub in ast.walk(node.generators[0].iter)}
+                    comp_subnodes, _ = _split_device_info_scope([ast.Expr(value=node)])
+                    for sub in comp_subnodes:
+                        if id(sub) != id(node) and id(sub) not in outermost_iter_ids:
+                            comp_di_vars_by_node.setdefault(id(sub), set()).update(comp_extra)
+
+            for node in direct_nodes:
+                extra_di = comp_di_vars_by_node.get(id(node))
+                eff_di = di_vars | extra_di if extra_di else di_vars
+                eff_plain = plain_dict_vars - extra_di if extra_di else plain_dict_vars
+
                 if isinstance(node, ast.Subscript) and _is_device_info_expr(
-                    node.value, di_vars, active_self_attrs, class_names, plain_dict_vars
+                    node.value, eff_di, active_self_attrs, class_names, eff_plain, cast_names
                 ):
                     checker.log_error(
                         "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
@@ -723,7 +1030,12 @@ def check_no_deprecated_device_info_mapping(
                         )
                     elif (
                         _is_device_info_expr(
-                            node.value, di_vars, active_self_attrs, class_names, plain_dict_vars
+                            node.value,
+                            eff_di,
+                            active_self_attrs,
+                            class_names,
+                            eff_plain,
+                            cast_names,
                         )
                         and node.attr in DEPRECATED_DEVICE_INFO_METHODS
                     ):
@@ -739,7 +1051,12 @@ def check_no_deprecated_device_info_mapping(
                         [node.left, *node.comparators], node.ops, node.comparators
                     ):
                         if isinstance(op, (ast.In, ast.NotIn)) and _is_device_info_expr(
-                            comparator, di_vars, active_self_attrs, class_names, plain_dict_vars
+                            comparator,
+                            eff_di,
+                            active_self_attrs,
+                            class_names,
+                            eff_plain,
+                            cast_names,
                         ):
                             checker.log_error(
                                 "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
@@ -751,18 +1068,26 @@ def check_no_deprecated_device_info_mapping(
                         elif isinstance(op, (ast.Eq, ast.NotEq)) and (
                             (
                                 _is_device_info_expr(
-                                    lhs, di_vars, active_self_attrs, class_names, plain_dict_vars
-                                )
-                                and _is_dict_expr(comparator, plain_dict_vars, dict_helper_names)
-                            )
-                            or (
-                                _is_dict_expr(lhs, plain_dict_vars, dict_helper_names)
-                                and _is_device_info_expr(
-                                    comparator,
-                                    di_vars,
+                                    lhs,
+                                    eff_di,
                                     active_self_attrs,
                                     class_names,
-                                    plain_dict_vars,
+                                    eff_plain,
+                                    cast_names,
+                                )
+                                and _is_dict_expr(
+                                    comparator, eff_plain, dict_helper_names, cast_names
+                                )
+                            )
+                            or (
+                                _is_dict_expr(lhs, eff_plain, dict_helper_names, cast_names)
+                                and _is_device_info_expr(
+                                    comparator,
+                                    eff_di,
+                                    active_self_attrs,
+                                    class_names,
+                                    eff_plain,
+                                    cast_names,
                                 )
                             )
                         ):
@@ -779,7 +1104,12 @@ def check_no_deprecated_device_info_mapping(
                             key is None
                             and val is not None
                             and _is_device_info_expr(
-                                val, di_vars, active_self_attrs, class_names, plain_dict_vars
+                                val,
+                                eff_di,
+                                active_self_attrs,
+                                class_names,
+                                eff_plain,
+                                cast_names,
                             )
                         ):
                             checker.log_error(
@@ -792,7 +1122,12 @@ def check_no_deprecated_device_info_mapping(
                 elif isinstance(node, ast.Call):
                     for kw in node.keywords:
                         if kw.arg is None and _is_device_info_expr(
-                            kw.value, di_vars, active_self_attrs, class_names, plain_dict_vars
+                            kw.value,
+                            eff_di,
+                            active_self_attrs,
+                            class_names,
+                            eff_plain,
+                            cast_names,
                         ):
                             checker.log_error(
                                 "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
@@ -801,16 +1136,24 @@ def check_no_deprecated_device_info_mapping(
                                 "Deprecated mapping unpacking '**' on DeviceInfo "
                                 "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
                             )
+                    is_dict_ctor = (
+                        isinstance(node.func, ast.Name) and node.func.id == "dict"
+                    ) or (
+                        isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "builtins"
+                        and node.func.attr == "dict"
+                    )
                     if (
-                        isinstance(node.func, ast.Name)
-                        and node.func.id == "dict"
+                        is_dict_ctor
                         and len(node.args) == 1
                         and _is_device_info_expr(
                             node.args[0],
-                            di_vars,
+                            eff_di,
                             active_self_attrs,
                             class_names,
-                            plain_dict_vars,
+                            eff_plain,
+                            cast_names,
                         )
                     ):
                         checker.log_error(
@@ -820,6 +1163,80 @@ def check_no_deprecated_device_info_mapping(
                             "Direct dict(...) conversion on DeviceInfo invokes deprecated mapping methods "
                             "on HA 2026.12+ (core#192323). Use typing_compat.device_info_to_dict() instead.",
                         )
+                    elif (
+                        isinstance(node.func, ast.Name)
+                        and node.func.id in _DEVICE_INFO_ITER_BUILTINS
+                        and len(node.args) == 1
+                        and not node.keywords
+                        and _is_device_info_expr(
+                            node.args[0],
+                            eff_di,
+                            active_self_attrs,
+                            class_names,
+                            eff_plain,
+                            cast_names,
+                        )
+                    ):
+                        checker.log_error(
+                            "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                            py_path,
+                            node.lineno,
+                            f"Deprecated mapping iteration/length '{node.func.id}(...)' on DeviceInfo "
+                            "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                        )
+                elif isinstance(node, (ast.For, ast.AsyncFor)) and _is_device_info_expr(
+                    node.iter,
+                    eff_di,
+                    active_self_attrs,
+                    class_names,
+                    eff_plain,
+                    cast_names,
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.lineno,
+                        "Deprecated mapping iteration ('for ... in') on DeviceInfo "
+                        "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                    )
+                elif isinstance(node, ast.comprehension) and _is_device_info_expr(
+                    node.iter,
+                    eff_di,
+                    active_self_attrs,
+                    class_names,
+                    eff_plain,
+                    cast_names,
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.iter.lineno,
+                        "Deprecated mapping iteration ('for ... in') on DeviceInfo "
+                        "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                    )
+                elif (
+                    isinstance(node, ast.Match)
+                    and _is_device_info_expr(
+                        node.subject,
+                        eff_di,
+                        active_self_attrs,
+                        class_names,
+                        eff_plain,
+                        cast_names,
+                    )
+                    and any(
+                        isinstance(sub, ast.MatchMapping)
+                        for case in node.cases
+                        for sub in ast.walk(case.pattern)
+                    )
+                ):
+                    checker.log_error(
+                        "RULE_NO_DEPRECATED_DEVICE_INFO_MAPPING",
+                        py_path,
+                        node.lineno,
+                        "Deprecated mapping pattern match ('case {...}') on DeviceInfo "
+                        "(HA 2026.12+, core#192323). Use typing_compat.device_info_to_dict() instead.",
+                    )
 
             child_inherited_vars = (
                 inherited_di_vars if isinstance(scope_node, ast.ClassDef) else di_vars
@@ -829,19 +1246,28 @@ def check_no_deprecated_device_info_mapping(
                 if isinstance(scope_node, ast.ClassDef)
                 else plain_dict_vars
             )
+            child_inherited_seq = (
+                inherited_di_seq_vars
+                if isinstance(scope_node, ast.ClassDef)
+                else di_seq_vars
+            )
             for child in child_scopes:
                 _audit_scope(
                     child.body,
                     child,
                     child_inherited_vars,
                     child_inherited_plain,
+                    child_inherited_seq,
                     set() if isinstance(child, ast.ClassDef) else active_self_attrs,
                 )
 
-        _audit_scope(tree.body, None, set(), set(), set())
+        _audit_scope(tree.body, None, set(), set(), set(), set())
 
     if len(checker.errors) == errors_before:
-        checker.log_ok("No deprecated DeviceInfo mapping operations (HA 2026.12+, core#192323).")
+        checker.log_ok(
+            f"No deprecated DeviceInfo mapping operations across {len(py_files)} Python files "
+            "(HA 2026.12+, core#192323)."
+        )
 
 
 def check_no_blocking_calls(checker: StandardsChecker):
@@ -1078,6 +1504,22 @@ KNOWN_INTEGRATION_CATEGORIES = frozenset(
 )
 
 PNG_MAGIC_BYTES = b"\x89PNG\r\n\x1a\n"
+PNG_IHDR_START = b"\x00\x00\x00\x0dIHDR"
+PNG_HEADER_SIZE = 33
+ALLOWED_BRAND_IMAGES = frozenset(
+    {
+        "icon.png",
+        "icon@2x.png",
+        "dark_icon.png",
+        "dark_icon@2x.png",
+        "logo.png",
+        "logo@2x.png",
+        "dark_logo.png",
+        "dark_logo@2x.png",
+    }
+)
+BRAND_ICON_SIZES = {"icon.png": 256, "icon@2x.png": 512}
+BRAND_LOGO_SHORTEST_SIDE = {"logo.png": (128, 256), "logo@2x.png": (256, 512)}
 MIN_SUPPORTED_HA_VERSION = (2026, 8, 0)
 HA_CALVER_RE = re.compile(
     r"^(?P<year>[1-9]\d{3})\.(?P<month>[1-9]|1[0-2])\.(?P<patch>0|[1-9]\d*)(?:(?:a|b|rc)(?:0|[1-9]\d*))?$"
@@ -1183,22 +1625,86 @@ def _validate_manifest_categories_and_branding(
             "Local brand/ directory not found under custom_components/myhome/",
         )
     elif brand_dir.is_dir():
-        for asset_name in ("icon.png", "logo.png"):
-            asset_path = brand_dir / asset_name
-            if not asset_path.is_file():
+        _validate_brand_dir(checker, brand_dir)
+
+
+def _validate_brand_dir(checker: StandardsChecker, brand_dir: Path) -> None:
+    """Validate local brand/ assets against Home Assistant hassfest brand_images rules."""
+    present_files: dict[str, Path] = {}
+    for entry in sorted(brand_dir.iterdir()):
+        if entry.is_file():
+            present_files[entry.name] = entry
+        else:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                entry,
+                1,
+                f"Local brand entry 'brand/{entry.name}' is not a file",
+            )
+
+    for extra_name in sorted(present_files.keys() - ALLOWED_BRAND_IMAGES):
+        checker.log_error(
+            "RULE_MARKETPLACE_MANIFEST",
+            present_files[extra_name],
+            1,
+            f"Unexpected file 'brand/{extra_name}' in brand/; allowed are: {', '.join(sorted(ALLOWED_BRAND_IMAGES))}",
+        )
+
+    asset_bytes: dict[str, bytes] = {}
+    for asset_name in sorted(ALLOWED_BRAND_IMAGES, key=lambda name: (name.startswith("dark_"), name)):
+        asset_path = present_files.get(asset_name)
+        if asset_path is None:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                brand_dir / asset_name,
+                1,
+                f"Required local brand asset {asset_name!r} missing from brand/",
+            )
+            continue
+
+        raw_bytes = asset_path.read_bytes()
+        asset_bytes[asset_name] = raw_bytes
+        if (
+            len(raw_bytes) < PNG_HEADER_SIZE
+            or raw_bytes[:8] != PNG_MAGIC_BYTES
+            or raw_bytes[8:16] != PNG_IHDR_START
+        ):
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                asset_path,
+                1,
+                f"Local brand asset {asset_name!r} is not a valid PNG file",
+            )
+            continue
+
+        width, height = struct.unpack(">II", raw_bytes[16:24])
+        base_name = asset_name.removeprefix("dark_")
+        if base_name in BRAND_ICON_SIZES:
+            expected = BRAND_ICON_SIZES[base_name]
+            if (width, height) != (expected, expected):
                 checker.log_error(
                     "RULE_MARKETPLACE_MANIFEST",
                     asset_path,
                     1,
-                    f"Required local brand asset {asset_name!r} missing from brand/",
+                    f"Local brand asset {asset_name!r} is {width}x{height}, expected {expected}x{expected}",
                 )
-            elif not asset_path.read_bytes().startswith(PNG_MAGIC_BYTES):
+        else:
+            low, high = BRAND_LOGO_SHORTEST_SIDE[base_name]
+            if not (low <= min(width, height) <= high):
                 checker.log_error(
                     "RULE_MARKETPLACE_MANIFEST",
                     asset_path,
                     1,
-                    f"Local brand asset {asset_name!r} is not a valid PNG file",
+                    f"Local brand asset {asset_name!r} is {width}x{height}, shortest side must be {low}..{high} px",
                 )
+
+        if asset_name.startswith("dark_") and base_name in asset_bytes and asset_bytes[base_name] == raw_bytes:
+            checker.log_error(
+                "RULE_MARKETPLACE_MANIFEST",
+                asset_path,
+                1,
+                f"Dark brand asset {asset_name!r} is byte-identical to {base_name!r}; provide distinct dark-theme artwork",
+            )
 
 
 def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | None = None):

@@ -32,6 +32,7 @@ from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.media_player import MyHOMEMediaPlayer
 from custom_components.myhome.sensor import (
+    MyHOMEActuatorOutputSensor,
     MyHOMEEnergySensor,
     MyHOMEIlluminanceSensor,
     MyHOMEPowerSensor,
@@ -87,6 +88,21 @@ def _sensor(cls, hass, gw, device_class, **extra):
                **COMMON, **extra)
 
 
+def _actuator_output(hass, gw):
+    return MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="1",
+        where="1#3",
+        zone="1",
+        actuator="3",
+        interface=None,
+        standalone=True,
+        gateway=gw,
+        **COMMON,
+    )
+
+
 def _media(hass, gw):
     return MyHOMEMediaPlayer(hass=hass, name="A", entity_name=None, device_id="1#16", who="16", where="1",
                              gateway=gw, **COMMON)
@@ -129,6 +145,7 @@ AUDIT = [
      SensorDeviceClass.TEMPERATURE, None, True),
     ("illuminance", lambda h, g: _sensor(MyHOMEIlluminanceSensor, h, g, SensorDeviceClass.ILLUMINANCE),
      SensorDeviceClass.ILLUMINANCE, None, True),
+    ("actuator output", _actuator_output, None, None, True),
     ("media player", _media, MediaPlayerDeviceClass.SPEAKER, None, True),
     ("lock button", lambda h, g: _button(DisableCommandButtonEntity, h, g), None, EntityCategory.CONFIG, True),
     ("unlock button", lambda h, g: _button(EnableCommandButtonEntity, h, g), None, EntityCategory.CONFIG, True),

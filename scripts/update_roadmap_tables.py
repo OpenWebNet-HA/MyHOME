@@ -61,6 +61,10 @@ MODEL_CANONICAL_ALIASES: dict[str, str] = {
     "LN4890A": "LN4890",
     "MHS1": "MyHomeServer1",
     "MYHOMESERVER1": "MyHomeServer1",
+    # The 3488 HOMETOUCH is set up under the model name MyHomeServer1 and counted with it
+    # (docs/trace-availability.md); ``g3488_*`` are its traces in who4_four_gateways_2026_11_18.
+    "3488": "MyHomeServer1",
+    "G3488": "MyHomeServer1",
     "F459": "F459",
     "F454": "F454",
     "F455": "F455",

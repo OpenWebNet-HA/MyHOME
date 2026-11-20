@@ -1258,7 +1258,7 @@ def test_gate6_blueprints_and_stable_version_branch_transition(
         re.sub(r'"version":\s*"[^"]+"', '"version": "2.0.0b18"', orig_manifest),
         encoding="utf-8",
     )
-    if '"version": "2.0.0"' in orig_manifest:
+    if not re.search(r'"version":\s*"[^"]*(?:a|b|rc)', orig_manifest):
         assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is False
     assert sync_doc.sync_blueprints_and_branch_urls(update=True)[0] is True
     assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is True

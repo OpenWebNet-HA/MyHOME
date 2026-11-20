@@ -48,7 +48,7 @@ If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste 
 
 ```bash
 # Set target release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0"
+TAG="2.0.1"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \

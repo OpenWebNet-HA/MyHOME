@@ -423,6 +423,27 @@ def test_the_desync_guard_reads_a_probe_address() -> None:
     assert _mismatched_who4_reply_zones("*#4*4*0##", ["*#4*303*0*0232##", "*#4*4*0*0256##"]) is None
 
 
+async def test_a_nacked_command_carries_the_mark_too() -> None:
+    """Review of #951, R1: a setpoint write is a command, and its refusal has to be told from a lost frame."""
+    harness = MockGatewayHarness()
+    harness.set_nack_commands(True)
+    handler = _handler_on_port(await harness.start())
+    handler.is_connected = True
+    handler._event_session_ready.set()
+    worker = asyncio.create_task(handler.sending_loop(0))
+    try:
+        written = await handler.send(
+            OWNHeatingCommand.set_temperature(where="2", temperature=21.0, mode="auto", standalone=True)
+        )
+        await asyncio.wait([written], timeout=10)
+    finally:
+        await handler.send_buffer.put(None)
+        await asyncio.wait_for(worker, timeout=10)
+        await harness.stop()
+    assert written.cancelled()
+    assert getattr(written, "_gateway_nack", False) is True
+
+
 async def test_a_nack_through_ownds_own_command_session_carries_the_mark() -> None:
     """Worker -> the real ``OWNCommandSession`` -> TCP -> a gateway double that NACKs every frame."""
     harness = MockGatewayHarness()

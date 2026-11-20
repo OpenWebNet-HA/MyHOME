@@ -385,6 +385,19 @@
   mcp_notes: "Automation: MH200 echo of a point UP behind interface 02, 500 ms after *2*0*11#4#02##; the actuator reported its own stop 60.9 s later (its run-time cutoff)"
   roundtrip: true
 
+- id: cover.evt.down.ptp.12.bus.02
+  frame: "*2*2*12#4#02##"
+  direction: event
+  who: 2
+  what: 2
+  where: "12"
+  scope: point
+  interface: "02"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: MH200 echo of a point DOWN behind interface 02, 500 ms after pre-move *2*0*12#4#02## (Issue #973 live reversal capture)"
+  roundtrip: true
+
 - id: cover.evt.stop.group.1
   frame: "*2*0*#1##"
   direction: event
