@@ -94,6 +94,18 @@ PARALLEL_UPDATES = 0
 _COARSE_ONLY_SPEED = 240
 # One Dimension 1 read per burst of WHAT 2..10 echoes on a fine dimmer (#851).
 _BRIGHTNESS_REFRESH_WINDOW_S = 1.0
+# A dimmer that is on can report exact level 0: live 2026-11-20, an F418 behind an F461 and an
+# F455 answered ``*#1*0010##`` with ``*1*2*0010##`` (on) and ``*#1*0010*1##`` with
+# ``*#1*0010*1*100*10##`` (level 0), steadily, and went back to ``*1*0*0010##`` /
+# ``*#1*0010*4*100*5##`` when switched off (tests/fixtures/traces/dimmer_on_at_level_0_2026_11_20).
+# A DIMENSION 1 level 0 is therefore "on at the minimum" while the light's own on / off status,
+# received at most this long before, says on (the level followed the status by 0.14 to 0.63 s).
+_LEVEL_ZERO_STATUS_FRESH_S = 10.0
+# With an older "on" status the level 0 is taken as off, as before, and the light is asked for
+# its status once, not more often than this.
+_LEVEL_ZERO_STATUS_CHECK_INTERVAL_S = 30.0
+# What a dimmer that is on at level 0 is shown at: the lowest level a light that is on can have.
+_LEVEL_ZERO_ON_PCT = 1
 
 # Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
 ATTR_COLOR_TEMP = "color_temp"
@@ -538,6 +550,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._exact_level_seen = False
         self._coarse_speed_seen = False
         self._brightness_refresh_after: float = 0.0
+        # What the light's last on / off status frame (``*1*<what>*<where>##``, not a level
+        # report) said, and when: it decides what an exact level 0 means (``_level_zero_while_on``).
+        self._status_on: bool | None = None
+        self._status_on_at: float = 0.0
+        self._status_check_after: float = 0.0
 
     @property
     def color_temp(self) -> int | None:
@@ -1116,6 +1133,57 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             name=f"myhome_light_{self._where}_brightness_refresh",
         )
 
+    def _request_status_check(self) -> None:
+        """Ask the light for its on / off status, at most once per ``_LEVEL_ZERO_STATUS_CHECK_INTERVAL_S``."""
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return
+        now = time.monotonic()
+        if now < self._status_check_after:
+            return
+        self._status_check_after = now + _LEVEL_ZERO_STATUS_CHECK_INTERVAL_S
+        hass.async_create_task(
+            self._gateway_handler.send_status_request(OWNLightingCommand.status(self._full_where)),
+            name=f"myhome_light_{self._where}_status_check",
+        )
+
+    def _note_on_off_status(self, message: OWNLightingEvent, is_no_load: bool) -> None:
+        """Keep what the light itself last said about being on or off.
+
+        Its status frame (``*1*0*<where>##``, ``*1*1*<where>##``, a level ``2..10``) and the no
+        load report. A DIMENSION 4 level 0 counts as "off" too: it is what an F418 answers a
+        level read with while it is off (F454, F455, F461; the one that is on at level 0
+        answers in DIMENSION 1). Other level reports and dim steps say nothing here.
+        """
+        if is_no_load:
+            self._status_on = False
+        elif getattr(message, "dimension", None) is None:
+            if message.is_on is None or getattr(message, "what", None) in (30, 31):
+                return
+            self._status_on = message.is_on
+        elif getattr(message, "dimension", None) == 4 and message.brightness == 0:
+            self._status_on = False
+        else:
+            return
+        self._status_on_at = time.monotonic()
+
+    def _level_zero_while_on(self, message: OWNLightingEvent) -> bool:
+        """Whether a DIMENSION 1 level 0 comes from a dimmer whose own status says it is on.
+
+        OWNd reads level 0 as "off", and for a dimmer that is off it is (an MH200 or an MH202
+        answers a level read that way). The same frame from a dimmer whose status frame has
+        just said "on" is the level of a light that is on: shown off, it is skipped by the
+        next "all off" and cannot be switched on from Home Assistant (``*1*1*<where>##``
+        changes nothing on a dimmer that is on already). With an "on" status that is not
+        recent the frame is taken as off, as before, and the light is asked which it is.
+        """
+        if getattr(message, "dimension", None) != 1 or message.brightness != 0 or self._status_on is not True:
+            return False
+        if time.monotonic() - self._status_on_at <= _LEVEL_ZERO_STATUS_FRESH_S:
+            return True
+        self._request_status_check()
+        return False
+
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message.
 
@@ -1141,6 +1209,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         preset = getattr(message, "brightness_preset", None)
         has_preset = isinstance(preset, int) and not isinstance(preset, bool)
         update_bus_state_complete = False
+        level_zero_while_on = self._level_zero_while_on(message)
+        self._note_on_off_status(message, is_no_load)
 
         if is_no_load:
             self._attr_is_on = False
@@ -1163,7 +1233,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         elif message.is_on is not None and getattr(message, "what", None) not in (30, 31):
             # A WHAT 30/31 dim step is a relative command, not a state: OWNd 2.0.0b11
             # still reports it as `is_on True`, and a step from 0 % may leave the light off (#367).
-            self._attr_is_on = message.is_on
+            self._attr_is_on = True if level_zero_while_on else message.is_on
             self._is_on_restored = False
             update_bus_state_complete = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
@@ -1305,12 +1375,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             and message.brightness is not None
             and not has_preset
         ):
+            # A dimmer that is on at level 0 is shown at the lowest level, never at 0.
+            level = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
             if is_fading:
                 # Precise policy during fade: only apply significant physical changes.
                 # Pre-09W29 coarse dimmers (is_coarse_dimmer=True, #767) quantize levels
                 # onto BTicino's coarse ladder where 86% -> WHAT 10 -> 100% spans 14 pp.
                 current_opt = self._attr_brightness_pct or 0
-                reported = message.brightness
+                reported = level
                 cancel_delta = (
                     25 if getattr(message, "is_coarse_dimmer", None) is True else 10
                 )
@@ -1319,8 +1391,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._apply_brightness_state(reported)
                 # else: keep optimistic state
             else:
-                self._attr_brightness_pct = message.brightness
-                self._attr_brightness = percent_to_eight_bits(message.brightness)
+                self._attr_brightness_pct = level
+                self._attr_brightness = percent_to_eight_bits(level)
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
             self._learn_dimmer_kind(message)
