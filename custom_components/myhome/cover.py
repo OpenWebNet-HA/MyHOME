@@ -497,6 +497,16 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
     return True
 
 
+def _clear_entity_actuator_lock(entity: MyHOMECover | MyHOMEImpulseCover) -> None:
+    """Clear WHO=14 actuator lock state upon observed physical actuation."""
+    entity._actuator_locked = False
+    entity._attr_extra_state_attributes["actuator_locked"] = False
+    mgr = getattr(entity._gateway_handler, "_actuator_locks", None)
+    clear_fn = getattr(mgr, "clear_lock_from_actuation", None)
+    if callable(clear_fn):
+        clear_fn(entity._where, entity._interface)
+
+
 class MyHOMECover(MyHOMEEntity, CoverEntity):
     # Full open / close runs on timed point covers settle on the travel timer;
     # a scope cover follows its members and has its own memberless run timeout.
@@ -646,6 +656,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_supported_features = self._strategy.supported_features
         self._attr_assumed_state = self._strategy.assumed_state
         self._gateway_handler = gateway
+        self._actuator_locked: bool | None = None
 
         self._attr_extra_state_attributes = {
             "A": where[: len(where) // 2],
@@ -1075,6 +1086,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._refresh_travel_attributes()
         end_stop = (
             not self._strategy.assumed_state
+            and not self._advanced
             and run_started_at is not None
             and (is_opening or is_closing)
             and (travel := self._travel_for(is_opening)) > 0
@@ -1353,6 +1365,28 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return self.current_cover_position == 0
         return self._attr_is_closed
 
+    @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Update WHO=14 actuator lock state and stop active optimistic motion when locked."""
+        locked_bool = bool(locked)
+        self._actuator_locked = locked_bool
+        self._attr_extra_state_attributes["actuator_locked"] = locked_bool
+        if locked_bool:
+            self._clear_relay_hold()
+            if self._calibrating:
+                self._interrupt_calibration("actuator locked via WHO 14")
+            if self._is_tilting:
+                self._cancel_stop_task()
+                self._run_generation += 1
+                self._apply_tilt_stop(time.monotonic())
+            elif self._attr_is_opening or self._attr_is_closing:
+                self._cancel_stop_task()
+                self._cancel_wall_settle()
+                self._run_generation += 1
+                self._end_echo_window()
+                self._freeze_position(time.monotonic())
+        self._publish_state()
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         if self._advanced:
@@ -1579,6 +1613,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         values are the actuator's run times, which equal the physical travel
         when the installer calibrated the actuator (the usual case).
         """
+        if self._actuator_locked is True:
+            raise HomeAssistantError(
+                f"{self._display_name}: cannot calibrate while actuator is locked (WHO 14)"
+            )
         if self._advanced:
             raise self._cover_reports_position_error()
         if self._calibrating:
@@ -2177,6 +2215,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Open the run of a direction frame about to be queued: this cover's own, or a scope
         frame that moves it (the gateway relays that frame to every member, so it is the
         member's motor-start echo too)."""
+        if self._actuator_locked is True:
+            return
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._end_run_from_unknown = False
@@ -2267,6 +2307,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         pre_stopped: bool = False,
     ) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
+        if self._actuator_locked is True:
+            command = (
+                OWNAutomationCommand.raise_shutter(self._full_where)
+                if direction == "open"
+                else OWNAutomationCommand.lower_shutter(self._full_where)
+            )
+            return await self._gateway_handler.send(command)
         if not pre_stopped and self._stops_before_move(is_tilting):
             await self._async_stop_before_move()
         self._begin_run(direction, is_tilting)
@@ -2310,6 +2357,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         END_SETTLE_MARGIN has passed, publish the end position; the real stop
         status, if it comes, finds nothing left to change.
         """
+        if self._actuator_locked is True:
+            await self._async_move("open" if opening else "close", pre_stopped=True)
+            return
         if not pre_stopped and self._stops_before_move(False):
             self._pending_timed_target = 100 if opening else 0
             try:
@@ -2331,6 +2381,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         for an own command; the write is tracked and the run settles on the travel timer
         like an own open / close (#770, #795).
         """
+        if self._actuator_locked is True:
+            return
         self._track_write(written)
         self._settle_run_to_end(opening, written)
         self._publish_state()
@@ -2474,6 +2526,29 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if ATTR_POSITION not in kwargs:
             return
         target_position = kwargs[ATTR_POSITION]
+
+        if self._actuator_locked is True:
+            if target_position >= 100:
+                await self.async_open_cover()
+            elif target_position <= 0:
+                await self.async_close_cover()
+            elif self._advanced:
+                await self._gateway_handler.send(
+                    OWNAutomationCommand.set_shutter_level(
+                        self._full_where, int(round(target_position))
+                    )
+                )
+            elif self._strategy.assumed_state:
+                await self.async_stop_cover()
+            else:
+                curr_pos = self.current_cover_position
+                if curr_pos is None:
+                    self._check_position_target(target_position)
+                else:
+                    diff = target_position - curr_pos
+                    if diff != 0:
+                        await self._async_move("open" if diff > 0 else "close")
+            return
 
         if self._strategy.assumed_state:
             if target_position >= 100:
@@ -2661,6 +2736,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _begin_stop(self, *, scope_where: str | None = None) -> None:
         """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
+        if self._actuator_locked is True:
+            return
         self._cancel_stop_task()
         # HA asked for the stop: its status is never the end stop, whenever it arrives.
         self._full_run_to_end = False
@@ -2684,11 +2761,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _follow_scope_stop(self, written: Any) -> None:
         """A scope stop frame just queued halts this member as well (#770)."""
+        if self._actuator_locked is True:
+            return
         self._track_stop_write(written)
         self._publish_state()
 
     async def _async_stop(self, **kwargs: Any) -> Any:
         """Queue a stop command and return its delivery handle."""
+        if self._actuator_locked is True:
+            return await self._gateway_handler.send(
+                OWNAutomationCommand.stop_shutter(self._full_where)
+            )
         was_tilting = self._is_tilting
         at = kwargs.get("at")
         self._begin_stop()
@@ -2834,6 +2917,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         an ordinary curtain run and nudge its position estimate. The leader
         times the pulse (_pulse_started) and settles it (_apply_tilt_stop).
         """
+        if self._actuator_locked is True:
+            return
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._end_pulse_for_takeover()
@@ -2955,6 +3040,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # on its way, so a failure cannot leave a running pulse without its stop.
 
         direction = "open" if diff > 0 else "close"
+        if self._actuator_locked is True:
+            await self._async_move(direction, is_tilting=True)
+            return
         if (
             was_tilting
             and direction == self._tilt_direction
@@ -3318,6 +3406,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         now = time.monotonic()
         moving = bool(is_opening or is_closing)
+        if self._actuator_locked is True and not is_translation and moving:
+            _clear_entity_actuator_lock(self)
         if moving and position is not None:
             # While the motor runs the actuator repeats the level it started from
             # (*#2*0112*10*12*25*…## until *#2*0112*10*10*0*…##): the status
@@ -3665,6 +3755,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         self._pulse_duration = pulse_duration
         self._min_cycle_time = min_cycle_time
         self._state_sensor = state_sensor
+        self._actuator_locked: bool | None = None
 
         self._attr_supported_features = (
             CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.STOP
@@ -3713,6 +3804,14 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         if self._access is None:
             return self._attr_extra_state_attributes
         return {**self._attr_extra_state_attributes, **self._access.attributes()}
+
+    @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Update WHO=14 actuator lock state for this impulse cover."""
+        locked_bool = bool(locked)
+        self._actuator_locked = locked_bool
+        self._attr_extra_state_attributes["actuator_locked"] = locked_bool
+        self._publish_state()
 
     async def async_added_to_hass(self) -> None:
         """Register listeners when added to Home Assistant."""
@@ -3868,6 +3967,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         del effect  # the policy already decided; the display follows the request
         if not await self._async_send_impulse():
             return False
+        if self._actuator_locked is True:
+            return True
         self._cancel_travel_timer()
         self._attr_is_opening = intent is Intent.OPEN
         self._attr_is_closing = intent is Intent.CLOSE
@@ -3983,6 +4084,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         # or within 1.0s after it
         if self._pulse_in_flight or time.monotonic() - self._last_pulse_time < 1.0:
             return
+
+        if self._actuator_locked is True:
+            _clear_entity_actuator_lock(self)
 
         # The button has already closed the relay and started the motor: pressing it
         # never aborts anything. Only Home Assistant's own pending request or

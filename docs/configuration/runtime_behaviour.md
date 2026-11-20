@@ -242,6 +242,19 @@ The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged po
 - **The read-back carries the whole `WHERE`**: `09#4#01` behind an interface, `<id>#9` on a Zigbee gateway.
 - **Only for commands this gateway entry sent.** When another client switches several lights at once (another gateway, a scenario module), the `F455` leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.
 - **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, and `WHO = 2` covers, whose position model is anchored on the write time.
+- **Post-`#964` dimension and rejected-write read-backs.** When a point-to-point command lacks an immediate status and `#964` reads back `*#1*<where>##`, `MyHOMELight` resolves DALI / ballast plain `*1*1*<where>##` answers by requesting `Dimension 1` brightness (`*#1*<where>*1##`), triggers `Dimension 14` (`get_color_temperature`) or `Dimension 12` (`get_hsv_color`) read-backs for pending colour writes, and restores `_last_brightness_pct` if a rejected write to an OFF-locked dimmer reads back `*1*0*<where>##`.
+
+---
+
+## 🔒 Actuator lock tracking (`WHO = 14`) & non-optimistic writes
+
+Every `WHO = 1` / `WHO = 2` light, switch, cover, and impulse cover tracks `WHO = 14` lock state via `ActuatorLockManager` (`actuator_lock.py`):
+
+- **Observed passively, never polled.** Gateways running `bt_luci` NACK `*#14*<WHERE>##` in `~50 ms` (`tests/fixtures/traces/f461_who14_live_2026-10-18/`). `actuator_locked` is therefore absent from entity attributes until an event-session (`*99*1##`) `OWNActuatorLockEvent` (`*14*0*<WHERE>##` lock / `*14*1*<WHERE>##` unlock) is observed for that point, its area (`1..9` / `100` vs point `10`), or general (`0` / `00`), scoped strictly per `#4#II` interface (ignoring `#G` groups, translations, and exposed virtual addresses).
+- **Non-optimistic writes while locked.** While `actuator_locked` is `true`, Home Assistant still sends the single command frame onto the bus so an actuator unlocked offline can react and recover, while suppressing optimistic `on` / brightness / colour / position / tilt mutations, software fades, `_last_brightness_pct` overwrites, `myhome.calibrate_cover`, and phantom cover travel / scope timers.
+- **Unlock refresh & self-healing.** On `*14*1*<WHERE>##`, lights commanded while locked are refreshed (`status` + `get_brightness`). If an actuator unlocks offline and acts on the bus, `actuator_locked` clears to `false` automatically — on lights/switches only when state or level actually changes (ignoring unchanged poll replies such as `*#1*55*1*120*5##`), on `WHO = 2` covers only on non-translation active motion (`*2*1*` / `*2*2*` / `WHAT 11` / `12` / moving `Dimension 10`, ignoring `*2*0*` stops and `*2*1000#...*` translations), and on `WHO = 1` impulse covers on external non-translation `is_on` frames outside the `1.0 s` echo window.
+
+*(#964, #976)*
 
 ---
 

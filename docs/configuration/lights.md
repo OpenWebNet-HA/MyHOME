@@ -28,6 +28,17 @@ Unlike legacy configurations that required manual flags (such as `dimmable: True
 
 ---
 
+## 🔒 Actuator Lock (`WHO = 14`) & Status Read-Back
+
+Every discovered or configured `WHO = 1` light and switch carries `Lock` (`*14*0*<WHERE>##`) and `Unlock` (`*14*1*<WHERE>##`) configuration buttons. Because gateways NACK `*#14*<WHERE>##` status queries in `~50 ms`, lock state cannot be polled at startup and is tracked dynamically from event-session `*14*0*<WHERE>##` / `*14*1*<WHERE>##` broadcasts (point-to-point, area `1..9` / `100`, and general `0` / `00`, isolated per `#4#II` interface):
+
+* **`actuator_locked` Attribute**: Remains absent until the first `WHO = 14` frame for that actuator (or its area/bus) is observed, then reflects `true` (locked) or `false` (unlocked).
+* **Non-Optimistic Locked Writes**: While `actuator_locked` is `true`, calling `light.turn_on`, `light.turn_off`, or `myhome.turn_on_timed` still transmits a single OpenWebNet command (so an actuator unlocked offline can still react and recover), while Home Assistant suppresses optimistic `on` / `brightness` / `color_temp` / `hs_color` state mutations, cancels or skips `software_stepped` fade loops, and preserves `_last_brightness_pct`. This eliminates the `~1.7 s` UI bounce and prevents false triggers on mirrored third-party entities.
+* **Unlock Refresh & Self-Healing**: Receiving `*14*1*<WHERE>##` refreshes any light that was commanded while locked (`status` + `get_brightness`). If an actuator is unlocked offline and reports a real state or level change on the bus, `actuator_locked` clears to `false` automatically (while unchanged poll replies such as `*#1*55*1*120*5##` preserve the lock).
+* **Post-`#964` Missing-Status Read-Backs**: When `gateway_confirm.py` reads back `*#1*<WHERE>##` `1.5 s` after an omitted status (`#964`), `MyHOMELight` resolves DALI / ballast plain `*1*1*<WHERE>##` replies with a `Dimension 1` brightness refresh (`*#1*<WHERE>*1##`), re-reads pending `Dimension 14` (`color_temp`) and `Dimension 12` (`hs_color` / `rgb_color`) writes, and restores `_last_brightness_pct` if a rejected write to an OFF dimmer reads back `*1*0*<WHERE>##` (see [Runtime behaviour](runtime_behaviour.md)).
+
+---
+
 ## ⚙️ Dimmer Transition Modes (UI Options)
 
 You can customize how dimming transitions are executed globally via the integration's UI Options:

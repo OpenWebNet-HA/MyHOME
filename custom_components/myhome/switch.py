@@ -603,6 +603,17 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             self._attr_icon = self._off_icon
 
         self._attr_is_on = None
+        self._actuator_locked: bool | None = None
+        self._locked_is_on: bool | None = None
+
+    @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Handle WHO=14 actuator lock/unlock events for this switch."""
+        is_locked = bool(locked)
+        self._actuator_locked = is_locked
+        self._attr_extra_state_attributes["actuator_locked"] = is_locked
+        self._locked_is_on = self._attr_is_on if is_locked else None
+        self._publish_state()
 
     async def async_update(self) -> None:
         """Update the entity.
@@ -629,6 +640,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             seconds=seconds,
         )
         await self._gateway_handler.send(cmd)
+        if self._actuator_locked is True:
+            return
         self._attr_is_on = True
         self.async_write_ha_state()
 
@@ -641,10 +654,33 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
 
     @callback
+    def _seed_locked_is_on(self) -> None:
+        """Capture baseline switch state when locked before state was known."""
+        if (
+            self._actuator_locked is True
+            and self._locked_is_on is None
+            and isinstance(self._attr_is_on, bool)
+        ):
+            self._locked_is_on = self._attr_is_on
+
+    @callback
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
         if getattr(message, "is_translation", None) is True:
             return
+        self._seed_locked_is_on()
+        if (
+            self._actuator_locked is True
+            and isinstance(message.is_on, bool)
+            and self._locked_is_on is not None
+            and message.is_on != self._locked_is_on
+        ):
+            self._actuator_locked = False
+            self._attr_extra_state_attributes["actuator_locked"] = False
+            self._locked_is_on = None
+            mgr = getattr(self._gateway_handler, "_actuator_locks", None)
+            if mgr is not None:
+                mgr.clear_lock_from_actuation(self._where, self._interface)
         if self._attr_device_class == SwitchDeviceClass.SWITCH:
             LOGGER.debug(
                 "%s %s",
@@ -665,6 +701,7 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             )
         if message.is_on is not None:
             self._attr_is_on = message.is_on
+        self._seed_locked_is_on()
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
         self._publish_state()

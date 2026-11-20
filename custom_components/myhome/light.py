@@ -538,6 +538,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._exact_level_seen = False
         self._coarse_speed_seen = False
         self._brightness_refresh_after: float = 0.0
+        self._actuator_locked: bool | None = None
+        self._locked_snapshot: tuple[bool | None, int | None] | None = None
+        self._dirty_while_locked: bool = False
+        self._pending_dim_confirm: set[int] = set()
+        self._pre_write_last_brightness_pct: int | None = None
 
     @property
     def color_temp(self) -> int | None:
@@ -822,6 +827,64 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
     ) -> None:
         await self._fade_engine.async_fade_to(start_pct, target_pct, duration, fade_id)
 
+    def _is_dimmable(self) -> bool:
+        """Return whether this light supports brightness or colour dimensions."""
+        return bool(
+            self._attr_supported_color_modes
+            & {
+                ColorMode.BRIGHTNESS,
+                ColorMode.COLOR_TEMP,
+                ColorMode.HS,
+                ColorMode.RGB,
+            }
+        )
+
+    async def _async_refresh_after_unlock(self) -> None:
+        """Read back status (and brightness when dimmable) after locked writes."""
+        await self._gateway_handler.send_status_request(
+            OWNLightingCommand.status(self._full_where)
+        )
+        if self._is_dimmable():
+            await self._gateway_handler.send_status_request(
+                OWNLightingCommand.get_brightness(self._full_where)
+            )
+
+    @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Handle WHO=14 actuator lock/unlock events for this light."""
+        is_locked = bool(locked)
+        self._actuator_locked = is_locked
+        self._attr_extra_state_attributes["actuator_locked"] = is_locked
+        if is_locked:
+            self._cancel_fade_if_active()
+            self._locked_snapshot = (self._attr_is_on, self._attr_brightness_pct)
+            self._dirty_while_locked = False
+        else:
+            self._locked_snapshot = None
+            if self._dirty_while_locked:
+                self._dirty_while_locked = False
+                hass = getattr(self, "hass", None)
+                if hass is not None:
+                    hass.async_create_task(self._async_refresh_after_unlock())
+        self._publish_state()
+
+    @callback
+    def _clear_actuator_lock(self) -> None:
+        """Clear WHO=14 lock state after real bus actuation contradicts the snapshot."""
+        self._actuator_locked = False
+        self._attr_extra_state_attributes["actuator_locked"] = False
+        self._locked_snapshot = None
+        self._dirty_while_locked = False
+        mgr = getattr(self._gateway_handler, "_actuator_locks", None)
+        if mgr is not None:
+            mgr.clear_lock_from_actuation(self._where, self._interface)
+
+    def _record_pending_dim_write(self, dimension: int) -> None:
+        """Record an unconfirmed Dimension 1/12/14 write for post-#964 read-back."""
+        if dimension in (1, 12) and not (self._pending_dim_confirm & {1, 12}):
+            self._pre_write_last_brightness_pct = self._last_brightness_pct
+        self._pending_dim_confirm.add(dimension)
+
     async def async_turn_on_timed(
         self,
         duration: float | None = None,
@@ -840,20 +903,18 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         elif brightness is not None:
             target_pct = eight_bits_to_min_percent(brightness)
 
-        if (
-            target_pct is not None
-            and target_pct > 0
-            and (
-                ColorMode.BRIGHTNESS in self._attr_supported_color_modes
-                or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
-                or ColorMode.HS in self._attr_supported_color_modes
-                or ColorMode.RGB in self._attr_supported_color_modes
-            )
-        ):
+        locked = self._actuator_locked is True
+        if locked:
+            self._dirty_while_locked = True
+
+        if target_pct is not None and target_pct > 0 and self._is_dimmable():
+            if not locked:
+                self._record_pending_dim_write(1)
             await self._gateway_handler.send(
                 OWNLightingCommand.set_brightness(self._full_where, target_pct)
             )
-            self._apply_brightness_state(target_pct, is_on=True)
+            if not locked:
+                self._apply_brightness_state(target_pct, is_on=True)
 
         cmd = build_timed_turn_on_command(
             self._full_where,
@@ -863,12 +924,19 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             seconds=seconds,
         )
         await self._gateway_handler.send(cmd)
+        if locked:
+            return
         self._attr_is_on = True
         self._is_on_restored = False
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
+        locked = self._actuator_locked is True
+        if locked:
+            self._dirty_while_locked = True
+            await self._cancel_fade_robustly()
+
         if ATTR_FLASH in kwargs and self._attr_supported_features & LightEntityFeature.FLASH:
             if kwargs[ATTR_FLASH] == FLASH_SHORT:
                 await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 0.5))
@@ -910,6 +978,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             else:  # pragma: no cover
                 cmd = OWNLightingCommand.set_rgb_color(self._full_where, int(r), int(g), int(b))
             await self._gateway_handler.send(cmd)
+            if locked:
+                return
+            self._record_pending_dim_write(12)
             self._attr_hs_color = (round(float(h), 1), round(float(s), 1))
             self._attr_rgb_color = (int(r), int(g), int(b))
             self._attr_color_mode = ColorMode.HS
@@ -931,11 +1002,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             await self._gateway_handler.send(
                 OWNLightingCommand.set_color_temperature(self._full_where, target_mireds)
             )
-            self._attr_color_temp = target_mireds
-            self._attr_color_temp_kelvin = target_kelvin
-            self._attr_color_mode = ColorMode.COLOR_TEMP
+            if not locked:
+                self._record_pending_dim_write(14)
+                self._attr_color_temp = target_mireds
+                self._attr_color_temp_kelvin = target_kelvin
+                self._attr_color_mode = ColorMode.COLOR_TEMP
 
             if ATTR_BRIGHTNESS not in kwargs and ATTR_BRIGHTNESS_PCT not in kwargs:
+                if locked:
+                    return
                 self._attr_is_on = True
                 self._is_on_restored = False
                 if self._attr_brightness is None and self._last_brightness_pct:
@@ -946,12 +1021,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         # Original combined condition preserved for compatibility
         if (
             (ATTR_BRIGHTNESS in kwargs or ATTR_BRIGHTNESS_PCT in kwargs)
-            and (
-                ColorMode.BRIGHTNESS in self._attr_supported_color_modes
-                or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
-                or ColorMode.HS in self._attr_supported_color_modes
-                or ColorMode.RGB in self._attr_supported_color_modes
-            )
+            and self._is_dimmable()
         ) or (
             ATTR_TRANSITION in kwargs
             and self._attr_supported_features & LightEntityFeature.TRANSITION
@@ -970,6 +1040,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 if target_pct == 0:
                     await self.async_turn_off(**kwargs)
                     return
+
+                if locked:
+                    await self._gateway_handler.send(
+                        OWNLightingCommand.set_brightness(self._full_where, target_pct)
+                    )
+                    return
+
                 start_pct = (
                     self._attr_brightness_pct
                     if self._attr_is_on and self._attr_brightness_pct is not None
@@ -979,6 +1056,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 await self._cancel_fade_robustly()
 
                 if self._should_use_software_stepped(transition):
+                    if not (self._attr_is_on and target_pct == start_pct):
+                        self._record_pending_dim_write(1)
                     if await self._maybe_instant_brightness(start_pct, target_pct, is_on=True):
                         return
 
@@ -986,6 +1065,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     return
 
                 # native path (exact pre-existing)
+                self._record_pending_dim_write(1)
                 if ATTR_TRANSITION in kwargs:
                     await self._gateway_handler.send(
                         OWNLightingCommand.set_brightness(
@@ -1003,6 +1083,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 return
             else:
                 # transition-only (no brightness kwarg)
+                if locked:
+                    await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
+                    return
+
                 target_pct = self._last_brightness_pct or 100
                 start_pct = (
                     self._attr_brightness_pct
@@ -1013,6 +1097,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 await self._cancel_fade_robustly()
 
                 if self._should_use_software_stepped(transition):
+                    if not (self._attr_is_on and target_pct == start_pct):
+                        self._record_pending_dim_write(1)
                     if await self._maybe_instant_brightness(start_pct, target_pct, is_on=True):
                         return
 
@@ -1029,21 +1115,27 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         else:
             # plain on path (preserved)
             await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
-            if (
-                ColorMode.BRIGHTNESS in self._attr_supported_color_modes
-                or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
-                or ColorMode.HS in self._attr_supported_color_modes
-                or ColorMode.RGB in self._attr_supported_color_modes
-            ):
+            if not locked and self._is_dimmable():
                 await self.async_update()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the device off."""
+        locked = self._actuator_locked is True
+        if locked:
+            self._dirty_while_locked = True
+            await self._cancel_fade_robustly()
+        else:
+            self._pending_dim_confirm.clear()
+            self._pre_write_last_brightness_pct = None
 
         if (
             ATTR_TRANSITION in kwargs
             and self._attr_supported_features & LightEntityFeature.TRANSITION
         ):
+            if locked:
+                await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
+                return
+
             transition = float(kwargs[ATTR_TRANSITION])
             start_pct = (
                 self._attr_brightness_pct
@@ -1130,6 +1222,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # end of movement and dimensions 5-7 here; the binary_sensor and sensor platforms
             # route them to this light's address key too. None of them is the light's state.
             return
+
+        if self._actuator_locked is True and self._locked_snapshot is None:
+            self._locked_snapshot = (self._attr_is_on, self._attr_brightness_pct)
 
         LOGGER.debug(
             "%s %s",
@@ -1219,6 +1314,74 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         elif has_level and self._is_mode_forbidden(ColorMode.BRIGHTNESS):
             self._log_locked_out(message, "1")
             has_level = False
+
+        if self._actuator_locked is True and (
+            is_no_load
+            or (
+                isinstance(message.is_on, bool)
+                and getattr(message, "what", None) not in (30, 31)
+                and self._locked_snapshot is not None
+                and self._locked_snapshot[0] is not None
+                and message.is_on != self._locked_snapshot[0]
+            )
+            or (
+                has_level
+                and message.brightness is not None
+                and not has_preset
+                and self._locked_snapshot is not None
+                and self._locked_snapshot[1] is not None
+                and message.brightness != self._locked_snapshot[1]
+            )
+        ):
+            self._clear_actuator_lock()
+
+        if has_level and message.brightness is not None and not has_preset:
+            self._pending_dim_confirm.discard(1)
+            self._pre_write_last_brightness_pct = None
+        if has_hs or has_rgb:
+            self._pending_dim_confirm.discard(12)
+            self._pre_write_last_brightness_pct = None
+        if has_color_temp:
+            self._pending_dim_confirm.discard(14)
+
+        dim = getattr(message, "dimension", None)
+        if message.is_on is False and dim is None and self._pending_dim_confirm:
+            if self._pre_write_last_brightness_pct is not None:
+                self._last_brightness_pct = self._pre_write_last_brightness_pct
+                self._attr_brightness_pct = 0
+                self._attr_brightness = 0
+            self._pending_dim_confirm.clear()
+            self._pre_write_last_brightness_pct = None
+        elif (
+            message.is_on is True
+            and dim is None
+            and getattr(message, "what", None) not in (30, 31)
+            and self._pending_dim_confirm
+        ):
+            if 1 in self._pending_dim_confirm:
+                self._pending_dim_confirm.discard(1)
+                self._pre_write_last_brightness_pct = None
+                if not has_preset and message.brightness is None:
+                    self._request_brightness_refresh()
+            if 14 in self._pending_dim_confirm:
+                self._pending_dim_confirm.discard(14)
+                hass = getattr(self, "hass", None)
+                if hass is not None:
+                    hass.async_create_task(
+                        self._gateway_handler.send_status_request(
+                            OWNLightingCommand.get_color_temperature(self._full_where)
+                        )
+                    )
+            if 12 in self._pending_dim_confirm:
+                self._pending_dim_confirm.discard(12)
+                self._pre_write_last_brightness_pct = None
+                hass = getattr(self, "hass", None)
+                if hass is not None:
+                    hass.async_create_task(
+                        self._gateway_handler.send_status_request(
+                            OWNLightingCommand.get_hsv_color(self._full_where)
+                        )
+                    )
 
         # Auto-promote to HS when HSV color data is received (Dimension 12)
         if has_hs or has_rgb:
@@ -1336,7 +1499,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 preset_pct = COARSE_PRESET_TO_PERCENT.get(
                     cast(int, preset), cast(int, preset) * 10
                 )
-            self._apply_brightness_state(max(0, min(100, preset_pct)))
+            if not (
+                self._actuator_locked is True
+                and self._is_fine_dimmer(message)
+                and self._attr_brightness_pct is not None
+            ):
+                self._apply_brightness_state(max(0, min(100, preset_pct)))
             if self._is_fine_dimmer(message):
                 # On a fine dimmer WHAT 2..10 is a quantised view of the level: an F461
                 # answers *#1*WHERE## with *1*7*WHERE## for anything between about 44 and
@@ -1345,6 +1513,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 # level, #828) and Dimension 1 is asked for the exact one.
                 self._bus_state_complete = False
                 self._request_brightness_refresh()
+
+        if self._actuator_locked is True and self._locked_snapshot is not None:
+            snap_on, snap_bri = self._locked_snapshot
+            if snap_on is None or snap_bri is None:
+                self._locked_snapshot = (
+                    self._attr_is_on if snap_on is None else snap_on,
+                    self._attr_brightness_pct if snap_bri is None else snap_bri,
+                )
 
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
