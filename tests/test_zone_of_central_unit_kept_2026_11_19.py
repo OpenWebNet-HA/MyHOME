@@ -473,8 +473,8 @@ def test_a_valve_status_from_behind_an_interface_teaches_the_local_zone_nothing(
 
 async def test_the_zone_behind_the_interface_learns_it_through_the_gateways_routing(hass: HomeAssistant) -> None:
     handler, zones = await _bus_plant(hass)
-    await _receive(hass, handler, ["*#4*4*19*0*1##"])  # BUILT: a local zone 4 that only heats
-    await _receive(hass, handler, [VALVE_STATUS_BEHIND_INTERFACE])
+    await _receive(hass, handler, ["*#4*4*19*0*1##", "*4*1*4##"])  # BUILT: a local zone 4 that only heats
+    await _receive(hass, handler, ["*#4*4#4#01*0*0250##", VALVE_STATUS_BEHIND_INTERFACE])
     await _receive(hass, handler, [VALVE_STATUS_BEHIND_INTERFACE])  # again, now that its zone exists
     offers_cool = {zone._interface: HVACMode.COOL in zone.hvac_modes for zone in zones if zone._where == "4"}
     assert offers_cool == {None: False, "01": True}

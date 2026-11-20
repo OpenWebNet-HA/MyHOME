@@ -163,8 +163,8 @@ async def test_the_zone_behind_an_interface_and_the_local_one_do_not_mix(hass: H
 
 async def test_a_zone_behind_an_interface_seen_first_does_not_hide_the_local_one(hass: HomeAssistant) -> None:
     handler, zones = await _bus_plant(hass)
-    await _receive(hass, handler, [ZONE_4_BEHIND_INTERFACE[0]])
-    await _receive(hass, handler, ["*#4*4*0*0256##"])
+    await _receive(hass, handler, [ZONE_4_BEHIND_INTERFACE[0], ZONE_4_BEHIND_INTERFACE[1]])
+    await _receive(hass, handler, ["*#4*4*0*0256##", "*4*1*4##"])
     assert {(zone._where, zone._interface): zone.current_temperature for zone in zones} == {
         ("4", "01"): 27.5,
         ("4", None): 25.6,

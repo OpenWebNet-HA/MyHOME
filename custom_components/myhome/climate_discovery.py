@@ -22,6 +22,7 @@ entity's business: ``MyHOMEClimate._standalone``.
 
 import asyncio
 import inspect
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -60,6 +61,11 @@ from .where_grammar import (
 # only from their actuators are left to report by themselves (``_ask_actuator_only_zones``):
 # an unanswered read holds a command session for 2.1 s on an F461 and about 9 s on an F455.
 ACTUATOR_ONLY_ZONE_MISSES = 2
+# Suppress identical raw repeats from gateways like MyHomeServer1 within this window unless
+# an active confirmation read is currently in flight for that zone (#966).
+CANDIDATE_ECHO_WINDOW = 5.0
+# Maximum lifetime of an unconfirmed candidate zone before its held frame expires (#966).
+CANDIDATE_MAX_AGE = 3600.0
 # The states of a climate entity that only a thermostat's own frames produce.
 _REAL_HVAC_STATES = frozenset(
     {
@@ -237,6 +243,24 @@ def _thermo_switch_zones(
     return whole, actuators
 
 
+def _thermo_hold_slot(message: Any) -> str:
+    """Held-frame slot key for an unconfirmed candidate zone.
+
+    Uses ``dimension`` and ``message_type`` rather than reading ``message.where``
+    (enforced by ``test_where_usage_guard.py``), and never uses ``act:`` so
+    ``_read_actuator_only_zones`` never treats a candidate frame as a plain valve.
+    """
+    dim = getattr(message, "dimension", None)
+    if dim == 20:
+        return f"fancoil:{thermo_event_actuator(message)}"
+    if dim is not None:
+        return f"dim:{dim}"
+    msg_type = getattr(message, "message_type", None)
+    if msg_type:
+        return f"type:{msg_type}"
+    return f"raw:{message}"
+
+
 class ZoneDiscovery:
     """The heating zones of one gateway: what creates a zone entity, and the reads at start.
 
@@ -260,8 +284,14 @@ class ZoneDiscovery:
         self._build_zone = build_zone
         self._switch_zones, self._switch_actuator_zones = _thermo_switch_zones(runtime.platforms, self._configured)
         # Frames of a zone that is not created yet, by slot (``dim0``, ``dim19``, ``dim19_off``,
-        # ``act:<N>``): the newest frame of a slot replaces the older one.
+        # ``act:<N>``, ``fancoil:<N>``, ``dim:<D>``, ``type:<T>``, ``raw:<S>``): the newest frame
+        # of a slot replaces the older one.
         self._held: dict[ZonePair, dict[str, OWNHeatingEvent]] = {}
+        # First-seen candidate zones (1..99, unconfigured) awaiting a second frame or active
+        # temperature confirmation (#966): ``pair -> (first_seen_monotonic, first_raw)``.
+        self._candidates: dict[ZonePair, tuple[float, str]] = {}
+        self._confirming_pair: ZonePair | None = None
+        self._candidate_task: asyncio.Future[Any] | None = None
 
     def start_reads(self) -> None:
         """Ask the zones known only from their actuators, once the start-up sweep is over.
@@ -283,15 +313,40 @@ class ZoneDiscovery:
         entity = self._build_zone(ctx, _zone_config(self._configured, ctx.address, ctx.key) or ctx.cfg)
         pair = _zone_pair(ctx.address)
         if pair is not None:
+            self._candidates.pop(pair, None)
             for held in self._held.pop(pair, {}).values():
                 entity.handle_event(held)
         return entity
+
+    def _drop_candidate_held(self, pair: ZonePair) -> None:
+        """Drop held non-actuator candidate frames for ``pair``, keeping valve/actuator slots."""
+        held = self._held.get(pair)
+        if not held:
+            return
+        for slot in [s for s in held if not s.startswith(("act:", "dim19"))]:
+            held.pop(slot, None)
+        if not held:
+            self._held.pop(pair, None)
+
+    def _accept_candidate_actuator(self, zone_pair: ZonePair) -> bool:
+        """Confirm a non-expired candidate on an actuator frame, or prune an expired one."""
+        if zone_pair not in self._candidates:
+            return False
+        if time.monotonic() - self._candidates[zone_pair][0] <= CANDIDATE_MAX_AGE:
+            self._candidates.pop(zone_pair, None)
+            return True
+        self._candidates.pop(zone_pair, None)
+        self._drop_candidate_held(zone_pair)
+        return False
 
     def accept(self, ctx: DeviceContext) -> bool:
         """Whether this frame, registry entry or configuration entry creates a zone now.
 
         A frame that does not is kept (``_held``) where the zone may still turn out to be a
-        thermostat, and handed to the zone when it is created.
+        thermostat, and handed to the zone when it is created. An unconfigured zone found on
+        the bus is held as a candidate until confirmed by a second independent frame or an
+        active temperature read so a single bit-flipped frame cannot create a phantom zone
+        (#966).
         """
         if is_probe(ctx.address.where):
             LOGGER.debug("Skipping non-zone address %s for climate platform", ctx.address.where)
@@ -344,6 +399,8 @@ class ZoneDiscovery:
             ):
                 zone_pair = _zone_pair(ctx.address)
                 if dim19 is not None and zone_pair is not None:
+                    if self._accept_candidate_actuator(zone_pair):
+                        return True
                     events = self._held.setdefault(zone_pair, {})
                     if dim19[2]:
                         events.pop("dim19", None)
@@ -368,6 +425,8 @@ class ZoneDiscovery:
             ):
                 zone_pair = _zone_pair(ctx.address)
                 if dim20 is not None and zone_pair is not None:
+                    if self._accept_candidate_actuator(zone_pair):
+                        return True
                     slot = f"act:{thermo_event_actuator(ctx.message)}"
                     events = self._held.setdefault(zone_pair, {})
                     events.pop(slot, None)
@@ -377,7 +436,40 @@ class ZoneDiscovery:
                     ctx.address.key,
                 )
                 return False
-        return True
+        if (
+            ctx.source != "bus"
+            or ctx.cfg
+            or _zone_config(self._configured, ctx.address, ctx.key)
+            or (pair := _zone_pair(ctx.address)) is None
+        ):
+            return True
+        now = time.monotonic()
+        for expired in [
+            cand for cand, (first_at, _raw) in self._candidates.items() if now - first_at > CANDIDATE_MAX_AGE
+        ]:
+            self._candidates.pop(expired, None)
+            self._drop_candidate_held(expired)
+        raw = "" if ctx.message is None else str(ctx.message)
+        if pair in self._candidates:
+            first_at, first_raw = self._candidates[pair]
+            if (
+                self._confirming_pair == pair
+                or raw != first_raw
+                or (now - first_at) >= CANDIDATE_ECHO_WINDOW
+            ):
+                self._candidates.pop(pair, None)
+                return True
+            return False
+        if pair in self._held and self._held[pair]:
+            return True
+        self._held.setdefault(pair, {})[_thermo_hold_slot(ctx.message)] = ctx.message
+        self._candidates[pair] = (now, raw)
+        self._start_candidate_reads(pair)
+        LOGGER.debug(
+            "Deferring unconfigured climate zone %s creation pending confirmation (#966)",
+            ctx.address.key,
+        )
+        return False
 
 
 
@@ -502,6 +594,7 @@ class ZoneDiscovery:
                     known
                     for known, events in self._held.items()
                     if known not in asked
+                    and known not in self._candidates
                     and known[1] is None
                     and known not in self._switch_zones
                     and known not in self._switch_actuator_zones
@@ -539,4 +632,94 @@ class ZoneDiscovery:
                 return
             LOGGER.debug("%s Zone %s has actuators and no thermostat answered", gateway.log_id, pair[0])
             silent += 1
+
+    def _start_candidate_reads(self, pair: ZonePair) -> None:
+        """Schedule active temperature confirmation for an unrouted, unexposed candidate zone."""
+        if (
+            pair[1] is not None
+            or self._candidate_task is not None
+            or is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0])
+            or not inspect.iscoroutinefunction(getattr(self._gateway, "read_zone_temperature", None))
+        ):
+            return
+        run = self._confirm_candidates()
+        task: object = self._config_entry.async_create_background_task(
+            self._hass, run, name=f"myhome_{self._gateway.mac}_confirm_zones"
+        )
+        if isinstance(task, asyncio.Future):
+            self._candidate_task = task
+        else:
+            run.close()
+
+    async def _read_under_confirm(self, pair: ZonePair) -> bool | None:
+        """Read ``pair``'s temperature while allowing identical reply frames to confirm it."""
+        if pair not in self._candidates:
+            return None
+        self._confirming_pair = pair
+        try:
+            result: bool | None = await self._gateway.read_zone_temperature(pair[0])
+            return result
+        finally:
+            self._confirming_pair = None
+
+    async def _confirm_candidates(self) -> None:
+        """Actively query unrouted candidate zones once the bus is quiet to confirm or evict them."""
+        gateway = self._gateway
+        try:
+            await asyncio.sleep(0)
+            if not any(
+                cand[1] is None and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand[0])
+                for cand in self._candidates
+            ):
+                return
+            wait = getattr(gateway, "wait_for_initial_discovery", None)
+            if callable(wait):
+                waiting = wait()
+                if inspect.isawaitable(waiting):
+                    await waiting
+            asked: set[ZonePair] = set()
+            lock = getattr(gateway, "_who4_startup_poll_lock", None)
+            while True:
+                candidate = next(
+                    (
+                        (cand_pair, data[0])
+                        for cand_pair, data in self._candidates.items()
+                        if cand_pair not in asked
+                        and cand_pair[1] is None
+                        and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand_pair[0])
+                    ),
+                    None,
+                )
+                if candidate is None:
+                    return
+                pair, first_at = candidate
+                asked.add(pair)
+                if inspect.iscoroutinefunction(getattr(gateway, "_wait_for_bus_quiet", None)):
+                    await gateway._wait_for_bus_quiet(first_at)
+                    if pair not in self._candidates:
+                        continue
+                answered: bool | None = None
+                for _attempt in range(2):
+                    if isinstance(lock, asyncio.Lock):
+                        async with lock:
+                            answered = await self._read_under_confirm(pair)
+                    else:
+                        answered = await self._read_under_confirm(pair)
+                    if pair not in self._candidates or answered is not None:
+                        break
+                if pair not in self._candidates:
+                    continue
+                if answered in (False, True):
+                    self._candidates.pop(pair, None)
+                    self._drop_candidate_held(pair)
+                else:
+                    LOGGER.debug(
+                        "%s Zone %s: temperature could not be read while gateway was busy; "
+                        "leaving it to confirm on its next frame",
+                        getattr(gateway, "log_id", gateway.mac),
+                        pair[0],
+                    )
+        finally:
+            self._confirming_pair = None
+            self._candidate_task = None
 

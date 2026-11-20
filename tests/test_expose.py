@@ -3250,8 +3250,10 @@ async def test_climate_discovery_defers_exposed_who4_master_probe_until_real_zon
     # 1. Pure virtual master probes on unused zones 50 and 6#4#01 must NOT create phantom climate entities
     await _emit("*#4*50*0*0215##")
     await _emit("*#4*6#4#01*0*0195##")
-    # Unexposed zone 8 still discovers normally from a Dimension 0 temperature report
+    # Unexposed zone 8 confirms cleanly once a second distinct zone frame arrives (#966)
     await _emit("*#4*8*0*0204##")
+    assert added_climates == []
+    await _emit("*4*1*8##")
     assert [ent._where for ent in added_climates] == ["8"]
 
     # 2. Zone 5 receives exposed master-probe temperature first, then a real zone setpoint report ->

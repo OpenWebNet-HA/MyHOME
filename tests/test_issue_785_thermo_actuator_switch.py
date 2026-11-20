@@ -1089,8 +1089,10 @@ async def test_climate_coexists_with_per_actuator_switch_and_prunes_ghosts(
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7*5*0##"))
     assert sorted(c._where for c in added_climates) == ["3", "5", "6"]
 
-    # ...whereas an unconfigured heating zone 2 without a thermo switch still discovers on *4*4001#2*0#3##...
+    # ...whereas an unconfigured heating zone 2 without a thermo switch discovers once confirmed...
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*4001#2*0#3##"))
+    assert sorted(c._where for c in added_climates) == ["3", "5", "6"]
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*2*0*0210##"))
     assert sorted(c._where for c in added_climates) == ["2", "3", "5", "6"]
 
     # ...and if a real temperature probe exists on Zone 7, climate discovers Zone 7 & inherits {"1": True}!
@@ -1554,15 +1556,18 @@ async def test_pure_valve_dimension_19_deferred_on_thermo_switch_zones_and_f455_
     assert z14._active_source == "actuators"
     assert z14.hvac_action == HVACAction.IDLE
 
-    # 4. Fan-coil Dimension 19 frames (cooling_fan_on / fan_on bool) still discover on Z#N zones
+    # 4. Fan-coil Dimension 19 frames (cooling_fan_on / fan_on bool) confirm alongside a 2nd frame on Z#N zones
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*10*19*5*0##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*10*0*0210##"))
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*11*19*0*6##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*11*0*0210##"))
     assert sorted(c._where for c in added_climates) == ["10", "11", "13", "14", "7", "9"]
 
-    # 5. Routed F422 isolation: routed 12#4#01 is deferred, local 12 discovers immediately
+    # 5. Routed F422 isolation: routed 12#4#01 is deferred, local 12 confirms on 2nd frame
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*12#4#01*19*0*0##"))
     assert sorted(c._full_where for c in added_climates) == ["10", "11", "13", "14", "7", "9"]
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*12*19*0*0##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*12*0*0210##"))
     assert sorted(c._full_where for c in added_climates) == ["10", "11", "12", "13", "14", "7", "9"]
 
     # 6. Authentic issue_674 F455 trace replay with 7#1 and 64#1 configured as thermo switches
@@ -1616,7 +1621,13 @@ async def test_pure_valve_dimension_19_deferred_on_thermo_switch_zones_and_f455_
     # Configured Z#N towel-warmer zones 7 and 64 NEVER spawn phantom climate entities!
     assert "7" not in discovered_f455_zones
     assert "64" not in discovered_f455_zones
-    # Non-switch pure-valve Dim 19 zones (e.g. 6, 8, 9, 14) and full zones (34, 35, 36) still discover (#674)
+    # Multi-frame full zones (34, 35, 36) confirm immediately; 1-frame valve zones (6, 8, 9, 14) await confirmation (#674, #966)
+    assert {"34", "35", "36"} <= discovered_f455_zones
+    for z in ("6", "8", "9", "14"):
+        parsed_confirm = OWNMessage.parse(f"*#4*{z}*0*0200##")
+        assert parsed_confirm is not None
+        async_dispatcher_send(hass, f"myhome_message_{f455_mac}", parsed_confirm)
+    discovered_f455_zones = {c._where for c in f455_climates}
     assert {"6", "8", "9", "14", "34", "35", "36"} <= discovered_f455_zones
 
 
