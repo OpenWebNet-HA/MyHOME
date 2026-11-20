@@ -161,6 +161,13 @@ class TimedCurtainStrategy(BaseCoverStrategy):
                 entity._attr_current_cover_position = reanchored
                 entity._start_position = reanchored
                 entity._attr_is_closed = reanchored == 0
+        if (
+            travel_time > 0
+            and (is_opening or is_closing)
+            and raw_elapsed >= self.travel_for_direction(is_opening)
+            and reanchored is not None
+        ):
+            entity._position_drift_bound = 0.0
         if end_stop_from_unknown and reanchored is not None:
             self.on_position_confirmed(entity, reanchored, "end_stop")
         self._reanchor_slats_on_stop_echo(entity, ctx, elapsed, is_opening, is_closing)
