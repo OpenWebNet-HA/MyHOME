@@ -228,6 +228,20 @@ Trade-off: a wall-switch stop pressed in the ≤ 0.6 s between the write and the
 
 ---
 
+## 💡 A light that does not report after a command is read back once
+
+A `WHO = 1` light or switch takes its state from the actuator's status frame on the event session, never from the command or its `ACK`. Some gateways leave that status out: a physical `F455` (firmware `1.0.76`) acknowledges a command in about 4 ms and, when several commands follow each other within tens of milliseconds (a scene, "all off", tiles tapped in a row), its event session omits some of the statuses although the lights switched. Home Assistant then kept the old state until the light changed again, and the header toggle of an entities card, which only commands the entities not yet shown in the target state, left such a light on at the next "all off" (live 2026-11-20, six lights in one call: the `F455` left out 1 or 2 statuses in 5 of 8 steps and a light stayed on in 3 of 4 on / off cycles; through the `F461` on the same bus none was left out).
+
+The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged point-to-point `WHO = 1` command. If no matching status of that light arrived `1.5 s` (`ECHO_CONFIRM_DELAY_S`) after the `ACK`, it sends one status request `*#1*<where>##`; the answer comes back on the command session and updates the entity.
+
+- **No extra traffic where the status arrives.** On a physical `F461` and in the real-user traces of `F454`, `F461`, `MH200N`, `MH201`, `MH202` and `MyHomeServer1` every status followed its command within `0.33 s`, so nothing is sent there.
+- **One request at most per command.** A status request never arms the read-back, so an address that does not answer costs one request and nothing more.
+- **A status of the other polarity is not the answer.** After `ON` then `OFF` in quick succession, a late `ON` status does not cancel the read-back of the `OFF`.
+- **Only for commands this gateway entry sent.** When another client switches several lights at once (another gateway, a scenario module), the `F455` leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.
+- **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, and `WHO = 2` covers, whose position model is anchored on the write time.
+
+---
+
 ## 🎨 Lights learn colour capabilities additively
 
 Colour modes are promoted from bus frames, and never removed:

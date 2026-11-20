@@ -252,6 +252,7 @@ The integration maintains 6699 automated unit tests (100% line coverage across a
 | [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Shared entity restore, YAML overlay merge, dynamic bus discovery, and dispatcher |
 | [`expose.py`](custom_components/myhome/expose.py) | **100%** | Virtual OpenWebNet responder projecting HA entities and system clock onto SCS |
 | [`gateway.py`](custom_components/myhome/gateway.py) | **100%** | Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle |
+| [`gateway_confirm.py`](custom_components/myhome/gateway_confirm.py) | **100%** | Point-to-point WHO=1 status read-back when a light's status does not follow an acknowledged command |
 | [`gateway_events.py`](custom_components/myhome/gateway_events.py) | **100%** | Inbound OpenWebNet frame classification, event bus emission, and doorbell routing |
 | [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Debounced lighting status resync sweeps after group, area, and general broadcasts |
 | [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Persistent event session watchdog, priority command queue, and paced worker pool |
