@@ -306,6 +306,7 @@ def _make_cover(
     where: str,
     *,
     advanced: bool = False,
+    allow_auto_advanced: bool = False,
     slat_tilt: bool = False,
     travel_time: int = 5,
     slat_time: float = 2.0,
@@ -321,6 +322,7 @@ def _make_cover(
             where=where,
             interface=None,
             advanced=advanced,
+            allow_auto_advanced=allow_auto_advanced,
             slat_tilt=slat_tilt,
             slat_time=slat_time,
             strategy_name=strategy_name,
@@ -621,6 +623,77 @@ async def test_who14_cover_variants_tilt_scope_advanced_and_simple(hass) -> None
         assert simple_cover.is_closed is True
     finally:
         for c in (locked_shutter, unlocked_shutter, blind, adv_cover, simple_cover, scope_cover):
+            await c.async_will_remove_from_hass()
+
+
+async def test_who14_advanced_and_promoted_cover_mid_run_lock_preserves_dim10_position(
+    hass, monkeypatch
+) -> None:
+    """Mid-run WHO=14 lock on native/auto-promoted covers must not snap Dim 10 position to end stop."""
+    gw = _gateway()
+    gw._actuator_locks = None
+
+    clock = [100.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+
+    adv_cover = _make_cover(hass, gw, "22", advanced=True, travel_time=5)
+    promo_cover = _make_cover(
+        hass, gw, "24", advanced=False, allow_auto_advanced=True, travel_time=5
+    )
+
+    try:
+        # Case A: Configured advanced=True cover (opening & closing past travel_time)
+        adv_cover.handle_event(OWNMessage.parse("*#2*22*10*11*40*001*0##"))
+        assert adv_cover.is_opening is True
+        assert adv_cover.current_cover_position == 40
+        assert adv_cover._run_started_at == 100.0
+
+        clock[0] += 35.0
+        adv_cover.handle_actuator_lock(True)
+        assert adv_cover._actuator_locked is True
+        assert adv_cover.is_opening is False
+        assert adv_cover.is_closing is False
+        assert adv_cover.current_cover_position == 40
+        assert adv_cover.is_closed is False
+        assert adv_cover.extra_state_attributes["last_run_seconds"] == 35.0
+
+        adv_cover.handle_event(OWNMessage.parse("*#2*22*10*12*40*001*0##"))
+        assert adv_cover._actuator_locked is False
+        assert adv_cover.is_closing is True
+        assert adv_cover.current_cover_position == 40
+
+        clock[0] += 35.0
+        adv_cover.handle_actuator_lock(True)
+        assert adv_cover._actuator_locked is True
+        assert adv_cover.is_closing is False
+        assert adv_cover.current_cover_position == 40
+        assert adv_cover.is_closed is False
+
+        # Case B: Auto-promoted Dimension 10 cover (_promote_to_native_strategy mid-run)
+        promo_cover._attr_current_cover_position = 20
+        promo_cover._start_position = 20
+        await promo_cover.async_open_cover()
+        assert promo_cover.is_opening is True
+        assert promo_cover._stop_task is not None
+        promo_cover.handle_event(OWNMessage.parse("*2*1*24##"))
+
+        promo_cover.handle_event(OWNMessage.parse("*#2*24*10*11*35*001*0##"))
+        assert promo_cover._advanced is True
+        assert promo_cover._start_position is None
+        assert promo_cover._move_start_time is None
+        assert promo_cover._stop_task is None
+        assert promo_cover.is_opening is True
+        assert promo_cover.current_cover_position == 35
+
+        clock[0] += 35.0
+        promo_cover.handle_actuator_lock(True)
+        assert promo_cover._actuator_locked is True
+        assert promo_cover.is_opening is False
+        assert promo_cover.is_closing is False
+        assert promo_cover.current_cover_position == 35
+        assert promo_cover.is_closed is False
+    finally:
+        for c in (adv_cover, promo_cover):
             await c.async_will_remove_from_hass()
 
 
