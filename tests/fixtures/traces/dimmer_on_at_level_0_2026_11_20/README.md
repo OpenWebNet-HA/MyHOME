@@ -20,3 +20,7 @@ What they show:
 What each trace is, and how it was taken, is in `frames.json` under `_traces`.
 
 Replayed by `tests/test_dimmer_on_at_level_0_2026_11_20.py`.
+
+`review_frames.json` holds the frames the maintainer quoted in the review of PR 970 (an MH200 2.1.0 and an MH200N 1.1.8,
+other plants): on those gateways a dimmer that goes off with a ramp reports only `DIMENSION 1` level 0. Copied from
+the comments; the captures themselves are not in this repository.

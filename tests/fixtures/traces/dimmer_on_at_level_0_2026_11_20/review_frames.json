@@ -1,0 +1,24 @@
+{
+ "_source": "Frames quoted by the maintainer in the review of MyHOME PR 970, copied character for character from the two comments. The captures themselves are not in this repository.",
+ "_traces": {
+  "mh200_off_with_speed": "Comment https://github.com/OpenWebNet-HA/MyHOME/pull/970#issuecomment-7042219757 (2026-11-20): physical MH200 2.1.0, F418U2 dimmer at WHERE 62. Seconds from the first frame; tx a frame sent, evt_rx a frame received on the event session, cmd_rx a reply on the command session. Off with a speed is reported only as DIMENSION 1 level 0; the status request sent by hand at 6.921 s is answered off.",
+  "mh200n_plain_off": "Comment https://github.com/OpenWebNet-HA/MyHOME/pull/970#issuecomment-7045423214 (2026-11-20): MH200N 1.1.8, dimmer 55 with a soft-off ramp. The comment gives the frames and their order for 6 of 6 off cycles, and 2.36 to 7.31 s between the two received frames; it gives no time per frame, so the first column is empty. No status request of dimmer 55 is quoted, so what an MH200N answers to one is not known from it."
+ },
+ "mh200_off_with_speed": [
+  ["0.000", "tx", "*1*5*62##"],
+  ["0.078", "evt_rx", "*1*5*62##"],
+  ["0.203", "evt_rx", "*#1*62*1*130*2##"],
+  ["2.562", "tx", "*1*0#2*62##"],
+  ["2.671", "evt_rx", "*#1*62*1*100*2##"],
+  ["5.156", "tx", "*#1*62*1##"],
+  ["5.265", "evt_rx", "*#1*62*1*100*2##"],
+  ["5.312", "cmd_rx", "*#1*62*1*100*2##"],
+  ["6.921", "tx", "*#1*62##"],
+  ["7.015", "evt_rx", "*1*0*62##"]
+ ],
+ "mh200n_plain_off": [
+  ["", "rx", "*1*6*55##"],
+  ["", "tx", "*1*0*55##"],
+  ["", "rx", "*#1*55*1*100*2##"]
+ ]
+}
