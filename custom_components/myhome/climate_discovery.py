@@ -292,6 +292,9 @@ class ZoneDiscovery:
         self._candidates: dict[ZonePair, tuple[float, str]] = {}
         self._confirming_pair: ZonePair | None = None
         self._candidate_task: asyncio.Future[Any] | None = None
+        # Candidates whose confirmation read nothing answered (a NACK, or an ACK without a frame of
+        # the zone): not read again; they wait for a second frame or CANDIDATE_MAX_AGE.
+        self._candidates_unanswered: set[ZonePair] = set()
 
     def start_reads(self) -> None:
         """Ask the zones known only from their actuators, once the start-up sweep is over.
@@ -463,6 +466,7 @@ class ZoneDiscovery:
         if any(s.startswith(("act:", "dim19")) for s in self._held.get(pair, ())):
             return True
         self._held.setdefault(pair, {})[_thermo_hold_slot(ctx.message)] = ctx.message
+        self._candidates_unanswered.discard(pair)
         self._candidates[pair] = (now, raw)
         self._start_candidate_reads(pair)
         LOGGER.debug(
@@ -663,12 +667,18 @@ class ZoneDiscovery:
             self._confirming_pair = None
 
     async def _confirm_candidates(self) -> None:
-        """Actively query unrouted candidate zones once the bus is quiet to confirm or evict them."""
+        """Read each unrouted candidate zone once, when the bus is quiet.
+
+        A zone that answers is created by its own frame. One that nothing answers stays a candidate,
+        is not read again, and is created by its next independent frame (``accept``) or expires.
+        """
         gateway = self._gateway
         try:
             await asyncio.sleep(0)
             if not any(
-                cand[1] is None and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand[0])
+                cand[1] is None
+                and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand[0])
+                and cand not in self._candidates_unanswered
                 for cand in self._candidates
             ):
                 return
@@ -686,6 +696,7 @@ class ZoneDiscovery:
                         for cand_pair, data in self._candidates.items()
                         if cand_pair not in asked
                         and cand_pair[1] is None
+                        and cand_pair not in self._candidates_unanswered
                         and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand_pair[0])
                     ),
                     None,
@@ -710,8 +721,13 @@ class ZoneDiscovery:
                 if pair not in self._candidates:
                     continue
                 if answered in (False, True):
-                    self._candidates.pop(pair, None)
-                    self._drop_candidate_held(pair)
+                    self._candidates_unanswered.add(pair)
+                    LOGGER.debug(
+                        "%s Zone %s: nothing answered its temperature read; it stays a candidate "
+                        "for its next frame and is not read again",
+                        getattr(gateway, "log_id", gateway.mac),
+                        pair[0],
+                    )
                 else:
                     LOGGER.debug(
                         "%s Zone %s: temperature could not be read while gateway was busy; "
