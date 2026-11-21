@@ -762,7 +762,7 @@ describe("refusals and A-35's sources", async () => {
     };
   }
 
-  test("«Cambia profilo» refused for a passing reason says the profile was not changed, keeps the choice and Assign on: a new tap tries again and closes as usual", async () => {
+  test("«Cambia profilo» refused for a passing reason says the change could not be confirmed, keeps the choice and Assign on: a new tap tries again and closes as usual", async () => {
     const context = await mountPanel();
     const sheet = await changeProfile(context);
     const writes = () => context.backend.calls.filter((message) => message.type === "myhome/cover_profiles/write").length;

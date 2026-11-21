@@ -2569,7 +2569,7 @@ export class CalibrationTab {
         this.refresh();
       } catch (error) {
         if (!current()) return;
-        // A refusal without a text of its own says the profile was not changed and to try again (here Assign does).
+        // A refusal without a text of its own says the change could not be confirmed and to try again (here Assign does).
         const said = assignError(t, error);
         box.textContent = said === t("profileError") ? t("calTabAssignRetry") : said;
         box.hidden = false;
