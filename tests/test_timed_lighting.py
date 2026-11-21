@@ -258,27 +258,27 @@ class TestLightTimedTurnOn:
         assert str(sent_cmd) == "*1*11*22##"
         assert non_dimmable_light.is_on is True
 
-    async def test_async_turn_on_timer_kwarg(self, dimmable_light, mock_gateway):
-        """Test async_turn_on intercepting 'timer' kwarg."""
-        await dimmable_light.async_turn_on(timer=300)
+    async def test_async_turn_on_timed_5min_preset(self, dimmable_light, mock_gateway):
+        """Test async_turn_on_timed 5-minute preset (300 s -> WHAT=15)."""
+        await dimmable_light.async_turn_on_timed(duration=300)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*15*21##"
         assert dimmable_light.is_on is True
 
-    async def test_async_turn_on_duration_kwarg(self, dimmable_light, mock_gateway):
-        """Test async_turn_on intercepting 'duration' kwarg."""
-        await dimmable_light.async_turn_on(duration=180)
+    async def test_async_turn_on_timed_3min_preset(self, dimmable_light, mock_gateway):
+        """Test async_turn_on_timed 3-minute preset (180 s -> WHAT=13)."""
+        await dimmable_light.async_turn_on_timed(duration=180)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*13*21##"
         assert dimmable_light.is_on is True
 
-    async def test_async_turn_on_timer_and_brightness(self, dimmable_light, mock_gateway):
-        """Test async_turn_on with both timer and brightness kwargs."""
-        await dimmable_light.async_turn_on(timer=45, brightness=255)
+    async def test_async_turn_on_timed_custom_duration_and_brightness(self, dimmable_light, mock_gateway):
+        """Test async_turn_on_timed with non-preset duration and 8-bit brightness."""
+        await dimmable_light.async_turn_on_timed(duration=45, brightness=255)
 
         assert mock_gateway.send.call_count == 2
         first_cmd = mock_gateway.send.call_args_list[0][0][0]
@@ -341,18 +341,18 @@ class TestSwitchTimedTurnOn:
         assert str(sent_cmd) == "*#1*31*#2*1*30*0##"
         assert test_switch.is_on is True
 
-    async def test_switch_async_turn_on_timer_kwarg(self, test_switch, mock_gateway):
-        """Test switch.async_turn_on intercepting 'timer' kwarg."""
-        await test_switch.async_turn_on(timer=60)
+    async def test_switch_async_turn_on_timed_1min_preset(self, test_switch, mock_gateway):
+        """Test switch.async_turn_on_timed 1-minute preset (60 s -> WHAT=11)."""
+        await test_switch.async_turn_on_timed(duration=60)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*11*31##"
         assert test_switch.is_on is True
 
-    async def test_switch_async_turn_on_duration_kwarg(self, test_switch, mock_gateway):
-        """Test switch.async_turn_on intercepting 'duration' kwarg."""
-        await test_switch.async_turn_on(duration=45)
+    async def test_switch_async_turn_on_timed_duration_custom(self, test_switch, mock_gateway):
+        """Test switch.async_turn_on_timed with non-preset duration (45 s -> Dim 2)."""
+        await test_switch.async_turn_on_timed(duration=45)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
@@ -374,8 +374,6 @@ class TestPlatformServiceRegistration:
     """Test registration of turn_on_timed service in light and switch platforms."""
 
     async def test_light_registers_turn_on_timed(self, hass):
-        from homeassistant.helpers import entity_platform
-
         mock_gateway = MagicMock()
         mock_gateway.mac = "AA:BB:CC:DD:EE:FF"
         hass.data = {DOMAIN: {mock_gateway.mac: {"entity": mock_gateway}}}
@@ -384,23 +382,14 @@ class TestPlatformServiceRegistration:
         config_entry.data = {"mac": mock_gateway.mac}
         config_entry.entry_id = "test_light_entry"
 
-        mock_platform = MagicMock()
-        token = entity_platform.current_platform.set(mock_platform)
-        try:
-            with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
-                 patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
-                attach_runtime(hass, config_entry)
-                await async_setup_light_entry(hass, config_entry, MagicMock())
+        with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+             patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
+            attach_runtime(hass, config_entry)
+            await async_setup_light_entry(hass, config_entry, MagicMock())
 
-            mock_platform.async_register_entity_service.assert_called_once()
-            service_name = mock_platform.async_register_entity_service.call_args[0][0]
-            assert service_name == SERVICE_TURN_ON_TIMED
-        finally:
-            entity_platform.current_platform.reset(token)
+        assert hass.services.has_service(DOMAIN, SERVICE_TURN_ON_TIMED)
 
     async def test_switch_registers_turn_on_timed(self, hass):
-        from homeassistant.helpers import entity_platform
-
         mock_gateway = MagicMock()
         mock_gateway.mac = "AA:BB:CC:DD:EE:FF"
         hass.data = {DOMAIN: {mock_gateway.mac: {"entity": mock_gateway, "platforms": {"switch": {}}}}}
@@ -409,16 +398,9 @@ class TestPlatformServiceRegistration:
         config_entry.data = {"mac": mock_gateway.mac}
         config_entry.entry_id = "test_switch_entry"
 
-        mock_platform = MagicMock()
-        token = entity_platform.current_platform.set(mock_platform)
-        try:
-            with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
-                 patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
-                attach_runtime(hass, config_entry)
-                await async_setup_switch_entry(hass, config_entry, MagicMock())
+        with patch("custom_components.myhome.discovery.er.async_entries_for_config_entry", return_value=[]), \
+             patch("custom_components.myhome.discovery.er.async_get", return_value=MagicMock()):
+            attach_runtime(hass, config_entry)
+            await async_setup_switch_entry(hass, config_entry, MagicMock())
 
-            mock_platform.async_register_entity_service.assert_called_once()
-            service_name = mock_platform.async_register_entity_service.call_args[0][0]
-            assert service_name == SERVICE_TURN_ON_TIMED
-        finally:
-            entity_platform.current_platform.reset(token)
+        assert hass.services.has_service(DOMAIN, SERVICE_TURN_ON_TIMED)

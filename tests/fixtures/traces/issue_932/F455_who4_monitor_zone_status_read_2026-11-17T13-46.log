@@ -1,0 +1,29 @@
+2026-11-17T13:46:10.880Z EVT *#4*2*0*0240## [OWNHeatingEvent] Zone 2's main sensor is reporting a temperature of 24.0°C.
+2026-11-17T13:46:11.868Z EVT *#4*2*13*00## [OWNHeatingEvent] Zone 2's local offset is set to 0°C.
+2026-11-17T13:46:11.881Z EVT *4*311*#2## [OWNHeatingEvent] Zone 2's mode is set to 'auto'.
+2026-11-17T13:46:12.691Z EVT *#4*2*14*0240*3## [OWNHeatingEvent] Zone 2's target temperature is set to 24.0°C.
+2026-11-17T13:46:13.607Z EVT *#4*2*12*0240*3## [OWNHeatingEvent] Zone 2's local target temperature is set to 24.0°C.
+2026-11-17T13:46:13.607Z EVT *4*1*2## [OWNHeatingEvent] Zone 2's mode is set to 'heat'.
+2026-11-17T13:46:14.390Z EVT *#4*2#1*20*5## [OWNHeatingEvent] Zone 2's fan is off.
+2026-11-17T13:46:15.347Z EVT *#4*2*19*5*5## [OWNHeatingEvent] Zone 2's cooling fan is off; heating fan is off.
+2026-11-17T13:46:16.191Z EVT *#4*2*11*0## [OWNHeatingEvent] Zone 2's fan is on at 'Auto' speed.
+2026-11-17T13:46:17.030Z EVT *#4*3*0*0253## [OWNHeatingEvent] Zone 3's main sensor is reporting a temperature of 25.3°C.
+2026-11-17T13:46:17.907Z EVT *#4*3*13*00## [OWNHeatingEvent] Zone 3's local offset is set to 0°C.
+2026-11-17T13:46:18.727Z EVT *#4*3*14*0215*3## [OWNHeatingEvent] Zone 3's target temperature is set to 21.5°C.
+2026-11-17T13:46:19.550Z EVT *#4*3*12*0215*3## [OWNHeatingEvent] Zone 3's local target temperature is set to 21.5°C.
+2026-11-17T13:46:19.551Z EVT *4*0*3## [OWNHeatingEvent] Zone 3's mode is set to 'cool'.
+2026-11-17T13:46:19.840Z EVT *4*311*#3## [OWNHeatingEvent] Zone 3's mode is set to 'auto'.
+2026-11-17T13:46:19.899Z EVT *4*210*#3## [OWNHeatingEvent] Zone 3's mode is set to 'cool'.
+2026-11-17T13:46:20.740Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T13:46:20.819Z EVT *#4*3#1*20*0## [OWNHeatingEvent] Zone 3's actuator 1 is off.
+2026-11-17T13:46:21.659Z EVT *#4*3*19*0*0## [OWNHeatingEvent] Zone 3's cooling valve is off; heating valve is off.
+2026-11-17T13:46:22.499Z EVT *#4*4*0*0260## [OWNHeatingEvent] Zone 4's main sensor is reporting a temperature of 26.0°C.
+2026-11-17T13:46:23.340Z EVT *#4*4*13*00## [OWNHeatingEvent] Zone 4's local offset is set to 0°C.
+2026-11-17T13:46:23.408Z EVT *4*311*#4## [OWNHeatingEvent] Zone 4's mode is set to 'auto'.
+2026-11-17T13:46:23.469Z EVT *4*210*#4## [OWNHeatingEvent] Zone 4's mode is set to 'cool'.
+2026-11-17T13:46:24.309Z EVT *#4*4*14*0215*3## [OWNHeatingEvent] Zone 4's target temperature is set to 21.5°C.
+2026-11-17T13:46:25.150Z EVT *#4*4*12*0215*3## [OWNHeatingEvent] Zone 4's local target temperature is set to 21.5°C.
+2026-11-17T13:46:25.150Z EVT *4*0*4## [OWNHeatingEvent] Zone 4's mode is set to 'cool'.
+2026-11-17T13:46:26.045Z EVT *#4*4#1*20*0## [OWNHeatingEvent] Zone 4's actuator 1 is off.
+2026-11-17T13:46:26.830Z EVT *#4*4*19*8*0## [OWNHeatingEvent] Zone 4's cooling fan is on at speed 3; heating valve is off.
+2026-11-17T13:46:27.670Z EVT *#4*4*11*0## [OWNHeatingEvent] Zone 4's fan is on at 'Auto' speed.

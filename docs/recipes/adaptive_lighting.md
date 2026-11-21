@@ -85,7 +85,7 @@ Create a Light Group helper (**Settings → Devices & Services → Helpers → C
 ### Option B: MyHOME SCS Hardware Groups (`WHERE = '#G'`)
 If you define SCS groups in `/config/myhome.yaml` under your gateway MAC address:
 ```yaml
-00:03:50:xx:xx:xx:  # Your gateway MAC address
+"00:03:50:01:02:03":  # Replace with your gateway MAC address
   light:
     living_room_dali_group:
       where: '#1'

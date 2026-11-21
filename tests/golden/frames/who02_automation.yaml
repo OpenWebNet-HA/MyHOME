@@ -130,12 +130,12 @@
   where: "93"
   dimension: 10
   dimension_values: ["75"]
-  source: legrand-spec
+  source: conflict
   mcp_valid: true
-  mcp_notes: "Automation dimension write: Set shutter position to 75%"
+  mcp_notes: "Grammar-only: a DIMENSION 10 write. WHO_2.pdf / Encyclopedia who-2-automation/dimensions.md define DIMENSION 10 as request / response / event only (shutter status); the position write is DIMENSION 11 (*#2*WHERE*#11#PRIORITY*LEVEL##). Was labelled legrand-spec as 'Set shutter position to 75%'; no committed plant trace carries this frame, so it pins parser shape only and claims no meaning."
   roundtrip: true
 
-- id: cover.dim.write.level.30.unparam
+- id: cover.dim.write.level.30.no_priority
   frame: "*#2*93*#11*30##"
   direction: dimension_write
   who: 2
@@ -145,7 +145,7 @@
   dimension_values: ["30"]
   source: legrand-spec
   mcp_valid: true
-  mcp_notes: "Automation: Unparameterized Dimension 11 write to 30%; listed in legacy 2015 Legrand WHO_2 spec as 'slat tilt' but verified by modern OpenWebNet Encyclopedia and firmware oracle as absolute shutter level (Go to level) operation"
+  mcp_notes: "Automation dimension write: Go to level 30% without the priority parameter. Dimension 11 is absolute position (no slat-angle dimension exists in WHO 2); the SCS write form carries #PRIORITY (*#2*WHERE*#11#PRIORITY*LEVEL##, Encyclopedia who-2-automation/dimensions.md#dimension-11---go-to-level) and only the ZigBee variant omits it. Grammar fixture only; no builder emits this form."
   roundtrip: true
 
 - id: cover.cmd.level.75
@@ -155,6 +155,7 @@
   what: null
   where: "93"
   dimension: 11
+  dimension_param: ["001"]
   dimension_values: ["75"]
   source: openwebnet4j
   mcp_valid: true
@@ -165,73 +166,126 @@
     method: set_shutter_level
     args: ["93", 75]
 
-- id: cover.status.dimension10.level10.73
-  frame: "*#2*73*10*10*0*001*0##"
-  direction: dimension_response
+- id: cover.req.status.ptp.01
+  frame: "*#2*01##"
+  direction: status_request
   who: 2
   what: null
-  where: "73"
-  dimension: 10
-  dimension_values: ["10", "0", "001", "0"]
+  where: "01"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)"
+  mcp_notes: "Automation (Covers & Shutters): Query status at address '01' with leading zero"
   roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: status
+    args: ["01"]
 
-- id: cover.cmd.translation.stop.03
-  frame: "*2*1000#0*03##"
+- id: cover.cmd.up.ptp.01
+  frame: "*2*1*01##"
   direction: command
   who: 2
-  what: "1000#0"
-  where: "03"
-  source: community-plant-capture
+  what: 1
+  where: "01"
+  source: public-readme
   mcp_valid: true
-  mcp_notes: "[Translation] Automation (Covers & Shutters): STOP movement at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  mcp_notes: "Automation (Covers & Shutters): UP (Open shutter) at address '01' with leading zero"
   roundtrip: true
-  is_translation: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["01"]
 
-- id: cover.cmd.translation.up.03
-  frame: "*2*1000#1*03##"
+- id: cover.cmd.down.ptp.01
+  frame: "*2*2*01##"
   direction: command
   who: 2
-  what: "1000#1"
-  where: "03"
-  source: community-plant-capture
+  what: 2
+  where: "01"
+  source: public-readme
   mcp_valid: true
-  mcp_notes: "[Translation] Automation (Covers & Shutters): UP (Open shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  mcp_notes: "Automation (Covers & Shutters): DOWN (Close shutter) at address '01' with leading zero"
   roundtrip: true
-  is_translation: true
+  builder:
+    class: OWNAutomationCommand
+    method: lower_shutter
+    args: ["01"]
 
-- id: cover.cmd.translation.down.03
-  frame: "*2*1000#2*03##"
+- id: cover.cmd.stop.ptp.01
+  frame: "*2*0*01##"
   direction: command
-  who: 2
-  what: "1000#2"
-  where: "03"
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "[Translation] Automation (Covers & Shutters): DOWN (Close shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
-  roundtrip: true
-  is_translation: true
-
-- id: cover.evt.stop.routed.interface.02
-  frame: "*2*0*14#4#02##"
-  direction: event
   who: 2
   what: 0
-  where: "14"
-  interface: "02"
+  where: "01"
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Automation: STOP event at address '14' routed via private bus interface 02 (MH200 physical plant sweep)"
+  mcp_notes: "Automation (Covers & Shutters): STOP movement at address '01' with leading zero"
   roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["01"]
 
+- id: cover.req.status.ptp.11
+  frame: "*#2*11##"
+  direction: status_request
+  who: 2
+  what: null
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): Query status at two-digit address '11'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: status
+    args: ["11"]
 
-# MH201 bus capture, MyHOME#433 (anonymized: frames only). A keypad general UP
-# (*2*0*0## then *2*1*0## ~530 ms later, cover.cmd.stop/up.gen.0) produced no
-# per-object UP frames; ~126 s later every actuator reported its own stop and
-# none came for WHERE 0 - the published flow, WHO_2.pdf 3.0.1.2-3: for
-# <where>=GEN,A,GR "as many frames as automation objects".
+- id: cover.cmd.up.ptp.11
+  frame: "*2*1*11##"
+  direction: command
+  who: 2
+  what: 1
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): UP (Open shutter) at two-digit address '11'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: raise_shutter
+    args: ["11"]
+
+- id: cover.cmd.down.ptp.11
+  frame: "*2*2*11##"
+  direction: command
+  who: 2
+  what: 2
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): DOWN (Close shutter) at two-digit address '11'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: lower_shutter
+    args: ["11"]
+
+- id: cover.cmd.stop.ptp.11
+  frame: "*2*0*11##"
+  direction: command
+  who: 2
+  what: 0
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation (Covers & Shutters): STOP movement at two-digit address '11'"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["11"]
+
 - id: cover.evt.stop.area.1
   frame: "*2*0*1##"
   direction: event
@@ -272,18 +326,14 @@
   mcp_notes: "Automation: STOP of point 18 at the end of its run, 127 s after a general UP, the last of eight covers that each reported their own stop within 1 s (MH201 capture, MyHOME#433)"
   roundtrip: true
 
-# MH200 + F422 live test, 2026-09-23 (the maintainer's plant, tests/fixtures/plants/
-# mh200_physical_plant: covers 11-16, 18, 19 behind interface 02, logical #4#
-# addressing). Scope commands do not cross the F422: only point commands move
-# those covers, while a scope status request is answered per object.
 - id: cover.req.status.area.1.bus.02
   frame: "*#2*1#4#02##"
   direction: status_request
   who: 2
   what: null
   where: "1"
-  interface: "02"
   scope: area
+  interface: "02"
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Automation: status of area 1 behind interface 02. MH200 answers with one *2*0*APL#4#02## per cover (11-16, 18, 19; 50 ms apart) and none for the area"
@@ -299,8 +349,8 @@
   who: 2
   what: 1
   where: "1"
-  interface: "02"
   scope: area
+  interface: "02"
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Automation: UP to area 1 behind interface 02. Valid grammar, but the MH200 neither echoed it nor moved a cover; the WHO_2 table establishes the #4# form for APL only (Encyclopedia who-2-automation/addressing.md)"
@@ -328,17 +378,308 @@
   who: 2
   what: 1
   where: "11"
-  interface: "02"
   scope: point
+  interface: "02"
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Automation: MH200 echo of a point UP behind interface 02, 500 ms after *2*0*11#4#02##; the actuator reported its own stop 60.9 s later (its run-time cutoff)"
   roundtrip: true
 
-# BTicino MyHomeServer1 + LN-4660M2 centralized shutter controller capture,
-# 2026-09-26, contributed by @f18m (#445, #466).
-# Proves that centralized control buttons emit multi-parameter Advanced Automation
-# commands on General address 0, followed by Dimension 10 telemetry bursts across actuators.
+- id: cover.evt.down.ptp.12.bus.02
+  frame: "*2*2*12#4#02##"
+  direction: event
+  who: 2
+  what: 2
+  where: "12"
+  scope: point
+  interface: "02"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: MH200 echo of a point DOWN behind interface 02, 500 ms after pre-move *2*0*12#4#02## (Issue #973 live reversal capture)"
+  roundtrip: true
+
+- id: cover.evt.stop.group.1
+  frame: "*2*0*#1##"
+  direction: event
+  who: 2
+  what: 0
+  where: "#1"
+  scope: group
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP to group 1 (every actuator programmed into it); within 0.55 s actuators 0110, 0112, 0113, 0115 echoed their own *2*0*APL## (MH201 plant fixture)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: stop_shutter
+    args: ["#1"]
+
+- id: cover.evt.down.group.1
+  frame: "*2*2*#1##"
+  direction: event
+  who: 2
+  what: 2
+  where: "#1"
+  scope: group
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: DOWN to group 1, 0.59 s after *2*0*#1##; all seven actuators echoed their own *2*2*APL## within 1 s and their own end-of-run *2*0*APL## 5.4-24.3 s after the group stop, none for #1 (MH201 plant fixture)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: lower_shutter
+    args: ["#1"]
+
+- id: cover.status.dimension10.level40.31
+  frame: "*#2*31*10*10*40*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "31"
+  scope: point
+  dimension: 10
+  dimension_values: ["10", "40", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 report with state 10 (stopped) at position 40%, priority bitfield 001, info 0 for shutter 31 on MH202 FW 2.6.13 and F454 FW 2.0.5 (@anotherjulien, MyHOME#466 comment 5849027587)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["31", 40, 10, "001", 0]
+
+- id: cover.status.dimension10.closing66.31
+  frame: "*#2*31*10*12*66*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "31"
+  scope: point
+  dimension: 10
+  dimension_values: ["12", "66", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 report with state 12 (closing) from position 66%, priority bitfield 001, info 0 for shutter 31 on F454 FW 2.0.5 and MH202 FW 2.6.13 (@anotherjulien, MyHOME#466 comments 5849027587 & 6038376669)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["31", 66, 12, "001", 0]
+
+- id: cover.status.dimension10.transitional.closing.02
+  frame: "*#2*02*10*12*100*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "02"
+  scope: point
+  dimension: 10
+  dimension_values: ["12", "100", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 report with state 12 (closing from initial position 100%) on LN-4660M2 advanced shutter actuator 02 captured on MyHomeServer1 (@f18m, MyHOME#445 comment 5868017035)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["02", 100, 12, "001", 0]
+
+- id: cover.status.dimension10.level26.0010
+  frame: "*#2*0010*10*10*26*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "0010"
+  scope: point
+  dimension: 10
+  dimension_values: ["10", "26", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 position 26% report for 4-digit address 0010 from MyHomeServer1 + LN-4660M2 plant after centralized stop (@f18m, MyHOME#445 & MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["0010", 26, 10, "001", 0]
+
+- id: cover.status.dimension10.level83.03
+  frame: "*#2*03*10*10*83*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "03"
+  scope: point
+  dimension: 10
+  dimension_values: ["10", "83", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension 10 position 83% report for bistable cover 03 on MyHomeServer1 FW 2.38.9 (@TheDarkWizard, MyHOME#466 comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: report_shutter_level
+    args: ["03", 83, 10, "001", 0]
+
+- id: cover.evt.translation.stop.91
+  frame: "*2*1000#0*91##"
+  direction: event
+  who: 2
+  what: "1000#0"
+  where: "91"
+  scope: point
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Leading-idle pushbutton command translation STOP (*2*1000#0*91## followed by *2*0*91## and *2*1000#1*91##) on MyHomeServer1 (@Interstellar0verdrive, MyHOME#466 comment 5927373969 & MyHOME#645 comment 6111193057)"
+  roundtrip: true
+
+- id: cover.evt.translation.up.91
+  frame: "*2*1000#1*91##"
+  direction: event
+  who: 2
+  what: "1000#1"
+  where: "91"
+  scope: point
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Pushbutton command translation UP (*2*1000#1*91## followed by *2*1*91##) on MyHomeServer1 (@Interstellar0verdrive, MyHOME#466 comment 5927373969 & MyHOME#645 comment 6111193057)"
+  roundtrip: true
+
+- id: cover.evt.translation.stop.05.f461
+  frame: "*2*1000#0*05##"
+  direction: event
+  who: 2
+  what: "1000#0"
+  where: "05"
+  scope: point
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Pre-move STOP command translation (*2*1000#0*05## -> *2*0*05## -> *2*1000#1/2*05## -> *2*1/2*05##) emitted by physical BTicino F461 FW 2.0.11 for BT-F411/2 5s timed shutter at WHERE 05 (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+
+- id: cover.evt.translation.down.05.f461
+  frame: "*2*1000#2*05##"
+  direction: event
+  who: 2
+  what: "1000#2"
+  where: "05"
+  scope: point
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Mid-flight reversal DOWN command translation (*2*1000#2*05## followed by *2*2*05## and 5.0 s hardware auto-stop *2*0*05##) on BTicino F461 FW 2.0.11 (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+
+- id: cover.evt.translation.stop.virtual.25.f461
+  frame: "*2*1000#0*25##"
+  direction: event
+  who: 2
+  what: "1000#0"
+  where: "25"
+  scope: point
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Pre-move STOP command translation (*2*1000#0*25## -> *2*1000#1/2*25##) broadcast on the event monitor session by physical BTicino F461 FW 2.0.11 for unpopulated virtual cover 25 before returning NACK on cmd (@gdluck & @GreenGrassBlueOcean, MyHOME#753)"
+  roundtrip: true
+
+- id: cover.cmd.level.50.virtual.25.f461
+  frame: "*#2*25*#11#001*50##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "25"
+  scope: point
+  dimension: 11
+  dimension_param: ["001"]
+  dimension_values: ["50"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Dimension #11#001 shutter position write (50%) on virtual cover 25 ACKed in 83 ms by physical BTicino F461 FW 2.0.11 and echoed on evt as *#2*25*#11#001#1*50## (@gdluck, MyHOME#750 comment 6277050571)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: set_shutter_level
+    args: ["25", 50]
+
+- id: cover.evt.level.50.virtual.25.f461
+  frame: "*#2*25*#11#001#1*50##"
+  direction: dimension_write
+  who: 2
+  what: null
+  where: "25"
+  scope: point
+  dimension: 11
+  dimension_param: ["001", "1"]
+  dimension_values: ["50"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Gateway event-session echo (*#2*25*#11#001#1*50##) emitted by physical BTicino F461 FW 2.0.11 (and F454/F459/F460/MH202/MyHomeServer1 in trace-corpus) when *#2*25*#11#001*50## is sent on cmd (@gdluck, MyHOME#750 comment 6277050571)"
+  roundtrip: true
+
+- id: cover.status.dimension10.level10.73
+  frame: "*#2*73*10*10*0*001*0##"
+  direction: dimension_response
+  who: 2
+  what: null
+  where: "73"
+  dimension: 10
+  dimension_values: ["10", "0", "001", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: Absolute position level 10% report for address 73 (issue #247 reporter plant)"
+  roundtrip: true
+
+- id: cover.cmd.translation.stop.03
+  frame: "*2*1000#0*03##"
+  direction: command
+  who: 2
+  what: "1000#0"
+  where: "03"
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): STOP movement at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+
+- id: cover.cmd.translation.up.03
+  frame: "*2*1000#1*03##"
+  direction: command
+  who: 2
+  what: "1000#1"
+  where: "03"
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): UP (Open shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+
+- id: cover.cmd.translation.down.03
+  frame: "*2*1000#2*03##"
+  direction: command
+  who: 2
+  what: "1000#2"
+  where: "03"
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "[Translation] Automation (Covers & Shutters): DOWN (Close shutter) at address '03' (issue #378 reporter plant, TheDarkWizard)"
+  roundtrip: true
+
+- id: cover.evt.stop.routed.interface.02
+  frame: "*2*0*14#4#02##"
+  direction: event
+  who: 2
+  what: 0
+  where: "14"
+  interface: "02"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: STOP event at address '14' routed via private bus interface 02 (MH200 physical plant sweep)"
+  roundtrip: true
+
 - id: cover.cmd.general.up.advanced.100
   frame: "*2*11#100#001#1*0##"
   direction: command
@@ -375,47 +716,29 @@
   mcp_notes: "Automation: Advanced STOP (step 001, priority 1) to General (WHERE 0) from LN-4660M2 centralized button on MyHomeServer1 (#445, #466). A follow-up 2026-09-28 capture (#445 comment 5868017035) confirms the STOP/PRESET button sends this byte-identical frame when pressed while every shutter is already stationary; no separate preset-recall or Dimension 11 write was observed, closing that open question from comment 5854237269."
   roundtrip: true
 
-- id: cover.status.dimension10.level26.0010
-  frame: "*#2*0010*10*10*26*001*0##"
-  direction: dimension_response
-  who: 2
-  what: null
-  where: "0010"
-  dimension: 10
-  dimension_values: ["10", "26", "001", "0"]
-  scope: point
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Automation: Dimension 10 position 26% report for 4-digit address '0010' from MyHomeServer1 plant after centralized stop (#445, #466)"
-  roundtrip: true
-
 - id: cover.status.dimension10.level86.02
   frame: "*#2*02*10*10*86*001*0##"
   direction: dimension_response
   who: 2
   what: null
   where: "02"
+  scope: point
   dimension: 10
   dimension_values: ["10", "86", "001", "0"]
-  scope: point
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Automation: Dimension 10 position 86% report for address '02' from MyHomeServer1 plant after centralized stop (#445, #466)"
   roundtrip: true
 
-# Follow-up MyHomeServer1 + LN-4660M2 captures, 2026-09-28, contributed by @f18m
-# (#445, comment 5868017035), answering the maintainer's outstanding questions
-# about a STOP press on already-stationary shutters and local (non-centralized)
-# keypad syntax.
 - id: cover.status.dimension10.rest100.04
   frame: "*#2*04*10*10*100*001*0##"
   direction: dimension_response
   who: 2
   what: null
   where: "04"
+  scope: point
   dimension: 10
   dimension_values: ["10", "100", "001", "0"]
-  scope: point
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Automation: Dimension 10 status-code 10 (stopped) at position 100% for an actuator that was never in motion during this capture, from the same stationary STOP-press trace as cover.cmd.general.stop.advanced.stationary; openwebnet-mcp's grammar-only reading ('10% open') is wrong here as elsewhere in this corpus, see README Provenance"
@@ -433,21 +756,6 @@
   mcp_notes: "Automation: the LN-4660M2's own LOCAL room button (not the centralized/general one) emits the plain *2*WHAT*WHERE## syntax at the individual point address, not the multi-parameter Advanced form used on General address 0; confirms local keypads and the centralized button differ in frame shape even on the same hardware family (#445 comment 5868017035)"
   roundtrip: true
 
-- id: cover.status.dimension10.transitional.closing.02
-  frame: "*#2*02*10*12*100*001*0##"
-  direction: dimension_response
-  who: 2
-  what: null
-  where: "02"
-  dimension: 10
-  dimension_values: ["12", "100", "001", "0"]
-  scope: point
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Automation: Dimension 10 report with status-code 12 (closing, from initial position 100%) captured mid-movement immediately after the local DOWN event (cover.evt.down.ptp.lnkeypad.02); first real-world confirmation of OWNd's state==12 'closing from initial position' branch (message.py OWNAutomationEvent), previously reachable only via spec inference; openwebnet-mcp reads dimension_values[0] as a raw percentage ('12% open'), which is the grammar-only misreading the README Provenance section warns about"
-  roundtrip: true
-
-# Plant capture from PR #491 (myhome_sweep_F454_all_2026-09-26T16-59-13.json)
 - id: cover.cmd.level.relayed.40.31
   frame: "*#2*31*#11#001#1*40##"
   direction: dimension_write
@@ -455,8 +763,25 @@
   what: null
   where: "31"
   dimension: 11
+  dimension_param: ["001", "1"]
   dimension_values: ["40"]
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Automation: Relayed absolute shutter level 40% with priority 001 and set selector 1 to address 31 (PR #491, #466)"
   roundtrip: true
+
+- id: cover.capture.req.status.general
+  frame: "*#2*0##"
+  direction: status_request
+  who: 2
+  what: null
+  where: "0"
+  scope: general
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Automation: General automation status sweep (*#2*0##; captured on MH200 and F454 live plants, MyHOME#494)"
+  roundtrip: true
+  builder:
+    class: OWNAutomationCommand
+    method: status
+    args: ["0"]

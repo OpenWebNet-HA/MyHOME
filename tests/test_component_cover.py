@@ -3544,10 +3544,11 @@ async def test_yaml_cover_restores_a_service_set_slat_time(hass, mock_gateway):
             }
         }
     }
-    config_entry = MagicMock()
-    config_entry.data = {"mac": mac}
-    config_entry.entry_id = "test_entry"
-    config_entry.options = {"cover_travel_times": {"41": {"down": 40.0, "up": 40.0, "slat_time": 3.5}}}
+    config_entry = MockConfigEntry(
+        domain=DOMAIN, data={"mac": mac}, entry_id="test_entry",
+        options={"cover_travel_times": {"41": {"down": 40.0, "up": 40.0, "slat_time": 3.5}}},
+    )
+    config_entry.add_to_hass(hass)
 
     added = []
     with patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \

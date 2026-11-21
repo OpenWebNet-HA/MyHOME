@@ -659,7 +659,9 @@ async def test_command_priority_queue_shutdown_and_wakeup_skip() -> None:
     await q.put({"message": "S1", "is_status_request": True})
 
     # Test shutdown
+    assert q.is_shutdown is False
     setattr(q, "_is_shutdown", True)
+    assert q.is_shutdown is True
     shutdown_exc = getattr(asyncio, "QueueShutDown", Exception)
     with pytest.raises(shutdown_exc):
         await q.put({"message": "C1", "is_status_request": False})

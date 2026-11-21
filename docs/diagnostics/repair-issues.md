@@ -66,8 +66,8 @@ An authoritative hardware model code reported by the gateway over the bus — an
 
 ### How to resolve
 1. Check the physical hardware label on your gateway unit in the electrical cabinet.
-2. Open **Settings → Devices & Services → MyHOME → ⋮ → Reconfigure**.
-3. Select the correct physical model.
+2. Open **Settings → Devices & Services → MyHOME → Configure** (Options Flow; **⋮ → Reconfigure** is for `host`, `port`, and `password`).
+3. Select the correct physical **Gateway Hardware Model** (`name`).
 
 ---
 
@@ -247,8 +247,8 @@ The integration passively detected that two configured OpenWebNet gateways share
 Home Assistant automatically inspects the hardware models, command concurrency, queue pacing, and supported OpenWebNet subsystems (`WHO` dimensions) of both gateways:
 
 - **Tier 1 (High Throughput / Multi-Session)**: `F454`, `F455`, `F461`, `MyHomeServer1`.
-- **Tier 2 (Linux / Touchscreen Gateways)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890`.
-- **Tier 3 (Legacy Microcontroller Gateways)**: `MH200N`, `MH200`, `F452`, `F453`.
+- **Tier 2 (Modern Scenario & Touchscreen Gateways)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890` (and Legrand catalogue equivalents `067292`, `573958`, `078479`).
+- **Tier 3 (Legacy & Single-Session Gateways)**: `MH200N`, `MH200`, `F452`, `F452V`, `F453`, `F453AV`, `H4684` / `H/L4684`, and `Generic`.
 
 The integration designates the higher-tier or broader-subsystem-coverage gateway as **Primary** (ranking by hardware tier, supported WHO count, and deterministic MAC address tie-break), and calculates the capability delta for the follower (`Δ = S_sec \ S_pri`):
 
@@ -312,6 +312,7 @@ A gateway configured as **Secondary** or **Warm Standby** points at a primary ga
 ### How to resolve
 1. Navigate to **Settings → Devices & Services → MyHOME** and click **Configure** on the gateway named in the issue.
 2. Either select another gateway (configured as **Shared** / **Primary**) under **Primary Gateway**, or set **Bus Topology** to `standalone` if it is now the only gateway on its bus.
+3. If the gateway named in the issue is the only MyHOME gateway left in Home Assistant, its **Configure** form shows **Bus Topology** and no other topology field: set it to `standalone` and save. The gateway is reloaded as its own primary and the issue is cleared. Nothing changes until you save, and saving with `shared` is refused there, because the primary it points at has no entry.
 
 ---
 

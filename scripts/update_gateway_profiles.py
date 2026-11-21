@@ -23,6 +23,10 @@ if str(REPO_ROOT) not in sys.path:
 README_MD = REPO_ROOT / "README.md"
 CONST_PY = REPO_ROOT / "custom_components" / "myhome" / "const.py"
 MANIFEST_JSON = REPO_ROOT / "custom_components" / "myhome" / "manifest.json"
+STRINGS_JSON = REPO_ROOT / "custom_components" / "myhome" / "strings.json"
+CONFIG_FLOW_OPTIONS_PY = REPO_ROOT / "custom_components" / "myhome" / "config_flow_options.py"
+CONFIG_FLOW_AUDIO_PY = REPO_ROOT / "custom_components" / "myhome" / "config_flow_audio.py"
+CONFIG_FLOW_TOPOLOGY_PY = REPO_ROOT / "custom_components" / "myhome" / "config_flow_topology.py"
 
 START_MARKER = "<!-- GATEWAY_PROFILES_START -->"
 END_MARKER = "<!-- GATEWAY_PROFILES_END -->"
@@ -181,10 +185,15 @@ GATEWAY_METADATA: list[dict[str, object]] = [
 # tests/test_startup_requests_per_firmware.py checks these lists against the sweep itself, and
 # verify_profiles_against_oracle checks them against ``pinned_whos``); a request of a WHO the row
 # does not advertise is not an omission (nothing is sent for that WHO at all) and is left out of
-# the generated row. ``notes`` describes the row; where a profile may list or drop WHO 16 between
+# the generated row. ``sweep_replaces`` lists what the sweep sends in place of an omitted general
+# request (``_heating_startup_requests`` in gateway.py; tests/test_review_955_third_pass_2026_11_18.py
+# checks the lists against the sweep itself), so the column does not read as "no WHO 4 request".
+# ``notes`` describes the row; where a profile may list or drop WHO 16 between
 # OWNd releases, ``notes_without_who16`` is used instead when the row does not carry WHO 16.
 GENERAL_ZONE_STATUS = "*#4*0##"
 SOUND_STATUS = "*#16*0*5##"
+CENTRAL_UNIT_STATUS = "*#4*#0##"
+ALL_ACTUATORS_STATUS = "*#4*0#0*20##"
 GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH202**",
@@ -205,7 +214,8 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "F454",
         "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep leaves it out; zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted.",
+        "sweep_replaces": [ALL_ACTUATORS_STATUS],
+        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep asks every actuator in its place (`*#4*0#0*20##`); zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
@@ -219,23 +229,26 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "F461",
         "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
-        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "sweep_replaces": [CENTRAL_UNIT_STATUS, ALL_ACTUATORS_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**F455**",
         "profile_name": "F455",
         "pinned_whos": [1, 2, 4, 18],
-        "sweep_omits": [],
-        "notes": "Entry-level gateway: lighting, cover, climate, and energy meter 51 queries. Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "sweep_replaces": [ALL_ACTUATORS_STATUS],
+        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Not in own-firmware-oracle; a physical F455 1.0.76 ACKed `*#4*0##` after 9.1 s with no zone frame although its zones answer single reads (`tests/fixtures/traces/issue_466`), so the sweep asks every actuator in its place (`*#4*0#0*20##`); a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
         "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
-        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "sweep_replaces": [CENTRAL_UNIT_STATUS, ALL_ACTUATORS_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**MH201**",
@@ -444,26 +457,450 @@ def build_block(
     table = generate_gateway_profiles_table(const_path, manifest_path)
     return f"{START_MARKER}\n{table}\n{END_MARKER}"
 
-def generate_gateway_options_table() -> str:
-    """Generate the markdown table for Gateway Runtime Options from config_flow."""
+# Authoritative Options Flow metadata cross-verified against config_flow_options.py,
+# config_flow_audio.py, config_flow_topology.py, and strings.json["options"]["step"]["user"]["data"].
+GATEWAY_OPTIONS_SPECS: list[dict[str, object]] = [
+    {
+        "keys": ("command_worker_count",),
+        "option": "**Command Worker Concurrency**",
+        "key_cell": "`command_worker_count`",
+        "selector": "Integer",
+        "default": "`1` (`2` on F455 and MyHomeServer1, via `command_session_default`)",
+        "limits": "Range 1–4 capped by model (`1` on single-session models, `2` on MH202, `4` on F454/F455/F461/MyHomeServer1; `1–10` on Generic)",
+        "description": "Number of concurrent asynchronous command sessions (`*99*0##`) dispatched to the gateway.",
+    },
+    {
+        "keys": ("transition_mode",),
+        "option": "**Dimmer Transition Mode**",
+        "key_cell": "`transition_mode`",
+        "selector": "Select",
+        "default": "`software_stepped`",
+        "limits": "`software_stepped`, `native`, `auto`",
+        "description": "Home Assistant software-stepped fade interpolation vs native hardware speed parameter (`auto` aliases `software_stepped`).",
+    },
+    {
+        "keys": ("generate_events",),
+        "option": "**Event Bus Broadcasting**",
+        "key_cell": "`generate_events`",
+        "selector": "Boolean",
+        "default": "`False`",
+        "limits": "All gateways",
+        "description": "Emits raw OpenWebNet bus frames onto the Home Assistant event bus as `myhome_message_event`.",
+    },
+    {
+        "keys": ("broadcast_resync",),
+        "option": "**Broadcast Re-sync**",
+        "key_cell": "`broadcast_resync`",
+        "selector": "Boolean",
+        "default": "`True`",
+        "limits": "All gateways",
+        "description": "Sweeps group (`#G`), area, and general (`WHERE = 0`) light addresses for status after a debounced silence window.",
+    },
+    {
+        "keys": ("address",),
+        "option": "**Gateway Host Address**",
+        "key_cell": "`address` *(writes `entry.data[\"host\"]`)*",
+        "selector": "IPv4 String",
+        "default": "Current `host`",
+        "limits": "Valid IPv4",
+        "description": "In-place update of the gateway IPv4 address (`host`) without deleting the config entry.",
+    },
+    {
+        "keys": ("password",),
+        "option": "**Gateway Password**",
+        "key_cell": "`password` *(writes `entry.data[\"password\"]`)*",
+        "selector": "String",
+        "default": "Current `password`",
+        "limits": "OPEN numeric / SHA-256 HMAC",
+        "description": "In-place update of the OpenWebNet password without deleting the config entry.",
+    },
+    {
+        "keys": ("name",),
+        "option": "**Gateway Hardware Model**",
+        "key_cell": "`name` *(writes `entry.data[\"name\"]` / model)*",
+        "selector": "Select",
+        "default": "Current model",
+        "limits": "`SUPPORTED_GATEWAY_MODELS`",
+        "description": "In-place override of the gateway hardware model and active OWNd profile (`model_source = \"manual\"`).",
+    },
+    {
+        "keys": ("ignored_addresses",),
+        "option": "**Ignored Bus Addresses**",
+        "key_cell": "`ignored_addresses`",
+        "selector": "Multiline Text",
+        "default": "`[]`",
+        "limits": "All gateways",
+        "description": "Newline- or comma-separated `WHO/WHERE` addresses (e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and fault tracking.",
+    },
+    {
+        "keys": ("standalone_zones",),
+        "option": "**Standalone Thermostats**",
+        "key_cell": "`standalone_zones`",
+        "selector": "Text",
+        "default": "`[]`",
+        "limits": "Zones `1`..`99` (local bus)",
+        "description": "Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`. The emulated firmware of F453, F453AV, H4684, MH200 and MH200N refuses that direct form (own-firmware-oracle `trace-corpus.tsv:55`; not yet seen on a real gateway): a refused write fails the service call.",
+    },
+    {
+        "keys": ("bus_topology",),
+        "option": "**Bus Topology**",
+        "key_cell": "`bus_topology`",
+        "selector": "Select",
+        "default": "`standalone`",
+        "limits": "`standalone`, `shared` *(multi-gateway setups)*",
+        "description": "Declares whether this gateway operates on an independent SCS bus (`standalone`) or shares a physical SCS bus with another configured gateway (`shared`).",
+    },
+    {
+        "keys": ("gateway_role",),
+        "option": "**Gateway Role**",
+        "key_cell": "`gateway_role`",
+        "selector": "Select",
+        "default": "`primary`",
+        "limits": "`primary`, `secondary`, `standby` *(shared bus)*",
+        "description": "Shared-bus coordination role: `primary` owns general bus discovery, `secondary` handles delegated `WHO` subsystems, and `standby` stays passive for hot failover.",
+    },
+    {
+        "keys": ("primary_gateway",),
+        "option": "**Primary Gateway**",
+        "key_cell": "`primary_gateway`",
+        "selector": "Select",
+        "default": "First peer gateway",
+        "limits": "Configured non-follower gateways",
+        "description": "Target primary gateway MAC address paired with a `secondary` or `standby` follower on a shared SCS bus.",
+    },
+    {
+        "keys": ("delegated_whos",),
+        "option": "**Delegated Subsystems**",
+        "key_cell": "`delegated_whos`",
+        "selector": "Multi-Select",
+        "default": "Auto-inferred (`[]`)",
+        "limits": "Delegatable `WHO` codes (`secondary` role)",
+        "description": "OpenWebNet `WHO` subsystems delegated to a `secondary` gateway on a shared bus (for example `WHO = 6` / `WHO = 8` door entry or `WHO = 16` audio).",
+    },
+    {
+        "keys": ("auto_join_streaming",),
+        "option": "**Auto-Join Streaming Groups**",
+        "key_cell": "`auto_join_streaming`",
+        "selector": "Boolean",
+        "default": "`True`",
+        "limits": "WHO 16 audio zones",
+        "description": "Automatically joins an active streaming decoder group when turning on a room amplifier or adjusting volume from a physical wall control.",
+    },
+    {
+        "keys": ("tuner_pictures",),
+        "option": "**FM Tuner Station Pictures**",
+        "key_cell": "`tuner_pictures`",
+        "selector": "Multiline Text",
+        "default": "`\"\"`",
+        "limits": "`<MHz>=<URL>` lines",
+        "description": "Custom station artwork mapping (`MHz=URL` per line, e.g. `96.2=/local/radio/one.png`) displayed while an F500/F500N tuner is tuned to that frequency.",
+    },
+    {
+        "keys": ("source_1_name", "source_2_name", "source_3_name", "source_4_name"),
+        "option": "**Audio Matrix Source Names**",
+        "key_cell": "`source_1_name`..`source_4_name`",
+        "selector": "Text",
+        "default": "`\"\"`",
+        "limits": "4 matrix inputs (`S1`–`S4`)",
+        "description": "Friendly labels for physical sound sources wired to F441/F441M matrix inputs `S1`–`S4` (blank hides unconfigured inputs from source selection).",
+    },
+    {
+        "keys": ("source_1_tuner", "source_2_tuner", "source_3_tuner", "source_4_tuner"),
+        "option": "**Audio Source FM Tuner Flag**",
+        "key_cell": "`source_1_tuner`..`source_4_tuner`",
+        "selector": "Boolean",
+        "default": "`False`",
+        "limits": "4 matrix inputs (`S1`–`S4`)",
+        "description": "Declares whether matrix input `S1`–`S4` is an F500/F500N RDS FM tuner, creating its radio `media_player`, frequency `number`, and seek `button` entities.",
+    },
+    {
+        "keys": tuple(f"default_source_env_{i}" for i in range(1, 10)),
+        "option": "**Audio Environment Default Source**",
+        "key_cell": "`default_source_env_1`..`default_source_env_9` *(stored in `source_defaults`)*",
+        "selector": "Select",
+        "default": "`none`",
+        "limits": "Active audio environments `1`–`9` (`none`, `1`–`4`)",
+        "description": "Per-environment default matrix input (`S1`–`S4`) selected when turning on a two-digit room amplifier (`EA`) from Home Assistant (`none` leaves routing unchanged).",
+    },
+    {
+        "keys": ("decoder_1_entity", "decoder_2_entity", "decoder_3_entity", "decoder_4_entity"),
+        "option": "**Streaming Decoder Entity**",
+        "key_cell": "`decoder_1_entity`..`decoder_4_entity`",
+        "selector": "Entity (`media_player`)",
+        "default": "`\"\"`",
+        "limits": "4 decoder slots (excludes MyHOME & MA clones)",
+        "description": "Upstream hardware `media_player` entity (e.g. Squeezelite, WiiM, Cambridge Audio) whose analog line-out feeds one of the matrix inputs.",
+    },
+    {
+        "keys": ("decoder_1_source", "decoder_2_source", "decoder_3_source", "decoder_4_source"),
+        "option": "**Streaming Decoder Matrix Input**",
+        "key_cell": "`decoder_1_source`..`decoder_4_source`",
+        "selector": "Select",
+        "default": "Slot index (`1`–`4`)",
+        "limits": "Unique matrix input `1`–`4` per active decoder",
+        "description": "Physical F441/F441M matrix source input (`S1`–`S4`) wired to each streaming decoder's line-out.",
+    },
+    {
+        "keys": ("decoder_1_pre_gain", "decoder_2_pre_gain", "decoder_3_pre_gain", "decoder_4_pre_gain"),
+        "option": "**Streaming Decoder Pre-Gain**",
+        "key_cell": "`decoder_1_pre_gain`..`decoder_4_pre_gain`",
+        "selector": "Integer (`%`)",
+        "default": "`0`",
+        "limits": "`0–100%` integer (`step: 1`)",
+        "description": "Fixed line-level feed trim (`0–100%` integer: `0%` leaves upstream volume untouched; `1–100%` sets upstream volume to `min(1.0, 0.75 + pre_gain / 100)`).",
+    },
+    {
+        "keys": ("decoder_1_companion", "decoder_2_companion", "decoder_3_companion", "decoder_4_companion"),
+        "option": "**Streaming Decoder Companion**",
+        "key_cell": "`decoder_1_companion`..`decoder_4_companion`",
+        "selector": "Entity (`media_player`)",
+        "default": "`\"\"` *(auto-detect)*",
+        "limits": "4 decoder slots (optional companion player)",
+        "description": "Optional companion `media_player` entity receiving stream URLs (`play_media`) on behalf of the hardware decoder when left blank for auto-detection.",
+    },
+]
+
+
+def extract_const_scalars(const_path: Path = CONST_PY) -> dict[str, str | int]:
+    """Parse top-level string and integer constants from const.py using stdlib AST."""
+    scalars: dict[str, str | int] = {
+        # Standard Home Assistant constants imported in config_flow_options.py
+        "CONF_HOST": "host",
+        "CONF_NAME": "name",
+        "CONF_PASSWORD": "password",
+    }
+    if not const_path.exists():
+        raise FileNotFoundError(f"{const_path} not found")
+
+    tree = ast.parse(const_path.read_text(encoding="utf-8"), filename=str(const_path))
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            val = stmt.value
+            if isinstance(val, ast.Constant) and isinstance(val.value, (str, int)) and not isinstance(val.value, bool):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name):
+                        scalars[target.id] = val.value
+        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name) and stmt.value is not None:
+            val = stmt.value
+            if isinstance(val, ast.Constant) and isinstance(val.value, (str, int)) and not isinstance(val.value, bool):
+                scalars[stmt.target.id] = val.value
+    return scalars
+
+
+def _eval_scalar_expr(expr: ast.AST, env_vars: dict[str, str | int]) -> str | int | None:
+    """Evaluate a simple constant/name/format/addition AST expression against ``env_vars``."""
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, (str, int)) and not isinstance(expr.value, bool):
+        return expr.value
+    if isinstance(expr, ast.Name) and expr.id in env_vars:
+        return env_vars[expr.id]
+    if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Add):
+        left = _eval_scalar_expr(expr.left, env_vars)
+        right = _eval_scalar_expr(expr.right, env_vars)
+        if isinstance(left, int) and isinstance(right, int):
+            return left + right
+    if (
+        isinstance(expr, ast.Call)
+        and isinstance(expr.func, ast.Attribute)
+        and expr.func.attr == "format"
+        and len(expr.args) == 1
+    ):
+        tmpl = _eval_scalar_expr(expr.func.value, env_vars)
+        arg = _eval_scalar_expr(expr.args[0], env_vars)
+        if isinstance(tmpl, str) and arg is not None:
+            return tmpl.format(arg)
+    return None
+
+
+def _unwrap_vol_key_expr(expr: ast.AST, env_vars: dict[str, str | int]) -> str | None:
+    """Resolve a ``Required(<key>, ...)`` / ``vol.Optional(<key>, ...)`` or literal schema key."""
+    target = expr
+    if isinstance(expr, ast.Call):
+        fn = expr.func
+        fn_name = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else ""
+        if fn_name in ("Required", "Optional") and expr.args:
+            target = expr.args[0]
+    val = _eval_scalar_expr(target, env_vars)
+    return val if isinstance(val, str) else None
+
+
+def _collect_schema_keys_from_stmts(
+    stmts: list[ast.stmt],
+    env_vars: dict[str, str | int],
+    found: set[str],
+) -> None:
+    """Walk function body statements to collect all ``schema_dict`` Voluptuous keys."""
+    for stmt in stmts:
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+            targets = stmt.targets if isinstance(stmt, ast.Assign) else [stmt.target]
+            value = stmt.value
+            if value is None:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id == "schema_dict" and isinstance(value, ast.Dict):
+                    for k in value.keys:
+                        if k is not None:
+                            resolved = _unwrap_vol_key_expr(k, env_vars)
+                            if resolved is not None:
+                                found.add(resolved)
+                elif (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "schema_dict"
+                ):
+                    resolved = _unwrap_vol_key_expr(target.slice, env_vars)
+                    if resolved is not None:
+                        found.add(resolved)
+                elif isinstance(target, ast.Name):
+                    eval_val = _eval_scalar_expr(value, env_vars)
+                    if eval_val is not None:
+                        env_vars[target.id] = eval_val
+        elif isinstance(stmt, ast.For) and isinstance(stmt.target, ast.Name):
+            loop_var = stmt.target.id
+            iter_vals: list[str | int] | None = None
+            if (
+                isinstance(stmt.iter, ast.Call)
+                and isinstance(stmt.iter.func, ast.Name)
+                and stmt.iter.func.id == "range"
+                and len(stmt.iter.args) == 2
+            ):
+                start = _eval_scalar_expr(stmt.iter.args[0], env_vars)
+                stop = _eval_scalar_expr(stmt.iter.args[1], env_vars)
+                if isinstance(start, int) and isinstance(stop, int):
+                    iter_vals = list(range(start, stop))
+            elif (
+                isinstance(stmt.iter, ast.Call)
+                and isinstance(stmt.iter.func, ast.Attribute)
+                and stmt.iter.func.attr == "_audio_environments"
+            ):
+                # Two-digit amplifier environments 1..9 (environment "0" is excluded)
+                iter_vals = [str(i) for i in range(1, 10)]
+            if iter_vals is not None:
+                for item in iter_vals:
+                    sub_env = dict(env_vars)
+                    sub_env[loop_var] = item
+                    _collect_schema_keys_from_stmts(stmt.body, sub_env, found)
+        elif isinstance(stmt, ast.If):
+            _collect_schema_keys_from_stmts(stmt.body, dict(env_vars), found)
+            _collect_schema_keys_from_stmts(stmt.orelse, dict(env_vars), found)
+
+
+def extract_options_flow_keys(
+    const_path: Path = CONST_PY,
+    options_path: Path = CONFIG_FLOW_OPTIONS_PY,
+    audio_path: Path = CONFIG_FLOW_AUDIO_PY,
+    topology_path: Path = CONFIG_FLOW_TOPOLOGY_PY,
+) -> set[str]:
+    """Introspect all Options Flow form keys via stdlib AST across options, audio, and topology mixins."""
+    base_env = extract_const_scalars(const_path)
+    found: set[str] = set()
+    targets: tuple[tuple[Path, str], ...] = (
+        (options_path, "async_step_user"),
+        (audio_path, "_append_audio_schema"),
+        (topology_path, "_append_topology_schema"),
+    )
+    for file_path, fn_name in targets:
+        if not file_path.exists():
+            raise FileNotFoundError(f"{file_path} not found")
+        tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=str(file_path))
+        matched_fn = False
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn_name:
+                matched_fn = True
+                _collect_schema_keys_from_stmts(node.body, dict(base_env), found)
+        if not matched_fn:
+            raise ValueError(f"Expected function '{fn_name}' not found in {file_path}")
+    return found
+
+
+def extract_strings_options_keys(strings_path: Path = STRINGS_JSON) -> set[str]:
+    """Extract ``options.step.user.data`` keys from strings.json."""
+    if not strings_path.exists():
+        raise FileNotFoundError(f"{strings_path} not found")
+    payload = json.loads(strings_path.read_text(encoding="utf-8"))
+    data = payload.get("options", {}).get("step", {}).get("user", {}).get("data")
+    if not isinstance(data, dict):
+        raise ValueError(f"Missing 'options.step.user.data' mapping in {strings_path}")
+    return set(data.keys())
+
+
+def extract_strings_options_description_keys(strings_path: Path = STRINGS_JSON) -> set[str]:
+    """Extract ``options.step.user.data_description`` keys from strings.json."""
+    if not strings_path.exists():
+        raise FileNotFoundError(f"{strings_path} not found")
+    payload = json.loads(strings_path.read_text(encoding="utf-8"))
+    desc = payload.get("options", {}).get("step", {}).get("user", {}).get("data_description", {})
+    if not isinstance(desc, dict):
+        raise ValueError(f"Invalid 'options.step.user.data_description' mapping in {strings_path}")
+    return set(desc.keys())
+
+
+def generate_gateway_options_table(
+    *,
+    const_path: Path = CONST_PY,
+    options_path: Path = CONFIG_FLOW_OPTIONS_PY,
+    audio_path: Path = CONFIG_FLOW_AUDIO_PY,
+    topology_path: Path = CONFIG_FLOW_TOPOLOGY_PY,
+    strings_path: Path = STRINGS_JSON,
+    specs: list[dict[str, object]] | None = None,
+) -> str:
+    """Generate the markdown table for Gateway Runtime Options and cross-verify 1-to-1 key parity."""
+    active_specs = GATEWAY_OPTIONS_SPECS if specs is None else specs
+    flow_keys = extract_options_flow_keys(
+        const_path=const_path,
+        options_path=options_path,
+        audio_path=audio_path,
+        topology_path=topology_path,
+    )
+    strings_keys = extract_strings_options_keys(strings_path)
+    desc_keys = extract_strings_options_description_keys(strings_path)
+
+    missing_in_strings = sorted(flow_keys - strings_keys)
+    extra_in_strings = sorted(strings_keys - flow_keys)
+    if missing_in_strings or extra_in_strings:
+        raise ValueError(
+            "Options Flow schema keys disagree with strings.json['options']['step']['user']['data']: "
+            f"missing_in_strings={missing_in_strings}, extra_in_strings={extra_in_strings}"
+        )
+
+    orphan_desc_keys = sorted(desc_keys - flow_keys)
+    if orphan_desc_keys:
+        raise ValueError(
+            "Orphaned keys in strings.json['options']['step']['user']['data_description'] "
+            f"not present in Options Flow schema: {orphan_desc_keys}"
+        )
+
+    documented_keys: set[str] = set()
+    duplicate_doc_keys: list[str] = []
+    for spec in active_specs:
+        raw_keys = spec.get("keys", ())
+        if not isinstance(raw_keys, (list, tuple)) or not raw_keys:
+            raise ValueError(f"Invalid 'keys' in GATEWAY_OPTIONS_SPECS entry: {spec!r}")
+        for k in raw_keys:
+            key_str = str(k)
+            if key_str in documented_keys and key_str not in duplicate_doc_keys:
+                duplicate_doc_keys.append(key_str)
+            documented_keys.add(key_str)
+
+    if duplicate_doc_keys:
+        raise ValueError(f"Duplicate keys in GATEWAY_OPTIONS_SPECS: {duplicate_doc_keys}")
+
+    missing_in_docs = sorted(flow_keys - documented_keys)
+    extra_in_docs = sorted(documented_keys - flow_keys)
+    if missing_in_docs or extra_in_docs:
+        raise ValueError(
+            "GATEWAY_OPTIONS_SPECS keys disagree with Options Flow schema: "
+            f"missing_in_docs={missing_in_docs}, extra_in_docs={extra_in_docs}"
+        )
+
     lines = [
         "| Option | Key | Selector / Type | Default | Session / Model Limits | Description |",
         "| :--- | :--- | :---: | :---: | :--- | :--- |",
-        "| **Command Worker Concurrency** | `worker_count` | Integer | `1` | Range 1–10 (capped by model: 1 for MH200/MH201, 2 for MH202, 4 for F454/MHS1) | Number of concurrent asynchronous command sessions dispatched to the gateway. |",
-        "| **Dimmer Transition Mode** | `transition_mode` | Select | `software_stepped` | `software_stepped`, `native`, `auto` | Home Assistant software-stepped fade vs native hardware speed parameter. |",
-        "| **Event Bus Broadcasting** | `generate_events` | Boolean | `False` | All gateways | Emits raw OpenWebNet bus frames onto the Home Assistant event bus as `myhome_message_event`. |",
-        "| **Broadcast Re-sync** | `broadcast_resync` | Boolean | `True` | All gateways | Automatically triggers targeted entity queries when general or area broadcast commands (`WHERE = 0`) are received. |",
-        "| **Gateway Host Address** | `address` | IPv4 String | Current Host | Valid IPv4 | In-place update of gateway IP address without deleting the integration entry. |",
-        "| **Gateway Password** | `own_password` | String | Current Pass | Alphanumeric / Numeric | In-place update of OpenWebNet password without deleting the integration entry. |",
-        "| **Gateway Hardware Model** | `name` | Select | Current Model | `SUPPORTED_GATEWAY_MODELS` | In-place correction of gateway hardware model and active profile. |",
-        "| **Audio Source Names** | `source_name_1`..`4` | Text | `\"\"` | 4 Matrix inputs | Custom labels for physical sound sources plugged into F441/F441M matrix inputs (S1–S4). |",
-        "| **Audio Source Tuner Flag** | `source_tuner_1`..`4` | Boolean | `False` | 4 Matrix inputs | Declares whether an input is an SCS radio tuner (enables RDS and frequency tuning commands). |",
-        "| **Audio Default Routing** | `source_default_<env>` | Select | `none` | Active audio environments | Per-environment default sound source assigned when turning on amplifiers. |",
-        "| **Proxy Decoder Entity** | `decoder_entity_1`..`4` | Entity (`media_player`) | `\"\"` | 4 Decoder slots | External software audio player entity (e.g. Music Assistant, Squeezelite) mapped to matrix inputs. |",
-        "| **Proxy Decoder Source** | `decoder_source_1`..`4` | Select | Slot index | 1–4 | Matrix source input plugged into the external audio player's sound card / DAC. |",
-        "| **Proxy Decoder Pre-Gain** | `decoder_pre_gain_1`..`4` | Number | `0` | -20 dB to +20 dB | Gain trim compensation to balance volume levels across streaming sources and physical tuners. |",
-        "| **Ignored Bus Addresses** | `ignored_addresses` | Multiline Text | `[]` | All gateways | Addresses (`WHO/WHERE`, e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and hardware fault repairs. |",
     ]
+    for spec in active_specs:
+        lines.append(
+            f"| {spec['option']} | {spec['key_cell']} | {spec['selector']} | "
+            f"{spec['default']} | {spec['limits']} | {spec['description']} |"
+        )
     return "\n".join(lines)
 
 
@@ -546,7 +983,11 @@ def generate_gateway_discovery_table(*, use_pinned: bool = False) -> str:
         sent = "WHO " + ", ".join(str(w) for w in sweep_whos(row)) if whos else "none"
         omitted = cast_list(row.get("sweep_omits"))
         if omitted:
-            sent += " (firmware drops " + ", ".join(f"`{frame}`" for frame in omitted) + ")"
+            sent += " (firmware drops " + ", ".join(f"`{frame}`" for frame in omitted)
+            replaced = cast_list(row.get("sweep_replaces"))
+            if replaced:
+                sent += "; " + ", ".join(f"`{frame}`" for frame in replaced) + f" sent in place of `{GENERAL_ZONE_STATUS}`"
+            sent += ")"
         notes = row["notes"]
         lines.append(f"| {model} | {who_str} | {sent} | {notes} |")
     return "\n".join(lines)

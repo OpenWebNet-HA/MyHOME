@@ -40,6 +40,7 @@ from .const import (
     LOGGER,
 )
 from .device_health import DeviceHealth
+from .gateway_confirm import LightEchoWatchdog
 from .gateway_events import GatewayEventDispatcher
 from .gateway_resync import LightingResyncManager
 from .gateway_sessions import (
@@ -88,6 +89,8 @@ from .topology import (
 __all__ = [
     "AVAILABILITY_GRACE",
     "COMMAND_SESSION_IDLE_TIMEOUT",
+    "COVER_PRE_MOVE_STOP_EMITTED",
+    "COVER_PRE_MOVE_STOP_OMITTED",
     "CommandPriorityQueue",
     "CommandWorkerPool",
     "EVENT_INACTIVITY_TIMEOUT",
@@ -127,6 +130,7 @@ __all__ = [
     "command_session_limit",
     "dr",
     "er",
+    "gateway_emits_cover_pre_move_stop",
     "get_gateway_profile",
     "read_who13",
     "read_who1013",
@@ -199,7 +203,7 @@ PACED_WRITE_TIMEOUT = 60.0
 WHO4_RECOVERY_QUIET_WINDOWS = 4
 # How long a zone request waits for others once the startup sweep is over: zones discovered
 # from incoming frames arrive over 1-2 s, and each would otherwise start its own all-zone
-# sweep (*#4*#0*20##) on an F461.
+# sweep (*#4*0#0*20##) on an F461.
 ZONE_REQUEST_COALESCE = 0.1
 DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
     (1, "*#1*0##"),
@@ -215,11 +219,15 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 # (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
 # until the flags exist there. Gateways not listed keep sending the request.
 GENERAL_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
+    {"F450", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
 )  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
 # oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
 # and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
-# trace 19-05-42 frames 0-10).
+# trace 19-05-42 frames 0-10). The F455 is not in the oracle either: a physical F455 1.0.76
+# ACKed *#4*0## after 9.1 s with no frame on either session, on a plant whose zones answer
+# every single read (tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl),
+# and again after about 9 s with no frame at every start on 2026-11-17 (#932); the request
+# holds a command session for those 9 s.
 SOUND_STATUS_REQUEST_REFUSED = frozenset(
     {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
@@ -235,23 +243,57 @@ SOUND_STATUS_REQUEST_REFUSED = frozenset(
 # trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
 # so their zones keep the zone status poll and are not listed here.
 ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
-# Gateways whose zones still ask nothing on add (the F455: #674, sixteen *#4*Z## polls timing out
-# one after another), but where a zone that has not reported its temperature, setpoint, mode and
-# an actuator by itself SILENT_ZONE_GRACE seconds after the startup sweep asks for what is
-# missing, read by read: its temperature (*#4*Z*0##), and only if that was answered its setpoint
-# (*#4*Z*14##), its setpoint in force (*#4*Z*12##, followed by the zone's season frame) and
-# actuator 1 (*#4*Z#1*20##). A value Home Assistant restored from before the restart is not a
-# report. A physical F455 1.0.76 answers each in ~0.1 s and ACKs *#4*Z## only after ~9 s
-# (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
-# standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
-# four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a probe
-# the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
-# (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the poll
-# holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in 0.09 s there.
-# The gate is read when the poll runs (the in-band identity may correct the model after the
-# entities were added) and through the gateway that serves WHO 4 (``silent_zone_poll_needed``).
-SILENT_ZONE_POLL = frozenset({"F455"})
-SILENT_ZONE_GRACE = 120.0
+# The silent-zone poll (#466, #932), on every gateway. Whether a gateway answers the general
+# request (*#4*0##) or the zone status request (*#4*Z##) with the state of a zone is known for
+# the models in the tables above and unknown for any other, and a zone whose thermostat nobody
+# touches pushes nothing by itself. So the rule goes by the result, not by a model list: a zone
+# that has not reported its temperature, setpoint and mode SILENT_ZONE_GRACE seconds after the
+# startup sweep, and after its own startup poll, asks for what is missing, read by read: its
+# temperature (*#4*Z*0##), and only if that was answered its knob (*#4*Z*13##, unless the zone
+# already asked for it when it was added), its setpoint (*#4*Z*14##), its setpoint in force
+# (*#4*Z*12##, followed by the zone's season frame) and actuator 1 (*#4*Z#1*20##, not where the
+# gateway drops the actuator request, ``silent_zone_actuator_read_refused``). A knob read that
+# was sent when the zone was added and brought nothing is repeated once, as the last read. A
+# value Home Assistant restored from before the restart is not a report. A zone that got everything from
+# the sweep, from its status request or from its thermostat sends nothing; its actuators were
+# asked for when it was added (``watch_zone_actuators``), so a zone that only misses them asks
+# for actuator 1 here only where that request is not sent (``zone_actuator_request_refused``,
+# the F455). A zone that answered neither of its last two status requests is left alone
+# (``poll_health``). The grace only lets the frames of the sweep and of the thermostats arrive;
+# the poll then waits for the zone's own startup poll, however long that takes on a large plant
+# (#886), before it looks at what is missing. The zones are asked one after another (the poll
+# holds ``_who4_startup_poll_lock``) and every read waits for the bus to be quiet after the one
+# before (``pace_startup_status_write``, BUS_QUIET_PERIOD): on a physical F455 plant the state
+# of an actuator came twice, 0.09-0.27 s apart, and the next read took the second copy for its
+# reply, which the #886 guard drops (tests/fixtures/traces/issue_932/README.md). A read the
+# guard still drops is sent once more, unless the zone's own answer arrived in the meantime.
+# Evidence:
+# - F455 1.0.76 (physical): answers each read in ~0.1 s and ACKs *#4*Z## only after ~9 s
+#   (issue_466/F455_direct_requests_2026-11-06.jsonl); its standalone zone 2 (that entry ran as a
+#   standby on a shared bus, so it had skipped the startup sweep) reported nothing on its own in
+#   four minutes (issue_466/F455_full_debug_log_2026-11-06T16-24-46.log). On a zone without a
+#   probe the same F455 NACKs *#4*Z*0## (and *14##, *12##, *19##) only after ~9 s, with no frame
+#   (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl): the one refused read that ends the
+#   poll holds a command session for those ~9 s, once per zone added. *#4*Z#1*20## answers in
+#   0.09 s there.
+# - MH201 3.6.43 (physical, #932; catalogued but not emulated in the oracle): standalone zones
+#   1-4 showed no target temperature after a restart until a thermostat published a change. It
+#   answered *#4*2*12## with *#4*2*12*0200*3## and *#4*#2*14## with *#4*2*14*0200*3##, and with
+#   this poll all four zones had their setpoint after a full restart without anyone touching a
+#   thermostat.
+# - own-firmware-oracle (main 3c1634b): all thirteen emulated gateways put *#4*Z*0##,
+#   *#4*Z*12##, *#4*Z*13## and *#4*Z*14## on the bus (verdict "out" in thermo-ts10.tsv,
+#   thermo-zone-requests.tsv and trace-corpus.tsv). No physical capture of the poll exists for
+#   F450, F453, F453AV, F459, H4684, MH200 and MH200N.
+# The gate is read when the poll runs and through the gateway that serves WHO 4
+# (``silent_zone_poll_needed``).
+SILENT_ZONE_GRACE = 30.0
+# Gateways whose zones do not send the knob read (*#4*Z*13##) when they are added; it goes out
+# inside the silent-zone poll instead, after the temperature read (``_local_offset_read_pending``
+# in climate.py). The F455: its zones ask nothing on add (#674, sixteen *#4*Z## polls timing out
+# one after another), and a single-dimension read on a probe-less channel holds a command
+# session ~9 s before the NACK.
+KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455"})
 # Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
@@ -274,22 +316,64 @@ ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200
 # (issue_466/F455_direct_requests_2026-11-06.jsonl, F455_direct_requests_zone3_2026-11-06.jsonl).
 # A zone's watch is not sent there; a thermo actuator switch (``Z#N``) still asks.
 ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
-# One request for every zone, by dimension. The live F461 2.0.11 answered ``*#4*#0*20##`` with
-# the actuators of each zone (``*#4*2#1*20*0##``, ``*#4*2#2*20*5##`` after 2.1 s).
-# The MyHomeServer1 3.87.13 (myhomeserver1_live_2026-10-24, run2_reads_thermo_sound_alarm_lights)
-# answered it in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone
-# through the paced sender takes about 32 s; the emulated 028206 forwards it ("out").
+# One request for every zone, by dimension.
+# Actuators (dimension 20): the published form, ``*#4*0#0*20##`` ("All the actuators [0#0]",
+# WHO 4 p. 22 and p. 62). 2.0.0 asked the F461 and the MyHomeServer1 with ``*#4*#0*20##``,
+# the form their captures were taken with (the live F461 2.0.11 answered it
+# with the actuators of each zone; the MyHomeServer1 3.87.13 of myhomeserver1_live_2026-10-24
+# in 0.39 s with 43 actuator frames for its 34 zones, where asking each zone through the paced
+# sender takes about 32 s). The two forms are answered alike wherever both were tried, and
+# ``#0`` is not a WHERE of dimension 20 in the document:
+# - own-firmware-oracle, thermo-zone-requests.tsv:16 and :17, all 13 images: the same row for
+#   both (10 images put the same telegram on the bus for either form; H4684, MH200 and MH202
+#   drop both);
+# - live 2026-11-18, three rounds with a monitor session, the two forms in turn: F461 2.0.11
+#   the same 5 actuators of its plant after each; MyHomeServer1 3.87.13 the same 43 actuators
+#   after each (ACK after 0.37-0.47 s on both, the first 8 frames on the command session and
+#   the rest on the event session);
+# - the F455 1.0.76 refuses ``*#4*#0*20##`` at once (NACK) and answers ``*#4*0#0*20##`` with the
+#   five actuators of its plant (ACK after 1.34-1.47 s), where the zone form
+#   (``ZONE_ACTUATOR_REQUEST_REFUSED``) and ``*#4*Z#0*20##`` name no actuator.
 # For humidity (dimension 60), all four humidity-forwarding gateways in own-firmware-oracle
 # (thermo-zone-requests: F459, F460, F461, MyHomeServer1) translate ``*#4*0*60##`` into the
 # broadcast SCS query ``$06D200030308000000`` ("out"); the live MyHomeServer1 3.87.13 ACKed it
 # in 0.50 s with all 17 humidity-probe zones answering (myhomeserver1_live_2026-10-24, #886),
 # and the live F461 2.0.11 answered it in 2.13 s (f461_live_2026-10-23).
+ALL_ACTUATORS_REQUEST = "*#4*0#0*20##"
 ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
+    "F455": {20: ALL_ACTUATORS_REQUEST},
     "F459": {60: "*#4*0*60##"},
     "F460": {60: "*#4*0*60##"},
-    "F461": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
-    "MYHOMESERVER1": {20: "*#4*#0*20##", 60: "*#4*0*60##"},
+    "F461": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
+    "MYHOMESERVER1": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
 }
+# What a gateway that drops the general request (``GENERAL_ZONE_REQUEST_REFUSED``) is asked at
+# start instead. Without it nothing asks a thermostat on those gateways, and a freshly added
+# gateway shows no zone until one speaks by itself (a temperature change, a key, the central
+# unit's quarter-hour push): a new F461 entry sent no WHO 4 frame and had no climate entity two
+# minutes later; twelve seconds after ``*#4*#0##`` and the zones were read from another client
+# it had its central unit and three zones (2026-11-18).
+# - The all-actuator request, where the firmware forwards it: live on F455, F461 and
+#   MyHomeServer1 (above); F450, F454, F459 and F460 by the oracle row above (not tried on a
+#   plant). Not sent where the oracle shows it dropped (H4684, MH200, MH202) nor on the MH201
+#   (not in the oracle, no capture). Every actuator answers as ``Z#N``: a fan coil creates its
+#   zone at once, a plain valve is kept until the zone is known to be a thermostat (#785), see
+#   ``climate._ask_actuator_only_zones``.
+# - The central unit's status, ``*#4*#0##``, where an unanswered request is cheap: the F461
+#   answered it in 0.16 s with the 3550's state, and a MyHomeServer1 with no central unit
+#   NACKed it after 2.09 s. Not on the F455: it answered in 1.07 s on a plant with a 3550, but
+#   it holds a WHO 4 read that nothing answers for about 9 s (``*#4*9*0##``: NACK after
+#   8.95 s), the reason ``*#4*0##`` is not sent there. Not in the sweep of the models nobody
+#   tried it on. On every model the same request is sent once later, when a report about a
+#   zone shows that a central unit is there to answer it (``request_central_status``).
+STARTUP_ALL_ACTUATORS_REQUEST = frozenset({"F450", "F454", "F455", "F459", "F460", "F461", "MYHOMESERVER1"})
+STARTUP_CENTRAL_STATUS_REQUEST = frozenset({"F461", "MYHOMESERVER1"})
+# A zone created from the answers to the sweep's all-actuator request asks for its actuators as
+# it is added (``watch_zone_actuators``). For this long after the sweep sent that request the
+# zone is taken as served: on a live F461 the zones found that way put the same request on the
+# bus again 18 s after the sweep (2026-11-18), and on a MyHomeServer1 each one is 43 actuators.
+ALL_ACTUATORS_SWEEP_FRESH = 30.0
+CENTRAL_STATUS_REQUEST = "*#4*#0##"
 # Gateways whose emulated firmware did not forward the zone humidity request (``*#4*Z*60##``:
 # nack and nothing on the bus) in the own-firmware-oracle thermo-zone-requests suite
 # (findings/thermo-zone-requests.md on main, ``firmware_observed``, emulated firmware); F459,
@@ -310,11 +394,24 @@ KNOWN_GATEWAY_MODELS = frozenset(
         "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
     }
 )
+# WHO 2 SCS pre-move STOP behavior (#959): 11 of 12 emulated Linux automation gateways
+# (5 bt_luci + 6 coso libplug_automation_tr.so) synthesize a 2-telegram SCS sequence
+# ($03<W>00120A STOP + $03<W>001208/1209 UP/DOWN) for *2*1*W## / *2*2*W## (firmware_oracle.json
+# and mcp_index.json). MH202 (010024, older coso without pre-STOP) and bare-metal MH201 (3.3.6,
+# live plant trace) emit only the single direction telegram, so energized timed relay actuators
+# (L4671/2, F411/2, F411/4, F411U2) stop instead of reversing unless HA stops first.
+COVER_PRE_MOVE_STOP_EMITTED = frozenset(
+    {"3488", "F453", "F453AV", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH200N", "MYHOMESERVER1"}
+)
+COVER_PRE_MOVE_STOP_OMITTED = frozenset({"MH201", "MH202"})
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
-    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL | SILENT_ZONE_POLL
-    | ZONE_ACTUATOR_REQUEST_REFUSED,
+    | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL
+    | KNOB_READ_IN_SILENT_ZONE_POLL
+    | ZONE_ACTUATOR_REQUEST_REFUSED
+    | COVER_PRE_MOVE_STOP_EMITTED
+    | COVER_PRE_MOVE_STOP_OMITTED,
     key=len,
     reverse=True,
 )
@@ -346,6 +443,38 @@ def _resolved_model(word: str) -> str | None:
     if isinstance(profile, GenericGatewayProfile):
         return None
     return _alnum(profile.model_name)
+
+
+def _resolve_model_key(model: str | None, *, profile: Any = None) -> str:
+    """Resolve a gateway model string and optional OWNd profile to a table key (``F461``, ``MH201``)."""
+    if profile is not None and not isinstance(profile, GenericGatewayProfile):
+        name: object = getattr(profile, "model_name", None) or model or ""
+    else:
+        name = model or ""
+    for word in re.findall(r"[A-Za-z0-9]+", str(name)):
+        resolved = _resolved_model(word)
+        if resolved is not None:
+            return resolved
+    normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
+    return next((known for known in _ZONE_REQUEST_MODELS if known in normalized), normalized)
+
+
+def gateway_emits_cover_pre_move_stop(model: str | None, *, profile: Any = None) -> bool | None:
+    """Return whether a gateway injects an SCS STOP (120A) ahead of UP/DOWN (1208/1209) (#959).
+
+    Read from the OWNd profile first when present; otherwise from the firmware-oracle and
+    live-trace tables (``True`` on 11/12 emulated Linux automation gateways, ``False`` on
+    ``MH201`` and ``MH202``, ``None`` when unmeasured).
+    """
+    emits = getattr(profile, "emits_cover_pre_move_stop", None)
+    if isinstance(emits, bool):
+        return emits
+    key = _resolve_model_key(model, profile=profile)
+    if key in COVER_PRE_MOVE_STOP_EMITTED:
+        return True
+    if key in COVER_PRE_MOVE_STOP_OMITTED:
+        return False
+    return None
 
 
 # A WHO 4 zone address: ``Z`` (0..99), ``#Z``, ``Z#N`` (actuator 0..9), each optionally behind
@@ -385,6 +514,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     """Manages a single MyHOME Gateway."""
 
     device_registry_id: str | None = None
+    # Behind the ``central_season`` property. Class defaults, so that a handler built without
+    # ``__init__`` reads them too.
+    _central_season: str | None = None
+    central_season_changed_at: float | None = None
 
     def __init__(
         self,
@@ -426,6 +559,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.device_registry_id = None
         self.broadcast_resync = broadcast_resync
         self.has_central_unit = False
+        # The season the central unit last reported about itself (``*4*102*#0##`` heating,
+        # ``*4*202*#0##`` conditioning); None until it reports one. A thermostat that keeps
+        # reporting the other season is not following it (climate ``_check_season_against_central``).
+        self._central_season = None
+        # When that season last changed from one to the other (``time.monotonic()``); None while
+        # it has only been learned. Its zones follow a change one after the other, so none is
+        # compared with the new season at once (climate ``CENTRAL_SEASON_SETTLE``).
+        self.central_season_changed_at = None
 
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,
@@ -441,6 +582,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
         self._event_dispatcher = GatewayEventDispatcher(self)
         self._resync_manager = LightingResyncManager(self)
+        self._echo_watchdog = LightEchoWatchdog(self)
         self._event_runner = EventSessionRunner(self)
         self._command_pool = CommandWorkerPool(
             self,
@@ -467,8 +609,32 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         # and the (zone, dimension) requests waiting for the next paced run.
         self._actuator_zones: dict[str, int] = {}
         self._zone_requests: set[tuple[str, int]] = set()
+        # Zones whose actuator request goes out although every actuator was asked a moment ago.
+        self._zone_requests_again: set[str] = set()
         self._zone_request_task: asyncio.Task[None] | None = None
+        self._central_status_task: asyncio.Task[None] | None = None
         self._who4_startup_poll_lock: asyncio.Lock = asyncio.Lock()
+        # When the startup sweep last asked every actuator (monotonic), 0 before it did.
+        self._all_actuators_swept_at: float = 0.0
+        # The same for the central unit's status (``CENTRAL_STATUS_REQUEST``), asked by the
+        # sweep or by ``request_central_status``.
+        self._central_status_swept_at: float = 0.0
+        # Zones (number, interface) found not to be run by the plant's central unit
+        # (``climate._mark_standalone_detected``), for what else hangs on the zone's device.
+        self.standalone_detected_zones: set[tuple[str, str | None]] = set()
+        # While ``climate_discovery`` creates the zones known only from their actuators.
+        self._actuator_only_reads_running = False
+
+    @property
+    def central_season(self) -> str | None:
+        """The season the central unit of this gateway's own bus last reported, None until it does."""
+        return self._central_season
+
+    @central_season.setter
+    def central_season(self, season: str | None) -> None:
+        if season is not None and self._central_season is not None and season != self._central_season:
+            self.central_season_changed_at = time.monotonic()
+        self._central_season = season
 
     @property
     def send_buffer(self) -> FrameScheduler | asyncio.Queue[Any]:
@@ -610,16 +776,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
         """
         profile = getattr(self.gateway, "profile", None)
-        if profile is not None and not isinstance(profile, GenericGatewayProfile):
-            name = getattr(profile, "model_name", None) or self.model
-        else:
-            name = self.model
-        for word in re.findall(r"[A-Za-z0-9]+", str(name)):
-            resolved = _resolved_model(word)
-            if resolved is not None:
-                return resolved
-        normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
-        return next((model for model in _ZONE_REQUEST_MODELS if model in normalized), normalized)
+        return _resolve_model_key(self.model, profile=profile)
+
+    def _who2_target(self) -> MyHOMEGatewayHandler:
+        """The gateway a WHO 2 command goes through (delegated or failover peer when active)."""
+        probe = OWNCommand.parse("*2*0*0##")
+        if probe is None:  # pragma: no cover - a fixed, well-formed frame
+            return self
+        return self._delegated_target(probe) or self._failover_target(probe) or self
+
+    @property
+    def emits_cover_pre_move_stop(self) -> bool | None:
+        """Whether the gateway serving WHO 2 injects an SCS STOP (120A) before UP/DOWN (1208/1209)."""
+        target = self._who2_target()
+        return gateway_emits_cover_pre_move_stop(
+            target.model,
+            profile=getattr(target.gateway, "profile", None),
+        )
 
     def _who4_target(self) -> MyHOMEGatewayHandler:
         """The gateway a WHO 4 status request goes through, the way ``send_status_request`` routes it.
@@ -627,7 +800,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         On a shared bus WHO 4 may be delegated to a secondary gateway, or served by the warm
         standby while this primary is down: that gateway's refusal and all-zone tables apply.
         """
-        probe = OWNCommand.parse("*#4*#0*20##")
+        probe = OWNCommand.parse(ALL_ACTUATORS_REQUEST)
         if probe is None:  # pragma: no cover - a fixed, well-formed frame
             return self
         return self._delegated_target(probe) or self._failover_target(probe) or self
@@ -670,11 +843,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return _unwatch
 
     @callback
-    def request_zone_dimension(self, where: str, dimension: int) -> None:
+    def request_zone_dimension(self, where: str, dimension: int, *, again: bool = False) -> None:
         """Ask a heating zone for one dimension once the startup sweep is over.
 
         Zones asking together share one paced run; where the gateway answers one request
         for every zone (``all_zone_request``), that frame replaces the local zones' own.
+        ``again``: the zone lost what it knew (its actuators, wiped by the off of a central
+        unit that turned out not to run it), so the request is not taken as served by the one
+        that asked every actuator a moment ago.
         """
         if dimension == 22:
             # A zone WHERE has no actuator token, so *#4*Z*22## is the crash form:
@@ -682,7 +858,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             # The published split form *#4*3#Z#N*22## goes through send_message once
             # the installed OWNd (>= 2.0.0b12) can tell the forms apart.
             raise ValueError("WHO 4 dimension 22 is never requested for a zone")
-        self._zone_requests.add((_validate_zone_where(where), dimension))
+        where = _validate_zone_where(where)
+        self._zone_requests.add((where, dimension))
+        if again:
+            self._zone_requests_again.add(where)
         if self._zone_request_task is None or self._zone_request_task.done():
             self._zone_request_task = self.hass.async_create_background_task(
                 self._send_zone_requests(), name=f"myhome_{self.mac}_zone_requests"
@@ -699,6 +878,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             await asyncio.sleep(ZONE_REQUEST_COALESCE if coalesce else 0)
             coalesce = True
             pending, self._zone_requests = self._zone_requests, set()
+            again, self._zone_requests_again = self._zone_requests_again, set()
             frames: list[str] = []
             target = self._who4_target()
             for dimension in sorted({dim for _where, dim in pending}):
@@ -726,6 +906,38 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         "%s Zones %s: %s refuses the humidity request; not asking", self.log_id, wheres, target.model
                     )
                     continue
+                # The one request for every zone first: it also serves a gateway that refuses
+                # the zone form (the F455 answers *#4*0#0*20## with every actuator). Left to
+                # ask on their own: zones behind an interface, and on a gateway that refuses the
+                # zone form an actuator named by a thermo switch (``Z#N``, #873), which alone
+                # does not call for every actuator of the plant.
+                all_zones = target.all_zone_request(dimension)
+                own_actuators = dimension == 20 and target.zone_actuator_request_refused
+                served = [
+                    where
+                    for where in wheres
+                    if BUS_ROUTING not in where and not (own_actuators and not _is_zone_level_where(where))
+                ]
+                if all_zones is not None and served:
+                    # 0 is "no sweep asked yet", not a time: on a host whose monotonic clock is
+                    # itself under ALL_ACTUATORS_SWEEP_FRESH it would read as a sweep just sent.
+                    # Every actuator of the bus was asked, by this gateway or by the one that
+                    # serves WHO 4 for it (a delegated secondary, the warm standby): the answers
+                    # reached this entry's zones either way, so both gateways' marks count.
+                    swept_at = max(self._all_actuators_swept_at, getattr(target, "_all_actuators_swept_at", 0.0))
+                    reads_running = (
+                        self._actuator_only_reads_running
+                        or getattr(target, "_actuator_only_reads_running", False) is True
+                    )
+                    just_swept = (
+                        all_zones == ALL_ACTUATORS_REQUEST
+                        and swept_at > 0
+                        and (time.monotonic() - swept_at < ALL_ACTUATORS_SWEEP_FRESH or reads_running)
+                        and again.isdisjoint(served)
+                    )
+                    if not just_swept:
+                        frames.append(all_zones)
+                    wheres = [where for where in wheres if where not in served]
                 if dimension == 20 and target.zone_actuator_request_refused:
                     zones = [where for where in wheres if _is_zone_level_where(where)]
                     if zones:
@@ -736,12 +948,6 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                             target.model,
                         )
                         wheres = [where for where in wheres if not _is_zone_level_where(where)]
-                        if not wheres:
-                            continue
-                all_zones = target.all_zone_request(dimension)
-                if all_zones is not None and any(BUS_ROUTING not in where for where in wheres):
-                    frames.append(all_zones)
-                    wheres = [where for where in wheres if BUS_ROUTING in where]  # behind an interface
                 for where in wheres:
                     # One zone the builder rejects must not drop the others of the batch.
                     try:
@@ -753,9 +959,47 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             try:
                 if self._last_event_frame_at > 0:
                     await self._wait_for_bus_quiet(self._last_event_frame_at)
-                await self.send_paced(frames)
+                delivered = await self.send_paced(frames)
+                if isinstance(delivered, list) and ALL_ACTUATORS_REQUEST in delivered:
+                    # Asked for every zone: the zones added in the next moments are served too.
+                    self._all_actuators_swept_at = target._all_actuators_swept_at = time.monotonic()
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
+
+    async def read_zone_temperature(self, where: str) -> bool | None:
+        """Ask one heating zone for its temperature (``*#4*Z*0##``) once the bus is quiet.
+
+        ``True``: the gateway acknowledged the read; the zone's frame, if any, was dispatched.
+        ``False``: the gateway answered with a NACK: nothing answers for that zone (2.1 s on an
+        F461, about 9 s on an F455).
+        ``None``: not known. The read timed out, came back out of step or was not written. A
+        MyHomeServer1 walks its own zone list every few minutes through a single-threaded
+        daemon (see ``WHO4_RECOVERY_QUIET_WINDOWS``); a read sent meanwhile waits behind it. On
+        2026-11-18 ``*#4*47*0##`` and ``*#4*70*0##`` got no ACK or NACK within 12.5 s while
+        54-89 WHO 4 frames per 5 s were on the bus, and were acknowledged in 0.14 s and 0.21 s
+        once it had been quiet for 4 s. So the bus is given time to go quiet before the read
+        and after one that failed, and the caller may ask again.
+        """
+        cmd = OWNCommand.parse(_zone_request_frame(where, 0))
+        if cmd is None:  # pragma: no cover - a validated, well-formed frame
+            return None
+        if self._last_event_frame_at > 0:
+            await self._wait_for_bus_quiet(self._last_event_frame_at)
+        written: object = await self.send_status_request(cmd)
+        await self._wait_for_write(written, cmd)
+        if not isinstance(written, asyncio.Future):
+            return None  # a gateway double without delivery information
+        if not written.done():
+            # Still queued or unanswered: withdrawn, so it does not go out next to the read
+            # the caller repeats (the sender skips a cancelled frame).
+            written.cancel()
+        if written.done() and not written.cancelled() and written.exception() is None:
+            await self._wait_for_bus_quiet(time.monotonic())
+            return True
+        if getattr(written, "_gateway_nack", False):
+            return False
+        await self._wait_for_who4_recovery(written)
+        return None
 
     async def wait_for_zone_requests(self) -> None:
         """Let same-turn zone dimension requests coalesce and wait for their paced run."""
@@ -825,16 +1069,33 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def silent_zone_poll_needed(self) -> bool:
-        """Whether a zone silent after the startup sweep asks its own state once (``SILENT_ZONE_POLL``).
+        """Whether a zone still silent after the startup sweep asks its own state once.
 
-        Decided by the gateway the reads go through (``_who4_target``: a secondary WHO 4 is
-        delegated to, or the warm standby while this primary is down), like
-        ``humidity_request_refused``. A passive follower (a standby, or a secondary without
-        WHO 4) has no zones of its own to ask.
+        On every gateway that serves its zones, whatever its model: what a zone is asked when
+        it is added differs per gateway, and the poll only asks for what none of that brought
+        (#466 on an F455, #932 on an MH201). A passive follower (a standby, or a secondary
+        without WHO 4) has no zones of its own to ask.
+        """
+        return not (self.is_follower and 4 not in self.delegated_whos)
+
+    @property
+    def knob_read_in_silent_zone_poll(self) -> bool:
+        """Whether the knob read (``*#4*Z*13##``) waits for the silent-zone poll (``KNOB_READ_IN_SILENT_ZONE_POLL``).
+
+        Decided like ``silent_zone_poll_needed``: by the gateway the reads go through, and a
+        passive follower has no zones of its own to ask.
         """
         if self.is_follower and 4 not in self.delegated_whos:
             return False
-        return self._who4_target()._model_key in SILENT_ZONE_POLL
+        return self._who4_target()._model_key in KNOB_READ_IN_SILENT_ZONE_POLL
+
+    @property
+    def silent_zone_actuator_read_refused(self) -> bool:
+        """Whether the silent-zone poll leaves the actuator read (``*#4*Z#1*20##``) out.
+
+        ``actuator_request_refused`` of the gateway the reads go through (``_who4_target``).
+        """
+        return self._who4_target().actuator_request_refused
 
     @property
     def zone_temperature_poll_needed(self) -> bool:
@@ -844,6 +1105,13 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         temperature; elsewhere the zone status poll or the sweep reports it.
         """
         if self.supports_zone_status:
+            return False
+        if self._model_key in KNOB_READ_IN_SILENT_ZONE_POLL:
+            # The F455: its zones ask nothing when they are added and nothing every five minutes
+            # (#674: a read on a channel without a probe holds its command session ~9 s before
+            # the NACK). Its temperature read goes out once, inside the silent-zone poll. Stated
+            # before the profile flag on purpose: the F455 refuses *#4*0## too, so a profile
+            # that says ``supports_general_heating_status = False`` must not turn this poll on.
             return False
         supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
         if isinstance(supported, bool):
@@ -915,6 +1183,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 self._available = True
                 LOGGER.info("%s Gateway available again.", self.log_id)
                 self._notify_availability()
+            if not was_connected:
+                # Frames may have been missed while the event session was down: the zones'
+                # actuator requests that follow are not taken as served by the startup sweep,
+                # and the central unit's season is not known until it reports again (a zone is
+                # not compared with a season that may have changed meanwhile).
+                self._all_actuators_swept_at = 0.0
+                self._central_status_swept_at = 0.0
+                self.central_season = None
             if not was_connected and self._initial_discovery_done.is_set():
                 runtime = getattr(self.config_entry, "runtime_data", None)
                 expose_mgr = getattr(runtime, "expose_manager", None)
@@ -1100,21 +1376,31 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 return
             await self._wait_for_bus_quiet(self._last_event_frame_at)
 
-    async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> None:
-        """Send general requests one at a time, each once the bus finished answering the last."""
+    async def send_paced(self, frames: Iterable[str], *, status_request: bool = True) -> list[str]:
+        """Send general requests one at a time, each once the bus finished answering the last.
+
+        Returns the frames the gateway did not refuse or lose: acknowledged, or written through
+        a sender that tells nothing about the delivery.
+        """
         epoch = self._begin_sweep()
+        delivered: list[str] = []
         try:
             for frame in frames:
                 cmd = OWNCommand.parse(frame)
                 if cmd is None:
                     continue
-                written = await (self.send_status_request(cmd) if status_request else self.send(cmd))
+                written: object = await (self.send_status_request(cmd) if status_request else self.send(cmd))
                 await self._wait_for_write(written, cmd)
+                if not isinstance(written, asyncio.Future) or (
+                    written.done() and not written.cancelled() and written.exception() is None
+                ):
+                    delivered.append(frame)
                 await self._wait_for_bus_quiet(time.monotonic())
                 if getattr(cmd, "who", None) == 4:
                     await self._wait_for_who4_recovery(written)
         finally:
             self._end_sweep(epoch)
+        return delivered
 
     def _refused_by_gateway(self, frame: str) -> bool:
         """Whether this gateway's firmware drops the startup request instead of forwarding it."""
@@ -1123,6 +1409,95 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if frame == "*#16*0*5##":
             return self.sound_status_request_refused
         return False
+
+    @property
+    def unanswered_zone_read_is_cheap(self) -> bool:
+        """Whether a WHO 4 read nothing answers costs about 2 s here (``STARTUP_CENTRAL_STATUS_REQUEST``).
+
+        An F461 and a MyHomeServer1 NACK it after 2.1 s; an F455 holds the command session for
+        about 9 s; the other models were not measured.
+        """
+        return self._model_key in STARTUP_CENTRAL_STATUS_REQUEST
+
+    @property
+    def asks_every_actuator_at_start(self) -> bool:
+        """Whether the startup sweep asks every actuator in place of the general request it drops.
+
+        Only there are the zones known from their actuators alone asked for their temperature
+        (``climate_discovery.ZoneDiscovery.start_reads``): where the general request is
+        forwarded every thermostat has answered it, and an address still known only from its
+        actuator has none.
+        """
+        return self._model_key in STARTUP_ALL_ACTUATORS_REQUEST
+
+    @property
+    def central_status_just_asked(self) -> bool:
+        """Whether the startup sweep asked the central unit's status in the last ``ALL_ACTUATORS_SWEEP_FRESH`` s.
+
+        The central unit's entity is created from the answer and would ask the same again as
+        it is added (live F461, 2026-11-18: ``*#4*#0##`` at 16:00:58.889 and at 16:01:08.227).
+        """
+        asked_at = self._central_status_swept_at
+        return asked_at > 0 and time.monotonic() - asked_at < ALL_ACTUATORS_SWEEP_FRESH
+
+    @property
+    def actuator_only_reads_running(self) -> bool:
+        """While ``climate_discovery`` reads the zones known only from their actuators."""
+        return self._actuator_only_reads_running
+
+    def actuator_only_reads(self, running: bool) -> None:
+        """``climate_discovery`` starts or ends its reads of the zones known only from their actuators.
+
+        Each zone it creates takes the actuator frames kept since the sweep's all-actuator
+        request, so none of them asks for every actuator again, however long the run takes.
+        Live on a MyHomeServer1 with 34 zones, 2026-11-18, before this: the sweep's request
+        at 21:02:44.195, then one more for each zone created later than
+        ``ALL_ACTUATORS_SWEEP_FRESH``, 15 between 21:04:05.313 and 21:04:45.393. At the end
+        the sweep counts as fresh once more, for the zones the last reads created.
+        """
+        self._actuator_only_reads_running = running
+        if not running and self._all_actuators_swept_at > 0:
+            self._all_actuators_swept_at = time.monotonic()
+
+    @callback
+    def request_central_status(self) -> None:
+        """Ask the central unit's status once a report about one of its zones shows it is there.
+
+        The sweep asks it only where a request nothing answers is cheap
+        (``STARTUP_CENTRAL_STATUS_REQUEST``). Elsewhere the central unit becomes known from its
+        report about a zone (``*4*110*#3##``), and its quarter-hour push names zones only: on
+        a live F455 alone on the bus, 2026-11-18, zones 2, 3 and 4 were found, no ``#0`` frame
+        came, and the central unit had no entity. Once it is known to exist the request is
+        answered (the F455 in 1.07 s on that plant; every emulated firmware puts it on the
+        bus, own-firmware-oracle trace-corpus.tsv:50), and the answer creates its entity. Not
+        sent when the sweep, or an earlier call, has just asked.
+        """
+        if self._central_status_task is None or self._central_status_task.done():
+            run = self._ask_central_status()
+            task: object = self.hass.async_create_background_task(run, name=f"myhome_{self.mac}_central_status")
+            if isinstance(task, asyncio.Task):
+                self._central_status_task = task
+            else:
+                run.close()  # a hass double that schedules nothing
+
+    async def _ask_central_status(self) -> None:
+        """After the sweep, under the start-up poll lock (an F455 mixes up crossing WHO 4 reads)."""
+        await self.wait_for_initial_discovery()
+        async with self._who4_startup_poll_lock:
+            if self.central_status_just_asked:
+                return
+            delivered = await self.send_paced([CENTRAL_STATUS_REQUEST])
+            if CENTRAL_STATUS_REQUEST in delivered:
+                self._central_status_swept_at = time.monotonic()
+
+    def _heating_startup_requests(self) -> list[str]:
+        """What replaces ``*#4*0##`` at start on a gateway that drops it."""
+        frames: list[str] = []
+        if self._model_key in STARTUP_CENTRAL_STATUS_REQUEST:
+            frames.append(CENTRAL_STATUS_REQUEST)
+        if self._model_key in STARTUP_ALL_ACTUATORS_REQUEST:
+            frames.append(ALL_ACTUATORS_REQUEST)
+        return frames
 
     def _discovery_frames(self) -> list[str]:
         """The startup general requests this gateway sends, after topology and profile gates."""
@@ -1144,14 +1519,38 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 continue
             if self._refused_by_gateway(frame):
                 LOGGER.debug("%s Skipping `%s`: %s firmware refuses it.", self.log_id, frame, self.gateway.model_name)
+                if frame == "*#4*0##":
+                    frames.extend(self._heating_startup_requests())
                 continue
             frames.append(frame)
         return frames
 
     async def initial_discovery(self) -> None:
         """Send the startup sweep that discovers devices missing from the config."""
+        frames = self._discovery_frames()
         try:
-            await self.send_paced(self._discovery_frames())
+            delivered = await self.send_paced(frames)
+            # Only a request the gateway took counts as asked: after a refused or lost one the
+            # zones' own actuator requests still go out.
+            swept = isinstance(delivered, list) and ALL_ACTUATORS_REQUEST in delivered
+            if swept:
+                self._all_actuators_swept_at = time.monotonic()
+            if isinstance(delivered, list) and CENTRAL_STATUS_REQUEST in delivered:
+                self._central_status_swept_at = time.monotonic()
+            if swept and self.all_zone_request(20) == ALL_ACTUATORS_REQUEST:
+                # The sweep has just asked every actuator: the zones that were waiting for it
+                # with their own actuator request (``watch_zone_actuators``) are served, and a
+                # second burst is not put on the bus (43 actuators on one MyHomeServer1 plant).
+                # Still asked: a zone behind an interface, and an actuator named by a thermo
+                # switch where the zone form is refused, as in ``_send_zone_requests``.
+                own_actuators = self.zone_actuator_request_refused
+                self._zone_requests = {
+                    (where, dimension)
+                    for where, dimension in self._zone_requests
+                    if dimension != 20
+                    or BUS_ROUTING in where
+                    or (own_actuators and not _is_zone_level_where(where))
+                }
         finally:
             self._initial_discovery_done.set()
         runtime = getattr(self.config_entry, "runtime_data", None)
@@ -1181,9 +1580,13 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self._unavailable_timer is not None:
             self._unavailable_timer()
         self._resync_manager.cancel_all()
+        self._echo_watchdog.cancel_all()
         if self._zone_request_task is not None:
             self._zone_request_task.cancel()
             self._zone_request_task = None
+        if self._central_status_task is not None:
+            self._central_status_task.cancel()
+            self._central_status_task = None
         self._zone_requests.clear()
         self._unavailable_timer = None
         self.is_connected = False

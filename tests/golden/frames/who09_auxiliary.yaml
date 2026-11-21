@@ -26,9 +26,9 @@
   who: 9
   what: 1
   where: "4"
-  source: openwebnet4j
+  source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Auxiliary: Activate AUX channel 4"
+  mcp_notes: "Auxiliary: AUX channel 4 ON, received 7 times from the bus on an H/L4684 gateway (MyHOME tests/fixtures/traces/issue_466/myhome_trace_HL4684_who9_2026-11-06T10-37-42.json, MyHOME#466)"
   roundtrip: true
 
 - id: aux.cmd.deactivate.4
@@ -37,7 +37,22 @@
   who: 9
   what: 0
   where: "4"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Auxiliary: AUX channel 4 OFF, received 8 times from the bus on an H/L4684 gateway (MyHOME tests/fixtures/traces/issue_466/myhome_trace_HL4684_who9_2026-11-06T10-37-42.json, MyHOME#466)"
+  roundtrip: true
+
+- id: aux.req.status.1
+  frame: "*#9*1##"
+  direction: status_request
+  who: 9
+  what: null
+  where: "1"
   source: legrand-spec
   mcp_valid: true
-  mcp_notes: "Auxiliary: Deactivate AUX channel 4"
+  mcp_notes: "Auxiliary: Request status of AUX channel 1 (WHO_9.pdf & own-firmware-oracle)"
   roundtrip: true
+  builder:
+    class: OWNStatusRequest
+    method: request
+    args: [9, "1"]

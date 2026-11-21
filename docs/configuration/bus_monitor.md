@@ -27,7 +27,7 @@ Unlike traditional external diagnostic tools that require a separate gateway soc
                      ▼
        ┌───────────────────────────┐
        │   WebSocket Subscription  │
-       │ (myhome/bus_monitor/sub)  │
+       │(myhome/bus_monitor/stream)│
        └─────────────┬─────────────┘
                      ▼
        ┌───────────────────────────┐
@@ -36,11 +36,24 @@ Unlike traditional external diagnostic tools that require a separate gateway soc
        └───────────────────────────┘
 ```
 
+### WebSocket API Endpoints
+
+All real-time streaming, history backfill, diagnostic frame injection, and cover calibration trace exports run over Home Assistant's native WebSocket API (`custom_components/myhome/websocket.py`):
+
+| WebSocket `type` | Access | Parameters & Limits | Description |
+| :--- | :---: | :--- | :--- |
+| `myhome/bus_monitor/stream` | Signed-in user | Optional `mac`, `who`, `where`, `direction` (`all`, `rx`, `tx`, `ack`, `nack`) | Live push subscription forwarding matching bus frames as they arrive. |
+| `myhome/bus_monitor/history` | Signed-in user | Optional `mac`, `limit` (`1–1000`, default `100`; backend ring holds `500`), `who`, `where`, `direction` | Returns buffered historical frames from the in-memory circular buffer. |
+| `myhome/bus_monitor/info` | Signed-in user | Optional `mac` | Returns gateway model, firmware, host/port, `OWNd` & integration versions, and ring-buffer stats. |
+| `myhome/bus_monitor/send` | **Administrator** | Required `frame`, optional `mac` | Transmits a validated raw OpenWebNet frame (blocks signaling frames and `is_refused_dimension_22` crash frames). |
+| `myhome/bus_monitor/clear` | **Administrator** | Optional `mac` | Clears the backend circular frame buffer and resets RX/TX counters. |
+| `myhome/cover/calibration_trace` | Signed-in user | Optional `mac` | Exports recorded cover calibration run traces and timing anchors for the gateway. |
+
 ---
 
 ## 🎴 Adding the Card to your Lovelace Dashboard
 
-The frontend card is bundled directly with the integration and registered automatically.
+The frontend card is bundled directly with the integration and registered automatically under `custom:myhome-openwebnet-bus-monitor` (with `custom:myhome-bus-card` registered as a backward-compatible alias).
 
 ### Method 1: UI Dashboard Editor
 1. In Home Assistant, open your dashboard and click the pencil icon (**Edit Dashboard**).
@@ -48,8 +61,11 @@ The frontend card is bundled directly with the integration and registered automa
 3. Paste the following configuration:
 
 ```yaml
-type: custom:myhome-bus-card
-title: MyHOME Bus Monitor
+type: custom:myhome-openwebnet-bus-monitor
+# Note: custom:myhome-bus-card is also supported as an alias
+title: MyHOME OpenWebNet Bus Monitor
+max_frames: 500          # Optional: 50–1000 (step 50, default 500)
+# mac: "00:03:50:01:02:03"  # Optional: pin to a specific gateway MAC on multi-gateway plants
 ```
 
 4. Click **Save**.
@@ -62,19 +78,12 @@ The card interface provides a live telemetry stream and controls:
 
 ### 1. Live Streaming Controls
 - **▶️ Resume / ⏸️ Pause**: Pause the live scrolling stream to examine a specific sequence of frames without new telegrams pushing it out of view.
-- **🗑️ Clear**: Clears the current frontend display buffer.
+- **🗑️ Clear**: Clears the current frontend display buffer (and backend ring buffer for administrators).
 
 ### 2. Powerful Filtering
-- **Filter by WHO Subsystem**: Click chips to isolate specific traffic:
-    - `💡 WHO=1` Lighting
-    - `🪟 WHO=2` Automation / Covers
-    - `🌡️ WHO=4` Thermoregulation
-    - `🚨 WHO=5` Burglar Alarm
-    - `🔘 WHO=15 / WHO=25` CEN & CEN+ Scenario Controls
-    - `🎵 WHO=16` Sound System / Audio Matrix
-    - `⚙️ WHO=13` Gateway Diagnostics
-- **Direction Filter**: Switch between `All`, `RX Only` (bus events), or `TX Only` (commands sent from Home Assistant).
-- **Free-Text & Regex Search**: Search for specific addresses (e.g. `*1*1*12##` or `12#1`).
+- **Filter by WHO Subsystem (`<select>` dropdown)**: Choose `All Subsystems` or isolate any of the **21** built-in `WHO` catalog entries (`WHO = 0, 1, 2, 3, 4, 5, 6, 7, 9, 13, 14, 15, 16, 17, 18, 22, 24, 25, 1001, 1004, 1013`), plus any unknown `WHO` codes dynamically learned from live bus traffic.
+- **Direction Filter (`<select>` dropdown)**: Switch across **5** direction/signaling options — `All`, `RX` (inbound bus events), `TX` (outbound commands from Home Assistant), `ACK` (`*#*1##`), or `NACK` (`*#*0##`).
+- **Substring & Field-Prefix Search**: Case-insensitive substring search across `where`, `what`, `dimension`, and `raw` frame text, or targeted prefix queries using `where:`, `what:`, `dim:`, or `raw:` (also accepts `=`, e.g. `where:12`, `what:1`, `dim:20`, `raw:*#4*`; plain substring matching, not regular expressions).
 
 ### 3. Capturing: Start Trace vs Sweep Bus
 

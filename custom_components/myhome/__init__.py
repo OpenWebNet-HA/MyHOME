@@ -108,9 +108,37 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url_path: str) 
         return False
 
 
+async def _async_unregister_lovelace_resource(
+    hass: HomeAssistant, base_url: str = "/myhome_static/myhome-bus-card.js"
+) -> None:
+    """Remove auto-registered Bus Monitor resource when no MyHOME gateways remain."""
+    try:
+        lovelace = hass.data.get("lovelace")
+        if not lovelace:
+            return
+        resources = getattr(lovelace, "resources", None)
+        if not resources or not hasattr(resources, "async_delete_item"):
+            return
+        if hasattr(resources, "loaded") and not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+        for item in list(resources.async_items() or []):
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get("url"), str)
+                and item["url"].split("?")[0] == base_url
+                and "id" in item
+            ):
+                await resources.async_delete_item(item["id"])
+                LOGGER.info("Removed Lovelace bus monitor resource: %s", item["url"])
+    except Exception as err:
+        LOGGER.debug("Could not remove Lovelace resource: %s", err)
+
+
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Register the Lovelace bus monitor card static resource and script."""
     domain_data = hass.data.setdefault(DOMAIN, {})
+    domain_data.pop("_lovelace_unregistered", None)
 
     card_path = os.path.join(os.path.dirname(__file__), "frontend", "myhome-bus-card.js")
     static_url = "/myhome_static/myhome-bus-card.js"
@@ -144,12 +172,16 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             if getattr(hass, "is_running", False):
                 async def _delayed_retry() -> None:
                     await asyncio.sleep(1)
-                    await _async_register_lovelace_resource(hass, versioned_url)
+                    domain_data.pop("_lovelace_listener_registered", None)
+                    if not domain_data.get("_lovelace_unregistered"):
+                        await _async_register_lovelace_resource(hass, versioned_url)
 
                 hass.async_create_task(_delayed_retry())
             else:
                 async def _on_ha_started(event: Event) -> None:
-                    await _async_register_lovelace_resource(hass, versioned_url)
+                    domain_data.pop("_lovelace_listener_registered", None)
+                    if not domain_data.get("_lovelace_unregistered"):
+                        await _async_register_lovelace_resource(hass, versioned_url)
 
                 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
                 hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
@@ -202,6 +234,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> bo
         INTEGRATION_VERSION,
         await _async_resolve_ownd_version(hass),
     )
+    if hass.data[DOMAIN].get("_lovelace_unregistered"):
+        await _async_register_frontend(hass)
 
     # Per-platform device configurations and entity objects; myhome.yaml and bus
     # discovery fill them, the platforms read them through entry.runtime_data.
@@ -385,6 +419,11 @@ async def async_remove_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> N
         if domain == DOMAIN and (issue_id.endswith(f"_{entry.entry_id}") or f"_{entry.entry_id}_" in issue_id):
             ir.async_delete_issue(hass, DOMAIN, issue_id)
     async_check_primary_links(hass, removed=entry.entry_id)
+    if not [e for e in hass.config_entries.async_entries(DOMAIN) if e.entry_id != entry.entry_id]:
+        domain_data = hass.data.setdefault(DOMAIN, {})
+        domain_data["_lovelace_unregistered"] = True
+        domain_data.pop("_lovelace_listener_registered", None)
+        await _async_unregister_lovelace_resource(hass)
 
     from .cover_profiles import remove_entry
     from .panel import async_remove_panel_if_last_entry

@@ -25,11 +25,11 @@ Log: `Gateway could not be reached or connection failed at <host>` or `Gateway c
 
 Log: `Gateway rejected the OpenWebNet password (password_error|password_required)`.
 
-Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). MH200 / MH200N / MH201 / AM4890 only support the numeric password; HMAC (alphanumeric) is available on F454 / F455 / MH202 / MyHOMEServer1. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.
+Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). `MH200`, `MH200N`, `MH201`, `F452`, `F453`, `F453AV`, `H4684`, and `AM4890` / `H4890` only support the legacy numeric OPEN password; SHA-256 HMAC (alphanumeric) is supported on `F454`, `F455`, `F461`, `MH202`, and `MyHomeServer1`. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.
 
 ### The gateway was discovered with the wrong model, or a repair issue says the model was corrected
 
-The model decides pacing and which subsystems are queried. See [How the gateway model is identified](gateway-identification.md): SSDP is authoritative, a manual choice is corrected when the WHO 13 device type contradicts it with an official code, and a repair issue asks you to confirm otherwise. Use the reconfigure flow to set the model explicitly. If the diagnostics show an unknown `who13_code`, please attach the download to an issue so the code can be documented.
+The model decides pacing and which subsystems are queried. See [How the gateway model is identified](gateway-identification.md): SSDP is authoritative, a manual choice is corrected when the WHO 13 device type contradicts it with an official code, and a repair issue asks you to confirm otherwise. Open **Configure** (Options Flow) on the integration card to set the hardware `model` explicitly (**⋮ → Reconfigure** updates `host`, `port`, and `password`). If the diagnostics show an unknown `who13_code`, please attach the download to an issue so the code can be documented.
 
 ### `No module named 'custom_components.myhome.backup'`
 
@@ -97,7 +97,7 @@ Log: `Could not send message *#4*<ZPP>*15##`. Probe addresses (`WHERE ≥ 100`) 
 
 - **Timed covers (`F411/2`, `F411/4`, `F411U2`, standard `F401`)**: Timed covers estimate position from the travel time. Calibrate it (`myhome.calibrate_cover` or the device's **Calibrate travel time** button) or measure it with a stopwatch and save it with `myhome.set_cover_travel_time`. A full open or close resynchronises the estimate.
 - **Cover stuck at `50%`, no `travel_time_down` / `travel_time_up` attributes, and calibration fails with `"{name} reports its position"`**: The cover has `advanced: true` (or `advanced_shutter: true` / `strategy: native`) set in `/config/myhome.yaml` on a standard actuator (such as an `F411/2` or `F411/4`) that does not support OpenWebNet Dimension 10 position reporting (`*#2*<WHERE>*10##` times out at startup). Remove `advanced: true` / `advanced_shutter: true` from `/config/myhome.yaml` and reload the MyHOME integration so the cover uses the timed position engine and accepts travel-time calibration ([#761](https://github.com/OpenWebNet-HA/MyHOME/issues/761)).
-- **Position-reporting actuators (Dimension 10)**: Actuators that natively report position (`67557`, `H4661M2`, `LN4661M2`, `F401` in advanced mode) are exact; if yours reports position on the bus (`*#2*<WHERE>*10*...##`) but the entity does not follow, set `advanced_shutter: true` in `myhome.yaml`.
+- **Position-reporting actuators (Dimension 10)**: Actuators that natively report calibrated position (`67557`, `H4661M2`, `LN4661M2`, `F401` in advanced mode) auto-promote to `native` (`advanced: true`) as soon as they emit a calibrated `Dimension 10` frame (`0..100`) and persist across restarts. If yours remains in timed mode, check whether it reports `LEVEL = 255` (uncalibrated end-stops — run the actuator's physical end-stop learning procedure) or whether `myhome.yaml` / saved `cover_travel_times` calibration is pinning it to timed mode; you can also set `advanced: true` (`advanced_shutter: true`) explicitly in `myhome.yaml`.
 
 ### Calibration fails with "no stop status from the actuator"
 
@@ -139,7 +139,7 @@ Download the MyHOME diagnostics (*Devices & services → MyHOME → ⋮ → Down
 
 ### `Could not send message *#16*0##` (or `*#2*0##`, `*#4*0##`) at every start
 
-Startup discovery only asks for subsystems the gateway profile advertises. The bare `*#16*0##` was the wrong frame and every gateway NACKs it; current versions send `*#16*0*5##`. If a status request is still rejected, check that the gateway model is right and correct it with the reconfigure flow.
+Startup discovery only asks for subsystems the gateway profile advertises. The bare `*#16*0##` was the wrong frame and every gateway NACKs it; current versions send `*#16*0*5##`. If a status request is still rejected, check that the gateway model is right and correct it via **Configure** (Options Flow).
 
 ### The gateway stops answering after a burst of commands
 
@@ -180,6 +180,6 @@ It needs the **I understand the risk** checkbox and an administrator user; a raw
 
 ## Getting help
 
-1. Reproduce with debug logging on.
-2. Press **Sweep Bus** on the card, then **Download diagnostics** (or **Export Trace** on the card).
+1. Reproduce with debug logging on (or click **`🔴 Start Trace`** and **`⏹ Stop Trace`** on the Bus Monitor card).
+2. Press **Sweep Bus** on the card, then **Download diagnostics** (or click **`💾 Export Trace`** / **`📋 Copy Trace`** on the card).
 3. Open an issue with the structured form and attach the download; mention the gateway model, firmware and the exact frames you expected. For protocol questions, [RFC #248](https://github.com/orgs/OpenWebNet-HA/discussions/248) is the place.

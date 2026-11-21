@@ -62,7 +62,7 @@ SCHEMA_WS_INFO: dict[Any, Any] = {
 SCHEMA_WS_HISTORY: dict[Any, Any] = {
     vol.Required("type"): WS_TYPE_HISTORY,
     vol.Optional("mac"): vol.Any(cv.string, None),
-    vol.Optional("limit", default=100): vol.All(vol.Coerce(int), vol.Range(min=1, max=500)),
+    vol.Optional("limit", default=100): vol.All(vol.Coerce(int), vol.Range(min=1, max=1000)),
     vol.Optional("who"): vol.Any(cv.string, vol.Coerce(int), None),
     vol.Optional("where"): vol.Any(cv.string, None),
     vol.Optional("direction"): vol.Any(vol.In(["rx", "tx", "ack", "nack", "all"]), None),

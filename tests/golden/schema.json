@@ -7,10 +7,27 @@
     "id",
     "frame",
     "direction",
+    "who",
     "source",
     "mcp_valid",
     "roundtrip"
   ],
+  "if": {
+    "properties": {
+      "who": {
+        "type": "integer"
+      }
+    },
+    "required": ["who"]
+  },
+  "then": {
+    "required": ["where"],
+    "properties": {
+      "where": {
+        "type": "string"
+      }
+    }
+  },
   "properties": {
     "id": {
       "type": "string",
@@ -47,6 +64,13 @@
       "type": ["string", "null"],
       "description": "Target or source address (preserving leading zeros, e.g. '0311', '51')."
     },
+    "where_param": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      },
+      "description": "Sub-address parameters on WHERE after stripping private-bus interface routing (e.g. ['3'] from '0#3', ['1'] from '33#1')."
+    },
     "scope": {
       "type": "string",
       "enum": ["general", "area", "group", "point"],
@@ -56,9 +80,20 @@
       "type": ["string", "null"],
       "description": "Private bus interface identifier if routed (e.g. '01' from '#4#01')."
     },
+    "is_translation": {
+      "type": "boolean",
+      "description": "Whether the frame carries the WHAT 1000#... command-translation prefix."
+    },
     "dimension": {
       "type": ["integer", "null"],
       "description": "Dimension index if a dimension frame."
+    },
+    "dimension_param": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      },
+      "description": "Parameters attached to DIMENSION (e.g. ['1'] from '1200#1', ['001', '1'] from '#11#001#1')."
     },
     "dimension_values": {
       "type": ["array", "null"],
@@ -92,10 +127,6 @@
       "type": "boolean",
       "description": "Whether parsing and re-serializing in OWNd must exactly match the raw frame string."
     },
-    "is_translation": {
-      "type": "boolean",
-      "description": "Whether this frame is an OpenWebNet Command Translation frame (WHAT=1000)."
-    },
     "builder": {
       "type": "object",
       "required": ["class", "method", "args"],
@@ -111,6 +142,10 @@
         "args": {
           "type": "array",
           "description": "Positional arguments to pass to the builder method."
+        },
+        "kwargs": {
+          "type": "object",
+          "description": "Keyword arguments to pass to the builder method."
         }
       },
       "additionalProperties": false

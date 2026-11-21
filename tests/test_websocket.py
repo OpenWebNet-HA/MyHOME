@@ -145,6 +145,14 @@ async def test_websocket_schemas_validation():
     assert res1["mac"] is None
     assert res1["limit"] == 100
 
+    res_max = schema_hist({"id": 10, "type": "myhome/bus_monitor/history", "limit": 1000})
+    assert res_max["limit"] == 1000
+    import voluptuous as vol
+
+    for bad_limit in (0, 1001):
+        with pytest.raises(vol.Invalid):
+            schema_hist({"id": 11, "type": "myhome/bus_monitor/history", "limit": bad_limit})
+
     schema_stream = ws_bus_monitor_stream._ws_schema
     res2 = schema_stream({"id": 2, "type": "myhome/bus_monitor/stream", "mac": None})
     assert res2["mac"] is None

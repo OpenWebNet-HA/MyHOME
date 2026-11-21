@@ -41,3 +41,25 @@
   mcp_valid: true
   mcp_notes: "Scenarios (Basic): Start scenario 95"
   roundtrip: true
+
+- id: scenario.capture.lock_scenes.01
+  frame: "*0*41*01##"
+  direction: event
+  who: 0
+  what: 41
+  where: "01"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Scenarios (Basic): Lock scenario programmer 01 (WHAT 41; captured on community plant, MyHOME#466)"
+  roundtrip: true
+
+- id: scenario.capture.unlock_scenes.01
+  frame: "*0*44*01##"
+  direction: event
+  who: 0
+  what: 44
+  where: "01"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Scenarios (Basic): Unlock scenario programmer 01 (WHAT 44; captured on community plant, MyHOME#466)"
+  roundtrip: true

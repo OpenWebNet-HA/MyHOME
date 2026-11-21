@@ -4,8 +4,8 @@ site_author: OpenWebNet-HA Community
 site_url: https://openwebnet-ha.github.io/MyHOME/
 repo_name: OpenWebNet-HA/MyHOME
 repo_url: https://github.com/OpenWebNet-HA/MyHOME
-edit_uri: edit/v2-phase1-architecture/docs/
-copyright: "Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under AGPL-3.0"
+edit_uri: edit/master/docs/
+copyright: "Copyright &copy; 2020–2026 OpenWebNet-HA Community &mdash; Licensed under Apache-2.0"
 
 theme:
   name: material
@@ -82,7 +82,6 @@ nav:
       - Overview: configuration/README.md
       - Installation: getting-started/installation.md
       - Hardware Compatibility: getting-started/hardware-compatibility.md
-      - Beta Evolution & Differences: roadmap/beta-differences.md
       - Removal & Clean Uninstall: getting-started/removal.md
   - Device Configuration:
       - Gateways & Connection: configuration/gateways.md
@@ -114,7 +113,6 @@ nav:
       - OpenWebNet Protocol & WHO Archive: openwebnet-who-specifications.md
       - Protocol Conformance Matrix: protocol_conformance_matrix.md
       - Hardware Trace Availability: trace-availability.md
-      - F454 Regression Checks: f454-regression-checks.md
       - Quality Scale Roadmap: quality_scale_plan.md
   - Panel Development:
       - Side Panel: sidepanel.md
@@ -136,4 +134,3 @@ nav:
       - Legacy YAML Configuration (< v0.9): migration/legacy-yaml.md
   - Roadmap:
       - Project Roadmap: roadmap.md
-      - Beta Evolution & Differences: roadmap/beta-differences.md

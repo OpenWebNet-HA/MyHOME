@@ -65,3 +65,94 @@ def test_debug_log_frames_are_attributed_to_the_labelled_gateway(
     f459 = [cell.strip() for cell in rows["**F459**"].split("|")[2:-1]]
     assert h4684 == ["✅", "", "✅"]
     assert f459 == ["", "✅", ""]
+
+
+def test_trace_matrix_excludes_tx_probes_and_oracle_fixtures(
+    trace_matrix, tmp_path, monkeypatch
+) -> None:
+    """Outbound tx sweep probes and synthetic oracle fixtures must never appear as physical traces."""
+    import json
+
+    traces = tmp_path / "traces"
+    traces.mkdir(parents=True)
+
+    # F461 diagnostic export with rx on WHO 1/4 and NACKed tx sweep probes on WHO 5/16/18
+    (traces / "f461_diag.json").write_text(
+        json.dumps(
+            {
+                "data": {
+                    "gateway": {"model_name": "F461"},
+                    "bus_monitor": {
+                        "recent_frames": [
+                            {"direction": "rx", "raw": "*1*1*11##"},
+                            {"direction": "rx", "raw": "*#4*1*0*0215##"},
+                            {"direction": "tx", "raw": "*#5*0##"},
+                            {"direction": "tx", "raw": "*#16*0##"},
+                            {"direction": "tx", "raw": "*#18*0##"},
+                        ]
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Synthetic firmware-oracle fixture on F453AV must also be excluded
+    (traces / "myhome_trace_oracle_F453AV_synth.json").write_text(
+        json.dumps(
+            {
+                "synthetic": True,
+                "gateway": {"model": "F453AV"},
+                "frames": [{"direction": "rx", "raw": "*16*3*01##"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(trace_matrix, "FIXTURES_DIR", tmp_path)
+    matrix = trace_matrix.build_matrix()
+    rows = {line.split("|")[1].strip(): line for line in matrix.splitlines()[2:]}
+    assert set(rows) == {"**F461**"}
+    header = matrix.splitlines()[0]
+    columns = [cell.strip() for cell in header.split("|")[2:-1]]
+    assert columns == ["WHO 1<br>Lights", "WHO 4<br>Climate"]
+    f461_cells = [cell.strip() for cell in rows["**F461**"].split("|")[2:-1]]
+    assert f461_cells == ["✅", "✅"]
+
+
+def test_who_labels_canonical_aux_and_cen_plus(trace_matrix, tmp_path, monkeypatch) -> None:
+    """WHO 9 and WHO 25 short labels must be canonical 'Aux' and 'CEN+', never 'Power' or 'Diag'."""
+    import json
+
+    assert trace_matrix.WHO_LABELS[9] == "Aux"
+    assert trace_matrix.WHO_LABELS[25] == "CEN+"
+    trace_matrix.validate_who_labels()
+
+    with pytest.raises(ValueError, match="WHO 9"):
+        trace_matrix.validate_who_labels({**trace_matrix.WHO_LABELS, 9: "Power"})
+    with pytest.raises(ValueError, match="WHO 25"):
+        trace_matrix.validate_who_labels({**trace_matrix.WHO_LABELS, 25: "Diag"})
+
+    traces = tmp_path / "traces"
+    traces.mkdir(parents=True)
+    (traces / "mh200n_diag.json").write_text(
+        json.dumps(
+            {
+                "data": {
+                    "gateway": {"model_name": "MH200N"},
+                    "bus_monitor": {
+                        "recent_frames": [
+                            {"direction": "rx", "raw": "*9*1*1##"},
+                            {"direction": "rx", "raw": "*25*21#1*21##"},
+                        ]
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(trace_matrix, "FIXTURES_DIR", tmp_path)
+    matrix = trace_matrix.build_matrix()
+    header_cols = [cell.strip() for cell in matrix.splitlines()[0].split("|")[2:-1]]
+    assert header_cols == ["WHO 9<br>Aux", "WHO 25<br>CEN+"]
+

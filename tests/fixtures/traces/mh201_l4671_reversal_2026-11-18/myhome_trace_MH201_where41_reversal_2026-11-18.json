@@ -1,0 +1,192 @@
+{
+  "synthetic": false,
+  "capture": {
+    "kind": "trace",
+    "source": "myhome/bus_monitor/subscribe history; tx frames sent raw with myhome/bus_monitor/send",
+    "started_at": "2026-11-18T21:06:41.764133+00:00",
+    "filters": {
+      "who": "2",
+      "where": "41",
+      "direction": null
+    },
+    "window": {
+      "first": "2026-11-18T21:06:41.764133+00:00",
+      "last": "2026-11-18T21:10:06.550313+00:00",
+      "frames": 10,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "integration_version": "2.0.0",
+    "ownd_version": "2.0.1"
+  },
+  "gateway": {
+    "model": "MH201",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "3.3.6",
+    "host": null,
+    "port": null,
+    "mac_prefix": "00:03:50",
+    "queue_pacing": 0.1,
+    "worker_count": 1,
+    "identification": {
+      "model": "MH201",
+      "source": "ssdp",
+      "configured_model": "MH201",
+      "ssdp_model": "MH201",
+      "who13_code": "200",
+      "who13_model": "F454",
+      "who13_model_official": null,
+      "who13_model_observed": "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201",
+      "who13_firmware": "3.3.6",
+      "who13_kernel": null,
+      "who13_distribution": null,
+      "who1013_code": "10",
+      "who1013_model": "MH201",
+      "who1013_other_names": [],
+      "who1013_n_conf": "15",
+      "who1013_brand": "0",
+      "who1013_line": "5",
+      "profile": "MH201Profile",
+      "conflict": null
+    }
+  },
+  "actuator": {
+    "model": "L4671/2",
+    "where": "41",
+    "strategy": "timed",
+    "travel_time": 15
+  },
+  "frames": [
+    {
+      "timestamp": 1795036001.764133,
+      "iso_time": "2026-11-18T21:06:41.764133+00:00",
+      "direction": "rx",
+      "raw": "*2*1*41##",
+      "who": "2",
+      "where": "41",
+      "what": "1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036012.87929,
+      "iso_time": "2026-11-18T21:06:52.879290+00:00",
+      "direction": "tx",
+      "raw": "*#2*41##",
+      "who": "2",
+      "where": "41",
+      "what": null,
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036030.373658,
+      "iso_time": "2026-11-18T21:07:10.373658+00:00",
+      "direction": "rx",
+      "raw": "*2*0*41##",
+      "who": "2",
+      "where": "41",
+      "what": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036136.008613,
+      "iso_time": "2026-11-18T21:08:56.008613+00:00",
+      "direction": "tx",
+      "raw": "*2*2*41##",
+      "who": "2",
+      "where": "41",
+      "what": "2",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036136.071633,
+      "iso_time": "2026-11-18T21:08:56.071633+00:00",
+      "direction": "rx",
+      "raw": "*2*2*41##",
+      "who": "2",
+      "where": "41",
+      "what": "2",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036141.096229,
+      "iso_time": "2026-11-18T21:09:01.096229+00:00",
+      "direction": "tx",
+      "raw": "*2*1*41##",
+      "who": "2",
+      "where": "41",
+      "what": "1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036141.151487,
+      "iso_time": "2026-11-18T21:09:01.151487+00:00",
+      "direction": "rx",
+      "raw": "*2*0*41##",
+      "who": "2",
+      "where": "41",
+      "what": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036145.10421,
+      "iso_time": "2026-11-18T21:09:05.104210+00:00",
+      "direction": "tx",
+      "raw": "*2*1*41##",
+      "who": "2",
+      "where": "41",
+      "what": "1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036145.171416,
+      "iso_time": "2026-11-18T21:09:05.171416+00:00",
+      "direction": "rx",
+      "raw": "*2*1*41##",
+      "who": "2",
+      "where": "41",
+      "what": "1",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    },
+    {
+      "timestamp": 1795036206.550313,
+      "iso_time": "2026-11-18T21:10:06.550313+00:00",
+      "direction": "rx",
+      "raw": "*2*0*41##",
+      "who": "2",
+      "where": "41",
+      "what": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "is_duplicate": false
+    }
+  ]
+}

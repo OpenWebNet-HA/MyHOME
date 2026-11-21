@@ -125,9 +125,44 @@ KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
     ("aux.cmd.deactivate.1", "F450"): {"nack"},
     ("aux.cmd.deactivate.1", "F453AV"): {"nack"},
     ("aux.cmd.deactivate.1", "H4684"): {"nack"},
+    **{
+        (fixture_id, product): {"nack"}
+        for fixture_id in (
+            "energy.stop_and_go.cmd.open.11",
+            "energy.stop_and_go.cmd.close.11",
+            "scenario_plus.cmd.turn_off.131",
+        )
+        for product in ("F450", "H4684", "MH200")
+    },
+    **{
+        (fixture_id, product): {"nack"}
+        for fixture_id in (
+            "intercom.capture.call_external.11.to.16",
+            "intercom.capture.call_internal.11.to.16",
+            "intercom.capture.call_pager.11",
+        )
+        for product in (
+            "F450",
+            "F453",
+            "F453AV",
+            "F454",
+            "F459",
+            "F460",
+            "F461",
+            "H4684",
+            "MH200",
+            "MH200N",
+            "MH202",
+            "MyHomeServer1",
+        )
+    },
     ("light.cmd.off.bus.25", "F450"): {"nack"},
     ("light.cmd.off.bus.25", "MH202"): {"nack"},
     ("light.cmd.on.gen.0", "F450"): {"nack"},
+    ("load.cmd.force.priority1", "F450"): {"nack"},
+    ("load.cmd.force.priority1", "F460"): {"nack"},
+    ("load.cmd.force.priority1", "F461"): {"nack"},
+    ("load.cmd.force.priority1", "MyHomeServer1"): {"nack"},
     ("sound.cmd.source.on.1", "F450"): {"nack"},
     ("sound.cmd.source.on.1", "F459"): {"nack"},
     ("sound.cmd.source.on.1", "F460"): {"nack"},
@@ -140,6 +175,12 @@ KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
     ("sound.cmd.source.on.2", "F461"): {"nack"},
     ("sound.cmd.source.on.2", "MH202"): {"nack"},
     ("sound.cmd.source.on.2", "MyHomeServer1"): {"nack"},
+    ("sounddiff.cmd.turn_on_with_source.area1.point1.output_area1", "F450"): {"nack"},
+    ("sounddiff.cmd.turn_on_with_source.area1.point1.output_area1", "H4684"): {"nack"},
+    ("sounddiff.cmd.turn_on_with_source.area1.point1.output_area1", "MH200"): {"nack"},
+    ("sounddiff.cmd.turn_on_with_source.area1.point1.output_area1", "MH202"): {"nack"},
+    ("thermo.capture.central.auto_generic.cu99.no_effect", "H4684"): {"nack"},
+    ("thermo.capture.central.auto_generic.cu99.no_effect", "MH200"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "H4684"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "MH200"): {"nack"},
     ("thermo.cmd.central.mode.heat.cu99", "H4684"): {"nack"},
@@ -254,7 +295,7 @@ def test_what19_fault_emitted_event():
 def test_all_gateway_responses_conform_to_openwebnet_protocol():
     """Verify that every verdict entry adheres strictly to OpenWebNet framing rules."""
     valid_replies = {"ack", "nack", "-"}
-    valid_verdicts = {"out", "silent", "timeout"}
+    valid_verdicts = {"out", "silent", "timeout", "crash"}
 
     for inp, entries in ALL_VERDICTS.items():
         assert inp.startswith("*") and inp.endswith("##"), f"Invalid input frame format: {inp}"

@@ -1,15 +1,15 @@
-# Upgrading from v0.9.4 to v2.0 (Beta)
+# Upgrading from v0.9.4 to v2.0
 
-This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0.9.4** production plant to the modern **v2.0 architecture** (`v2-phase1-architecture`).
+This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0.9.4** plant to the modern **MyHOME v2.0** architecture.
 
 ---
 
 ## 🧭 What Changes in v2.0?
 
-| Aspect | Legacy v0.9.4 | Next-Gen v2.0 (Beta) |
+| Aspect | Legacy v0.9.4 | MyHOME v2.0 |
 | :--- | :--- | :--- |
 | **Setup Model** | Manual YAML (`/config/myhome.yaml`) | **100% UI-First** (Config Flow & Auto-Discovery) |
-| **Entity Discovery** | Strict YAML parsing at startup | Dynamic on-wire SCS bus discovery (`WHO = 1, 2, 4, 13, 15, 18, 25`) |
+| **Entity Discovery** | Strict YAML parsing at startup | Dynamic on-wire SCS bus discovery (`WHO = 1, 2, 4, 5, 16, 18, 25` entities + `WHO = 15 / 25` device triggers; `WHO = 9` via `myhome.yaml`, `WHO = 13` diagnostics) |
 | **Cover Calibration** | Manual `travel_time` integers in YAML | Automated on-bus calibration (button & service action), direction-aware up/down times |
 | **Light Capabilities** | Manual `dimmable: true` YAML flags | Dynamically learned from bus telemetry (dimming, HSV, color temp, DALI DT8) |
 | **Entity Naming** | Configured exclusively in `myhome.yaml` | Managed natively in Home Assistant Device & Entity Registry |
@@ -32,19 +32,23 @@ This guide provides a step-by-step roadmap for migrating an existing **MyHOME v0
 
 ---
 
-## 📦 Step 2: Installing the v2.0 Beta Release
+## 📦 Step 2: Installing MyHOME v2.0
 
-### Why Manual ZIP / SSH is Recommended for Beta
-While stable releases (like v0.9.4) are distributed through standard HACS tracks on `master`, v2.0 is currently developed on the `v2-phase1-architecture` branch. HACS often fails to track non-default development branches or rejects pre-release beta builds.
+### Option A: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.8 – 2026.10`)
 
-### Installation via ZIP Archive
+- **Home Assistant 2026.11+ (Marketplace)**: Open **Settings → Marketplace**, open **MyHOME** *(or add `https://github.com/OpenWebNet-HA/MyHOME` via **Add from link** → **Integration**)*, install or update to **v2.0+**, and restart Home Assistant.
+- **Home Assistant 2026.8 – 2026.10 (HACS)**: Open **HACS → Integrations → MyHOME**, update/download **v2.0+**, and restart Home Assistant.
+
+*(Note: To install a `2.0.0bX` pre-release tag published ahead of stable `v2.0.0` on `master`, use Option B below.)*
+
+### Option B: Terminal & SSH or Manual ZIP Archive
 
 #### ⚡ 1-Click Terminal Command (Home Assistant Terminal & SSH)
 If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste this command directly into your terminal:
 
 ```bash
-# Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0b18"
+# Set target release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
+TAG="2.0.1"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \
@@ -67,10 +71,10 @@ ha core restart
 > 6. `grep '"version"' myhome/manifest.json`: Prints the installed version to the terminal for immediate confirmation.
 > 7. `ha core restart`: Issues a core restart command via the Home Assistant supervisor CLI.
 
-#### 📁 Alternative: Manual Download via Samba / Studio Code Server
+#### 📁 Manual Download via Samba / Studio Code Server
 If you prefer not using the command line:
 
-1. Download `myhome.zip` from the latest [v2.0 Beta GitHub Release](https://github.com/OpenWebNet-HA/MyHOME/releases).
+1. Download `myhome.zip` from [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases).
 2. Connect to your Home Assistant host via **Samba Share** or the **Studio Code Server** add-on.
 3. Navigate to `/config/custom_components/myhome/` (create the folders if they don't exist).
 4. Extract the contents of `myhome.zip` directly into `/config/custom_components/myhome/`.
@@ -82,11 +86,12 @@ If you prefer not using the command line:
 ## 🔌 Step 3: Gateway Setup & Device Onboarding
 
 1. Once Home Assistant restarts, navigate to **Settings → Devices & Services**.
-2. If your gateway is discovered automatically via SSDP/mDNS, click **Configure**.
+2. If your gateway is discovered automatically via **SSDP / UPnP**, click **Configure**.
 3. Otherwise, click **Add Integration**, search for **MyHOME**, and enter:
-    - **Host**: IP address of your gateway.
-    - **Port**: `20000`.
-    - **Password**: OpenWebNet password (or HMAC password for MyHomeServer1).
+    - **Address**: IPv4 address of your gateway (e.g. `192.168.1.50` — strict IPv4; `.local` mDNS hostnames are rejected).
+    - **Port**: `20000` (`1–65535`).
+    - *(If UPnP probing does not respond on the host, a manual fallback step prompts for the gateway **MAC Address** and **Device Type**, which are refined automatically after authentication via `WHO = 13` / `WHO = 1013` queries.)*
+    - **Password**: OpenWebNet numeric password (or alphanumeric HMAC password on `F454`, `F455`, `F461`, `MH202`, `MyHomeServer1`).
 4. Home Assistant connects to the gateway, starts the command and event sessions, and automatically discovers your connected bus actuators and sensors.
 
 ### Are Existing Entity IDs Preserved?
@@ -98,15 +103,17 @@ If you prefer not using the command line:
 
 Before upgrading, review these key architectural changes:
 
-### 1. Gateway Identity Strict Verification (`#370`)
-* **Change**: v2 strictly queries and validates the gateway MAC address and hardware model via `WHO = 13` dimension queries.
-* **Impact**: If a gateway was previously configured with an incorrect or spoofed MAC address in `myhome.yaml`, v2 creates a Home Assistant **Repair Issue** alerting you to update the configuration to match the true hardware identity.
+### 1. Gateway Identity Verification & `myhome.yaml` MAC Matching (`#370`)
+* **Change**: v2 queries and validates the gateway MAC address, firmware (`*#13**16##`), and hardware model (`*#13**15##` / `*#1013**1##` / `*#13**12##`) via `WHO = 13` / `WHO = 1013` dimension queries.
+* **Impact**:
+    - If `/config/myhome.yaml` defines gateway sections under a placeholder or mismatched MAC address that matches no configured gateway, v2 **logs a warning** (`myhome.yaml has no section for gateway ...; Rename the section to this gateway's MAC to load it`) and falls back to any previously imported options snapshot rather than raising a Repair Issue.
+    - If a gateway's configured hardware `model` is contradicted by live `WHO = 13` device-type frames, v2 raises a `gateway_identity_mismatch` / `gateway_identity_corrected` **Repair Issue** (resolved under **Settings → Devices & Services → MyHOME → Configure**).
 
-### 2. MyHomeServer1 Session Management (`#397`)
-* **Change**: MyHomeServer1 firmware enforces single-command session limits. v2 introduces dedicated session serialization and worker pacing specifically tailored for Linux-based MHS1 gateways to prevent session lockups.
+### 2. MyHomeServer1 Session Concurrency & Pacing (`#397`)
+* **Change**: `MyHomeServer1` firmware supports up to **4** concurrent command sessions (`default = 2` command workers, `max = 4`, with a **`20 ms`** inter-frame delay). v2 enforces profile-specific worker caps and ticket-ordered FIFO queue pacing so `MyHomeServer1` stays responsive alongside the mobile app without exhausting its socket pool.
 
 ### 3. Core & Python Requirements
-* **Change**: v2 requires Home Assistant Core ≥ 2026.3 running on Python 3.14+ (or compatible container). Legacy Python 3.11 environments cannot import the modern async core.
+* **Change**: v2 requires Home Assistant Core ≥ 2026.8 running on Python 3.14+ (or compatible container). Legacy Python 3.11 environments cannot import the modern async core.
 
 ---
 
@@ -120,7 +127,7 @@ Before upgrading, review these key architectural changes:
 
 ## ⏪ Rollback Procedure
 
-If you encounter an unexpected issue during beta testing and wish to revert to v0.9.4:
+If you encounter an unexpected issue after upgrading and wish to revert to v0.9.4:
 
 1. Restore your pre-upgrade Home Assistant backup via **Settings → System → Backups**.
 2. Alternatively, re-download the [v0.9.4 Release Archive](https://github.com/OpenWebNet-HA/MyHOME/releases/tag/0.9.4), extract it into `/config/custom_components/myhome/`, and restart Home Assistant.

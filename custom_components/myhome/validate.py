@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import re
 import typing
+from collections.abc import Mapping
 
 from homeassistant.components.alarm_control_panel import (  # type: ignore[attr-defined]
     DOMAIN as ALARM_CONTROL_PANEL,
@@ -87,6 +88,8 @@ from .const import (
     CONF_DIMMABLE,
     CONF_ENTITIES,
     CONF_ENTITY_NAME,
+    CONF_EXPLICIT_KINEMATICS,
+    CONF_EXPLICIT_TRAVEL_TIME,
     CONF_EXPOSE,
     CONF_FAN_SUPPORT,
     CONF_HEATING_SUPPORT,
@@ -120,6 +123,7 @@ from .const import (
     CONF_STATE_SENSOR,
     CONF_STEP_DOWN_ACTION,
     CONF_STEP_UP_ACTION,
+    CONF_STOP_BEFORE_MOVE,
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_TURN_OFF_ACTION,
@@ -135,6 +139,7 @@ from .const import (
     COVER_STRATEGIES,
     DEFAULT_MIN_MOTOR_PULSE,
     DEFAULT_SLAT_TIME,
+    EXPLICIT_COVER_KINEMATICS_KEYS,
     LOGGER,
     MAX_MIN_POSITION_DELTA,
     MAX_SLAT_TIME,
@@ -342,10 +347,23 @@ class MyHomeConfigSchema(Schema):
 
 class MyHomeDeviceSchema(Schema):
     def __call__(self, data):  # type: ignore
+        explicit_kinematics = {
+            str(device)
+            for device, raw in (data.items() if isinstance(data, Mapping) else ())
+            if isinstance(raw, Mapping)
+            and any(key in raw for key in EXPLICIT_COVER_KINEMATICS_KEYS)
+        }
+        explicit_travel_time = {
+            str(device)
+            for device, raw in (data.items() if isinstance(data, Mapping) else ())
+            if isinstance(raw, Mapping) and CONF_TRAVEL_TIME in raw
+        }
         data = super().__call__(data)  # type: ignore
         _rekeyed_data = {}
 
         for device in data:
+            data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
+            data[device][CONF_EXPLICIT_TRAVEL_TIME] = str(device) in explicit_travel_time
             data[device][CONF_ENTITIES] = {}
             interface = data[device].get(CONF_BUS_INTERFACE)
             routing = f"{BUS_ROUTING}{interface}" if interface is not None else ""
@@ -427,7 +445,7 @@ class MyHomeSensorSchema(Schema):
 light_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="1"): "1",
+            Optional(CONF_WHO, default="1"): All(Coerce(str), In(["1"])),
             Required(CONF_WHERE): All(
                 Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
             ),
@@ -583,7 +601,7 @@ access_schema = All(
 cover_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="2"): In(["1", "2"]),
+            Optional(CONF_WHO, default="2"): All(Coerce(str), In(["1", "2"])),
             Required(CONF_WHERE): All(
                 Coerce(str), Any(General(), Area(), Group(), PointToPoint(), msg="Invalid <WHERE>, expecting a valid General, Area, Group or Point-to-Point <WHERE>")  # type: ignore
             ),
@@ -639,6 +657,7 @@ cover_schema = MyHomeDeviceSchema(
                 Coerce(float), Range(min=CALIBRATION_MIN_MOTOR_PULSE, max=CALIBRATION_MAX_MOTOR_PULSE)
             ),
             Optional(CONF_MIN_POSITION_DELTA): All(Coerce(int), Range(min=1, max=MAX_MIN_POSITION_DELTA)),
+            Optional(CONF_STOP_BEFORE_MOVE): Boolean(),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
             Optional(CONF_MEMBERS): [All(Coerce(str), PointToPoint())],
@@ -675,6 +694,10 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             raise Invalid("slat_time can only be defined on a cover with slat_tilt enabled")
         if CONF_MIN_POSITION_DELTA in cfg and not cfg.get(CONF_ADVANCED_SHUTTER) and not advanced:
             raise Invalid("min_position_delta only applies to an advanced cover (use min_motor_pulse on a timed cover)")
+        if CONF_STOP_BEFORE_MOVE in cfg and (cfg.get(CONF_ADVANCED_SHUTTER) or advanced):
+            raise Invalid(
+                "stop_before_move only applies to a timed cover (an advanced cover runs its own level write)"
+            )
         cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
     return data
 
@@ -689,6 +712,8 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
         if is_impulse and cover_type in ("shutter", "standard"):
             raise Invalid(f"{device}: who: 1 is an impulse relay; type: {cover_type} only applies to who: 2")
         if is_impulse:
+            if CONF_STOP_BEFORE_MOVE in cfg:
+                raise Invalid(f"{device}: stop_before_move only applies to WHO 2 covers (not impulse covers on who: 1)")
             try:
                 PointToPoint()(str(cfg[CONF_WHERE]))
             except Invalid as err:
@@ -721,7 +746,7 @@ def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any
 binary_sensor_schema = MyHomeDeviceSchema(
     {
         Required(str): All({
-            Optional(CONF_WHO, default="25"): In(["1", "9", "25"]),
+            Optional(CONF_WHO, default="25"): All(Coerce(str), In(["1", "9", "25"])),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
@@ -791,7 +816,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
 sensor_schema = MyHomeSensorSchema(
     {
         Required(str): {
-            Optional(CONF_WHO): In(["1", "4", "18"]),
+            Optional(CONF_WHO): All(Coerce(str), In(["1", "4", "18"])),
             Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
             Required(CONF_NAME): str,
             Required(CONF_DEVICE_CLASS): In(
@@ -811,7 +836,7 @@ sensor_schema = MyHomeSensorSchema(
 climate_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="4"): "4",
+            Optional(CONF_WHO, default="4"): All(Coerce(str), In(["4"])),
             Optional(CONF_ZONE, default="#0"): Coerce(str),
             Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Optional(CONF_NAME): str,
@@ -830,7 +855,7 @@ climate_schema = MyHomeDeviceSchema(
 alarm_control_panel_schema = MyHomeDeviceSchema(
     {
         Required(str): {
-            Optional(CONF_WHO, default="5"): "5",
+            Optional(CONF_WHO, default="5"): All(Coerce(str), In(["5"])),
             Required(CONF_WHERE): All(Coerce(str), Any(General(), Area(), Group(), PointToPoint(canonical=False), SpecialWhere())),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
@@ -867,7 +892,7 @@ lock_schema = MyHomeDeviceSchema(
         Required(str): {
             # Only door entry strikes. A WHO 1 relay can be a motorized gate, and a lock
             # would let it bypass the cover's access policy, so there is no `who: 1` here.
-            Optional(CONF_WHO, default="6"): "6",
+            Optional(CONF_WHO, default="6"): All(Coerce(str), In(["6"])),
             Required(CONF_WHERE): All(Coerce(str), DoorEntryWhere()),
             Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,

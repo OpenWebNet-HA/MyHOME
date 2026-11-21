@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Hashable
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,8 @@ class MyHOMEEntity(RestoreEntity):
     # Whether to request a status update from the bus right after being added.
     # Push-only devices set this to False to avoid a useless (NACKed) query.
     _poll_on_add: bool = True
+    # The deferred poll on add, while the startup sweep is still to run (``_async_poll_if_needed``).
+    _poll_on_add_task: asyncio.Task[None] | None = None
     _bus_state_complete: bool = False
     # Sensors / binary sensors: let Home Assistant name the entity after its device class.
     _name_from_device_class: bool = False
@@ -92,15 +95,23 @@ class MyHOMEEntity(RestoreEntity):
         self._attr_entity_registry_enabled_default = True
         self._attr_should_poll = False
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")},
-            name=name,
-            manufacturer=self._manufacturer,
-            model=self._model,
-        )
         # Link to the gateway device (via_device_id; via_device is gone since core 2026.8).
+        identifiers = {(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")}
         if gateway.device_registry_id:
-            self._attr_device_info["via_device_id"] = gateway.device_registry_id
+            self._attr_device_info = DeviceInfo(
+                identifiers=identifiers,
+                name=name,
+                manufacturer=self._manufacturer,
+                model=self._model,
+                via_device_id=gateway.device_registry_id,
+            )
+        else:
+            self._attr_device_info = DeviceInfo(
+                identifiers=identifiers,
+                name=name,
+                manufacturer=self._manufacturer,
+                model=self._model,
+            )
 
     @property
     def _display_name(self) -> str:
@@ -262,27 +273,34 @@ class MyHOMEEntity(RestoreEntity):
             last_state = None
         if last_state is not None:
             await self.async_restore_last_state(last_state)
-        if self._poll_on_add:
-            if (
-                hasattr(self._gateway_handler, "wait_for_initial_discovery")
-                and (
-                    getattr(self._gateway_handler, "sweep_active", False) is True
-                    or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+        await self._async_poll_if_needed()
+
+    async def _async_poll_if_needed(self) -> None:
+        """Poll initial status if requested, deferring until any active discovery sweep finishes."""
+        if not self._poll_on_add:
+            return
+        if self._poll_on_add_waits():
+            target_hass = self.hass or self._hass
+            if target_hass is not None:
+                poll_task = target_hass.async_create_background_task(
+                    self._async_poll_after_discovery(),
+                    name=f"myhome_{self.entity_id}_poll_on_add",
                 )
-            ):
-                target_hass = self.hass or self._hass
-                if target_hass is not None:
-                    poll_task = target_hass.async_create_background_task(
-                        self._async_poll_after_discovery(),
-                        name=f"myhome_{self.entity_id}_poll_on_add",
-                    )
+                self._poll_on_add_task = poll_task
 
-                    def _cancel_poll() -> None:
-                        poll_task.cancel()
+                def _cancel_poll() -> None:
+                    poll_task.cancel()
 
-                    self.async_on_remove(_cancel_poll)
-                    return
-            await self.async_update()
+                self.async_on_remove(_cancel_poll)
+                return
+        await self.async_update()
+
+    def _poll_on_add_waits(self) -> bool:
+        """Whether the poll on add is left to ``_async_poll_after_discovery``; platforms extend."""
+        return hasattr(self._gateway_handler, "wait_for_initial_discovery") and (
+            getattr(self._gateway_handler, "sweep_active", False) is True
+            or getattr(self._gateway_handler, "initial_discovery_pending", False) is True
+        )
 
     async def _async_poll_after_discovery(self) -> None:
         """Poll device status once initial discovery has completed."""
@@ -305,12 +323,6 @@ class MyHOMEEntity(RestoreEntity):
                 setattr(self, "_attr_is_on", True)
             elif last_state.state == "off":
                 setattr(self, "_attr_is_on", False)
-        if hasattr(self, "_attr_native_value") and getattr(self, "_attr_native_value") is None:
-            if last_state.state not in ("unknown", "unavailable"):
-                try:
-                    setattr(self, "_attr_native_value", float(last_state.state))
-                except (ValueError, TypeError):
-                    setattr(self, "_attr_native_value", last_state.state)
 
     async def async_removed_from_registry(self) -> None:
         """Drop the device's fault issues when the owner deletes the entity.

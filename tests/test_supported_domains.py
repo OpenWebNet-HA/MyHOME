@@ -45,7 +45,7 @@ def test_extract_who_mapping():
     """Verify WHO mapping extracted from supported_functions.md."""
     mapping = extract_who_mapping()
     assert mapping["light"] == "WHO=1"
-    assert mapping["switch"] == "WHO=1"
+    assert mapping["switch"] == "WHO=1 / 4 / 9 / 25"
     assert mapping["cover"] == "WHO=1 / WHO=2"
     assert mapping["lock"] == "WHO=6"
     assert mapping["climate"] == "WHO=4"
@@ -63,9 +63,12 @@ def test_generate_domains_table():
     table = generate_domains_table()
     assert "| Domain | WHO | Capabilities |" in table
     assert "| **`light`** | WHO=1 |" in table
+    assert "| **`switch`** | WHO=1 / 4 / 9 / 25 |" in table
     assert "| **`button`** | WHO=14 / 2 / 16 / 22 |" in table
     assert "| **`number`** | WHO=16 / 22 |" in table
     assert "| **`device_trigger`** *(Automations)* | WHO=15 / 25 |" in table
+    assert "`timer` parameter" not in table
+    assert "`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`" in table
 
     for domain in DOMAIN_METADATA:
         meta = DOMAIN_METADATA[domain]

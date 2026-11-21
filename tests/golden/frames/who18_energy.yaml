@@ -5,9 +5,9 @@
   what: null
   where: "1"
   dimension: 1
-  source: legrand-spec
+  source: conflict
   mcp_valid: true
-  mcp_notes: "Energy Management: Request instantaneous active power from meter 1"
+  mcp_notes: "Grammar-only: DIMENSION 1 is not defined for SCS WHO 18 (active power is DIMENSION 113) and WHERE 1 is outside the 1N / 5N / 7N#0 families; parsed with message_type None"
   roundtrip: true
 
 - id: energy.resp.active_power.meter1.1450
@@ -18,9 +18,9 @@
   where: "1"
   dimension: 1
   dimension_values: ["1450"]
-  source: legrand-spec
+  source: conflict
   mcp_valid: true
-  mcp_notes: "Energy Management: Meter 1 reports 1450 Watts instantaneous active power"
+  mcp_notes: "Grammar-only: DIMENSION 1 is not defined for SCS WHO 18, so 1450 carries no documented unit; parsed with message_type None"
   roundtrip: true
 
 - id: energy.req.lifetime.meter1
@@ -30,9 +30,9 @@
   what: null
   where: "1"
   dimension: 11
-  source: legrand-spec
+  source: conflict
   mcp_valid: true
-  mcp_notes: "Energy Management: Request cumulative energy totalizer for meter 1"
+  mcp_notes: "Grammar-only: DIMENSION 11 is the ZigBee variant's Voltage dimension, not an SCS totalizer (DIMENSION 51); parsed with message_type None"
   roundtrip: true
 
 - id: energy.resp.lifetime.meter1.45230
@@ -43,9 +43,9 @@
   where: "1"
   dimension: 11
   dimension_values: ["00452300"]
-  source: legrand-spec
+  source: conflict
   mcp_valid: true
-  mcp_notes: "Energy Management: Cumulative energy reports 45,230.0 kWh"
+  mcp_notes: "Grammar-only: DIMENSION 11 is the ZigBee variant's Voltage dimension; 00452300 is kept raw without a unit (SCS WHO 18 energy values are Wh); parsed with message_type None"
   roundtrip: true
 
 - id: energy.req.unit.meter51
@@ -59,6 +59,150 @@
   mcp_valid: true
   mcp_notes: "Energy Management: Request energy meter 51 diagnostic/unit parameter 113"
   roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: request_active_power
+    args: ["51"]
+
+- id: energy.cmd.start_stream.meter56.2
+  frame: "*#18*56*#1200#1*2##"
+  direction: dimension_write
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_param: ["1"]
+  dimension_values: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Start 2-minute instantaneous active power auto-update stream on F520 meter 56 (BTicino F454 FW 2.0 capture by @xtimmy86x, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: start_sending_instant_power
+    args: ["56", 2]
+
+- id: energy.resp.auto_update_interval.meter56.2
+  frame: "*#18*56*1200#1*2##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_param: ["1"]
+  dimension_values: ["2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 56 confirms 2-minute active power auto-update interval active ~235 ms after *#18*56*#1200#1*2## (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_streaming_state
+    args: ["56", 2, 1]
+
+- id: energy.resp.auto_update_interval.meter56.0
+  frame: "*#18*56*1200#1*0##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "56"
+  dimension: 1200
+  dimension_param: ["1"]
+  dimension_values: ["0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 56 reports instantaneous active power auto-update expired (interval 0) ~126.18 s after activation (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_streaming_state
+    args: ["56", 0, 1]
+
+- id: energy.resp.active_power.meter51.572
+  frame: "*#18*51*113*572##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 113
+  dimension_values: ["572"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 51 reports 572 W instantaneous active power on Dimension 113 during active stream (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_active_power
+    args: ["51", 572]
+
+- id: energy.resp.actuator_power.channel77.161
+  frame: "*#18*77#0*113*161##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "77"
+  where_param: ["0"]
+  dimension: 113
+  dimension_values: ["161"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Local-bus actuator channel 77#0 reports 161 W active power on Dimension 113 (MyHOME#669)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_active_power
+    args: ["77#0", 161]
+
+- id: energy.resp.cumulative_totalizer.meter51
+  frame: "*#18*51*51*23791364##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 51
+  dimension_values: ["23791364"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 51 reports 23,791,364 Wh cumulative energy totalizer on Dimension 51 (@caiosweet MH200N FW 1.1.8 capture, MyHOME#466 comment 5834435606)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_total_energy
+    args: ["51", 23791364]
+
+- id: energy.resp.partial_month.meter52.1
+  frame: "*#18*52*53*1##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "52"
+  dimension: 53
+  dimension_values: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 52 reports 1 Wh current-month partial energy on Dimension 53 (@anotherjulien F454 FW 2.0.5 capture, MyHOME#466 comment 5849027587)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_partial_month_energy
+    args: ["52", 1]
+
+- id: energy.resp.partial_day.meter51.13165
+  frame: "*#18*51*54*13165##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 54
+  dimension_values: ["13165"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: F520 meter 51 reports 13,165 Wh current-day partial energy on Dimension 54 (@xtimmy86x F454 FW 2.0 capture, MyHOME#661 comment 6067730589)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_partial_day_energy
+    args: ["51", 13165]
 
 - id: energy.resp.active_power.meter51.602
   frame: "*#18*51*113*602##"
@@ -79,42 +223,12 @@
   who: 18
   what: null
   where: "77"
+  where_param: ["0"]
   dimension: 113
   dimension_values: ["415"]
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Energy Management: Actuator channel 77#0 reports 415 Watts active power (issue #247 reporter plant)"
-  roundtrip: true
-
-# Authentic BTicino F454 & F520 Dimension 1200 stream lifecycle (Issue #466, PR #661, @xtimmy86x physical capture)
-- id: energy.cmd.start_stream.meter56.2
-  frame: "*#18*56*#1200#1*2##"
-  direction: dimension_write
-  who: 18
-  what: null
-  where: "56"
-  dimension: 1200
-  dimension_values: ["2"]
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Energy Management: Start 2-minute instantaneous active power auto-update stream on meter 56 (F454 authentic capture)"
-  roundtrip: true
-  builder:
-    class: OWNEnergyCommand
-    method: start_sending_instant_power
-    args: ["56", 2]
-
-- id: energy.resp.auto_update_interval.meter56.2
-  frame: "*#18*56*1200#1*2##"
-  direction: dimension_response
-  who: 18
-  what: null
-  where: "56"
-  dimension: 1200
-  dimension_values: ["2"]
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Energy Management: Meter 56 reports 2-minute active power auto-update interval active (F454 authentic capture)"
   roundtrip: true
 
 - id: energy.cmd.stop_stream.meter56
@@ -124,6 +238,7 @@
   what: null
   where: "56"
   dimension: 1200
+  dimension_param: ["1"]
   dimension_values: ["0"]
   source: community-plant-capture
   mcp_valid: true
@@ -134,19 +249,6 @@
     method: start_sending_instant_power
     args: ["56", 0]
 
-- id: energy.resp.auto_update_interval.meter56.0
-  frame: "*#18*56*1200#1*0##"
-  direction: dimension_response
-  who: 18
-  what: null
-  where: "56"
-  dimension: 1200
-  dimension_values: ["0"]
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Energy Management: Meter 56 reports instantaneous active power auto-update stopped / expired (interval 0, F454 authentic capture)"
-  roundtrip: true
-
 - id: energy.resp.auto_update_interval.meter54.255
   frame: "*#18*54*1200#1*255##"
   direction: dimension_response
@@ -154,27 +256,13 @@
   what: null
   where: "54"
   dimension: 1200
+  dimension_param: ["1"]
   dimension_values: ["255"]
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Energy Management: Meter 54 reports 255-minute active power auto-update interval active (F454 authentic capture)"
   roundtrip: true
 
-
-- id: energy.resp.cumulative_totalizer.meter51
-  frame: "*#18*51*51*23791364##"
-  direction: dimension_response
-  who: 18
-  what: null
-  where: "51"
-  dimension: 51
-  dimension_values: ["23791364"]
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Energy Management: Meter 51 reports 23791364 Wh cumulative energy (issue #466 capture)"
-  roundtrip: true
-
-# Physical MH200 gateway live verification, 2026-09-27 (Issue #494, PR #506)
 - id: energy.req.active_power.f520.meter51
   frame: "*#18*51*1200##"
   direction: dimension_request
@@ -198,6 +286,10 @@
   mcp_valid: true
   mcp_notes: "Energy Management: Request cumulative energy totalizer from meter 51 (MH200 live test verification, issue #494)"
   roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: get_total_consumption
+    args: ["51"]
 
 - id: energy.req.active_power.actuator.channel71
   frame: "*#18*71#0*1200##"
@@ -205,6 +297,7 @@
   who: 18
   what: null
   where: "71"
+  where_param: ["0"]
   dimension: 1200
   source: community-plant-capture
   mcp_valid: true
@@ -217,10 +310,138 @@
   who: 18
   what: null
   where: "71"
+  where_param: ["0"]
   dimension: 51
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Energy Management: Request cumulative energy totalizer from actuator channel 71#0 (MH200 live test verification, issue #494)"
   roundtrip: true
 
+- id: energy.capture.cumulative_totalizer.meter51.8151646
+  frame: "*#18*51*51*8151646##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 51
+  dimension_values: ["8151646"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 8151646 Wh cumulative energy totalizer (8151.646 kWh display unit; MyHomeServer1 2.87.13 capture, MyHOME#907)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_total_energy
+    args: ["51", 8151646]
 
+- id: energy.capture.req.monthly_totalizer.meter51
+  frame: "*#18*51*53##"
+  direction: dimension_request
+  who: 18
+  what: null
+  where: "51"
+  dimension: 53
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Request current-month partial energy totalizer (Dimension 53) from meter 51 (MyHomeServer1 2.87.13 5-min poll, MyHOME#907)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: get_partial_monthly_consumption
+    args: ["51"]
+
+- id: energy.capture.resp.monthly_totalizer.meter51.88973
+  frame: "*#18*51*53*88973##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 53
+  dimension_values: ["88973"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 88973 Wh current-month partial energy totalizer (Dimension 53, MyHomeServer1 2.87.13 capture, MyHOME#907)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_partial_month_energy
+    args: ["51", 88973]
+
+- id: energy.capture.req.daily_totalizer.meter51
+  frame: "*#18*51*54##"
+  direction: dimension_request
+  who: 18
+  what: null
+  where: "51"
+  dimension: 54
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Request current-day partial energy totalizer (Dimension 54) from meter 51 (MyHomeServer1 2.87.13 5-min poll, MyHOME#907)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: get_partial_daily_consumption
+    args: ["51"]
+
+- id: energy.capture.resp.daily_totalizer.meter51.3017
+  frame: "*#18*51*54*3017##"
+  direction: dimension_response
+  who: 18
+  what: null
+  where: "51"
+  dimension: 54
+  dimension_values: ["3017"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Energy Management: Meter 51 reports 3017 Wh current-day partial energy totalizer (Dimension 54, MyHomeServer1 2.87.13 capture, MyHOME#907)"
+  roundtrip: true
+  builder:
+    class: OWNEnergyCommand
+    method: report_partial_day_energy
+    args: ["51", 3017]
+
+- id: energy.stop_and_go.cmd.open.11
+  frame: "*18*21*11##"
+  direction: command
+  who: 18
+  what: 21
+  where: "11"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Energy Management (Stop & Go): Open F522/F523 automatic reset breaker 11 (WHAT 21; Encyclopedia functional/who-18-energy-management & own-firmware-oracle)"
+  roundtrip: true
+  builder:
+    class: OWNStopAndGoCommand
+    method: open_breaker
+    args: ["11"]
+
+- id: energy.stop_and_go.cmd.close.11
+  frame: "*18*22*11##"
+  direction: command
+  who: 18
+  what: 22
+  where: "11"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Energy Management (Stop & Go): Close F522/F523 automatic reset breaker 11 (WHAT 22; Encyclopedia functional/who-18-energy-management & own-firmware-oracle)"
+  roundtrip: true
+  builder:
+    class: OWNStopAndGoCommand
+    method: close_breaker
+    args: ["11"]
+
+- id: energy.stop_and_go.req.status_mask.11
+  frame: "*#18*11*250##"
+  direction: dimension_request
+  who: 18
+  what: null
+  where: "11"
+  dimension: 250
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Energy Management (Stop & Go): Request status bitmask (Dimension 250) from breaker 11 (Encyclopedia functional/who-18-energy-management & own-firmware-oracle)"
+  roundtrip: true
+  builder:
+    class: OWNStopAndGoCommand
+    method: request_status_mask
+    args: ["11"]

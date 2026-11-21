@@ -149,25 +149,43 @@ def verify_metadata(target: str, pinned_version: str, dev_fallback: bool = False
 
 
 def verify_golden_corpus() -> Tuple[bool, str]:
-    """Gate 2: Run Golden Corpus Conformance Suite."""
+    """Gate 2: Run Golden Corpus Validation, Sync, Privacy & Trace-Shape Coverage."""
+    check_res = run_cmd([sys.executable, "tools/golden/validate_corpus.py", "--check"], check=False)
+    if check_res.returncode != 0:
+        return False, "tools/golden/validate_corpus.py --check failed (corpus.json out of sync or schema error)"
+
+    sync_res = run_cmd([sys.executable, "scripts/sync_golden_corpus.py", "--check"], check=False)
+    if sync_res.returncode != 0:
+        return False, "scripts/sync_golden_corpus.py --check failed (Staged-Superset drift detected)"
+
     cmd = [
         sys.executable,
         "-m",
         "pytest",
         "--noconftest",
+        "-o",
+        "addopts=",
         "-p",
         "no:homeassistant_custom_component",
+        "-p",
+        "no:pytest_homeassistant_custom_component",
         "tests/test_golden_conformance.py",
+        "tests/test_golden_privacy.py",
         "-q",
     ]
     res = run_cmd(cmd, check=False)
     if res.returncode != 0:
-        return False, "test_golden_conformance.py failed against installed OWNd"
+        return False, "test_golden_conformance.py / test_golden_privacy.py failed against installed OWNd"
+
+    shape_res = run_cmd([sys.executable, "tools/golden/check_trace_shape_coverage.py"], check=False)
+    if shape_res.returncode != 0:
+        return False, "tools/golden/check_trace_shape_coverage.py failed (uncovered trace shape or stale ratchet)"
+
     try:
         count = len(json.loads((REPO_ROOT / "tests" / "golden" / "corpus.json").read_text(encoding="utf-8")))
     except (OSError, ValueError, TypeError):
         count = "all"
-    return True, f"{count} Golden Corpus fixtures verified (parser extraction & builder parity passed)"
+    return True, f"{count} Golden Corpus fixtures verified (schema, sync, privacy, conformance & trace-shape ratchet passed)"
 
 
 def verify_platform_imports() -> Tuple[bool, str]:
@@ -242,8 +260,12 @@ def verify_firmware_oracle() -> Tuple[bool, str]:
         "-m",
         "pytest",
         "--noconftest",
+        "-o",
+        "addopts=",
         "-p",
         "no:homeassistant_custom_component",
+        "-p",
+        "no:pytest_homeassistant_custom_component",
         "tests/test_firmware_oracle_conformance.py",
         "-q",
     ]

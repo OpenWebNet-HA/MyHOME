@@ -50,14 +50,16 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "capabilities": (
             "On/Off, Dimmers with brightness control & transitions (stepped & native), "
             "DALI DT8 Tunable White (Dimension 14, 2000K–6535K), HS/RGB colour, "
-            "Hardware-offloaded bus timers (`myhome.turn_on_timed` / `timer` parameter)"
+            "Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`)"
         ),
     },
     "switch": {
         "label": "**`switch`**",
         "capabilities": (
-            "Relays, auxiliary switches, socket actuators (switch/outlet device classes), "
-            "Hardware-offloaded bus timers (`myhome.turn_on_timed` / `timer` parameter)"
+            "Relays & socket actuators (`WHO=1`, switch/outlet device classes), "
+            "thermoregulation zone/actuator power switches (`WHO=4`), "
+            "auxiliary & CEN+ contact invert switches (`WHO=9 / 25`), "
+            "Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`)"
         ),
     },
     "cover": {
@@ -79,6 +81,7 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`climate`**",
         "capabilities": (
             "Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, "
+            "0–10 V proportional actuator output levels (`0..100 %`), "
             "offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation"
         ),
     },
@@ -100,6 +103,7 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`sensor`**",
         "capabilities": (
             "Power meters, energy counters (total/daily/monthly), temperature probes (3475), "
+            "0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), "
             "illuminance / lux sensors"
         ),
     },

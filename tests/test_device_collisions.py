@@ -4,6 +4,7 @@ import pytest
 
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.myhome_device import MyHOMEEntity
+from custom_components.myhome.typing_compat import device_info_to_dict
 
 
 @pytest.mark.asyncio
@@ -47,8 +48,8 @@ async def test_cross_domain_device_collision():
     assert light_entity.unique_id != cover_entity.unique_id
 
     # critically ensure they generate DIFFERENT identifiers for the Device Registry (preventing merge)
-    light_identifier = list(light_entity.device_info["identifiers"])[0]
-    cover_identifier = list(cover_entity.device_info["identifiers"])[0]
+    light_identifier = list(device_info_to_dict(light_entity.device_info)["identifiers"])[0]
+    cover_identifier = list(device_info_to_dict(cover_entity.device_info)["identifiers"])[0]
 
     # Identifier format: (DOMAIN, '{mac}-{who}-{device_id}')
     assert light_identifier == (DOMAIN, "00:03:50:00:48:71-1-11")

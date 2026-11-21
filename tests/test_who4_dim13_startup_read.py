@@ -16,11 +16,12 @@ never sent.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from OWNd.message import OWNHeatingEvent
+from OWNd.message import OWNHeatingEvent, OWNMessage
 
 from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.discovery import message_has_state
@@ -34,6 +35,7 @@ def _gateway(
     supports_zone_status: bool,
     zone_temperature_poll_needed: bool = False,
     silent_zone_poll_needed: bool = False,
+    knob_read_in_silent_zone_poll: bool = False,
     humidity_request_refused: bool = True,
     interface_zone_request_refused: bool = False,
 ) -> MagicMock:
@@ -46,6 +48,7 @@ def _gateway(
     gw.supports_zone_status = supports_zone_status
     gw.zone_temperature_poll_needed = zone_temperature_poll_needed
     gw.silent_zone_poll_needed = silent_zone_poll_needed
+    gw.knob_read_in_silent_zone_poll = knob_read_in_silent_zone_poll
     gw.humidity_request_refused = humidity_request_refused
     gw.interface_zone_request_refused = interface_zone_request_refused
     gw.send = AsyncMock(return_value=None)
@@ -262,3 +265,47 @@ async def test_message_has_state_scs_zone_complete_only_on_dim13(hass):
     z = _zone(hass, gw, where="2")
     assert message_has_state(z, OWNHeatingEvent("*#4*2*0*0239##")) is False
     assert message_has_state(z, OWNHeatingEvent("*#4*2*13*11##")) is True
+
+
+# ---- 8. physical H/L4684 2026-11-13 trace replay (#466#issuecomment-6846511850) ----
+
+async def test_hl4684_2026_11_13_trace_replay(hass):
+    """Replay the 30-frame H/L4684 trace from #466#issuecomment-6846511850."""
+    assert TODAY.is_file()
+    trace = json.loads(TODAY.read_text(encoding="utf-8"))
+    assert trace["gateway"]["model"] == "H/L4684"
+    frames = trace["frames"]
+    assert len(frames) == 30
+
+    gw = _gateway(model="H/L4684", supports_zone_status=False, zone_temperature_poll_needed=False)
+    zones = {w: _zone(hass, gw, where=w) for w in ("88", "33", "22", "11")}
+    for z in zones.values():
+        await z._async_send_zone_polls()
+
+    tx_frames = [f["raw"] for f in frames if f["direction"] == "tx"]
+    assert tx_frames == ["*#4*88*13##", "*#4*33*13##", "*#4*22*13##", "*#4*11*13##"]
+    assert _sent(gw) == tx_frames
+
+    initial_offsets: dict[str, float | int | None] = {}
+    z33_knob_history: list[float | int | None] = []
+
+    for f in frames:
+        parsed = OWNMessage.parse(f["raw"])
+        assert parsed is not None, f"Unparseable trace frame: {f['raw']}"
+        if f["direction"] != "rx" or not isinstance(parsed, OWNHeatingEvent):
+            continue
+        target_where = parsed.where.lstrip("#") if parsed.where else ""
+        if target_where in zones:
+            zones[target_where].handle_event(parsed)
+            if parsed.dimension == 13:
+                if target_where not in initial_offsets:
+                    initial_offsets[target_where] = zones[target_where]._local_offset
+                elif target_where == "33":
+                    z33_knob_history.append(zones["33"]._local_offset)
+
+    assert initial_offsets == {"88": -3, "33": -1, "22": -2, "11": -2}
+    assert z33_knob_history == [-2, -3, -2, -1]
+    for z in zones.values():
+        assert z._local_offset_reported is True
+        assert z._asks_local_offset is False
+

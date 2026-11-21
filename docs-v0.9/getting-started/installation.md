@@ -1,12 +1,12 @@
-# Installation (v0.9.4 Production Release)
+# Installation (v0.9.4 Legacy Archive)
 
-This guide covers installing the stable **v0.9.4** release of the MyHOME integration from the `master` branch.
+This archived guide covers installing the legacy **v0.9.4** YAML release of the MyHOME integration for older Home Assistant installations (`2024.x – 2025.x`).
 
 ---
 
 > [!WARNING]
-> **Production Stability Notice**:
-> If you are running a stable production home automation setup, **stay on release 0.9.4** on the `master` branch. **Do not install the v2 beta zip** on a production system without first reviewing the [**v2 Upgrade Guide**](../../beta/migration/upgrade-from-094/).
+> **Legacy Archive Notice**:
+> For Home Assistant **2026.8 or newer**, install **MyHOME v2.0+** via the [**v2.0 Installation Manual**](https://openwebnet-ha.github.io/MyHOME/latest/getting-started/installation/). If you are upgrading an existing v0.9.4 setup, review the [**v2.0 Upgrade Guide**](https://openwebnet-ha.github.io/MyHOME/latest/migration/upgrade-from-094/) first.
 
 ---
 

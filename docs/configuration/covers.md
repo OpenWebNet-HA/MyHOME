@@ -26,11 +26,11 @@ The integration distinguishes between two types of MyHOME covers:
 | **Standard (Timed) Covers** | Standard relay actuators (`F411/2`, `F411U2`, standard `F401`, older flush-mount units) | ✅ Estimated | Actuator has no position feedback. The v2 runtime estimates position from the elapsed share of the **travel time** (`travel_time_down` and `travel_time_up`). |
 
 > [!NOTE]
-> Every discovered cover starts as a **timed** cover. Position-reporting hardware is not detected automatically: set `advanced_shutter: true` for that cover in `/config/myhome.yaml` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Advanced covers refuse `myhome.calibrate_cover` and travel times in `myhome.set_cover_travel_time`, as they do not need a travel time (a Venetian blind with `slat_tilt` still accepts `slat_time` there).
+> Unconfigured point-to-point covers start as **timed** covers until the actuator reports a calibrated `Dimension = 10` position (`0..100`) on its own point-to-point `WHERE`, at which point they **automatically promote** to `native` (`advanced: true`) and remember that promotion across restarts. Uncalibrated actuators reporting `255`, scope `Dimension = 10` frames, and covers with explicit YAML kinematics or saved travel-time calibration remain `timed`. You can also set `advanced: true` (or its alias `advanced_shutter: true`) explicitly in `/config/myhome.yaml` — for example when pairing `native` with `slat_tilt: true` or setting a custom `min_position_delta` (see [Troubleshooting → Cover position is wrong](troubleshooting.md#cover-position-is-wrong)). Native / advanced covers refuse `myhome.calibrate_cover` and travel times in `myhome.set_cover_travel_time`, as they do not need a travel time (a Venetian blind with `slat_tilt` still accepts `slat_time` there).
 
 ### Choosing the cover model (`strategy`)
 
-Each WHO=2 cover runs one of four position models. Without `strategy`, the flags pick it: `advanced_shutter: true` gives `native`, `slat_tilt: true` gives `venetian`, `travel_time: 0` gives `simple`, and anything else gives `timed`. Set `strategy` in `/config/myhome.yaml` to name it explicitly:
+Each WHO=2 cover runs one of four position models. Without `strategy`, the flags (or calibrated `Dimension = 10` bus traffic on an unconfigured cover) pick it: `advanced: true` / `advanced_shutter: true` (or auto-detected calibrated `Dimension = 10`) gives `native`, `slat_tilt: true` gives `venetian`, `travel_time: 0` gives `simple`, and anything else gives `timed`. Set `strategy` in `/config/myhome.yaml` to name it explicitly:
 
 | `strategy` | Position | Use for |
 | :--- | :--- | :--- |
@@ -56,6 +56,10 @@ cover:
     class: curtain
 ```
 
+> [!NOTE]
+> **Single-Gateway vs Multi-Gateway `myhome.yaml` Layout**:
+> Flat top-level `cover:` blocks apply to single-gateway installations. On multi-gateway installations, nest `cover:` (and any other domain blocks) under each gateway's MAC address key (e.g. `"00:03:50:01:02:03":`).
+
 Covers set up in the UI (without `myhome.yaml`) change their device class in Home Assistant with the **"Show As"** feature, like [switches](switches.md) and [binary sensors](binary-sensors.md): **Settings → Devices & Services → Entities**, select the cover entity, click the **Settings (gear)** icon and pick the class under **Show As**.
 
 ---
@@ -68,7 +72,8 @@ For standard covers without hardware position feedback, the integration provides
 * **End of Run with a Slat/Roll Model**: A cover whose travel profile has a geometry (the panel's `slat_roll` model) settles its full runs as described above. `set_cover_position: 0` / `100` is a full run with no stop frame, as `open_cover` / `close_cover`, also from the sill with the slats still open; an end already reached sends nothing. From a known start the settle waits the model's remaining time to the end stop plus 2 s, from an unknown start the full opening or closing time plus 2 s. After a restart such a cover restores the model state it saved while stationary, curtain height and slat phase together, only if it was saved with the same motion model (profile, personal times and travel); otherwise it starts `unknown` (no position, `is_closed` unknown), never `open`. A restored position is an estimate, since the cover may have moved while Home Assistant was offline: the next full run re-anchors it.
 * **Direction-Aware Travel Times**: Because gravity and motor friction cause shutters to fall faster than they rise, the v2 engine tracks separate `travel_time_down` and `travel_time_up` durations (default: `25.0s`).
 * **Frame Anchor Timing**: The run timer starts when the direction frame is **written to the gateway**, not when Home Assistant queues it. While a timed run from a known position is in progress, Home Assistant republishes the interpolated `current_position` roughly once per second whenever the rounded percentage changes, so the UI slider animates smoothly instead of jumping only when the run settles or stops.
-* **Echo Suppression**: The gateway relays a momentary stop status (~0.1 s) followed by translation and the actual motor start (~0.55 s). The v2 engine recognizes these as command echoes, re-anchoring the timer to the true motor start rather than falsely treating them as manual stop commands.
+* **Echo Suppression & Terminal Stop Detection**: Gateways that synthesize an SCS pre-move stop relay a momentary stop status (~0.1 s) followed by translation and the actual motor start (~0.55 s). The v2 engine recognizes that sequence as a command echo and re-anchors the timer to the true motor start; however, if a plain `*2*0*<WHERE>##` arrives inside the 1.5 s echo window and **no** motor-start status (`*2*1*<WHERE>##` / `*2*2*<WHERE>##`) follows before the window expires, the stop was terminal (e.g. an interlocked relay stopping on an opposite command, or an immediate wall-keypad stop) and the cover reverts to stopped at its pre-command position ([#959](https://github.com/OpenWebNet-HA/MyHOME/issues/959)).
+* **Pre-Move Stop on Single-Telegram Gateways (`stop_before_move`)**: Most Linux automation gateways (`bt_luci` on `F453`, `F453AV`, `H4684`, `MH200`, `MH200N` and `coso` `libplug_automation_tr.so` on `F454`, `F459`, `F460`, `F461`, `MyHomeServer1`, `3488`) inject an SCS `STOP` (`12 0A`) ahead of `UP` / `DOWN` (`12 08` / `12 09`), whereas **`MH201`** and **`MH202`** send only the direction telegram. On `MH201` and `MH202`, interlocked timed relay actuators (`L4671/2`, `H4671/2`, `F411/2`, `F411/4`, `F411U2`) treat an opposite command while energized — both mid-travel and while timing out their ~60 s factory `M=0` relay hold after the curtain reached its limit switch — as a stop rather than a reversal ([#959](https://github.com/OpenWebNet-HA/MyHOME/issues/959)). On `MH201` and `MH202` (and automatically on unmeasured gateways once an unfollowed echo-window stop is observed), timed point and local scope covers send `*2*0*<WHERE>##`, wait for socket delivery plus `0.6 s`, and then send the direction frame whenever the relay may still be energized (`65 s` window from motor start, cleared immediately as soon as the actuator's `*2*0*<WHERE>##` cutoff arrives, so idle covers incur zero extra bus traffic or latency). In `/config/myhome.yaml`, optional `stop_before_move: true` or `false` on a `WHO = 2` timed cover overrides this automatic policy (for example `stop_before_move: true` on actuators configured with `M=1..4` multi-minute or infinite run-time hold; rejected on `advanced` / `strategy: native` and `who: 1` impulse covers).
 * **Motor Start-Up Floor (`min_motor_pulse`)**: A tubular motor needs a moment after the relay closes before the curtain moves. On an F454 with Somfy Ilmo 50 WT motors (20.4 s travel), 1 % steps (~0.2 s) clicked the relay without moving the curtain, while 2 % steps (~0.4 s) moved it ([#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466)). A position change that would run shorter than the configured floor runs for `min_motor_pulse` seconds (default: `0.4 s`, configurable per cover via YAML `min_motor_pulse` or `myhome.set_cover_travel_time`; `0.0` disables), and the estimate books the movement of that longer run: on a 5 s cover with the default 0.4 s floor, 50 % → 51 % ends at 58 %. Other motors may need more or less.
 * **Stop Status Re-Anchoring & Command-Translation Stops**: When a timed run is stopped, the estimate is provisionally frozen at the stop write (or on a WHO 2 stop command translation `*2*1000#0*<WHERE>##` / `*2*1000#10…*<WHERE>##`, so external stops still halt the run when a MyHomeServer1 omits the plain `*2*0*<WHERE>##` status under [#645](https://github.com/OpenWebNet-HA/MyHOME/issues/645)). If the gateway relays the plain stop status (`*2*0*<WHERE>##`) within the echo window (measured at 34–47 ms, median 42 ms on a MyHOMEServer1 and 64–120 ms on an F461), the final position and `last_run_seconds` are re-anchored to `stop status - start anchor` ([#705](https://github.com/OpenWebNet-HA/MyHOME/issues/705)). Gateways that do not relay the plain stop status keep the provisional freeze. A bus start seen *only* as `*2*1000#1*` / `*2*1000#2*` waits one second for the actuator's `*2*1*` / `*2*2*`, which a MyHOMEServer1 now and then never relays while the motor runs; when no status of that shutter follows, the translation starts the run of its existing cover, dated when it arrived. Gateways also emit `#1` / `#2` translations for an actuator locked via WHO 14, which does not move: from a `*14*0*<WHERE>##` seen on the bus to the next `*14*1*<WHERE>##` the translations of that shutter start nothing. A lock set while Home Assistant was not connected, or an actuator missing from the bus, is not known, and its lone translation is taken as a run. A Stop inside that second, plain or advanced (`*2*0*…##` / `*2*10#…##`, or its translation `*2*1000#0*…##` / `*2*1000#10#…##`), to that shutter, to a group, an area or every shutter (`#<G>` / `<A>` / `0`), drops the waiting translations of the shutters it addresses, so none of them starts after the Stop: a group's shutters are the `members` its group cover declares, and a group no cover declares may hold any shutter of its bus. An Up or a Down to a group, an area or every shutter inside that second wins over the waiting direction of the shutters it addresses: they follow its status (`*2*1*…##` / `*2*2*…##`) or, when only its translation (`*2*1000#1*…##` / `*2*1000#2*…##`) comes, run its way from that translation (a group no cover declares drops their waiting direction instead), and the earlier direction is never delivered after it.
 * **Full Runs Settle on the Travel Timer**: `open_cover`, `close_cover`, `set_cover_position: 0` / `100`, scope full runs, and uninterrupted wall-switch runs all let the motor stop on its limit switch instead of sending a timed stop frame. Setting position to 0 % or 100 % also runs when the cover already reports 0 % or 100 %, so it puts a drifted estimate back in step, and a short move whose run would reach an end becomes a full run to that end too. Because an actuator's own stop status (`*2*0*<WHERE>##`) can arrive long after the curtain physically arrived — ~60 s at factory `M=0`, 120 s at `M=1` on `F411` actuators driving 60–86 s shutters ([discussion #770](https://github.com/OpenWebNet-HA/MyHOME/discussions/770#discussioncomment-19245565)), or never on `M=4` / gateways that do not relay it — the integration settles the entity to 0 % / 100 % (`closed` / `open`) once the stored travel time plus 2 s has passed, for app and wall runs alike. An actuator's own stop status that arrives up to 0.5 s *before* the stored travel time on such a run is the end stop as well and settles the end position at once (on a live F461 with an F411/2 calibrated at 5.82 s, the limit stop came 5.74–5.76 s after the motor start, which used to leave the estimate at `open 1 %` / `open 98 %`; a yaml `travel_time` is a whole second, so it can be up to 0.5 s off the real travel too). Stopping midway (from Home Assistant, or from the wall on a gateway that relays the WHO 2 command translation `*2*1000#0*<WHERE>##`), or a plain stop more than 0.5 s before the travel time, cancels the settle and freezes the interpolated position; once the timer has settled, any later hardware cutoff or stop frame leaves `0 %` / `100 %` and `last_run_seconds` untouched.
@@ -76,8 +81,7 @@ For standard covers without hardware position feedback, the integration provides
 
 > [!NOTE]
 > Small moves can still drift. The estimate assumes the curtain moves for the whole run. A motor's start-up time (measured only on the Somfy Ilmo 50 WT in [#466](https://github.com/OpenWebNet-HA/MyHOME/issues/466); another installation measured none on runs of about 0.76 s) is lost on every run, and the slat phase of a roller shutter with slats is booked as travel (one report: a 40 % request from fully closed lifted the curtain only about 18 % of its travel). A series of short moves can therefore book more travel than the curtain made. Send the cover to 0 % or 100 % now and then to re-sync it.
->
-> Venetian blinds are handled as a plain lift cover: lift only, no tilt, and no fine positioning.
+> For Venetian blinds and motorized louvres with tilting slats, enable `slat_tilt: true` (see [Venetian Blinds & Slat Tilt Positioning](#venetian-blinds-slat-tilt-positioning-timed-slat-inching)).
 
 > [!WARNING]
 > **Half the time is not half the height.** The estimate is linear: 50 % means the motor ran for half of the stored travel time. A roller shutter does not move at constant speed — coming down from the top the curtain runs fast on a full roll and is well past the middle at half time; going up from the bottom the first seconds go into gathering the slats and the curtain barely moves. Measured on a 107 cm shutter with exact travel times: `set_cover_position: 50` stopped at 27 cm from the sill coming down and at 37 cm going up, against a true midpoint of about 53 cm, while Home Assistant reported 50 % both times. The end positions (0 % / 100 %) are exact; intermediate positions are approximate and differ by direction. Treat the slider as "roughly there", not as a measurement — this applies to calibrated and manually set times alike.
@@ -91,6 +95,7 @@ The smallest change is set per cover with `min_position_delta` in `/config/myhom
 cover:
   living_room_shutter:
     where: '31'
+    name: Living Room Shutter
     advanced_shutter: true
     min_position_delta: 1
 ```
@@ -252,7 +257,7 @@ cover:
     members: ['11', '13']
 ```
 
-**Behind an F422 interface** (`bus_interface: '02'`, logical `#4#` addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. `11#4#02` … `22#4#02`).
+**Behind an F422 interface** (`interface: '02'`, logical `#4#` addressing), physical actuators reside on an isolated secondary SCS bus segment (e.g. `11#4#02` … `22#4#02`).
 
 ### 🏛️ The BTicino Way & Real-World Plant Discovery
 
@@ -280,16 +285,16 @@ The gateway routes the single broadcast frame through the F422 interface onto th
 The MyHOME integration implements a dual-layer architecture adhering to both Home Assistant standards and BTicino protocol engineering:
 
 1. **Native Broadcast for General Scope Covers (`where: '0'`)**:
-   When `open_cover`, `close_cover`, or `stop_cover` is called on a General cover behind an interface (`where: '0'`, `bus_interface: '02'`), the integration sends the native OpenWebNet broadcast frame directly (`*2*WHAT*0#4#<bus>##`).
+   When `open_cover`, `close_cover`, or `stop_cover` is called on a General cover behind an interface (`where: '0'`, `interface: '02'`), the integration sends the native OpenWebNet broadcast frame directly (`*2*WHAT*0#4#<bus>##`).
 
     - Actuators on the interface bus respond simultaneously without dropping frames.
     - When the gateway echoes `*2*WHAT*0#4#<bus>##`, the integration scopes the incoming frame strictly to entities on that interface (`interface == "02"`), preserving total bus isolation.
     - When individual actuators reach their end stops and report status frames (`*2*0*11#4#02##`, etc.), Home Assistant tracks each entity and aggregates the General cover's position automatically.
 
-2. **Paced Member Fan-Out (`PACED_FANOUT_DELAY = 0.3s`) for Percentage Positioning**:
-   OpenWebNet has no broadcast protocol for percentage positioning (Dimension 10 positioning `*#2*WHERE*#10*LEVEL##` is strictly point-to-point; there is no broadcast level command).
-   When `set_cover_position` is called on a scope/group cover, or when non-general scopes must address individual actuators, the integration staggers member commands with a safety interval of **0.3 s (300 ms)**.
-   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, completely eliminating frame loss during multi-cover repositioning.
+2. **Paced Member Fan-Out (`PACED_FANOUT_DELAY = 0.3s`) for Percentage Positioning Behind `interface` (`#4#II`)**:
+   OpenWebNet has no broadcast protocol for percentage positioning (**Dimension 11** positioning `*#2*WHERE*#11#001*LEVEL##` is write-only and strictly point-to-point, while **Dimension 10** `*#2*WHERE*10*BS*LEVEL*...##` is read-only status feedback).
+   When `set_cover_position` is called on an area, group, or general scope cover configured with `interface:` (`#4#II`), or when non-general scopes behind `interface:` execute `open_cover` / `close_cover` / `stop_cover`, `MyHOMEScopeCover` fans out individual point-to-point commands to its member covers staggered by **0.3 s (300 ms)** (`PACED_FANOUT_DELAY = 0.3`). *(On the main bus without `interface:`, `set_cover_position` on a scope cover does not fan out per-member Dimension 11 commands; instead it runs a timed scope run using the scope cover's `travel_time`.)*
+   This gives the F422 hardware FIFO buffer adequate time to serialize frames onto the secondary bus, eliminating frame loss during multi-cover repositioning.
 
 3. **Keypad Broadcast Reflection**:
    A general or area command from a physical wall switch or scenario unit also moves the individual covers in Home Assistant. A group or area cover whose shutters are not known yet ends its run after its own `travel_time`, so it never stays stuck on *opening* ([#433](https://github.com/OpenWebNet-HA/MyHOME/issues/433)).
@@ -309,7 +314,7 @@ Every payload carries `message` (the raw frame), `event` (`open`, `close` or `st
 Only a **command frame that states a motion** fires an event: the standard `WHAT 0` / `1` / `2` (`*2*0*0##`, `*2*1*3##`, `*2*2*#5##`) and the advanced `WHAT 10` / `11` / `12` with their parameters (`*2*10#001#1*0##` stop, `*2*11#100#001#1*0##` up, `*2*12#100#001#1*0##` down, as captured from a MyHomeServer1 + LN4660M2 keypad). Nothing fires for:
 
 * **any WHO 2 dimension frame**, as for the WHO 1 light events: a Dimension 11 level write and its event-session echo (`*#2*#5*#11#001*50##`, echoed by an F461 / MyHomeServer1 as `*#2*#5*#11#001#1*50##`; see [Protocol Note: Dimension 11 is Shutter Level](#protocol-note-dimension-11-is-shutter-level)) sets a level, it does not state a motion;
-* a **`DIMENSION 10` status frame on a scope address** (`*#2*#5*10*10*50*001*0##`, `*#2*0*10*10*50*001*0##`), guarded defensively: a physical shutter reports its `DIMENSION 10` status on its own point-to-point address, never on a group, area or general one, so such a frame is parsed but never read as a stop;
+* a **`DIMENSION 10` status frame on a scope address** (`*#2*#5*10*10*50*001*0##`, `*#2*0*10*10*50*001*0##`), guarded defensively: a physical shutter reports its `DIMENSION 10` status on its own point-to-point address, never on a group, area or general one, so such a frame is parsed, never read as a stop, and never promotes member covers to `native`;
 * a `WHAT` outside the WHO 2 table, which states no motion.
 
 ```yaml
@@ -336,11 +341,11 @@ Declare a General scope cover in `/config/myhome.yaml` for each bus interface, a
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:XX:XX:XX:
+"00:03:50:01:02:03":
   cover:
     all_shutters_oost:
       where: "0"
-      bus_interface: "02"
+      interface: "02"
       name: "All Shutters East"
 ```
 
@@ -500,20 +505,20 @@ Everything in this part applies **only to a cover that has an `access:` block**.
     - Any external close-block switch to report `off`.
     - Any missing, unavailable, or non-binary sensor state immediately fails closed.
 5. **Audible / Visual Pre-Warning & Watchdog**:
-   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds`. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
+   Before a close pulse, an optional pre-warning flasher (`prewarn_light`) triggers for `prewarn_seconds` and Home Assistant fires a `myhome_access_prewarning` bus event (`entity_id`, `name`, `seconds`) so speakers, sirens, or dashboard alerts can warn bystanders before motion starts. After the pulse, an anti-stuck watchdog monitors motion: if the expected state is not reached within `travel_time + watchdog_margin`, a latching fault is asserted with **zero automatic retries**. A latched fault survives a restart or reload of Home Assistant and can only be cleared on site by an authorized user using the `myhome.acknowledge_cover_fault` action; an in-flight request or pre-warning can be cancelled at any time using `myhome.cancel_cover_request` (see [Services](services.md#14-myhomecancel_cover_request)).
 6. **A Wall Button Starts the Gate, It Does Not Stop It**:
    A press of the wall button (or any other keypad on the bus) closes the relay and energizes the motor by itself; Home Assistant only sees the resulting `*1*1*WHERE##` frame afterwards. When such a frame arrives during an approval request or the pre-warning countdown, Home Assistant therefore *drops its own pending request* so that no second pulse follows and stops or reverses the gate. The movement the button started is not aborted. Use the hardware's own stop input or the remote control for an emergency stop.
 
 ### ⚙️ Configuring an Impulse Cover
 
-An impulse cover needs `who: 1` and a single point-to-point `where`. The minimal configuration is a hardware interface with no approval step:
+An impulse cover needs `who: "1"` (unquoted integer `who: 1` is also coerced to `"1"`) and a single point-to-point `where`. The minimal configuration is a hardware interface with no approval step:
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:XX:XX:XX:
+"00:03:50:01:02:03":
   cover:
     garage_door:
-      who: 1
+      who: "1"
       where: "71"
       name: Garage door
       device_class: garage
@@ -524,11 +529,11 @@ Add an `access:` block to opt in to the supervised workflow (phone approval, PIN
 
 ```yaml
 # /config/myhome.yaml
-00:03:50:XX:XX:XX:
+"00:03:50:01:02:03":
   cover:
     garage_door:
-      who: 1
-      type: impulse_relay            # optional; only valid together with who: 1
+      who: "1"
+      type: impulse_relay            # optional; only valid together with who: "1"
       where: "71"                    # one relay, never a general, area or group address
       name: Garage door
       device_class: garage           # garage or gate (default gate)
@@ -562,15 +567,16 @@ Add an `access:` block to opt in to the supervised workflow (phone approval, PIN
 | `access.*` | Optional. Turns on the supervised workflow, see the flow above: `allowed_users`, `approvers`, `remote_close`, `camera`, `safety_devices_verified`, `safety_check_days`, `prewarn_light`, `prewarn_seconds`, `close_block_entity`, `watchdog_margin`, `approval_timeout`. |
 
 > [!NOTE]
-> `type: impulse_relay` together with `who: 2` (and `type: shutter` or `standard` together with `who: 1`) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.
+> `type: impulse_relay` together with `who: "2"` (and `type: shutter` or `standard` together with `who: "1"`) is rejected when the configuration is validated; it used to fall back to an ordinary shutter silently.
 
 ### 🔒 Configuring a Door Strike Lock
 
 ```yaml
-00:03:50:XX:XX:XX:
+# /config/myhome.yaml
+"00:03:50:01:02:03":
   lock:
     front_door:
-      who: 6                         # the only value; WHO 1 relays are covers
+      who: "6"                       # the only value (unquoted who: 6 is also coerced); WHO 1 relays are covers
       where: "4001"                  # 1-99 or 4000-4099 endpoints; append #2 on a riser installation: "4001#2"
       name: Front door
       code: "1234"                   # optional digit-only PIN; asked on every unlock
@@ -611,5 +617,5 @@ Locks exist only when they are configured here (and are restored from the regist
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](../../0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
+> If you are upgrading from legacy v0.9 installations and still have manual `cover:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Cover Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/covers/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all covers are managed dynamically via Home Assistant's native registry.
 

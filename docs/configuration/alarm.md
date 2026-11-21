@@ -117,6 +117,26 @@ states:
 
 ---
 
+## 📡 Event Bus Notifications (`myhome_alarm_event`)
+
+Every `WHO = 5` frame received from the burglar alarm central unit or its zones also fires `myhome_alarm_event` on the Home Assistant event bus, so automations can react to individual zone activations (`*5*11*#n##` / `*5*18*#n##`) and technical alarms without polling:
+
+- `where`: Wire zone or central-unit address as a string (e.g. `"0"`, `"#1"`, or an empty string `""` on empty-WHERE system frames)
+- `state`: Decoded state string from OWNd (e.g. `"disengage"`, `"engage"`, `"intrusion alarm"`, `"active zone"`, `"technical alarm"`)
+- `state_code`: Numeric `WHAT` state code
+- `is_alarm`: `True` when the frame reports an active alarm condition
+- `message`: Raw OpenWebNet frame string
+
+```yaml
+trigger:
+  - platform: event
+    event_type: myhome_alarm_event
+    event_data:
+      is_alarm: true
+```
+
+---
+
 ## 🧪 Interactive Diagnostics via Bus Monitor
 
 You can query the alarm with the [Lovelace Bus Monitor Card](bus_monitor.md) Command Injector:
@@ -129,4 +149,4 @@ You can query the alarm with the [Lovelace Bus Monitor Card](bus_monitor.md) Com
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `alarm_control_panel:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Alarm Documentation](../../0.9.4/configuration/alarm/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, alarm panels are discovered dynamically.
+> If you are upgrading from legacy v0.9 installations and still have manual `alarm_control_panel:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Alarm Documentation](https://openwebnet-ha.github.io/MyHOME/0.9.4/configuration/alarm/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, alarm panels are discovered dynamically.

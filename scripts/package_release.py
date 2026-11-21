@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Packaging script for MyHOME Home Assistant Integration.
-Creates a HACS-compliant `myhome.zip` release asset containing the contents of
-`custom_components/myhome/` at the root of the archive.
+Creates a Home Assistant Marketplace / HACS-compliant `myhome.zip` release asset
+containing the contents of `custom_components/myhome/` at the root of the archive.
 """
 
 import argparse
@@ -101,7 +101,7 @@ def should_exclude(rel_path):
 
 
 def build_zip(version):
-    """Build the HACS-compliant myhome.zip package."""
+    """Build the Home Assistant Marketplace / HACS-compliant myhome.zip package."""
     print(f"\n[BUILD] Packaging myhome.zip for version {version}...")
     if os.path.exists(OUTPUT_ZIP):
         os.remove(OUTPUT_ZIP)
@@ -137,7 +137,7 @@ def verify_zip():
         if "__init__.py" not in namelist:
             print("[ERROR] __init__.py is not in the root of the zip archive!", file=sys.stderr)
             sys.exit(1)
-        print("[VERIFY] Archive structure verified successfully. HACS compliant.")
+        print("[VERIFY] Archive structure verified successfully. Marketplace / HACS compliant.")
 
 
 if __name__ == "__main__":

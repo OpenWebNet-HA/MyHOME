@@ -45,14 +45,51 @@ from .const import (
     LOGGER,
 )
 from .cover_translation import movement_translation
+from .gateway_confirm import echo_watchdog_of
 from .topology import peer_handles_who
-from .where_grammar import is_central_unit_report, is_probe, where_param
+from .where_grammar import (
+    central_report_zone,
+    central_unit_season,
+    is_central_unit_report,
+    is_probe,
+    thermo_event_interface,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
 # WHO 8 call kinds of the entrance panels PE1..PE4 (6: handset to handset, 14: pager).
 ENTRANCE_PANEL_KINDS = frozenset({1, 2, 3, 4})
+
+
+def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
+    """Keep what a report of a central unit (``is_central_unit_report``) says about the plant.
+
+    Returns ``(news, found_by_zone)``. ``news``: a central unit, or the season of the one on
+    the gateway's own bus, has just become known, and the zones are told. ``found_by_zone``:
+    the central unit of the gateway's own bus has just become known from its report about a
+    zone (``*4*110*#3##``), so it has no entity yet and its status is asked once
+    (``request_central_status``).
+
+    A report from behind an interface (built, no capture holds one: ``*4*110*#3#4#01##``) is
+    another bus's central unit and says nothing about this one: the zones of the gateway's own bus stay what they are (a
+    plant with no central unit of its own keeps its standalone thermostats), nothing is asked
+    and nobody is told. ``has_central_unit`` is the gateway's own bus only.
+    Called for the event session and for the replies of the command session
+    (``GatewayEventDispatcher.note_central_unit``), and by the entity for a frame handed to
+    it directly (``climate._handle_event``).
+    """
+    if thermo_event_interface(message) is not None:
+        return False, False
+    news = getattr(handler, "has_central_unit", False) is not True
+    found_by_zone = news and central_report_zone(message) is not None
+    handler.has_central_unit = True
+    season = central_unit_season(message)
+    if season is not None:
+        news = news or getattr(handler, "central_season", None) != season
+        handler.central_season = season
+    return news, found_by_zone
 
 
 class GatewayEventDispatcher:
@@ -256,6 +293,39 @@ class GatewayEventDispatcher:
         except Exception:
             self._logger.exception("%s Device health could not process `%s`", self.handler.log_id, message)
 
+    def note_central_unit(self, message: Any) -> tuple[bool, bool]:
+        """``note_central_unit_report`` for a frame that is a central unit's report, else nothing.
+
+        For both sessions: the event session's frames (``process_message``) and the replies
+        the command session collected and the event session did not show
+        (``gateway_sessions``). Without the second, a central unit first seen in the reply
+        to its status request got its entity, whose constructor marks the plant as having a
+        central unit, and the zones were never told.
+        """
+        if isinstance(message, OWNHeatingEvent) and not message.is_translation and is_central_unit_report(message):
+            return note_central_unit_report(self.handler, message)
+        return False, False
+
+    def tell_central_unit(self, message: Any, news: bool, found_by_zone: bool) -> None:
+        """After the frame was dispatched: pass on what ``note_central_unit`` found."""
+        from . import gateway as gw_module
+
+        dispatcher_send = getattr(gw_module, "async_dispatcher_send", async_dispatcher_send)
+        if news:
+            # The central unit, or its season, has just become known. Its own ``#0`` frame
+            # reaches every zone through the central unit's entity; a report about one zone
+            # (``*4*110*#3##``, all a quarter-hour push brings) reaches that zone only, so
+            # the others are told here: a zone that reported its season earlier is compared
+            # now, and what a zone offers follows the plant it turns out to be on.
+            dispatcher_send(self.hass, f"myhome_central_season_{self.handler.mac}")
+        if found_by_zone:
+            msg_who = getattr(message, "who", getattr(message, "_who", None))
+            who_int = int(msg_who) if msg_who is not None and str(msg_who).isdigit() else None
+            if self._is_active_for_who(who_int):
+                # Known from its report about a zone, with no frame of its own: asked for its
+                # status once, so that it gets its entity (``request_central_status``).
+                self.handler.request_central_status()
+
     async def process_message(self, message: Any) -> None:
         """Process a received message and dispatch to Home Assistant."""
         from . import gateway as gw_module
@@ -295,8 +365,15 @@ class GatewayEventDispatcher:
                     {"gateway": str(self.handler.gateway.host), "message": str(message)},
                 )
 
+        # Before the entities see the frame: the central unit's entity hands its mode to its
+        # zones while it handles it, and they compare their season with this one.
+        central = self.note_central_unit(message)
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
+            self.tell_central_unit(message, *central)
+            echo_watchdog = echo_watchdog_of(self.handler)
+            if echo_watchdog is not None:
+                echo_watchdog.status_seen(message)
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
@@ -318,8 +395,6 @@ class GatewayEventDispatcher:
             or isinstance(message, OWNHeatingEvent)
         ):
             if not message.is_translation:
-                if isinstance(message, OWNHeatingEvent) and is_central_unit_report(message):
-                    self.handler.has_central_unit = True
                 if isinstance(message, OWNLightingEvent) and self._is_active_for_who(1):
                     if (
                         not getattr(message, "is_group", False)

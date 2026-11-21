@@ -5,7 +5,7 @@ blueprint:
     starts opening, begins closing, or reaches confirmed closed state, plus an alert
     if the door is left open for too long.
   domain: automation
-  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/v2-phase1-architecture/blueprints/automation/myhome/door_gate_motion_notification.yaml
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/master/blueprints/automation/myhome/door_gate_motion_notification.yaml
   input:
     target_cover:
       name: "Gate or Garage Door"

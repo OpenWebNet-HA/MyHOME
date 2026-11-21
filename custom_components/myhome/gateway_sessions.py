@@ -22,6 +22,8 @@ from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
+from .gateway_confirm import echo_watchdog_of
+from .gateway_events import GatewayEventDispatcher
 from .where_grammar import expose_message_where, normalize_where, where_param
 
 if TYPE_CHECKING:
@@ -533,9 +535,15 @@ _WHO4_REPLY_RE = re.compile(
 
 
 def _who4_zone_token(where_field: str) -> str | None:
-    """Return canonical zone string ``'1'..'99'`` from a WHO 4 WHERE field, or None."""
+    """Return the zone ``'1'..'99'`` or the probe ``'100'..'900'`` of a WHO 4 WHERE field, or None.
+
+    A probe is a bare number, as in ``validate.py``: an external probe ``N00`` (``100``..``900``)
+    or a probe ``PZZ`` (``101``..``899``). ``12#1`` is actuator 1 of zone 12.
+    """
     if "#4#" in where_field:
         where_field, _, _ = where_field.rpartition("#4#")
+    if where_field.isdigit() and 100 <= int(where_field) <= 900:
+        return str(int(where_field))
     base = where_field.removeprefix("#").split("#", 1)[0]
     if base.isdigit() and 1 <= int(base) <= 99:
         return str(int(base))
@@ -548,8 +556,13 @@ def _mismatched_who4_reply_zones(request_msg: Any, collected: Any) -> set[str] |
     On multi-session gateways whose internal SCS bus-request FIFO overflows or times out
     (MyHomeServer1 3.87.13 in #886), a closed session's delayed bus replies + ``*#*1##``
     can flush onto the next open command session. Only point-to-point WHO 4 reads for a
-    concrete zone ``1..99`` are checked, and only when at least one zone-bearing WHO 4
-    frame was collected and zero frames match the queried zone.
+    concrete zone ``1..99`` or probe ``100..900`` are checked, and only when at least one
+    zone-bearing WHO 4 frame was collected and zero frames match the queried zone or probe.
+
+    A frame about a probe carries the probe's WHERE in every capture (``*#4*303*0*0232##``
+    on a physical F455 plant in issue_932, ``*#4*105*15*0*0000*0000##`` on an MH201 3.3.6
+    in issue_466, ``*#4*100*15*1*0200*0001##`` in #264), so the read of a probe is checked
+    like the read of a zone.
     """
     if not collected or not isinstance(collected, list):
         return None
@@ -1012,6 +1025,11 @@ class FrameScheduler:
     def status_paused(self) -> bool:
         """Return True while status requests are held back after a gateway timeout/desync."""
         return self._status_resume_at > time.monotonic()
+
+    @property
+    def is_shutdown(self) -> bool:
+        """Return True once shutdown() has been called on the scheduler."""
+        return self._is_shutdown
 
     @property
     def _allow_status(self) -> bool:
@@ -1589,10 +1607,36 @@ class CommandWorkerPool:
                                 if isinstance(written, asyncio.Future) and not written.done():
                                     setattr(written, "_command_timeout", True)
                                 self._pause_status_after_desync()
+                            elif (
+                                getattr(last_error, "reason", None) == "nack"
+                                and isinstance(written, asyncio.Future)
+                                and not written.done()
+                            ):
+                                # The gateway answered the frame, a read or a command, with a NACK
+                                # (OWNd's `OWNNackError` of a written frame; a refused negotiation
+                                # has another reason). Every other cancellation here is a frame that
+                                # was not written or whose socket was lost: a probe's fallback read
+                                # and a setpoint write tell the two apart.
+                                setattr(written, "_gateway_nack", True)
                             _cancel_written(task)
                         else:
+                            if (
+                                task["is_status_request"]
+                                and collected is True
+                                and isinstance(written, asyncio.Future)
+                                and not written.done()
+                            ):
+                                # OWNd returns True for an ACK that closed the request with no frame
+                                # on the command session. The silent-zone poll reads this mark.
+                                setattr(written, "_empty_reply", True)
                             _resolve_written(task, written_at)
                             self.handler._record_tx(written_at, task["message"])
+                            echo_watchdog = echo_watchdog_of(self.handler)
+                            if echo_watchdog is not None and not task["is_status_request"] and not is_exposed:
+                                # An acknowledged light command whose status never arrives is
+                                # read back, on every gateway model (measured on an F455, which
+                                # leaves statuses out of a burst).
+                                echo_watchdog.command_acknowledged(task["message"], written_at)
                         responses_to_dispatch: Any = collected
                         if responses_to_dispatch is None and task["is_status_request"]:
                             # A standalone zone status request (*#4*Z##) that answers only some of
@@ -1617,9 +1661,7 @@ class CommandWorkerPool:
                                 )
                                 if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
                                     if task["is_status_request"]:
-                                        # The answer to a status request, read on the command session: the
-                                        # state when the actuator answered, never a new event of its own (its
-                                        # copy on the monitor session comes as usual).
+                                        # A read reply is not a new movement/stop event.
                                         setattr(resp, "myhome_status_reply", True)
                                     if isinstance(resp, OWNGatewayEvent):
                                         self.handler._handle_gateway_diagnostics(resp)
@@ -1628,9 +1670,22 @@ class CommandWorkerPool:
                                         and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
                                     ):
                                         self.handler._handle_gateway_identity_diagnostics(resp)
+                                    # A central unit's report among the replies is noted before
+                                    # the entities see it, as on the event session.
+                                    events = getattr(self.handler, "_event_dispatcher", None)
+                                    central = (
+                                        events.note_central_unit(resp)
+                                        if isinstance(events, GatewayEventDispatcher)
+                                        else (False, False)
+                                    )
                                     dispatcher_send(
                                         self.hass, f"myhome_message_{self.mac}", resp
                                     )
+                                    if isinstance(events, GatewayEventDispatcher):
+                                        events.tell_central_unit(resp, *central)
+                                    echo_watchdog = echo_watchdog_of(self.handler)
+                                    if echo_watchdog is not None:
+                                        echo_watchdog.status_seen(resp)
                                     # A reply to a request sent for an offline primary
                                     self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
@@ -1663,6 +1718,11 @@ class CommandWorkerPool:
                 and (self._active_worker_loops == 0 or self._terminate_sender)
             ):
                 self.send_buffer.clear_status_pause()
+            if self._active_worker_loops == 0 or self._terminate_sender:
+                # No worker is left to write a status read-back: drop the pending ones.
+                echo_watchdog = echo_watchdog_of(self.handler)
+                if echo_watchdog is not None:
+                    echo_watchdog.cancel_all()
             with contextlib.suppress(Exception):
                 await asyncio.shield(_command_session.close())
             LOGGER.debug("%s Destroying sending worker %s", self.log_id, worker_id)

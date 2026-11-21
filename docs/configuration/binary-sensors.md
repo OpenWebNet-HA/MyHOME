@@ -2,25 +2,39 @@
 
 The **MyHOME** integration provides monitoring for dry contact interfaces, PIR motion sensors, and security auxiliary contacts across OpenWebNet **WHO = 25**, **WHO = 1**, and **WHO = 9**.
 
-In v2, setup and management are **100% UI-first**: binary sensors are automatically discovered from SCS bus events, and device presentation (such as choosing between a door sensor, window contact, or motion detector) is configured directly in Home Assistant's UI settings.
+`WHO = 25` dry contacts (`3xxx`) and `WHO = 1` motion detectors are **automatically discovered from SCS bus traffic**, whereas `WHO = 9` auxiliary channels (`WHERE = 0..9`) require declaration in `/config/myhome.yaml`. Device presentation (such as choosing between a door sensor, window contact, or motion detector) can be configured directly in Home Assistant's UI settings.
 
 ---
 
 ## 🚀 Supported Binary Sensor Types
 
 ### 1. Dry Contact Interfaces (WHO = 25)
-* **Hardware**: BTicino `3477` flush-mounted contact interface, magnetic reed switches, mechanical window switches, technical alarm contacts.
-* **Addresses**: `WHERE = 31` through `3201`.
-* **Auto-Discovery**: As soon as a dry contact changes state on the SCS bus, the integration automatically creates the corresponding binary sensor entity.
+* **Hardware**: BTicino `3477` / `F428` / `3480` contact interfaces, magnetic reed switches, mechanical window switches, technical alarm contacts.
+* **Addresses**: `WHERE = 31` through `3201` (or `3<A><PL>` alarm/IR contacts).
+* **Auto-Discovery**: Automatically discovered from SCS bus events and registered `3xxx` startup sweeps (`*#25*3xxx##`).
 
 ### 2. Motion / PIR Sensors (WHO = 1)
-* **Hardware**: Legrand `048822`, BTicino `BMSE1001` or standard SCS ceiling/wall motion sensors configured in scenario mode.
-* **Operation**: When movement is detected, the sensor broadcasts an event frame on WHO 1 that sets the binary sensor to `on` (Detected), returning to `off` (Clear) when timeout expires.
+* **Hardware**: Legrand `048822` / `067226`, BTicino `BMSE1001` / `K4659`, or standard SCS ceiling/wall motion sensors.
+* **Auto-Discovery**: Automatically discovered when movement broadcasts an event frame on `WHO = 1` (`*1*34*WHERE##` / `*1*39*WHERE##`).
+* **Occupancy Clearing**:
+  * **Stand-alone mode (`WHAT = 39`)**: Detectors that emit end-of-movement (`*1*39*WHERE##`, #777) clear immediately on `WHAT = 39` and use a 10-minute safety fallback during continuous occupancy so multi-minute gaps between `WHAT = 34` frames do not drop the state early.
+  * **Scenarios mode (no `WHAT = 39`)**: Detectors configured in Scenarios mode (such as the BTicino `K4659` Object `128`/`165`, #941) repeat `*1*34*WHERE##` once per configured `DIMENSION 7` time delay and go silent when movement stops; they clear via an exact timer at `DIMENSION 7 + 3 s` (default `303 s` before `DIMENSION 7` is reported) and adapt automatically if a longer repeat cycle is observed.
 * **Address**: a WHO 1 point address; an area-0 point with PL 1..9 is spelled in two digits (`04`), so `where: "0004"` in `myhome.yaml` is resolved to `04` and a `…-1-0004-motion` entity is moved to `…-1-04-motion` at startup (#147).
 
-### 3. Auxiliary Alarm Sensors (WHO = 9)
-* **Hardware**: Auxiliary sensors, technical transmitters (water leak, methane gas), or peripheral contacts connected to the burglar alarm central unit.
+### 3. Auxiliary Alarm Channels (WHO = 9 — Requires `myhome.yaml`)
+* **Hardware**: Auxiliary channels (`AUX 0`–`AUX 9`), technical transmitters (water leak, methane gas), or peripheral contacts linked to the burglar alarm central unit.
 * **Addresses**: `WHERE = 0` through `9`.
+* **Configuration**: `WHO = 9` frames do **not** auto-discover entities from bus traffic (`WHO = 13` also never dynamically discovers entities). Declare auxiliary channels under `binary_sensor:` in `/config/myhome.yaml`:
+
+```yaml
+# /config/myhome.yaml
+binary_sensor:
+  aux_water_leak:
+    who: "9"
+    where: "1"
+    name: Utility Water Leak
+    class: moisture
+```
 
 ---
 
@@ -61,4 +75,4 @@ Every WHO = 25 dry contact and WHO = 9 auxiliary device exposes a per-device **I
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `binary_sensor:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Binary Sensor Documentation](../../0.9.4/configuration/binary-sensors/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all binary sensors are discovered dynamically.
+> `WHO = 25` dry contacts and `WHO = 1` motion sensors are discovered dynamically from the SCS bus, while `WHO = 9` auxiliary channels are declared under `binary_sensor:` in `/config/myhome.yaml` (and cached into the gateway's config entry options on startup). For migrating pre-v0.9 `configuration.yaml` files, see the [Legacy YAML Migration Guide](../migration/legacy-yaml.md).

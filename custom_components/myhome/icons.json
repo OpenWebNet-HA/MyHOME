@@ -1,6 +1,18 @@
 {
   "entity": {
     "button": {
+      "lock": {
+        "default": "mdi:lock-alert"
+      },
+      "unlock": {
+        "default": "mdi:lock-open-variant-outline"
+      },
+      "calibrate_travel_time": {
+        "default": "mdi:ruler-square-compass"
+      },
+      "calibrate_all_covers": {
+        "default": "mdi:window-shutter-settings"
+      },
       "tuner_seek_up": {
         "default": "mdi:fast-forward-outline"
       },
@@ -11,6 +23,17 @@
     "number": {
       "tuner_frequency": {
         "default": "mdi:radio-fm"
+      }
+    },
+    "sensor": {
+      "energy_today": {
+        "default": "mdi:lightning-bolt"
+      },
+      "energy_month": {
+        "default": "mdi:lightning-bolt"
+      },
+      "actuator_output_level": {
+        "default": "mdi:gauge"
       }
     },
     "switch": {
@@ -62,6 +85,9 @@
     "tuner_store_station": {
       "service": "mdi:content-save-outline"
     },
+    "send_scenario_plus_command": {
+      "service": "mdi:play-box-multiple"
+    },
     "cancel_cover_request": {
       "service": "mdi:shield-remove-outline"
     },
@@ -70,4 +96,3 @@
     }
   }
 }
-

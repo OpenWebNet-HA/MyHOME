@@ -1,0 +1,1042 @@
+{
+  "description": "Monotonically shrinking legacy trace-shape ratchet. New trace shapes MUST be added to tests/golden/frames/*.yaml instead of growing this file.",
+  "total_uncovered_shapes": 259,
+  "shapes": {
+    "command_or_event|0|3|area_or_point|-|-": {
+      "example_frame": "*0*3*43##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_F454_all_2026-11-04T08-33-48.json"
+    },
+    "command_or_event|0|4|area_or_point|-|-": {
+      "example_frame": "*0*4*43##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_F454_all_2026-11-04T08-33-48.json"
+    },
+    "command_or_event|1001|14#1|general|-|-": {
+      "example_frame": "*1001*14#1*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "command_or_event|1001|2|general|-|-": {
+      "example_frame": "*1001*2*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "command_or_event|1001|4|general|-|-": {
+      "example_frame": "*1001*4*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "command_or_event|1001|52|general|-|-": {
+      "example_frame": "*1001*52*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "command_or_event|1001|9#1|general|-|-": {
+      "example_frame": "*1001*9#18236904*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "command_or_event|14|1|area_or_point+if|-|-": {
+      "example_frame": "*14*1*07#4#01##",
+      "first_seen_in": "tests/fixtures/traces/f461_who14_live_2026-10-18/myhome_trace_F461_who14_live_2026-10-18.json"
+    },
+    "command_or_event|14|2|area_or_point|-|-": {
+      "example_frame": "*14*2*07##",
+      "first_seen_in": "tests/fixtures/traces/f461_who14_live_2026-10-18/myhome_trace_F461_who14_live_2026-10-18.json"
+    },
+    "command_or_event|15|1|area_or_point|-|-": {
+      "example_frame": "*15*01*73##",
+      "first_seen_in": "tests/fixtures/traces/issue_434/myhome_trace_MH200N_all_2026-09-29T18-31-59.json"
+    },
+    "command_or_event|15|3|area_or_point|-|-": {
+      "example_frame": "*15*03*61##",
+      "first_seen_in": "tests/fixtures/traces/issue_612/myhome_trace_MH200N_startup_cen_scene_2026-10-07T20-38-24.json"
+    },
+    "command_or_event|16|0|area_or_point|-|-": {
+      "example_frame": "*16*0*102##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|1002|area_or_point|-|-": {
+      "example_frame": "*16*1002*21##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|1003|area_or_point|-|-": {
+      "example_frame": "*16*1003*21##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|101|area_or_point|-|-": {
+      "example_frame": "*16*101*101##",
+      "first_seen_in": "tests/fixtures/traces/oracle_who22_tuner/myhome_trace_oracle_myhomeserver1_who22_only_tuner.json"
+    },
+    "command_or_event|16|102|area_or_point|-|-": {
+      "example_frame": "*16*102*21##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|10|area_or_point|-|-": {
+      "example_frame": "*16*10*102##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|5000|area_or_point|-|-": {
+      "example_frame": "*16*5000*101##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_f500n_tuner_seek_and_frequency.json"
+    },
+    "command_or_event|16|5100|area_or_point|-|-": {
+      "example_frame": "*16*5100*101##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_f500n_tuner_seek_and_frequency.json"
+    },
+    "command_or_event|16|6001|area_or_point|-|-": {
+      "example_frame": "*16*6001*101##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "command_or_event|16|6003|area_or_point|-|-": {
+      "example_frame": "*16*6003*102##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|6005|area_or_point|-|-": {
+      "example_frame": "*16*6005*102##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|6101|area_or_point|-|-": {
+      "example_frame": "*16*6101*101##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_f500n_tuner.json"
+    },
+    "command_or_event|16|6102|area_or_point|-|-": {
+      "example_frame": "*16*6102*102##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|16|6104|area_or_point|-|-": {
+      "example_frame": "*16*6104*102##",
+      "first_seen_in": "tests/fixtures/traces/l4561n_stereo_control/myhome_trace_MH200_l4561n_sound_source.json"
+    },
+    "command_or_event|1|0#1|area_or_point|-|-": {
+      "example_frame": "*1*0#2*01##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|1|0#1|general|-|-": {
+      "example_frame": "*1*0#1*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_746/myhome_trace_MH200N_all_2026-10-17T14-28-20.json"
+    },
+    "command_or_event|1|0|group_or_hash|-|-": {
+      "example_frame": "*1*0*#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|1|11|area_or_point|-|-": {
+      "example_frame": "*1*11*01##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|1|17|area_or_point|-|-": {
+      "example_frame": "*1*17*3##",
+      "first_seen_in": "tests/fixtures/plants/issue_311_f454/diagnostic_summary.json"
+    },
+    "command_or_event|1|20|area_or_point|-|-": {
+      "example_frame": "*1*20*01##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|1|2|area_or_point|-|-": {
+      "example_frame": "*1*2*14##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_F454_all_2026-09-26T16-59-13.json"
+    },
+    "command_or_event|1|30#2|area_or_point|-|-": {
+      "example_frame": "*1*30#2#255*0010##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "command_or_event|1|30|area_or_point|-|-": {
+      "example_frame": "*1*30*01##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|1|31|area_or_point|-|-": {
+      "example_frame": "*1*31*01##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|1|34|area_or_point|-|-": {
+      "example_frame": "*1*34*34##",
+      "first_seen_in": "tests/fixtures/traces/issue_434/myhome_trace_MH200N_all_2026-09-29T18-31-59.json"
+    },
+    "command_or_event|1|39|area_or_point|-|-": {
+      "example_frame": "*1*39*31##",
+      "first_seen_in": "tests/fixtures/traces/issue_746/myhome_trace_MH200N_all_2026-10-17T14-28-20.json"
+    },
+    "command_or_event|1|6|area_or_point|-|-": {
+      "example_frame": "*1*6*01##",
+      "first_seen_in": "tests/fixtures/traces/issue_453/myhome_trace_H4890_all_2026-09-25T19-40-19.json"
+    },
+    "command_or_event|22|0#2|area_or_point#wp2|-|-": {
+      "example_frame": "*22*0#4#1*5#2#1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_H4890_all_2026-09-26T11-48-10.json"
+    },
+    "command_or_event|22|0#2|area_or_point|-|-": {
+      "example_frame": "*22*0#4#4*6##",
+      "first_seen_in": "tests/fixtures/traces/mh202_sound_intercom_ducking/myhome_trace_MH202_all_2026-10-18T10-34-13.json"
+    },
+    "command_or_event|22|1#2|area_or_point#wp1|-|-": {
+      "example_frame": "*22*1#4#1*2#1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_H4890_all_2026-09-26T11-48-10.json"
+    },
+    "command_or_event|22|21#2|area_or_point#wp2|-|-": {
+      "example_frame": "*22*21#4#4*5#2#3##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_all_2026-11-01T11-48-15.json"
+    },
+    "command_or_event|22|23#2|area_or_point#wp2|-|-": {
+      "example_frame": "*22*23#4#1*5#2#1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_H4890_all_2026-09-26T11-48-10.json"
+    },
+    "command_or_event|22|3#1|area_or_point#wp2|-|-": {
+      "example_frame": "*22*3#1*3#4#1##",
+      "first_seen_in": "tests/fixtures/traces/mh202_sound_intercom_ducking/myhome_trace_MH202_all_2026-10-18T10-34-13.json"
+    },
+    "command_or_event|22|31|area_or_point#wp1|-|-": {
+      "example_frame": "*22*31*2#1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_all_2026-11-01T11-48-15.json"
+    },
+    "command_or_event|22|32|area_or_point#wp1|-|-": {
+      "example_frame": "*22*32*2#3##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_H4890_all_2026-09-26T11-48-10.json"
+    },
+    "command_or_event|22|4#1|area_or_point#wp2|-|-": {
+      "example_frame": "*22*4#1*3#4#1##",
+      "first_seen_in": "tests/fixtures/traces/mh202_sound_intercom_ducking/myhome_trace_MH202_all_2026-10-18T10-34-13.json"
+    },
+    "command_or_event|25|12#1|area_or_point|-|-": {
+      "example_frame": "*25*12#0*11##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/config_entry-myhome_MyHomeServer1_who25_scenario_plus.json"
+    },
+    "command_or_event|25|32#1|area_or_point|-|-": {
+      "example_frame": "*25*32#1*31##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/config_entry-myhome_F454_step_commands.json"
+    },
+    "command_or_event|2|10#2|area_or_point|-|-": {
+      "example_frame": "*2*10#001#1*05##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "command_or_event|2|1000#3|area_or_point|-|-": {
+      "example_frame": "*2*1000#10#001#1*21##",
+      "first_seen_in": "tests/fixtures/traces/discussion_770_f454_f401/myhome_trace_F454_2026-10-23_anon.json"
+    },
+    "command_or_event|2|1000#4|area_or_point|-|-": {
+      "example_frame": "*2*1000#11#100#001#1*21##",
+      "first_seen_in": "tests/fixtures/traces/discussion_770_f454_f401/myhome_trace_F454_2026-10-23_anon.json"
+    },
+    "command_or_event|2|11#2|area_or_point|-|-": {
+      "example_frame": "*2*11#1#001*05##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "command_or_event|2|12#2|area_or_point|-|-": {
+      "example_frame": "*2*12#1#001*05##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "command_or_event|2|13|area_or_point|-|-": {
+      "example_frame": "*2*13*05##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "command_or_event|2|14|area_or_point|-|-": {
+      "example_frame": "*2*14*05##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "command_or_event|2|2|general|-|-": {
+      "example_frame": "*2*2*0##",
+      "first_seen_in": "tests/fixtures/plants/issue_311_f454/diagnostic_summary.json"
+    },
+    "command_or_event|4|0|group_or_hash|-|-": {
+      "example_frame": "*4*0*#2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|102|central|-|-": {
+      "example_frame": "*4*102*#0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|103|central|-|-": {
+      "example_frame": "*4*103*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_619/myhome_trace_F453AV_who4_2026-10-11T10-49-26.Central.to.OFF.json"
+    },
+    "command_or_event|4|103|group_or_hash|-|-": {
+      "example_frame": "*4*103*#10##",
+      "first_seen_in": "tests/fixtures/traces/issue_619/myhome_trace_F453AV_who4_2026-10-11T10-49-26.Central.to.OFF.json"
+    },
+    "command_or_event|4|107|area_or_point|-|-": {
+      "example_frame": "*4*107*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_presets_live_2026-10-24/myhome_trace_F461_presets_live_2026-10-24.json"
+    },
+    "command_or_event|4|108|area_or_point|-|-": {
+      "example_frame": "*4*108*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-24/myhome_trace_F461_live_2026-10-24.json"
+    },
+    "command_or_event|4|110#1|central|-|-": {
+      "example_frame": "*4*110#0200*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_453/myhome_trace_MyHomeServer1_all_2026-09-25T19-40-15.json"
+    },
+    "command_or_event|4|1101|central|-|-": {
+      "example_frame": "*4*1101*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH200N_all_2026-11-02T12-53-15.json"
+    },
+    "command_or_event|4|111|group_or_hash|-|-": {
+      "example_frame": "*4*111*#4##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH200N_all_2026-11-02T12-53-15.json"
+    },
+    "command_or_event|4|115#1|central|-|-": {
+      "example_frame": "*4*115#1101*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_619/myhome_trace_F453AV_who4_2026-10-11T10-29-57.json"
+    },
+    "command_or_event|4|1|group_or_hash|-|-": {
+      "example_frame": "*4*1*#2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|203|group_or_hash|-|-": {
+      "example_frame": "*4*203*#1##",
+      "first_seen_in": "tests/fixtures/traces/issue_453/myhome_trace_H4890_all_2026-09-25T19-40-19.json"
+    },
+    "command_or_event|4|208|area_or_point|-|-": {
+      "example_frame": "*4*208*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-24/myhome_trace_F461_live_2026-10-24.json"
+    },
+    "command_or_event|4|20|central|-|-": {
+      "example_frame": "*4*20*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH200N_all_2026-11-02T12-53-15.json"
+    },
+    "command_or_event|4|210|group_or_hash|-|-": {
+      "example_frame": "*4*210*#5##",
+      "first_seen_in": "tests/fixtures/traces/issue_629/myhome_trace_F454_all_2026-10-05T11-14-00.json"
+    },
+    "command_or_event|4|23|central|-|-": {
+      "example_frame": "*4*23*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_453/myhome_trace_H4890_all_2026-09-25T19-40-19.json"
+    },
+    "command_or_event|4|302|area_or_point|-|-": {
+      "example_frame": "*4*302*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|302|central|-|-": {
+      "example_frame": "*4*302*#0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|303|group_or_hash|-|-": {
+      "example_frame": "*4*303*#2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|30|central|-|-": {
+      "example_frame": "*4*30*#0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH200N_all_2026-11-02T12-53-15.json"
+    },
+    "command_or_event|4|3101|central|-|-": {
+      "example_frame": "*4*3101*#0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|311|area_or_point|-|-": {
+      "example_frame": "*4*311*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|312#2|area_or_point|-|-": {
+      "example_frame": "*4*312#0210#1*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|312#2|group_or_hash|-|-": {
+      "example_frame": "*4*312#0210#1*#2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "command_or_event|4|4001#1|general#wp1|-|-": {
+      "example_frame": "*4*4001#1*0#3##",
+      "first_seen_in": "tests/fixtures/plants/issue_303_f461/diagnostic_summary.json"
+    },
+    "command_or_event|5|12|group_or_hash|-|-": {
+      "example_frame": "*5*12*#1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_who5_2026-11-06T10-37-42.json"
+    },
+    "command_or_event|5|4|empty|-|-": {
+      "example_frame": "*5*4*##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_who5_2026-11-06T10-37-42.json"
+    },
+    "command_or_event|5|5|empty|-|-": {
+      "example_frame": "*5*5*##",
+      "first_seen_in": "tests/fixtures/plants/issue_311_f454/diagnostic_summary.json"
+    },
+    "command_or_event|5|7|empty|-|-": {
+      "example_frame": "*5*7*##",
+      "first_seen_in": "tests/fixtures/plants/issue_311_f454/diagnostic_summary.json"
+    },
+    "command_or_event|5|8|empty|-|-": {
+      "example_frame": "*5*8*##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_who5_2026-11-06T10-37-42.json"
+    },
+    "command_or_event|5|9|empty|-|-": {
+      "example_frame": "*5*9*##",
+      "first_seen_in": "tests/fixtures/plants/issue_311_f454/diagnostic_summary.json"
+    },
+    "command_or_event|9|0|general|-|-": {
+      "example_frame": "*9*0*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MH200N_all_2026-09-26T18-32-34.json"
+    },
+    "dimension_request|13|-|empty|10|0": {
+      "example_frame": "*#13**10##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|11|0": {
+      "example_frame": "*#13**11##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|12|0": {
+      "example_frame": "*#13**12##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|13|0": {
+      "example_frame": "*#13**13##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|17|0": {
+      "example_frame": "*#13**17##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|19|0": {
+      "example_frame": "*#13**19##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|1|0": {
+      "example_frame": "*#13**1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|13|-|empty|22|0": {
+      "example_frame": "*#13**22##",
+      "first_seen_in": "tests/fixtures/plants/mh201_physical_plant/diagnostic_summary.json"
+    },
+    "dimension_request|13|-|empty|25|0": {
+      "example_frame": "*#13**25##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|13|-|empty|26|0": {
+      "example_frame": "*#13**26##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|13|-|empty|27|0": {
+      "example_frame": "*#13**27##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|13|-|empty|2|0": {
+      "example_frame": "*#13**2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|13|-|empty|3|0": {
+      "example_frame": "*#13**3##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|13|-|general|0|0": {
+      "example_frame": "*#13*0*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|16|-|area_or_point|6|0": {
+      "example_frame": "*#16*101*6##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|16|-|area_or_point|7|0": {
+      "example_frame": "*#16*101*7##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|16|-|area_or_point|8|0": {
+      "example_frame": "*#16*101*8##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|16|-|area_or_point|9|0": {
+      "example_frame": "*#16*101*9##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|17|-|area_or_point|40|0": {
+      "example_frame": "*#17*1*40##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|17|-|area_or_point|41|0": {
+      "example_frame": "*#17*1*41##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point#wp1|113|0": {
+      "example_frame": "*#18*71#0*113##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point#wp1|71|0": {
+      "example_frame": "*#18*71#0*71##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point#wp1|72#dp1|0": {
+      "example_frame": "*#18*71#0*72#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point#wp1|73|0": {
+      "example_frame": "*#18*71#0*73##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|1130|0": {
+      "example_frame": "*#18*51*1130##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|1134|0": {
+      "example_frame": "*#18*51*1134##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|212|0": {
+      "example_frame": "*#18*11*212##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|251|0": {
+      "example_frame": "*#18*11*251##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|258|0": {
+      "example_frame": "*#18*11*258##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|511#dp2|0": {
+      "example_frame": "*#18*51*511#10#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|512#dp1|0": {
+      "example_frame": "*#18*51*512#10##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|513#dp1|0": {
+      "example_frame": "*#18*51*513#10##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|514#dp1|0": {
+      "example_frame": "*#18*51*514#10##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|516|0": {
+      "example_frame": "*#18*51*516##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|517#dp1|0": {
+      "example_frame": "*#18*51*517#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|52#dp2|0": {
+      "example_frame": "*#18*51*52#26#9##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|18|-|area_or_point|52|0": {
+      "example_frame": "*#18*51*52##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|1|-|area_or_point|14|0": {
+      "example_frame": "*#1*0012*14##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|1|-|area_or_point|15|0": {
+      "example_frame": "*#1*06*15##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|1|-|area_or_point|2|0": {
+      "example_frame": "*#1*01*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|1|-|area_or_point|5|0": {
+      "example_frame": "*#1*52*5##",
+      "first_seen_in": "tests/fixtures/traces/issue_777/f454_067226_f411_shared_where52.json"
+    },
+    "dimension_request|1|-|area_or_point|7|0": {
+      "example_frame": "*#1*52*7##",
+      "first_seen_in": "tests/fixtures/traces/issue_777/f454_067226_f411_shared_where52.json"
+    },
+    "dimension_request|1|-|group_or_hash|15|0": {
+      "example_frame": "*#1*#1*15##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp1|10|0": {
+      "example_frame": "*#22*2#1*10##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp1|13|0": {
+      "example_frame": "*#22*2#1*13##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|17|0": {
+      "example_frame": "*#22*3#1#1*17##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|19|0": {
+      "example_frame": "*#22*3#1#1*19##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|1|0": {
+      "example_frame": "*#22*3#1#1*1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|20|0": {
+      "example_frame": "*#22*3#1#1*20##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|2|0": {
+      "example_frame": "*#22*3#1#1*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|4|0": {
+      "example_frame": "*#22*3#1#1*4##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|22|-|area_or_point#wp2|5|0": {
+      "example_frame": "*#22*5#2#1*5##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|2|-|area_or_point+if|10|0": {
+      "example_frame": "*#2*11#4#02*10##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|2|-|area_or_point|10|0": {
+      "example_frame": "*#2*0114*10##",
+      "first_seen_in": "tests/fixtures/plants/mh201_physical_plant/diagnostic_summary.json"
+    },
+    "dimension_request|2|-|area_or_point|11|0": {
+      "example_frame": "*#2*05*11##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|4|-|area_or_point#wp1|0|0": {
+      "example_frame": "*#4*23#1*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|4|-|area_or_point#wp1|15#dp1|0": {
+      "example_frame": "*#4*23#1*15#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|4|-|area_or_point#wp1|20|0": {
+      "example_frame": "*#4*2#1*20##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|11|0": {
+      "example_frame": "*#4*2*11##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|12|0": {
+      "example_frame": "*#4*2*12##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|13#dp1|0": {
+      "example_frame": "*#4*2*13#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|14|0": {
+      "example_frame": "*#4*2*14##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|15#dp1|0": {
+      "example_frame": "*#4*2*15#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|15|0": {
+      "example_frame": "*#4*2*15##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|17|0": {
+      "example_frame": "*#4*2*17##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|1|0": {
+      "example_frame": "*#4*2*1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|21|0": {
+      "example_frame": "*#4*2*21##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|29|0": {
+      "example_frame": "*#4*2*29##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|2|0": {
+      "example_frame": "*#4*2*2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|30|0": {
+      "example_frame": "*#4*2*30##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|31|0": {
+      "example_frame": "*#4*2*31##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|32|0": {
+      "example_frame": "*#4*2*32##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|3|0": {
+      "example_frame": "*#4*2*3##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|4|0": {
+      "example_frame": "*#4*2*4##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|60|0": {
+      "example_frame": "*#4*2*60##",
+      "first_seen_in": "tests/fixtures/traces/f461_actuators_live_2026-10-25/myhome_trace_F461_actuators_live_2026-10-25.json"
+    },
+    "dimension_request|4|-|area_or_point|6|0": {
+      "example_frame": "*#4*2*6##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|area_or_point|8|0": {
+      "example_frame": "*#4*2*8##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|central|0|0": {
+      "example_frame": "*#4*#0*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|central|13|0": {
+      "example_frame": "*#4*#0*13##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|central|19|0": {
+      "example_frame": "*#4*#0*19##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|central|20|0": {
+      "example_frame": "*#4*#0*20##",
+      "first_seen_in": "tests/fixtures/traces/f461_actuators_live_2026-10-25/myhome_trace_F461_actuators_live_2026-10-25.json"
+    },
+    "dimension_request|4|-|general#wp1|17|0": {
+      "example_frame": "*#4*0#0*17##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH201_all_2026-09-25T19-11-35.json"
+    },
+    "dimension_request|4|-|general|0|0": {
+      "example_frame": "*#4*0*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|general|12|0": {
+      "example_frame": "*#4*0*12##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_request|4|-|general|60|0": {
+      "example_frame": "*#4*0*60##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_request|4|-|group_or_hash|14|0": {
+      "example_frame": "*#4*#2*14##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_response|1001|-|general|30|3": {
+      "example_frame": "*#1001*0*30*1*521*1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "dimension_response|1001|-|general|4|6": {
+      "example_frame": "*#1001*0*4*0*0*0*0*0*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MyHomeServer1_monostable_cover_diagnostic_2026-09-27T13-51-19.json"
+    },
+    "dimension_response|13|-|empty|10|4": {
+      "example_frame": "*#13**10*192*0*2*92##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|13|-|empty|11|4": {
+      "example_frame": "*#13**11*255*255*255*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|13|-|empty|12|6": {
+      "example_frame": "*#13**12*0*3*80*0*4*97##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|13|-|empty|17|3": {
+      "example_frame": "*#13**17*4*2*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|13|-|empty|19|4": {
+      "example_frame": "*#13**19*0*8*33*56##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|13|-|empty|27|1": {
+      "example_frame": "*#13**27*70#52#54#49##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_response|16|-|area_or_point|6|2": {
+      "example_frame": "*#16*101*6*0*88800##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|16|-|area_or_point|7|2": {
+      "example_frame": "*#16*101*7*0*1##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|16|-|area_or_point|8|12": {
+      "example_frame": "*#16*101*8*42*42*79*79*69*42*79*79*69*42*42*32##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|18|-|area_or_point#wp1|1200#dp1|1": {
+      "example_frame": "*#18*73#0*1200#1*125##",
+      "first_seen_in": "tests/fixtures/plants/issue_247_myhomeserver1/diagnostic_summary.json"
+    },
+    "dimension_response|1|-|area_or_point|12|3": {
+      "example_frame": "*#1*0010*12*511*127*255##",
+      "first_seen_in": "tests/fixtures/plants/issue_288_f461_dali_dt8/diagnostic_summary.json"
+    },
+    "dimension_response|1|-|area_or_point|14|1": {
+      "example_frame": "*#1*0012*14*1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_F461_all_2026-09-28T12-42-23.json"
+    },
+    "dimension_response|1|-|area_or_point|2|3": {
+      "example_frame": "*#1*01*2*0*0*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|1|-|general|5|1": {
+      "example_frame": "*#1*0*5*2##",
+      "first_seen_in": "tests/fixtures/traces/issue_777/f454_067226_f411_shared_where52.json"
+    },
+    "dimension_response|1|-|general|7|3": {
+      "example_frame": "*#1*0*7*0*0*45##",
+      "first_seen_in": "tests/fixtures/traces/issue_777/f454_067226_f411_shared_where52.json"
+    },
+    "dimension_response|1|-|group_or_hash|15|1": {
+      "example_frame": "*#1*#1*15*1##",
+      "first_seen_in": "tests/fixtures/plants/issue_288_f461_dali_dt8/diagnostic_summary.json"
+    },
+    "dimension_response|22|-|area_or_point#wp1|6|1": {
+      "example_frame": "*#22*2#1*6*1##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|10|12": {
+      "example_frame": "*#22*5#2#1*10*42*42*79*79*69*42*79*79*69*42*42*32##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|10|4": {
+      "example_frame": "*#22*5#2#1*10*82*65*68*73##",
+      "first_seen_in": "tests/fixtures/traces/oracle_who22_tuner/myhome_trace_oracle_myhomeserver1_who22_only_tuner.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|11|3": {
+      "example_frame": "*#22*5#2#1*11*1*8880*1##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|17|1": {
+      "example_frame": "*#22*3#3#1*17*10##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-52-48.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|18|1": {
+      "example_frame": "*#22*3#3#1*18*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-52-48.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|19|1": {
+      "example_frame": "*#22*3#3#1*19*3##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-52-48.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|20|1": {
+      "example_frame": "*#22*3#3#1*20*1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-52-48.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|25|3": {
+      "example_frame": "*#22*5#2#3*25*0*0*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_H4890_all_2026-09-26T11-48-10.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|2|1": {
+      "example_frame": "*#22*3#3#1*2*30##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-52-48.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|4|1": {
+      "example_frame": "*#22*3#3#1*4*30##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_H4890_all_2026-09-26T11-52-48.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|5|2": {
+      "example_frame": "*#22*5#2#1*5*1*8880##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_all_2026-09-26T20-00-28.json"
+    },
+    "dimension_response|22|-|area_or_point#wp2|8|2": {
+      "example_frame": "*#22*5#1#1*8*1*8##",
+      "first_seen_in": "tests/fixtures/traces/issue_746/myhome_trace_MH200N_all_2026-10-17T14-28-20.json"
+    },
+    "dimension_response|22|-|empty|5|2": {
+      "example_frame": "*#22**5*1*9650##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_all_2026-11-07T08-54-06.json"
+    },
+    "dimension_response|4|-|area_or_point#wp1|20:st=7|1": {
+      "example_frame": "*#4*11#1*20*7##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_HL4684_all_2026-11-05T22-15-31.json"
+    },
+    "dimension_response|4|-|area_or_point|11|1": {
+      "example_frame": "*#4*2*11*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|14|1": {
+      "example_frame": "*#4*1*14*0200##",
+      "first_seen_in": "tests/fixtures/traces/issue_866/myhome_trace_MH202_all_2026-11-04T20-39-35.json"
+    },
+    "dimension_response|4|-|area_or_point|15|3": {
+      "example_frame": "*#4*105*15*0*0000*0000##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH201_all_2026-09-25T19-11-35.json"
+    },
+    "dimension_response|4|-|area_or_point|19:cv=5:hv=1|2": {
+      "example_frame": "*#4*2*19*5*1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|19:cv=8:hv=0|2": {
+      "example_frame": "*#4*2*19*8*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|2|1": {
+      "example_frame": "*#4*2*2*0350##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|3|1": {
+      "example_frame": "*#4*2*3*0070##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|4|1": {
+      "example_frame": "*#4*2*4*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|6|1": {
+      "example_frame": "*#4*2*6*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_response|4|-|area_or_point|7:ctx=1:st=3|2": {
+      "example_frame": "*#4*2*7*1*3##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-24/myhome_trace_F461_live_2026-10-24.json"
+    },
+    "dimension_response|4|-|area_or_point|7:ctx=1:st=4|2": {
+      "example_frame": "*#4*2*7*1*4##",
+      "first_seen_in": "tests/fixtures/traces/f461_presets_live_2026-10-24/myhome_trace_F461_presets_live_2026-10-24.json"
+    },
+    "dimension_response|4|-|area_or_point|7:ctx=2:st=3|2": {
+      "example_frame": "*#4*2*7*2*3##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-24/myhome_trace_F461_live_2026-10-24.json"
+    },
+    "dimension_response|4|-|central|0|1": {
+      "example_frame": "*#4*#0*0*0215##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "dimension_response|4|-|central|30|3": {
+      "example_frame": "*#4*#0*30*12*10*2026##",
+      "first_seen_in": "tests/fixtures/traces/issue_619/myhome_trace_F453AV_who4_2026-10-11T10-29-57.json"
+    },
+    "dimension_response|4|-|central|31|2": {
+      "example_frame": "*#4*#0*31*12*28##",
+      "first_seen_in": "tests/fixtures/traces/issue_619/myhome_trace_F453AV_who4_2026-10-11T10-29-57.json"
+    },
+    "dimension_response|4|-|general#wp1|20:st=1|1": {
+      "example_frame": "*#4*0#3*20*1##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MyHomeServer1_all_2026-09-29T18-20-22.json"
+    },
+    "dimension_response|4|-|group_or_hash|14|2": {
+      "example_frame": "*#4*#2*14*0280*1##",
+      "first_seen_in": "tests/fixtures/plants/issue_333_myhomeserver1/diagnostic_summary.json"
+    },
+    "dimension_write|16|-|area_or_point|6|2": {
+      "example_frame": "*#16*101*#6*0*96200##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_f500n_tuner_seek_and_frequency.json"
+    },
+    "dimension_write|16|-|area_or_point|7|1": {
+      "example_frame": "*#16*101*#7*3##",
+      "first_seen_in": "tests/fixtures/traces/f500_tuner/myhome_trace_MH200N_f500n_tuner.json"
+    },
+    "dimension_write|18|-|area_or_point#wp1|1200#dp1|1": {
+      "example_frame": "*#18*73#0*#1200#1*125##",
+      "first_seen_in": "tests/fixtures/plants/issue_247_myhomeserver1/diagnostic_summary.json"
+    },
+    "dimension_write|1|-|area_or_point+if|1|2": {
+      "example_frame": "*#1*25#4#02*#1*196*0##",
+      "first_seen_in": "tests/fixtures/plants/issue_288_f461_dali_dt8/diagnostic_summary.json"
+    },
+    "dimension_write|1|-|area_or_point|1000#dp1|3": {
+      "example_frame": "*#1*54*#1000#2*0*1*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_sweep_MH201_all_2026-09-25T19-11-35.json"
+    },
+    "dimension_write|1|-|area_or_point|13|4": {
+      "example_frame": "*#1*19*#13*2*115*0*0##",
+      "first_seen_in": "tests/fixtures/traces/issue_466/myhome_trace_MH202_all_2026-09-26T16-59-17.json"
+    },
+    "dimension_write|4|-|area_or_point#wp1|20:st=1|1": {
+      "example_frame": "*#4*2#1*#20*1##",
+      "first_seen_in": "tests/fixtures/plants/issue_333_myhomeserver1/diagnostic_summary.json"
+    },
+    "dimension_write|4|-|area_or_point|11|1": {
+      "example_frame": "*#4*2*#11*1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_write|4|-|area_or_point|30|3": {
+      "example_frame": "*#4*2*#30*25*12*2026##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_write|4|-|area_or_point|31|2": {
+      "example_frame": "*#4*2*#31*10*30##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_write|4|-|area_or_point|32|2": {
+      "example_frame": "*#4*2*#32*02*00##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "dimension_write|4|-|area_or_point|7:ctx=1:st=3|2": {
+      "example_frame": "*#4*2*#7*1*3##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-24/myhome_trace_F461_live_2026-10-24.json"
+    },
+    "dimension_write|4|-|area_or_point|7:ctx=1:st=4|2": {
+      "example_frame": "*#4*2*#7*1*4##",
+      "first_seen_in": "tests/fixtures/traces/f461_presets_live_2026-10-24/myhome_trace_F461_presets_live_2026-10-24.json"
+    },
+    "dimension_write|4|-|area_or_point|7:ctx=2:st=3|2": {
+      "example_frame": "*#4*2*#7*2*3##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-24/myhome_trace_F461_live_2026-10-24.json"
+    },
+    "dimension_write|4|-|group_or_hash|14|2": {
+      "example_frame": "*#4*#2*#14*0280*1##",
+      "first_seen_in": "tests/fixtures/plants/issue_333_myhomeserver1/diagnostic_summary.json"
+    },
+    "status_request|1013|-|general|-|-": {
+      "example_frame": "*#1013*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|14|-|area_or_point|-|-": {
+      "example_frame": "*#14*06##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "status_request|14|-|general|-|-": {
+      "example_frame": "*#14*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_who14_live_2026-10-18/myhome_trace_F461_who14_live_2026-10-18.json"
+    },
+    "status_request|15|-|general|-|-": {
+      "example_frame": "*#15*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|16|-|area_or_point|-|-": {
+      "example_frame": "*#16*101##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "status_request|16|-|general|-|-": {
+      "example_frame": "*#16*0##",
+      "first_seen_in": "tests/fixtures/plants/issue_247_myhomeserver1/diagnostic_summary.json"
+    },
+    "status_request|17|-|empty|-|-": {
+      "example_frame": "*#17##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json"
+    },
+    "status_request|18|-|general|-|-": {
+      "example_frame": "*#18*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|1|-|general#wp1|-|-": {
+      "example_frame": "*#1*0#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|1|-|group_or_hash|-|-": {
+      "example_frame": "*#1*#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|22|-|general|-|-": {
+      "example_frame": "*#22*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|25|-|general|-|-": {
+      "example_frame": "*#25*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|2|-|general+if|-|-": {
+      "example_frame": "*#2*0#4#02##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "status_request|4|-|area_or_point#wp1|-|-": {
+      "example_frame": "*#4*2#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|4|-|central#wp1|-|-": {
+      "example_frame": "*#4*#0#1##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|4|-|general|-|-": {
+      "example_frame": "*#4*0##",
+      "first_seen_in": "tests/fixtures/plants/issue_247_myhomeserver1/diagnostic_summary.json"
+    },
+    "status_request|4|-|group_or_hash|-|-": {
+      "example_frame": "*#4*#2##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    },
+    "status_request|8|-|general|-|-": {
+      "example_frame": "*#8*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-23/myhome_trace_F461_live_2026-10-23.json"
+    },
+    "status_request|9|-|general|-|-": {
+      "example_frame": "*#9*0##",
+      "first_seen_in": "tests/fixtures/traces/f461_live_2026-10-15/myhome_trace_F461_live_2026-10-15.json"
+    }
+  }
+}
