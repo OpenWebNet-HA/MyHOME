@@ -103,9 +103,10 @@ async def test_dimension_14_write_is_followed_by_a_zone_status_read(hass: HomeAs
 
 @pytest.mark.parametrize("gateway", ["F461", "F455"])
 async def test_central_restore_replay_reads_once_per_setpoint_write(hass: HomeAssistant, gateway: str) -> None:
-    """Replay of a real event session: one zone read per setpoint write, none for any other frame."""
+    """Replay of a real event session: one read per setpoint write where the gateway answers the zone
+    status request, none on an F455 (its profile has no zone status request); none for any other frame."""
     frames = _event_session_frames(RESTORE / f"myhome_trace_{gateway}_central_restore_2026-11-12.json")
-    dispatcher, sent = _dispatcher(hass)
+    dispatcher, sent = _dispatcher(hass, supports_zone_status=gateway != "F455")
     writes: list[str] = []
     for raw in frames:
         message = OWNMessage.parse(raw)
@@ -117,7 +118,8 @@ async def test_central_restore_replay_reads_once_per_setpoint_write(hass: HomeAs
         await dispatcher.process_message(message)
 
     assert writes, "the capture holds setpoint writes"
-    assert sent == [f"*#4*{raw.split('*')[2].lstrip('#')}##" for raw in writes]
+    expected = [f"*#4*{raw.split('*')[2].lstrip('#')}##" for raw in writes] if gateway != "F455" else []
+    assert sent == expected
     # The setpoint the zone then reports is an event, never a command: it asks nothing.
     report = OWNMessage.parse("*#4*4*14*0215*3##")
     assert isinstance(report, OWNHeatingEvent)

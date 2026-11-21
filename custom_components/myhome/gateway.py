@@ -619,6 +619,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._recent_ptp: collections.deque[tuple[float, str, str | None]] = self._resync_manager.recent_ptp
         self._sender_stop: asyncio.Event = self._command_pool.sender_stop
         self._initial_discovery_done: asyncio.Event = asyncio.Event()
+        # Event sessions opened so far (counted when the session comes up after being down).
+        self.event_connections = 0
         # Paced sweeps in flight; close_listener() bumps the epoch so a sweep that was
         # running at the time cannot end one started after the reconnect.
         self._active_sweeps: int = 0
@@ -1250,6 +1252,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 self._all_actuators_swept_at = 0.0
                 self._central_status_swept_at = 0.0
                 self.central_season = None
+                self.event_connections += 1
             if not was_connected and self._initial_discovery_done.is_set():
                 runtime = getattr(self.config_entry, "runtime_data", None)
                 expose_mgr = getattr(runtime, "expose_manager", None)
@@ -1704,6 +1707,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if standby is not None:
             return await standby.send_status_request(message)
         return await self._command_pool.send_status_request(message)
+
+    def command_in_flight(self, message: Any) -> bool:
+        """Whether ``message`` is being written by the command pool right now (it may be on the wire)."""
+        pool = getattr(self, "_command_pool", None)
+        return any(sent is message for sent in getattr(pool, "_in_flight_messages", ()))
 
     def claim_in_flight_dimension_where(self, who: int, dimension: int) -> str | None:
         """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""

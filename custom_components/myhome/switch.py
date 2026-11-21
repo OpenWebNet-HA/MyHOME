@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import time
 import types
@@ -100,6 +101,8 @@ PARALLEL_UPDATES = 0
 THERMO_REVERT_WINDOW_SECONDS = 2.0
 # Actuator N of ``Z#N`` (WHO 4 p. 22: "Actuators N of zone Z [Z#N] = [0-99#1-9]").
 _ACTUATOR_NUMBERS = frozenset("123456789")
+# How long a direct dimension 20 write is waited for: the gateway's ACK or NACK, or nothing.
+DIRECT_WRITE_DELIVERY_TIMEOUT = 15.0
 
 
 def _supports_config_subentry_id(cb: Any) -> bool:
@@ -723,6 +726,9 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         self._turn_on_command = turn_on_command
         self._turn_off_command = turn_off_command
         self._actuator_states: dict[str, bool] = {}
+        # Actuators the map holds only because an aggregate report (``Z#0``) was shown under
+        # number 1: no actuator number is proven by it.
+        self._aggregate_actuators: set[str] = set()
         self._actuator_levels: dict[str, int] = {}
         self._zone_active = False
         self._active_source = "actuators"
@@ -772,12 +778,18 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         """Restore relay state, per-actuator map, and custom icons across restarts."""
         await super().async_restore_last_state(last_state)
         raw_actuators = last_state.attributes.get("actuators")
-        if self._actuator is None and isinstance(raw_actuators, dict) and not self._actuator_states:
+        if self._actuator is None and isinstance(raw_actuators, dict):
             for act, val in raw_actuators.items():
+                act = str(act)
+                # A live report is never overwritten; one shown only from an aggregate report is.
+                if act in self._actuator_states and act not in self._aggregate_actuators:
+                    continue
                 if val in ("on", True):
-                    self._actuator_states[str(act)] = True
+                    self._actuator_states[act] = True
+                    self._aggregate_actuators.discard(act)
                 elif val in ("off", False):
-                    self._actuator_states[str(act)] = False
+                    self._actuator_states[act] = False
+                    self._aggregate_actuators.discard(act)
         if (
             self._attr_is_on is not None
             and self._off_icon is not None
@@ -836,8 +848,10 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
 
         The gateways do not route WHO 4 across an interface (``interface_zone_request_refused``,
         own-firmware-oracle ``findings/thermo-zone-requests.md``): the read form of this address
-        is cut at ``#`` and sent to the local bus (``*#4*2#1#4#01*20##`` -> local zone 2
-        actuator 1 on six images, local zone 4 actuator 1 on the MH202), so the write would
+        is cut at ``#`` and sent to the local bus (on an F450, F454, F459, F460, F461,
+        MyHomeServer1 and 3488 image ``*#4*2#1#4#01*20##`` puts the bytes of the zone read
+        ``*#4*2*20##`` on the local bus, on the MH202 those of zone 4 actuator 1:
+        ``thermo-zone-requests.tsv`` row 22 against rows 37 and 23), so the write may
         switch an actuator of the local bus. The climate platform refuses its writes for the
         same reason (#816); the reads of this switch are already withheld. A configured
         ``turn_on_command`` / ``turn_off_command`` is the owner's own frame and is sent.
@@ -875,10 +889,15 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         actuator, each one that has reported (``_actuator_states``: dimension 20 frames,
         restored across restarts), in the proven form. Only while no actuator of the zone
         is known does the bare-zone frame still go out, as before; whether any gateway acts
-        on it is not known.
+        on it is not known. An aggregate report (``Z#0``) proves no actuator number; saved
+        actuators (restored across restarts) count as reported.
         """
         if self._actuator is None:
-            actuators = sorted(act for act in self._actuator_states if act in _ACTUATOR_NUMBERS)
+            actuators = sorted(
+                act
+                for act in self._actuator_states
+                if act in _ACTUATOR_NUMBERS and act not in self._aggregate_actuators
+            )
             if actuators:
                 routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
                 return [f"*#4*{self._zone}#{act}{routing}*#20*{value}##" for act in actuators]
@@ -892,8 +911,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             return
         self._refuse_interface_write()
         self._pending_direct_write = (True, time.monotonic(), False)
-        for frame in self._direct_write_frames(1):
-            await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
+        await self._send_direct_writes(1)
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the thermo actuator off via custom trigger or direct Dimension 20 write."""
@@ -903,8 +921,29 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             return
         self._refuse_interface_write()
         self._pending_direct_write = (False, time.monotonic(), False)
-        for frame in self._direct_write_frames(0):
-            await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
+        await self._send_direct_writes(0)
+
+    async def _send_direct_writes(self, value: int) -> None:
+        """Send every direct dimension 20 write, then raise for the ones the gateway refused (NACK).
+
+        A write nothing answered within ``DIRECT_WRITE_DELIVERY_TIMEOUT`` is not raised.
+        """
+        refused: list[str] = []
+        for frame in self._direct_write_frames(value):
+            written = await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
+            if not isinstance(written, asyncio.Future):
+                continue
+            await asyncio.wait([written], timeout=DIRECT_WRITE_DELIVERY_TIMEOUT)
+            if written.done() and written.cancelled() and getattr(written, "_gateway_nack", False) is True:
+                refused.append(frame)
+        if refused:
+            frames = ", ".join(refused)
+            raise HomeAssistantError(
+                f"{self._device_name}: the gateway refused {frames}",
+                translation_domain=DOMAIN,
+                translation_key="thermo_switch_write_refused",
+                translation_placeholders={"name": self._device_name, "frames": frames},
+            )
 
     def _check_direct_write_revert(self, new_state: bool) -> None:
         """Detect MyHomeServer1 bt_thermo_manager immediate revert after a #20 write."""
@@ -959,6 +998,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
                     )
                 else:
                     self._actuator_states["1"] = dim20_active
+                    self._aggregate_actuators.add("1")
                 new_state = dim20_active
             else:
                 if self._actuator is not None and act_id != self._actuator:
@@ -966,6 +1006,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
                 if not (act_id.isascii() and act_id.isdigit() and 1 <= int(act_id) <= 9):
                     return
                 self._actuator_states[act_id] = dim20_active
+                self._aggregate_actuators.discard(act_id)
                 if thermo_dim20_actuator_target(message) is not None:
                     if dim20_level is not None:
                         self._actuator_levels[act_id] = dim20_level

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.core import State
+from homeassistant.exceptions import ServiceValidationError
 from OWNd.message import OWNHeatingEvent
 
 from custom_components.myhome import climate as climate_module
@@ -352,7 +353,7 @@ async def test_saved_nominal_carries_no_knob_offset(hass):
     ids=["saved-before-the-attribute", "nominal-none", "unreadable-nominal"],
 )
 async def test_zone_saved_off_without_a_nominal_does_not_write_the_saved_value(hass, attributes, caplog):
-    """A state saved while off by an older version has no nominal: nothing is written, and it is said.
+    """A state saved while off by an older version has no nominal: nothing is written, the call fails.
 
     The value shown while off cannot be told from a protection setpoint, so it is not written as
     a heating setpoint; the zone's next dimension 14 brings the nominal.
@@ -363,9 +364,9 @@ async def test_zone_saved_off_without_a_nominal_does_not_write_the_saved_value(h
     assert restored._target_temperature is None
     assert "nominal_temperature" not in restored.extra_state_attributes
     _feed(restored, "*4*102*3##", "*#4*3*12*0070*3##")
-    await restored.async_set_hvac_mode(HVACMode.HEAT)
+    with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+        await restored.async_set_hvac_mode(HVACMode.HEAT)
     restored._gateway_handler.send.assert_not_awaited()
-    assert "has no known setpoint yet" in caplog.text
     # what the zone said while off is its protection setpoint: the silent-zone poll still asks
     assert "*#4*3*14##" in restored._silent_zone_reads()
     _feed(restored, "*#4*#3*14*0250*1##")  # the 3550 reports the zone's setpoint

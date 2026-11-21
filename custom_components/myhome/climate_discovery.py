@@ -334,6 +334,7 @@ class ZoneDiscovery:
         pair = _zone_pair(ctx.address)
         if pair is not None:
             self._candidates.pop(pair, None)
+            self._candidates_unanswered.discard(pair)
             for held in self._held.pop(pair, {}).values():
                 entity.handle_event(held)
         return entity
@@ -468,6 +469,7 @@ class ZoneDiscovery:
             cand for cand, (first_at, _raw) in self._candidates.items() if now - first_at > CANDIDATE_MAX_AGE
         ]:
             self._candidates.pop(expired, None)
+            self._candidates_unanswered.discard(expired)
             self._drop_candidate_held(expired)
         raw = "" if ctx.message is None else str(ctx.message)
         if pair in self._candidates:
@@ -478,6 +480,7 @@ class ZoneDiscovery:
                 or (now - first_at) >= CANDIDATE_ECHO_WINDOW
             ):
                 self._candidates.pop(pair, None)
+                self._candidates_unanswered.discard(pair)
                 return True
             return False
         if any(s.startswith(("act:", "dim19")) for s in self._held.get(pair, ())):
@@ -724,7 +727,9 @@ class ZoneDiscovery:
                 asked.add(pair)
                 if inspect.iscoroutinefunction(getattr(gateway, "_wait_for_bus_quiet", None)):
                     await gateway._wait_for_bus_quiet(first_at)
-                    if pair not in self._candidates:
+                    if pair not in self._candidates or is_exposed_on_bus(
+                        self._hass, self._config_entry, 4, pair[0]
+                    ):
                         continue
                 answered: bool | None = None
                 for _attempt in range(2):

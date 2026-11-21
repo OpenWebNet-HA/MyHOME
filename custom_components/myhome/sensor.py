@@ -1422,6 +1422,8 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         # the entry is reloaded, or the gateway comes back from an outage). The readings the
         # probe sends by itself are all it has then.
         self._fallback_read_refused = False
+        # The gateway's event-session count when the refusal came: a reconnect asks once more.
+        self._fallback_refused_on_connection: int | None = None
 
     @property
     def _is_probe(self) -> bool:
@@ -1490,6 +1492,20 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         if self._push_is_fresh():
             return
         if self._is_probe and self._fallback_read_refused:
+            # A reconnect of the event session (also one too short to make the gateway
+            # unavailable) asks the probe once more.
+            connections = getattr(self._gateway_handler, "event_connections", None)
+            if isinstance(connections, int) and connections != self._fallback_refused_on_connection:
+                self._fallback_read_refused = False
+            else:
+                return
+        if (
+            self._is_probe
+            and BUS_ROUTING in str(self._where)
+            and getattr(self._gateway_handler, "interface_zone_request_refused", False) is True
+        ):
+            # A probe behind an interface where the gateway does not route WHO 4: its own
+            # reports are all it has.
             return
         cmd = self._fallback_read()
         pushes_before = self._pushes
@@ -1520,6 +1536,7 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         if self._pushes != pushes_before:
             return
         self._fallback_read_refused = True
+        self._fallback_refused_on_connection = getattr(self._gateway_handler, "event_connections", None)
         LOGGER.debug(
             "%s %s: the gateway refused the read of probe %s; it is not asked again, its own reports are used",
             self._gateway_handler.log_id,
@@ -1761,7 +1778,13 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         target = getattr(
             self._gateway_handler, "_who4_target", lambda: self._gateway_handler
         )()
-        if getattr(target, "actuator_request_refused", False) is True:
+        # Decided by the form of the read: this actuator (``Z#N``), not the zone (as the thermo
+        # switch does); a gateway double without the method keeps the zone-level check.
+        read_refused = getattr(self._gateway_handler, "actuator_read_refused", None)
+        refused = read_refused(self._where) if callable(read_refused) else None
+        if not isinstance(refused, bool):
+            refused = getattr(target, "actuator_request_refused", False) is True
+        if refused:
             return
         if (
             self._interface is not None

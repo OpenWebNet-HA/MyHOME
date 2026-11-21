@@ -387,10 +387,14 @@ async def test_climate_edge_cases_and_properties(hass):
     climate._target_temperature = 21.5
     assert climate.target_temperature == 21.5
 
-    # async_set_hvac_mode when _target_temperature is None does not send command for HEAT or COOL
+    # async_set_hvac_mode when _target_temperature is None sends nothing for HEAT or COOL and says so
     climate._target_temperature = None
-    await climate.async_set_hvac_mode(HVACMode.HEAT)
-    await climate.async_set_hvac_mode(HVACMode.COOL)
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+        await climate.async_set_hvac_mode(HVACMode.HEAT)
+    with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+        await climate.async_set_hvac_mode(HVACMode.COOL)
     gateway.send.assert_not_called()
 
     # async_set_temperature without temperature kwarg uses _local_target_temperature
