@@ -2504,7 +2504,7 @@ export class CalibrationTab {
     if (!profiles.length) return;
     const button = page.querySelector("[data-assign]");
     const chosen = () => list.querySelector('input[name="assign_profile"]:checked')?.value;
-    // Assign stays off while the gateway is reserved, and after Home Assistant has refused once.
+    // Assign stays off while the gateway is reserved, and after another change saved meanwhile until the data are read again.
     let refused = false;
     // A tap or click on the choice already made takes it back (no choice, Assign off), «Nessun
     // profilo» too: A-01's own behaviour, one shared function; the keyboard keeps the radios' (Space never unticks).
@@ -2569,15 +2569,20 @@ export class CalibrationTab {
         this.refresh();
       } catch (error) {
         if (!current()) return;
-        box.textContent = assignError(t, error);
+        // A refusal without a text of its own says the change could not be confirmed and to try again (here Assign does).
+        const said = assignError(t, error);
+        box.textContent = said === t("profileError") ? t("calTabAssignRetry") : said;
         box.hidden = false;
         box.scrollIntoView?.({ block: "nearest" });
-        refused = true;
         // Another change saved meanwhile: as A-35, the data are read again and the window drawn on them, the
         // choice kept, Assign on again (wiz_T627); until then Assign stays off.
         if (error?.code === "revision_conflict") {
+          refused = true;
           state.retry = { entryId: item.entry.entry_id, revision: data.revision, choice, message: box.textContent };
           this._read(item.entry.entry_id, generation);
+        } else {
+          // Any other refusal: the choice stays and Assign is on again, a new tap tries the same write.
+          button.disabled = reserved || !chosen() || chosen() === item.cover.profile_id;
         }
       }
     };

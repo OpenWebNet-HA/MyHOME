@@ -608,6 +608,8 @@ export const translations = {
     calTabSlatsNone: "No slats",
     calTabFromProfile: "from the profile",
     calTabAssignKeepsPersonal: "Any opening or closing times set on this cover will be kept and used instead of the corresponding times in the selected profile.",
+    // «Cambia profilo» refused without a text of its own (the generic profileError): the choice stays, Assign on again.
+    calTabAssignRetry: "Unable to confirm the change. Try again.",
     calTabCompare: "Profile values and this cover’s values",
     // A cover calibrated without a profile, its values alone.
     calTabOwnValues: "This cover’s values",
@@ -1743,6 +1745,7 @@ export const translations = {
     calTabSlatsNone: "Nessuna lamella",
     calTabFromProfile: "dal profilo",
     calTabAssignKeepsPersonal: "Gli eventuali tempi di apertura e chiusura impostati su questa tapparella verranno mantenuti e usati al posto dei corrispondenti tempi del profilo scelto.",
+    calTabAssignRetry: "Impossibile confermare la modifica. Riprova.",
     calTabCompare: "Valori del profilo e di questa tapparella",
     calTabOwnValues: "Valori di questa tapparella",
     calTabCompareProfile: "Profilo",

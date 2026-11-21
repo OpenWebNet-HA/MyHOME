@@ -742,13 +742,96 @@ describe("refusals and A-35's sources", async () => {
     assert.equal(sheet().querySelector('input[name="assign_profile"][value="spare"]'), null);
     assert.equal(sheet().querySelector(".cal-assign-error").textContent, translations.it.wiz_T627);
     assert.equal(sheet().querySelector("[data-assign]").disabled, true, "nothing new chosen: Assign off");
-    // Another refusal (not a conflict): the same message as before, and Assign stays off.
+    // Another refusal (not a conflict): the same message as before, and Assign on again to retry.
     const other = sheet().querySelector('input[name="assign_profile"][value="manual"]');
     other.checked = true; other.dispatchEvent(new dom.window.Event("change", { bubbles: true })); await tick();
     context.backend.refuseNext("cover_unavailable");
     sheet().querySelector("[data-assign]").click(); await settle();
     assert.equal(sheet().querySelector(".cal-assign-error").textContent, translations.it.profileError_cover_unavailable);
-    assert.equal(sheet().querySelector("[data-assign]").disabled, true);
+    assert.equal(sheet().querySelector("[data-assign]").disabled, false);
+  });
+
+  /** The next profile write fails with `error` (a refusal, or the connection lost), then the backend answers again. */
+  function failNextWrite(context, error) {
+    const { hass } = context.backend, answer = hass.callWS;
+    hass.callWS = async (message) => {
+      if (message.type !== "myhome/cover_profiles/write") return answer(message);
+      hass.callWS = answer;
+      context.backend.calls.push(structuredClone(message));
+      throw error;
+    };
+  }
+
+  test("«Cambia profilo» refused for a passing reason says the change could not be confirmed, keeps the choice and Assign on: a new tap tries again and closes as usual", async () => {
+    const context = await mountPanel();
+    const sheet = await changeProfile(context);
+    const writes = () => context.backend.calls.filter((message) => message.type === "myhome/cover_profiles/write").length;
+    failNextWrite(context, Object.assign(new Error("no"), { code: "unknown_error" }));
+    sheet().querySelector("[data-assign]").click(); await settle();
+    assert.equal(context.backend.store.assignments[OFFICE], "living", "nothing written");
+    const box = sheet().querySelector(".cal-assign-error");
+    assert.equal(box.hidden, false);
+    assert.equal(box.textContent, translations.it.calTabAssignRetry, "no «Chiudi e riprova»: Assign tries again here");
+    assert.equal(sheet().querySelector('input[name="assign_profile"][value="spare"]').checked, true, "the choice kept");
+    const button = sheet().querySelector("[data-assign]");
+    assert.equal(button.disabled, false, "Assign on again");
+    // Refused again, with a text of its own: that text, and Assign on again.
+    context.backend.refuseNext("cover_unavailable");
+    button.click(); await settle();
+    assert.equal(writes(), 2, "the same write sent again");
+    assert.equal(box.textContent, translations.it.profileError_cover_unavailable);
+    assert.equal(box.hidden, false);
+    assert.equal(button.disabled, false, "Assign on again");
+    // A request on its way keeps Assign off (no double sending).
+    button.click();
+    assert.equal(button.disabled, true, "off while the request runs");
+    assert.equal(box.hidden, true, "the message hidden at the new attempt");
+    await settle();
+    assert.equal(writes(), 3);
+    assert.equal(context.backend.store.assignments[OFFICE], "spare", `${NAMES[OFFICE]} follows «Spare»`);
+    assert.equal(sheet(), null, "the window closed on the confirmation");
+  });
+
+  test("«Scollega il profilo» after the connection was lost: Assign on again, a new tap unlinks", async () => {
+    const context = await mountPanel();
+    const sheet = await changeProfile(context);
+    const none = sheet().querySelector('input[name="assign_profile"][value="__no_profile__"]');
+    none.checked = true; none.dispatchEvent(new dom.window.Event("change", { bubbles: true })); await tick();
+    const button = sheet().querySelector("[data-assign]");
+    assert.equal(button.textContent.trim(), translations.it.wiz_T406);
+    // Home Assistant's websocket rejects a lost connection with its own numeric code: no text of its own.
+    failNextWrite(context, { code: 3, message: "Connection lost" });
+    button.click(); await settle();
+    assert.equal(context.backend.store.assignments[OFFICE], "living", "nothing written");
+    assert.equal(sheet().querySelector(".cal-assign-error").textContent, translations.it.calTabAssignRetry);
+    assert.equal(none.checked, true, "the choice kept");
+    assert.equal(button.textContent.trim(), translations.it.wiz_T406, "still «Scollega il profilo»");
+    assert.equal(button.disabled, false, "on again");
+    button.click(); await settle();
+    assert.equal(context.backend.store.assignments[OFFICE], undefined, `${NAMES[OFFICE]} follows no profile`);
+    assert.equal(sheet(), null, "the window closed on the confirmation");
+  });
+
+  test("«Cambia profilo» refused for another change saved meanwhile keeps Assign off until the data are read again", async () => {
+    const context = await mountPanel();
+    const sheet = await changeProfile(context);
+    const { hass } = context.backend, answer = hass.callWS;
+    let release = null;
+    hass.callWS = (message) => (message.type === "myhome/cover_profiles/overview" && !release
+      ? new Promise((resolve) => { release = () => resolve(answer(message)); }) : answer(message));
+    context.backend.silentBump();
+    sheet().querySelector("[data-assign]").click(); await settle();
+    assert.ok(release, "the data are being read again");
+    assert.equal(sheet().querySelector(".cal-assign-error").textContent, translations.it.wiz_T627);
+    const button = sheet().querySelector("[data-assign]");
+    assert.equal(button.disabled, true, "off until the data are back");
+    const writes = context.backend.writes().length;
+    button.click(); await settle();
+    assert.equal(context.backend.writes().length, writes, "a tap meanwhile sends nothing");
+    hass.callWS = answer;
+    release(); await settle();
+    assert.equal(sheet().querySelector('input[name="assign_profile"][value="spare"]').checked, true, "the choice kept");
+    assert.equal(sheet().querySelector("[data-assign]").disabled, false, "on again once the data are back");
   });
 
   test("A-35 lists the source of another profile on; assigned, it follows the new profile and the other profile keeps its values, its source and its followers", async () => {
