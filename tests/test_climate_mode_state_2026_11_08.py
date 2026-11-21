@@ -174,7 +174,7 @@ def test_zone_of_the_central_keeps_its_mode_on_a_season_frame() -> None:
 # F3: 102 / 202 on #0 are protection in their season, and HEAT / COOL on #0 waits for the 3550.
 
 
-async def test_central_heat_shows_the_antifreeze_the_3550_answers() -> None:
+async def test_central_heat_leaves_thermal_protection_with_the_last_program() -> None:
     gateway = _gateway()
     central = _climate(gateway, "#0", standalone=None, central=True)
     _replay(central, _rx("f461_central_cool"))
@@ -182,21 +182,21 @@ async def test_central_heat_shows_the_antifreeze_the_3550_answers() -> None:
     assert central.extra_state_attributes["central_operation"] == "thermal_protection"
 
     await central.async_set_hvac_mode(HVACMode.HEAT)
-    assert _sent(gateway) == _tx("f461_central_heat")
+    assert _sent(gateway) == [*_tx("f461_central_heat"), "*4*3100*#0##"]
     assert central.hvac_mode == HVACMode.COOL  # nothing reported yet
-    _replay(central, _rx("f461_central_heat"))
+    _replay(central, ["*4*102*#0##", "*4*21*#0##", "*4*31*#0##", "*4*1101*#0##", "*4*21*#0##", "*4*31*#0##"])
     assert central.hvac_mode == HVACMode.HEAT
     assert central.hvac_action != HVACAction.OFF
     attributes = central.extra_state_attributes
-    assert attributes["central_operation"] == "antifreeze"
+    assert "central_operation" not in attributes
+    assert attributes["program"] == 1
     assert attributes["season"] == "heating"
     assert attributes["battery_fault"] is True
     assert attributes["remote_control"] == "enabled"
 
-    await central.async_set_hvac_mode(HVACMode.HEAT)  # second press: the 3550 sends nothing
-    assert _sent(gateway)[-1:] == _tx("f461_central_heat_second_press")
+    await central.async_set_hvac_mode(HVACMode.HEAT)  # second press: running in that season, season frame alone
+    assert _sent(gateway)[2:] == _tx("f461_central_heat_second_press")
     assert central.hvac_mode == HVACMode.HEAT
-    assert central.extra_state_attributes["central_operation"] == "antifreeze"
 
 
 def test_central_protection_does_not_switch_the_zones_off() -> None:

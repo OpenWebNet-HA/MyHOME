@@ -26,6 +26,7 @@ REVIEWED: dict[str, str] = {
     "climate_discovery.py::_zone_route_keys": "WHO 4 grammar: probe and pump WHERE are never route keys",
     "sensor.py::async_setup_entry.temperature_bus_address": "probe test is where_grammar.is_probe; sensors take the probe's frames",
     "sensor.py::async_setup_entry.route_keys": "sensors filter by measurement type, so a heating actuator frame reaches none",
+    "climate.py::MyHOMEClimate._note_central_reported_state": "WHO 4: only WHERE #0 is the central unit's own report (WHERE 0 is the general probes); it latches state, routes nothing",
     "gateway_events.py::GatewayEventDispatcher.process_message": "heating DIM 14 command: asks the WHERE it was sent to for its status",
     # Address derivation: the WHERE is the device's address, whichever WHO.
     "discovery.py::Address.from_message": "the address of a frame; each platform's address hook narrows it",

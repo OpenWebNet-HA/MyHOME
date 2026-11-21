@@ -170,10 +170,10 @@ Central units coordinate with the plant as follows:
     - `*4*3100*#0##` (Auto / restore scheduled programming command)
     - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
 
-    *(Note: `WHAT = 103` and `102` — Heating OFF and Antifreeze protection — are inbound status reports emitted by thermostats/central units on the bus, never outbound `#0` mode-switch commands.)*
+    *(Note: Home Assistant's mode switch on `#0` does not send `WHAT = 103` or `102` — Heating OFF and Antifreeze protection — it sends the frames listed above; they reach it as status reports from thermostats/central units on the bus.)*
 3. **Inbound Operating Mode & Status Broadcasts**: The physical central unit broadcasts events across the bus whenever its state changes:
 
-    - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling / Conditioning status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` / `*4*103*#0##` (OFF status), `*4*202*#0##` (Conditional OFF status), `*4*102*#0##` (Antifreeze status).
+    - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling / Conditioning status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` / `*4*103*#0##` (OFF status), `*4*202*#0##` (thermal protection status, conditioning season), `*4*102*#0##` (antifreeze status, heating season). Thermal protection and antifreeze are not OFF: the central unit keeps its season and holds the protection setpoint, so the entity shows `cool` / `heat` with the attribute `central_operation` (`thermal_protection` / `antifreeze`). A `3550` answers a season frame with that season's protection and stays there, or answers nothing when it is already in that season, in protection or off; that is why `heat` / `cool` on `#0` follow the season frame with `*4*3100*#0##` when the central unit has reported protection, off or the other season (live F461 + F455, 2026-11-18).
     - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
     - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
     - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).

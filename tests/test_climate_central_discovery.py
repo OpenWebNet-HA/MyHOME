@@ -309,8 +309,8 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
     assert str(gateway.send_status_request.call_args[0][0]) == "*#4*#0##"
 
     # 2. Command path: setting mode via HA emits central commands and dispatches signal.
-    # HEAT / COOL only change the season: the mode shown comes from the 3550's answer
-    # (antifreeze / thermal protection, live 3550 2026-11-08).
+    # Nothing is known about the central unit at this point, so HEAT sends the season
+    # frame only; the mode shown comes from the 3550's answer (live 3550 2026-11-08).
     await cu.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*4*1*#0##"
@@ -320,8 +320,7 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
     assert central_mode_events[-1] == HVACMode.HEAT
 
     await cu.async_set_hvac_mode(HVACMode.COOL)
-    sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*0*#0##"
+    assert [str(call.args[0]) for call in gateway.send.call_args_list[-2:]] == ["*4*0*#0##", "*4*3100*#0##"]
     assert cu.hvac_mode == HVACMode.HEAT
     cu.handle_event(OWNHeatingEvent("*4*202*#0##"))
     assert cu.hvac_mode == HVACMode.COOL

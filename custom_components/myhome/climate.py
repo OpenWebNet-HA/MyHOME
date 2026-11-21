@@ -473,6 +473,24 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # and the echo frame once seen (the same frame object can be delivered more than once).
         self._central_echo: tuple[str, float | None, float] | None = None
         self._central_echo_seen: object | None = None
+        # The same for the restore command that follows a season command.
+        self._central_restore_echo: tuple[str, float | None, float] | None = None
+        self._central_restore_echo_seen: object | None = None
+        # The write futures still awaited for a slot: its echo can come as soon as the frame is
+        # written, before the future resolves, however long the frame waited in the queue.
+        self._central_echo_writes: dict[str, asyncio.Future[Any]] = {}
+        # Central unit: what it REPORTED in this session, never what is shown or saved. True in
+        # protection or off, False running a program or a manual setpoint, None before any report;
+        # the season it reported and when. They decide whether `heat` / `cool` restore the program.
+        self._central_reported_idle: bool | None = None
+        self._central_reported_season: str | None = None
+        self._central_reported_season_at: float | None = None
+        # The gateway's ``central_season_learned_at`` when it learned its season from this entity's
+        # own echoed command (the dispatcher stores it before the echo is filtered): that season
+        # is not the plant's while the gateway has learned nothing since. Not persisted.
+        self._central_echo_season_learned_at: float | None = None
+        # One #0 command at a time: nothing is written between the season frame and its restore.
+        self._central_command_lock = asyncio.Lock()
         self._program: int | None = None
         self._holiday_days: int | None = None
         self._scenario: int | None = None
@@ -2727,50 +2745,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 HVACMode.AUTO: "auto",
             }
             cmd_mode = mode_map.get(hvac_mode)
-            if cmd_mode:
-                command = OWNHeatingCommand.set_central_mode(
-                    where=self._where,
-                    mode=cmd_mode,
-                )
-                # Armed before sending, without a deadline: the echo can arrive while the frame
-                # waits in the command pool or while send() is still awaited. The window starts
-                # when the frame is written (the ``written`` future's result), not now, so a busy
-                # CommandWorkerPool does not push the echo out of it.
-                frame = str(command)
-                armed_at = time.monotonic()
-                self._central_echo = (frame, None, armed_at)
-                try:
-                    written: Any = await self._gateway_handler.send(command)
-                except BaseException:
-                    self._central_echo = None
-                    raise
-                if isinstance(written, asyncio.Future):
-
-                    def _on_written(future: "asyncio.Future[float]", armed_at: float = armed_at) -> None:
-                        self._anchor_central_echo(armed_at, future)
-
-                    written.add_done_callback(_on_written)
-                else:
-                    self._anchor_central_echo(armed_at, None)
-                if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
-                    # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
-                    # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
-                    # or nothing when the season does not change (live F461 and F455,
-                    # 2026-11-08), so the mode shown comes from that answer. A 4-zone
-                    # central (#0#1..#0#4) is not polled and its reports are routed to the
-                    # zone, so it keeps the mode it was set to.
-                    return
-                self._central_operation = None
-                if hvac_mode == HVACMode.OFF:
-                    self._attr_hvac_action = HVACAction.OFF
-                self._attr_hvac_mode = hvac_mode
-                if self.hass is not None:
-                    self.async_write_ha_state()
-                    async_dispatcher_send(
-                        self.hass,
-                        f"myhome_central_mode_{self._gateway_handler.mac}",
-                        hvac_mode,
-                    )
+            if cmd_mode and self._where.removeprefix("4-") in ("#0", "0"):
+                # The season frame and its restore are one operation: a later command of this
+                # entity is written after both.
+                async with self._central_command_lock:
+                    await self._set_central_unit_mode(hvac_mode, cmd_mode)
+            elif cmd_mode:
+                await self._set_central_unit_mode(hvac_mode, cmd_mode)
             return
 
         if hvac_mode == HVACMode.OFF:
@@ -2889,13 +2870,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         )
         if self._central:
             mode = "heat" if self._attr_hvac_mode != HVACMode.COOL else "cool"
-            await self._gateway_handler.send(
-                OWNHeatingCommand.set_central_temperature(
-                    where=self._where,
-                    temperature=target_temperature,
-                    mode=mode,
-                )
+            setpoint = OWNHeatingCommand.set_central_temperature(
+                where=self._where,
+                temperature=target_temperature,
+                mode=mode,
             )
+            if self._where.removeprefix("4-") in ("#0", "0"):
+                # Not between a season frame and its restore (``async_set_hvac_mode``).
+                async with self._central_command_lock:
+                    await self._gateway_handler.send(setpoint)
+            else:
+                await self._gateway_handler.send(setpoint)
             self._target_temperature = target_temperature
             self._local_target_base = None
             self._nominal_from_dim12 = False
@@ -3048,8 +3033,173 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         ):
             self._show_nominal()
 
+    async def _set_central_unit_mode(self, hvac_mode: HVACMode, cmd_mode: str) -> None:
+        """Send the central unit command for ``hvac_mode`` (``cmd_mode`` is OWNd's name of it)."""
+        command = OWNHeatingCommand.set_central_mode(
+            where=self._where,
+            mode=cmd_mode,
+        )
+        if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
+            # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
+            # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
+            # or nothing when the season does not change (live F461 and F455,
+            # 2026-11-08), so the mode shown comes from that answer. A 4-zone
+            # central (#0#1..#0#4) is not polled and its reports are routed to the
+            # zone, so it keeps the mode it was set to.
+            # Decided before the season frame goes out, on what the central unit reported.
+            leaves_idle = self._season_command_leaves_central_idle(hvac_mode)
+            # The restore follows only a season frame that was written: the frame is awaited.
+            await self._send_central_command(command, "_central_echo", written_required=True)
+            # Decision of 2026-11-18: the season frame alone leaves a 3550 in protection
+            # or off; the last weekly program right behind it starts the program of that
+            # season (live 3550 through F461 and F455, 2026-11-18).
+            # The decision is taken again after the season frame was written: a report of the
+            # central unit that came in while it waited (a manual setpoint) must not be replaced.
+            if leaves_idle and self._season_command_leaves_central_idle(hvac_mode):
+                restore = OWNHeatingCommand.set_central_mode(where=self._where, mode="auto")
+                await self._send_central_command(restore, "_central_restore_echo", written_required=True)
+            return
+        await self._send_central_command(command, "_central_echo")
+        self._central_operation = None
+        if hvac_mode == HVACMode.OFF:
+            self._attr_hvac_action = HVACAction.OFF
+        self._attr_hvac_mode = hvac_mode
+        if self.hass is not None:
+            self.async_write_ha_state()
+            async_dispatcher_send(
+                self.hass,
+                f"myhome_central_mode_{self._gateway_handler.mac}",
+                hvac_mode,
+            )
+
+    def _season_command_leaves_central_idle(self, hvac_mode: HVACMode) -> bool:
+        """Whether the season frame for ``hvac_mode`` alone would leave the 99-zone central unit idle.
+
+        Decided on what the central unit itself REPORTED in this session, never on what is shown
+        (an ``off`` asked for but not reported) or what was saved before a restart. True when it
+        reported protection or off, or a season other than the one requested: a 3550 then stays
+        in (or falls into) protection, so the last weekly program must follow. False when nothing
+        is known from the central unit (no report yet, or only the restored state) or when it
+        reported running in the requested season: the restore would replace a manual setpoint
+        by the program.
+        """
+        if self._central_reported_idle is True:
+            return True
+        season = self._central_reported_season
+        # A newer report of the central unit about one of its zones (``*4*210*#4##``) is its
+        # season too. The gateway keeps it from the local central unit's reports only: a
+        # standalone zone and a frame from behind an interface do not set it
+        # (``note_central_unit_report``). It is newer when the gateway learned it (also from None
+        # after a reconnect) after the entity's own report. A season the gateway learned from this
+        # entity's own echoed command is not a report (``_is_own_central_echo``).
+        plant_season = getattr(self._gateway_handler, "central_season", None)
+        learned_at = getattr(self._gateway_handler, "central_season_learned_at", None)
+        learned_from_echo = (
+            isinstance(learned_at, (int, float)) and learned_at == self._central_echo_season_learned_at
+        )
+        if (
+            isinstance(plant_season, str)
+            and not learned_from_echo
+            and (
+                self._central_reported_season_at is None
+                or (isinstance(learned_at, (int, float)) and learned_at > self._central_reported_season_at)
+            )
+        ):
+            season = plant_season
+        if season is None:
+            return False
+        return (season == SEASON_HEATING) != (hvac_mode == HVACMode.HEAT)
+
+    def _note_central_reported_state(self, message: OWNHeatingEvent, idle: bool | None) -> None:
+        """Keep what a report of the central unit itself says: ``idle`` (None: unchanged) and its season."""
+        # WHERE 0 is the general probes, not the central unit #0 (WHO 4 WHERE table).
+        if str(getattr(message, "where", "") or "").strip().removeprefix("4-") != "#0":
+            return
+        if idle is not None:
+            self._central_reported_idle = idle
+        season = getattr(message, "season", None)
+        if isinstance(season, str):
+            self._central_reported_season = season
+            self._central_reported_season_at = time.monotonic()
+
+    async def _send_central_command(self, command: Any, slot: str, *, written_required: bool = False) -> None:
+        """Send a central unit command with the echo filter armed for it in ``slot``.
+
+        With ``written_required`` (the season frame and its restore) the delivery future the
+        gateway hands back is awaited: a frame that is not written (cancelled, refused by a
+        NACK, failed) raises ``HomeAssistantError`` and only the echo armed by this call is
+        cleared. Without a future (a gateway double, a delegated send) nothing is awaited.
+        """
+        # Armed before sending, without a deadline: the echo can arrive while the frame
+        # waits in the command pool or while send() is still awaited. The window starts
+        # when the frame is written (the ``written`` future's result), not now, so a busy
+        # CommandWorkerPool does not push the echo out of it.
+        frame = str(command)
+        armed_at = time.monotonic()
+        setattr(self, slot, (frame, None, armed_at))
+        try:
+            written: Any = await self._gateway_handler.send(command)
+        except BaseException:
+            self._disarm_central_echo(slot, armed_at)
+            raise
+        if not isinstance(written, asyncio.Future):
+            self._anchor_central_echo(armed_at, None, slot)
+            return
+
+        def _on_written(future: "asyncio.Future[float]", armed_at: float = armed_at) -> None:
+            if self._central_echo_writes.get(slot) is future:
+                del self._central_echo_writes[slot]
+            self._anchor_central_echo(armed_at, future, slot)
+
+        if written_required and not written.done():
+            self._central_echo_writes[slot] = written
+        written.add_done_callback(_on_written)
+        if not written_required:
+            return
+        # Not ``await written``: a cancelled future would raise CancelledError, and a cancelled
+        # service call must not cancel the frame (its echo stays recognised when it is written).
+        await asyncio.wait((written,), timeout=SETPOINT_DELIVERY_TIMEOUT)
+        if not written.done():
+            # No worker wrote it in time (one that ended before dequeueing it, for one): the
+            # frame is withdrawn, it must not go out after the call has returned.
+            written.cancel()
+            if self._central_echo_writes.get(slot) is written:
+                del self._central_echo_writes[slot]
+            self._disarm_central_echo(slot, armed_at)
+            raise HomeAssistantError(
+                f"{self._display_name}: the gateway did not write {frame} within 15 seconds; it was withdrawn",
+                translation_domain=DOMAIN,
+                translation_key="central_command_not_written",
+                translation_placeholders={"name": self._display_name, "frame": frame},
+            )
+        if written.cancelled() or written.exception() is not None:
+            cause = None if written.cancelled() else written.exception()
+            if getattr(written, "_gateway_nack", False) is True:
+                raise HomeAssistantError(
+                    f"{self._display_name}: the gateway refused {frame}",
+                    translation_domain=DOMAIN,
+                    translation_key="central_command_refused",
+                    translation_placeholders={"name": self._display_name, "frame": frame},
+                ) from cause
+            # No NACK: the acknowledgement may only have been lost, the frame may have arrived.
+            raise HomeAssistantError(
+                f"{self._display_name}: the gateway did not confirm {frame}; it may still have reached the central unit",
+                translation_domain=DOMAIN,
+                translation_key="central_command_unconfirmed",
+                translation_placeholders={"name": self._display_name, "frame": frame},
+            ) from cause
+
     @callback
-    def _anchor_central_echo(self, armed_at: float, written: "asyncio.Future[float] | None") -> None:
+    def _disarm_central_echo(self, slot: str, armed_at: float) -> None:
+        """Clear ``slot`` if it still holds the command armed at ``armed_at``, not a later one."""
+        echo: tuple[str, float | None, float] | None = getattr(self, slot)
+        if echo is not None and echo[2] == armed_at:
+            setattr(self, slot, None)
+
+    @callback
+    def _anchor_central_echo(
+        self, armed_at: float, written: "asyncio.Future[float] | None", slot: str = "_central_echo"
+    ) -> None:
         """Start the echo window at the time the command was written (MyHOMEGatewayHandler.send).
 
         The future resolves to the monotonic time taken just before the frame went on the
@@ -3058,17 +3208,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         command armed at ``armed_at`` is anchored: a later command, even the same frame, keeps
         waiting for its own write.
         """
-        echo = self._central_echo
+        echo: tuple[str, float | None, float] | None = getattr(self, slot)
         if echo is None or echo[2] != armed_at:
             return
         frame = echo[0]
         if written is None:
-            self._central_echo = (frame, time.monotonic() + _CENTRAL_ECHO_WINDOW, echo[2])
+            setattr(self, slot, (frame, time.monotonic() + _CENTRAL_ECHO_WINDOW, echo[2]))
             return
         if written.cancelled() or written.exception() is not None:
-            self._central_echo = None
+            setattr(self, slot, None)
             return
-        self._central_echo = (frame, float(written.result()) + _CENTRAL_ECHO_WINDOW, echo[2])
+        setattr(self, slot, (frame, float(written.result()) + _CENTRAL_ECHO_WINDOW, echo[2]))
 
     @callback
     def _is_own_central_echo(self, message: OWNHeatingEvent) -> bool:
@@ -3084,22 +3234,35 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         every frame equal to the command inside the window is the echo, and the same object
         stays recognised after it.
         """
-        if message is self._central_echo_seen:
+        # Each slot remembers the echo object it recognised: the season frame's echo stays
+        # one when the restore's echo is recognised after it.
+        if message is self._central_echo_seen or message is self._central_restore_echo_seen:
             return True
-        echo = self._central_echo
-        if echo is None:
-            return False
-        frame, deadline, armed_at = echo
         now = time.monotonic()
-        if (deadline is None and now - armed_at > _CENTRAL_ECHO_PENDING_LIMIT) or (
-            deadline is not None and now > deadline
-        ):
-            self._central_echo = None
-            return False
-        if str(message) != frame:
-            return False
-        self._central_echo_seen = message
-        return True
+        for slot in ("_central_echo", "_central_restore_echo"):
+            echo: tuple[str, float | None, float] | None = getattr(self, slot)
+            if echo is None:
+                continue
+            frame, deadline, armed_at = echo
+            pending = self._central_echo_writes.get(slot)
+            # A season frame or restore whose write is still awaited is not expired: it can be
+            # written (and echoed) after a long wait in the queue.
+            if (
+                deadline is None
+                and now - armed_at > _CENTRAL_ECHO_PENDING_LIMIT
+                and (pending is None or pending.done())
+            ) or (deadline is not None and now > deadline):
+                setattr(self, slot, None)
+                continue
+            if str(message) == frame:
+                setattr(self, f"{slot}_seen", message)
+                # The gateway's dispatcher ran first and may have stored this echo's season:
+                # a value learned since the command was armed came from the echo.
+                learned_at = getattr(self._gateway_handler, "central_season_learned_at", None)
+                if isinstance(learned_at, (int, float)) and learned_at >= armed_at:
+                    self._central_echo_season_learned_at = learned_at
+                return True
+        return False
 
     def _is_central_addressed_mode_frame(self, message: OWNHeatingEvent) -> bool:
         """Whether a mode / season frame for a standalone zone is in the ``#Z`` (via central unit) form.
@@ -3407,6 +3570,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             previous_season = self._season
             self._season = message.season
             self._season_reported = True
+            if self._central:
+                # The season only: neither protection nor off, and a reported off stays.
+                self._note_central_reported_state(message, None)
             self._note_own_season(message)
             self._refresh_hvac_modes()
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
@@ -3464,6 +3630,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 protection = _CENTRAL_PROTECTION["102" if self._season == SEASON_HEATING else "202"]
             if self._central:
                 self._central_operation = protection[0] if protection is not None else None
+                # Protection or off is idle; a program or a mode only with its season
+                # (``*4*1101*#0##``): a seasonless ``*4*311*#0##`` is also another client's
+                # command, which a 3550 did not act on (central_restore_3100_live_2026-11-12).
+                if protection is not None or message.mode == CLIMATE_MODE_OFF:
+                    reported_idle: bool | None = True
+                elif isinstance(getattr(message, "season", None), str):
+                    reported_idle = False
+                elif self._holiday_days is not None and "#" not in raw_what:
+                    # A vacation report (*4*33003*#0##) runs a schedule; the activation
+                    # command carries a return program (*4*33002#3103*#0##), the report none.
+                    reported_idle = False
+                else:
+                    reported_idle = None
+                self._note_central_reported_state(message, reported_idle)
             if protection is not None:
                 # *4*102*#0## / *4*202*#0## is the central unit in antifreeze / thermal
                 # protection (WHO 4 p. 5, p. 64): the plant keeps its season and holds the
@@ -3530,6 +3710,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._unpaired_dim12_at = None
             if self._central:
                 self._central_operation = None
+                # A manual setpoint (``*4*110#0180*#0##``) runs; off is idle.
+                if message.mode == CLIMATE_MODE_OFF:
+                    self._note_central_reported_state(message, True)
+                else:
+                    self._note_central_reported_state(
+                        message, False if isinstance(getattr(message, "season", None), str) else None
+                    )
             self._hvac_mode_restored = False
             prev_mode = self._attr_hvac_mode
             self._remember_season(message)

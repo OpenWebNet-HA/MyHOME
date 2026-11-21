@@ -518,6 +518,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     # ``__init__`` reads them too.
     _central_season: str | None = None
     central_season_changed_at: float | None = None
+    central_season_learned_at: float | None = None
 
     def __init__(
         self,
@@ -567,6 +568,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         # it has only been learned. Its zones follow a change one after the other, so none is
         # compared with the new season at once (climate ``CENTRAL_SEASON_SETTLE``).
         self.central_season_changed_at = None
+        # When a season was last stored that differs from the one held (``time.monotonic()``):
+        # learned from None (also after a reconnect) or changed; None until the first one. It
+        # tells the central unit's entity which of its own report and this season is newer.
+        self.central_season_learned_at = None
 
         self._who13: dict[str, Any] = {
             "code": None, "model": None, "model_official": None, "model_observed": None,
@@ -631,6 +636,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     def central_season(self, season: str | None) -> None:
         if season is not None and self._central_season is not None and season != self._central_season:
             self.central_season_changed_at = time.monotonic()
+        if season is not None and season != self._central_season:
+            self.central_season_learned_at = time.monotonic()
         self._central_season = season
 
     @property
