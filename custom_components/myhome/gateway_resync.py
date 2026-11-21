@@ -5,8 +5,10 @@ lighting frames, and manages group echo cancellation.
 """
 from __future__ import annotations
 
+import asyncio
 import collections
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -19,6 +21,9 @@ from .const import (
     LOGGER,
     RESYNC_DEBOUNCE_S,
     RESYNC_LEADING_WINDOW_S,
+    RESYNC_REPLY_GRACE_S,
+    RESYNC_STORM_SWEEPS,
+    RESYNC_STORM_WINDOW_S,
     area_of_where,
     normalize_where,
 )
@@ -26,6 +31,14 @@ from .discovery import Address, parse_unique_id
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
+
+
+@dataclass
+class _SweepStorm:
+    """A scope that was swept `RESYNC_STORM_SWEEPS` times in a row for one state."""
+
+    last_activity: float
+    trailing_done: bool = False
 
 
 class LightingResyncManager:
@@ -57,6 +70,14 @@ class LightingResyncManager:
         # dim step): then both ON and OFF member echoes count towards cancelling.
         self._resync_expected_on: dict[str, bool | None] = {}
         self._resync_echoed_members: dict[str, set[str]] = {}
+        # Scope -> (monotonic time its status request was queued, state of the command
+        # it reads back), until the request is closed (ACK, NACK, dropped); then
+        # scope -> (end of the reply grace, that state).
+        self._own_sweeps: dict[str, tuple[float, bool | None]] = {}
+        self._reply_guard: dict[str, tuple[float, bool | None]] = {}
+        # (scope, commanded state) -> times of its last sweeps / its storm, if any.
+        self._sweep_times: dict[tuple[str, bool], collections.deque[float]] = {}
+        self._sweep_storms: dict[tuple[str, bool], _SweepStorm] = {}
 
     @property
     def hass(self) -> HomeAssistant:
@@ -243,6 +264,83 @@ class LightingResyncManager:
             return known.issubset(echoed_wheres)
         return True
 
+    def _is_own_sweep_reply(self, where: str, msg_is_on: bool | None, now: float) -> bool:
+        """Return True when a scope frame is the answer to this gateway's own status request.
+
+        The reply to `*#1*<where>##` is `*1*<status>*<where>##` on the command and the
+        event session (WHO 1 PDF, 3.3.1). For a scope that is, frame for frame, a scope
+        command: a physical F461 2.0.11 and F455 1.0.76 answered `*#1*00##` with
+        `*1*0*00##` frames between the point statuses, each one armed the next
+        `*#1*00##`, and the poll never stopped (live, 2026-11-18).
+
+        So while the request for `where` is queued or being answered, and for
+        `RESYNC_REPLY_GRACE_S` after it is closed, a frame for `where` that states the
+        ON/OFF of the command being read back is taken as its answer. One that states
+        the other is a new command (a group switched on and off again within a second)
+        and is swept; its own answers then match it, so the chain ends there. A dim
+        step states neither and is never an answer.
+        """
+        if not isinstance(msg_is_on, bool):
+            return False
+        own = self._own_sweeps.get(where)
+        if own is not None:
+            if now - own[0] <= RESYNC_STORM_WINDOW_S:
+                return own[1] == msg_is_on
+            # The request's future never closed (worker gone): do not stay deaf.
+            self._own_sweeps.pop(where, None)
+        guard = self._reply_guard.get(where)
+        if guard is not None:
+            if now <= guard[0]:
+                return guard[1] == msg_is_on
+            self._reply_guard.pop(where, None)
+        return False
+
+    def _sweep_answered(self, where: str, started: float) -> None:
+        """Close the reply window of the status request queued at `started`."""
+        own = self._own_sweeps.get(where)
+        if own is None or own[0] != started:
+            return
+        self._own_sweeps.pop(where, None)
+        self._reply_guard[where] = (float(self._time.monotonic()) + RESYNC_REPLY_GRACE_S, own[1])
+
+    def _sweep_delay(self, where: str, expected_on: bool | None, now: float) -> float | None:
+        """Return the debounce for a sweep of `where`, or None when it must not be armed.
+
+        A scope swept `RESYNC_STORM_SWEEPS` times inside `RESYNC_STORM_WINDOW_S` for the
+        same commanded state is in a storm: something on the bus keeps repeating the
+        scope frame (the answer to another client's status request on a shared bus looks
+        like one). It then gets a single sweep once it has been quiet for the window,
+        so the last command is still read back, and nothing more until it has been
+        quiet for the window again. A dim step (no commanded state) is never held: a
+        long press is a train of them and each pause must be read back (#367).
+        """
+        if expected_on is None:
+            return RESYNC_DEBOUNCE_S
+        key = (where, expected_on)
+        storm = self._sweep_storms.get(key)
+        if storm is not None:
+            if now - storm.last_activity <= RESYNC_STORM_WINDOW_S:
+                storm.last_activity = now
+                return None if storm.trailing_done else RESYNC_STORM_WINDOW_S
+            self._sweep_storms.pop(key, None)
+            self._sweep_times.pop(key, None)
+        times = self._sweep_times.get(key)
+        while times and times[0] < now - RESYNC_STORM_WINDOW_S:
+            times.popleft()
+        if times is not None and len(times) >= RESYNC_STORM_SWEEPS:
+            self._sweep_storms[key] = _SweepStorm(last_activity=now)
+            LOGGER.warning(
+                "%s Lighting scope %s was swept %d times in %.0f s for the same command; "
+                "holding its status request until the bus has been quiet for %.0f s.",
+                self.handler.log_id,
+                where,
+                RESYNC_STORM_SWEEPS,
+                RESYNC_STORM_WINDOW_S,
+                RESYNC_STORM_WINDOW_S,
+            )
+            return RESYNC_STORM_WINDOW_S
+        return RESYNC_DEBOUNCE_S
+
     def schedule_resync(self, message: Any) -> None:
         """Schedule a debounced state resynchronization sweep."""
         if not getattr(self.handler, "broadcast_resync", True):
@@ -280,6 +378,9 @@ class LightingResyncManager:
         group_seed_echoes: dict[str, set[str]] = {}
         if getattr(message, "is_group", False):
             group_key = self._normalize_group_key(message.group, self._message_interface(message))
+            if self._is_own_sweep_reply(group_key, msg_is_on, now):
+                LOGGER.debug("%s group %s frame answers our own status request, not sweeping", self.handler.log_id, group_key)
+                return
             members = self._group_members.get(group_key)
             latest_grp_pol: dict[str, bool | None] = {}
             for t, w, _ in self._recent_ptp:
@@ -308,6 +409,9 @@ class LightingResyncManager:
             targets.append(group_key)
         elif getattr(message, "is_area", False):
             raw_where = str(message.where)
+            if self._is_own_sweep_reply(raw_where, msg_is_on, now):
+                LOGGER.debug("%s area %s frame answers our own status request, not sweeping", self.handler.log_id, raw_where)
+                return
             leading_echoes = _leading_echoes_for_area(raw_where)
             if self._area_fully_echoed(raw_where, leading_echoes):
                 LOGGER.debug("%s area %s had leading member echoes, skipping sweep", self.handler.log_id, raw_where)
@@ -333,9 +437,16 @@ class LightingResyncManager:
         call_later = getattr(gw_module, "async_call_later", async_call_later)
 
         for where in targets:
+            expected_on = msg_is_on if isinstance(msg_is_on, bool) else None
+            delay = self._sweep_delay(where, expected_on, now)
+            if delay is None:
+                # In a storm, after its one late sweep: a timer still armed for the
+                # scope (another commanded state) is left to run.
+                LOGGER.debug("%s scope %s is held after repeated sweeps, not sweeping", self.handler.log_id, where)
+                continue
             if where in self._resync_timers:
                 self._resync_timers.pop(where)()
-            self._resync_expected_on[where] = msg_is_on if isinstance(msg_is_on, bool) else None
+            self._resync_expected_on[where] = expected_on
             if where.startswith("#"):
                 seeded = set(group_seed_echoes.get(where, set()))
                 self._resync_echoed_members[where] = seeded
@@ -347,7 +458,7 @@ class LightingResyncManager:
             def _cb(_now_cb: Any, w: str = where) -> None:
                 self.hass.async_create_task(self.handler._resync_broadcast(w))
 
-            self._resync_timers[where] = call_later(self.hass, RESYNC_DEBOUNCE_S, _cb)
+            self._resync_timers[where] = call_later(self.hass, delay, _cb)
 
     _schedule_resync = schedule_resync
 
@@ -357,11 +468,29 @@ class LightingResyncManager:
         self._resync_group_echoes.pop(where, None)
         self._resync_area_echoes.pop(where, None)
         self._resync_echoed_members.pop(where, None)
-        self._resync_expected_on.pop(where, None)
+        expected_on = self._resync_expected_on.pop(where, None)
         if getattr(self.handler, "_terminate_listener", False):
             return
 
-        await self.handler.send_status_request(OWNLightingCommand.status(where))
+        now = float(self._time.monotonic())
+        if isinstance(expected_on, bool):
+            key = (where, expected_on)
+            self._sweep_times.setdefault(key, collections.deque(maxlen=RESYNC_STORM_SWEEPS)).append(now)
+            storm = self._sweep_storms.get(key)
+            if storm is not None:
+                storm.trailing_done = True
+                storm.last_activity = now
+        written = await self.handler.send_status_request(OWNLightingCommand.status(where))
+        if isinstance(written, asyncio.Future):
+            # From here until the request is closed, a frame for this scope that states
+            # the command being read back is its answer (`_is_own_sweep_reply`).
+            self._own_sweeps[where] = (now, expected_on)
+            self._reply_guard.pop(where, None)
+
+            def _answered(_fut: asyncio.Future[Any], w: str = where, started: float = now) -> None:
+                self._sweep_answered(w, started)
+
+            written.add_done_callback(_answered)
 
     _execute_resync = execute_resync
     _resync_broadcast = execute_resync
@@ -377,3 +506,7 @@ class LightingResyncManager:
         self._resync_expected_on.clear()
         self._recent_ptp.clear()
         self._ptp_polarities.clear()
+        self._own_sweeps.clear()
+        self._reply_guard.clear()
+        self._sweep_times.clear()
+        self._sweep_storms.clear()

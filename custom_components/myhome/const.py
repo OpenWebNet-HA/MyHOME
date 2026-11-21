@@ -283,6 +283,18 @@ SOFTWARE_TRANSITION_MAX_STEPS = 25
 # Debounce window for reactive group / area / general broadcast re-sync (issue #368)
 RESYNC_DEBOUNCE_S = 0.5
 RESYNC_LEADING_WINDOW_S = 1.5
+# A status request answers with `*1*<status>*<where>##` on the command and the event
+# session (WHO 1 PDF, 3.3.1), so the reply to a sweep can carry the scope's own WHERE:
+# a physical F461 / F455 answered `*#1*00##` with `*1*0*00##` next to the point
+# statuses. That is the frame of a real area command too. Scope frames for a scope this
+# gateway is asking about, up to this long after the request is closed, are its answer.
+RESYNC_REPLY_GRACE_S = 0.5
+# Sweeps of one scope, for one commanded state, inside the window before the scope is
+# held: it then gets one more sweep once it has been quiet for the window, and nothing
+# else until then. Bounds what any reply-shaped frame can cost (another client's
+# sweep answered on a shared bus, a gateway quirk not seen yet).
+RESYNC_STORM_SWEEPS = 3
+RESYNC_STORM_WINDOW_S = 30.0
 
 # Pacing delay between member commands during scope cover fan-out (prevents F422 buffer overflow)
 PACED_FANOUT_DELAY = 0.3

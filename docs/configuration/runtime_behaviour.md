@@ -75,6 +75,23 @@ Instead, the integration debounces across a bidirectional window:
     - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
       (`light` or `switch` in the entity registry), never `*#1*0##`.
 
+A status request is answered with `*1*<status>*<where>##` frames, on the command and on
+the event session, and for a scope that is the frame of a scope command: a physical F461
+(2.0.11) and F455 (1.0.76) answered `*#1*00##` with `*1*0*00##` frames between the point
+statuses. Two rules keep an answer from starting the next sweep:
+
+- While the integration's own request for a scope is queued or being answered, and for
+  0.5 s after the gateway closes it (`RESYNC_REPLY_GRACE_S`), a frame for that scope that
+  states the ON/OFF of the command being read back is its answer. A frame that states
+  the other (the scope switched back within a second) is a new command and is swept.
+- A scope is swept at most 3 times in 30 s for the same commanded state
+  (`RESYNC_STORM_SWEEPS`, `RESYNC_STORM_WINDOW_S`). After that it gets one more sweep
+  once it has been quiet for 30 s, so the last command is still read back, and nothing
+  else until it has been quiet for 30 s again; a warning names the scope. This is what
+  ends the exchange when another client on the same bus (a second Home Assistant, for
+  example) sweeps the scope and its answer is seen here. Dim steps (`WHAT` 30 / 31) are
+  never held.
+
 Disable this with **Sweep group/area/general light addresses for status** in the
 Options Flow if your gateway lags on repeated status requests.
 
