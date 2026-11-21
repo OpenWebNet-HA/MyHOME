@@ -25,6 +25,7 @@ from homeassistant.const import CONF_NAME
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from OWNd.message import OWNCommand, OWNEvent, OWNLightingCommand, OWNMessage
 
+from custom_components.myhome.access_policy import Intent
 from custom_components.myhome.const import (
     CONF_ADVANCED_SHUTTER,
     CONF_ENTITY,
@@ -1108,5 +1109,285 @@ async def test_who14_impulse_cover_offline_unlock_in_echo_window(hass) -> None:
         with pytest.raises(HomeAssistantError):
             await gate.async_open_cover()
         assert gate._locked_pulse_pending_intent is None
+    finally:
+        await gate.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_unlock_preserves_unlocked_motion_and_clears_idle_recovery(hass) -> None:
+    """Unlock events must not cancel unlocked runs or already-started recovery."""
+    gw = _gateway()
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Shutter Unlock Guard",
+            entity_name=None,
+            device_id="05",
+            who="2",
+            where="05",
+            interface=None,
+            advanced=False,
+            slat_tilt=True,
+            slat_time=0.5,
+            min_motor_pulse=0.05,
+            manufacturer="BTicino",
+            model="F411/2",
+            gateway=gw,
+            travel_time=1.0,
+        )
+    cover.hass = hass
+    cover.entity_id = "cover.shutter_unlock_guard"
+    cover.async_write_ha_state = MagicMock()
+    cover.async_schedule_update_ha_state = MagicMock()
+
+    try:
+        # 1. Unlocked timed position run is untouched by General/explicit unlock
+        cover._actuator_locked = False
+        cover._attr_current_cover_position = 0
+        cover._start_position = 0
+        cover._attr_current_cover_tilt_position = 0
+        await cover.async_set_cover_position(position=50)
+        cover.handle_event(OWNMessage.parse("*2*1*05##"))
+        task = cover._stop_task
+        assert task is not None and not task.done()
+        cover.handle_actuator_lock(False)
+        assert cover._stop_task is task and not task.cancelled()
+        await asyncio.wait_for(task, timeout=3.0)
+        assert "*2*0*05##" in gw.sent
+        assert 45 <= (cover.current_cover_position or 0) <= 60
+
+        # 2. Unlocked Venetian tilt pulse is untouched by unlock
+        gw.sent.clear()
+        cover._attr_current_cover_tilt_position = 0
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+        tilt_task = cover._stop_task
+        assert tilt_task is not None and not tilt_task.done()
+        cover.handle_actuator_lock(False)
+        assert cover._stop_task is tilt_task and not tilt_task.cancelled()
+        await asyncio.wait_for(tilt_task, timeout=2.0)
+        assert "*2*0*05##" in gw.sent
+        assert cover._is_tilting is False
+
+        # 3. Armed waiting locked recovery IS cancelled on explicit WHO=14 unlock before motion
+        gw.sent.clear()
+        cover._attr_current_cover_position = 0
+        cover._start_position = 0
+        cover.handle_actuator_lock(True)
+        await cover.async_set_cover_position(position=50)
+        assert cover._stop_task is not None
+        assert cover._locked_recovery_started is not None
+        assert not cover._locked_recovery_started.is_set()
+        cover.handle_actuator_lock(False)
+        assert cover._stop_task is None
+        assert cover._locked_recovery_started is None
+
+        # 4. Offline-unlocked started recovery survives a delayed WHO=14 unlock frame
+        gw.sent.clear()
+        cover._attr_current_cover_position = 0
+        cover._start_position = 0
+        cover._attr_current_cover_tilt_position = 0
+        cover.handle_actuator_lock(True)
+        await cover.async_set_cover_position(position=50)
+        cover.handle_event(OWNMessage.parse("*2*1*05##"))
+        started_task = cover._stop_task
+        assert started_task is not None
+        assert cover._locked_recovery_started is not None and cover._locked_recovery_started.is_set()
+        cover.handle_actuator_lock(False)
+        assert cover._stop_task is started_task and not started_task.cancelled()
+        await asyncio.wait_for(started_task, timeout=2.0)
+        assert "*2*0*05##" in gw.sent
+    finally:
+        await cover.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_locked_stop_before_move_echoes_and_supersession(hass) -> None:
+    """Locked pre-move stops absorb own *2*1000#0* / *2*0* echoes and honour real cancellations."""
+    gw = _gateway()
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="MH201 Locked",
+            entity_name=None,
+            device_id="05",
+            who="2",
+            where="05",
+            interface=None,
+            advanced=False,
+            stop_before_move=True,
+            min_motor_pulse=0.05,
+            manufacturer="BTicino",
+            model="F411/2",
+            gateway=gw,
+            travel_time=0.4,
+        )
+    cover.hass = hass
+    cover.entity_id = "cover.mh201_locked"
+    cover.async_write_ha_state = MagicMock()
+    cover.async_schedule_update_ha_state = MagicMock()
+
+    try:
+        with (
+            patch("custom_components.myhome.cover.PRE_MOVE_STOP_SETTLE_DELAY", 0.05),
+            patch("custom_components.myhome.cover.ECHO_WINDOW", 1.0),
+        ):
+            # A. Own *2*1000#0* and *2*0* echoes during pre-move settle do not abort locked move
+            cover._attr_current_cover_position = 0
+            cover._start_position = 0
+            cover.handle_actuator_lock(True)
+            gw.sent.clear()
+            move_task = asyncio.create_task(cover.async_set_cover_position(position=50))
+            await asyncio.sleep(0)
+            assert gw.sent == ["*2*0*05##"]
+            cover.handle_event(OWNMessage.parse("*2*1000#0*05##"))
+            cover.handle_event(OWNMessage.parse("*2*0*05##"))
+            await asyncio.wait_for(move_task, timeout=2.0)
+            assert gw.sent == ["*2*0*05##", "*2*1*05##"]
+            assert cover._stop_task is not None
+            await cover.async_stop_cover()
+
+            # B. Explicit async_stop_cover during locked pre-move settle supersedes open_cover
+            cover.handle_actuator_lock(True)
+            gw.sent.clear()
+            open_task = asyncio.create_task(cover.async_open_cover())
+            await asyncio.sleep(0)
+            assert gw.sent == ["*2*0*05##"]
+            await cover.async_stop_cover()
+            await asyncio.wait_for(open_task, timeout=2.0)
+            assert gw.sent == ["*2*0*05##", "*2*0*05##"]
+
+            # C. General *2*0*0## stop frame during locked pre-move settle supersedes open_cover
+            cover.handle_actuator_lock(True)
+            gw.sent.clear()
+            open_task2 = asyncio.create_task(cover.async_open_cover())
+            await asyncio.sleep(0)
+            assert gw.sent == ["*2*0*05##"]
+            cover.handle_event(OWNMessage.parse("*2*0*0##"))
+            await asyncio.wait_for(open_task2, timeout=2.0)
+            assert gw.sent == ["*2*0*05##"]
+    finally:
+        await cover.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_auto_promotion_mid_locked_recovery_hands_off_target(hass) -> None:
+    """Moving Dim 10 frame that unlocks & promotes mid-locked-recovery hands off target to *#11#001."""
+    gw = _gateway()
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=hass,
+            name="Auto Promote Locked",
+            entity_name=None,
+            device_id="05",
+            who="2",
+            where="05",
+            interface=None,
+            advanced=False,
+            allow_auto_advanced=True,
+            manufacturer="BTicino",
+            model=None,
+            gateway=gw,
+            travel_time=5,
+        )
+    cover.hass = hass
+    cover.entity_id = "cover.auto_promote_locked"
+    cover.async_write_ha_state = MagicMock()
+    cover.async_schedule_update_ha_state = MagicMock()
+
+    try:
+        cover._attr_current_cover_position = 0
+        cover._start_position = 0
+        cover.handle_actuator_lock(True)
+        gw.sent.clear()
+
+        await cover.async_set_cover_position(position=50)
+        assert gw.sent == ["*2*1*05##"]
+        assert cover._stop_task is not None
+        assert cover._locked_recovery_target == 50
+
+        with patch.object(cover, "_persist_advanced_cover"):
+            cover.handle_event(OWNMessage.parse("*#2*05*10*1*0*0*0##"))
+        await asyncio.sleep(0)
+
+        assert cover._actuator_locked is False
+        assert cleared == [("05", None)]
+        assert cover._advanced is True
+        assert cover._locked_recovery_started is None
+        assert cover._locked_recovery_target is None
+        assert cover._stop_task is None
+        assert "*#2*05*#11#001*50##" in gw.sent
+    finally:
+        await cover.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_impulse_cover_double_tap_deadband_and_str_dim_step(hass) -> None:
+    """Deadband-rejected second pulse while locked preserves first pulse's recovery intent; str dim steps ignored."""
+    gw = _gateway()
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        gate = MyHOMEImpulseCover(
+            hass=hass,
+            name="Gate Double Tap",
+            entity_name=None,
+            device_id="24",
+            who="1",
+            where="24",
+            interface=None,
+            device_class=CoverDeviceClass.GATE,
+            travel_time=0.05,
+            pulse_duration=0.5,
+            min_cycle_time=1.0,
+            pin_code=None,
+            state_sensor=None,
+            manufacturer="BTicino",
+            model="Impulse Cover",
+            gateway=gw,
+        )
+    gate.hass = hass
+    gate.entity_id = "cover.gate_double_tap"
+    gate.async_write_ha_state = MagicMock()
+
+    try:
+        gate._attr_is_closed = True
+        gate.handle_actuator_lock(True)
+
+        # String WHAT "30" dim step is filtered without unlocking or changing gate state
+        gate.handle_event(
+            SimpleNamespace(what="30", dimension=None, is_on=True, is_translation=False)
+        )
+        assert gate._actuator_locked is True
+        assert gate.is_opening is False
+
+        await gate.async_open_cover()
+        assert gate._locked_pulse_pending_intent is Intent.OPEN
+
+        # Second press within 1.0 s deadband fails without clearing pending recovery intent
+        with pytest.raises(HomeAssistantError):
+            await gate.async_open_cover()
+        assert gate._locked_pulse_pending_intent is Intent.OPEN
+
+        # Bus confirmation from first pulse unlocks and runs open travel timer
+        gate.handle_event(OWNMessage.parse("*1*1*24##"))
+        assert gate._actuator_locked is False
+        assert cleared == [("24", None)]
+        assert gate.is_opening is True
+        await asyncio.sleep(0.08)
+        assert gate.is_opening is False
     finally:
         await gate.async_will_remove_from_hass()

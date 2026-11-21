@@ -730,6 +730,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._locked_recovery_started: asyncio.Event | None = None
         self._locked_recovery_tilt: tuple[int | None, int, float] | None = None
         self._locked_recovery_target: int | None = None
+        self._locked_pre_stop_echo_gen: int | None = None
+        self._locked_pre_stop_echo_until: float | None = None
+        self._locked_pre_stop_translation_seen: bool = False
 
     @property
     def _settles_on_timer(self) -> bool:
@@ -1322,6 +1325,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 current = None
             if self._stop_task is not current and not self._stop_task.done():
                 self._stop_task.cancel()
+                self._clear_locked_recovery()
             self._stop_task = None
 
     @property
@@ -1376,9 +1380,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         locked_bool = bool(locked)
         self._actuator_locked = locked_bool
         self._attr_extra_state_attributes["actuator_locked"] = locked_bool
-        self._cancel_stop_task()
-        self._clear_locked_recovery()
         if locked_bool:
+            self._cancel_stop_task()
+            self._clear_locked_recovery()
             self._clear_relay_hold()
             if self._calibrating:
                 self._interrupt_calibration("actuator locked via WHO 14")
@@ -1390,6 +1394,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._run_generation += 1
                 self._end_echo_window()
                 self._freeze_position(time.monotonic())
+        elif (
+            self._locked_recovery_started is not None
+            and not self._locked_recovery_started.is_set()
+        ):
+            self._cancel_stop_task()
+            self._clear_locked_recovery()
         self._publish_state()
 
     async def async_added_to_hass(self) -> None:
@@ -1766,6 +1776,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
             self._pending_timed_target = None
             self._cancel_stop_task()
+            self._clear_locked_recovery()
             self._run_generation += 1
             self._end_echo_window()
             self._run_start_position = None
@@ -2286,25 +2297,35 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_send_stop_for_pre_move(self) -> tuple[Any, int]:
         """Queue a pre-move stop and return ``(written, stop_generation)``."""
         written = await self._async_stop()
+        if self._actuator_locked is True:
+            self._locked_pre_stop_echo_gen = self._last_stop_generation
+            self._locked_pre_stop_echo_until = time.monotonic() + ECHO_WINDOW
+            self._locked_pre_stop_translation_seen = False
         return written, self._last_stop_generation
 
     async def _async_stop_before_move(self) -> None:
         """Stop an energized timed actuator and let its relay settle before moving (#959)."""
         written, gen = await self._async_send_stop_for_pre_move()
-        if gen != self._run_generation:
-            raise _MoveSuperseded
-        delivered = True
-        if isinstance(written, asyncio.Future):
-            done, _ = await asyncio.wait({written}, timeout=WRITE_TIMEOUT)
+        try:
             if gen != self._run_generation:
                 raise _MoveSuperseded
-            delivered = bool(done) and not written.cancelled() and written.exception() is None
-        if not delivered:
-            return
-        # 0.6 s matches native MH201 scenario STOP->MOVE spacing (0.587 s) & live L4671/2 settle (#959).
-        await asyncio.sleep(PRE_MOVE_STOP_SETTLE_DELAY)
-        if gen != self._run_generation:
-            raise _MoveSuperseded
+            delivered = True
+            if isinstance(written, asyncio.Future):
+                done, _ = await asyncio.wait({written}, timeout=WRITE_TIMEOUT)
+                if gen != self._run_generation:
+                    raise _MoveSuperseded
+                delivered = bool(done) and not written.cancelled() and written.exception() is None
+            if not delivered:
+                return
+            # 0.6 s matches native MH201 scenario STOP->MOVE spacing (0.587 s) & live L4671/2 settle (#959).
+            await asyncio.sleep(PRE_MOVE_STOP_SETTLE_DELAY)
+            if gen != self._run_generation:
+                raise _MoveSuperseded
+        finally:
+            if self._locked_pre_stop_echo_gen == gen:
+                self._locked_pre_stop_echo_gen = None
+                self._locked_pre_stop_echo_until = None
+                self._locked_pre_stop_translation_seen = False
 
     def _clear_locked_recovery(self) -> None:
         """Invalidate and clear any armed locked timed/tilt recovery state."""
@@ -2313,6 +2334,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._locked_recovery_started = None
         self._locked_recovery_tilt = None
         self._locked_recovery_target = None
+        self._locked_pre_stop_echo_gen = None
+        self._locked_pre_stop_echo_until = None
+        self._locked_pre_stop_translation_seen = False
 
     async def _async_locked_timed_move(
         self,
@@ -2474,7 +2498,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         status, if it comes, finds nothing left to change.
         """
         if self._actuator_locked is True:
-            await self._async_move("open" if opening else "close", pre_stopped=pre_stopped)
+            with suppress(_MoveSuperseded):
+                await self._async_move("open" if opening else "close", pre_stopped=pre_stopped)
             return
         if not pre_stopped and self._stops_before_move(False):
             self._pending_timed_target = 100 if opening else 0
@@ -2924,6 +2949,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._actuator_locked is True:
             self._cancel_stop_task()
             self._clear_locked_recovery()
+            self._run_generation += 1
             self._last_stop_generation = self._run_generation
             return await self._gateway_handler.send(
                 OWNAutomationCommand.stop_shutter(self._full_where)
@@ -3549,24 +3575,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 entity_id=self.entity_id,
             )
 
-        # Physical shutters only report Dimension 10 on their own point-to-point WHERE,
-        # never on a general, area, or group scope address (which relay_general /
-        # relay_scope fan out to every member).
-        own_point = self._is_own_point_message(message)
-        promoted = False
-        if own_point and (position is not None or position_unknown):
-            self._dim10_seen = True
-        if own_point and position is not None:
-            self._bus_state_complete = True
-            if not self._advanced and self._allow_auto_advanced and not self._calibrating:
-                self._promote_to_native_strategy(reported_position=position)
-                promoted = True
-
-        LOGGER.debug(
-            "%s %s",
-            self._gateway_handler.log_id,
-            getattr(message, "human_readable_log", str(message)),
-        )
         now = time.monotonic()
         moving = bool(is_opening or is_closing)
         if self._actuator_locked is True and not is_translation and moving:
@@ -3595,6 +3603,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             else:
                 self._cancel_stop_task()
                 self._clear_locked_recovery()
+
+        # Physical shutters only report Dimension 10 on their own point-to-point WHERE,
+        # never on a general, area, or group scope address (which relay_general /
+        # relay_scope fan out to every member).
+        own_point = self._is_own_point_message(message)
+        promoted = False
+        if own_point and (position is not None or position_unknown):
+            self._dim10_seen = True
+        if own_point and position is not None:
+            self._bus_state_complete = True
+            if not self._advanced and self._allow_auto_advanced and not self._calibrating:
+                self._promote_to_native_strategy(reported_position=position)
+                promoted = True
+
+        LOGGER.debug(
+            "%s %s",
+            self._gateway_handler.log_id,
+            getattr(message, "human_readable_log", str(message)),
+        )
         if moving and position is not None:
             # While the motor runs the actuator repeats the level it started from
             # (*#2*0112*10*12*25*…## until *#2*0112*10*10*0*…##): the status
@@ -3755,6 +3782,31 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._arm_wall_settle(False)
         else:
             # Stopped (state == 0 or other): a genuine stop ends any timed run.
+            if (
+                self._actuator_locked is True
+                and self._locked_pre_stop_echo_gen is not None
+                and self._locked_pre_stop_echo_gen == self._run_generation
+                and self._locked_pre_stop_echo_until is not None
+                and now <= self._locked_pre_stop_echo_until
+            ):
+                _, is_general = self._format_where_and_scope(
+                    getattr(message, "where", None), message
+                )
+                if (
+                    not is_general
+                    and is_translation
+                    and not self._locked_pre_stop_translation_seen
+                ):
+                    self._locked_pre_stop_translation_seen = True
+                    return
+                if not is_general and not is_translation:
+                    self._locked_pre_stop_echo_gen = None
+                    self._locked_pre_stop_echo_until = None
+                    self._locked_pre_stop_translation_seen = False
+                    return
+                self._locked_pre_stop_echo_gen = None
+                self._locked_pre_stop_echo_until = None
+                self._locked_pre_stop_translation_seen = False
             if not is_translation:
                 self._clear_relay_hold()
             was_tilting = self._is_tilting
@@ -4181,10 +4233,13 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         """
         del effect  # the policy already decided; the display follows the request
         was_locked = self._actuator_locked is True
+        previous_pending = self._locked_pulse_pending_intent if was_locked else None
         if was_locked:
             self._locked_pulse_pending_intent = intent
         if not await self._async_send_impulse():
-            self._locked_pulse_pending_intent = None
+            self._locked_pulse_pending_intent = (
+                previous_pending if self._actuator_locked is True else None
+            )
             return False
         if was_locked:
             return True
@@ -4278,9 +4333,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             return
         what_pub = getattr(message, "what", None)
         what = what_pub if isinstance(what_pub, (int, str)) else getattr(message, "_what", None)
-        if getattr(message, "dimension", None) is None and what in (30, 31):
+        if getattr(message, "dimension", None) is None and what in (30, 31, "30", "31"):
             return
-        is_on = getattr(message, "is_on", False) or what in (1, 18)
+        is_on = getattr(message, "is_on", False) or what in (1, 18, "1", "18")
         if not is_on:
             return  # Ignore *1*0*... release frames (such as the 5-minute delayed hardware timer)
 
