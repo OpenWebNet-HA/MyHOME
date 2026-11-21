@@ -53,7 +53,7 @@ def test_extract_who_mapping():
     assert mapping["binary_sensor"] == "WHO=1 / 9 / 25"
     assert mapping["sensor"] == "WHO=1 / 4 / 18"
     assert mapping["button"] == "WHO=14 / 2 / 16 / 22"
-    assert mapping["number"] == "WHO=16 / 22"
+    assert mapping["number"] == "WHO=2 / 16 / 22"
     assert mapping["media_player"] == "WHO=16 / 22"
     assert mapping["device_trigger"] == "WHO=15 / 25"
 
@@ -65,7 +65,7 @@ def test_generate_domains_table():
     assert "| **`light`** | WHO=1 |" in table
     assert "| **`switch`** | WHO=1 / 4 / 9 / 25 |" in table
     assert "| **`button`** | WHO=14 / 2 / 16 / 22 |" in table
-    assert "| **`number`** | WHO=16 / 22 |" in table
+    assert "| **`number`** | WHO=2 / 16 / 22 |" in table
     assert "| **`device_trigger`** *(Automations)* | WHO=15 / 25 |" in table
     assert "`timer` parameter" not in table
     assert "`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`" in table

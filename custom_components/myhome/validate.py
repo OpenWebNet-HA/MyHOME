@@ -643,7 +643,7 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_MIN_CYCLE_TIME, default=5.0): All(Coerce(float), Range(min=1.0, max=120.0)),
             Optional(CONF_ACCESS): access_schema,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
-            Optional("advanced_shutter", default=False): Boolean(),
+            Optional("advanced_shutter"): Boolean(),
             Optional(CONF_STRATEGY): In(list(COVER_STRATEGIES)),
             Optional(CONF_SLAT_TILT, default=False): Boolean(),
             Optional(CONF_SLAT_TIME): All(
@@ -698,7 +698,16 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             raise Invalid(
                 "stop_before_move only applies to a timed cover (an advanced cover runs its own level write)"
             )
-        cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
+        if cfg.get(CONF_ADVANCED_SHUTTER):
+            if not cfg.get(CONF_EXPLICIT_TRAVEL_TIME):
+                cfg.pop(CONF_TRAVEL_TIME, None)
+            if not cfg.get(CONF_SLAT_TILT):
+                if cfg.get(CONF_MIN_MOTOR_PULSE) == DEFAULT_MIN_MOTOR_PULSE:
+                    cfg.pop(CONF_MIN_MOTOR_PULSE, None)
+            else:
+                cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
+        else:
+            cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
     return data
 
 

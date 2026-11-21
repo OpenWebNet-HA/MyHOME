@@ -122,10 +122,11 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Calibrate travel time | ✅ | On every timed cover device, plus *Calibrate all covers* on the gateway device. |
 | FM tuner seek up / down | ✅ | Companion *Seek up* and *Seek down* buttons on every declared F500 / F500N `Audio Source` device (`WHO 16` `*16*5000/5100*10S##` or `WHO 22` `*22*5/6*2#S##`). |
 
-### `number` (WHO 16 / 22)
+### `number` (WHO 2 / 16 / 22)
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
+| Native cover minimum position step | ✅ | `number.<cover>_minimum_position_step` (`1–5 %`, step `1 %`, `NumberMode.BOX`, `EntityCategory.CONFIG`) on every point-to-point native WHO 2 cover device (persists in config entry options and overrides `myhome.yaml` `min_position_delta`). |
 | FM tuner manual frequency | ✅ | `number.<source>_frequency` (`87.50–108.00 MHz`, `0.05 MHz` step, `NumberMode.BOX`) on every declared F500 / F500N `Audio Source` device (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`). |
 
 ### `media_player` (WHO 16 / 22)
