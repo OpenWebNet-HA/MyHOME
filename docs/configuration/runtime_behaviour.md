@@ -263,6 +263,8 @@ The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged po
 - **Only for commands this gateway entry sent.** When another client switches several lights at once (another gateway, a scenario module), the `F455` leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.
 - **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, and `WHO = 2` covers, whose position model is anchored on the write time.
 
+On a fine dimmer a preset frame (`WHAT = 2..10`) asks Dimension 1 for the exact level (#851). A preset frame that arrives while that read is out is taken as part of its answer (a `MyHomeServer1` and a `3488` answer the read with the level and with the preset frame). A read that brings no new level is repeated at most twice for the same preset; then the light is not asked again until its preset or level changes, it goes off, a command is sent to it from Home Assistant, or it has sent no preset frame for `30 s`.
+
 ---
 
 ## 🎨 Lights learn colour capabilities additively
