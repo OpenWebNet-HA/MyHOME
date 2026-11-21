@@ -31,6 +31,7 @@ from custom_components.myhome.climate import MyHOMEClimate
 from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.media_player import MyHOMEMediaPlayer
+from custom_components.myhome.number import MyHOMECoverMinPositionDeltaNumber
 from custom_components.myhome.sensor import (
     MyHOMEActuatorOutputSensor,
     MyHOMEEnergySensor,
@@ -153,6 +154,9 @@ AUDIT = [
      lambda h, g: CalibrateCoverButtonEntity(h, platform="button", device_id="21", where="21", interface=None, name="C", gateway=g),
      None, EntityCategory.CONFIG, True),
     ("calibrate all button", lambda h, g: CalibrateAllCoversButtonEntity(h, g.config_entry, g), None, EntityCategory.CONFIG, True),
+    ("cover min position step",
+     lambda h, g: MyHOMECoverMinPositionDeltaNumber(hass=h, config_entry=g.config_entry, device_id="21", where="21", interface=None, name="C", gateway=g),
+     None, EntityCategory.CONFIG, True),
     ("alarm", _alarm, None, None, True),
 ]
 

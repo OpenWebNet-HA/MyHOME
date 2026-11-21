@@ -36,7 +36,10 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import (
     async_call_later,
@@ -72,6 +75,7 @@ from .const import (
     CONF_ACCESS,
     CONF_ADVANCED_COVERS,
     CONF_ADVANCED_SHUTTER,
+    CONF_COVER_MIN_POSITION_DELTAS,
     CONF_COVER_TRAVEL_TIMES,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
@@ -101,7 +105,9 @@ from .const import (
     EVENT_COVER_CALIBRATION,
     EXPLICIT_COVER_KINEMATICS_KEYS,
     LOGGER,
+    MAX_MIN_POSITION_DELTA,
     MAX_SLAT_TIME,
+    MIN_MIN_POSITION_DELTA,
     MIN_SLAT_TIME,
     SERVICE_ACKNOWLEDGE_COVER_FAULT,
     SERVICE_CALIBRATE_COVER,
@@ -109,6 +115,7 @@ from .const import (
     SERVICE_RESET_COVER_TRAVEL_TIME,
     SERVICE_SET_COVER_TRAVEL_TIME,
     SERVICE_STOP_COVER_CALIBRATION,
+    SIGNAL_COVER_MIN_POSITION_DELTA,
 )
 from .cover_calibration import (
     CalibrationCutoff,
@@ -149,10 +156,12 @@ from .cover_strategies import (
     clamp_slat_time,
     resolve_cover_strategy,
 )
+from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import (
     Address,
     DeviceContext,
     PlatformDiscovery,
+    config_for,
     default_known_keys,
     parse_unique_id,
 )
@@ -300,6 +309,75 @@ def _can_auto_promote_advanced(
     return True
 
 
+def resolve_cover_min_position_delta(
+    config_entry: Any,
+    device_id: str,
+    cfg: Mapping[str, Any] | None = None,
+) -> int:
+    """Resolve the minimum position step (%) for a native cover (UI option > YAML > default)."""
+    options = getattr(config_entry, "options", None) or {}
+    stored = options.get(CONF_COVER_MIN_POSITION_DELTAS)
+    if isinstance(stored, Mapping):
+        raw = stored.get(str(device_id))
+        if (
+            isinstance(raw, int)
+            and not isinstance(raw, bool)
+            and MIN_MIN_POSITION_DELTA <= raw <= MAX_MIN_POSITION_DELTA
+        ):
+            return raw
+    if isinstance(cfg, Mapping) and CONF_MIN_POSITION_DELTA in cfg:
+        try:
+            return max(
+                MIN_MIN_POSITION_DELTA,
+                min(MAX_MIN_POSITION_DELTA, int(cfg[CONF_MIN_POSITION_DELTA])),
+            )
+        except (TypeError, ValueError):
+            pass
+    return MIN_POSITION_DELTA
+
+
+def is_native_point_cover(
+    hass: HomeAssistant | None,
+    config_entry: MyHOMEConfigEntry | None,
+    gateway_mac: str,
+    device_id: str,
+    entity_id: str | None = None,
+) -> bool:
+    """Return True when ``device_id`` is a point-to-point WHO=2 native cover."""
+    from .cover_scope import CoverScope
+
+    address = Address.from_device_id(device_id)
+    if CoverScope.of(address.where, address.interface) is not None:
+        return False
+    if hass is not None:
+        if entity_id is None:
+            entity_id = er.async_get(hass).async_get_entity_id(
+                "cover", DOMAIN, f"{gateway_mac}-2-{device_id}"
+            )
+        if entity_id and (state := hass.states.get(entity_id)) is not None:
+            if (
+                "min_position_delta" in state.attributes
+                and "travel_time" not in state.attributes
+            ):
+                return True
+    runtime = get_runtime_data(config_entry) if config_entry is not None else None
+    cover_platforms = runtime.platforms.get("cover", {}) if runtime is not None else {}
+    cfg = config_for(
+        cover_platforms, address, device_id, f"2-{address.key}", f"2-{address.clean_key}"
+    )
+    if cfg.get(CONF_STRATEGY) == "native":
+        return True
+    if cfg.get(CONF_STRATEGY) in ("timed", "simple", "venetian"):
+        return False
+    if bool(cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False))):
+        return True
+    if _is_stored_advanced_cover(config_entry, device_id):
+        return _can_auto_promote_advanced(
+            cfg, _stored_calibration(config_entry, device_id), None
+        )
+    return False
+
+
 def _actuator_cutoff(seconds: float) -> float | None:
     """Return the actuator run-time limit a calibration run of ``seconds`` ended at, if any."""
     for limit in CALIBRATION_CUTOFFS:
@@ -386,7 +464,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             gateway=runtime.gateway,
             travel_time=int(cfg.get(CONF_TRAVEL_TIME, DEFAULT_TRAVEL_TIME)),
             min_motor_pulse=float(cfg.get(CONF_MIN_MOTOR_PULSE, DEFAULT_MIN_MOTOR_PULSE)),
-            min_position_delta=int(cfg.get(CONF_MIN_POSITION_DELTA, MIN_POSITION_DELTA)),
+            min_position_delta=resolve_cover_min_position_delta(config_entry, ctx.key, cfg),
             device_class=device_class,
             stop_before_move=cfg.get(CONF_STOP_BEFORE_MOVE),
             **kwargs,
@@ -678,6 +756,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._stop_task: asyncio.Task[None] | None = None
         self._wall_settle_unsub: CALLBACK_TYPE | None = None
         self._live_refresh_unsub: CALLBACK_TYPE | None = None
+        self._min_delta_unsub: CALLBACK_TYPE | None = None
         self._live_refresh_last_published: int | None = None
         self._timer_settle_enabled: bool = True
         self._travel_recomputed: asyncio.Event = asyncio.Event()
@@ -1368,6 +1447,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._arm_wall_settle(bool(self._attr_is_opening))
         if self._family is not None:
             self._family.membership_changed()
+        if (target_hass := (self.hass or self._hass)) is not None and self._min_delta_unsub is None:
+            self._min_delta_unsub = async_dispatcher_connect(
+                target_hass,
+                SIGNAL_COVER_MIN_POSITION_DELTA.format(self._gateway_handler.mac),
+                self._handle_min_position_delta_update,
+            )
+
+    @callback
+    def _handle_min_position_delta_update(self, device_id: str, delta: int) -> None:
+        """Apply an updated minimum position step (%) from the companion number entity."""
+        if device_id != str(self._device_id):
+            return
+        clamped = max(MIN_MIN_POSITION_DELTA, min(MAX_MIN_POSITION_DELTA, int(delta)))
+        self._min_position_delta = clamped
+        if isinstance(self._strategy, NativePositionStrategy):
+            self._strategy.min_position_delta = clamped
+            self._attr_extra_state_attributes["min_position_delta"] = clamped
+            self._publish_state()
 
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
@@ -1448,10 +1545,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._pending_stop_context = None
+        if self._min_delta_unsub is not None:
+            self._min_delta_unsub()
+            self._min_delta_unsub = None
         await super().async_will_remove_from_hass()
 
     async def async_removed_from_registry(self) -> None:
-        """Drop device fault issues and any persisted auto-detected advanced flag on deletion."""
+        """Drop device fault issues and persisted per-cover options on deletion."""
         await super().async_removed_from_registry()
         entry = getattr(self._gateway_handler, "config_entry", None)
         hass = self.hass or self._hass
@@ -1463,14 +1563,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ):
             return
         options = dict(getattr(entry, "options", None) or {})
-        stored = options.get(CONF_ADVANCED_COVERS)
         key = str(self._device_id)
-        if isinstance(stored, Mapping) and key in stored:
-            updated = {k: v for k, v in stored.items() if k != key}
-            if updated:
-                options[CONF_ADVANCED_COVERS] = updated
-            else:
-                options.pop(CONF_ADVANCED_COVERS, None)
+        changed = False
+        for option_key in (CONF_ADVANCED_COVERS, CONF_COVER_MIN_POSITION_DELTAS):
+            stored = options.get(option_key)
+            if isinstance(stored, Mapping) and key in stored:
+                updated = {k: v for k, v in stored.items() if k != key}
+                if updated:
+                    options[option_key] = updated
+                else:
+                    options.pop(option_key, None)
+                changed = True
+        if changed:
             hass.config_entries.async_update_entry(entry, options=options)
 
 

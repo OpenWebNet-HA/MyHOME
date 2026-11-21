@@ -216,6 +216,12 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
         button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
         if button is not None:
             registry.async_remove(button)
+    if entry.domain == "cover":
+        delta_number = registry.async_get_entity_id(
+            "number", DOMAIN, f"{entry.unique_id}-min_position_delta"
+        )
+        if delta_number is not None:
+            registry.async_remove(delta_number)
     if entry.domain == "binary_sensor" and entry.device_id:
         remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
         if not any(e.domain == "binary_sensor" for e in remaining):
@@ -281,20 +287,28 @@ def binary_sensor_only_on_primary(with_sensor: set[str], device_identifier: str,
 
 @callback
 def prune_orphaned_companions(hass: HomeAssistant, config_entry_id: str, own_mac: str, primary_mac: str) -> None:
-    """Remove a follower's buttons whose actuator was pruned in favour of the primary (#524).
+    """Remove a follower's companion entities whose actuator was pruned in favour of the primary (#524).
 
-    Earlier versions removed only the actuator, leaving its buttons and device
-    behind. A button counts as orphaned when this gateway no longer has its
-    actuator and the primary does; buttons of an actuator the user deleted are
+    Earlier versions removed only the actuator, leaving its companion buttons/numbers
+    and device behind. A companion counts as orphaned when this gateway no longer has
+    its actuator and the primary does; companions of an actuator the user deleted are
     left alone.
     """
     registry = er.async_get(hass)
     for entry in er.async_entries_for_config_entry(registry, config_entry_id):
-        if entry.domain != "button" or not entry.unique_id.endswith(COMPANION_SUFFIXES):
+        if entry.domain == "button" and entry.unique_id.endswith(COMPANION_SUFFIXES):
+            actuator = entry.unique_id.rsplit("-", 1)[0]
+        elif entry.domain == "number" and entry.unique_id.endswith("-min_position_delta"):
+            actuator = entry.unique_id.removesuffix("-min_position_delta")
+        else:
             continue
-        actuator = entry.unique_id.rsplit("-", 1)[0]
         if actuator_only_on_primary(registry, actuator, own_mac, primary_mac):
-            LOGGER.info("Pruned orphaned button %s: its actuator lives on primary gateway %s", entry.entity_id, primary_mac)
+            LOGGER.info(
+                "Pruned orphaned %s %s: its actuator lives on primary gateway %s",
+                entry.domain,
+                entry.entity_id,
+                primary_mac,
+            )
             prune_entity(hass, registry, entry, config_entry_id)
 
 

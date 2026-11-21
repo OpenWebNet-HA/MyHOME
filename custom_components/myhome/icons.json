@@ -23,6 +23,9 @@
     "number": {
       "tuner_frequency": {
         "default": "mdi:radio-fm"
+      },
+      "min_position_delta": {
+        "default": "mdi:arrow-expand-vertical"
       }
     },
     "sensor": {

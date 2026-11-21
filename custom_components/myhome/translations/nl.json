@@ -702,6 +702,9 @@
     "number": {
       "tuner_frequency": {
         "name": "Frequentie"
+      },
+      "min_position_delta": {
+        "name": "Minimale positiestap"
       }
     },
     "sensor": {

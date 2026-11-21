@@ -26,31 +26,24 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
-    CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_DEVICE_MODEL,
     CONF_MANUFACTURER,
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
-    CONF_STRATEGY,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
     LOGGER,
     SERVICE_CALIBRATE_COVER,
 )
-from .cover import (
-    _can_auto_promote_advanced,
-    _is_stored_advanced_cover,
-    _stored_calibration,
-)
+from .cover import is_native_point_cover
 from .cover_scope import CoverScope
 from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import (
     Address,
     actuator_only_on_primary,
-    config_for,
     parse_unique_id,
     prune_orphaned_companions,
 )
@@ -78,34 +71,9 @@ def _is_non_calibratable_cover(
     address = Address.from_device_id(device_id)
     if CoverScope.of(address.where, address.interface) is not None:
         return True
-    if hass is not None:
-        if entity_id is None:
-            entity_id = er.async_get(hass).async_get_entity_id(
-                "cover", DOMAIN, f"{gateway_mac}-2-{device_id}"
-            )
-        if entity_id and (state := hass.states.get(entity_id)) is not None:
-            if (
-                "min_position_delta" in state.attributes
-                and "travel_time" not in state.attributes
-            ):
-                return True
-    runtime = get_runtime_data(config_entry) if config_entry is not None else None
-    cover_platforms = runtime.platforms.get("cover", {}) if runtime is not None else {}
-    cfg = config_for(
-        cover_platforms, address, device_id, f"2-{address.key}", f"2-{address.clean_key}"
+    return is_native_point_cover(
+        hass, config_entry, gateway_mac, device_id, entity_id=entity_id
     )
-    if cfg.get(CONF_STRATEGY) == "native":
-        return True
-    if (
-        bool(cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)))
-        and cfg.get(CONF_STRATEGY) not in ("timed", "simple", "venetian")
-    ):
-        return True
-    if _is_stored_advanced_cover(config_entry, device_id):
-        return _can_auto_promote_advanced(
-            cfg, _stored_calibration(config_entry, device_id), None
-        )
-    return False
 
 
 async def async_setup_entry(
