@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
     from .myhome_device import MyHOMEEntity
 
-_AREA_WHERES = frozenset({"1", "2", "3", "4", "5", "6", "7", "8", "9", "100"})
+_AREA_WHERES = frozenset({"00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"})
 _IGNORED_PLATFORMS = frozenset({"button", "binary_sensor", "sensor"})
 
 
@@ -93,13 +93,13 @@ class ActuatorLockManager:
         if (
             not raw_where
             or raw_where.startswith("#")
-            or raw_where in ("0", "00")
+            or raw_where == "0"
             or "#9" in raw_where
         ):
             return _noop
 
         key = _split_point_key(raw_where, getattr(entity, "_interface", None))
-        if not key[0] or key[0] in ("0", "00"):
+        if not key[0] or key[0] == "0" or key[0] in _AREA_WHERES:
             return _noop
 
         if (state := self._states.get(key)) is not None:
@@ -149,7 +149,7 @@ class ActuatorLockManager:
         if not base or base.startswith("#") or (routing and iface is None):
             return
 
-        if base in ("0", "00"):
+        if base == "0":
             for key in list(self._states):
                 if key[1] == iface:
                     self._states[key] = locked

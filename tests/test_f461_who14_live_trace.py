@@ -394,6 +394,8 @@ async def test_who14_shutter05_locked_commands_translations_and_unlock(
         assert shutter05.is_closing is False
         assert shutter05.current_cover_position == 0
         assert shutter05.is_closed is True
+        assert shutter05._stop_task is not None
+        await shutter05.async_stop_cover()
         assert shutter05._stop_task is None
 
         with pytest.raises(
@@ -574,8 +576,10 @@ async def test_who14_cover_variants_tilt_scope_advanced_and_simple(hass) -> None
         await blind.async_close_cover_tilt()
         assert gw.sent == ["*2*1*09##", "*2*1*09##", "*2*2*09##"]
         assert blind._is_tilting is False
-        assert blind._stop_task is None
+        assert blind._stop_task is not None
         assert blind.current_cover_tilt_position == 100
+        await blind.async_stop_cover()
+        assert blind._stop_task is None
 
         # 2. Scope cover: locked members skip _begin_run, _follow_scope_run_to_end,
         # _begin_stop, _follow_scope_stop, and _follow_pulse
@@ -749,12 +753,16 @@ async def test_who14_impulse_cover_locked_and_self_healing(hass) -> None:
         assert gate.is_closed is None
         assert gate._travel_timer_cancel is None
 
-        # *1*0*, translation, and echo-window frames keep lock True
+        # *1*0*, WHAT 30/31 dim step, translation, and a pre-lock echo keep lock True
         gate.handle_event(OWNMessage.parse("*1*0*22##"))
+        assert gate._actuator_locked is True
+        gate.handle_event(OWNMessage.parse("*1*30*22##"))
+        gate.handle_event(OWNMessage.parse("*1*31*22##"))
         assert gate._actuator_locked is True
         trans = MagicMock(is_translation=True, is_on=True, what=1000)
         gate.handle_event(trans)
         assert gate._actuator_locked is True
+        gate._locked_pulse_pending_intent = None
         gate._last_pulse_time = time.monotonic()
         gate.handle_event(OWNMessage.parse("*1*1*22##"))
         assert gate._actuator_locked is True
@@ -777,5 +785,328 @@ async def test_who14_impulse_cover_locked_and_self_healing(hass) -> None:
         await gate.async_open_cover()
         assert gate.is_opening is True
         assert gate._travel_timer_cancel is not None
+    finally:
+        await gate.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_timed_cover_offline_unlock_recovery_and_pre_stop(hass) -> None:
+    """Offline-unlocked timed cover set_cover_position stops at target and honours MH201 stop_before_move."""
+    gw = _gateway()
+    gw.model = "MH201"
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    ents = await _plant(hass, gw)
+    shutter05: MyHOMECover = ents["05"]
+
+    try:
+        shutter05._travel_time_up = 1.0
+        shutter05._travel_time_down = 1.0
+        shutter05._attr_current_cover_position = 0
+        shutter05._start_position = 0
+        shutter05._attr_is_closed = True
+        shutter05.handle_actuator_lock(True)
+        # Energized relay hold (e.g. offline motion on MH201 before WHO=14 stop arrived) honours stop_before_move
+        shutter05._arm_relay_hold(time.monotonic(), opening=False)
+
+        # MH201 energized relay honours stop_before_move for open/set_cover_position
+        gw.sent.clear()
+        with patch("custom_components.myhome.cover.PRE_MOVE_STOP_SETTLE_DELAY", 0.01):
+            await shutter05.async_set_cover_position(position=50)
+        assert gw.sent == ["*2*0*05##", "*2*1*05##"]
+        assert shutter05.is_opening is False
+        assert shutter05._stop_task is not None
+
+        # Pre-move stop/translation and stationary Dim 10 must not cancel recovery timer
+        shutter05.handle_event(OWNMessage.parse("*2*1000#0*05##"))
+        shutter05.handle_event(OWNMessage.parse("*2*0*05##"))
+        shutter05.handle_event(OWNMessage.parse("*#2*05*10*10*0*0*0*0*0*0##"))
+        assert shutter05._stop_task is not None
+
+        # Offline-unlocked *2*1*05## unlocks, opens optimistically, and auto-stop sends *2*0*05##
+        gw.sent.clear()
+        shutter05.handle_event(OWNMessage.parse("*2*1*05##"))
+        assert shutter05._actuator_locked is False
+        assert cleared == [("05", None)]
+        assert shutter05.is_opening is True
+        task = shutter05._stop_task
+        assert task is not None
+        await asyncio.wait_for(task, timeout=2.0)
+        assert "*2*0*05##" in gw.sent
+        shutter05.handle_event(OWNMessage.parse("*2*0*05##"))
+        assert shutter05.is_opening is False
+        assert 40 <= (shutter05.current_cover_position or 0) <= 65
+
+        # Silent gateway fallback (no *2*1* arrives), opposite direction takeover, and failed future
+        shutter05.handle_actuator_lock(True)
+        shutter05._attr_current_cover_position = 100
+        shutter05._start_position = 100
+        shutter05._clear_relay_hold()
+        shutter05._travel_time_down = 0.8
+        gw.sent.clear()
+        with patch("custom_components.myhome.cover.MOTOR_START_DELAY", 0.01):
+            await shutter05.async_set_cover_position(position=50)
+            await asyncio.wait_for(shutter05._stop_task, timeout=2.0)  # type: ignore[arg-type]
+        assert gw.sent == ["*2*2*05##", "*2*0*05##"]
+
+        shutter05._travel_time_up = 5.0
+        shutter05._attr_current_cover_position = 0
+        shutter05._start_position = 0
+        await shutter05.async_set_cover_position(position=50)
+        shutter05.handle_event(OWNMessage.parse("*2*2*05##"))
+        assert shutter05._stop_task is None
+        assert shutter05._locked_recovery_started is None
+
+        # Cancelled / error write futures abort cleanly without throwing
+        shutter05.handle_actuator_lock(True)
+        fut_cancel = hass.loop.create_future()
+        fut_cancel.cancel()
+        gw.send = AsyncMock(return_value=fut_cancel)
+        await shutter05.async_set_cover_position(position=50)
+        await asyncio.wait_for(shutter05._stop_task, timeout=2.0)  # type: ignore[arg-type]
+        assert shutter05._locked_recovery_started is None
+
+        fut_err = hass.loop.create_future()
+        fut_err.set_exception(RuntimeError("bus down"))
+        gw.send = AsyncMock(return_value=fut_err)
+        await shutter05.async_set_cover_position(position=50)
+        await asyncio.wait_for(shutter05._stop_task, timeout=2.0)  # type: ignore[arg-type]
+        assert shutter05._locked_recovery_started is None
+
+        # Pending write Future resolving to timestamp, task cancellation while awaiting written & sleep,
+        # generation supersession races, MIN_MOTOR_PULSE stretching to 100/0, _MoveSuperseded, & HomeAssistantError
+        gw.send = AsyncMock(side_effect=lambda cmd, *a, **k: (gw.sent.append(str(cmd)), True)[1])
+        shutter05.handle_actuator_lock(True)
+        # Superseded during pre-move stop
+        shutter05._arm_relay_hold(time.monotonic(), opening=False)
+        with patch("custom_components.myhome.cover.PRE_MOVE_STOP_SETTLE_DELAY", 0.05):
+            pre_task = asyncio.create_task(shutter05.async_set_cover_position(position=50))
+            await asyncio.sleep(0.01)
+            shutter05._run_generation += 1
+            await pre_task
+        shutter05._clear_relay_hold()
+
+        # MIN_MOTOR_PULSE stretching 95->99 to 100% and 5->1 to 0%
+        gw.sent.clear()
+        shutter05._travel_time_up = 1.0
+        shutter05._travel_time_down = 1.0
+        shutter05._attr_current_cover_position = 95
+        shutter05._start_position = 95
+        await shutter05.async_set_cover_position(position=99)
+        shutter05._attr_current_cover_position = 5
+        shutter05._start_position = 5
+        await shutter05.async_set_cover_position(position=1)
+        assert gw.sent == ["*2*1*05##", "*2*2*05##"]
+
+        # Future write_ts + task cancellation while awaiting written + HomeAssistantError during stop
+        shutter05._attr_current_cover_position = 0
+        shutter05._start_position = 0
+        pending_fut = hass.loop.create_future()
+        gw.send = AsyncMock(return_value=pending_fut)
+        await shutter05.async_set_cover_position(position=50)
+        cancel_task = shutter05._stop_task
+        assert cancel_task is not None
+        await asyncio.sleep(0)
+        shutter05._cancel_stop_task()
+        await asyncio.gather(cancel_task, return_exceptions=True)
+
+        # Future write_ts completes AFTER _locked_recovery_gen superseded, during fallback_wait, and during sleep
+        for phase in ("after_write", "after_wait", "after_sleep"):
+            shutter05.handle_actuator_lock(True)
+            shutter05._clear_relay_hold()
+            fut_ok = hass.loop.create_future()
+            gw.send = AsyncMock(return_value=fut_ok)
+            shutter05._attr_current_cover_position = 0
+            shutter05._start_position = 0
+            await shutter05.async_set_cover_position(position=50)
+            t = shutter05._stop_task
+            assert t is not None
+            await asyncio.sleep(0.01)
+            if phase == "after_write":
+                shutter05._locked_recovery_gen += 1
+                fut_ok.set_result(time.monotonic())
+            elif phase == "after_wait":
+                fut_ok.set_result(time.monotonic())
+                await asyncio.sleep(0.01)
+                shutter05._locked_recovery_gen += 1
+                shutter05.handle_event(OWNMessage.parse("*2*1*05##"))
+            else:
+                shutter05._travel_time_up = 0.8
+                fut_ok.set_result(time.monotonic())
+                await asyncio.sleep(0.01)
+                shutter05.handle_event(OWNMessage.parse("*2*1*05##"))
+                await asyncio.sleep(0.01)
+                shutter05._locked_recovery_gen += 1
+            await asyncio.wait_for(t, timeout=2.0)
+
+        # CancelledError during sleep & HomeAssistantError during stop
+        shutter05.handle_actuator_lock(True)
+        shutter05._travel_time_up = 5.0
+        shutter05._attr_current_cover_position = 0
+        shutter05._start_position = 0
+        gw.send = AsyncMock(return_value=True)
+        await shutter05.async_set_cover_position(position=50)
+        shutter05.handle_event(OWNMessage.parse("*2*1*05##"))
+        sleep_task = shutter05._stop_task
+        assert sleep_task is not None
+        await asyncio.sleep(0)
+        sleep_task.cancel()
+        await asyncio.gather(sleep_task, return_exceptions=True)
+
+        shutter05.handle_actuator_lock(True)
+        shutter05._travel_time_up = 0.8
+        shutter05._attr_current_cover_position = 0
+        shutter05._start_position = 0
+        await shutter05.async_set_cover_position(position=50)
+        with (
+            patch("custom_components.myhome.cover.MOTOR_START_DELAY", 0.01),
+            patch.object(shutter05, "async_stop_cover", AsyncMock(side_effect=HomeAssistantError("stop failed"))),
+        ):
+            await asyncio.sleep(0)
+            shutter05.handle_event(OWNMessage.parse("*2*1*05##"))
+            await asyncio.wait_for(shutter05._stop_task, timeout=2.0)  # type: ignore[arg-type]
+    finally:
+        await shutter05.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_venetian_tilt_offline_unlock_recovery(hass) -> None:
+    """Offline-unlocked Venetian blind tilt stops after its tilt pulse duration instead of running to 100%."""
+    gw = _gateway()
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        blind = MyHOMECover(
+            hass=hass,
+            name="Locked Blind",
+            entity_name=None,
+            device_id="09",
+            who="2",
+            where="09",
+            interface=None,
+            advanced=False,
+            slat_tilt=True,
+            slat_time=1.0,
+            manufacturer="BTicino",
+            model="F411/2",
+            gateway=gw,
+            travel_time=5,
+        )
+    blind.hass = hass
+    blind.entity_id = "cover.locked_blind_recovery"
+    blind.async_write_ha_state = MagicMock()
+    blind.async_schedule_update_ha_state = MagicMock()
+
+    try:
+        blind._attr_current_cover_tilt_position = 0
+        blind._attr_current_cover_position = 50
+        blind.handle_actuator_lock(True)
+
+        gw.sent.clear()
+        await blind.async_set_cover_tilt_position(tilt_position=50)
+        assert gw.sent == ["*2*1*09##"]
+        assert blind._is_tilting is False
+        assert blind.current_cover_tilt_position == 0
+
+        # Offline unlock *2*1*09## -> unlocks, engages tilt mode, auto-stops after ~0.5s
+        blind.handle_event(OWNMessage.parse("*2*1*09##"))
+        assert blind._actuator_locked is False
+        assert blind._is_tilting is True
+        task = blind._stop_task
+        assert task is not None
+        await asyncio.wait_for(task, timeout=2.0)
+        assert gw.sent == ["*2*1*09##", "*2*0*09##"]
+        assert blind._is_tilting is False
+        assert blind.current_cover_position == 50
+        assert 40 <= (blind.current_cover_tilt_position or 0) <= 60
+
+        # Slat-tilt blind locked set_cover_position(50) -> offline unlock sets slat angle on auto-stop
+        blind._attr_current_cover_position = 0
+        blind._start_position = 0
+        blind._travel_time_up = 1.0
+        blind._travel_time_down = 1.0
+        blind.handle_actuator_lock(True)
+        gw.sent.clear()
+        await blind.async_set_cover_position(position=50)
+        blind.handle_event(OWNMessage.parse("*2*1*09##"))
+        assert blind._stop_task is not None
+        await asyncio.wait_for(blind._stop_task, timeout=2.0)
+        assert blind.current_cover_tilt_position == 100
+    finally:
+        await blind.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_who14_impulse_cover_offline_unlock_in_echo_window(hass) -> None:
+    """Offline-unlocked WHO=1 impulse cover (no state_sensor) recovers inside the 1.0 s echo window."""
+    gw = _gateway()
+    cleared: list[tuple[str, str | None]] = []
+    gw._actuator_locks = SimpleNamespace(
+        clear_lock_from_actuation=lambda where, iface: cleared.append((where, iface))
+    )
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        gate = MyHOMEImpulseCover(
+            hass=hass,
+            name="Gate Recovery",
+            entity_name=None,
+            device_id="24",
+            who="1",
+            where="24",
+            interface=None,
+            device_class=CoverDeviceClass.GATE,
+            travel_time=0.05,
+            pulse_duration=0.5,
+            min_cycle_time=0.0,
+            pin_code=None,
+            state_sensor=None,
+            manufacturer="BTicino",
+            model="Impulse Cover",
+            gateway=gw,
+        )
+    gate.hass = hass
+    gate.entity_id = "cover.gate_recovery"
+    gate.async_write_ha_state = MagicMock()
+
+    try:
+        gate._attr_is_closed = True
+        gate.handle_actuator_lock(True)
+
+        # Locked pulse transmits; before bus confirmation gate remains locked and closed
+        await gate.async_open_cover()
+        assert gate._actuator_locked is True
+        assert gate.is_opening is False
+        assert gate.is_closed is True
+
+        # Relay confirms *1*1*24## inside 1.0 s echo window -> unlocks and runs open travel timer
+        gate.handle_event(OWNMessage.parse("*1*1*24##"))
+        assert gate._actuator_locked is False
+        assert cleared == [("24", None)]
+        assert gate.is_opening is True
+        assert gate.is_closed is False
+        await asyncio.sleep(0.08)
+        assert gate.is_opening is False
+        assert gate.is_closed is False
+
+        # Re-lock and close offline -> in-window *1*1*24## unlocks and closes gate
+        gate.handle_actuator_lock(True)
+        await gate.async_close_cover()
+        assert gate.is_closing is False
+        gate.handle_event(OWNMessage.parse("*1*1*24##"))
+        assert gate._actuator_locked is False
+        assert gate.is_closing is True
+        await asyncio.sleep(0.08)
+        assert gate.is_closing is False
+        assert gate.is_closed is True
+
+        # Failed pulse send clears pending recovery intent cleanly
+        gate.handle_actuator_lock(True)
+        gw.send = AsyncMock(side_effect=RuntimeError("write error"))
+        with pytest.raises(HomeAssistantError):
+            await gate.async_open_cover()
+        assert gate._locked_pulse_pending_intent is None
     finally:
         await gate.async_will_remove_from_hass()

@@ -376,7 +376,9 @@ class GatewayEventDispatcher:
             if echo_watchdog is not None:
                 echo_watchdog.status_seen(message)
             if self._is_active_for_who(1) or self._is_active_for_who(2):
-                actuator_locks = actuator_locks_of(self.handler)
+                owner_fn = getattr(self.handler, "actuator_lock_owner", None)
+                lock_owner = owner_fn() if callable(owner_fn) else self.handler
+                actuator_locks = actuator_locks_of(lock_owner)
                 if actuator_locks is not None:
                     actuator_locks.observe(message)
             self.handler._correlate_shared_bus_traffic(message)

@@ -15,6 +15,7 @@ from homeassistant.components.light import (
     ATTR_RGB_COLOR,
     ATTR_TRANSITION,
     FLASH_SHORT,
+    ColorMode,
 )
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.core import HomeAssistant
@@ -699,3 +700,217 @@ async def test_cached_register_and_pre_poll_none_state_self_healing(hass: HomeAs
     assert sw_cached._actuator_locked is False
     assert sw_cached.extra_state_attributes["actuator_locked"] is False
     assert mgr2.is_locked("32") is False
+
+
+async def test_switch_ignores_what30_31_dim_steps(hass: HomeAssistant) -> None:
+    """WHO=1 WHAT 30/31 dim steps must neither turn an OFF switch ON nor clear its lock."""
+    from custom_components.myhome.actuator_lock import ActuatorLockManager
+
+    gw = _make_gateway()
+    mgr = ActuatorLockManager(gw)
+    gw._actuator_locks = mgr
+    sw = _make_switch(hass, gw, where="33")
+    sw._attr_is_on = False
+    mgr.register(sw)
+
+    # Unlocked OFF switch stays OFF when WHAT 30 / 31 arrives
+    sw.handle_event(OWNEvent.parse("*1*30*33##"))
+    assert sw.is_on is False
+    sw.handle_event(OWNEvent.parse("*1*31*33##"))
+    assert sw.is_on is False
+
+    # Locked OFF switch neither turns ON nor self-heals on WHAT 30 / 31
+    mgr.observe(OWNEvent.parse("*14*0*33##"))
+    assert sw._actuator_locked is True
+    sw.handle_event(OWNEvent.parse("*1*30*33##"))
+    sw.handle_event(OWNEvent.parse("*1*31*33##"))
+    assert sw.is_on is False
+    assert sw._actuator_locked is True
+    assert mgr.is_locked("33") is True
+
+
+async def test_dali_dim12_dim14_unlock_refresh_self_healing_and_rejected_cleanup(
+    hass: HomeAssistant,
+) -> None:
+    """DALI Dim 12/14 unlock refreshes colour dims, self-heals on changes, and restores rejected writes."""
+    from custom_components.myhome.actuator_lock import ActuatorLockManager
+
+    gw = _make_gateway(transition_mode=TRANSITION_MODE_NATIVE)
+    mgr = ActuatorLockManager(gw)
+    gw._actuator_locks = mgr
+    dali = _make_light(hass, gw, where="25", dimmable=True, color_temp=True, rgb=True)
+    dali._attr_supported_color_modes = {ColorMode.HS, ColorMode.COLOR_TEMP}
+    mgr.register(dali)
+
+    # 1. Clean DALI baseline -> lock -> dirty write -> unlock refreshes all 4 requests
+    dali.handle_event(OWNEvent.parse("*#1*25*14*300##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*12*100*50*80##"))
+    dali._attr_is_on = True
+    mgr.observe(OWNEvent.parse("*14*0*25##"))
+    assert dali._locked_color_temp_snapshot == 300
+    assert dali._locked_hs_snapshot == (100.0, 50.0)
+
+    gw.sent.clear()
+    await dali.async_turn_on(color_temp_kelvin=3500)
+    assert dali._dirty_while_locked is True
+    assert dali._attr_color_temp == 300
+
+    mgr.observe(OWNEvent.parse("*14*1*25##"))
+    await hass.async_block_till_done()
+    assert gw.status_requests == ["*#1*25##", "*#1*25*1##", "*#1*25*14##", "*#1*25*12##"]
+
+    # 2. Unchanged Dim 14 / 12 polls & OWNd sentinels keep lock; genuine Dim 14 change unlocks
+    mgr.observe(OWNEvent.parse("*14*0*25##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*14*300##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*14*1##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*12*100*50*80##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*12*511*127*255##"))
+    assert dali._actuator_locked is True
+
+    dali.handle_event(OWNEvent.parse("*#1*25*14*250##"))
+    assert dali._actuator_locked is False
+    assert dali.color_temp == 250
+
+    # 3. Genuine Dim 12 H/S change, Dim 12 V-only change, and RGB-only Dim 12 change self-heal
+    mgr.observe(OWNEvent.parse("*14*0*25##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*12*200*50*80##"))
+    assert dali._actuator_locked is False
+
+    mgr.observe(OWNEvent.parse("*14*0*25##"))
+    dali.handle_event(OWNEvent.parse("*#1*25*12*200*50*40##"))
+    assert dali._actuator_locked is False
+
+    dali._attr_rgb_color = (255, 0, 0)
+    mgr.observe(OWNEvent.parse("*14*0*25##"))
+    rgb_only = SimpleNamespace(
+        is_translation=False,
+        is_on=None,
+        brightness=None,
+        brightness_preset=None,
+        hs=None,
+        rgb=(0, 255, 0),
+        value=None,
+        color_temp=None,
+        unknown_state=None,
+        dimension=12,
+        human_readable_log="rgb",
+    )
+    dali.handle_event(rgb_only)
+    assert dali._actuator_locked is False
+
+    # Backfill snapshots when locked BEFORE initial Dim 14 / Dim 12 poll arrives
+    dali_fresh = _make_light(hass, gw, where="26", dimmable=True, color_temp=True, rgb=True)
+    dali_fresh._attr_supported_color_modes = {ColorMode.HS, ColorMode.COLOR_TEMP}
+    dali_fresh._attr_is_on = True
+    dali_fresh._attr_brightness_pct = 50
+    mgr.register(dali_fresh)
+    mgr.observe(OWNEvent.parse("*14*0*26##"))
+    assert dali_fresh._locked_color_temp_snapshot is None
+    assert dali_fresh._locked_hs_snapshot is None
+    dali_fresh.handle_event(OWNEvent.parse("*#1*26*14*250##"))
+    assert dali_fresh._actuator_locked is True
+    assert dali_fresh._locked_color_temp_snapshot == 250
+    dali_fresh.handle_event(OWNEvent.parse("*#1*26*12*120*60*50##"))
+    assert dali_fresh._actuator_locked is True
+    assert dali_fresh._locked_hs_snapshot == (120.0, 60.0)
+    assert dali_fresh._locked_rgb_snapshot is not None
+
+    # 4. OFF-locked rejected-write read-back cleanup (unknown lock state before WHO=14 seen):
+    #    4a. _last_brightness_pct originally 0 -> Dim 1 zero read-back restores 0 and 0%
+    off_new = _make_light(hass, gw, where="27", dimmable=True)
+    off_new._attr_is_on = False
+    off_new._attr_brightness_pct = 0
+    off_new._attr_brightness = 0
+    off_new._last_brightness_pct = 0
+    await off_new.async_turn_on(brightness_pct=45)
+    assert off_new._last_brightness_pct == 45
+    off_new.handle_event(OWNEvent.parse("*#1*27*1*100*5##"))
+    assert off_new._last_brightness_pct == 0
+    assert off_new._attr_brightness_pct == 0
+    assert off_new._attr_brightness == 0
+    assert off_new._pending_dim_confirm == set()
+
+    #    4b. Rejected HS write on OFF DALI light -> *1*0*28## restores prior CT mode & value
+    off_dali = _make_light(hass, gw, where="28", dimmable=True, color_temp=True, rgb=True)
+    off_dali._attr_supported_color_modes = {ColorMode.HS, ColorMode.COLOR_TEMP}
+    off_dali._attr_is_on = False
+    off_dali._attr_brightness_pct = 0
+    off_dali._attr_brightness = 0
+    off_dali._last_brightness_pct = 65
+    off_dali._attr_color_mode = ColorMode.COLOR_TEMP
+    off_dali._attr_color_temp = 333
+    off_dali._attr_color_temp_kelvin = 3003
+    off_dali._attr_hs_color = (10.0, 20.0)
+    off_dali._attr_rgb_color = (255, 220, 200)
+    await off_dali.async_turn_on(hs_color=(180, 90))
+    assert off_dali._attr_color_mode == ColorMode.HS
+    off_dali.handle_event(OWNEvent.parse("*1*0*28##"))
+    assert off_dali.is_on is False
+    assert off_dali._attr_color_mode == ColorMode.COLOR_TEMP
+    assert off_dali.color_temp == 333
+    assert off_dali._attr_hs_color == (10.0, 20.0)
+    assert off_dali._last_brightness_pct == 65
+    assert off_dali._attr_brightness_pct == 0
+
+    #    4c. Rejected color_temp write on OFF DALI light -> *1*0*28## restores HS mode & 0% brightness
+    off_dali._attr_color_mode = ColorMode.HS
+    off_dali._attr_brightness = None
+    await off_dali.async_turn_on(color_temp_kelvin=4000)
+    assert off_dali._attr_color_mode == ColorMode.COLOR_TEMP
+    assert off_dali._attr_brightness_pct == 65
+    off_dali.handle_event(OWNEvent.parse("*1*0*28##"))
+    assert off_dali._attr_color_mode == ColorMode.HS
+    assert off_dali.color_temp == 333
+    assert off_dali._attr_brightness_pct == 0
+    assert off_dali._attr_brightness == 0
+
+    #    4d. Accepted CT + Dim 1 writes clear pre-write snapshot cleanly
+    await off_dali.async_turn_on(color_temp_kelvin=4000, brightness_pct=50)
+    off_dali.handle_event(OWNEvent.parse("*#1*28*1*150*5##"))
+    off_dali.handle_event(OWNEvent.parse("*#1*28*14*250##"))
+    assert off_dali._pending_dim_confirm == set()
+    assert off_dali._pre_write_color_state is None
+
+
+async def test_light_echo_watchdog_skips_known_locked_lights(hass: HomeAssistant) -> None:
+    """LightEchoWatchdog must not arm or confirm status read-backs for known WHO=14 locked lights."""
+    import time
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+    from OWNd.message import OWNCommand
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.myhome.actuator_lock import ActuatorLockManager
+    from custom_components.myhome.gateway_confirm import LightEchoWatchdog
+
+    sent: list[str] = []
+    handler = SimpleNamespace(
+        hass=hass,
+        log_id="[WHO14]",
+        send_status_request=AsyncMock(side_effect=lambda cmd: sent.append(str(cmd))),
+    )
+    mgr = ActuatorLockManager(handler)  # type: ignore[arg-type]
+    handler._actuator_locks = mgr
+    handler.actuator_lock_owner = lambda: handler
+    dog = LightEchoWatchdog(handler)  # type: ignore[arg-type]
+
+    try:
+        # Lock point 07 before command -> watchdog skips arming and sends nothing
+        mgr.observe(OWNEvent.parse("*14*0*07##"))
+        dog.command_acknowledged(OWNCommand.parse("*1*1*07##"), time.monotonic())
+        assert dog.pending == {}
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2))
+        await hass.async_block_till_done()
+        assert sent == []
+
+        # Unlocked at ACK time, then locked during 1.5 s delay -> _confirm skips read-back
+        mgr.observe(OWNEvent.parse("*14*1*07##"))
+        dog.command_acknowledged(OWNCommand.parse("*1*1*07##"), time.monotonic())
+        assert dog.pending == {"07": "*1*1*07##"}
+        mgr.observe(OWNEvent.parse("*14*0*07##"))
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2))
+        await hass.async_block_till_done()
+        assert sent == []
+    finally:
+        dog.cancel_all()

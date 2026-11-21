@@ -540,9 +540,22 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_after: float = 0.0
         self._actuator_locked: bool | None = None
         self._locked_snapshot: tuple[bool | None, int | None] | None = None
+        self._locked_color_temp_snapshot: int | None = None
+        self._locked_hs_snapshot: tuple[float, float] | None = None
+        self._locked_rgb_snapshot: tuple[int, int, int] | None = None
         self._dirty_while_locked: bool = False
         self._pending_dim_confirm: set[int] = set()
         self._pre_write_last_brightness_pct: int | None = None
+        self._pre_write_color_state: (
+            tuple[
+                ColorMode | None,
+                int | None,
+                int | None,
+                tuple[float, float] | None,
+                tuple[int, int, int] | None,
+            ]
+            | None
+        ) = None
 
     @property
     def color_temp(self) -> int | None:
@@ -840,13 +853,24 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         )
 
     async def _async_refresh_after_unlock(self) -> None:
-        """Read back status (and brightness when dimmable) after locked writes."""
+        """Read back status and supported dimmer/DALI colour dimensions after locked writes."""
         await self._gateway_handler.send_status_request(
             OWNLightingCommand.status(self._full_where)
         )
         if self._is_dimmable():
             await self._gateway_handler.send_status_request(
                 OWNLightingCommand.get_brightness(self._full_where)
+            )
+        if ColorMode.COLOR_TEMP in self._attr_supported_color_modes:
+            await self._gateway_handler.send_status_request(
+                OWNLightingCommand.get_color_temperature(self._full_where)
+            )
+        if (
+            ColorMode.HS in self._attr_supported_color_modes
+            or ColorMode.RGB in self._attr_supported_color_modes
+        ):
+            await self._gateway_handler.send_status_request(
+                OWNLightingCommand.get_hsv_color(self._full_where)
             )
 
     @callback
@@ -858,9 +882,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if is_locked:
             self._cancel_fade_if_active()
             self._locked_snapshot = (self._attr_is_on, self._attr_brightness_pct)
+            self._locked_color_temp_snapshot = self._attr_color_temp
+            self._locked_hs_snapshot = self._attr_hs_color
+            self._locked_rgb_snapshot = self._attr_rgb_color
             self._dirty_while_locked = False
         else:
             self._locked_snapshot = None
+            self._locked_color_temp_snapshot = None
+            self._locked_hs_snapshot = None
+            self._locked_rgb_snapshot = None
             if self._dirty_while_locked:
                 self._dirty_while_locked = False
                 hass = getattr(self, "hass", None)
@@ -874,6 +904,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._actuator_locked = False
         self._attr_extra_state_attributes["actuator_locked"] = False
         self._locked_snapshot = None
+        self._locked_color_temp_snapshot = None
+        self._locked_hs_snapshot = None
+        self._locked_rgb_snapshot = None
         self._dirty_while_locked = False
         mgr = getattr(self._gateway_handler, "_actuator_locks", None)
         if mgr is not None:
@@ -881,9 +914,40 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     def _record_pending_dim_write(self, dimension: int) -> None:
         """Record an unconfirmed Dimension 1/12/14 write for post-#964 read-back."""
-        if dimension in (1, 12) and not (self._pending_dim_confirm & {1, 12}):
+        if not self._pending_dim_confirm:
             self._pre_write_last_brightness_pct = self._last_brightness_pct
+            self._pre_write_color_state = (
+                self._attr_color_mode,
+                self._attr_color_temp,
+                self._attr_color_temp_kelvin,
+                self._attr_hs_color,
+                self._attr_rgb_color,
+            )
         self._pending_dim_confirm.add(dimension)
+
+    def _clear_pending_dim_state(self) -> None:
+        """Reset pending write snapshots once confirmed, cleared, or superseded."""
+        self._pending_dim_confirm.clear()
+        self._pre_write_last_brightness_pct = None
+        self._pre_write_color_state = None
+
+    def _restore_rejected_dim_write(self) -> None:
+        """Restore pre-write dimmer and DALI colour state when read-back shows OFF."""
+        if ({1, 12} & self._pending_dim_confirm) and self._pre_write_last_brightness_pct is not None:
+            self._last_brightness_pct = self._pre_write_last_brightness_pct
+            self._attr_brightness_pct = 0
+            self._attr_brightness = 0
+        if ({12, 14} & self._pending_dim_confirm) and self._pre_write_color_state is not None:
+            mode, mireds, kelvin, hs_col, rgb_col = self._pre_write_color_state
+            self._attr_color_mode = mode
+            self._attr_color_temp = mireds
+            self._attr_color_temp_kelvin = kelvin
+            self._attr_hs_color = hs_col
+            self._attr_rgb_color = rgb_col
+            if self._attr_brightness_pct:
+                self._attr_brightness_pct = 0
+                self._attr_brightness = 0
+        self._clear_pending_dim_state()
 
     async def async_turn_on_timed(
         self,
@@ -1125,8 +1189,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._dirty_while_locked = True
             await self._cancel_fade_robustly()
         else:
-            self._pending_dim_confirm.clear()
-            self._pre_write_last_brightness_pct = None
+            self._clear_pending_dim_state()
 
         if (
             ATTR_TRANSITION in kwargs
@@ -1225,6 +1288,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         if self._actuator_locked is True and self._locked_snapshot is None:
             self._locked_snapshot = (self._attr_is_on, self._attr_brightness_pct)
+            self._locked_color_temp_snapshot = self._attr_color_temp
+            self._locked_hs_snapshot = self._attr_hs_color
+            self._locked_rgb_snapshot = self._attr_rgb_color
 
         LOGGER.debug(
             "%s %s",
@@ -1332,26 +1398,58 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 and self._locked_snapshot[1] is not None
                 and message.brightness != self._locked_snapshot[1]
             )
+            or (
+                has_color_temp
+                and self._locked_color_temp_snapshot is not None
+                and message.color_temp != self._locked_color_temp_snapshot
+            )
+            or (
+                has_hs
+                and self._locked_hs_snapshot is not None
+                and (
+                    int(round(float(cast(int, message.hue)))),
+                    int(round(float(cast(int, message.saturation)))),
+                )
+                != (
+                    int(round(float(self._locked_hs_snapshot[0]))),
+                    int(round(float(self._locked_hs_snapshot[1]))),
+                )
+            )
+            or (
+                has_rgb
+                and not has_hs
+                and self._locked_rgb_snapshot is not None
+                and tuple(cast("tuple[int, int, int]", message.rgb)) != self._locked_rgb_snapshot
+            )
+            or (
+                (has_hs or has_rgb)
+                and isinstance(raw_val, (int, float))
+                and self._locked_snapshot is not None
+                and self._locked_snapshot[1] is not None
+                and int(raw_val) != self._locked_snapshot[1]
+            )
         ):
             self._clear_actuator_lock()
 
         if has_level and message.brightness is not None and not has_preset:
-            self._pending_dim_confirm.discard(1)
-            self._pre_write_last_brightness_pct = None
+            if message.brightness == 0 and self._pending_dim_confirm:
+                self._restore_rejected_dim_write()
+            else:
+                self._pending_dim_confirm.discard(1)
+                if not self._pending_dim_confirm:
+                    self._clear_pending_dim_state()
         if has_hs or has_rgb:
             self._pending_dim_confirm.discard(12)
-            self._pre_write_last_brightness_pct = None
+            if not self._pending_dim_confirm:
+                self._clear_pending_dim_state()
         if has_color_temp:
             self._pending_dim_confirm.discard(14)
+            if not self._pending_dim_confirm:
+                self._clear_pending_dim_state()
 
         dim = getattr(message, "dimension", None)
         if message.is_on is False and dim is None and self._pending_dim_confirm:
-            if self._pre_write_last_brightness_pct is not None:
-                self._last_brightness_pct = self._pre_write_last_brightness_pct
-                self._attr_brightness_pct = 0
-                self._attr_brightness = 0
-            self._pending_dim_confirm.clear()
-            self._pre_write_last_brightness_pct = None
+            self._restore_rejected_dim_write()
         elif (
             message.is_on is True
             and dim is None
@@ -1360,7 +1458,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         ):
             if 1 in self._pending_dim_confirm:
                 self._pending_dim_confirm.discard(1)
-                self._pre_write_last_brightness_pct = None
                 if not has_preset and message.brightness is None:
                     self._request_brightness_refresh()
             if 14 in self._pending_dim_confirm:
@@ -1374,7 +1471,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     )
             if 12 in self._pending_dim_confirm:
                 self._pending_dim_confirm.discard(12)
-                self._pre_write_last_brightness_pct = None
                 hass = getattr(self, "hass", None)
                 if hass is not None:
                     hass.async_create_task(
@@ -1382,6 +1478,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                             OWNLightingCommand.get_hsv_color(self._full_where)
                         )
                     )
+            if not self._pending_dim_confirm:
+                self._clear_pending_dim_state()
 
         # Auto-promote to HS when HSV color data is received (Dimension 12)
         if has_hs or has_rgb:
@@ -1521,6 +1619,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._attr_is_on if snap_on is None else snap_on,
                     self._attr_brightness_pct if snap_bri is None else snap_bri,
                 )
+            if self._locked_color_temp_snapshot is None and self._attr_color_temp is not None:
+                self._locked_color_temp_snapshot = self._attr_color_temp
+            if self._locked_hs_snapshot is None and self._attr_hs_color is not None:
+                self._locked_hs_snapshot = self._attr_hs_color
+            if self._locked_rgb_snapshot is None and self._attr_rgb_color is not None:
+                self._locked_rgb_snapshot = self._attr_rgb_color
 
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon

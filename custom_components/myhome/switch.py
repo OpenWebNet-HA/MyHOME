@@ -668,9 +668,14 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         """Handle an event message."""
         if getattr(message, "is_translation", None) is True:
             return
+        is_dim_step = (
+            getattr(message, "dimension", None) is None
+            and getattr(message, "what", None) in (30, 31)
+        )
         self._seed_locked_is_on()
         if (
             self._actuator_locked is True
+            and not is_dim_step
             and isinstance(message.is_on, bool)
             and self._locked_is_on is not None
             and message.is_on != self._locked_is_on
@@ -699,7 +704,7 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
-        if message.is_on is not None:
+        if not is_dim_step and message.is_on is not None:
             self._attr_is_on = message.is_on
         self._seed_locked_is_on()
         if self._off_icon is not None and self._on_icon is not None:

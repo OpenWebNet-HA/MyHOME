@@ -156,32 +156,57 @@ def test_interface_isolation_and_normalization(hass: HomeAssistant) -> None:
 
 
 def test_general_and_area_scopes_and_point_10(hass: HomeAssistant) -> None:
-    """General (0/00) and Area (1..9/100) respect interfaces and distinguish point 10."""
+    """General (0) and Area (00, 1..9, 100) respect interfaces and distinguish point 10."""
     handler, _ = _make_handler(hass)
     mgr = handler._actuator_locks
 
     ent_a0 = _make_bare_entity(hass, handler, who="1", where="05")
+    ent_a0_4d = _make_bare_entity(hass, handler, who="1", where="0015")
     ent_a1 = _make_bare_entity(hass, handler, who="1", where="11")
     ent_a1_4d = _make_bare_entity(hass, handler, who="1", where="0115")
     ent_p10 = _make_bare_entity(hass, handler, who="1", where="10")
     ent_a10 = _make_bare_entity(hass, handler, who="2", where="1005")
+    ent_if1_a0 = _make_bare_entity(hass, handler, who="1", where="05", interface="01")
     ent_if1 = _make_bare_entity(hass, handler, who="1", where="11", interface="01")
 
-    for e in (ent_a0, ent_a1, ent_a1_4d, ent_p10, ent_a10, ent_if1):
+    for e in (ent_a0, ent_a0_4d, ent_a1, ent_a1_4d, ent_p10, ent_a10, ent_if1_a0, ent_if1):
         mgr.register(e)
 
-    # Cached unseen point on main bus + another on area 1 & area 10 & interface 01
+    # Cached unseen point on main bus (area 0 and area 9) + area 1 & area 10 & interface 01
+    mgr.observe(OWNMessage.parse("*14*0*04##"))
     mgr.observe(OWNMessage.parse("*14*0*98##"))
     mgr.observe(OWNMessage.parse("*14*1*12##"))
     mgr.observe(OWNMessage.parse("*14*1*1002##"))
     mgr.observe(OWNMessage.parse("*14*0*98#4#01##"))
+
+    # Area 0 lock (*14*0*00##): locks ONLY Area 0 (05, 0015, cached 04), leaving areas 1/9/10, point 10, and iface 01 untouched
+    mgr.observe(OWNMessage.parse("*14*0*00##"))
+    assert ent_a0._actuator_locked is True
+    assert ent_a0_4d._actuator_locked is True
+    assert mgr.is_locked("04") is True
+    assert ent_a1._actuator_locked is None
+    assert ent_p10._actuator_locked is None
+    assert ent_a10._actuator_locked is None
+    assert ent_if1_a0._actuator_locked is None
+    assert mgr.is_locked("98") is True
+    mgr.observe(OWNMessage.parse("*14*1*00##"))
+    assert ent_a0._actuator_locked is False
+    assert ent_a0_4d._actuator_locked is False
+    assert mgr.is_locked("04") is False
+    assert mgr.is_locked("98") is True
+
+    # Interface-scoped Area 0 lock (*14*0*00#4#01##) affects only interface 01 Area 0
+    mgr.observe(OWNMessage.parse("*14*0*00#4#01##"))
+    assert ent_if1_a0._actuator_locked is True
+    assert ent_if1._actuator_locked is None
+    assert ent_a0._actuator_locked is False
 
     # Area 1 lock (*14*0*1##): locks 11, 0115, and cached 12; leaves 05, 10, 1005, and iface 01 untouched
     mgr.observe(OWNMessage.parse("*14*0*1##"))
     assert ent_a1._actuator_locked is True
     assert ent_a1_4d._actuator_locked is True
     assert mgr.is_locked("12") is True
-    assert ent_a0._actuator_locked is None
+    assert ent_a0._actuator_locked is False
     assert ent_p10._actuator_locked is None
     assert ent_a10._actuator_locked is None
     assert ent_if1._actuator_locked is None
@@ -197,15 +222,21 @@ def test_general_and_area_scopes_and_point_10(hass: HomeAssistant) -> None:
     mgr.observe(OWNMessage.parse("*14*0*10##"))
     assert ent_p10._actuator_locked is True
 
-    # General unlock (*14*1*00##) and general lock (*14*0*0##) stay on same interface
-    mgr.observe(OWNMessage.parse("*14*1*00##"))
-    assert all(e._actuator_locked is False for e in (ent_a0, ent_a1, ent_a1_4d, ent_p10, ent_a10))
+    # General lock (*14*0*0##) and general unlock (*14*1*0##) affect all points on same interface
+    mgr.observe(OWNMessage.parse("*14*1*0##"))
+    assert all(
+        e._actuator_locked is False
+        for e in (ent_a0, ent_a0_4d, ent_a1, ent_a1_4d, ent_p10, ent_a10)
+    )
     assert mgr.is_locked("98") is False
     assert ent_if1._actuator_locked is None
     assert mgr.is_locked("98#4#01") is True
 
     mgr.observe(OWNMessage.parse("*14*0*0##"))
-    assert all(e._actuator_locked is True for e in (ent_a0, ent_a1, ent_a1_4d, ent_p10, ent_a10))
+    assert all(
+        e._actuator_locked is True
+        for e in (ent_a0, ent_a0_4d, ent_a1, ent_a1_4d, ent_p10, ent_a10)
+    )
     assert ent_if1._actuator_locked is None
 
     # Interface-scoped general lock/unlock
@@ -214,6 +245,7 @@ def test_general_and_area_scopes_and_point_10(hass: HomeAssistant) -> None:
     assert mgr.is_locked("98", "01") is True
     mgr.observe(OWNMessage.parse("*14*1*0#4#01##"))
     assert ent_if1._actuator_locked is False
+    assert ent_if1_a0._actuator_locked is False
     assert mgr.is_locked("98", "01") is False
 
 
@@ -451,3 +483,48 @@ async def test_live_entity_subclasses_and_dispatcher_integration(hass: HomeAssis
     ):
         await orphan.async_added_to_hass()
     assert orphan._actuator_lock_registered is False
+
+
+@pytest.mark.asyncio
+async def test_warm_standby_failover_routes_who14_to_primary(hass: HomeAssistant) -> None:
+    """During Warm Standby failover, WHO=14 frames on standby update the primary's locks."""
+    from custom_components.myhome.const import ROLE_PRIMARY, ROLE_STANDBY, TOPOLOGY_SHARED
+    from tests.test_multi_gateway import _create_mock_gateway
+
+    _, gw_primary = _create_mock_gateway(
+        hass,
+        "00:03:50:aa:bb:11",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_PRIMARY,
+    )
+    _, gw_standby = _create_mock_gateway(
+        hass,
+        "00:03:50:aa:bb:12",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_STANDBY,
+        primary_gateway="00:03:50:aa:bb:11",
+    )
+
+    ent = _make_bare_entity(hass, gw_primary, who="1", where="05")
+    gw_primary._actuator_locks.register(ent)
+
+    gw_primary.is_connected = True
+    gw_standby.is_connected = True
+    assert gw_primary.actuator_lock_owner() is gw_primary
+    # While primary is online, standby owns neither locks nor WHO=14 events
+    assert gw_standby.actuator_lock_owner() is None
+    await gw_standby._process_message(OWNMessage.parse("*14*0*05##"))
+    assert ent._actuator_locked is None
+
+    # Primary disconnects -> standby routes WHO=14 frames (including Area 00 & General 0) to primary
+    gw_primary.is_connected = False
+    gw_primary._on_event_connection_state_change(False)
+    assert gw_standby.actuator_lock_owner() is gw_primary
+
+    await gw_standby._process_message(OWNMessage.parse("*14*0*00##"))
+    assert ent._actuator_locked is True
+    assert gw_primary._actuator_locks.is_locked("05") is True
+
+    await gw_standby._process_message(OWNMessage.parse("*14*1*0##"))
+    assert ent._actuator_locked is False
+    assert gw_primary._actuator_locks.is_locked("05") is False

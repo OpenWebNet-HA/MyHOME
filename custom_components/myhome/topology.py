@@ -707,6 +707,15 @@ class GatewayTopologyMixin:
             return primary_gw.device_health
         return self.device_health
 
+    def actuator_lock_owner(self) -> Any:
+        """The gateway handler whose WHO = 14 actuator locks apply during failover."""
+        if self.is_standby:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
+                return None
+            return primary_gw
+        return self
+
     @property
     def ignored_addresses(self) -> Any:
         """Addresses configured to be ignored on this gateway."""
