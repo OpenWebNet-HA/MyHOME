@@ -106,6 +106,7 @@ from .where_grammar import (
     canonical_thermo_zone,
     is_central_thermo_where,
     is_central_unit_report,
+    is_external_probe,
     is_probe,
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -126,6 +127,8 @@ SCAN_INTERVAL = timedelta(seconds=300)
 # `*#4*303*15##`; the F455 1.0.76 on that plant held a command session 9.3 to 9.4 s before it
 # NACKed each of them (sent directly to the F461 on the same bus: NACK after 2.1 s). Three
 # poll intervals cover that report interval with one update to spare.
+# (That read was the dimension 15 one; a slave probe is now asked for dimension 0, see
+# `MyHOMETemperatureSensor._fallback_read`.)
 PROBE_PUSH_FRESH = 900.0
 # A single corrupted frame (e.g. zone 1 bit-7 flip -> 129) must not register a
 # permanent phantom probe sensor (#967). Unconfigured bus probes confirm passively
@@ -225,6 +228,25 @@ def _climate_zone_config(
         if canonical_thermo_zone(cfg_addr.where) == zone and cfg_addr.interface == interface:
             return dict(cfg)
     return {}
+
+def _probe_frame_without_reading(message: Any) -> bool:
+    """A WHO 4 dimension 15 frame whose sensor field and temperature are all zeros.
+
+    An MH201 3.3.6 delivered ``*#4*105*15*0*0000*0000##`` twice, 8 s apart (issue_466, sweep of
+    2026-09-25), while probe 105 of that plant reports 29.6 °C on dimension 0
+    (``*#4*105*0*0296##``, 7 min 11 s earlier in the trace of the same gateway). OWNd reads the
+    frame as sensor 0 at 0.0 °C. The dimension 15 reports in the other captures carry sensor
+    ``1``: ``*#4*100*15*1*0253*0001##`` (#308), ``*#4*100*15*1*0200*0001##`` (#264); so does the
+    touch screen's test report ``*#4*11*15*1*123*1111##``, and its request is ``15#1``
+    (Encyclopedia, WHO 4 dimensions, "Historical external-probe DIMENSION 15"). What a sensor
+    field of ``0`` stands for is not documented, so only a frame whose sensor field and
+    temperature are both zeros is taken as "no reading"; ``0000`` from sensor 1 is still 0.0 °C.
+    """
+    if getattr(message, "dimension", None) != 15:
+        return False
+    values = [str(value) for value in (getattr(message, "dimension_value", None) or [])]
+    return len(values) >= 2 and all(value != "" and set(value) == {"0"} for value in values[:2])
+
 
 
 async def async_setup_entry(
@@ -498,6 +520,8 @@ async def async_setup_entry(
         clean = where.split("-")[-1].split("#")[0]
         if not clean:
             return None
+        if _probe_frame_without_reading(message):
+            return None  # no sensor is created for a frame that carries no reading
         is_probe_reading = dimension == 15 or message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
@@ -1395,13 +1419,36 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         # Readings received from the bus, to tell whether one arrived while a fallback read was out.
         self._pushes = 0
         # Set when the gateway refused the fallback read of a probe: it is not sent again (until
-        # the entry is reloaded). The readings the probe sends by itself are all it has then.
+        # the entry is reloaded, or the gateway comes back from an outage). The readings the
+        # probe sends by itself are all it has then.
         self._fallback_read_refused = False
 
     @property
     def _is_probe(self) -> bool:
         """Return True for slave/external probe addresses (ZPP >= 100)."""
         return is_probe(str(self._where).split("#")[0])
+
+    def _fallback_read(self) -> OWNHeatingCommand:
+        """The read of this sensor: dimension 0, except for an external probe (``N00``).
+
+        A slave probe ``PZZ`` is read like a zone: "Slave probe temperature request: where =
+        [1-8]+[01-99]", ``*#4*where*0##``, example ``*#4*301*0##`` (WHO 4 PDF, 1.5.1). Probe 303
+        of a physical plant, 2026-11-18, asked directly on a command session: ``*#4*303*0##``
+        was answered with ``*#4*303*0*0233##`` and an ACK after 0.09 s by an F455 1.0.76 and
+        after 0.14 s by an F461 2.0.11; ``*#4*303*15##`` was NACKed with no frame after 8.9 s
+        (F455) and 2.1 s (F461). Probe 105 behind an MH200N 1.1.8 and an MH201 3.3.6 reports on
+        dimension 0 too (``*#4*105*0*0296##``, issue_466); ``*#4*105*15##`` sent through that
+        MH200N was followed by no frame of the probe.
+
+        An external probe ``N00`` keeps the dimension 15 read of #308: its reports are dimension
+        15 frames (``*#4*100*15*1*0253*0001##``, a 3455 behind an L4577 on an F454), no capture
+        shows it answering a dimension 0 read, and that read is rationed by the latch below.
+        """
+        if is_external_probe(str(self._where).split("#")[0]):
+            build = getattr(OWNHeatingCommand, "get_probe_temperature", None)  # absent in old OWNd
+            if build is not None:
+                return cast(OWNHeatingCommand, build(self._where))
+        return OWNHeatingCommand.get_temperature(self._where)
 
     def _push_is_fresh(self) -> bool:
         """Return True when a reading arrived within the last poll interval (a probe: ``PROBE_PUSH_FRESH``)."""
@@ -1420,19 +1467,31 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         """When entity is removed from hass."""
         self._unregister_entity_ref(str(self._attr_device_class))
 
+    @callback
+    def _handle_availability_update(self) -> None:
+        """Ask a probe once more after the gateway came back from an outage.
+
+        The refusal was the answer of the gateway before the outage (a restart of the gateway, a
+        power cut on the plant, another gateway taking over). One refused read per outage is the
+        cost; without it one command timeout latched the probe until the entry was reloaded.
+        """
+        if self._fallback_read_refused and getattr(self._gateway_handler, "is_connected", False) is True:
+            self._fallback_read_refused = False
+            LOGGER.debug(
+                "%s %s: the gateway is available again; probe %s is asked once more when it stays silent",
+                self._gateway_handler.log_id,
+                self.entity_id,
+                self._where,
+            )
+        super()._handle_availability_update()
+
     async def async_update(self) -> None:
         """Poll the probe, unless the bus already pushed a fresh reading."""
         if self._push_is_fresh():
             return
-        if self._is_probe:
-            if self._fallback_read_refused:
-                return
-            cmd = (
-                getattr(OWNHeatingCommand, "get_probe_temperature", None)
-                and OWNHeatingCommand.get_probe_temperature(self._where)
-            ) or OWNHeatingCommand.get_temperature(self._where)
-        else:
-            cmd = OWNHeatingCommand.get_temperature(self._where)
+        if self._is_probe and self._fallback_read_refused:
+            return
+        cmd = self._fallback_read()
         pushes_before = self._pushes
         written = await self._gateway_handler.send_status_request(cmd)
         if self._is_probe and isinstance(written, asyncio.Future):
@@ -1471,6 +1530,9 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
+        if _probe_frame_without_reading(message):
+            # Not a reading and not a report: it changes neither the value nor the fallback window.
+            return None
         val = None
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
             val = message.main_temperature

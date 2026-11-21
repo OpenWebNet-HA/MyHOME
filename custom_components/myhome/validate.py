@@ -360,6 +360,10 @@ class MyHomeDeviceSchema(Schema):
         }
         data = super().__call__(data)  # type: ignore
         _rekeyed_data = {}
+        # A 4-zone central unit (``central: true``, ``zone: "1"`` -> ``#0#1``) also answers to
+        # its bare zone number. Where the file has a zone with that number too, the number
+        # is the zone's whatever the order of the two entries: filed last, without replacing.
+        _central_aliases: list[tuple[str, typing.Any]] = []
 
         for device in data:
             data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
@@ -375,13 +379,16 @@ class MyHomeDeviceSchema(Schema):
                 data[device][CONF_NAME] = (
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
                 )
-                _rekeyed_data[_new_key] = data[device]
                 _rekeyed_data[str(device)] = data[device]
                 clean_zone = str(data[device][CONF_ZONE]).split("#")[-1]
-                _rekeyed_data[f"{clean_zone}{routing}"] = data[device]
                 _rekeyed_data[f"{data[device][CONF_ZONE]}{routing}"] = data[device]
+                _zone_aliases = [_new_key, f"{clean_zone}{routing}"]
                 if not routing:
-                    _rekeyed_data[f"zone_{clean_zone}"] = data[device]
+                    _zone_aliases.append(f"zone_{clean_zone}")
+                if str(data[device][CONF_ZONE]).startswith("#0#"):
+                    _central_aliases.extend((alias, data[device]) for alias in _zone_aliases)
+                else:
+                    _rekeyed_data.update(dict.fromkeys(_zone_aliases, data[device]))
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
             if CONF_ICON not in data[device]:
@@ -397,6 +404,8 @@ class MyHomeDeviceSchema(Schema):
             if CONF_DEVICE_CLASS not in data[device]:
                 data[device][CONF_DEVICE_CLASS] = SwitchDeviceClass.SWITCH
 
+        for alias, central in _central_aliases:
+            _rekeyed_data.setdefault(alias, central)
         return _rekeyed_data
 
 

@@ -445,9 +445,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyHOMEConfigEntry) -> b
         return True
 
     gateway_handler = runtime.gateway
-    # Device faults are re-raised by the next setup if still there (device_health.py).
+    # Device faults are re-raised by the next setup if still there (device_health.py). An
+    # issue the owner ignored stays, so that a reload does not bring it back as a new one.
     health = getattr(gateway_handler, "device_health", None)
     if isinstance(health, DeviceHealth):
-        health.clear_all()
+        health.clear_all(keep_ignored=True)
 
     return await gateway_handler.close_listener()

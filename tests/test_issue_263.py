@@ -227,7 +227,9 @@ async def test_climate_yaml_config_skips_probe_entries(hass, mock_gateway):
         ("invalid_hvac_mode", "19.0", HVACMode.OFF, 19.0),
         (HVACMode.HEAT, "22.0", HVACMode.HEAT, 22.0),
         (HVACMode.COOL, "23.0", HVACMode.COOL, 23.0),
-        (HVACMode.OFF, "18.0", HVACMode.OFF, 18.0),
+        # Saved while off: the value shown may be the protection setpoint (#383), so it is not
+        # taken as the nominal one (tests/test_climate_setpoint_in_force.py, restart while off).
+        (HVACMode.OFF, "18.0", HVACMode.OFF, None),
         (None, None, None, None),
         ("heat", "invalid_number", HVACMode.HEAT, None),
     ],

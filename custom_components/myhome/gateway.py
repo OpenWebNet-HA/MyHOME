@@ -24,7 +24,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway, OWNSession
-from OWNd.message import OWNCommand
+from OWNd.message import OWNCommand, OWNHeatingCommand
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
 from .bus_monitor import BusMonitor
@@ -310,6 +310,13 @@ KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455"})
 # this table is the fallback for ``GenericGatewayProfile`` / brand-prefixed model strings and
 # ``None`` (unverified) profile flags.
 ACTUATOR_REQUEST_REFUSED = frozenset({"F453", "F453AV", "H4684", "MH200", "MH200N", "MH202"})
+# Of those six, the gateways whose firmware drops the actuator form too (``*#4*Z#N*20##``): the
+# same suite's ``*#4*1#1*20##`` row is "silent" on H4684 and MH200 only. F453, F453AV and MH200N
+# put it on the bus (``$0499813110``, "nack / out": no device on the emulated bus) and the MH202
+# acknowledges it ("ack / out"); thermo-zone-requests.tsv has the same split for ``*#4*2#1*20##``.
+# Emulated firmware only: no physical capture of that read exists for those four, so a read
+# they leave unanswered ends the silent-zone poll like any other (it is the poll's last read).
+ACTUATOR_FORM_REQUEST_REFUSED = frozenset({"H4684", "MH200"})
 # Gateways that refuse the zone form of that request at once but answer the actuator form
 # (``*#4*Z#N*20##``): a physical F455 1.0.76 NACKed *#4*2*20##, *#4*4*20##, *#4*3*20## and
 # *#4*0*20## in 2-18 ms and answered *#4*2#1*20## / *#4*4#1*20## / *#4*3#1*20## in ~0.09 s
@@ -489,20 +496,32 @@ def _validate_zone_where(where: str) -> str:
     A one-digit interface is written with two (``3#4#1`` -> ``3#4#01``), as the frames on
     the wire and the configuration validator spell it. Anything else would change the
     frame's grammar: ``2*22`` would turn a dimension 20 request into ``*#4*2*22*20##``, a
-    dimension 22 write; ``2##`` ends the frame early. The builder of OWNd#140
-    (``OWNHeatingCommand.actuators_status``) accepts and rejects the same addresses.
+    dimension 22 write; ``2##`` ends the frame early. Same grammar as the builder of OWNd#140
+    (``OWNHeatingCommand.actuators_status``), with two differences on purpose: the builder
+    refuses the one-digit interface this function completes (``3#4#1``), and it strips
+    surrounding whitespace, which is refused here (`` 2``, and ``2\n``: the whole string has
+    to match, ``$`` alone would let a trailing newline into the frame).
     """
     zone, routing, interface = (where or "").rpartition(BUS_ROUTING)
     if routing and len(interface) == 1 and interface.isdigit():
         where = f"{zone}{routing}{interface.zfill(2)}"
-    if not _ZONE_WHERE.match(where or ""):
+    if not _ZONE_WHERE.fullmatch(where or ""):
         raise ValueError(f"Invalid zone address: {where!r}")
     return where
 
 
 def _zone_request_frame(where: str, dimension: int) -> str:
-    """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder."""
-    return f"*#4*{_validate_zone_where(where)}*{dimension}##"
+    """The dimension request of one zone (``*#4*WHERE*DIM##``), validated like a builder.
+
+    Dimension 20 is built by OWNd (``OWNHeatingCommand.actuators_status``, OWNd#140, in the
+    pinned 2.0.1), as #792 planned once it was released. Dimensions 11, 19 and 60 have no OWNd
+    builder that takes a zone behind an interface, so they keep the string and this module's
+    copy of the address grammar.
+    """
+    where = _validate_zone_where(where)
+    if dimension == 20:
+        return str(OWNHeatingCommand.actuators_status(where))
+    return f"*#4*{where}*{dimension}##"
 
 
 def _is_zone_level_where(where: str) -> bool:
@@ -820,6 +839,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return not supported
         return self._model_key in ACTUATOR_REQUEST_REFUSED
 
+    @property
+    def actuator_form_request_refused(self) -> bool:
+        """Whether this gateway drops the actuator form of the request too (``*#4*Z#N*20##``)."""
+        return self._model_key in ACTUATOR_FORM_REQUEST_REFUSED
+
+    def actuator_read_refused(self, where: str) -> bool:
+        """Whether the dimension 20 read of ``where`` is not sent, by the form ``where`` takes.
+
+        A zone (``Z``) is the zone form, refused where ``actuator_request_refused`` or
+        ``zone_actuator_request_refused`` says so; an actuator (``Z#N``) is refused only where
+        ``actuator_form_request_refused`` does. Decided by the gateway the read goes through.
+        """
+        target = self._who4_target()
+        if _is_zone_level_where(where):
+            return target.actuator_request_refused or target.zone_actuator_request_refused
+        return target.actuator_form_request_refused
+
     def all_zone_request(self, dimension: int) -> str | None:
         """The single request this gateway answers with every zone's ``dimension``, if any."""
         return ALL_ZONE_REQUESTS.get(self._model_key, {}).get(dimension)
@@ -901,10 +937,22 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                         if not wheres:
                             continue
                 if dimension == 20 and target.actuator_request_refused:
-                    LOGGER.debug(
-                        "%s Zones %s: %s refuses the actuator request; not asking", self.log_id, wheres, target.model
+                    # The zone form is dropped; an actuator named by a thermo switch (``Z#N``)
+                    # is still asked where the firmware forwards that form.
+                    asked = (
+                        []
+                        if target.actuator_form_request_refused
+                        else [where for where in wheres if not _is_zone_level_where(where)]
                     )
-                    continue
+                    LOGGER.debug(
+                        "%s Zones %s: %s refuses the actuator request; not asking",
+                        self.log_id,
+                        [where for where in wheres if where not in asked],
+                        target.model,
+                    )
+                    if not asked:
+                        continue
+                    wheres = asked
                 if dimension == 60 and target.humidity_request_refused:
                     LOGGER.debug(
                         "%s Zones %s: %s refuses the humidity request; not asking", self.log_id, wheres, target.model
@@ -1006,10 +1054,16 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return None
 
     async def wait_for_zone_requests(self) -> None:
-        """Let same-turn zone dimension requests coalesce and wait for their paced run."""
+        """Let same-turn zone dimension requests coalesce and wait for their paced run.
+
+        The run is shared by every zone, so a waiter only watches it: ``asyncio.wait`` leaves
+        the task alone when the waiter is cancelled (a climate entity removed during its
+        startup poll), where ``asyncio.gather`` cancels what it awaits and would drop the
+        other zones' frames with it. Same form as ``_wait_for_write``.
+        """
         await asyncio.sleep(0)
-        while self._zone_request_task is not None and not self._zone_request_task.done():
-            await asyncio.gather(self._zone_request_task, return_exceptions=True)
+        while (task := self._zone_request_task) is not None and not task.done():
+            await asyncio.wait({task})
 
     def _has_status_consumer(self, message: OWNCommand) -> bool:
         """Whether ``send_status_request(message)`` has an active worker, target, or test double."""
@@ -1097,9 +1151,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     def silent_zone_actuator_read_refused(self) -> bool:
         """Whether the silent-zone poll leaves the actuator read (``*#4*Z#1*20##``) out.
 
-        ``actuator_request_refused`` of the gateway the reads go through (``_who4_target``).
+        ``actuator_form_request_refused`` of the gateway the reads go through (``_who4_target``):
+        the read is the actuator form, which more gateways forward than the zone form.
         """
-        return self._who4_target().actuator_request_refused
+        return self._who4_target().actuator_form_request_refused
 
     @property
     def zone_temperature_poll_needed(self) -> bool:

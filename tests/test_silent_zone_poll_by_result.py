@@ -12,8 +12,10 @@ any gateway asks for what it has not reported, read by read, and a refused read 
   repeat a read that was answered; one that brought nothing is repeated once, as the last read of
   a zone that is still silent. Only the F455 keeps the first knob read for the poll
   (``KNOB_READ_IN_SILENT_ZONE_POLL``, #674).
-- Actuator 1 (``*#4*Z#1*20##``) is not asked where the gateway drops the actuator request, and a
-  zone that misses nothing else asks for it only where its watch could not (the F455).
+- Actuator 1 (``*#4*Z#1*20##``) is not asked where the gateway drops that form of the actuator
+  request (H4684 and MH200: ``*#4*1#1*20##`` "silent" in own-firmware-oracle thermo-actuator.tsv; the
+  F453, F453AV, MH200N and MH202, which drop only the zone form ``*#4*1*20##``, put it on the bus),
+  and a zone that misses nothing else asks for it only where its watch could not (the F455).
 - A zone marked unresponsive (``poll_health``) is left alone.
 - The poll starts after the zone's own poll on add, the zones are asked one after another, and
   every read waits for the bus to be quiet after the one before (the pacing of #886). A read the
@@ -58,19 +60,20 @@ KNOB = "*#4*2*13*00##"
 SCS_ONLY = {
     "F450": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F452": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
-    "F453": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
-    "F453AV": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
+    "F453": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
+    "F453AV": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F455": ([], ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]),
     "F458": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F459": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "H4684": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
     "BTicino H/L4684": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
     "MH200": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
-    "MH200N": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
+    "MH200N": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "MH201": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
 }
-# model: whether the poll may ask for actuator 1 (the gateway does not drop the actuator request)
-ZONE_STATUS = {"F454": True, "F460": True, "F461": True, "MH202": False, "MyHomeServer1": True, "Generic": True}
+# model: whether the poll may ask for actuator 1 (the gateway does not drop the actuator form of the
+# request; the MH202 drops the zone form and acknowledges *#4*1#1*20##, thermo-actuator.tsv "ack / out")
+ZONE_STATUS = {"F454": True, "F460": True, "F461": True, "MH202": True, "MyHomeServer1": True, "Generic": True}
 
 
 # ------------------------------------------------------------------ the gate
@@ -117,6 +120,23 @@ def test_the_gateway_that_serves_who_4_decides_the_knob_and_the_actuator_read(ha
     monkeypatch.setattr(primary, "_who4_target", lambda: primary)
     monkeypatch.setattr(other, "_who4_target", lambda: primary)
     assert other.actuator_request_refused is True and other.silent_zone_actuator_read_refused is False
+    # The zone form and the actuator form are two refusals: only H4684 and MH200 drop both.
+    for model, zone_form, actuator_form in (
+        ("H4684", True, True),
+        ("MH200", True, True),
+        ("F453", True, False),
+        ("F453AV", True, False),
+        ("MH200N", True, False),
+        ("MH202", True, False),
+        ("F454", False, False),
+    ):
+        handler = _handler(hass, model)
+        assert handler.actuator_request_refused is zone_form, model
+        assert handler.silent_zone_actuator_read_refused is actuator_form, model
+        assert handler.actuator_read_refused("2") is zone_form, model
+        assert handler.actuator_read_refused("2#1") is actuator_form, model
+    f455_reads = _handler(hass, "F455")
+    assert f455_reads.actuator_read_refused("2") is True and f455_reads.actuator_read_refused("2#1") is False
     f455 = _handler(hass, "F455")
     monkeypatch.setattr(primary, "_who4_target", lambda: f455)
     assert primary.knob_read_in_silent_zone_poll is True
@@ -602,7 +622,7 @@ async def test_a_zone_without_a_temperature_asks_for_it_first(hass, model) -> No
     assert on_add == SCS_ONLY[model][0]
     zone.handle_event(OWNHeatingEvent(KNOB))
     await zone._poll_if_silent(grace=0)
-    assert _queued(handler)[len(on_add) :] == ["*#4*2*0##", "*#4*2*14##", "*#4*2*12##"]
+    assert _queued(handler)[len(on_add) :] == ["*#4*2*0##", *SCS_ONLY[model][1]]
 
 
 async def test_a_refused_read_ends_the_poll(hass) -> None:
@@ -689,3 +709,53 @@ async def test_an_added_zone_schedules_the_poll(hass, monkeypatch) -> None:
     for remove in list(zone._on_remove or []):
         remove()
     task.cancel.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("model", "where", "asked"),
+    [
+        # The actuator form, *#4*Z#N*20##: forwarded by the four gateways that drop only the zone form.
+        ("MH202", "7#1", ["*#4*7#1*20##"]),
+        ("F453", "7#1", ["*#4*7#1*20##"]),
+        ("F453AV", "7#1", ["*#4*7#1*20##"]),
+        ("MH200N", "7#1", ["*#4*7#1*20##"]),
+        ("F455", "7#1", ["*#4*7#1*20##"]),
+        ("H4684", "7#1", []),
+        ("MH200", "7#1", []),
+        # The zone form, *#4*Z*20##: dropped by all six, and refused at once by the F455.
+        ("MH202", "7", []),
+        ("MH200N", "7", []),
+        ("H4684", "7", []),
+        ("F455", "7", []),
+        ("F454", "7", ["*#4*7*20##"]),
+    ],
+)
+async def test_a_thermo_switch_reads_its_actuator_by_the_form_the_gateway_forwards(hass, model, where, asked) -> None:
+    """``homeassistant.update_entity`` on a WHO 4 thermo switch: the read goes by the form of its WHERE."""
+    from custom_components.myhome.switch import MyHOMEThermoSwitch
+
+    handler = _handler(hass, model)
+    _ready(handler)
+    zone, _, actuator = where.partition("#")
+    switch = MyHOMEThermoSwitch(
+        hass=hass, name="Towel warmer", entity_name=None, icon=None, icon_on=None, device_id=f"4-{where}",
+        where=where, zone=zone, actuator=actuator or None, interface=None, device_class=None,
+        manufacturer="BTicino", model="F430", turn_on_command=None, turn_off_command=None, gateway=handler,
+    )
+    await switch.async_update()
+    assert _queued(handler) == asked
+
+
+@pytest.mark.parametrize(
+    ("model", "sent"),
+    [("MH202", ["*#4*7#1*20##"]), ("F453", ["*#4*7#1*20##"]), ("MH200N", ["*#4*7#1*20##"]), ("H4684", []), ("MH200", [])],
+)
+async def test_the_watch_of_an_actuator_is_sent_where_only_the_zone_form_is_dropped(hass, model, sent) -> None:
+    from tests.test_f455_zone_polling import _drain
+
+    handler = _handler(hass, model)
+    handler._initial_discovery_done.set()
+    handler.watch_zone_actuators("7")  # a climate zone: the zone form, dropped by these gateways
+    handler.watch_zone_actuators("7#1")  # a thermo actuator switch
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _drain(handler) == sent

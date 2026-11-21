@@ -2333,3 +2333,125 @@ async def test_issue_863_actuator_4_does_not_overwrite_actuator_1(
         "*#4*30#4#01##"
     ]
 
+
+
+async def test_direct_write_behind_an_interface_is_refused_like_the_climate_writes(hass: HomeAssistant) -> None:
+    """A routed thermo switch must not write ``*#4*Z#N#4#II*#20*V##`` where WHO 4 is not routed (#816).
+
+    The gateways cut the address at ``#`` and act on the local bus (own-firmware-oracle
+    ``findings/thermo-zone-requests.md``: the read ``*#4*2#1#4#01*20##`` goes to local zone 2
+    actuator 1, on the MH202 to local zone 4 actuator 1). The reads of the switch were already
+    withheld and the climate platform refuses its writes; the switch still wrote.
+    """
+
+    def _switch(gateway: MagicMock, *, on: str | None = None, off: str | None = None) -> MyHOMEThermoSwitch:
+        return MyHOMEThermoSwitch(
+            hass=hass, name="Towel warmer", entity_name=None, icon=None, icon_on=None, device_id="4-7#1#4#01",
+            where="7#1", zone="7", actuator="1", interface="01", device_class=None, manufacturer="BTicino",
+            model="F430", turn_on_command=on, turn_off_command=off, gateway=gateway,
+        )
+
+    gw = _mock_gateway()
+    gw.interface_zone_request_refused = True
+    routed = _switch(gw)
+    for action in (routed.async_turn_on, routed.async_turn_off):
+        with pytest.raises(HomeAssistantError) as err:
+            await action()
+        assert err.value.translation_key == "thermo_switch_interface_write_refused"
+        assert err.value.translation_placeholders == {"name": "Towel warmer", "interface": "01", "where": "7#1#4#01"}
+    gw.send.assert_not_awaited()
+
+    # The owner's own trigger frames are sent as configured (the CEN+ pair of #785).
+    triggered = _switch(gw, on="*25*21#1*21##", off="*25*21#2*21##")
+    await triggered.async_turn_on()
+    await triggered.async_turn_off()
+    assert [str(call.args[0]) for call in gw.send.await_args_list] == ["*25*21#1*21##", "*25*21#2*21##"]
+
+    # A gateway whose profile says it routes WHO 4 across an interface keeps the direct write.
+    routing = _mock_gateway()
+    routing.interface_zone_request_refused = False
+    await _switch(routing).async_turn_on()
+    assert str(routing.send.await_args.args[0]) == "*#4*7#1#4#01*#20*1##"
+
+    # A local actuator is untouched.
+    local_gw = _mock_gateway()
+    local_gw.interface_zone_request_refused = True
+    local = MyHOMEThermoSwitch(
+        hass=hass, name="Towel warmer", entity_name=None, icon=None, icon_on=None, device_id="4-7#1",
+        where="7#1", zone="7", actuator="1", interface=None, device_class=None, manufacturer="BTicino",
+        model="F430", turn_on_command=None, turn_off_command=None, gateway=local_gw,
+    )
+    await local.async_turn_on()
+    assert str(local_gw.send.await_args.args[0]) == "*#4*7#1*#20*1##"
+
+
+async def test_a_whole_zone_switch_writes_the_actuators_that_reported(hass: HomeAssistant) -> None:
+    """CA5-4: ``*#4*Z*#20*V##`` is in no source; a zone is written actuator by actuator.
+
+    The frames of zone 3 are the ones the live plant gave (F455 1.0.76, 2026-11-18,
+    ``*#4*0#0*20##`` -> ``*#4*3#1*20*0##``, ``*#4*3#2*20*0##``); ``*#4*3#1*#20*1##`` and
+    ``*#4*3#1*#20*0##`` were acknowledged and followed by the actuator on the F461 and the
+    F455 that day. The writes for actuator 2 are the same form with its number.
+    """
+
+    def _zone_switch(gateway: MagicMock, *, interface: str | None = None) -> MyHOMEThermoSwitch:
+        switch = MyHOMEThermoSwitch(
+            hass=hass, name="Radiators", entity_name=None, icon=None, icon_on=None, device_id="4-3",
+            where="3", zone="3", actuator=None, interface=interface, device_class=None, manufacturer="BTicino",
+            model="F430", turn_on_command=None, turn_off_command=None, gateway=gateway,
+        )
+        switch.hass = hass
+        switch.entity_id = "switch.radiators"
+        switch.async_write_ha_state = MagicMock()
+        return switch
+
+    def _sent(gateway: MagicMock) -> list[str]:
+        return [str(call.args[0]) for call in gateway.send.await_args_list]
+
+    gw = _mock_gateway()
+    zone = _zone_switch(gw)
+
+    # Nothing of the zone has reported: the frame of before, the only thing there is to send.
+    await zone.async_turn_on()
+    assert _sent(gw) == ["*#4*3*#20*1##"]
+
+    gw.send.reset_mock()
+    zone.handle_event(OWNHeatingEvent("*#4*3#2*20*0##"))
+    zone.handle_event(OWNHeatingEvent("*#4*3#1*20*0##"))
+    assert zone.extra_state_attributes["actuators"] == {"1": "off", "2": "off"}
+    await zone.async_turn_on()
+    assert _sent(gw) == ["*#4*3#1*#20*1##", "*#4*3#2*#20*1##"]
+    assert zone._pending_direct_write is not None and zone._pending_direct_write[0] is True
+
+    gw.send.reset_mock()
+    await zone.async_turn_off()
+    assert _sent(gw) == ["*#4*3#1*#20*0##", "*#4*3#2*#20*0##"]
+
+    # The actuators restored after a restart are written the same way; anything in the saved
+    # attribute that is no actuator number is not turned into an address.
+    restored_gw = _mock_gateway()
+    restored = _zone_switch(restored_gw)
+    await restored.async_restore_last_state(
+        State("switch.radiators", "off", {"zone": 3, "actuators": {"2": "off", "1": "off", "0": "off", "x": "on"}})
+    )
+    await restored.async_turn_on()
+    assert _sent(restored_gw) == ["*#4*3#1*#20*1##", "*#4*3#2*#20*1##"]
+
+    # An actuator switch keeps its own address, and a custom trigger is sent as configured.
+    act_gw = _mock_gateway()
+    actuator = MyHOMEThermoSwitch(
+        hass=hass, name="Towel warmer", entity_name=None, icon=None, icon_on=None, device_id="4-3#1",
+        where="3#1", zone="3", actuator="1", interface=None, device_class=None, manufacturer="BTicino",
+        model="F430", turn_on_command=None, turn_off_command=None, gateway=act_gw,
+    )
+    actuator._actuator_states = {"1": False, "2": False}
+    await actuator.async_turn_on()
+    assert _sent(act_gw) == ["*#4*3#1*#20*1##"]
+
+    # Behind an interface a gateway said to route WHO 4 gets the actuators with the interface.
+    routing = _mock_gateway()
+    routing.interface_zone_request_refused = False
+    routed = _zone_switch(routing, interface="01")
+    routed._actuator_states = {"1": False}
+    await routed.async_turn_off()
+    assert _sent(routing) == ["*#4*3#1#4#01*#20*0##"]

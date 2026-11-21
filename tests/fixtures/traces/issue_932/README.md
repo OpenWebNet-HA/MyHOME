@@ -87,3 +87,24 @@ it is on actuator 2.
   F455 answered with a NACK at 11:31:16.094Z, 9.324 s after the read was queued and 8.938 s after
   a worker took it. Since then a report of a probe keeps its fallback read back for 900 s, and a
   refused read is not sent again until the entry is reloaded.
+
+## The two reads of probe 303 asked directly, 2026-11-18
+
+Two more files of the same plant, the day after. A test client opened one command session on
+each gateway (OWNd; the F455 asks no password, the F461 negotiates HMAC) and sent the two reads
+of the slave probe `303` one after the other. Each file holds the five lines of the client's log
+that follow the opening of the session, unchanged: the time as the client wrote it, `>>` for a
+frame sent and `<<` for a frame received. The lines of the negotiation are left out.
+
+| File | What it is |
+|---|---|
+| `F455_direct_read_probe_303_2026-11-18.log` | Through the F455: `*#4*303*0##`, its answer and the ACK, then `*#4*303*15##` and the NACK. |
+| `F461_direct_read_probe_303_2026-11-18.log` | The same two reads through the F461, 9 s later. |
+
+- **The dimension 0 read of the WHO 4 document is answered by both gateways.** `*#4*303*0##` was
+  answered with `*#4*303*0*0233##` and an ACK 0.089 s after it was sent by the F455, and 0.140 s
+  after it was sent by the F461.
+- **The dimension 15 read is refused by both, with no frame.** `*#4*303*15##` was NACKed 8.948 s
+  after it was sent by the F455 and 2.133 s after it was sent by the F461. Since then the fallback
+  read of a slave probe (`PZZ`) is `*#4*<probe>*0##`; an external probe (`N00`) keeps the
+  dimension 15 read.

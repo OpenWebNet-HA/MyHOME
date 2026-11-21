@@ -14,6 +14,7 @@ WHERE                  meaning
 ``Z#N``                actuator N of zone Z - the frame concerns zone Z
 ``0#N``                pump N (actuator N of zone 0) - names no zone
 ``PZZ`` (>= 100)       probe P of zone ZZ - a sensor's frame, no zone's
+``3#Z#N`` (DIM 22)     split unit N of zone Z - no zone's, least of all 3's
 =====================  =================================================
 
 ``*4*4001#Z*0#N##`` (zone Z calls pump N) carries the zone in WHAT.
@@ -199,7 +200,9 @@ __all__ = [
     "canonical_thermo_zone",
     "central_report_zone",
     "central_unit_season",
+    "central_unit_where",
     "expose_message_where",
+    "four_zone_central_where",
     "is_actuator_where",
     "is_actuator_status",
     "is_apl_address",
@@ -208,6 +211,7 @@ __all__ = [
     "is_central_unit_report",
     "is_probe",
     "is_pump",
+    "is_split_unit",
     "is_valid_hs_tuple",
     "is_valid_rgb_tuple",
     "normalize_expose_where",
@@ -317,9 +321,48 @@ def where_param(message: Any) -> list[str]:
     return getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
 
 
+def is_external_probe(where: str) -> bool:
+    """A probe WHERE of ``N00`` (``100``..``900``): external probe ``N``, as in ``validate.py``.
+
+    The published slave probe is ``[1-8]+[01-99]`` (WHO 4 PDF, "Slave probe temperature
+    request"), so ``ZZ`` is never ``00`` there; ``[PL_N]00`` is the external-probe address rule of
+    MyHOME_Suite (Encyclopedia ``diagnostics/address-discovery.md``, family ``1004``). The two
+    report on different dimensions in the captures: a slave probe ``*#4*303*0*0232##``
+    (issue_932), ``*#4*105*0*0296##`` (issue_466); an external probe ``*#4*100*15*1*0253*0001##``
+    (a 3455 behind an L4577 on an F454, #308).
+    """
+    bare = where.removeprefix("4-").removeprefix("#")
+    return is_probe(where) and int(bare) <= 900 and int(bare) % 100 == 0
+
+
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def is_split_unit(message: Any) -> bool:
+    """WHERE ``3#Z#N`` under DIMENSION 22: split unit ``N`` of zone ``Z``, not zone 3.
+
+    "Where= 3#<where actuators>, Where actuators= Z#N = [0-99]#[1-9]" (WHO 4 PDF 1.10.1 /
+    1.10.2, kb/sources/text/openwebnet-who-4.txt:3206-3212, 3265-3266; Encyclopedia
+    functional/who-4-temperature-control/addressing.md "Split control uses the additional
+    prefix ``3#Z#N`` under ``DIMENSION 22``"). OWNd reports WHERE ``3`` with the parameters
+    ``[Z, N]`` and, on a status frame, zone 3: read as that zone's, a split unit's report
+    created a "Zone 3" on a plant without one. The frame carries the split unit's mode, set
+    point, fan speed and swing, nothing of a heating zone. ``3#4#N`` is split unit ``N`` of
+    zone 4 here, not zone 3 behind interface ``N`` (:func:`is_actuator_where`). No capture
+    of the form exists in the trace corpus (2026-11-18); the reading rests on the published
+    grammar.
+    """
+    params = [str(param) for param in where_param(message)]
+    if len(params) == 4 and params[2] == "4":  # ``3#Z#N#4#II``: behind an F422
+        params = params[:2]
+    return (
+        getattr(message, "dimension", None) == 22
+        and str(getattr(message, "where", None)) == "3"
+        and len(params) == 2
+        and all(_is_ascii_uint(param) for param in params)
+    )
 
 
 def is_central_thermo_where(message: Any) -> bool:
@@ -327,6 +370,47 @@ def is_central_thermo_where(message: Any) -> bool:
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
     head = raw.removeprefix("#").split("#", 1)[0]
     return raw.startswith("#") and head.isdigit() and not is_probe(head)
+
+
+def _where_params(message: Any) -> list[str]:
+    """:func:`where_param` as strings; nothing for a test double that has no such list."""
+    params = where_param(message)
+    return [str(param) for param in params] if isinstance(params, (list, tuple)) else []
+
+
+def four_zone_central_where(message: Any) -> str | None:
+    """``#0#N`` when a frame is addressed to zone ``N`` (1-4) of a 4-zone central unit, else ``None``.
+
+    OWNd reports ``*4*303*#0#1##`` as WHERE ``#0`` with the parameter ``1`` (and zone 1), so
+    the frame's own WHERE read ``#0``: the 99-zone central unit's. ``#0#N#4#II`` is the same
+    zone behind an F422 interface (parameters ``N``, ``4``, ``II``). ``#0#4#II`` (two
+    parameters) is not one of them: it is the 99-zone central unit behind interface ``II``.
+    """
+    if str(getattr(message, "where", None)) != "#0":
+        return None
+    params = _where_params(message)
+    if len(params) == 3 and params[1] == "4":
+        params = params[:1]
+    if len(params) == 1 and params[0] in ("1", "2", "3", "4"):
+        return f"#0#{params[0]}"
+    return None
+
+
+def central_unit_where(message: Any) -> str | None:
+    """``#0`` or ``#0#4#II``: the frame is the 99-zone central unit's own, else ``None``.
+
+    ``#0`` is "Central Unit" in the WHERE table (WHO 4 p. 6), and the only address its
+    status flags are published for (``*4*[20-21]*#0##``, ``*4*whatn*#0##``, p. 23-24).
+    ``#0#N`` (:func:`four_zone_central_where`) and the general ``0`` are other addresses.
+    """
+    if str(getattr(message, "where", None)) != "#0":
+        return None
+    params = _where_params(message)
+    if not params:
+        return "#0"
+    if len(params) == 2 and params[0] == "4" and _is_ascii_uint(params[1]) and len(params[1]) <= 2:
+        return f"#0#4#{params[1]}"
+    return None
 
 
 # Zone operation mode by central unit with its season (WHO 4 p. 65, 1.9.4; p. 9): 110 / 210
@@ -611,9 +695,9 @@ def _decode_thermo_output_code(
 
 
 def thermo_event_zone(message: Any) -> str | None:
-    """Return zone ``"1"``..``"99"`` of a WHO=4 event or command, or ``None`` for pumps/probes/central."""
+    """Return zone ``"1"``..``"99"`` of a WHO=4 event or command, or ``None`` for pumps/probes/split units/central."""
     raw_where = str(getattr(message, "where", None) or "")
-    if is_pump(message) or is_probe(raw_where):
+    if is_pump(message) or is_probe(raw_where) or is_split_unit(message):
         return None
     zone = getattr(message, "zone", None)
     if isinstance(zone, int) and not isinstance(zone, bool) and 1 <= zone <= 99:

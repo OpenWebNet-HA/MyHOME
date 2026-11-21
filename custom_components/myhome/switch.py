@@ -93,9 +93,13 @@ from .where_grammar import (
 
 PLATFORM = Platform.SWITCH
 PARALLEL_UPDATES = 0
-# Emulated MyHomeServer1 (028206) bt_thermo_manager reverts unauthorized #20 writes in ~0.16 s;
-# 2.0 s (~12x margin) absorbs 9600-baud SCS bus contention without catching normal user toggles.
+# A MyHomeServer1 028206 emulated by the author of #817 reverted an unauthorized #20 write after
+# ~0.16 s (bt_thermo_manager; the PR's description is the only record: no committed oracle result
+# or trace holds a WHO 4 #20 write on that image). 2.0 s (~12x that figure) absorbs 9600-baud SCS
+# bus contention without catching normal user toggles.
 THERMO_REVERT_WINDOW_SECONDS = 2.0
+# Actuator N of ``Z#N`` (WHO 4 p. 22: "Actuators N of zone Z [Z#N] = [0-99#1-9]").
+_ACTUATOR_NUMBERS = frozenset("123456789")
 
 
 def _supports_config_subentry_id(cb: Any) -> bool:
@@ -794,7 +798,13 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
 
     async def async_update(self) -> None:
         """Request Dimension 20 actuator status from gateways that forward it."""
-        if getattr(self._gateway_handler, "actuator_request_refused", False) is True:
+        # By the form the read takes: ``*#4*Z#N*20##`` is forwarded by more gateways than
+        # ``*#4*Z*20##``, which an F455 refuses too (``actuator_read_refused``).
+        read_refused = getattr(self._gateway_handler, "actuator_read_refused", None)
+        refused = read_refused(self._full_where) if callable(read_refused) else None
+        if not isinstance(refused, bool):  # a gateway double without the method
+            refused = getattr(self._gateway_handler, "actuator_request_refused", False) is True
+        if refused:
             return
         if (
             self._interface is not None
@@ -821,15 +831,69 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             translation_placeholders={"name": self._device_name},
         )
 
+    def _refuse_interface_write(self) -> None:
+        """Refuse the direct ``#20`` write of an actuator behind an ``#4#II`` interface.
+
+        The gateways do not route WHO 4 across an interface (``interface_zone_request_refused``,
+        own-firmware-oracle ``findings/thermo-zone-requests.md``): the read form of this address
+        is cut at ``#`` and sent to the local bus (``*#4*2#1#4#01*20##`` -> local zone 2
+        actuator 1 on six images, local zone 4 actuator 1 on the MH202), so the write would
+        switch an actuator of the local bus. The climate platform refuses its writes for the
+        same reason (#816); the reads of this switch are already withheld. A configured
+        ``turn_on_command`` / ``turn_off_command`` is the owner's own frame and is sent.
+        """
+        if self._interface is None:
+            return
+        if getattr(self._gateway_handler, "interface_zone_request_refused", False) is not True:
+            return
+        raise HomeAssistantError(
+            f"{self._device_name} is behind interface {self._interface} and the gateway does not route "
+            f"WHO 4 across it: `*#4*{self._full_where}*#20*...` would switch an actuator of the local bus",
+            translation_domain=DOMAIN,
+            translation_key="thermo_switch_interface_write_refused",
+            translation_placeholders={
+                "name": self._device_name,
+                "interface": self._interface,
+                "where": self._full_where,
+            },
+        )
+
+    def _direct_write_frames(self, value: int) -> list[str]:
+        """The Dimension 20 writes that switch this entity ON (``1``) or OFF (``0``).
+
+        An actuator switch writes its own address, ``*#4*Z#N*#20*V##``: the only form of
+        this write with evidence. Real MyHomeServer1 plants put it on the bus (71 frames in
+        the trace corpus under ``tests/fixtures``, every one ``Z#N``), and an F461 2.0.11 and an F455 1.0.76
+        acknowledged ``*#4*3#1*#20*1##`` / ``*#4*3#1*#20*0##`` and the actuator followed
+        (live, 2026-11-18: ``*#4*3#1*20##`` read ``0``, ``1``, ``0``).
+
+        A whole-zone switch (WHERE ``Z``) wrote ``*#4*Z*#20*V##``. No source has that
+        address for dimension 20: the PDF's WHERE is ``Z#N``, ``Z#0`` or ``0#0``, for the
+        request only (WHO 4 p. 22, "1.5.8 Actuator status"), no capture and no committed
+        oracle row holds a bare-zone write, and an F455 refuses even the bare-zone read
+        (``gateway.ZONE_ACTUATOR_REQUEST_REFUSED``). So the zone is written actuator by
+        actuator, each one that has reported (``_actuator_states``: dimension 20 frames,
+        restored across restarts), in the proven form. Only while no actuator of the zone
+        is known does the bare-zone frame still go out, as before; whether any gateway acts
+        on it is not known.
+        """
+        if self._actuator is None:
+            actuators = sorted(act for act in self._actuator_states if act in _ACTUATOR_NUMBERS)
+            if actuators:
+                routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
+                return [f"*#4*{self._zone}#{act}{routing}*#20*{value}##" for act in actuators]
+        return [f"*#4*{self._full_where}*#20*{value}##"]
+
     async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the thermo actuator on via custom trigger or direct Dimension 20 write."""
         if self._turn_on_command:
             cmd = cast(OWNCommand, OWNCommand.parse(self._turn_on_command))
             await self._gateway_handler.send(cmd)
             return
+        self._refuse_interface_write()
         self._pending_direct_write = (True, time.monotonic(), False)
-        cmd = cast(OWNCommand, OWNCommand.parse(f"*#4*{self._full_where}*#20*1##"))
-        await self._gateway_handler.send(cmd)
+        for frame in self._direct_write_frames(1):
+            await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the thermo actuator off via custom trigger or direct Dimension 20 write."""
@@ -837,9 +901,10 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             cmd = cast(OWNCommand, OWNCommand.parse(self._turn_off_command))
             await self._gateway_handler.send(cmd)
             return
+        self._refuse_interface_write()
         self._pending_direct_write = (False, time.monotonic(), False)
-        cmd = cast(OWNCommand, OWNCommand.parse(f"*#4*{self._full_where}*#20*0##"))
-        await self._gateway_handler.send(cmd)
+        for frame in self._direct_write_frames(0):
+            await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
 
     def _check_direct_write_revert(self, new_state: bool) -> None:
         """Detect MyHomeServer1 bt_thermo_manager immediate revert after a #20 write."""

@@ -61,6 +61,9 @@ def _apply_yaml_platforms(
     # One memo for the whole copy: a device the validator files under several keys
     # (climate zone aliases, the button platform) stays one object.
     memo: dict[int, Any] = {}
+    # The bare zone number of a 4-zone central unit (``#0#1`` -> ``1``, ``zone_1``): the
+    # zone's own entry when the file has one, in either order, as in the validator.
+    central_aliases: list[tuple[str, str, Any]] = []
     for plat, devices in yaml_platforms.items():
         if plat in configured_platforms and isinstance(devices, dict):
             for d_id, d_cfg in devices.items():
@@ -87,9 +90,13 @@ def _apply_yaml_platforms(
                         z_val = str(runtime_cfg.get(CONF_ZONE) or runtime_cfg.get("zone"))
                         configured_platforms[plat][f"{z_val}{routing}"] = runtime_cfg
                         clean_z = z_val.split("#")[-1]
-                        configured_platforms[plat][f"{clean_z}{routing}"] = runtime_cfg
-                        if not routing:
-                            configured_platforms[plat][f"zone_{clean_z}"] = runtime_cfg
+                        aliases = [f"{clean_z}{routing}"] if routing else [clean_z, f"zone_{clean_z}"]
+                        if z_val.startswith("#0#"):
+                            central_aliases.extend((plat, alias, runtime_cfg) for alias in aliases)
+                        else:
+                            configured_platforms[plat].update(dict.fromkeys(aliases, runtime_cfg))
+    for plat, alias, runtime_cfg in central_aliases:
+        configured_platforms[plat].setdefault(alias, runtime_cfg)
 
 
 def _snapshot(

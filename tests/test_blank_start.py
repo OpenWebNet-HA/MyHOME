@@ -591,6 +591,7 @@ async def test_blank_start_ignores_broadcast_and_area_frames(hass: HomeAssistant
         assert hass.states.get("light.light_0_4_01") is None
         assert hass.states.get("climate.climate_zone_00") is None
         assert hass.states.get("climate.climate_zone_0") is None
+        assert hass.states.get("climate.central_unit_0") is None
         assert hass.states.get("climate.climate_zone_00_01") is None
         assert hass.states.get("climate.climate_zone_00_4_01") is None
         assert hass.states.get("sensor.zone_00") is None

@@ -46,9 +46,12 @@ from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 from .where_grammar import (
     canonical_thermo_zone,
+    four_zone_central_where,
+    is_central_thermo_where,
     is_central_unit_actuator_status,
     is_probe,
     is_pump,
+    is_split_unit,
     parse_thermo_actuator_where,
     thermo_dim19_status,
     thermo_dim20_status,
@@ -122,8 +125,11 @@ def _bus_zone(message: Any) -> int | None:
     actuator 1 for it. Taken as the central unit's, a fan coil value (``*#4*#0*20*5##``)
     discovered a central unit on a plant that has none, and on a plant that has one the
     frame became an actuator of the central unit.
+
+    Nor ``3#Z#N`` under DIMENSION 22: split unit ``N`` of zone ``Z``
+    (``where_grammar.is_split_unit``), which OWNd reports as zone 3.
     """
-    if is_pump(message) or is_central_unit_actuator_status(message):
+    if is_pump(message) or is_split_unit(message) or is_central_unit_actuator_status(message):
         return None
     if is_probe(str(getattr(message, "where", None))):
         return None  # probe P of zone ZZ (105 = probe 1 of zone 5), not the zone's own frame
@@ -144,6 +150,8 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     raw_where = getattr(message, "where", None)
     zone = _bus_zone(message)
     interface = thermo_event_interface(message)
+    if is_split_unit(message):
+        return [], interface  # a split unit's report is no zone's, and its WHERE ``3`` no zone 3
     # OWNHeatingEvent keeps WHAT only as ``_what``; it has no ``what`` property.
     what = getattr(message, "what", None) or getattr(message, "_what", None)
     what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
@@ -191,13 +199,22 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
     """
     zones, interface = _calling_zones(message)
     zone = _bus_zone(message)
-    keys = [] if zone is None else [f"#{zone}" if zone == 0 else str(zone)]
+    keys: list[str] = []
+    if zone is not None and zone != 0:
+        keys.append(str(zone))
+    elif zone == 0 and is_central_thermo_where(message):
+        # OWNd's zone 0 is both ``#0``, the central unit, and ``0``, "General probes (all
+        # probes)" (WHO 4 p. 6). Only the first is the central unit's frame: a general
+        # ``*4*303*0##`` under the key ``#0`` switched the central unit's entity off.
+        keys.append("#0")
     # WHERE "0" with a parameter is pump ``0#N``, not the general "0" (#431); an actuator
     # status with WHERE ``#0`` is not the central unit's (#944).
     if getattr(message, "where", None) and not is_probe(str(message.where)) and not (
-        is_pump(message) or is_central_unit_actuator_status(message)
+        is_pump(message) or is_split_unit(message) or is_central_unit_actuator_status(message)
     ):
-        keys.append(str(message.where))
+        # ``#0#N`` is zone N of a 4-zone central unit; OWNd reports its WHERE as ``#0``, the
+        # 99-zone central unit's key, under which no ``#0#N`` entity listens.
+        keys.append(four_zone_central_where(message) or str(message.where))
     keys.extend(zones)
     if interface:
         return list(dict.fromkeys(f"{key}{BUS_ROUTING}{interface}" for key in keys))
