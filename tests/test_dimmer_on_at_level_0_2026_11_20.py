@@ -7,15 +7,18 @@ DIMENSION 1, steadily. OWNd reads level 0 as "off", the entity followed, and the
 shown off while its own status said on: the header toggle of a card left it on at the next
 "all off", and ``light.turn_on`` changed nothing (the dimmer was on already).
 
-The rule: a DIMENSION 1 level 0 is "on at the minimum" while the light's own on / off status,
-received in the last ``_LEVEL_ZERO_STATUS_FRESH_S``, says on. Everything else is as before:
-an "off" status, a DIMENSION 4 level 0 (what the same dimmer answers while it is off, and how
-an off with a speed is announced) and a DIMENSION 1 level 0 with no recent "on" status (what an
-MH200 or an MH202 answers for a dimmer that is off) mean off.
+The rule (reworked after the review of #970, see ``test_dimmer_level_0_verified_2026_11_22.py``):
+a DIMENSION 1 level 0 that follows an "on" status of the light is verified with a status request
+(``*#1*<where>##``). Answered "on", the dimmer is on at the minimum (1 %) and stays so at every
+later level 0; closed with no "on" answer, it is off (an MH200 reports an off with a ramp as
+nothing but that level 0). Until the answer the level 0 is shown on only when the "on" status is
+at most ``_LEVEL_ZERO_STATUS_FRESH_S`` old. Everything else is as before: an "off" status, a
+DIMENSION 4 level 0 and a DIMENSION 1 level 0 with no "on" status before it mean off.
 
 Every frame is in a capture (``test_the_frames_this_file_rests_on``).
 """
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -38,16 +41,52 @@ PLAIN_ON = "*1*1*0010##"
 MH202_OFF_LEVEL = "*#1*32*1*100*0##"
 
 
-def _light(hass: Any, where: str = "0010") -> tuple[MyHOMELight, Any]:
+@pytest.fixture(autouse=True)
+def _no_grace(monkeypatch: Any) -> None:
+    """The wait for the replies that follow a closed request: nothing to wait for in a test."""
+    monkeypatch.setattr(light_module, "_LEVEL_ZERO_CHECK_GRACE_S", 0, raising=False)
+
+
+def _light(
+    hass: Any, where: str = "0010", *, answers: tuple[str, ...] = (), dimmable: bool = True
+) -> tuple[MyHOMELight, Any]:
+    """A light and a gateway that answers its status request ``*#1*<where>##``.
+
+    ``gateway.requests``: every status request, in order. ``gateway.status_answers``: the frames
+    the light receives for its status request. ``gateway.status_outcome``: ``answered`` (the
+    request is closed, then the answers arrive, as the command pool does), ``not_written`` (the
+    delivery future is cancelled), ``nack`` (cancelled with the mark of a NACK) or ``silent``
+    (never closed).
+    """
     gateway = MagicMock()
     gateway.send = AsyncMock()
-    gateway.send_status_request = AsyncMock()
     gateway.log_id = "[gw]"
+    gateway.requests = []
+    gateway.status_answers = list(answers)
+    gateway.status_outcome = "answered"
     light = MyHOMELight(
         hass=hass, name="Dimmer", entity_name="Dimmer", icon=None, icon_on=None,
-        device_id=where, who="1", where=where, interface=None, dimmable=True,
+        device_id=where, who="1", where=where, interface=None, dimmable=dimmable,
         manufacturer="BTicino", model="F418", gateway=gateway,
     )
+
+    async def send_status_request(message: Any) -> "asyncio.Future[float]":
+        raw = str(message)
+        gateway.requests.append(raw)
+        written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        if raw != f"*#1*{where}##":
+            written.set_result(0.0)
+        elif gateway.status_outcome == "answered":
+            written.set_result(0.0)
+            frames = list(gateway.status_answers)
+            asyncio.get_running_loop().call_soon(lambda: _feed(light, *frames))
+        elif gateway.status_outcome in ("not_written", "nack"):
+            if gateway.status_outcome == "nack":
+                setattr(written, "_gateway_nack", True)
+            written.cancel()
+        return written
+
+    gateway.send_status_request = send_status_request
     light.hass = hass
     light.async_schedule_update_ha_state = MagicMock()
     return light, gateway
@@ -62,7 +101,7 @@ def _feed(light: MyHOMELight, *frames: str) -> None:
 
 
 def _requests(gateway: Any) -> list[str]:
-    return [str(call.args[0]) for call in gateway.send_status_request.await_args_list]
+    return list(gateway.requests)
 
 
 def _received(trace: str) -> list[str]:
@@ -84,14 +123,15 @@ def test_the_frames_this_file_rests_on() -> None:
 
 
 async def test_on_then_level_0_is_on_at_the_minimum(hass: Any) -> None:
-    light, gateway = _light(hass)
+    light, gateway = _light(hass, answers=(ON_AT_2,))
     _feed(light, OFF, PLAIN_ON, ON_AT_2, LEVEL_0)
+    assert light.is_on is True and light._attr_brightness_pct == 1  # at once: its status has just said on
     await hass.async_block_till_done()
     assert light.is_on is True
     assert light._attr_brightness_pct == 1 and light.brightness == 3
     assert light.color_mode == ColorMode.BRIGHTNESS
     assert light._last_brightness_pct != 0  # the level to come back to is not "0"
-    assert "*#1*0010##" not in _requests(gateway)  # the status was fresh: nothing to ask
+    assert _requests(gateway).count("*#1*0010##") == 1  # asked once, answered on
 
     _feed(light, OFF, OFF_LEVEL)  # switched off: its status, and DIMENSION 4 level 0
     assert light.is_on is False
@@ -99,7 +139,7 @@ async def test_on_then_level_0_is_on_at_the_minimum(hass: Any) -> None:
 
 @pytest.mark.parametrize("trace", ["f455_on_at_level_0", "f461_on_at_level_0"])
 async def test_the_capture_of_the_stuck_dimmer_replayed(hass: Any, trace: str) -> None:
-    light, _gateway = _light(hass)
+    light, _gateway = _light(hass, answers=(ON_AT_2,))
     frames = _received(trace)
     at_level_0 = frames.index(LEVEL_0)
     _feed(light, *frames[: at_level_0 + 1])
@@ -111,7 +151,7 @@ async def test_the_capture_of_the_stuck_dimmer_replayed(hass: Any, trace: str) -
 
 async def test_the_capture_of_the_levels_replayed(hass: Any) -> None:
     """Off, on at level 0 (three reads), 1, 2, 5, 10, 20 %, off, on at 20 %: the state after each frame."""
-    light, _gateway = _light(hass)
+    light, _gateway = _light(hass, answers=(ON_AT_2,))
     seen: list[tuple[str, bool | None, int | None]] = []
     for raw in _received("f461_levels"):
         _feed(light, raw)
@@ -173,38 +213,39 @@ async def test_level_0_after_an_off_status_is_off(hass: Any) -> None:
 
 
 async def test_level_0_long_after_the_on_status_is_off_and_the_light_is_asked(hass: Any, monkeypatch: Any) -> None:
-    """An "on" status that is not recent settles nothing: off as before, and one status request."""
+    """An "on" status that is not recent: off until the light has answered, and one status request."""
     clock = [1000.0]
     monkeypatch.setattr(light_module.time, "monotonic", lambda: clock[0])
-    light, gateway = _light(hass)
+    light, gateway = _light(hass, answers=(ON_AT_2,))
     _feed(light, ON_AT_2, LEVEL_1)
     clock[0] += 60
     _feed(light, LEVEL_0)
+    assert light.is_on is False  # nothing recent says on
     await hass.async_block_till_done()
-    assert light.is_on is False
+    # It answered "on": the light is on at the minimum, and its level is asked (a fine dimmer).
+    assert light.is_on is True and light._attr_brightness_pct == 1
     assert _requests(gateway).count("*#1*0010##") == 1
+    assert _requests(gateway).count("*#1*0010*1##") == 1
 
-    # It answers "on": the light is on, its level is asked (a fine dimmer), and the level 0
-    # that comes back is now the level of a light that is on.
-    _feed(light, ON_AT_2)
     clock[0] += 0.4
-    _feed(light, LEVEL_0)
+    _feed(light, LEVEL_0)  # the level that comes back
     await hass.async_block_till_done()
     assert light.is_on is True and light._attr_brightness_pct == 1
-    assert _requests(gateway).count("*#1*0010##") == 1  # asked once
 
-    # The same again within the interval asks nothing more.
+    # The same level 15 s later is still the level of a light that is on, and asks nothing.
     clock[0] += 15
     _feed(light, LEVEL_0)
     await hass.async_block_till_done()
-    assert light.is_on is False
+    assert light.is_on is True and light._attr_brightness_pct == 1
     assert _requests(gateway).count("*#1*0010##") == 1
+
+    # Later than the interval it is verified again, in the background: never shown off.
     clock[0] += 30
-    _feed(light, ON_AT_2)
-    clock[0] += 20
     _feed(light, LEVEL_0)
+    assert light.is_on is True
     await hass.async_block_till_done()
-    assert _requests(gateway).count("*#1*0010##") == 2  # a later doubt is asked again
+    assert light.is_on is True and light._attr_brightness_pct == 1
+    assert _requests(gateway).count("*#1*0010##") == 2
 
 
 async def test_it_answers_off_when_asked(hass: Any, monkeypatch: Any) -> None:
