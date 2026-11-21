@@ -2714,7 +2714,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _saved_nominal_in_force(self) -> float | None:
         """The commanded setpoint saved before a restart, while nothing has replaced the restored setpoint."""
-        restored = getattr(self, "_restored_nominal", None)
+        restored: tuple[float, float] | None = getattr(self, "_restored_nominal", None)
         if (
             restored is None
             or not self._target_temperature_restored
@@ -3050,7 +3050,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             temperature=target_temperature,
             mode=mode,
         )
-        written = await self._gateway_handler.send(setpoint)
+        written: Any = await self._gateway_handler.send(setpoint)
         if not isinstance(written, asyncio.Future):
             return
         await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)

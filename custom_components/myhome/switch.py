@@ -930,7 +930,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         """
         refused: list[str] = []
         for frame in self._direct_write_frames(value):
-            written = await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
+            written: Any = await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
             if not isinstance(written, asyncio.Future):
                 continue
             await asyncio.wait([written], timeout=DIRECT_WRITE_DELIVERY_TIMEOUT)
