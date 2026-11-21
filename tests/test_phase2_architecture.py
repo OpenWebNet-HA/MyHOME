@@ -613,10 +613,11 @@ async def test_p4_climate_central_unit_bus_events_and_auto_mode(hass: HomeAssist
     event_mode_target = OWNHeatingEvent.parse("*4*110#0215*#0##")  # Heating target
     cu.handle_event(event_mode_target)
 
-    # 3. Subordinate zone receiving master_mode = HVACMode.AUTO -> triggers lines 514-516
+    # 3. Subordinate zone receiving master_mode = HVACMode.AUTO keeps its mode: the central unit's
+    #    `auto` is a command to the central unit, not a state of its zones (decision of 2026-11-22)
     zone._attr_hvac_mode = HVACMode.HEAT
     zone._handle_central_mode_update(HVACMode.AUTO)
-    assert zone._attr_hvac_mode == HVACMode.AUTO
+    assert zone._attr_hvac_mode == HVACMode.HEAT
 
 
 async def test_p2_device_trigger_edge_cases(hass: HomeAssistant):
