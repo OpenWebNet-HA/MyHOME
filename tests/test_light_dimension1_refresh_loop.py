@@ -251,3 +251,22 @@ async def test_a_held_echo_keeps_the_exact_level(hass, clock):
     assert gateway.send_status_request.await_count == 2
     assert light._attr_brightness_pct == 53
     assert light._bus_state_complete is True
+
+
+async def test_only_one_read_of_a_light_is_out_at_a_time(hass, clock):
+    """The request refuses a second read while one is out, whoever asks and however long it takes."""
+    light, gateway = _light(hass, where="0010")
+    reads = _held_reads(gateway)
+    _feed(light, "*#1*0010*1*153*4##")
+    clock.now += 60.0
+    _feed(light, "*1*7*0010##")
+    await _tick()
+    assert len(reads) == 1
+    clock.now += 5.0  # the one-second window has passed; the read is still being answered
+    assert light._request_brightness_refresh() is False
+    assert light._request_brightness_refresh(force=True) is False
+    await _tick()
+    assert len(reads) == 1
+    reads[0][1].set_result(None)
+    await hass.async_block_till_done()
+    assert len(reads) == 1
