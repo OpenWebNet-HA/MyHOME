@@ -1,0 +1,209 @@
+{
+  "capture": {
+    "kind": "synthetic-firmware-oracle-trace",
+    "synthetic": true,
+    "source": "firmware-oracle-contract",
+    "provenance": "SYNTHETIC TRACE — NOT A LIVE PLANT CAPTURE. Deterministically constructed from own-firmware-oracle suite energy-ts10 on emulated F454 firmware 2.0.51 (020051, same WHO 18 forwarding family as F459 020105 / F461 020011 / MyHomeServer1 028206 / MH200N 010108) and the Issue #907 recorder timeline (8133608 Wh = 8133.608 kWh, ~17 s post-discovery poll delay).",
+    "started_at": "2026-11-11T10:14:58.000Z",
+    "filters": {
+      "who": "1,2,4,13,18",
+      "where": null,
+      "direction": null
+    },
+    "window": {
+      "first": "2026-11-11T10:14:58.000Z",
+      "last": "2026-11-11T10:15:30.200Z",
+      "frames": 12,
+      "buffer_frames": 12,
+      "buffer_depth": 500,
+      "truncated": false
+    }
+  },
+  "environment": {
+    "home_assistant_version": "2026.11.1",
+    "integration_version": "2.0.0b18",
+    "ownd_version": "2.0.0b14",
+    "exported_at": "2026-11-11T10:15:31.000Z"
+  },
+  "gateway": {
+    "model": "F454",
+    "manufacturer": "BTicino S.p.A.",
+    "firmware": "2.0.51",
+    "mac_prefix": "00:03:50",
+    "connection_type": "tcp",
+    "queue_pacing": 0.02,
+    "is_connected": true
+  },
+  "telemetry": {
+    "total_rx": 6,
+    "total_tx": 6,
+    "captured_in_buffer": 12,
+    "buffer_depth": 500,
+    "queue_depth": 0
+  },
+  "frames": [
+    {
+      "timestamp": 1794392098.05,
+      "iso_time": "2026-11-11T10:14:58.050000+00:00",
+      "direction": "tx",
+      "raw": "*#13**15##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "15",
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 startup): gateway model query during initial_discovery."
+    },
+    {
+      "timestamp": 1794392098.08,
+      "iso_time": "2026-11-11T10:14:58.080000+00:00",
+      "direction": "rx",
+      "raw": "*#13**15*200##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "15",
+      "dimension_values": ["200"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 oracle): WHO 13 model code 200."
+    },
+    {
+      "timestamp": 1794392098.12,
+      "iso_time": "2026-11-11T10:14:58.120000+00:00",
+      "direction": "tx",
+      "raw": "*#13**16##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "16",
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 startup): firmware version query."
+    },
+    {
+      "timestamp": 1794392098.15,
+      "iso_time": "2026-11-11T10:14:58.150000+00:00",
+      "direction": "rx",
+      "raw": "*#13**16*2*0*51##",
+      "who": "13",
+      "what": null,
+      "where": "",
+      "dimension": "16",
+      "dimension_values": ["2", "0", "51"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 oracle): firmware 2.0.51."
+    },
+    {
+      "timestamp": 1794392099.0,
+      "iso_time": "2026-11-11T10:14:59.000000+00:00",
+      "direction": "tx",
+      "raw": "*#1*0##",
+      "who": "1",
+      "what": null,
+      "where": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 startup): WHO 1 general status sweep while sensor.total_power_energy holds restored state."
+    },
+    {
+      "timestamp": 1794392104.0,
+      "iso_time": "2026-11-11T10:15:04.000000+00:00",
+      "direction": "tx",
+      "raw": "*#2*0##",
+      "who": "2",
+      "what": null,
+      "where": "0",
+      "dimension": null,
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 startup): WHO 2 general status sweep."
+    },
+    {
+      "timestamp": 1794392115.0,
+      "iso_time": "2026-11-11T10:15:15.000000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*51##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "51",
+      "is_ack": false,
+      "is_nack": false,
+      "scs_emitted": "$06D1A1023350150000",
+      "note": "SYNTHETIC (F454 020051 / F459 020105 oracle energy-ts10): post-discovery totalizer poll ACKed and forwarded to SCS bus."
+    },
+    {
+      "timestamp": 1794392115.18,
+      "iso_time": "2026-11-11T10:15:15.180000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*51*8133608##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "51",
+      "dimension_values": ["8133608"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F520 meter at WHERE=51): cumulative energy totalizer 8133608 Wh (8133.608 kWh)."
+    },
+    {
+      "timestamp": 1794392115.4,
+      "iso_time": "2026-11-11T10:15:15.400000+00:00",
+      "direction": "tx",
+      "raw": "*#18*51*113##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "113",
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F454 020051 startup): instantaneous active power query."
+    },
+    {
+      "timestamp": 1794392115.55,
+      "iso_time": "2026-11-11T10:15:15.550000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*113*420##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "113",
+      "dimension_values": ["420"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F520 meter at WHERE=51): active power 420 W (0.42 kW)."
+    },
+    {
+      "timestamp": 1794392129.8,
+      "iso_time": "2026-11-11T10:15:29.800000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*113*850##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "113",
+      "dimension_values": ["850"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F520 meter at WHERE=51): active power 850 W (0.85 kW)."
+    },
+    {
+      "timestamp": 1794392130.2,
+      "iso_time": "2026-11-11T10:15:30.200000+00:00",
+      "direction": "rx",
+      "raw": "*#18*51*51*8133615##",
+      "who": "18",
+      "what": null,
+      "where": "51",
+      "dimension": "51",
+      "dimension_values": ["8133615"],
+      "is_ack": false,
+      "is_nack": false,
+      "note": "SYNTHETIC (F520 meter at WHERE=51): cumulative totalizer advances monotonically to 8133615 Wh (+7 Wh = +0.007 kWh)."
+    }
+  ]
+}

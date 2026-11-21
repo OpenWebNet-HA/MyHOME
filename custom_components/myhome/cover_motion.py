@@ -155,6 +155,17 @@ class CoverMotionModel:
 
 
 # Native timed-cover echo and linear interpolation helpers.
+# Timed-cover echo window after socket write (empirical: 1.5 s; #302, #753, #959):
+# - Issue #302 (live MyHomeServer1): gateway relays pre-move *2*0*WHERE## within
+#   ~0.10 s, *2*1000#<dir>*WHERE## at ~0.15 s, and motor-start *2*<dir>*WHERE##
+#   at ~0.55 s after socket write.
+# - PR #753 (tests/fixtures/traces/f461_live_2026-10-18/, live F461 2.0.11 + F411/2)
+#   and tests/golden/frames/who02_automation.yaml (MH200 2.1.0): gateways whose
+#   coso (libplug_automation_tr.so) or bt_luci daemon injects an SCS STOP (12 0A)
+#   ahead of UP/DOWN (12 08/12 09) emit *2*0*WHERE## ~0.4-0.6 s before *2*1/*2*2.
+# - 1.5 s (~0.55 s motor-start lag + ~0.95 s LAN/SCS arbitration & event-session
+#   scheduling margin) covers that full echo burst while bounding how long an
+#   unfollowed *2*0*WHERE## (#959 terminal stop when no *2*1/*2*2 follows) waits.
 ECHO_WINDOW: float = 1.5
 
 # Time from the write of a direction frame to the motor start when the gateway
@@ -194,6 +205,31 @@ MIN_MOTOR_PULSE: float = 0.4
 # is ~0.2 s), a 1% move clicks the relay without moving the curtain, so the
 # default stays 2% (configurable in 1..5%).
 MIN_POSITION_DELTA: int = 2
+
+# Interlocked relay & motor capacitor settle pause between a pre-move STOP socket
+# write and the subsequent direction frame on gateways without SCS pre-STOP (MH201,
+# MH202) (empirical: 0.6 s; #959):
+# - Native MH201 firmware scenario STOP -> MOVE bus spacing: 0.587 s measured
+#   between *2*0*#1## and *2*2*#1## in
+#   tests/fixtures/plants/mh201_physical_plant/diagnostic_summary.json.
+# - Live MH201 (fw 3.3.6) + 35x BTicino L4671/2 verification in Issue #959
+#   (Encyclopedia OWN-DEV-0098/0022/0023/0153 Object 7 interlocked 230 Vac motor
+#   relays): waiting 0.6 s after the STOP write made every mid-run reversal and
+#   every post-arrival move inside the ~60 s relay hold succeed cleanly.
+PRE_MOVE_STOP_SETTLE_DELAY: float = 0.6
+
+# Post-start hold window during which a factory M=0 timed relay actuator's coil
+# may remain energized after HA settled the curtain at 0% / 100% (empirical: 65.0 s;
+# #319, #565, #959, #961):
+# - Encyclopedia OWN-DEV-0098 (H4671/2, L4671/2, AM5851/2), OWN-DEV-0022 (F411/2),
+#   OWN-DEV-0023 (F411/4), and OWN-DEV-0153 (F411U2): factory configurator M=0
+#   sets internal relay cutoff STOP_TIME = 60 s.
+# - Measured M=0 hardware oscillator drift: 60.05-61.5 s on MH200N / MyHomeServer1
+#   (const.CALIBRATION_CUTOFFS[0] + CALIBRATION_CUTOFF_LATE_PER_MIN = 65.0 s) and
+#   61.38 s on MH201 3.3.6 + L4671/2 in mh201_l4671_reversal_2026-11-18 frame [9].
+# - 65.0 s (60.0 s M=0 STOP_TIME + ~1.5 s oscillator drift + ~3.5 s bus/scheduler
+#   margin) covers the full energized tail and clears early on rx *2*0*WHERE##.
+M0_RELAY_HOLD_WINDOW: float = 65.0
 
 # Slack after the stored travel time before a timed full run (0% / 100%) is
 # reported as arrived. No stop frame is sent for those runs, and the actuator's

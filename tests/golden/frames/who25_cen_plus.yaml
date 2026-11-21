@@ -13,36 +13,6 @@
     method: press
     args: ["21", 1]
 
-- id: cen_plus.event.short_press.btn1.22
-  frame: "*25*21#1*22##"
-  direction: event
-  who: 25
-  what: "21#1"
-  where: "22"
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 2; verified on physical MyHomeServer1 with Living Now KW8011 (MyHOME#466, comment 5855690408)"
-  roundtrip: true
-  builder:
-    class: OWNCenPlusCommand
-    method: press
-    args: ["22", 1]
-
-- id: cen_plus.event.short_press.btn1.23
-  frame: "*25*21#1*23##"
-  direction: event
-  who: 25
-  what: "21#1"
-  where: "23"
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 3; verified on physical MyHomeServer1 with Living Now KW8011 (MyHOME#466, comment 5855690408)"
-  roundtrip: true
-  builder:
-    class: OWNCenPlusCommand
-    method: press
-    args: ["23", 1]
-
 - id: cen_plus.event.start_long_press.btn1.21
   frame: "*25*22#1*21##"
   direction: event
@@ -113,3 +83,78 @@
     class: OWNCenPlusCommand
     method: start_long_press
     args: ["22047", 2]
+
+- id: cen_plus.event.short_press.btn1.22
+  frame: "*25*21#1*22##"
+  direction: event
+  who: 25
+  what: "21#1"
+  where: "22"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 2; verified on physical MyHomeServer1 with Living Now KW8011 (MyHOME#466, comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: press
+    args: ["22", 1]
+
+- id: cen_plus.event.short_press.btn1.23
+  frame: "*25*21#1*23##"
+  direction: event
+  who: 25
+  what: "21#1"
+  where: "23"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+: Short pressure on pushbutton 1 of Object 3; verified on physical MyHomeServer1 with Living Now KW8011 (MyHOME#466, comment 5855690408)"
+  roundtrip: true
+  builder:
+    class: OWNCenPlusCommand
+    method: press
+    args: ["23", 1]
+
+- id: cen_plus.capture.req.status.21
+  frame: "*#25*21##"
+  direction: status_request
+  who: 25
+  what: null
+  where: "21"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "CEN+ / Dry Contacts: Status request on WHO 25 address 21 (probe only: sent 4 times to an F461 (FW 2.0.11), answered NACK each time, never received in a stored trace; MyHOME trace f461_live_2026-10-23; OpenWebNet-Encyclopedia cap-mh200-who25-boundary-20261022 records NACK on an MH200 (FW 2.1.0) as well)"
+  roundtrip: true
+  builder:
+    class: OWNDryContactCommand
+    method: status
+    args: ["21"]
+
+- id: scenario_plus.capture.turn_on.11
+  frame: "*25*11#0*11##"
+  direction: event
+  who: 25
+  what: "11#0"
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Scenario Plus (WHO 25): Turn ON ScenarioPlus object 11 (WHAT 11#0; OWNScenarioPlusCommand.turn_on); sent by the MyHOME integration and received 83 ms later on the event session of a MyHomeServer1 2.87.13 (MyHOME trace issue_466, MyHomeServer1 who25 scenario plus). WHAT 11 is not in the CEN+ or dry-contact PDFs, where the rotary selector events are WHAT 25 to 28. OpenWebNet-Encyclopedia cap-mh200-who25-boundary-20261022 records NACK for this frame on an MH200 (FW 2.1.0)"
+  roundtrip: true
+  builder:
+    class: OWNScenarioPlusCommand
+    method: turn_on
+    args: ["11"]
+
+- id: scenario_plus.cmd.turn_off.131
+  frame: "*25*12*131##"
+  direction: command
+  who: 25
+  what: 12
+  where: "131"
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Scenario Plus (WHO 25): Turn OFF on ScenarioPlus address 131 (WHAT 12; libqtdevices ScenarioPlusDevice & own-firmware-oracle)"
+  roundtrip: true
+  builder:
+    class: OWNScenarioPlusCommand
+    method: turn_off
+    args: ["131"]

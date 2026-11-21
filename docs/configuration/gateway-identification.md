@@ -133,9 +133,10 @@ The manual form (`Custom (IP Gateway)` → address → MAC and model) offers def
 
 | step | request | asked when | what it settles |
 | :--- | :--- | :--- | :--- |
-| 1 | `*#13**15##` | always | the WHO=13 device type; every known gateway answers it |
-| 2 | `*#1013**1##` | only when step 1 returned a **shared** code (`200`) | the OBJECT_MODEL, one code per model |
-| 3 | `*#13**12##` (MAC) | only when **every** model the codes can name is in `MAC_REQUEST_SAFE_MODELS` | the gateway's real MAC |
+| 1a | `*#13**15##` | always (setup & runtime startup) | the WHO=13 device type; every known gateway answers it |
+| 1b | `*#13**16##` | always (setup & runtime startup when firmware is unknown) | the gateway firmware version (`V.R.B`), which also gates firmware-specific profile capabilities (e.g. `H/L4684` FW ≥ `6.0.0`) |
+| 2 | `*#1013**1##` | only when step 1a returned a **shared** code (`200`) | the OBJECT_MODEL, one code per model |
+| 3 | `*#13**12##` (MAC) | setup only, when **every** model the codes can name is in `MAC_REQUEST_SAFE_MODELS` | the gateway's real MAC |
 
 The whole probe is best effort with a 15 s cap: a gateway that refuses the session, answers nothing or times out leaves the typed values in place.
 
@@ -165,8 +166,8 @@ When a dimension-15 reply arrives, the handler compares the reported model with 
 
 Two repair issues exist for this:
 
-- **Gateway model mismatch for …** (`gateway_identity_mismatch`) — the reported and configured models disagree and the integration is *not* sure enough to act. It names the code, what the specification or field evidence says it means, and how to fix it (reconfigure flow) if the reported model is what you own.
-- **Gateway model corrected to …** (`gateway_identity_corrected`) — a manually chosen model was contradicted by an official 2006 code or by a catalogue `WHO=1013` OBJECT_MODEL and was corrected; reconfigure if that is wrong.
+- **Gateway model mismatch for …** (`gateway_identity_mismatch`) — the reported and configured models disagree and the integration is *not* sure enough to act. It names the code, what the specification or field evidence says it means, and how to fix it via **Configure** (Options Flow; **Reconfigure** updates `host`/`port`/`password`) if the reported model is what you own.
+- **Gateway model corrected to …** (`gateway_identity_corrected`) — a manually chosen model was contradicted by an official 2006 code or by a catalogue `WHO=1013` OBJECT_MODEL and was corrected; open **Configure** (Options Flow) if you need to override the model manually.
 
 Neither issue is raised twice for the same finding, and a mismatch issue is withdrawn automatically if the gateway later reports a code that no longer contradicts.
 
@@ -209,7 +210,7 @@ Every diagnostics download (*Settings → Devices & services → MyHOME → ⋮ 
   "who1013_n_conf": null,
   "who1013_brand": null,
   "who1013_line": null,
-  "profile": "MH200NProfile",
+  "profile": "MH200Profile",
   "conflict": null
 }
 ```
@@ -218,11 +219,11 @@ Reading it:
 
 - `source` — which of the three sources produced the label.
 - `who13_code` — the raw code your gateway reported; `who13_model_official` / `who13_model_observed` — what the 2006 specification and the field evidence say it means (either may be `null`).
-- `who13_firmware`, `who13_kernel`, `who13_distribution` — dimensions 16 / 23 / 24, corroborating evidence when the gateway sends them.
+- `who13_firmware`, `who13_kernel`, `who13_distribution` — dimensions 16 / 23 / 24, corroborating evidence when the gateway sends them (`*#13**16##` is actively queried on startup whenever the firmware version is not yet known).
 - `who1013_code` / `who1013_model` — the `WHO=1013` OBJECT_MODEL reply and what the diagnostic catalogue or field evidence says it means; both `null` unless `who13_code` was a shared code (the question is not asked automatically otherwise) or `myhome.sweep_bus` queried `*#1013*0*1##` and the gateway answered. On an MH200 they are always `null`.
 - `who1013_other_names` — the same product's other brand name(s), e.g. `["003598"]` for an F454.
 - `who1013_n_conf`, `who1013_brand`, `who1013_line` — the rest of the reply, rendered as `value (meaning)` when the value has been seen before and as the bare value when it has not, so a new one reaches the trace instead of being dropped. Traced gateways show `"1 (BTicino)"` or `"5 (Legrand BTicino)"`, and `"0 (Undefined)"`.
-- `profile` — the OWNd profile actually in use (MH200 and MH200N share `MH200NProfile`; that is expected).
+- `profile` — the OWNd profile actually in use (`MH200` uses `MH200Profile`, which disables `WHO 22` and `WHO 25`, distinct from `MH200NProfile` used by `MH200N`).
 - `conflict` — non-null exactly when a *Gateway model mismatch* repair issue is open, with the reason.
 
 If `source` is `manual` and `who13_code` is not in either table, you are the first to see that code: please open an issue with the export attached.
@@ -231,6 +232,6 @@ If `source` is `manual` and `who13_code` is not in either table, you are the fir
 
 ## What to do if your gateway is mislabelled
 
-1. Open the entry's **⋮ → Reconfigure** and set the model you own. The reconfigure flow keeps your entities.
+1. Open the entry's **Configure** button (Options Flow) and select the **Gateway Hardware Model** (`name`) you own (**⋮ → Reconfigure** is for `host`, `port`, and `password`). Changing the model in **Configure** preserves all of your devices and entity IDs.
 2. If you know your model but the integration keeps questioning it, the WHO=13 code your gateway sends is new evidence — attach the export to an issue so the table above can grow.
 3. Never edit `custom_components/myhome/const.py` on your installation to "fix" a code: the precedence rule above is what protects you from the next mislabel.

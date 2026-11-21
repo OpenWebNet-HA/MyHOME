@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Iterable
 
@@ -106,7 +107,7 @@ class CoverFamily:
                 cover._follow_members()
 
 
-from .cover import MyHOMECover  # noqa: E402
+from .cover import MyHOMECover, _MoveSuperseded  # noqa: E402
 
 
 class MyHOMEScopeCover(MyHOMECover):
@@ -220,6 +221,18 @@ class MyHOMEScopeCover(MyHOMECover):
         """Members to position individually: OpenWebNet has no broadcast percentage position."""
         return self._members() if self.scope is not None and self.scope.interface is not None else []
 
+    def _stops_before_move(self, is_tilting: bool) -> bool:
+        """Return True when a local scope run must send a scope stop before moving (#959)."""
+        if is_tilting or self._advanced or self._calibrating:
+            return False
+        if self._stop_before_move is True:
+            return True
+        if self._stop_before_move is False:
+            return False
+        if members := self._members():
+            return any(m._stops_before_move(False) for m in members)
+        return super()._stops_before_move(False)
+
     async def async_open_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
             for i, member in enumerate(members):
@@ -227,7 +240,8 @@ class MyHOMEScopeCover(MyHOMECover):
                     await asyncio.sleep(PACED_FANOUT_DELAY)
                 await member.async_open_cover(**kwargs)
             return
-        await self._async_run_members_to_end(True)
+        with suppress(_MoveSuperseded):
+            await self._async_run_members_to_end(True)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         if members := self._fan_out():
@@ -236,9 +250,12 @@ class MyHOMEScopeCover(MyHOMECover):
                     await asyncio.sleep(PACED_FANOUT_DELAY)
                 await member.async_close_cover(**kwargs)
             return
-        await self._async_run_members_to_end(False)
+        with suppress(_MoveSuperseded):
+            await self._async_run_members_to_end(False)
 
-    async def _async_run_members_to_end(self, opening: bool) -> asyncio.Future[Any] | None:
+    async def _async_run_members_to_end(
+        self, opening: bool, *, pre_stopped: bool = False
+    ) -> asyncio.Future[Any] | None:
         """One scope frame runs every member to its end stop (no F422 fan-out: the main bus,
         or a general frame, which crosses the interface natively).
 
@@ -247,6 +264,8 @@ class MyHOMEScopeCover(MyHOMECover):
         known member still freezes its interpolated position, while an early stop on an
         unknown member keeps settling to the end stop.
         """
+        if not pre_stopped and self._stops_before_move(False):
+            await self._async_stop_before_move()
         direction = "open" if opening else "close"
         if self._is_tilting:
             self._apply_tilt_stop()
@@ -254,7 +273,7 @@ class MyHOMEScopeCover(MyHOMECover):
         for member in followers:
             member._begin_run(direction)
         try:
-            written = await self._async_move(direction)
+            written = await self._async_move(direction, pre_stopped=True)
         except Exception:
             for member in followers:
                 member._abort_motion()  # the scope frame never reached the bus: nothing moved
@@ -263,19 +282,15 @@ class MyHOMEScopeCover(MyHOMECover):
             member._follow_scope_run_to_end(opening, written)
         return written
 
-    async def _async_run_to_end(self, opening: bool) -> None:
+    async def _async_run_to_end(self, opening: bool, *, pre_stopped: bool = False) -> None:
         """`set_cover_position: 0` / `100` with one scope frame: the members settle too."""
-        written = await self._async_run_members_to_end(opening)
-        self._cancel_run_timeout()
-        self._settle_run_to_end(opening, written)
+        with suppress(_MoveSuperseded):
+            written = await self._async_run_members_to_end(opening, pre_stopped=pre_stopped)
+            self._cancel_run_timeout()
+            self._settle_run_to_end(opening, written)
 
-    async def async_stop_cover(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
-            for i, member in enumerate(members):
-                if i > 0 and PACED_FANOUT_DELAY > 0:
-                    await asyncio.sleep(PACED_FANOUT_DELAY)
-                await member.async_stop_cover(**kwargs)
-            return
+    async def _async_stop_local_scope(self, **kwargs: Any) -> tuple[Any, int]:
+        """Send a broadcast stop on this scope and freeze its timed/tilting members."""
         if not self._is_tilting:
             self._cancel_run_timeout()
         at = kwargs.get("at")
@@ -305,6 +320,7 @@ class MyHOMEScopeCover(MyHOMECover):
             for member in followers:
                 member._end_echo_window()
             raise
+        stop_gen = self._last_stop_generation
         for member in followers:
             member._follow_scope_stop(written)
         not_before = max(at, queued_at) if at is not None else queued_at
@@ -313,6 +329,20 @@ class MyHOMEScopeCover(MyHOMECover):
                 if isinstance(written, asyncio.Future) and not written.done():
                     leader._pulse_stop_written = written
                 leader._settle_pulse_on_write(written, leader_gen, not_before)
+        return written, stop_gen
+
+    async def _async_send_stop_for_pre_move(self) -> tuple[Any, int]:
+        """Stop the local scope and its members ahead of a scope direction frame (#959)."""
+        return await self._async_stop_local_scope()
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        if members := self._fan_out():
+            for i, member in enumerate(members):
+                if i > 0 and PACED_FANOUT_DELAY > 0:
+                    await asyncio.sleep(PACED_FANOUT_DELAY)
+                await member.async_stop_cover(**kwargs)
+            return
+        await self._async_stop_local_scope(**kwargs)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         if members := self._fan_out_position_members():
@@ -366,14 +396,20 @@ class MyHOMEScopeCover(MyHOMECover):
         if errors:
             raise errors[0]
 
-    async def _async_move(self, direction: str, is_tilting: bool = False) -> asyncio.Future[Any] | None:
+    async def _async_move(
+        self,
+        direction: str,
+        is_tilting: bool = False,
+        *,
+        pre_stopped: bool = False,
+    ) -> asyncio.Future[Any] | None:
         if is_tilting and not self._fan_out():
             # On the local bus one scope frame turns every member's slats: they
             # follow this pulse instead of reading its frames as a curtain run.
             self._pulse_followers = [m for m in self._members() if m._slat_tilt]
             for member in self._pulse_followers:
                 member._follow_pulse(self, direction)
-        written = await super()._async_move(direction, is_tilting=is_tilting)
+        written = await super()._async_move(direction, is_tilting=is_tilting, pre_stopped=pre_stopped)
         if not is_tilting:
             self._watch_run()
         return written

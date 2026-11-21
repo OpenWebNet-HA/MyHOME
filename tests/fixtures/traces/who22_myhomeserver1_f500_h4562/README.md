@@ -19,7 +19,7 @@ The gateway address was deliberately left out of the fixtures.
 
 | File | Content |
 |---|---|
-| `trace1_living_room_3-7-5.json` | Power ON with source, F500 preset change with RDS, matrix switch to AUX 2, volume steps, atomic OFF |
+| `trace1_living_room_3-7-5.json` | Power ON (output area 1), F500 preset change with RDS, matrix switch to AUX 2, volume steps, atomic OFF |
 | `trace2_kitchen_3-7-6.json` | Power ON into source 2, physical H4562 keypress, matrix cycling, atomic OFF |
 | `trace3_whole_house_paging.json` | Paging open (`19#1`), voice start (`20#1`), global ducking (`12*0*10`), volume restore |
 
@@ -35,8 +35,9 @@ literally in the comment. Each frame carries a short `note` with the reporter's 
 - **Dimension 12 `STATE*X`**: with state 1, `X` is the audio channel / source (1 or 2); `12*0*10`
   appears as standby/ducking during paging and after atomic OFF.
 - **Matrix routing**: `*22*35#4#1#N*<zone>##` routes a zone to source `N`.
-- **WHAT forms**: `1#4#1` ON with source, `0#4#0` atomic OFF, `9`/`2#1` next preset on source 1,
-  `19#1` / `20#1` paging open / voice, `3#1` / `4#1` volume step up / down.
+- **WHAT forms**: `1#4#1` ON with output area 1 (not a source: trace 2 comes up on source 2),
+  `0#4#0` atomic OFF, `9`/`2#1` next preset on source 1, `19#1` / `20#1` paging open / voice,
+  `3#1` / `4#1` volume step up / down.
 - **Physical keypress**: `*22*9*5#3#7#6##` (WHERE `5#3#A#P`) is emitted by the H4562 keypad.
 
 These behaviours are not yet all decoded by OWNd; see the OWNd#103 discussion.

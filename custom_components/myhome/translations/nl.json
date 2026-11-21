@@ -234,8 +234,8 @@
           "source_4_name": "Bron 4 — naam van wat op matrix-ingang S4 is aangesloten (leeg laten als er niets op zit)",
           "source_4_tuner": "Bron 4 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "address": "IP address",
+          "name": "Gatewaymodel",
           "password": "Wachtwoord",
-          "config_file_path": "Path onfiguratie bestand",
           "command_worker_count": "Aantal open command sessies",
           "generate_events": "Genereer gebeurtenissen in Home Assistant voor elk ontvangen bericht",
           "broadcast_resync": "Bevraag groep-/gebied-/algemene adressen na een stille periode",
@@ -315,8 +315,8 @@
   },
   "services": {
     "sync_time": {
-      "name": "Syncronize time",
-      "description": "Syncronize gateway's time to HA local time.",
+      "name": "Tijd synchroniseren",
+      "description": "Synchroniseer de tijd van de gateway met de lokale tijd van Home Assistant.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -347,8 +347,8 @@
           "description": "Name(s) of entities that will start sending instant power information."
         },
         "duration": {
-          "name": "Duration",
-          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+          "name": "Tijdsduur",
+          "description": "Duur in minuten (1–255) voor automatische updates van het actuele vermogen; roep myhome.stop_sending_instant_power aan om het verzenden eerder te stoppen."
         }
       }
     },
@@ -399,6 +399,10 @@
         "gateway": {
           "name": "Gateway",
           "description": "MAC-adres van de gateway (optioneel; standaard voor alle actieve gateways)."
+        },
+        "force": {
+          "name": "Scan forceren",
+          "description": "Forceer een scan over alle subsystemen (inclusief Alarm en Energie) ongeacht de beperkingen van het gatewayprofiel, inclusief de algemene verzoeken die de gatewayfirmware normaal negeert."
         }
       }
     },
@@ -426,7 +430,7 @@
       "fields": {
         "station": {
           "name": "Zender",
-          "description": "Nummer van het voorkeuzegeheugen (1–5 op F500, tot 1–15 op F500N)."
+          "description": "Nummer van het voorkeuzegeheugen (1–15). Voorkeuzeplaatsen 6–15 vereisen WHO = 22-ondersteuning op de gateway (1–5 op gateways met alleen WHO = 16)."
         }
       }
     },
@@ -596,7 +600,7 @@
       "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
     },
     "cover_reports_position": {
-      "message": "{name} meldt zijn positie (advanced: true in myhome.yaml); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, verwijder dan advanced: true uit myhome.yaml."
+      "message": "{name} meldt zijn positie (Dimension 10 / advanced: true); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, stel dan advanced: false in of verwijder advanced: true uit myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} wordt al gekalibreerd"
@@ -721,6 +725,9 @@
       },
       "energy_month": {
         "name": "Energie (huidige maand)"
+      },
+      "actuator_output_level": {
+        "name": "Uitgangsniveau actuator {actuator}"
       }
     },
     "switch": {

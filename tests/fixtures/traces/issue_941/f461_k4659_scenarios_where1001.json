@@ -1,0 +1,265 @@
+{
+  "capture": {
+    "kind": "bus_monitor_passive_trace_excerpt",
+    "title": "BTicino F461 (2.0.11) with K4659 PIR sensor in Scenarios mode (Object 128) at WHERE 1001",
+    "reporter": "lyubomirtraykov",
+    "sources": [
+      "https://github.com/OpenWebNet-HA/MyHOME/issues/941"
+    ],
+    "captured_at": "2026-11-17",
+    "abbreviated": true,
+    "abbreviation_note": "Excerpt from the passive MyHOME Bus Monitor trace attached to issue #941, keeping the K4659 WHO=1 dimension queries/events (at 01 before re-addressing and at 1001 after) and the MyHOME_Suite WHO=1001 diagnostic readout (device ID 6328260, modobj=43, slot 1 Object=128, delay=15s, sensitivity=3) while omitting unrelated WHO=1 polling and WHO=4 climate frames."
+  },
+  "gateway": {
+    "model": "F461",
+    "firmware": "2.0.11",
+    "connection_type": "tcp",
+    "command_worker_count": 1,
+    "queue_pacing_s": 0.05
+  },
+  "environment": {
+    "ha_version": "2026.11.2",
+    "integration_version": "2.0.0b18",
+    "ownd_version": "2.0.0b14"
+  },
+  "plant": {
+    "device": {
+      "manufacturer": "BTicino",
+      "model": "K4659",
+      "device_id": "6328260",
+      "modobj": 43,
+      "object_id": 128,
+      "object_mode": "Scenarios daylight and presence sensor",
+      "initial_where": "01",
+      "configured_where": "1001",
+      "reported_pir_sensitivity": 3,
+      "reported_motion_timeout_s": 15
+    }
+  },
+  "frames": [
+    {
+      "time": "17:25:10.396",
+      "t": 0.0,
+      "direction": "rx",
+      "raw": "*#1*01*6*2668##",
+      "who": 1,
+      "note": "Illuminance report at initial address 01 (2668 lx)"
+    },
+    {
+      "time": "17:25:10.414",
+      "t": 0.018,
+      "direction": "tx",
+      "raw": "*#1*01*5##",
+      "who": 1,
+      "note": "PIR sensitivity query on discovery at 01"
+    },
+    {
+      "time": "17:25:11.508",
+      "t": 1.112,
+      "direction": "rx",
+      "raw": "*#1*01*5*3##",
+      "who": 1,
+      "note": "K4659 replies with actual WHERE 01, PIR sensitivity=3 (very high)"
+    },
+    {
+      "time": "17:25:11.606",
+      "t": 1.21,
+      "direction": "tx",
+      "raw": "*#1*01*7##",
+      "who": 1,
+      "note": "Motion timeout (DIMENSION 7) query on discovery at 01"
+    },
+    {
+      "time": "17:25:12.628",
+      "t": 2.232,
+      "direction": "rx",
+      "raw": "*#1*01*7*0*0*15##",
+      "who": 1,
+      "note": "K4659 replies with actual WHERE 01, motion_timeout=0h 0m 15s"
+    },
+    {
+      "time": "17:25:27.212",
+      "t": 16.816,
+      "direction": "rx",
+      "raw": "*1001*9#6328260*0##",
+      "who": 1001,
+      "note": "MyHOME_Suite device scan/selection for device ID 6328260"
+    },
+    {
+      "time": "17:25:27.325",
+      "t": 16.929,
+      "direction": "rx",
+      "raw": "*#1001*01*1*43*6*1*0##",
+      "who": 1001,
+      "note": "DIMENSION 1 device identity: modobj=43 (OWN-DEV-0016 / K4659)"
+    },
+    {
+      "time": "17:25:28.588",
+      "t": 18.192,
+      "direction": "rx",
+      "raw": "*#1001*0*#30*1*128##",
+      "who": 1001,
+      "note": "DIMENSION 30 slot 1: Object 128 (Scenarios daylight and presence sensor)"
+    },
+    {
+      "time": "17:25:30.504",
+      "t": 20.108,
+      "direction": "rx",
+      "raw": "*#1001*0*#32#1*1*1001##",
+      "who": 1001,
+      "note": "DIMENSION 32 slot 1 address configured to 1001 (A=10, PL=01)"
+    },
+    {
+      "time": "17:25:30.596",
+      "t": 20.2,
+      "direction": "rx",
+      "raw": "*#1001*0*#35#10#1*0##",
+      "who": 1001,
+      "note": "DIMENSION 35 slot 1 index 10: Time delay HOURS=0"
+    },
+    {
+      "time": "17:25:30.676",
+      "t": 20.28,
+      "direction": "rx",
+      "raw": "*#1001*0*#35#11#1*0##",
+      "who": 1001,
+      "note": "DIMENSION 35 slot 1 index 11: Time delay MINUTES=0"
+    },
+    {
+      "time": "17:25:30.771",
+      "t": 20.375,
+      "direction": "rx",
+      "raw": "*#1001*0*#35#12#1*15##",
+      "who": 1001,
+      "note": "DIMENSION 35 slot 1 index 12: Time delay SECONDS=15"
+    },
+    {
+      "time": "17:25:30.852",
+      "t": 20.456,
+      "direction": "rx",
+      "raw": "*#1001*0*#35#22#1*1##",
+      "who": 1001,
+      "note": "DIMENSION 35 slot 1 index 22 parameter=1"
+    },
+    {
+      "time": "17:25:30.939",
+      "t": 20.543,
+      "direction": "rx",
+      "raw": "*#1001*0*#35#20#1*3##",
+      "who": 1001,
+      "note": "DIMENSION 35 slot 1 index 20: PIR sensitivity=3"
+    },
+    {
+      "time": "17:25:38.924",
+      "t": 28.528,
+      "direction": "rx",
+      "raw": "*#1*1001*6*2668##",
+      "who": 1,
+      "note": "Illuminance report at new address 1001 (2668 lx)"
+    },
+    {
+      "time": "17:26:27.172",
+      "t": 76.776,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 1 start: motion detected at 1001"
+    },
+    {
+      "time": "17:26:42.163",
+      "t": 91.767,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 1 repeat (+14.991 s): still occupied; no WHAT 39 sent when idle afterwards"
+    },
+    {
+      "time": "17:27:19.171",
+      "t": 128.775,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 2 start after 37.008 s silence (no WHAT 39 emitted)"
+    },
+    {
+      "time": "17:27:34.005",
+      "t": 143.609,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 2 repeat (+14.834 s): still occupied; no WHAT 39 sent when idle afterwards"
+    },
+    {
+      "time": "17:28:37.644",
+      "t": 207.248,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 3 start after 63.639 s silence (no WHAT 39 emitted)"
+    },
+    {
+      "time": "17:28:52.779",
+      "t": 222.383,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 3 repeat (+15.135 s)"
+    },
+    {
+      "time": "17:29:08.333",
+      "t": 237.937,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 3 repeat (+15.554 s — shows +0.55 s re-trigger jitter above 15 s)"
+    },
+    {
+      "time": "17:29:12.484",
+      "t": 242.088,
+      "direction": "rx",
+      "raw": "*#1*1001*6*2499##",
+      "who": 1,
+      "note": "Illuminance report (2499 lx)"
+    },
+    {
+      "time": "17:29:18.709",
+      "t": 248.313,
+      "direction": "rx",
+      "raw": "*#1*1001*6*45##",
+      "who": 1,
+      "note": "Illuminance report (45 lx)"
+    },
+    {
+      "time": "17:29:20.780",
+      "t": 250.384,
+      "direction": "rx",
+      "raw": "*#1*1001*6*2478##",
+      "who": 1,
+      "note": "Illuminance report (2478 lx)"
+    },
+    {
+      "time": "17:29:23.893",
+      "t": 253.497,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 3 repeat (+15.560 s)"
+    },
+    {
+      "time": "17:29:39.437",
+      "t": 269.041,
+      "direction": "rx",
+      "raw": "*1*34*1001##",
+      "who": 1,
+      "note": "Cycle 3 final repeat (+15.544 s); goes silent without WHAT 39"
+    },
+    {
+      "time": "17:29:57.069",
+      "t": 286.673,
+      "direction": "rx",
+      "raw": "*#1*1001*6*2668##",
+      "who": 1,
+      "note": "Illuminance report (2668 lx)"
+    }
+  ]
+}

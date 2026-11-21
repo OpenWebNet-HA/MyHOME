@@ -14,34 +14,25 @@ This guide details how to completely remove the **MyHOME** integration and clean
 
 ---
 
-## Step 2: Clean Up Storage & Persistent Data
+## Step 2: Automatic Storage & Repair Cleanup
 
-The MyHOME integration stores non-volatile calibration data (such as measured cover travel times and device options) in Home Assistant's internal storage:
+Deleting the MyHOME integration entry in Step 1 cleans up persistent integration state automatically (`async_remove_entry`):
 
-1. Connect to your Home Assistant host via SSH, Terminal, or the Studio Code Server addon.
-2. Navigate to your configuration directory:
-   ```bash
-   cd /config/.storage
-   ```
-3. Remove any integration storage files:
-   ```bash
-   rm -f myhome.*
-   ```
-   *(This removes stored cover travel time calibrations and cached hardware profiles).*
+- **Cover calibration times (`cover_travel_times`) & imported YAML snapshots**: Stored directly inside the gateway config entry's `options` and deleted by Home Assistant as part of removing the config entry.
+- **Decoder pool state (`.storage/myhome.decoder_pool.<entry_id>`)**: Automatically removed by `async_remove_entry`.
+- **Integration Repair Issues**: All `myhome` domain Repair Issues linked to that gateway entry are automatically cleared from Home Assistant's Issue Registry (and any remaining secondary/standby gateways linked to a removed primary are flagged automatically).
+
+No manual deletion inside `/config/.storage/` is required. *(If you previously ran an early pre-v2 build and want to verify no orphaned files remain, you can inspect `ls -la /config/.storage/myhome.*` via SSH or Terminal.)*
 
 ---
 
-## Step 3: Remove Custom Lovelace Bus Monitor Card (If Installed)
+## Step 3: Lovelace Bus Monitor Card Resource Cleanup
 
-If you installed the custom Lovelace Bus Monitor card (`myhome-bus-card`):
+In v2, the bundled Bus Monitor card is served from `/myhome_static/myhome-bus-card.js?v=...` and its Lovelace dashboard resource is **removed automatically** when you delete the final MyHOME gateway entry.
 
-1. Navigate to **Settings → Dashboards → Three dots (⋮) in top right → Resources**.
-2. Locate the resource referencing:
-   ```text
-   /local/myhome-bus-card.js
-   ```
-3. Click on the resource and select **Delete**.
-4. In your Home Assistant `/config/www/` folder, remove the card JavaScript file if present:
+1. Remove any `custom:myhome-openwebnet-bus-monitor` (or `custom:myhome-bus-card`) cards from your Lovelace dashboard views.
+2. Optionally open **Settings → Dashboards → Three dots (⋮) in top right → Resources** to confirm no `/myhome_static/myhome-bus-card.js` resource remains.
+3. If you manually copied a pre-v2 standalone card into `/config/www/` (`/local/myhome-bus-card.js`), delete that manual resource entry in **Resources** and remove the file:
    ```bash
    rm -f /config/www/myhome-bus-card.js
    ```
@@ -52,14 +43,17 @@ If you installed the custom Lovelace Bus Monitor card (`myhome-bus-card`):
 
 To completely remove the integration code from Home Assistant:
 
-1. Using your terminal or file manager, delete the custom component folder:
-   ```bash
-   rm -rf /config/custom_components/myhome
-   ```
-2. If you maintain a legacy `/config/myhome.yaml` file, you can safely archive or delete it:
-   ```bash
-   rm -f /config/myhome.yaml
-   ```
+1. **If installed via Home Assistant Marketplace (2026.11+) or HACS (`< 2026.11`):**
+    - In **Settings → Marketplace** (`2026.11+`), open **MyHOME**, open the three dots (`⋮`) menu in the upper-right corner, and select **Uninstall**.
+    - In **HACS** (`< 2026.11`), open **MyHOME**, open the three dots (`⋮`) menu, and select **Remove**.
+2. **If installed manually or via SSH one-liner:** delete the custom component folder using your terminal or file manager:
+    ```bash
+    rm -rf /config/custom_components/myhome
+    ```
+3. If you maintain a legacy `/config/myhome.yaml` file, you can safely archive or delete it:
+    ```bash
+    rm -f /config/myhome.yaml
+    ```
 
 ---
 

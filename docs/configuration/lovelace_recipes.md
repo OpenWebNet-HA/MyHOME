@@ -43,7 +43,7 @@ card:
 
 ## 🔊 Recipe 2: Dynamic Multiroom Audio Zone Player
 
-For installations equipped with BTicino WHO 16 sound systems (F441, F441M audio matrices, F500 tuners, 3484 amplifier nodes). This showcase provides three dashboard patterns:
+For installations equipped with BTicino `WHO = 16` / `WHO = 22` sound systems (F441, F441M audio matrices, F500/F500N tuners, 3484 amplifier nodes). This showcase provides three dashboard patterns:
 
 1. **Auto-Collapsing Active Speakers Card**: A dynamic overview panel that automatically stays hidden when music is off and expands into interactive player cards whenever any room starts playing.
 2. **Dedicated Multi-Room Audio View (Sections Layout)**: A comprehensive whole-home audio control page organized by floor/zone with 1-tap matrix source selector chips (`Radio`, `Streamer`) and master power toggles.
@@ -313,7 +313,7 @@ sections:
 
 ### Pattern C: Stock Lovelace Alternative (Zero Custom Cards)
 
-If you prefer not to install custom frontend cards via HACS, you can use Home Assistant's built-in cards:
+If you prefer not to install custom frontend cards via the Home Assistant Marketplace or HACS, you can use Home Assistant's built-in cards:
 
 #### Option 1: Native Tile Card with Controls
 ```yaml

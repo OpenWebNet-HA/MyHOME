@@ -21,9 +21,9 @@ MESSAGE_NAMES = {"message", "msg", "parsed", "frame", "event"}
 
 REVIEWED: dict[str, str] = {
     # Heating (WHO 4): the grammar helpers are the one place that reads a heating WHERE.
-    "climate.py::_bus_zone": "WHO 4 grammar: probe and pump frames name no zone (where_grammar)",
-    "climate.py::_calling_zones": "WHO 4 grammar: the zones a frame concerns",
-    "climate.py::_zone_route_keys": "WHO 4 grammar: probe and pump WHERE are never route keys",
+    "climate_discovery.py::_bus_zone": "WHO 4 grammar: probe and pump frames name no zone (where_grammar)",
+    "climate_discovery.py::_calling_zones": "WHO 4 grammar: the zones a frame concerns",
+    "climate_discovery.py::_zone_route_keys": "WHO 4 grammar: probe and pump WHERE are never route keys",
     "sensor.py::async_setup_entry.temperature_bus_address": "probe test is where_grammar.is_probe; sensors take the probe's frames",
     "sensor.py::async_setup_entry.route_keys": "sensors filter by measurement type, so a heating actuator frame reaches none",
     "gateway_events.py::GatewayEventDispatcher.process_message": "heating DIM 14 command: asks the WHERE it was sent to for its status",
@@ -44,6 +44,7 @@ REVIEWED: dict[str, str] = {
     "cover_translation.py::CoverTranslationRelay._key": "WHO 2 point-to-point translation: WHERE (+ F422 interface) is the shutter address",
     "cover_translation.py::CoverTranslationRelay._addressed_by": "WHO 2 group / area / general Stop or direction: WHERE (+ F422 interface) is the scope it addresses",
     "cover_translation.py::CoverTranslationRelay._members": "WHO 2 group frame: WHERE (+ F422 interface) is the group whose declared members it reaches",
+    "cover.py::MyHOMECover._is_own_point_message": "WHO 2 Dimension 10: promotion and completeness apply only on the cover's own point-to-point WHERE",
     "gateway_resync.py::LightingResyncManager.handle_ptp_echo": "WHO 1 point-to-point echo: WHERE is the APL address",
     "gateway_resync.py::LightingResyncManager.schedule_resync": "WHO 1 point-to-point echo: WHERE is the APL address",
     "topology.py::GatewayTopologyMixin._correlate_shared_bus_traffic": "general-frame test for shared-bus correlation",

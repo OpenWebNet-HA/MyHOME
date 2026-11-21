@@ -32,12 +32,14 @@ from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.light import MyHOMELight
 from custom_components.myhome.media_player import MyHOMEMediaPlayer
 from custom_components.myhome.sensor import (
+    MyHOMEActuatorOutputSensor,
     MyHOMEEnergySensor,
     MyHOMEIlluminanceSensor,
     MyHOMEPowerSensor,
     MyHOMETemperatureSensor,
 )
 from custom_components.myhome.switch import MyHOMEInvertSwitch, MyHOMESwitch
+from custom_components.myhome.typing_compat import device_info_to_dict
 
 
 @pytest.fixture
@@ -86,6 +88,21 @@ def _sensor(cls, hass, gw, device_class, **extra):
                **COMMON, **extra)
 
 
+def _actuator_output(hass, gw):
+    return MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="1",
+        where="1#3",
+        zone="1",
+        actuator="3",
+        interface=None,
+        standalone=True,
+        gateway=gw,
+        **COMMON,
+    )
+
+
 def _media(hass, gw):
     return MyHOMEMediaPlayer(hass=hass, name="A", entity_name=None, device_id="1#16", who="16", where="1",
                              gateway=gw, **COMMON)
@@ -128,6 +145,7 @@ AUDIT = [
      SensorDeviceClass.TEMPERATURE, None, True),
     ("illuminance", lambda h, g: _sensor(MyHOMEIlluminanceSensor, h, g, SensorDeviceClass.ILLUMINANCE),
      SensorDeviceClass.ILLUMINANCE, None, True),
+    ("actuator output", _actuator_output, None, None, True),
     ("media player", _media, MediaPlayerDeviceClass.SPEAKER, None, True),
     ("lock button", lambda h, g: _button(DisableCommandButtonEntity, h, g), None, EntityCategory.CONFIG, True),
     ("unlock button", lambda h, g: _button(EnableCommandButtonEntity, h, g), None, EntityCategory.CONFIG, True),
@@ -150,5 +168,6 @@ def test_entity_audit(hass, gateway, label, factory, device_class, category, ena
 def test_entities_link_to_the_gateway_device(hass, gateway):
     """Every entity's device points at the gateway device through via_device_id."""
     entity = _light(hass, gateway)
-    assert entity.device_info["via_device_id"] == gateway.device_registry_id
-    assert "via_device" not in entity.device_info
+    info = device_info_to_dict(entity.device_info)
+    assert info["via_device_id"] == gateway.device_registry_id
+    assert "via_device" not in info

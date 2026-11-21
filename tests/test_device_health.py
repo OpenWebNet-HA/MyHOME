@@ -64,7 +64,9 @@ async def test_unmapped_lighting_status_raises_an_issue_for_an_unconfigured_addr
         "code": "99",
         "evidence": "",
     }
-    assert issue.learn_more_url.endswith("/diagnostics/repair-issues/#unmapped-device-status")
+    assert issue.learn_more_url == (
+        "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#unmapped-device-status"
+    )
     assert health.faults == [{"who": 1, "where": "74", "kind": "unmapped_status", "code": "99", "evidence": ""}]
 
 

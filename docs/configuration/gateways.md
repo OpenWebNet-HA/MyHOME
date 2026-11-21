@@ -29,18 +29,21 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 ## 🔌 Connection Setup via Config Flow
 
 ### Step 1: Initial Discovery
-- In many networks, MyHOME gateways announce themselves via **SSDP** or **mDNS**.
-- If discovered automatically, Home Assistant displays a notification prompting to configure the discovered gateway.
-- If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME**.
+- On local networks, MyHOME gateways announce themselves via **SSDP / UPnP** (mDNS / `.local` hostnames are not used by OpenWebNet gateways).
+- If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to **Configure** the gateway, or lists discovered gateways in the setup picker alongside **"Custom (IP Gateway)"**.
+- If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME** -> choose **Custom (IP Gateway)**.
+- A later announcement of a configured gateway that was found over SSDP updates its address when that changed, and the change reloads the entry. The port is not announced and stays as configured. The friendly name, the UDN and the firmware are stored only while the entry has none: the firmware kept is the version the gateway reports over `WHO=13` dimension 16, not the announced UPnP `modelNumber`. A gateway added by hand (**Custom (IP Gateway)**) and an ignored gateway are not updated by SSDP.
+- An `F455` is found under the manufacturer names `BTicino S.p.A.` and `Legrand S.p.A.`. An F455 1.0.76 that reports `Legrand S.p.A.` answers Home Assistant's search with `ST: ssdp:all` and announces itself with `NT: upnp:rootdevice` every 6 to 7 minutes; it has a matcher for each of the two.
 
 ### Step 2: Installation Parameters Reference
 
-| Parameter | Key | Type | Default | Description |
-| :--- | :--- | :---: | :---: | :--- |
-| **Host** | `host` | String | - | IPv4 address or hostname of the OpenWebNet gateway (e.g. `192.168.1.50`). A static IP or permanent DHCP reservation is strongly advised. |
-| **Port** | `port` | Integer | `20000` | TCP port for the OpenWebNet service (standard default is `20000`). |
-| **Password** | `password` | String | None | OpenWebNet password. Can be numeric (4 or 9 digits) or alphanumeric depending on gateway model and firmware. For **MyHomeServer1**, use the installer password configured in MyHOME_Up. Leave blank if open LAN is active. |
-| **Gateway Model** | `model` | Select | Auto-detected | Hardware model (e.g. `MyHomeServer1`, `F454`, `MH201`, `F453AV`). Auto-detected during handshake, or selected manually. |
+| Step | Parameter | Key | Type | Default | Description |
+| :--- | :--- | :--- | :---: | :---: | :--- |
+| `custom` | **IPv4 Address** | `address` *(stored as `host`)* | IPv4 String | `192.168.1.100` | Strict numeric IPv4 address of the OpenWebNet gateway (`.local` mDNS hostnames and IPv6 literals are rejected). A static IP or DHCP reservation is strongly advised. |
+| `custom` | **Port** | `port` | Integer | `20000` | TCP port for the OpenWebNet service (`1–65535`, standard default `20000`). Home Assistant then attempts a UPnP `get_gateway` metadata lookup at that IP. |
+| `custom_manual` *(only if UPnP lookup fails)* | **MAC Address** | `serialNumber` *(stored as `mac`)* | String | `00:03:50:00:00:00` | Gateway MAC address (`unique_id`). Automatically replaced after authentication if the gateway safely answers `*#13**12##` (`F461`, `MyHomeServer1`). |
+| `custom_manual` *(only if UPnP lookup fails)* | **Device Type** | `modelName` *(stored as `name`)* | Select | `MyHomeServer1` | Hardware model (`SUPPORTED_GATEWAY_MODELS`, including `"Generic"`). Probed and refined post-auth via `*#13**15##`, `*#13**16##`, and `*#1013**1##`. |
+| `password` *(only when required by gateway)* | **Password** | `password` | String | — | Numeric OPEN password (`MH200`, `MH200N`, `MH201`, `F452`, `F453`, `F453AV`, `H4684`) or alphanumeric SHA-256 HMAC password (`F454`, `F455`, `F461`, `MH202`, `MyHomeServer1`). |
 
 ---
 
@@ -89,33 +92,41 @@ You can adjust integration runtime parameters at any time without re-adding the 
 <!-- GATEWAY_OPTIONS_START -->
 | Option | Key | Selector / Type | Default | Session / Model Limits | Description |
 | :--- | :--- | :---: | :---: | :--- | :--- |
-| **Command Worker Concurrency** | `worker_count` | Integer | `1` | Range 1–10 (capped by model: 1 for MH200/MH201, 2 for MH202, 4 for F454/MHS1) | Number of concurrent asynchronous command sessions dispatched to the gateway. |
-| **Dimmer Transition Mode** | `transition_mode` | Select | `software_stepped` | `software_stepped`, `native`, `auto` | Home Assistant software-stepped fade vs native hardware speed parameter. |
+| **Command Worker Concurrency** | `command_worker_count` | Integer | `1` (`2` on F455 and MyHomeServer1, via `command_session_default`) | Range 1–4 capped by model (`1` on single-session models, `2` on MH202, `4` on F454/F455/F461/MyHomeServer1; `1–10` on Generic) | Number of concurrent asynchronous command sessions (`*99*0##`) dispatched to the gateway. |
+| **Dimmer Transition Mode** | `transition_mode` | Select | `software_stepped` | `software_stepped`, `native`, `auto` | Home Assistant software-stepped fade interpolation vs native hardware speed parameter (`auto` aliases `software_stepped`). |
 | **Event Bus Broadcasting** | `generate_events` | Boolean | `False` | All gateways | Emits raw OpenWebNet bus frames onto the Home Assistant event bus as `myhome_message_event`. |
-| **Broadcast Re-sync** | `broadcast_resync` | Boolean | `True` | All gateways | Automatically triggers targeted entity queries when general or area broadcast commands (`WHERE = 0`) are received. |
-| **Gateway Host Address** | `address` | IPv4 String | Current Host | Valid IPv4 | In-place update of gateway IP address without deleting the integration entry. |
-| **Gateway Password** | `own_password` | String | Current Pass | Alphanumeric / Numeric | In-place update of OpenWebNet password without deleting the integration entry. |
-| **Gateway Hardware Model** | `name` | Select | Current Model | `SUPPORTED_GATEWAY_MODELS` | In-place correction of gateway hardware model and active profile. |
-| **Audio Source Names** | `source_name_1`..`4` | Text | `""` | 4 Matrix inputs | Custom labels for physical sound sources plugged into F441/F441M matrix inputs (S1–S4). |
-| **Audio Source Tuner Flag** | `source_tuner_1`..`4` | Boolean | `False` | 4 Matrix inputs | Declares whether an input is an SCS radio tuner (enables RDS and frequency tuning commands). |
-| **Audio Default Routing** | `source_default_<env>` | Select | `none` | Active audio environments | Per-environment default sound source assigned when turning on amplifiers. |
-| **Proxy Decoder Entity** | `decoder_entity_1`..`4` | Entity (`media_player`) | `""` | 4 Decoder slots | External software audio player entity (e.g. Music Assistant, Squeezelite) mapped to matrix inputs. |
-| **Proxy Decoder Source** | `decoder_source_1`..`4` | Select | Slot index | 1–4 | Matrix source input plugged into the external audio player's sound card / DAC. |
-| **Proxy Decoder Pre-Gain** | `decoder_pre_gain_1`..`4` | Number | `0` | -20 dB to +20 dB | Gain trim compensation to balance volume levels across streaming sources and physical tuners. |
-| **Ignored Bus Addresses** | `ignored_addresses` | Multiline Text | `[]` | All gateways | Addresses (`WHO/WHERE`, e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and hardware fault repairs. |
+| **Broadcast Re-sync** | `broadcast_resync` | Boolean | `True` | All gateways | Sweeps group (`#G`), area, and general (`WHERE = 0`) light addresses for status after a debounced silence window. |
+| **Gateway Host Address** | `address` *(writes `entry.data["host"]`)* | IPv4 String | Current `host` | Valid IPv4 | In-place update of the gateway IPv4 address (`host`) without deleting the config entry. |
+| **Gateway Password** | `password` *(writes `entry.data["password"]`)* | String | Current `password` | OPEN numeric / SHA-256 HMAC | In-place update of the OpenWebNet password without deleting the config entry. |
+| **Gateway Hardware Model** | `name` *(writes `entry.data["name"]` / model)* | Select | Current model | `SUPPORTED_GATEWAY_MODELS` | In-place override of the gateway hardware model and active OWNd profile (`model_source = "manual"`). |
+| **Ignored Bus Addresses** | `ignored_addresses` | Multiline Text | `[]` | All gateways | Newline- or comma-separated `WHO/WHERE` addresses (e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and fault tracking. |
+| **Standalone Thermostats** | `standalone_zones` | Text | `[]` | Zones `1`..`99` (local bus) | Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`. The emulated firmware of F453, F453AV, H4684, MH200 and MH200N refuses that direct form (own-firmware-oracle `trace-corpus.tsv:55`; not yet seen on a real gateway): a refused write fails the service call. |
+| **Bus Topology** | `bus_topology` | Select | `standalone` | `standalone`, `shared` *(multi-gateway setups)* | Declares whether this gateway operates on an independent SCS bus (`standalone`) or shares a physical SCS bus with another configured gateway (`shared`). |
+| **Gateway Role** | `gateway_role` | Select | `primary` | `primary`, `secondary`, `standby` *(shared bus)* | Shared-bus coordination role: `primary` owns general bus discovery, `secondary` handles delegated `WHO` subsystems, and `standby` stays passive for hot failover. |
+| **Primary Gateway** | `primary_gateway` | Select | First peer gateway | Configured non-follower gateways | Target primary gateway MAC address paired with a `secondary` or `standby` follower on a shared SCS bus. |
+| **Delegated Subsystems** | `delegated_whos` | Multi-Select | Auto-inferred (`[]`) | Delegatable `WHO` codes (`secondary` role) | OpenWebNet `WHO` subsystems delegated to a `secondary` gateway on a shared bus (for example `WHO = 6` / `WHO = 8` door entry or `WHO = 16` audio). |
+| **Auto-Join Streaming Groups** | `auto_join_streaming` | Boolean | `True` | WHO 16 audio zones | Automatically joins an active streaming decoder group when turning on a room amplifier or adjusting volume from a physical wall control. |
+| **FM Tuner Station Pictures** | `tuner_pictures` | Multiline Text | `""` | `<MHz>=<URL>` lines | Custom station artwork mapping (`MHz=URL` per line, e.g. `96.2=/local/radio/one.png`) displayed while an F500/F500N tuner is tuned to that frequency. |
+| **Audio Matrix Source Names** | `source_1_name`..`source_4_name` | Text | `""` | 4 matrix inputs (`S1`–`S4`) | Friendly labels for physical sound sources wired to F441/F441M matrix inputs `S1`–`S4` (blank hides unconfigured inputs from source selection). |
+| **Audio Source FM Tuner Flag** | `source_1_tuner`..`source_4_tuner` | Boolean | `False` | 4 matrix inputs (`S1`–`S4`) | Declares whether matrix input `S1`–`S4` is an F500/F500N RDS FM tuner, creating its radio `media_player`, frequency `number`, and seek `button` entities. |
+| **Audio Environment Default Source** | `default_source_env_1`..`default_source_env_9` *(stored in `source_defaults`)* | Select | `none` | Active audio environments `1`–`9` (`none`, `1`–`4`) | Per-environment default matrix input (`S1`–`S4`) selected when turning on a two-digit room amplifier (`EA`) from Home Assistant (`none` leaves routing unchanged). |
+| **Streaming Decoder Entity** | `decoder_1_entity`..`decoder_4_entity` | Entity (`media_player`) | `""` | 4 decoder slots (excludes MyHOME & MA clones) | Upstream hardware `media_player` entity (e.g. Squeezelite, WiiM, Cambridge Audio) whose analog line-out feeds one of the matrix inputs. |
+| **Streaming Decoder Matrix Input** | `decoder_1_source`..`decoder_4_source` | Select | Slot index (`1`–`4`) | Unique matrix input `1`–`4` per active decoder | Physical F441/F441M matrix source input (`S1`–`S4`) wired to each streaming decoder's line-out. |
+| **Streaming Decoder Pre-Gain** | `decoder_1_pre_gain`..`decoder_4_pre_gain` | Integer (`%`) | `0` | `0–100%` integer (`step: 1`) | Fixed line-level feed trim (`0–100%` integer: `0%` leaves upstream volume untouched; `1–100%` sets upstream volume to `min(1.0, 0.75 + pre_gain / 100)`). |
+| **Streaming Decoder Companion** | `decoder_1_companion`..`decoder_4_companion` | Entity (`media_player`) | `""` *(auto-detect)* | 4 decoder slots (optional companion player) | Optional companion `media_player` entity receiving stream URLs (`play_media`) on behalf of the hardware decoder when left blank for auto-detection. |
 <!-- GATEWAY_OPTIONS_END -->
 
-### 1. Command Worker Concurrency (`worker_count`)
-- **Range**: `1` to `10` (Default: `1`).
+### 1. Command Worker Concurrency (`command_worker_count`)
+- **Range**: `1` to `4` on profiled gateways (`1` to `10` on `Generic`).
 - Dynamically capped and validated against the gateway model's hardware limit:
-    - **1 worker**: MH200, MH200N, MH201, F452, F453AV, AM4890 / H4890 / LN4890, Generic.
-    - **2 workers**: MH202.
-    - **Up to 4 workers**: F454, F455, F461, MyHomeServer1.
+    - **1 worker**: `MH200`, `MH200N`, `MH201`, `F452`, `F452V`, `F453`, `F453AV`, `H4684`, `AM4890` / `H4890` / `LN4890`.
+    - **Up to 2 workers**: `MH202` (default `1`).
+    - **Up to 4 workers**: `F454`, `F461` (default `1`); `F455`, `MyHomeServer1` (default `2`).
 - Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.
 
 ### 2. Dimmer Transition Mode (`transition_mode`)
-- `software_stepped` *(Default & Recommended)*: Home Assistant calculates and dispatches smooth 100-step brightness interpolation. Guarantees consistent fade behavior across all BTicino dimmer generations (F418, F41835, DALI interfaces).
-- `native`: Passes the transition duration directly to the gateway as hardware speed parameters (`WHAT = 2`–`9`). Only supported if all physical dimmers support native hardware speed parameters.
+- `software_stepped` *(Default & Recommended)*: Home Assistant calculates and dispatches smooth software-stepped brightness interpolation (up to **25 steps**, `SOFTWARE_TRANSITION_MAX_STEPS = 25`). Guarantees consistent fade behavior across all BTicino dimmer generations (`F418`, `F418U2`, DALI interfaces).
+- `native`: Passes the transition duration directly to the gateway using OpenWebNet hardware fade speed parameters (rather than fixed `WHAT = 2`–`9` brightness steps). Only recommended when your physical dimmers honour native hardware fade speed parameters.
 - `auto`: Alias for `software_stepped`.
 
 ### 3. Event Bus Broadcasting (`generate_events`)
@@ -124,15 +135,16 @@ You can adjust integration runtime parameters at any time without re-adding the 
 
 ### 4. Broadcast Re-sync (`broadcast_resync`)
 - Boolean switch (Default: `True`).
-- When enabled, detecting general (`WHERE = 0`) or room-wide broadcast commands automatically triggers targeted queries to keep individual entity states synchronized.
+- When enabled, detecting group (`#G`), area, or general (`WHERE = 0`) light broadcast commands arms a **500 ms** (`RESYNC_DEBOUNCE_S = 0.5`) debounce window and sweeps only addresses whose actuators did not echo spontaneously.
 
-### 5. Multi-Room Audio Routing & Dynamic Proxy Decoders (`WHO = 16`)
-- **Audio Source Names & Tuner Flags (`source_name_1`..`4`, `source_tuner_1`..`4`)**: Assign friendly names for the physical inputs on the F441/F441M audio matrix (e.g. "Living Room HiFi", "FM Tuner"). Flag tuner inputs so frequency and RDS commands are enabled.
-- **Default Source per Environment (`source_default_<env>`)**: Declares which source input is selected when an amplifier in that environment is switched on.
-- **Dynamic Proxy Decoders (`decoder_entity_1`..`4`, `decoder_source_1`..`4`, `decoder_pre_gain_1`..`4`)**: Map external software streaming players (e.g., Music Assistant, Squeezelite) to physical matrix inputs, with pre-gain calibration (-20 dB to +20 dB).
+### 5. Multi-Room Audio Routing, Tuners & Dynamic Proxy Decoders (`WHO = 16` / `WHO = 22`)
+- **Audio Source Names & Tuner Flags (`source_1_name`..`source_4_name`, `source_1_tuner`..`source_4_tuner`)**: Assign friendly names for the physical inputs on the F441/F441M audio matrix (e.g. "Living Room HiFi", "FM Tuner"). Enable `source_1_tuner`..`source_4_tuner` on F500/F500N inputs so FM frequency, preset, and RDS controls are created across `WHO = 16` and `WHO = 22` (including `WHO = 22`-only gateways).
+- **Default Source per Environment (`default_source_env_1`..`default_source_env_9`)**: Declares which matrix input (`S1`–`S4`) is selected when a two-digit `WHO = 16` amplifier in that environment is switched on.
+- **Dynamic Proxy Decoders (`decoder_1_entity`..`decoder_4_entity`, `decoder_1_source`..`decoder_4_source`, `decoder_1_pre_gain`..`decoder_4_pre_gain`, `decoder_1_companion`..`decoder_4_companion`)**: Map external streaming players (e.g. Music Assistant, Squeezelite, WiiM, DLNA DMR) to physical matrix inputs (`WHO = 16`), with integer pre-gain trim (`0–100%`).
 
-### 6. In-Place Gateway Reconfiguration
-- You can update the gateway IP address (`address`), password (`own_password`), or hardware model (`name`) directly within the Options Flow without removing and re-adding devices or breaking entity IDs.
+### 6. Reconfigure vs Configure (Options Flow)
+- **Reconfigure (`⋮ → Reconfigure`)**: Updates connection transport settings in place — `host` (IPv4), `port`, and `password` — verifying connectivity before saving.
+- **Configure (`Configure` button / Options Flow)**: Changes the gateway hardware **model** (`name`), runtime worker/fade/audio options, shared-bus topology, or `address` / `password` in place without deleting devices or breaking entity IDs.
 
 ---
 
@@ -140,7 +152,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 
 The integration includes enterprise-grade connection reliability safeguards:
 
-- **Active Keep-Alive**: Periodically transmits diagnostic ping frames (`*#13**0##` or `*#13**22##`) to prevent gateway NAT socket closure.
+- **OS-Level TCP Socket Keepalive**: OWNd enables OS-level TCP socket keepalive probes (`SO_KEEPALIVE`) on the event session socket to detect half-open NAT/router drops. On `F454`, `F461`, `MH200` and `MH200N` it also writes the keepalive frame `*#*1##` on the event session every 90 s; on the other models that session carries no periodic application frames.
 - **Backoff & Auto-Reconnect**: If a network glitch or gateway reboot occurs, the event and command workers automatically cycle through an exponential backoff reconnect loop.
 - **Availability Grace Period**: An entity availability grace timer (60 seconds) prevents entities from rapidly toggling to `Unavailable` during brief gateway reconnections or WiFi dropouts.
 - **Silent Reconnect Cycles**: The read cycle in which OWNd re-establishes the event socket produces no frame and is skipped at `DEBUG` level; `Event connection lost, reconnecting...` is OWNd's own log line and is normal on gateways that close idle sockets (MH200/MH201).
@@ -156,7 +168,7 @@ See [Runtime Behaviour Notes](runtime_behaviour.md) for the reasoning behind eac
 
 OpenWebNet gateways manage an internal real-time clock (RTC) queried via WHO=13 dimension 0 (`*#13**0##`) or dimension 22 (`*#13**22##`). When the timezone has not been configured in the gateway's management interface, the gateway emits a placeholder sentinel value `999` in the timezone field (e.g. `*#13**0*<HH>*<MM>*<SS>*999##` or `*#13**22*...*999*...##`).
 
-This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See also the [Wiki guide on Gateway Timezone Configuration](https://github.com/OpenWebNet-HA/MyHOME/wiki/Gateway-Timezone-Configuration)).
+This placeholder can cause date and time parsing failures or dropped gateway diagnostic messages. When the integration detects this sentinel, it registers a Home Assistant Repair issue advising that the gateway requires configuration. (See [Unconfigured Timezone](../diagnostics/repair-issues.md#unconfigured-timezone) in the Repair Issues Guide).
 
 > [!NOTE]
 > The **F461** gateway is configured exclusively via the Home + Project app and maintains its clock via NTP. Its firmware always reports `999` over OpenWebNet even when configured; the integration recognizes this and automatically exempts the F461 from this warning.
@@ -333,7 +345,7 @@ Rather than requiring users to manually calculate subsystem overlaps and gateway
                       |   1. Compare Hardware Performance Tiers  |
                       |   - Tier 1: F454, F455, F461, MHS1       |
                       |   - Tier 2: MH201, MH202, H4890/Touch    |
-                      |   - Tier 3: MH200N, MH200, F452, F453    |
+                      |   - Tier 3: MH200N/200, F452/453, H4684  |
                       +--------------------+---------------------+
                                            |
                                            v
@@ -375,9 +387,9 @@ Rather than requiring users to manually calculate subsystem overlaps and gateway
 ```
 
 ##### Gateway Performance Tiers & Pacing
-1. **Tier 1 (High Throughput / Multi-Session, ≤ 50 ms pacing)**: `F454`, `F455`, `F461`, `MyHomeServer1`.
-2. **Tier 2 (Linux / Touchscreen Gateways, 100 ms pacing)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890`.
-3. **Tier 3 (Legacy Microcontroller Gateways, 150 ms pacing)**: `MH200N`, `MH200`, `F452`, `F453`.
+1. **Tier 1 (High Throughput / Multi-Session, 20–50 ms pacing)**: `F454`, `F455`, `F461`, `MyHomeServer1`.
+2. **Tier 2 (Modern Scenario & Touchscreen Gateways, 50–100 ms pacing)**: `MH201`, `MH202`, `H4890` / `AM4890` / `LN4890` (and Legrand catalogue equivalents `067292`, `573958`, `078479`).
+3. **Tier 3 (Legacy & Single-Session Gateways)**: `MH200N`, `MH200`, `F452`, `F452V`, `F453`, `F453AV`, `H4684` / `H/L4684`, and `Generic`.
 
 When two gateways are paired on a shared bus, the integration ranks them by performance tier (Tier 1 > Tier 2 > Tier 3), supported OpenWebNet subsystem coverage (more supported WHO dimensions wins), and deterministic MAC address ordering (`pri_mac <= sec_mac`) as a final tie-breaker. The broader, more performant gateway is assigned as the **Primary**.
 

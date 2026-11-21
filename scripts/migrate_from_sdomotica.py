@@ -731,6 +731,7 @@ def generate_myhome_yaml(
         "media_player",
         "alarm_control_panel",
     ]
+    icon_supported_domains = {"light", "switch"}
 
     for domain in domain_order:
         domain_entities = by_domain.get(domain, [])
@@ -778,7 +779,7 @@ def generate_myhome_yaml(
                 lines.append(f"      class: \"{ent.device_class}\"")
             if ent.area_id:
                 lines.append(f"      # area: {ent.area_id}")
-            if ent.icon:
+            if ent.icon and domain in icon_supported_domains:
                 lines.append(f"      icon: \"{ent.icon}\"")
 
         lines.append("")

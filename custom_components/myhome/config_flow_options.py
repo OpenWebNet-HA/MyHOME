@@ -21,6 +21,7 @@ from .const import (
     CONF_GENERATE_EVENTS,
     CONF_IGNORED_ADDRESSES,
     CONF_OWN_PASSWORD,
+    CONF_STANDALONE_ZONES,
     CONF_TRANSITION_MODE,
     CONF_TUNER_PICTURES,
     CONF_WORKER_COUNT,
@@ -32,6 +33,7 @@ from .const import (
 from .gateway import command_session_default, command_session_limit
 from .ignored import validate_ignored_addresses
 from .typing_compat import flow_schema
+from .where_grammar import validate_standalone_zones
 
 
 class MyhomeOptionsFlowHandler(
@@ -130,6 +132,15 @@ class MyhomeOptionsFlowHandler(
                 errors[CONF_IGNORED_ADDRESSES] = "invalid_ignored_address"
             else:
                 self.options[CONF_IGNORED_ADDRESSES] = parsed_ignored
+
+            # As for the ignored addresses: a cleared field is left out of user_input.
+            standalone_zones, zones_valid = validate_standalone_zones(
+                user_input.get(CONF_STANDALONE_ZONES, "")
+            )
+            if not zones_valid:
+                errors[CONF_STANDALONE_ZONES] = "invalid_standalone_zone"
+            else:
+                self.options[CONF_STANDALONE_ZONES] = standalone_zones
 
             if not errors:
                 self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})
@@ -285,6 +296,14 @@ class MyhomeOptionsFlowHandler(
             ): vol.Maybe(
                 selector.TextSelector(selector.TextSelectorConfig(multiline=True))
             ),
+            vol.Optional(
+                CONF_STANDALONE_ZONES,
+                description={
+                    "suggested_value": ", ".join(
+                        str(zone) for zone in self.options.get(CONF_STANDALONE_ZONES) or []
+                    )
+                },
+            ): vol.Maybe(selector.TextSelector()),
             vol.Optional(
                 CONF_TUNER_PICTURES,
                 description={

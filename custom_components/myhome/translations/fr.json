@@ -234,8 +234,8 @@
           "source_4_name": "Source 4 — nom de l'appareil raccordé à l'entrée S4 de la matrice (laisser vide si rien n'est connecté)",
           "source_4_tuner": "La source 4 est un tuner (F500) : ajoute une entité radio avec stations, fréquence et RDS",
           "address": "Adresse IP",
+          "name": "Modèle de passerelle",
           "password": "Mot de passe",
-          "config_file_path": "Chemin du fichier de configuration",
           "command_worker_count": "Nombre de session de commande simultanées",
           "generate_events": "Générer des événements dans Home Assistant pour chaque message reçu",
           "broadcast_resync": "Interroger les adresses de groupe/zone/générale après une fenêtre de silence",
@@ -348,7 +348,7 @@
         },
         "duration": {
           "name": "Durée",
-          "description": "Pendant combien de temps la puissance instantanée va-t-elle être automatiquement envoyée en minutes (0 pour arrêter)."
+          "description": "Durée en minutes (1–255) de l'envoi automatique de la puissance instantanée ; appelez myhome.stop_sending_instant_power pour arrêter l'envoi plus tôt."
         }
       }
     },
@@ -399,6 +399,10 @@
         "gateway": {
           "name": "Passerelle",
           "description": "Adresse MAC de la passerelle (facultatif ; par défaut pour toutes les passerelles actives)."
+        },
+        "force": {
+          "name": "Forcer le balayage",
+          "description": "Force le balayage de tous les sous-systèmes (y compris Alarme et Énergie) quelles que soient les restrictions du profil de la passerelle, y compris les requêtes générales normalement ignorées par le firmware."
         }
       }
     },
@@ -426,7 +430,7 @@
       "fields": {
         "station": {
           "name": "Station",
-          "description": "Numéro d'emplacement mémoire (1–5 sur F500, jusqu'à 1–15 sur F500N)."
+          "description": "Numéro d'emplacement mémoire (1–15). Les emplacements 6–15 nécessitent la prise en charge WHO = 22 par la passerelle (1–5 sur les passerelles WHO = 16 uniquement)."
         }
       }
     },
@@ -596,7 +600,7 @@
       "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
     },
     "cover_reports_position": {
-      "message": "{name} signale sa position (advanced: true dans myhome.yaml) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, retirez advanced: true de myhome.yaml."
+      "message": "{name} signale sa position (Dimension 10 / advanced: true) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, définissez advanced: false ou retirez advanced: true dans myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} est déjà en cours de calibration"
@@ -721,6 +725,9 @@
       },
       "energy_month": {
         "name": "Énergie (mois en cours)"
+      },
+      "actuator_output_level": {
+        "name": "Niveau de sortie actionneur {actuator}"
       }
     },
     "switch": {

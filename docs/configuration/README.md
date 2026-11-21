@@ -23,14 +23,14 @@ Before adding the integration to Home Assistant, ensure:
 In v2, gateway setup is **100% UI-first**:
 
 1. In Home Assistant, navigate to **Settings → Devices & Services**.
-2. If your gateway is discovered automatically via SSDP or mDNS, click **Configure** on the discovery card.
+2. If your gateway is discovered automatically via **SSDP / UPnP**, click **Configure** on the discovery card (OpenWebNet gateways do not use mDNS).
 3. If adding manually:
-    - Click **Add Integration** in the bottom right corner.
-    - Search for **MyHOME** and select it.
+    - Click **Add Integration** in the bottom right corner, search for **MyHOME**, and choose **Custom (IP Gateway)**.
 4. Fill in the connection parameters:
-    - **Host**: Gateway IP address (e.g. `192.168.1.50`).
-    - **Port**: `20000` (default OpenWebNet port).
-    - **Password**: Your OpenWebNet or HMAC authentication password.
+    - **Address** (`address` / `host`): Strict numeric IPv4 address of the gateway (e.g. `192.168.1.50`; `.local` mDNS hostnames are rejected).
+    - **Port** (`port`): `20000` (default OpenWebNet TCP port).
+    - **MAC Address & Device Type** (`serialNumber` / `modelName`): Prompted only if UPnP metadata lookup at that IP fails; refined automatically via `WHO = 13` / `WHO = 1013` probing once connected.
+    - **Password** (`password`): Prompted when the gateway requires numeric OPEN or SHA-256 HMAC authentication.
 5. Click **Submit**. Home Assistant will establish the command session (`*99*0##`) and event listening session (`*99*1##`), verify the gateway hardware identity, and create the gateway device entry.
 
 For full parameter specifications and troubleshooting, see [Gateways & Connection Setup](gateways.md).
@@ -41,9 +41,9 @@ For full parameter specifications and troubleshooting, see [Gateways & Connectio
 
 Once connected:
 
-* **Automatic Bus Scanning**: The integration queries the SCS bus across supported subsystems (`WHO = 1, 2, 4, 15, 18, 25`).
+* **Automatic Bus Scanning**: Startup discovery queries supported stateful subsystems (`WHO = 1, 2, 4, 5, 16, 18`, gated by the gateway's hardware profile and firmware-refusal guards) plus any registered `3xxx` (`WHO = 25`) dry contacts — stateless `WHO = 15` / `WHO = 25` scenario pushbuttons are never polled at startup and instead register on button press.
 * **Device Registry Linking**: Discovered actuators, thermostats, and sensors are automatically grouped and linked to your gateway device via Home Assistant's `via_device_id` registry model.
-* **Non-Destructive Transition**: If you have an existing `/config/myhome.yaml` file from v0.9.4, entity names and physical SCS groups (`#G`) are read on startup as a compatibility overlay.
+* **Non-Destructive Transition**: If you have an existing `/config/myhome.yaml` file from v0.9.4, entity names and physical SCS groups (`#G` under `light:`) are read on startup as a compatibility overlay.
 * **Organizing Entities**: Open **Settings → Devices & Services → Entities** to customize entity names, assign rooms/areas (e.g. *Living Room*, *Kitchen*), and set custom icons.
 
 ---
@@ -52,10 +52,10 @@ Once connected:
 
 Fine-tune runtime parameters by clicking **Configure** on the MyHOME integration card:
 
-* **Command Worker Concurrency**: Number of asynchronous command workers (default: `1`). Increase to `2`–`4` for high-throughput multi-session gateways like F454 or MHS1.
-* **Dimmer Transition Mode**: Choose between `software_stepped` (smooth 100-step software stepping managed by Home Assistant) and `native` (actuator hardware fade ramp).
-* **Event Bus Broadcasting**: Toggle whether raw bus frames are emitted as `myhome_message_event` events to Home Assistant for custom event automations.
-* **Dynamic Proxy Decoders**: Map network audio decoders (Music Assistant, Squeezelite) to physical F441 matrix source inputs for Diffusione Sonora.
+* **Command Worker Concurrency (`command_worker_count`)**: Number of asynchronous command workers (default `1`, or `2` on `F455` and `MyHomeServer1`; up to `2` on `MH202` and up to `4` on `F454`, `F455`, `F461`, and `MyHomeServer1`).
+* **Dimmer Transition Mode (`transition_mode`)**: Choose between `software_stepped` (smooth **25-step** software fade interpolation managed by Home Assistant) and `native` (actuator hardware fade speed parameter).
+* **Event Bus Broadcasting (`generate_events`)**: Toggle whether raw bus frames are emitted as `myhome_message_event` events to Home Assistant for custom event automations.
+* **Dynamic Proxy Decoders (`decoder_1_entity`–`decoder_4_entity`)**: Map network audio decoders (Music Assistant, Squeezelite, WiiM, DLNA DMR) to physical F441/F441M matrix source inputs for Diffusione Sonora.
 
 ---
 
@@ -69,7 +69,7 @@ Explore dedicated guides for each MyHOME subsystem:
 | **Lighting & Dimmers** | `WHO = 1` | [Lights & Dimmers Guide](lights.md) |
 | **Motorized Covers & Shutters** | `WHO = 2` | [Covers & Shutters Guide](covers.md) |
 | **Heating & Climate Control** | `WHO = 4` | [Climate & Heating Guide](climate.md) |
-| **Diffusione Sonora (Sound System)** | `WHO = 16` | [Sound System / Media Player Guide](media_player.md) |
+| **Diffusione Sonora (Sound System)** | `WHO = 16`, `WHO = 22` | [Sound System / Media Player Guide](media_player.md) |
 | **Scenario Pushbuttons & Rotary Dials** | `WHO = 15`, `WHO = 25` | [CEN & CEN+ Device Triggers Guide](cen_cenplus.md) |
 | **Switches, Relays & Sockets** | `WHO = 1` | [Switches & Relays Guide](switches.md) |
 | **Electrical Energy & Power Meters** | `WHO = 18` | [Sensors & Energy Guide](sensors.md) |

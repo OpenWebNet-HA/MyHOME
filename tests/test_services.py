@@ -625,12 +625,17 @@ async def test_send_scenario_plus_command_no_gateways(hass: HomeAssistant) -> No
         (SERVICE_SEND_MESSAGE, {"gw_mac": "00:03:50:aa:bb:cc", ATTR_MESSAGE: "*1*1*12##"}),
         (SERVICE_SEND_MESSAGE, {ATTR_GATEWAY: "00:03:50:aa:bb:cc"}),
         (SERVICE_SYNC_TIME, {"gw_mac": "00:03:50:aa:bb:cc"}),
+        ("sweep_bus", {"gw_mac": "00:03:50:aa:bb:cc"}),
+        ("sweep_bus", {"force": "not_a_boolean"}),
+        ("stop_cover_calibration", {"gw_mac": "00:03:50:aa:bb:cc"}),
+        ("send_scenario_plus_command", {"gw_mac": "00:03:50:aa:bb:cc", "where": "11", "action": "on"}),
+        ("send_scenario_plus_command", {"where": "11", "action": "on", "typo_key": True}),
     ],
 )
-async def test_send_message_and_sync_time_reject_unknown_or_missing_keys(
+async def test_services_reject_unknown_or_invalid_schema_keys(
     hass: HomeAssistant, attach_gateway, service, data
 ) -> None:
-    """A misspelt key (#189: `gw_mac`) or a missing message raises instead of reaching the default gateway."""
+    """A misspelt key (#189: `gw_mac`) or invalid field raises at the Voluptuous layer."""
     from unittest.mock import AsyncMock
 
     import voluptuous as vol
@@ -645,6 +650,46 @@ async def test_send_message_and_sync_time_reject_unknown_or_missing_keys(
         await hass.services.async_call(DOMAIN, service, data, blocking=True)
     mock_handler.send.assert_not_called()
     mock_handler.send_status_request.assert_not_called()
+
+
+async def test_send_scenario_plus_command_integer_and_none_fields(
+    hass: HomeAssistant, attach_gateway
+) -> None:
+    """Integer `where` works and explicit `None` fields still trigger translated ServiceValidationErrors."""
+    from unittest.mock import AsyncMock
+
+    await async_setup_services(hass)
+    mock_handler = MagicMock()
+    mock_handler.send = AsyncMock()
+    gw_mac = "00:03:50:aa:bb:cc"
+    attach_gateway(gw_mac, mock_handler)
+
+    await hass.services.async_call(
+        DOMAIN,
+        "send_scenario_plus_command",
+        {"gateway": None, "where": 11, "action": "on"},
+        blocking=True,
+    )
+    mock_handler.send.assert_called_once()
+    assert str(mock_handler.send.call_args[0][0]) == "*25*11#0*11##"
+
+    with pytest.raises(ServiceValidationError) as exc_none_where:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "where": None, "action": "on"},
+            blocking=True,
+        )
+    assert exc_none_where.value.translation_key == "scenario_plus_missing_where"
+
+    with pytest.raises(ServiceValidationError) as exc_none_action:
+        await hass.services.async_call(
+            DOMAIN,
+            "send_scenario_plus_command",
+            {"gateway": gw_mac, "where": "11", "action": None},
+            blocking=True,
+        )
+    assert exc_none_action.value.translation_key == "scenario_plus_unknown_action"
 
 
 def test_send_message_and_sync_time_have_selectors() -> None:

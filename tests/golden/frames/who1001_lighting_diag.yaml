@@ -1,0 +1,103 @@
+# WHO=1001 Lighting & Automation Diagnostic — status bitmasks, firmware & device IDs.
+
+- id: lighting_diag.capture.dim11.fault_bitmask.74
+  frame: "*#1001*74*11*111110111111111111110111##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "74"
+  dimension: 11
+  dimension_values: ["111110111111111111110111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Actuator 74 Dimension 11 diagnostic bitmask reply (received on MH200 plants, MyHOME traces issue_466 MH200 all 2026-09-26, issue_733 and mh200_sound_f441m; openwebnet-mcp catalog stub warns on WHO 1001)"
+  roundtrip: true
+
+- id: lighting_diag.capture.dim11.bitmask.0010
+  frame: "*#1001*0010*11*111110111111111101100111##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "0010"
+  dimension: 11
+  dimension_values: ["111110111111111101100111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): 4-digit address 0010 Dimension 11 diagnostic bitmask reply (F461 FW 2.0.11 sweep capture)"
+  roundtrip: true
+
+- id: lighting_diag.capture.dim7.bitmask.0
+  frame: "*#1001*0*7*111111111111111101101111##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "0"
+  dimension: 7
+  dimension_values: ["111111111111111101101111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Dimension 7 diagnostic status bitmask on WHERE 0 (MyHomeServer1 monostable/scenarios cover diagnostic capture)"
+  roundtrip: true
+
+- id: lighting_diag.capture.dim1.object_model.119
+  frame: "*#1001*0*1*119*15*1*5##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "0"
+  dimension: 1
+  dimension_values: ["119", "15", "1", "5"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Dimension 1 device identification reply (object model 119; MyHomeServer1 diagnostic capture)"
+  roundtrip: true
+
+- id: lighting_diag.capture.dim2.fw_version.1_3_8
+  frame: "*#1001*0*2*1*3*8##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "0"
+  dimension: 2
+  dimension_values: ["1", "3", "8"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Dimension 2 actuator firmware version 1.3.8 (MyHomeServer1 diagnostic capture)"
+  roundtrip: true
+
+- id: lighting_diag.capture.dim13.device_id.18236904
+  frame: "*#1001*0*13*18236904##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "0"
+  dimension: 13
+  dimension_values: ["18236904"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Dimension 13 device serial/ID register 18236904 (MyHomeServer1 diagnostic capture)"
+  roundtrip: true
+
+- id: lighting_diag.capture.req.status.general
+  frame: "*#1001*0##"
+  direction: status_request
+  who: 1001
+  what: null
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): General diagnostic status request WHERE=0 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
+  roundtrip: true
+
+- id: lighting_diag.capture.dim1.object_model.43.01
+  frame: "*#1001*01*1*43*6*1*0##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "01"
+  dimension: 1
+  dimension_values: ["43", "6", "1", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Point-to-point Dimension 1 device identification reply (modobj=43, K4659 / OWN-DEV-0016; F461 2.0.11 capture, MyHOME#941)"
+  roundtrip: true

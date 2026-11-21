@@ -1,4 +1,4 @@
-# Sound System / Media Player (`WHO = 16`)
+# Sound System / Media Player (`WHO = 16` / `WHO = 22`)
 
 This guide explains how to configure and automate the BTicino / Legrand **Diffusione Sonora** (Sound System) in Home Assistant using the MyHOME integration.
 
@@ -6,12 +6,12 @@ This guide explains how to configure and automate the BTicino / Legrand **Diffus
 
 ## 🎵 Subsystem Architecture
 
-In MyHOME systems, multi-room audio is managed by dedicated hardware analog matrices and room amplifiers communicating over the SCS bus using **OpenWebNet WHO = 16**.
+In MyHOME systems, multi-room audio is managed by dedicated hardware analog matrices, room amplifiers, and FM tuner sources communicating over the SCS bus using **OpenWebNet `WHO = 16`** and **`WHO = 22`** (amplifier zones and matrix routing use `WHO = 16` with `WHO = 22` active-source area tracking on dual-stack gateways, while F500/F500N FM RDS tuners support full control and telemetry across both `WHO = 16` and `WHO = 22`, including `WHO = 22`-only gateways such as `MyHomeServer1` and `F461`).
 
 ### Supported Hardware
 - **Audio Matrix**: F441, F441M (4 stereo source inputs S1–S4, up to 8 independent stereo room amplifier environment outputs over the 2-wire SCS bus)
 - **Audio Source Interfaces**: L4561N / L4561 (stereo source interface with RCA line inputs and IR emitter control, 4 DIN modules), L4560 / HS4560 / N4560 / NT4560 / HC4560 (flush-mount modular RCA line-in sockets), 3482 (auxiliary line-in preamplifier / interface), 3495 (source isolator with 1500 Vrms galvanic isolation for ground loop and hum elimination)
-- **FM Tuner Modules**: F500, F500COAX (WHO 16 FM RDS stereo tuner modules, 4 DIN modules)
+- **FM Tuner Modules**: F500, F500N, F500COAX (`WHO = 16` / `WHO = 22` FM RDS stereo tuner modules, 4 DIN modules)
 - **Room Amplifiers**: H4562, L4562 (flush-mount stereo room amplifiers), F502 (DIN rail stereo room amplifier, 230 Vac powered), 3484, 3484/1, 3487 (modular stereo/mono amplifiers)
 - **Audio Controls & Accessories**: H4651/2, L4651/2 (special controls), HC/HS4563, L/N/NT4563 (rotary controls), HC/HS4653/2, HC/HS4653/3 (soft-touch controls), H/L4684 (colour touchscreen), 3529 (wall control panels), 3499 (bus line terminators), 346000 (SCS bus power supply)
 
@@ -69,7 +69,7 @@ MyHOME Dynamic Proxy
 
 A common question is: ***"How can you have stereo sound with only 2 wires, and why do I need an audio interface like the L4561N?"***
 
-- **Audio and commands travel together over the same 2-wire SCS bus.** In BTicino MyHOME **Diffusion Sonore 2 Fils** (2-Wire Sound System), the physical 2-wire SCS bus (white/grey twisted pair) simultaneously carries **27V DC power**, **digital OpenWebNet control frames** (WHO = 16: power, volume, source routing, FM frequency tuning), and **high-frequency modulated stereo audio** across the very same two conductors. There is no separate analog audio cabling running between the matrix and the room amplifiers; the 2-wire SCS bus carries the music directly to each room.
+- **Audio and commands travel together over the same 2-wire SCS bus.** In BTicino MyHOME **Diffusion Sonore 2 Fils** (2-Wire Sound System), the physical 2-wire SCS bus (white/grey twisted pair) simultaneously carries **27V DC power**, **digital OpenWebNet control frames** (`WHO = 16` / `WHO = 22`: power, volume, source routing, FM frequency tuning), and **high-frequency modulated stereo audio** across the very same two conductors. There is no separate analog audio cabling running between the matrix and the room amplifiers; the 2-wire SCS bus carries the music directly to each room.
 - **Why an audio source interface is required for external streamers.** External network streamers (WiiM, Squeezelite/Raspberry Pi, DLNA DACs, Cambridge Audio, CD players, etc.) output standard baseband analog line-level stereo audio (0.7–2.0 V RMS via RCA or 3.5mm jack). They cannot connect directly to SCS bus screw terminals. A Legrand / BTicino audio source interface—such as the **L4561N / L4561** (4-DIN stereo control module with RCA inputs and IR emitter output), **L4560 / HS4560 / N4560 / NT4560 / HC4560** (modular flush-mount RCA sockets), or **3482** (auxiliary line-in preamplifier)—is the physical bridge that takes line-level stereo analog audio and modulates/injects it directly onto the 2-wire SCS bus into one of the matrix source inputs (S1–S4).
 - **Galvanic isolation (art. 3495) for ground loops & hum.** When connecting external Class I audio sources (equipment with an earth ground connection, such as a desktop PC or earthed Hi-Fi amplifier) or multiple Class II sources, BTicino strongly recommends placing a **3495** source isolator between the streamer and the source interface. It provides 1500 Vrms isolation to preserve the SELV safety rating of the MyHOME SCS bus and prevent 50/60 Hz ground hum.
 - **Stereo distribution and speaker wiring.** The F441 / F441M matrix and SCS audio bus transmit a true stereo (L/R) signal. Each room environment ("Ambiance") is wired with a single 2-wire SCS bus daisy-chained across room amplifiers (e.g. flush-mount **H4562 / L4562** or DIN rail **F502**) and control panels (**H4651/2**, **H4684**), ending at a **3499** bus termination resistor. The amplifier in the room demodulates the stereo signal and drives the room's speakers over standard local copper speaker wire (Left and Right).
@@ -198,6 +198,8 @@ Selecting a source sends the same two frames a wall panel puts on the bus:
 | `*16*3*10S##` | Activate source device `S` |
 | `*16*3*1ES##` | Route environment `E` to source `S` |
 
+On dual-stack gateways whose firmware omits or mis-translates `*16*3*1ES##` when an amplifier wakes on its stored source (such as `H/L4684` FW ≥ `6.0.0`), the integration also tracks canonical `WHO = 22` active-source area notifications (`*22*23#4#<E>*5#2#<S>##`, `*22*21#4#<E>*5#2#<S>##`, and `*22*1/2#4#<E>*2#<S>##`) so every zone in environment `E` stays synchronized with the active matrix input.
+
 The routing address carries the **environment** digit of the amplifier
 address, not the amplifier digit. Amplifier addresses are `EA` — environment
 followed by amplifier — so zone `23` lives in environment 2 and is routed with
@@ -209,9 +211,9 @@ matrix hardware, not an integration limitation. The integration holds to it:
 - **One stream per environment.** While zone 22 streams from a decoder,
   `play_media` or a source change on zone 23 is refused with an error naming
   zone 22, instead of silently switching zone 22 off its stream.
-- **Environment 0 cannot be switched.** Amplifiers `01`–`09` would be routed
+- **Environment 0 cannot be switched or grouped.** Amplifiers `01`–`09` (and single-digit legacy addresses whose environment is unknown) would be routed
   with `10S`, which is the source device address itself. Source selection is
-  refused there and no default can be set for it; use a wall panel.
+  refused there, no default can be set for it, and `MediaPlayerEntityFeature.GROUPING` is omitted on Environment 0 zones; use a wall panel.
 - **Only two-digit amplifier addresses are routed.** The WHO=16 address table
   lists amplifiers as `01`–`99`. A single-digit address such as `1` in a YAML
   configuration does not say which environment it belongs to (`01` or `11`?),
@@ -275,7 +277,7 @@ A matrix input can hold a **tuner** rather than a line interface. Tick *Source N
 is a tuner* in the options and the integration creates a dedicated `Audio Source`
 device with four entities alongside the amplifier zones:
 
-- `media_player.<source>` — power, preset dropdown (`Station 1`–`Station 15`), next/previous preset, RDS title, and Home Assistant Media Browser (`BROWSE_MEDIA`)
+- `media_player.<source>` — power, preset dropdown (`Station 1`–`Station 5` by default, dynamically expanding up to `Station 1`–`Station 15` on `WHO = 22` gateways once a slot `> 5` is seen on the bus or stored via `myhome.tuner_store_station`), next/previous preset, RDS title, custom station artwork (`tuner_pictures`), and Home Assistant Media Browser (`BROWSE_MEDIA`)
 - `number.<source>_frequency` — direct manual FM frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step, box mode)
 - `button.<source>_seek_up` & `button.<source>_seek_down` — one-tap hardware FM auto-seek buttons
 
@@ -283,11 +285,12 @@ device with four entities alongside the amplifier zones:
 | :--- | :--- |
 | On / off | `*16*3*10S##` / `*16*13*10S##` (or the published `*22*1#4#1*2#S##` / `*22*0#4#0*2#S##`) |
 | Next / previous track | next / previous station (`*16*6001*10S##` / `*16*6101*10S##`, or `*22*9*2#S##` / `*22*10*2#S##`) |
-| Source list | stored stations (defaults to 1–5 for F500, dynamically expands up to 1–15 for F500N: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
+| Source list | stored stations (`_station_count` starts at `5` for F500 and dynamically expands up to `1–15` on `WHO 22` once a slot `> 5` is reported on the bus or stored via `myhome.tuner_store_station`: `*#16*10S*#7*<N>##` or `*#22*2#S*#6*<N>##`) |
 | Manual frequency (`number.<source>_frequency` / `myhome.tuner_set_frequency`) | `87.50–108.00 MHz` (`*#16*10S*#6*0*<kHz>##` or `*#22*2#S*#5*1*<10kHz>##`) |
 | Seek up / down (`button` / `myhome.tuner_seek_up` & `tuner_seek_down`) | `*16*5000*10S##` / `*16*5100*10S##` (or `*22*5*2#S##` / `*22*6*2#S##`) |
 | Store preset (`myhome.tuner_store_station`) | `*#16*10S*#10*<1–5>##` (or `*22*33#<1–15>*2#S##` for slots `6`–`15` and `WHO 22`-only gateways) |
-| Media Browser (`BROWSE_MEDIA`) & `play_media` (`channel`) | `"1"`–`"15"` selects a station; anything else is read as MHz, so `"105.3"` tunes to `105.30 MHz` |
+| Media Browser (`BROWSE_MEDIA`) & `play_media` (`channel`) | `"1"`–`"15"` selects a station (with station thumbnails from `tuner_pictures` when matched); anything else is read as MHz, so `"105.3"` tunes to `105.30 MHz` |
+| `entity_picture` (`tuner_pictures` option) | One `MHz=URL` entry per line (e.g. `96.2=/local/radio/one.png`): shown while tuned to that frequency and used as Media Browser station thumbnails (your own images; none are bundled) |
 | `media_title` | RDS text, reported as ASCII codes on `WHO 16` `DIMENSION 8` / `WHO 22` `DIMENSION 10` |
 | `frequency` attribute | `WHO 16` `DIMENSION 6` / `WHO 22` `DIMENSION 5` & `11`, in MHz |
 | `station` attribute | `WHO 16` `DIMENSION 7` / `WHO 22` `DIMENSION 6` & `11` |
@@ -368,7 +371,9 @@ Sources, defaults and the Dynamic Proxy are all configured in the integration's 
     - **Source input**: the F441M input it is wired to, chosen from a list that shows your source names (e.g. `S1 — Streamer`).
     - **Pre-gain offset**: percentage added to the 75% baseline decoder feed volume (0–100 %, e.g. `20` for 95% feed or `25`–`100` for 100% line-level feed; `0` = Pre-Amp OFF). See [Gain Staging](#gain-staging-bus-noise-elimination).
     - A decoder that is paused from outside (for example a Spotify Connect session started on the device) and not held by one of your zones is left alone by `play_media` for **5 minutes**; after that it counts as free. This applies to the streaming companion of a two-entity decoder as well.
-6. Click **Submit**.
+6. **Auto-join streaming groups (`auto_join_streaming`)**: when enabled, turning on a room or raising volume from a physical wall control automatically joins that room into an active streaming group playing on its routed source.
+7. **Tuner pictures (`tuner_pictures`)**: optional `MHz=URL` mapping (one per line, e.g. `96.2=/local/radio/one.png`) showing your station logo on the tuner entity while tuned to that frequency and in Media Browser thumbnails.
+8. Click **Submit**.
 
 Naming a source or setting a default is what switches on automatic routing for
 streaming (see [Routing when streaming](#routing-when-streaming)); leaving both
@@ -535,7 +540,7 @@ features:
 When managing multiple audio zones across a home, displaying inactive amplifiers clutters your main dashboard. This card automatically stays hidden when all sound zones are idle, and dynamically expands to show only the zones currently **playing or active**, with volume sliders, mute buttons, and track controls:
 
 ```yaml
-# Requires custom:auto-entities (HACS)
+# Requires custom:auto-entities (Marketplace / HACS)
 type: custom:auto-entities
 card:
   type: vertical-stack
@@ -667,7 +672,7 @@ Every OpenWebNet frame received on the SCS bus is evaluated against the pure dec
 | `*16*1101*<WHERE>##`<br>to `*16*1115*<WHERE>##` | Wall switch Volume-DOWN rocker (−1 to −15) | `PowerTransition.NO_CHANGE` | Steps volume down only. Never powers on an inactive amplifier. |
 | `*#16*<WHERE>*1*<LEVEL>##`<br>`*#22*3#A#P*1*<LEVEL>##` | Dimension 1 volume status report (0–31) | `PowerTransition.NO_CHANGE` | **CRITICAL**: Updates `volume_level` only. Never wakes or turns on an OFF amplifier ([#669](https://github.com/OpenWebNet-HA/MyHOME/issues/669), [#682](https://github.com/OpenWebNet-HA/MyHOME/issues/682)). |
 | `*#16*<WHERE>*#1*<LEVEL>##` | Dimension #1 volume set command | `PowerTransition.NO_CHANGE` | Writes target volume level. Does not alter amplifier power state. |
-| `*16*3*1ES##` | Matrix environment routing frame | `PowerTransition.NO_CHANGE` | Routes environment `E` to source `S`. Handled by routing logic; does not change power state. |
+| `*16*3*1ES##`<br>`*22*1/2/21/23#4#<E>*...##` | Matrix environment routing frame (`WHO 16` / `WHO 22` area active-source notification) | `PowerTransition.NO_CHANGE` | Routes environment `E` to source `S`. Handled by routing logic; does not change power state. |
 | `*16*3*10S##` | Source device activation frame | `PowerTransition.NO_CHANGE` | Toggles source hardware `S`. Does not alter room amplifier power. |
 | `*16*13*<WHERE>##`<br>`*16*10*<WHERE>##` | Amplifier OFF (stereo / mono) | `PowerTransition.WAKE_ECHO_OFF`<br>`PowerTransition.PARKED_CONFIRM_OFF`<br>`PowerTransition.REAL_OFF` | • If within 3.0s of wake: ignored as self-echo.<br>• If amplifier is parked: acknowledged as auto-off echo.<br>• Otherwise: real OFF from wall switch or gateway; powers off entity and disbands group. |
 
@@ -676,7 +681,7 @@ Every OpenWebNet frame received on the SCS bus is evaluated against the pure dec
 In installations equipped with both BTicino Sound Diffusion (F441/F441M, WHO = 16 / WHO = 22) and 2-Wire Video Door Entry / Intercom systems (e.g. Classe 100/300 internal units, 344612, entrance panels):
 
 1. **Hardware Intercom Ducking**: When an incoming door call or intercom conversation begins, the video door entry system or audio matrix hardware performs automatic **hardware audio ducking** or line muting so that door chimes and speech remain clearly audible over background music.
-2. **Dimension 1 Status Broadcasts**: To synchronize volume levels during ducking, the gateway or matrix broadcasts OpenWebNet Dimension 1 volume status reports (`*#16*<WHERE>*1*<vol>##` and WHO 22 mirrors `*#22*3#A#P*1*<vol>##`) across the SCS bus. During the call, volume is lowered (e.g., to 0 or a low ducked level). When the intercom call terminates, the hardware broadcasts restoration Dimension 1 reports restoring previous volume levels (e.g., back to 10 or 15).
+2. **Dimension 1 Status Broadcasts**: To synchronize volume levels during ducking, the gateway or matrix broadcasts OpenWebNet Dimension 1 volume status reports (`*#16*<WHERE>*1*<vol>##`, alongside `WHO = 22` bus mirrors `*#22*3#A#P*1*<vol>##` on dual-stack gateways; room zone entities apply volume updates from `*#16*<WHERE>*1*<vol>##`) across the SCS bus. During the call, volume is lowered (e.g., to 0 or a low ducked level). When the intercom call terminates, the hardware broadcasts restoration Dimension 1 reports restoring previous volume levels (e.g., back to 10 or 15).
 3. **Prevention of False Wake-Ups ([#669](https://github.com/OpenWebNet-HA/MyHOME/issues/669))**: Unpowered room amplifiers retain their hardware volume registers in non-volatile memory and receive these broadcast ducking/restoration frames even while switched OFF. Prior to [#682](https://github.com/OpenWebNet-HA/MyHOME/issues/682), loosely coupled status checks could interpret volume updates as an indication that the amplifier was active, causing unpowered amplifiers throughout the house to falsely power ON whenever the doorbell rang.
 4. **Guaranteed Decoupling**: With `determine_power_transition(...)`, Dimension 1 status reports are strictly classified as `PowerTransition.NO_CHANGE`. Inactive amplifiers stay OFF throughout the intercom call, active amplifiers duck and restore seamlessly, and volume state remains perfectly synchronized.
 5. **Golden Trace Verification**: Validated against an authentic 30-frame MH202 bus capture (`myhome_trace_MH202_sound_intercom_ducking.json`) in `tests/test_intercom_ducking_trace_replay.py`.

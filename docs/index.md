@@ -12,9 +12,9 @@ The v2.0 architecture represents a complete modernization of the integration, fe
 
 - **UI-First Configuration**: Streamlined gateway setup, automatic on-wire bus discovery, and device management via Home Assistant's native Config Flow and Options Flow (with backward compatibility for existing `myhome.yaml` files and SCS groups).
 - **Native Automation Device Triggers**: Automate physical CEN (`WHO = 15`) and CEN+ (`WHO = 25`) scenario pushbuttons directly in Home Assistant's automation builder (Short press, Long press, Release, and Rotary Encoder dials).
-- **In-Band Diagnostic Bus Monitor**: Real-time Lovelace card (`custom:myhome-bus-card`) providing live OpenWebNet frame monitoring, filtering, bus sweeping, and 1-click trace export without consuming extra gateway sockets.
-- **Diffusione Sonora Dynamic Proxy**: Stream music from Music Assistant or Spotify into BTicino analog audio matrix amplifier zones (`WHO = 16`) with automatic power management and anti-hiss gain staging.
-- **Decoupled OWNd 2.0 Engine**: Clean protocol abstraction preventing drift, backed by 1,600+ regression tests with 100% code coverage.
+- **In-Band Diagnostic Bus Monitor**: Real-time Lovelace card (`custom:myhome-openwebnet-bus-monitor`) providing live OpenWebNet frame monitoring, filtering, bus sweeping, and 1-click trace export without consuming extra gateway sockets.
+- **Diffusione Sonora & Dynamic Proxy**: Stream music from Music Assistant or Spotify into BTicino analog audio matrix amplifier zones (`WHO = 16`, with `WHO = 22` active-source area tracking), control F500/F500N FM RDS radio tuners (`WHO = 16` / `WHO = 22`), and get automatic power management with anti-hiss gain staging.
+- **Decoupled OWNd 2.0 Engine**: Clean protocol abstraction preventing drift, backed by 5,700+ automated tests with 100% statement coverage.
 
 ---
 
@@ -56,7 +56,7 @@ The v2.0 architecture represents a complete modernization of the integration, fe
 
     ---
 
-    F441/F441M matrix routing, multiroom streaming proxy, and decoder pooling.
+    F441/F441M matrix routing, F500/F500N FM RDS tuners (`WHO = 16` / `WHO = 22`), multiroom streaming proxy, and decoder pooling.
 
 -   :material-gesture-tap-button: __[CEN & CEN+ Triggers](configuration/cen_cenplus.md)__
 
@@ -86,15 +86,25 @@ The v2.0 architecture represents a complete modernization of the integration, fe
 
 ---
 
-## 📦 Compatibility Matrix
+## 📦 Supported Gateways
 
-| Hardware Gateway | Protocol Transport | Concurrent Sessions | HMAC Authentication | Recommended Worker Count |
-| :--- | :--- | :---: | :---: | :---: |
-| **MyHomeServer1** | TCP (`20000`) | 4 | Yes | 4 |
-| **F454 / F455 / F461** | TCP (`20000`) | 4 | Optional | 4 |
-| **MH202** | TCP (`20000`) | 2 | Optional | 2 |
-| **MH200N / MH201 / MH200** | TCP (`20000`) | 1 | No | 1 |
-| **F452 / F452V / MHServer** | TCP (`20000`) | 1 | No | 1 |
+<!-- GATEWAY_PROFILES_START -->
+| Gateway Model | Protocol Support | Max Command Workers | Inter-Frame Delay | UPnP Discovery | Notes |
+|---|---|---|---|---|---|
+| **F454** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ Port 49153 | Full high-speed multi-session support |
+| **F455** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ Port 49153 | Basic gateway (single SCS bus) |
+| **F461** | OpenWebNet / HMAC | 4 workers | 50 ms | ❌ Manual | Compact DIN Ethernet Web Server |
+| **MH202** | OpenWebNet / HMAC | 2 workers | 100 ms | ✅ Port 49153 | Modern scenario programmer gateway |
+| **MH201** | OpenWebNet | 1 worker | 100 ms | ✅ Port 49153 | Second-generation scenario programmer |
+| **MyHomeServer1** | OpenWebNet / HMAC | 4 workers | 20 ms | ✅ SSDP | Cloud/local hybrid gateway |
+| **MH200N** | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Second-generation scenario programmer |
+| **MH200** *(Legacy)* | OpenWebNet | 1 worker | 150 ms | ✅ SSDP | Strict single-session pacing; watchdog hardened |
+| **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
+| **F452 / F453 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
+| **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
+<!-- GATEWAY_PROFILES_END -->
+
+See [Hardware Compatibility](getting-started/hardware-compatibility.md) for per-gateway startup discovery capabilities and firmware details.
 
 ---
 

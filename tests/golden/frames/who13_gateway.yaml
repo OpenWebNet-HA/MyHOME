@@ -11,19 +11,6 @@
   mcp_notes: "Gateway Management: Gateway reports firmware version 1.2.3"
   roundtrip: true
 
-- id: gateway.resp.firmware.version.mh200n
-  frame: "*#13**16*1*1*8##"
-  direction: dimension_response
-  who: 13
-  what: null
-  where: ""
-  dimension: 16
-  dimension_values: ["1", "1", "8"]
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Gateway Management: MH200N reports firmware version 1.1.8 (issue #466 capture)"
-  roundtrip: true
-
 - id: gateway.resp.internal.datetime
   frame: "*#13**22*09*37*30*102*03*01*05*2019##"
   direction: dimension_response
@@ -36,6 +23,111 @@
   mcp_valid: true
   mcp_notes: "Gateway Management: Gateway reports internal datetime 2019-05-01 09:37:30-02:00"
   roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_datetime
+    args: ["2019-05-01T09:37:30-02:00"]
+
+- id: gateway.req.time
+  frame: "*#13**0##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request gateway internal time on Dimension 0 (Legrand F455 FW 1.0.86 capture by @lionelser and BTicino MH202 FW 2.6.13 capture by @anotherjulien, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: request_time
+    args: []
+
+- id: gateway.resp.internal.time.mh202
+  frame: "*#13**0*20*54*00*002##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["20", "54", "00", "002"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino MH202 FW 2.6.13 reports internal time 20:54:00+02:00 on Dimension 0 (@anotherjulien, MyHOME#466 comment 5849027587)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_time
+    args: ["20:54:00+02:00"]
+
+- id: gateway.write.internal.time.f454
+  frame: "*#13**#0*11*30*00*002##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["11", "30", "00", "002"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Periodic Dimension 0 time sync write 11:30:00+02:00 on shared F454 FW 2.0.5 + MH202 bus (@anotherjulien, MyHOME#466 comment 6038376669)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_time
+    args: ["11:30:00+02:00"]
+
+- id: gateway.resp.internal.date.f461
+  frame: "*#13**1*04*15*10*2026##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["04", "15", "10", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 FW 2.0.11 reports internal date Thursday (04) 2026-10-15 on Dimension 1 (@GreenGrassBlueOcean live plant capture, 2026-10-15)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_date
+    args: ["2026-10-15"]
+
+- id: gateway.write.internal.date.f454
+  frame: "*#13**#1*03*07*10*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["03", "07", "10", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Periodic Dimension 1 date sync write Wednesday (03) 2026-10-07 on shared F454 FW 2.0.5 + MH202 bus (@anotherjulien, MyHOME#466 comment 6038376669)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_date
+    args: ["2026-10-07"]
+
+- id: gateway.resp.internal.datetime.mh200n
+  frame: "*#13**22*16*37*03*001*05*25*09*2026##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["16", "37", "03", "001", "05", "25", "09", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino MH200N FW 1.1.8 reports internal datetime Friday (05) 2026-09-25 16:37:03+01:00 on Dimension 22 (@caiosweet, MyHOME#466 comment 5834435606)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: report_datetime
+    args: ["2026-09-25T16:37:03+01:00"]
 
 - id: gateway.write.internal.datetime.2026
   frame: "*#13**#22*17*33*54*002*05*11*09*2026##"
@@ -47,8 +139,12 @@
   dimension_values: ["17", "33", "54", "002", "05", "11", "09", "2026"]
   source: community-plant-capture
   mcp_valid: true
-  mcp_notes: "Gateway Management: Set gateway internal datetime to 2026-09-11 17:33:54 (issue #247 reporter plant)"
+  mcp_notes: "Gateway Management: Set gateway internal datetime to Friday (05) 2026-09-11 17:33:54+02:00 on Dimension 22 (MyHomeServer1 plant capture, MyHOME#247)"
   roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_datetime
+    args: ["2026-09-11T17:33:54+02:00"]
 
 - id: gateway.req.device_type
   frame: "*#13**15##"
@@ -61,22 +157,11 @@
   mcp_valid: true
   mcp_notes: "Gateway Management: Request gateway model / device type (physical MH200 check)"
   roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: request_device_type
+    args: []
 
-- id: gateway.req.firmware_version
-  frame: "*#13**16##"
-  direction: dimension_request
-  who: 13
-  what: null
-  where: ""
-  dimension: 16
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Gateway Management: Request gateway firmware version (physical MH200 check)"
-  roundtrip: true
-
-# Regression (live 2026-09-23): a physical MH200, firmware 2.1.0, set up by hand as
-# MH200N. Code 4 must correct that label to MH200 - the MH200N has a code of its own
-# (44) - or the MH200N profile skips the startup WHO=16 sweep (identity.py).
 - id: gateway.resp.model.device_type.mh200
   frame: "*#13**15*4##"
   direction: dimension_response
@@ -88,19 +173,6 @@
   source: community-plant-capture
   mcp_valid: true
   mcp_notes: "Gateway Management: Gateway reports device type code 4 (MH200 physical gateway)"
-  roundtrip: true
-
-- id: gateway.resp.firmware.version.2_1_0
-  frame: "*#13**16*2*1*0##"
-  direction: dimension_response
-  who: 13
-  what: null
-  where: ""
-  dimension: 16
-  dimension_values: ["2", "1", "0"]
-  source: community-plant-capture
-  mcp_valid: true
-  mcp_notes: "Gateway Management: Gateway reports firmware version 2.1.0 (MH200 physical gateway)"
   roundtrip: true
 
 - id: gateway.resp.model.device_type.200
@@ -193,4 +265,248 @@
   mcp_notes: "Gateway Diagnostic: Gateway reports object model 26 (LGRH4684 Legrand color touch screen, verified from TiDisplayColor firmware)"
   roundtrip: true
 
+- id: gateway.resp.internal.time.f461.999
+  frame: "*#13**0*17*45*24*999##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["17", "45", "24", "999"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 FW 2.0.11 answers *#13**0## with the time and the timezone field 999 (no timezone configured), decoded as a naive 17:45:24 (MyHOME#865, tests/fixtures/traces/f461_live_2026-11-04/myhome_sweep_F461_all_2026-11-04T15-45-56.json)"
+  roundtrip: true
 
+- id: gateway.resp.internal.datetime.f461.999
+  frame: "*#13**22*22*59*16*999*01*26*10*2026##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 22
+  dimension_values: ["22", "59", "16", "999", "01", "26", "10", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 FW 2.0.11 reports Dimension 22 with the timezone field 999 (no timezone configured), weekday Monday (01) 2026-10-26 22:59:16, decoded as a naive datetime (MyHOME, tests/fixtures/traces/f461_who13_clock_tz_live_2026-10-26/myhome_trace_F461_who13_clock_tz_live_2026-10-26.json)"
+  roundtrip: true
+
+- id: gateway.resp.firmware.version.f461
+  frame: "*#13**16*2*0*11##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  dimension_values: ["2", "0", "11"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 reports firmware 2.0.11 on Dimension 16 (MyHOME#865, f461_live_2026-11-04 sweep)"
+  roundtrip: true
+
+- id: gateway.resp.kernel.version.f461
+  frame: "*#13**23*5*10*35##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 23
+  dimension_values: ["5", "10", "35"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 FW 2.0.11 reports kernel 5.10.35 on Dimension 23 (MyHOME#865, f461_live_2026-11-04 sweep)"
+  roundtrip: true
+
+- id: gateway.resp.distribution.version.f461
+  frame: "*#13**24*2*26*4##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 24
+  dimension_values: ["2", "26", "4"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino F461 FW 2.0.11 reports distribution 2.26.4 on Dimension 24 (MyHOME#865, f461_live_2026-11-04 sweep)"
+  roundtrip: true
+
+- id: gateway.resp.model.device_type.hl4684.23
+  frame: "*#13**15*23##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 15
+  dimension_values: ["23"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: BTicino H/L4684 FW 6.0.11 answers *#13**15## with code 23 (MyHOME#466, tests/fixtures/traces/issue_466/config_entry-myhome_HL4684_fw6_0_11.json); decoded through WHO13_DEVICE_TYPES"
+  roundtrip: true
+
+- id: gateway.resp.firmware.version.mh200n
+  frame: "*#13**16*1*1*8##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  dimension_values: ["1", "1", "8"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MH200N reports firmware version 1.1.8 (issue #466 capture)"
+  roundtrip: true
+
+- id: gateway.req.firmware_version
+  frame: "*#13**16##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request gateway firmware version (physical MH200 check)"
+  roundtrip: true
+
+- id: gateway.resp.firmware.version.2_1_0
+  frame: "*#13**16*2*1*0##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  dimension_values: ["2", "1", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Gateway reports firmware version 2.1.0 (MH200 physical gateway)"
+  roundtrip: true
+
+- id: gateway.capture.req.diagnostic_object_model.where0
+  frame: "*#1013*0*1##"
+  direction: dimension_request
+  who: 1013
+  what: null
+  where: "0"
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: Request gateway diagnostic object model code with WHERE=0 (MyHomeServer1 2.87.13 sweep, MyHOME#907/#908)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayDiagnosticCommand
+    method: request_diagnostic_object_model
+    args: ["0"]
+
+- id: gateway.capture.resp.diagnostic_object_model.myhomeserver1
+  frame: "*#1013**1*67*15*5*0##"
+  direction: dimension_response
+  who: 1013
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["67", "15", "5", "0"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Diagnostic: MyHomeServer1 4-parameter WHO=1013 Dimension 1 reply (object_model=67 MyHomeServer1, n_conf=15, brand=5 Legrand BTicino, line=0; MyHomeServer1 2.87.13 capture, MyHOME#907/#908)"
+  roundtrip: true
+
+- id: gateway.capture.resp.firmware.version.myhomeserver1.2_87_13
+  frame: "*#13**16*2*87*13##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 16
+  dimension_values: ["2", "87", "13"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 reports firmware version 2.87.13 (MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.req.kernel_version
+  frame: "*#13**23##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 23
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request underlying Linux kernel version (Dimension 23, ownkb:chunk:r000329; MyHomeServer1 2.87.13 sweep, MyHOME#907/#908)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: request_kernel_version
+    args: []
+
+- id: gateway.capture.req.distribution_version
+  frame: "*#13**24##"
+  direction: dimension_request
+  who: 13
+  what: null
+  where: ""
+  dimension: 24
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: Request Linux distribution version (Dimension 24; MyHomeServer1 2.87.13 sweep, MyHOME#907/#908)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: request_distribution_version
+    args: []
+
+- id: gateway.capture.resp.distribution_version.myhomeserver1.2_26_3
+  frame: "*#13**24*2*26*3##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 24
+  dimension_values: ["2", "26", "3"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 reports distribution version 2.26.3 (Dimension 24, MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.write.clock_sync.empty_tz.myhomeserver1
+  frame: "*#13**#0*14*59*05*##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["14", "59", "05", ""]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 (2.87.13) 1 Hz internal clock broadcast with trailing empty timezone field ('*##' -> dimension_values=['14','59','05',''], MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.resp.time.unconfigured_tz.999
+  frame: "*#13**0*15*13*25*999##"
+  direction: dimension_response
+  who: 13
+  what: null
+  where: ""
+  dimension: 0
+  dimension_values: ["15", "13", "25", "999"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 (2.87.13) internal time reply 15:13:25 with unconfigured timezone sentinel 999 (MyHOME#907/#908 capture)"
+  roundtrip: true
+
+- id: gateway.capture.write.date_sync.2026_11_14
+  frame: "*#13**#1*06*14*11*2026##"
+  direction: dimension_write
+  who: 13
+  what: null
+  where: ""
+  dimension: 1
+  dimension_values: ["06", "14", "11", "2026"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway Management: MyHomeServer1 (2.87.13) internal date broadcast Saturday 2026-11-14 (Dimension 1 DW*DD*MM*YYYY, MyHOME#907/#908 capture; note openwebnet-mcp's WHO 13 summary table mislabels Dimension 1 as Firmware Version)"
+  roundtrip: true
+  builder:
+    class: OWNGatewayCommand
+    method: set_date
+    args: ["2026-11-14"]

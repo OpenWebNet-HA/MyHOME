@@ -50,7 +50,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
@@ -68,3 +68,71 @@ jobs:
           OWND_REF: ${{ github.head_ref || github.ref_name }}
         run: |
           python scripts/run_ownd_smoke.py --target "$OWND_TARGET"
+
+      - name: Verify Cross-Repo Golden Corpus Staged-Superset Sync (${{ matrix.ownd-target }})
+        if: matrix.ownd-target == 'pinned' || matrix.ownd-target == 'dev'
+        env:
+          OWND_TARGET: ${{ matrix.ownd-target }}
+          OWND_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json, os, re, shutil, subprocess, sys
+          from pathlib import Path
+          from packaging.version import Version
+
+          target = os.environ["OWND_TARGET"]
+          ownd_dir = Path(os.environ["RUNNER_TEMP"]) / "ownd_golden_check"
+          if ownd_dir.exists():
+              shutil.rmtree(ownd_dir)
+
+          repo_url = "https://github.com/OpenWebNet-HA/OWNd.git"
+          refs_to_try: list[str] = []
+          if target == "dev":
+              ref = os.environ.get("OWND_REF") or "master"
+              refs_to_try = [ref, "master"] if ref != "master" else ["master"]
+          elif target == "pinned":
+              manifest = json.loads(Path("custom_components/myhome/manifest.json").read_text(encoding="utf-8"))
+              pinned = next(r.split("==", 1)[1] for r in manifest["requirements"] if r.startswith("OWNd=="))
+              if Version(pinned) < Version("2.0.0b15"):
+                  print(f"Pinned OWNd=={pinned} predates unified Golden Corpus (>=2.0.0b15); skipping tag diff.")
+                  sys.exit(0)
+              hyphen_tag = re.sub(r"([0-9])(a|b|rc)([0-9]+)$", r"\1-\2\3", f"v{pinned}")
+              tag_refs = [hyphen_tag, f"v{pinned}"] if hyphen_tag != f"v{pinned}" else [f"v{pinned}"]
+              ref = os.environ.get("OWND_REF") or "master"
+              dev_refs = [ref, "master"] if ref != "master" else ["master"]
+              tag_check = subprocess.run(
+                  ["git", "ls-remote", "--tags", repo_url, *[f"refs/tags/{t}" for t in tag_refs]],
+                  capture_output=True,
+                  text=True,
+                  check=False,
+              )
+              if tag_check.returncode == 0 and not tag_check.stdout.strip():
+                  print(f"[NOTICE] Tag for OWNd=={pinned} not yet pushed; falling back to dev ref {dev_refs}.")
+                  refs_to_try = dev_refs
+              else:
+                  refs_to_try = tag_refs
+
+          cloned = False
+          rc = 1
+          for candidate_ref in refs_to_try:
+              if ownd_dir.exists():
+                  shutil.rmtree(ownd_dir)
+              res = subprocess.run(
+                  ["git", "clone", "--depth", "1", "--branch", candidate_ref, repo_url, str(ownd_dir)],
+                  check=False,
+              )
+              if res.returncode != 0:
+                  continue
+              cloned = True
+              print(f"Checking Staged-Superset sync against {repo_url}@{candidate_ref}...")
+              rc = subprocess.run(
+                  [sys.executable, "scripts/sync_golden_corpus.py", "--check", "--ownd-dir", str(ownd_dir), "--require-ownd"],
+                  check=False,
+              ).returncode
+              if rc == 0:
+                  break
+          if not cloned:
+              print(f"[ERROR] Unable to clone {repo_url} at any of {refs_to_try}", file=sys.stderr)
+              sys.exit(1)
+          sys.exit(rc)
+          PY

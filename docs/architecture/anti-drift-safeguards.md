@@ -25,7 +25,7 @@ graph TD
         B --> B4[Diagnostics & In-Band Bus Monitor WebSocket]
     end
 
-    A -->|Published via PyPI: OWNd==2.0.0b14| B
+    A -->|Published via PyPI: OWNd==2.0.1| B
 ```
 
 ### Why Decouple?
@@ -54,7 +54,7 @@ graph TD
     subgraph "Pillar 1: Shift-Left Downstream Canary (OWNd)"
         O1[OWNd PR or Commit] --> O2[Build Candidate OWNd Wheel]
         O2 --> O3[Checkout MyHOME integration]
-        O3 --> O4[Run full MyHOME 1,600+ test suite]
+        O3 --> O4[Run full MyHOME 5,800+ test suite]
         O4 -->|Any failure| O5[Block OWNd PR from Merging]
         O4 -->|All green| O6[Allow OWNd Merge]
     end
@@ -108,7 +108,7 @@ To keep production and development dependencies in lock-step:
    ```json
    {
      "requirements": [
-       "OWNd==2.0.0b14"
+       "OWNd==2.0.1"
      ]
    }
    ```
@@ -126,6 +126,8 @@ Both repositories enforce automated zero-tolerance quality gates:
 | **Statement Coverage** | **Strict 100.0%** (0 missing lines across all integration modules) | `pytest --cov --cov-report=term-missing` |
 | **Linting & Formatting** | **0 Ruff Violations** | `ruff check .` |
 | **Home Assistant Standards** | **Gold / Platinum Scale** | `scripts/verify_ha_standards.py` |
+| **Canonical Golden Corpus & Staged-Superset Sync** | **`MyHOME >= OWNd`** (451+ schema-validated fixtures across 21 subsystems; 0 missing `OWNd` IDs, 0 divergent shared IDs, 0 raw-frame collisions, non-mutating `--check`) | `tools/golden/validate_corpus.py --check` & `scripts/sync_golden_corpus.py --check` |
+| **Trace-to-Golden Structural Shape Ratchet** | **0 New Uncovered Trace Shapes** (every frame shape in the JSON traces under `tests/fixtures/` is covered by `tests/golden/corpus.json` or listed in a legacy baseline capped at 259 entries; Encyclopedia evidence is checked only with `--encyclopedia-evidence`) | `tools/golden/check_trace_shape_coverage.py` |
 | **Upstream Compatibility** | `dev`, `beta`, `stable` | `.github/workflows/ha-upstream-compat.yml` |
 
 By combining Shift-Left testing in `OWNd` with nightly canary builds and automated release bumping in `MyHOME`, protocol drift is structurally impossible.

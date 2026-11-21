@@ -14,11 +14,11 @@ The integration natively interfaces with Legrand / BTicino DIN power management 
 * **BTicino F522 / F523**: Multi-circuit energy and power management modules (`WHERE = 71` through `7255`).
 
 ### Auto-Discovered Entities
-When an energy meter is detected on the SCS bus, the integration creates:
+When an energy meter is detected on the SCS bus, the integration creates entities only for the measurements the meter actually reports:
 
 1. **Instantaneous Power Sensor** (`device_class: power`): Real-time active power consumption in Watts (**W**).
-2. **Total Energy Counter** (`device_class: energy`, `state_class: total_increasing`): Cumulative electrical energy consumption in Watt-hours (**Wh**) or kilowatt-hours (**kWh**).
-3. **Periodic Energy Counters**: Daily and monthly energy sub-counters.
+2. **Total Energy Counter** (`device_class: energy`, `state_class: total_increasing`): Cumulative electrical energy consumption in Watt-hours (**Wh**).
+3. **Periodic Energy Counters**: Daily and monthly energy sub-counters (created disabled by default in the entity registry; enable them in Home Assistant if needed).
 
 ### Home Assistant Energy Dashboard Integration
 Because energy entities implement standard `state_class: total_increasing` and `device_class: energy`:
@@ -28,13 +28,20 @@ Because energy entities implement standard `state_class: total_increasing` and `
 3. Home Assistant automatically generates hourly, daily, and monthly solar/grid tracking graphs.
 
 ### Live High-Frequency Power Streaming
-To instruct the gateway to stream high-frequency instantaneous power updates to Home Assistant, call the `myhome.start_sending_instant_power` service action:
+To instruct a power meter to stream high-frequency instantaneous power updates (`Dimension 113`) to Home Assistant, call `myhome.start_sending_instant_power` targeting the power sensor entity (optional `duration`: `1–255` minutes, default `65`), and call `myhome.stop_sending_instant_power` to stop streaming early:
 
 ```yaml
 action: myhome.start_sending_instant_power
+target:
+  entity_id: sensor.general_power
 data:
-  meter_id: 1    # Meter address (e.g. 1 for F520 address 51)
-  interval: 10   # Push interval in seconds
+  duration: 65   # Optional: 1–255 minutes (default: 65)
+```
+
+```yaml
+action: myhome.stop_sending_instant_power
+target:
+  entity_id: sensor.general_power
 ```
 
 > [!TIP]
@@ -43,12 +50,15 @@ data:
 
 ---
 
-## 🌡️ Temperature Sensors (WHO = 4)
+## 🌡️ Temperature Sensors & 0–10 V Proportional Actuator Output Sensors (WHO = 4)
 
-Standalone and secondary temperature probes operating on WHO 4 are automatically exposed as `sensor` entities with `device_class: temperature`:
+Standalone and secondary temperature probes operating on `WHO = 4` are automatically discovered as `sensor` entities with `device_class: temperature`:
 
-* **Main Zone Probes (`WHERE = 1..99`)**: Reports ambient room temperature for individual zones.
-* **Secondary Radio Probes (`WHERE ≥ 100`)**: Reports battery-powered wireless probes (e.g. BTicino `3455` behind `L4577` radio interfaces). The v2 engine utilizes push-driven listening, eliminating unnecessary bus polling.
+* **Standalone & Secondary Probes (`WHERE ≥ 100`, i.e. `0101`–`0999` / `101`–`899`, or `Dimension 15`)**: Auto-discovered from SCS bus traffic (including battery-powered wireless probes such as BTicino `3455` behind `L4577` radio interfaces, and outdoor/slave probes `3475`/`3476`).
+* **Thermostat Zones (`WHERE = 1..99`)**: Zone addresses `1..99` belong to `climate.*` thermostat entities by default and do **not** spawn duplicate standalone temperature `sensor` entities unless explicitly declared under `sensor:` in `/config/myhome.yaml`.
+* **0–10 V Proportional Actuator Output Level (`*#4*Z#N*20*100..200##`, `1 <= Z <= 99`, `1 <= N <= 9`)**: Whenever an explicit zone actuator address `Z#N` (`1 <= Z <= 99`, `1 <= N <= 9`) reports a proportional 0–10 V output code (`Dimension 20` values `100..200` → `0..100 %`, e.g. Sabiana 0–10 V fan coils or modulating valves), the integration automatically creates an enabled `sensor` entity (`MyHOMEActuatorOutputSensor` — `Actuator <N> output level`, unit `%`, `state_class: measurement`, `mdi:gauge`) attached to the same Home Assistant Device as the zone's `climate` entity — with `generate_events` disabled. Bare zone (`Z`) and `Z#0` Dimension 20 frames never create or spread output levels onto proportional sensors, and standard discrete `0..22` valve and 3-speed fan-coil actuators never spawn extra entities.
+  * **Restart behaviour (`SensorEntity`, no stale state restoration)**: `MyHOMEActuatorOutputSensor` inherits directly from `SensorEntity` (not `RestoreSensor`), so its state starts `unknown` after a Home Assistant restart until the first bus report arrives rather than replaying stale values alongside the live `climate` entity.
+  * **When `*#4*Z#N*20##` is polled**: Each sensor registers its `Z#N` address with `watch_zone_actuators` when added (unless routed behind a local interface `#4#IF` where `interface_zone_request_refused` is `True`), triggering polls after startup discovery completes and after every event-session reconnect. Depending on the gateway, that poll is coalesced into `*#4*0#0*20##` on `F461` and `MyHomeServer1`, sent as `*#4*Z#N*20##` on `3488`, `F450`, `F454`, `F455`, `F459`, and `F460`, and skipped on `ACTUATOR_REQUEST_REFUSED` gateways (`F453`, `F453AV`, `H4684`, `MH200`, `MH200N`, `MH202`) as well as behind `#4#IF` (`interface_zone_request_refused`). Calling `homeassistant.update_entity` (`async_update`) also sends `*#4*Z#N*20##` whenever neither `actuator_request_refused` nor `interface_zone_request_refused` is `True`.
 
 ---
 
@@ -66,4 +76,4 @@ Light intensity sensors (e.g. Legrand `048822` ceiling detectors configured in s
 ## 🔄 Legacy YAML Note
 
 > [!NOTE]
-> If you are upgrading from legacy v0.9 installations and still have manual `sensor:` blocks in `/config/myhome.yaml`, please refer to the [v0.9.4 Legacy Sensor Documentation](../../0.9.4/configuration/sensors/) or the [Legacy YAML Migration Guide](../migration/legacy-yaml.md). In v2, all sensors are discovered dynamically.
+> `WHO = 18` energy meters, `WHO = 4` standalone probes (`WHERE ≥ 100` or `Dimension 15`), and `WHO = 1` illuminance sensors are discovered dynamically from the bus; `sensor:` entries in `/config/myhome.yaml` remain supported for custom naming or exposing thermostat zone (`1..99`) temperatures as standalone `sensor` entities. For migrating pre-v0.9 `configuration.yaml` files, see the [Legacy YAML Migration Guide](../migration/legacy-yaml.md).

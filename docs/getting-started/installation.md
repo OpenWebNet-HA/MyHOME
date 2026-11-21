@@ -1,30 +1,47 @@
-# Installation Guide (v2.0 Beta)
+# Installation Guide
 
-This guide covers installing the **MyHOME** next-generation integration (`v2-phase1-architecture`) in Home Assistant.
+This guide covers installing and updating the **MyHOME** integration in Home Assistant.
 
 ---
 
 ## Prerequisites
 
-- **Home Assistant**: Home Assistant Core 2026.3 or newer.
-- **Python Runtime**: Python 3.14+ (or official Home Assistant container).
-- **Physical Gateway**: An OpenWebNet IP gateway (F454, F455, F461, MyHomeServer1, MH200N/201/202, F453AV) connected via local Ethernet.
+- **Home Assistant**: Home Assistant Core 2026.8 or newer.
+- **Python Runtime**: Python 3.14+ (or official Home Assistant OS / Container).
+- **Physical Gateway**: An OpenWebNet IP gateway (F454, F455, F461, MyHomeServer1, MH200, MH200N, MH201, MH202, H4890/AM4890, H/L4684, F452/F453/F453AV) connected via local Ethernet.
 
 ---
 
-## Option 1: Manual ZIP / SSH Installation (Recommended for v2 Beta)
+## Option 1: Home Assistant Marketplace / HACS (Recommended for Stable Releases)
 
-> [!IMPORTANT]
-> **Why Manual Installation is Recommended for v2 Beta**:
-> The v2 architecture is currently published as preview/beta releases from the `v2-phase1-architecture` development branch. HACS tracks the default `master` branch by default and often fails to detect or rejects pre-release beta tags on non-default branches. Installing via ZIP ensures you receive the exact, tested beta build.
+From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.8 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
+
+- **Home Assistant 2026.11+ (Marketplace):**
+    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
+    2. Search for **MyHOME** in the catalog, or if adding manually before catalog publication, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
+    3. Select **MyHOME** to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**)*.
+    4. Restart Home Assistant when prompted.
+- **Home Assistant 2026.8 – 2026.10 (HACS):**
+    1. Open **HACS** in Home Assistant.
+    2. Search for **MyHOME**, or click the three dots (`⋮`) in the top right → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**.
+    3. Open **MyHOME**, select the desired release version, and click **Download**.
+    4. Restart Home Assistant when prompted.
+
+> [!NOTE]
+> **Installing `2.0.0bX` Pre-Releases Prior to Stable `v2.0.0`:**
+> Pre-release `2.0.0bX` builds published ahead of the `v2.0.0` merge on `master` should be installed via **Option 2 (Terminal & SSH or Manual Archive)** below, as Marketplace and HACS track the default branch by default.
+
+---
+
+## Option 2: Terminal & SSH or Manual ZIP Archive
 
 ### ⚡ 1-Click Terminal Command (Home Assistant Terminal & SSH)
 
 If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste this command directly into your terminal:
 
 ```bash
-# Set target beta release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.0b18"
+# Set target release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
+TAG="2.0.1"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \
@@ -38,9 +55,9 @@ ha core restart
 
 ---
 
-### 📁 Alternative: Manual Download via Samba / Studio Code Server
+### 📁 Manual Download via Samba / Studio Code Server
 
-1. Download the `myhome.zip` archive from the latest [v2.0 Beta Release](https://github.com/OpenWebNet-HA/MyHOME/releases).
+1. Download the `myhome.zip` archive from [GitHub Releases](https://github.com/OpenWebNet-HA/MyHOME/releases).
 2. Connect to your Home Assistant host using **SSH**, **Samba share**, or the **Studio Code Server** add-on.
 3. Open the Home Assistant configuration folder (the directory containing `configuration.yaml`).
 4. Ensure the `custom_components/` folder exists, and extract the archive so that files are placed at:
@@ -53,27 +70,9 @@ ha core restart
 
 > [!CAUTION]
 > **Folder Structure Warning**:
-> Always ensure integration files reside in `/config/custom_components/myhome/`. Never extract files directly into `/config/custom_components/` root, and never retain backup directories inside `custom_components/` (e.g. `custom_components/myhome_old/`). In modern Home Assistant cores, extra Python packages or stray `__init__.py` files in `custom_components/` can prevent all custom integrations from loading.
+> Always ensure integration files reside in `/config/custom_components/myhome/`. Never extract files directly into `/config/custom_components/` root, and never retain backup directories inside `custom_components/` (e.g. `custom_components/myhome.backup` or `custom_components/myhome_old/`). Home Assistant scans every subdirectory under `custom_components/`, so stray backup folders inside `custom_components/` can prevent custom integrations from loading. Keep any safety backups outside (e.g. `/config/myhome_backup/`).
 
-5. Restart Home Assistant:
-    - Go to **Developer Tools → YAML → Restart** (or **Settings → System → Restart**).
-
----
-
-## Option 2: Installation via HACS (Custom Repository)
-
-If you prefer managing updates through HACS:
-
-1. Open **HACS** in Home Assistant.
-2. Click the three dots (⋮) in the top right and choose **Custom repositories**.
-3. Enter the repository URL:
-   ```text
-   https://github.com/OpenWebNet-HA/MyHOME
-   ```
-4. Select category: **Integration**.
-5. Click **Add**.
-6. Search for **MyHOME**. If installing a beta release, toggle **Show beta versions** in the version dropdown, choose the latest `2.0.0bX` release, and click **Download**.
-7. Restart Home Assistant.
+5. Restart Home Assistant (**Settings → System → Restart**).
 
 ---
 

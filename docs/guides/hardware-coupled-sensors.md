@@ -59,10 +59,10 @@ If you cannot easily modify physical configurator plugs in electrical panels, us
 
 ### 🌟 Using the Dusk Curfew Blueprint
 
-[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FOpenWebNet-HA%2FMyHOME%2Fblob%2Fv2-phase1-architecture%2Fblueprints%2Fautomation%2Fmyhome%2Fdusk_curfew.yaml)
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FOpenWebNet-HA%2FMyHOME%2Fblob%2Fmaster%2Fblueprints%2Fautomation%2Fmyhome%2Fdusk_curfew.yaml)
 
 > [!TIP]
-> During the v2 beta development cycle, the badge above points to the `v2-phase1-architecture` branch. You can also import directly from this URL in **Settings → Automations & Scenes → Blueprints → Import Blueprint**.
+> You can click the badge above or import the blueprint URL directly in **Settings → Automations & Scenes → Blueprints → Import Blueprint**.
 
 * **Source File**: `blueprints/automation/myhome/dusk_curfew.yaml`
 * **Manual Installation**:

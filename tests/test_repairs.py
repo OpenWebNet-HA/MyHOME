@@ -134,7 +134,10 @@ async def test_unconfigured_timezone_issues_lifecycle(hass: HomeAssistant) -> No
     assert issue.translation_key == ISSUE_UNCONFIGURED_TIMEZONE
     assert not issue.is_fixable
     assert issue.translation_placeholders == {"gateway": "Mock Gateway"}
-    assert issue.learn_more_url == "https://github.com/OpenWebNet-HA/MyHOME/wiki/Configuration#timezone"
+    assert (
+        issue.learn_more_url
+        == "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#unconfigured-timezone"
+    )
 
     async_delete_unconfigured_timezone_issue(hass, entry_id)
     assert issue_registry.async_get_issue(DOMAIN, f"{ISSUE_UNCONFIGURED_TIMEZONE}_{entry_id}") is None
@@ -161,7 +164,10 @@ async def test_incompatible_decoder_issue_lifecycle(hass: HomeAssistant) -> None
     assert issue.translation_key == ISSUE_INCOMPATIBLE_DECODER
     assert issue.is_fixable
     assert issue.translation_placeholders == {"decoder": decoder_id, "platform": "cambridge_audio"}
-    assert issue.learn_more_url == "https://openwebnet-ha.github.io/MyHOME/beta/configuration/use_cases/#music-assistant"
+    assert (
+        issue.learn_more_url
+        == "https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/#music-assistant"
+    )
 
     async_delete_incompatible_decoder_issue(hass, entry_id, decoder_id)
     assert issue_registry.async_get_issue(DOMAIN, issue_id) is None
@@ -369,4 +375,64 @@ async def test_shared_bus_repair_flow_missing_gateway(hass: HomeAssistant) -> No
     result = await flow.async_step_init()
     assert result["type"] == "abort"
     assert result["reason"] == "gateway_missing"
+
+
+@pytest.mark.asyncio
+async def test_repair_issue_canonical_manual_urls(hass: HomeAssistant) -> None:
+    """Verify topology and decoder config repair issues point to canonical /MyHOME/latest/ manual URLs."""
+    from custom_components.myhome.const import (
+        ISSUE_GATEWAY_FAILOVER,
+        ISSUE_PRIMARY_GATEWAY_MISSING,
+        ISSUE_SHARED_BUS_DETECTED,
+    )
+    from custom_components.myhome.repairs import (
+        ISSUE_INVALID_DECODER,
+        async_create_decoder_config_issue,
+        async_create_failover_issue,
+        async_create_primary_missing_issue,
+        async_create_shared_bus_issue,
+    )
+
+    reg = ir.async_get(hass)
+
+    async_create_shared_bus_issue(hass, "00:03:50:aa:bb:01", "00:03:50:aa:bb:02")
+    shared_issue = reg.async_get_issue(
+        DOMAIN, f"{ISSUE_SHARED_BUS_DETECTED}_000350aabb01_000350aabb02"
+    )
+    assert shared_issue is not None
+    assert (
+        shared_issue.learn_more_url
+        == "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#unconfigured-shared-bus-detected"
+    )
+
+    async_create_failover_issue(
+        hass, "00:03:50:aa:bb:01", "00:03:50:aa:bb:02", "Primary GW", "Standby GW"
+    )
+    failover_issue = reg.async_get_issue(DOMAIN, f"{ISSUE_GATEWAY_FAILOVER}_000350aabb01")
+    assert failover_issue is not None
+    assert (
+        failover_issue.learn_more_url
+        == "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#gateway-failover-active-warm-standby-high-availability"
+    )
+
+    async_create_primary_missing_issue(hass, "sec_entry", "Secondary GW", "00:03:50:aa:bb:01")
+    missing_pri = reg.async_get_issue(DOMAIN, f"{ISSUE_PRIMARY_GATEWAY_MISSING}_sec_entry")
+    assert missing_pri is not None
+    assert (
+        missing_pri.learn_more_url
+        == "https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#primary-gateway-missing"
+    )
+
+    async_create_decoder_config_issue(
+        hass, "dec_entry", "media_player.loop_zone", ISSUE_INVALID_DECODER, {"platform": "myhome"}
+    )
+    dec_issue = reg.async_get_issue(
+        DOMAIN, f"{ISSUE_INVALID_DECODER}_dec_entry_media_player_loop_zone"
+    )
+    assert dec_issue is not None
+    assert (
+        dec_issue.learn_more_url
+        == "https://openwebnet-ha.github.io/MyHOME/latest/configuration/use_cases/#music-assistant"
+    )
+
 

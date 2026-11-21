@@ -1,0 +1,31 @@
+# WHO=7 Multimedia Video Door Entry — camera video stream control (OWNAVCommand).
+
+- id: av.cmd.receive_video.4000
+  frame: "*7*0*4000##"
+  direction: command
+  who: 7
+  what: 0
+  where: "4000"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Multimedia (WHO 7): Receive video from camera 4000 (WHAT 0 'Receive Video'; OWNAVCommand.receive_video). The WHO 7 PDF frame tables print *7*0*WHERE*## with a trailing empty tag (§3.1, p. 5); the three-tag form used here appears once, in its prose, as *7*0*where## (p. 11). No capture; not in openwebnet4j or in the pinned firmware oracle"
+  roundtrip: true
+  builder:
+    class: OWNAVCommand
+    method: receive_video
+    args: [4000]
+
+- id: av.cmd.close_video
+  frame: "*7*9**##"
+  direction: command
+  who: 7
+  what: 9
+  where: "*"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "Multimedia (WHO 7): Free audio/video resources (WHAT 9; OWNAVCommand.close_video), printed as *7*9**## in the WHO 7 PDF (§3.2). No capture; not in openwebnet4j or in the pinned firmware oracle"
+  roundtrip: true
+  builder:
+    class: OWNAVCommand
+    method: close_video
+    args: []

@@ -1,0 +1,212 @@
+# WHO=17 MH200N Scene Scheduler — start, stop, enable, disable & status frames.
+
+- id: scene.capture.start.30
+  frame: "*17*1*30##"
+  direction: command
+  who: 17
+  what: 1
+  where: "30"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Start scene 30 (WHAT 1; MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNSceneCommand
+    method: start
+    args: [30]
+
+- id: scene.capture.stop.30
+  frame: "*17*2*30##"
+  direction: command
+  who: 17
+  what: 2
+  where: "30"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Stop scene 30 (WHAT 2; MH200N & MH200 plant captures, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNSceneCommand
+    method: stop
+    args: [30]
+
+- id: scene.cmd.enable.30
+  frame: "*17*3*30##"
+  direction: command
+  who: 17
+  what: 3
+  where: "30"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Enable scene 30 (WHAT 3)"
+  roundtrip: true
+  builder:
+    class: OWNSceneCommand
+    method: enable
+    args: [30]
+
+- id: scene.cmd.disable.30
+  frame: "*17*4*30##"
+  direction: command
+  who: 17
+  what: 4
+  where: "30"
+  source: legrand-spec
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Disable scene 30 (WHAT 4)"
+  roundtrip: true
+  builder:
+    class: OWNSceneCommand
+    method: disable
+    args: [30]
+
+- id: scene.capture.event.start.31
+  frame: "*17*1*31##"
+  direction: event
+  who: 17
+  what: 1
+  where: "31"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 31 started event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.start.34
+  frame: "*17*1*34##"
+  direction: event
+  who: 17
+  what: 1
+  where: "34"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 34 started event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.stop.34
+  frame: "*17*2*34##"
+  direction: event
+  who: 17
+  what: 2
+  where: "34"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 34 stopped event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.start.41
+  frame: "*17*1*41##"
+  direction: event
+  who: 17
+  what: 1
+  where: "41"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 41 started event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.stop.41
+  frame: "*17*2*41##"
+  direction: event
+  who: 17
+  what: 2
+  where: "41"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 41 stopped event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.start.42
+  frame: "*17*1*42##"
+  direction: event
+  who: 17
+  what: 1
+  where: "42"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 42 started event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.stop.42
+  frame: "*17*2*42##"
+  direction: event
+  who: 17
+  what: 2
+  where: "42"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 42 stopped event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.start.43
+  frame: "*17*1*43##"
+  direction: event
+  who: 17
+  what: 1
+  where: "43"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 43 started event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.stop.43
+  frame: "*17*2*43##"
+  direction: event
+  who: 17
+  what: 2
+  where: "43"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 43 stopped event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.start.56
+  frame: "*17*1*56##"
+  direction: event
+  who: 17
+  what: 1
+  where: "56"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 56 started event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.event.stop.56
+  frame: "*17*2*56##"
+  direction: event
+  who: 17
+  what: 2
+  where: "56"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 56 stopped event (MH200N plant capture, MyHOME#466)"
+  roundtrip: true
+
+- id: scene.capture.req.status.0
+  frame: "*#17*0##"
+  direction: status_request
+  who: 17
+  what: null
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): General scene status request WHERE=0 (*#17*<where>## in the WHO 17 PDF §3.2.1; sent to an MH200 (FW 2.0.0) it is followed 100 to 250 ms later by *17*2*137##, *17*3*137##, *17*2*30## and *17*3*30##, MyHOME trace issue_466, MH200 all, 2026-09-26; an F461 (FW 2.0.11) answers NACK, MyHOME traces f461_live_2026-10-15 and f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNSceneCommand
+    method: status
+    args: [0]
+
+- id: scene.capture.req.status.1
+  frame: "*#17*1##"
+  direction: status_request
+  who: 17
+  what: null
+  where: "1"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "MH200N Scene (WHO 17): Scene 1 status request (*#17*<where>## in the WHO 17 PDF §3.2.1; probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-23)"
+  roundtrip: true
+  builder:
+    class: OWNSceneCommand
+    method: status
+    args: [1]

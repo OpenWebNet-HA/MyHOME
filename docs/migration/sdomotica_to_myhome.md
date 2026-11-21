@@ -177,9 +177,15 @@ Based on the official **Sdomotica Gateway Manual** (pages 18–23):
 | `SAThermoC` | Standalone Cooling only | `climate` | 4 | `zone: "<addr>"`, `heat: false`, `cool: true` |
 | `SAThermoH` | Standalone Heating only | `climate` | 4 | `zone: "<addr>"`, `heat: true`, `cool: false` |
 | `TemperatureSensors` | External temperature probe | `sensor` | 4 | `where: "<addr>"`, `class: "temperature"` |
-| `Audio` | Multi-channel sound amplifier | `media_player` | 16 | `zone: "<zone>"` |
+| `Audio` | Multi-channel sound amplifier | `media_player` | 16 | `zone: "<zone>"` *(emitted commented-out in `myhome.yaml`; auto-discovered from bus)* |
 | `SecuritySystem` | Burglar alarm central (3486) | `alarm_control_panel` | 5 | `where: "<zone>"` |
-| `Door` | Garage / gate door opener | `switch` | 1 / 6 | `where: "<addr>"` |
+| `Door` | Door / gate relay accessory | `switch` | 1 | `where: "<addr>"` *(default; see Door / Gate note below)* |
+
+> [!NOTE]
+> **`Door` Accessories & Custom Entity Icons (`scripts/migrate_from_sdomotica.py`)**
+>
+> - **`Door` mapping**: SDomotica `Door` accessories default to `WHO = 1` `switch:` (`where: "<addr>"`). If the physical endpoint is a **door-entry electric strike** (`WHO = 6`, `*6*10*<where>##`), move it under `lock:` with `who: "6"` and `where: "<addr>"` (see [Supported Functions — `lock` (`WHO = 6`)](../configuration/supported_functions.md#lock-who-6)). If it is a **`WHO = 1` pulse-driven motorized gate or garage door**, move it under `cover:` with `who: "1"` and `type: impulse_relay` so deadband and optional access-policy protections apply (see [Covers & Shutters — Impulse Covers](../configuration/covers.md)).
+> - **`icon:` preservation**: When generating `/config/myhome.yaml`, custom `icon:` attributes from the entity registry are emitted only on `light` and `switch` entries (the two v2 YAML device schemas that accept `icon:`). For other platforms, custom icons remain managed in the Home Assistant Entity Registry (`--migrate-registry` or UI).
 
 ---
 

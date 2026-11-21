@@ -237,8 +237,8 @@
           "source_4_name": "Source 4 — name of what is wired to matrix input S4 (leave blank if nothing is connected)",
           "source_4_tuner": "Source 4 is a tuner (F500): adds a radio entity with stations, frequency and RDS",
           "address": "IP address",
+          "name": "Gateway model",
           "password": "Password",
-          "config_file_path": "Configuration file path",
           "command_worker_count": "Number of concurrent command sessions",
           "generate_events": "Generate events in Home Assistant for each message received",
           "broadcast_resync": "Sweep group/area/general light addresses for status after a debounced silence window",
@@ -274,6 +274,7 @@
           "delegated_whos": "Delegated subsystems",
           "auto_join_streaming": "Auto-join streaming groups",
           "ignored_addresses": "Ignored addresses",
+          "standalone_zones": "Standalone thermostats",
           "tuner_pictures": "Tuner pictures"
         },
         "data_description": {
@@ -281,6 +282,7 @@
           "delegated_whos": "Secondary role only: subsystems whose new devices this gateway discovers. Devices the primary already has stay on the primary.",
           "auto_join_streaming": "Automatically join an active streaming group when turning on a room or adjusting volume from a physical wall control.",
           "ignored_addresses": "Permanently ignore listed addresses (e.g. 1/74, 1/74#4#01): skips discovery, entities and fault tracking. Separate multiple entries with newlines or commas.",
+          "standalone_zones": "Thermostat zones (1-99, e.g. 2, 7) that are not managed by the central unit although the plant has one: their setpoint and mode are written to the thermostat itself (`*#4*Z*#14*...`) instead of through the central unit (`*#4*#Z*#14*...`). Leave empty to let the integration find out from the bus. Same as `standalone: true` in myhome.yaml.",
           "tuner_pictures": "One MHz=URL per line (e.g. 96.2=/local/radio/one.png): the picture shown while a tuner is on that frequency. Your own images; none are bundled.",
           "command_worker_count": "Recommended for the {model}: {session_default}. It accepts at most {session_limit} command session(s), and each one plus the event session uses one of its few connections, which the Legrand/BTicino app and other clients need too. Raise it only if commands queue up."
         }
@@ -304,6 +306,7 @@
       "invalid_ip": "Invalid IP address",
       "invalid_worker_count": "Workers must be between 1 and 10",
       "worker_count_above_gateway_limit": "The {model} accepts at most {session_limit} command session(s) at a time; with more it stops answering.",
+      "invalid_standalone_zone": "Standalone thermostats must be zone numbers from 1 to 99, separated by commas (e.g. 2, 7).",
       "invalid_config_path": "Configuration file does not exist at this path",
       "invalid_password": "Invalid password",
       "password_error": "Invalid password",
@@ -330,8 +333,8 @@
   },
   "services": {
     "sync_time": {
-      "name": "Syncronize time",
-      "description": "Syncronize gateway's time to HA local time.",
+      "name": "Synchronize time",
+      "description": "Synchronize gateway's time to HA local time.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -363,7 +366,7 @@
         },
         "duration": {
           "name": "Duration",
-          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+          "description": "Duration in minutes (1–255) for automatic instant power updates; call myhome.stop_sending_instant_power to stop transmission early."
         }
       }
     },
@@ -414,6 +417,10 @@
         "gateway": {
           "name": "Gateway",
           "description": "The gateway's MAC address (optional; defaults to all active gateways)."
+        },
+        "force": {
+          "name": "Force probe",
+          "description": "Force sweep across all subsystems (including Alarm and Energy) regardless of gateway profile restrictions, including the general requests the gateway firmware normally drops."
         }
       }
     },
@@ -489,7 +496,7 @@
       "fields": {
         "station": {
           "name": "Station",
-          "description": "Preset memory slot number (1–5 on F500, up to 1–15 on F500N)."
+          "description": "Preset memory slot number (1–15). Preset slots 6–15 require WHO = 22 gateway support (1–5 on WHO = 16-only gateways)."
         }
       }
     },
@@ -632,6 +639,15 @@
     "auto_standalone_zone": {
       "message": "{name} is a standalone thermostat: the central unit has no program for it"
     },
+    "setpoint_not_taken": {
+      "message": "{name} did not take the setpoint {temperature} °C, neither through the central unit nor directly: it still reports {reported} °C"
+    },
+    "setpoint_refused": {
+      "message": "{name}: the gateway refused the setpoint write ({frame})"
+    },
+    "setpoint_not_taken_via_central": {
+      "message": "{name} did not take the setpoint {temperature} °C sent through the central unit ({frame}): it still reports {reported} °C. If it is a standalone thermostat, list its zone under \"Standalone thermostats\" in the gateway options (or set `standalone: true` in myhome.yaml)"
+    },
     "zone_heat_in_conditioning_season": {
       "message": "{name} follows the central unit, which is in the conditioning season: change the season on the central unit"
     },
@@ -660,7 +676,7 @@
       "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
     },
     "cover_reports_position": {
-      "message": "{name} reports its position (advanced: true in myhome.yaml); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, remove advanced: true from myhome.yaml."
+      "message": "{name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} is already being calibrated"
@@ -821,6 +837,9 @@
       },
       "energy_month": {
         "name": "Energy (current month)"
+      },
+      "actuator_output_level": {
+        "name": "Actuator {actuator} output level"
       }
     },
     "switch": {

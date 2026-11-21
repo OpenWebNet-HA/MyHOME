@@ -9,11 +9,8 @@ from homeassistant.helpers import entity_registry as er
 from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import (
-    _calling_zones,
-    _zone_address,
-    async_setup_entry,
-)
+from custom_components.myhome.climate import async_setup_entry
+from custom_components.myhome.climate_discovery import _calling_zones, _zone_address
 from custom_components.myhome.discovery import Address
 from tests.conftest import attach_runtime
 

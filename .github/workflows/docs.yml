@@ -6,6 +6,8 @@ on:
       - master
       - v2-phase1-architecture
     paths:
+      - 'README.md'
+      - 'ROADMAP.md'
       - 'docs/**'
       - 'docs-v0.9/**'
       - 'mkdocs*.yml'
@@ -18,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to (re)deploy, e.g. 2.0.0b14. Empty deploys the branch as dev."
+        description: "Release tag to (re)deploy, e.g. v2.0.0. Empty deploys the branch."
         required: false
         default: ""
 
@@ -47,7 +49,7 @@ jobs:
       # No pip cache: this job publishes, and a cache any branch can write
       # must not feed what lands on the docs site.
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
 
@@ -71,37 +73,103 @@ jobs:
           RELEASE_TAG: ${{ github.event_name == 'release' && github.ref_name || inputs.version }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          # 1. Deploy the v0.9.4 legacy documentation (production master)
-          echo "Deploying v0.9.4 legacy documentation..."
-          mike deploy --push --update-aliases -F mkdocs-v0.9.yml 0.9.4 legacy v0.9 latest -t "v0.9.4 (legacy)"
+          # 0. Explicitly fetch origin/gh-pages and all tags: `actions/checkout` with `ref:`
+          #    fetches only that single ref, leaving `origin/gh-pages` absent so `mike list`
+          #    would see `[]` and `mike deploy --push` would fail with non-fast-forward.
+          git fetch --force --tags origin +refs/heads/gh-pages:refs/remotes/origin/gh-pages || true
 
-          # 2. Deploy v2 documentation
-          # An alias may not share its name with a version (mike refuses it), so
-          # "dev" is only ever the branch preview version, never an alias.
+          # 1. Remove any pre-release (alpha/beta/rc) entries from GitHub Pages so
+          #    the version switcher only lists clean release lines (2.x, dev, legacy).
+          mapfile -t PRE_VERSIONS < <(
+            mike list --json | python -c 'import json, re, sys; [print(e["version"]) for e in json.load(sys.stdin) if re.match(r"^[0-9]+\.[0-9]+(\.[0-9]+)?[-.]?(a|b|rc|alpha|beta)[-.]?[0-9]*$", e.get("version", ""), re.IGNORECASE)]'
+          )
+          if [ "${#PRE_VERSIONS[@]}" -gt 0 ]; then
+            echo "Pruning pre-release documentation snapshots: ${PRE_VERSIONS[*]}"
+            mike delete --push "${PRE_VERSIONS[@]}"
+          fi
+
+          # 2. Strip any non-legacy aliases (such as 'latest', 'stable', 'beta') from 0.9.4
+          #    before redeploying, because `mike deploy --update-aliases` unions new aliases
+          #    onto existing ones instead of removing old aliases.
+          mapfile -t STALE_LEGACY_ALIASES < <(
+            mike list --json | python -c 'import json, sys; allowed = {"legacy", "v0.9"}; [print(a) for e in json.load(sys.stdin) if e.get("version") == "0.9.4" for a in e.get("aliases", []) if a not in allowed]'
+          )
+          if [ "${#STALE_LEGACY_ALIASES[@]}" -gt 0 ]; then
+            echo "Removing non-legacy aliases from 0.9.4: ${STALE_LEGACY_ALIASES[*]}"
+            mike delete --push "${STALE_LEGACY_ALIASES[@]}"
+          fi
+
+          echo "Deploying v0.9.4 legacy documentation archive..."
+          mike deploy --push --update-aliases -F mkdocs-v0.9.yml 0.9.4 legacy v0.9 -t "v0.9.4 (legacy)"
+
+          # Helper: ensure target minor version identifier is not occupied as an alias on another version.
+          ensure_clean_version_slot() {
+            local ver_id="$1"
+            if mike list --json | python -c 'import json, sys; data, t = json.load(sys.stdin), sys.argv[1]; sys.exit(0 if any(t in v.get("aliases", []) and v.get("version") != t for v in data) else 1)' "${ver_id}"; then
+              mike delete --push "${ver_id}"
+            fi
+          }
+
+          # Helper: retitle any superseded 2.x "(latest)" entry and deploy the active 2.x latest manual.
+          deploy_v2_latest() {
+            local minor_ver="$1"
+            ensure_clean_version_slot "${minor_ver}"
+            local old_ver
+            while IFS= read -r old_ver; do
+              if [ -n "${old_ver}" ]; then
+                mike retitle --push "${old_ver}" "v${old_ver}"
+              fi
+            done < <(
+              mike list --json | python -c 'import json, re, sys; target = sys.argv[1]; [print(v["version"]) for v in json.load(sys.stdin) if re.match(r"^2\.[0-9]+$", v.get("version", "")) and v["version"] != target and v.get("title", "").endswith("(latest)")]' "${minor_ver}"
+            )
+            mike deploy --push --update-aliases -F mkdocs.yml "${minor_ver}" latest stable beta -t "v${minor_ver} (latest)"
+            mike set-default --push latest
+          }
+
+          LATEST_STABLE_MINOR=$(git tag -l | python -c 'import re, sys; tags = [tuple(map(int, m.groups())) for line in sys.stdin if (m := re.match(r"^v?(2)\.([0-9]+)\.([0-9]+)$", line.strip()))]; print(f"{max(tags)[0]}.{max(tags)[1]}" if tags else "")')
+          HAS_V2_DOCS=$(mike list --json | python -c 'import json, re, sys; print("1" if any(re.match(r"^2\.[0-9]+$", v.get("version", "")) for v in json.load(sys.stdin)) else "0")')
+
+          # 3. Deploy v2 documentation following minor-series versioning best practices
           if [ -n "${RELEASE_TAG}" ]; then
             CLEAN_VER="${RELEASE_TAG#v}"
-            # Check if this is a final stable 2.0 release (without beta/alpha/rc tag)
             if echo "${CLEAN_VER}" | grep -Eq '^2\.[0-9]+\.[0-9]+$'; then
-              echo "Deploying official stable release: ${CLEAN_VER}"
-              mike deploy --push --update-aliases -F mkdocs.yml "${CLEAN_VER}" stable latest -t "v${CLEAN_VER} (stable)"
-              mike set-default --push stable
-            elif echo "${CLEAN_VER}" | grep -Eq '^2\.[0-9]+\.[0-9]+b[0-9]+$'; then
-              echo "Deploying versioned beta release: ${CLEAN_VER}"
-              # Up to b13 "2.0" was the v2 docs version itself. It becomes an alias
-              # of the newest beta, so the old version has to go first.
-              if mike list --json | python -c 'import json, sys; sys.exit(not any(v["version"] == "2.0" for v in json.load(sys.stdin)))'; then
-                mike delete --push 2.0
+              MINOR_VER="${CLEAN_VER%.*}"
+              IS_LATEST_MINOR=$(python -c 'import sys; cur, latest = sys.argv[1], sys.argv[2]; print("1" if (not latest or tuple(map(int, cur.split("."))) >= tuple(map(int, latest.split(".")))) else "0")' "${MINOR_VER}" "${LATEST_STABLE_MINOR}")
+              if [ "${IS_LATEST_MINOR}" = "1" ]; then
+                echo "Deploying official stable release ${CLEAN_VER} to latest minor series ${MINOR_VER}..."
+                deploy_v2_latest "${MINOR_VER}"
+              else
+                echo "Deploying patch release ${CLEAN_VER} to older minor series ${MINOR_VER} (keeping ${LATEST_STABLE_MINOR} as latest)..."
+                ensure_clean_version_slot "${MINOR_VER}"
+                mike deploy --push --update-aliases -F mkdocs.yml "${MINOR_VER}" -t "v${MINOR_VER}"
+                mike set-default --push latest
               fi
-              mike deploy --push --update-aliases -F mkdocs.yml "${CLEAN_VER}" beta 2.0 -t "v${CLEAN_VER} (beta)"
-              mike set-default --push latest
             else
-              echo "Deploying preview release: ${CLEAN_VER}"
-              mike deploy --push -F mkdocs.yml "${CLEAN_VER}" -t "v${CLEAN_VER} (preview)"
-              mike set-default --push latest
+              echo "Pre-release tag ${CLEAN_VER}: updating dev preview (skipping versioned beta snapshot)..."
+              mike deploy --push --update-aliases -F mkdocs.yml dev -t "dev (preview)"
+              if [ -z "${LATEST_STABLE_MINOR}" ] || [ "${HAS_V2_DOCS}" = "0" ]; then
+                echo "Updating 2.0 (latest) manual ahead of initial stable 2.0.0 tag..."
+                deploy_v2_latest "2.0"
+              else
+                mike set-default --push latest
+              fi
             fi
           else
-            echo "Deploying branch ${REF_NAME} as development preview (version: dev)"
+            echo "Deploying branch ${REF_NAME} to dev preview..."
             mike deploy --push --update-aliases -F mkdocs.yml dev -t "dev (preview)"
-            # Default root redirect points to latest (production v0.9.4 until 2.0.0 is released)
-            mike set-default --push latest
+            if [ -z "${LATEST_STABLE_MINOR}" ] || [ "${HAS_V2_DOCS}" = "0" ]; then
+              echo "Updating 2.0 (latest) manual ahead of initial stable 2.0.0 tag..."
+              deploy_v2_latest "2.0"
+            elif [ "${REF_NAME}" = "master" ]; then
+              MANIFEST_STABLE_MINOR=$(python -c 'import json, re, sys; latest = sys.argv[1]; v = json.load(open("custom_components/myhome/manifest.json", encoding="utf-8")).get("version", ""); m = re.match(r"^(2\.[0-9]+)\.[0-9]+$", v); minor = m.group(1) if m else ""; ok = bool(minor) and (not latest or tuple(map(int, minor.split("."))) >= tuple(map(int, latest.split(".")))); print(minor if ok else "")' "${LATEST_STABLE_MINOR}")
+              if [ -n "${MANIFEST_STABLE_MINOR}" ]; then
+                echo "Updating ${MANIFEST_STABLE_MINOR} (latest) manual from master..."
+                deploy_v2_latest "${MANIFEST_STABLE_MINOR}"
+              else
+                echo "master carries pre-release or older manifest version; keeping ${LATEST_STABLE_MINOR} as latest..."
+                mike set-default --push latest
+              fi
+            else
+              mike set-default --push latest
+            fi
           fi

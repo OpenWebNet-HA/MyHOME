@@ -1,0 +1,80 @@
+# WHO=14 Actuator Lock — point, private-riser & general lock/unlock frames.
+
+- id: actuator_lock.capture.lock.11
+  frame: "*14*0*11##"
+  direction: command
+  who: 14
+  what: 0
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Actuator Lock (WHO 14): Lock/disable actuator 11 (WHAT 0; captured on MH200N & MH201 plants, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNActuatorLockCommand
+    method: lock
+    args: [11]
+
+- id: actuator_lock.capture.unlock.11
+  frame: "*14*1*11##"
+  direction: command
+  who: 14
+  what: 1
+  where: "11"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Actuator Lock (WHO 14): Unlock/enable actuator 11 (WHAT 1; captured on community plant, MyHOME#466)"
+  roundtrip: true
+  builder:
+    class: OWNActuatorLockCommand
+    method: unlock
+    args: [11]
+
+- id: actuator_lock.capture.lock.07.bus01
+  frame: "*14*0*07#4#01##"
+  direction: command
+  who: 14
+  what: 0
+  where: "07"
+  interface: "01"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Actuator Lock (WHO 14): Lock actuator 07 on private riser #4#01 (F461 WHO 14 live capture)"
+  roundtrip: true
+  builder:
+    class: OWNActuatorLockCommand
+    method: lock
+    args: ["07", "01"]
+
+- id: actuator_lock.capture.event.locked.32
+  frame: "*14*0*32##"
+  direction: event
+  who: 14
+  what: 0
+  where: "32"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Actuator Lock (WHO 14): Actuator 32 reports locked state (WHAT 0; F454 plant sweep capture)"
+  roundtrip: true
+
+- id: actuator_lock.capture.event.unlocked.05
+  frame: "*14*1*05##"
+  direction: event
+  who: 14
+  what: 1
+  where: "05"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Actuator Lock (WHO 14): Actuator 05 reports unlocked state (WHAT 1; F461 WHO 14 live capture)"
+  roundtrip: true
+
+- id: actuator_lock.capture.unlock.general
+  frame: "*14*1*0##"
+  direction: event
+  who: 14
+  what: 1
+  where: "0"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Actuator Lock (WHO 14): General unlock frame WHERE=0 observed in F461 sweep capture; parsed by OWNActuatorLockEvent while OWNActuatorLockCommand restricts outbound builders to APL point-to-point addresses"
+  roundtrip: true

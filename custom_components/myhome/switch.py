@@ -8,7 +8,6 @@ import types
 from collections import defaultdict
 from typing import Any, cast
 
-import voluptuous as vol
 from homeassistant.components.switch import (  # type: ignore[attr-defined, unused-ignore]
     SwitchDeviceClass,
     SwitchEntity,
@@ -23,7 +22,6 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_platform
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -32,7 +30,6 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import RegistryEntry
 from OWNd.message import (
-    MESSAGE_TYPE_ACTION,
     OWNCommand,
     OWNHeatingCommand,
     OWNHeatingEvent,
@@ -60,7 +57,6 @@ from .const import (
     CONF_WHO,
     DOMAIN,
     LOGGER,
-    SERVICE_TURN_ON_TIMED,
     SIGNAL_BINARY_SENSOR_INVERTED,
     SIGNAL_NEW_BINARY_SENSOR,
     build_timed_turn_on_command,
@@ -71,7 +67,9 @@ from .discovery import (
     Address,
     DeviceContext,
     PlatformDiscovery,
+    binary_sensor_only_on_primary,
     default_known_keys,
+    devices_with_binary_sensor,
     parse_unique_id,
     prune_entity,
 )
@@ -79,11 +77,15 @@ from .expose import is_exposed_on_bus
 from .gateway import MyHOMEGatewayHandler
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
+from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
-from .typing_compat import as_any
+from .typing_compat import device_info_to_dict
 from .where_grammar import (
     parse_thermo_actuator_where,
+    thermo_dim19_status,
+    thermo_dim20_actuator_target,
     thermo_dim20_is_active,
+    thermo_dim20_level,
     thermo_event_actuator,
     thermo_event_interface,
     thermo_event_zone,
@@ -432,6 +434,26 @@ async def async_setup_entry(
         if inv is not None:
             invert_entities.append(inv)
 
+    # Shared bus (#453): the contacts with a binary sensor on this follower and on its
+    # primary, read once for all the myhome.yaml contacts below.
+    follower_contacts: tuple[str, set[str]] | None = None
+    if registry is not None and runtime.is_follower and runtime.primary_gateway_mac:
+        follower_contacts = (
+            runtime.primary_gateway_mac,
+            devices_with_binary_sensor(hass, registry, config_entry.entry_id, runtime.primary_gateway_mac),
+        )
+
+    def _contact_only_on_primary(switch: MyHOMEInvertSwitch) -> bool:
+        """Shared bus: this follower's contact lives on its primary gateway (#453)."""
+        if follower_contacts is None:
+            return False
+        primary_mac, with_sensor = follower_contacts
+        identifiers = device_info_to_dict(switch.device_info).get("identifiers") or set()
+        return any(
+            domain == DOMAIN and binary_sensor_only_on_primary(with_sensor, identifier, gateway_mac, primary_mac)
+            for domain, identifier in identifiers
+        )
+
     seen_bs_configs: set[int] = set()
     for dev_id, bs_cfg in configured_bs.items():
         if not isinstance(bs_cfg, dict) or id(bs_cfg) in seen_bs_configs:
@@ -456,8 +478,13 @@ async def async_setup_entry(
             model=str(bs_cfg.get(CONF_DEVICE_MODEL, default_model)),
             cfg=bs_cfg,
         )
-        if inv is not None:
-            invert_entities.append(inv)
+        if inv is None:
+            continue
+        if _contact_only_on_primary(inv):
+            # The binary sensor of this myhome.yaml entry is not created here either
+            known_invert_switches.discard(inv._option_key)
+            continue
+        invert_entities.append(inv)
 
     if registry is not None:
         active_invert_uids = {s.unique_id for s in invert_entities if s.unique_id}
@@ -507,18 +534,7 @@ async def async_setup_entry(
         else:
             async_add_entities(startup_entities)
 
-    platform = entity_platform.current_platform.get()
-    if platform is not None:
-        platform.async_register_entity_service(
-            SERVICE_TURN_ON_TIMED,
-            as_any({
-                vol.Optional("duration"): vol.Coerce(float),
-                vol.Optional("hours", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
-                vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
-                vol.Optional("seconds", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=59)),
-            }),
-            "async_turn_on_timed",
-        )
+    async_register_turn_on_timed_service(hass)
     return True
 
 
@@ -595,12 +611,14 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         """
         await self._gateway_handler.send_status_request(OWNLightingCommand.status(self._full_where))
 
-    async def async_turn_on_timed(
+    async def async_turn_on_timed(  # pylint: disable=unused-argument
         self,
         duration: float | None = None,
         hours: int = 0,
         minutes: int = 0,
         seconds: float = 0,
+        brightness: int | None = None,
+        brightness_pct: int | None = None,
     ) -> None:
         """Turn on switch with a hardware-offloaded bus timer."""
         cmd = build_timed_turn_on_command(
@@ -614,18 +632,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         self._attr_is_on = True
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the device on."""
-        if "timer" in kwargs or "duration" in kwargs:
-            raw_dur = kwargs.get("timer", kwargs.get("duration"))
-            dur = float(raw_dur) if raw_dur is not None else None
-            await self.async_turn_on_timed(
-                duration=dur,
-                hours=int(kwargs.get("hours", 0)),
-                minutes=int(kwargs.get("minutes", 0)),
-                seconds=float(kwargs.get("seconds", 0)),
-            )
-            return
         await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
@@ -664,6 +672,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
 
 class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
     """Switch entity for a probe-less WHO=4 thermo actuator / towel-warmer relay."""
+
+    _unrecorded_attributes = frozenset({"output_level", "actuator_levels"})
 
     def __init__(
         self,
@@ -709,6 +719,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         self._turn_on_command = turn_on_command
         self._turn_off_command = turn_off_command
         self._actuator_states: dict[str, bool] = {}
+        self._actuator_levels: dict[str, int] = {}
         self._zone_active = False
         self._active_source = "actuators"
         self._pending_direct_write: tuple[bool, float, bool] | None = None
@@ -733,15 +744,22 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return WHO=4 thermo actuator addressing attributes."""
+        """Return WHO=4 thermo actuator addressing and proportional output attributes."""
         attrs: dict[str, Any] = {"zone": int(self._zone)}
         if self._actuator is not None:
             attrs["actuator"] = int(self._actuator)
+            if self._actuator in self._actuator_levels:
+                attrs["output_level"] = self._actuator_levels[self._actuator]
         elif self._actuator_states:
             attrs["actuators"] = {
                 act: "on" if active else "off"
                 for act, active in sorted(self._actuator_states.items())
             }
+            if self._actuator_levels:
+                attrs["actuator_levels"] = {
+                    act: level
+                    for act, level in sorted(self._actuator_levels.items())
+                }
         if self._interface is not None:
             attrs["Int"] = self._interface
         return attrs
@@ -787,12 +805,14 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         cmd = cast(OWNCommand, OWNCommand.parse(f"*#4*{self._full_where}*20##"))
         await self._gateway_handler.send_status_request(cmd)
 
-    async def async_turn_on_timed(
+    async def async_turn_on_timed(  # pylint: disable=unused-argument
         self,
         duration: float | None = None,
         hours: int = 0,
         minutes: int = 0,
         seconds: float = 0,
+        brightness: int | None = None,
+        brightness_pct: int | None = None,
     ) -> None:
         """Reject WHO=1 hardware timers on WHO=4 thermo actuators."""
         raise HomeAssistantError(
@@ -801,10 +821,8 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             translation_placeholders={"name": self._device_name},
         )
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the thermo actuator on via custom trigger or direct Dimension 20 write."""
-        if "timer" in kwargs or "duration" in kwargs:
-            await self.async_turn_on_timed()
         if self._turn_on_command:
             cmd = cast(OWNCommand, OWNCommand.parse(self._turn_on_command))
             await self._gateway_handler.send(cmd)
@@ -865,6 +883,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
 
         dim20_active = thermo_dim20_is_active(message)
         if dim20_active is not None:
+            dim20_level = thermo_dim20_level(message)
             act_id = thermo_event_actuator(message)
             if act_id == "0":
                 if self._actuator is not None:
@@ -879,7 +898,17 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             else:
                 if self._actuator is not None and act_id != self._actuator:
                     return
+                if not (act_id.isascii() and act_id.isdigit() and 1 <= int(act_id) <= 9):
+                    return
                 self._actuator_states[act_id] = dim20_active
+                if thermo_dim20_actuator_target(message) is not None:
+                    if dim20_level is not None:
+                        self._actuator_levels[act_id] = dim20_level
+                    elif act_id in self._actuator_levels:
+                        if dim20_active:
+                            self._actuator_levels.pop(act_id, None)
+                        else:
+                            self._actuator_levels[act_id] = 0
                 new_state = (
                     dim20_active
                     if self._actuator is not None
@@ -889,21 +918,15 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             self._bus_state_complete = True
         elif (
             isinstance(message, OWNHeatingEvent)
-            and getattr(message, "message_type", None) == MESSAGE_TYPE_ACTION
-            and getattr(message, "dimension", None) == 19
             and self._actuator is None
+            and (dim19 := thermo_dim19_status(message)) is not None
         ):
-            is_active = bool(
-                message.is_active()
-                or message.is_heating()
-                or message.is_cooling()
-                or getattr(message, "cooling_fan_on", None)
-                or getattr(message, "fan_on", None)
-            )
+            is_active = dim19[2]
             self._zone_active = is_active
             self._active_source = "zone"
             if not is_active:
                 self._actuator_states = dict.fromkeys(self._actuator_states, False)
+                self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
             new_state = self._zone_active
             self._bus_state_complete = True
         else:
@@ -985,22 +1008,22 @@ class MyHOMEInvertSwitch(MyHOMEEntity, SwitchEntity):
         self._attr_is_on = inverted
         self._publish_state()
 
-    async def async_turn_on(self, **kwargs: Any) -> None:
+    async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Enable state inversion for the companion binary sensor."""
-        if "timer" in kwargs or "duration" in kwargs:
-            await self.async_turn_on_timed()
         self._persist_and_apply(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Disable state inversion for the companion binary sensor."""
         self._persist_and_apply(False)
 
-    async def async_turn_on_timed(
+    async def async_turn_on_timed(  # pylint: disable=unused-argument
         self,
         duration: float | None = None,
         hours: int = 0,
         minutes: int = 0,
         seconds: float = 0,
+        brightness: int | None = None,
+        brightness_pct: int | None = None,
     ) -> None:
         """Reject WHO=1 hardware timers on binary sensor invert configuration switches."""
         raise HomeAssistantError(

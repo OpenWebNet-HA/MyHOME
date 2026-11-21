@@ -1,0 +1,4 @@
+2026-11-17T13:46:50.248Z EVT *#4*4#1*20*0## [OWNHeatingEvent] Zone 4's actuator 1 is off.
+2026-11-17T13:46:53.378Z EVT *#4*4#2*20*0## [OWNHeatingEvent] Zone 4's actuator 2 is off.
+2026-11-17T13:46:53.417Z EVT *#4*4#2*20*8## [OWNHeatingEvent] Zone 4's fan is on at speed 3.
+2026-11-17T13:46:56.498Z EVT *#4*4*19*8*0## [OWNHeatingEvent] Zone 4's cooling fan is on at speed 3; heating valve is off.

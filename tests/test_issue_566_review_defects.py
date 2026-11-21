@@ -218,6 +218,170 @@ async def test_removing_an_entry_removes_its_repair_issues(hass: HomeAssistant) 
     assert not [issue_id for issue_id in remaining if "gone" in issue_id]
 
 
+async def test_lovelace_resource_kept_on_multi_entry_and_deleted_on_final_entry(
+    hass: HomeAssistant,
+) -> None:
+    """Bus Monitor Lovelace resource is removed only when the final MyHOME entry is deleted."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome import (
+        _async_unregister_lovelace_resource,
+        async_remove_entry,
+    )
+    from custom_components.myhome.const import DOMAIN
+
+    resources = SimpleNamespace(
+        loaded=False,
+        async_load=AsyncMock(),
+        async_items=lambda: [
+            "not-a-dict",
+            {"url": "/other/card.js", "id": "keep_other"},
+            {"url": "/myhome_static/myhome-bus-card.js?v=1234abcd"},
+            {"url": "/myhome_static/myhome-bus-card.js?v=deadbeef", "id": "bus_res_1"},
+        ],
+        async_delete_item=AsyncMock(),
+    )
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    entry1 = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:00:01"}, entry_id="gw1")
+    entry2 = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:00:02"}, entry_id="gw2")
+    other_domain = MockConfigEntry(domain="hue", data={}, entry_id="hue1")
+    entry1.add_to_hass(hass)
+    entry2.add_to_hass(hass)
+    other_domain.add_to_hass(hass)
+
+    # Removing entry1 while entry2 remains keeps the Lovelace resource untouched
+    await async_remove_entry(hass, entry1)
+    resources.async_load.assert_not_awaited()
+    resources.async_delete_item.assert_not_awaited()
+
+    await hass.config_entries.async_remove(entry1.entry_id)
+
+    # Removing final MyHOME entry loads unloaded resources and deletes bus_res_1
+    await async_remove_entry(hass, entry2)
+    resources.async_load.assert_awaited_once()
+    assert resources.loaded is True
+    resources.async_delete_item.assert_awaited_once_with("bus_res_1")
+
+    # Already-loaded resources skip async_load, and exceptions are caught cleanly
+    resources.async_load.reset_mock()
+    resources.async_delete_item = AsyncMock(side_effect=RuntimeError("storage error"))
+    await _async_unregister_lovelace_resource(hass)
+    resources.async_load.assert_not_awaited()
+    resources.async_delete_item.assert_awaited_once_with("bus_res_1")
+
+    # Missing async_delete_item / missing resources / missing lovelace are safe no-ops
+    hass.data["lovelace"] = SimpleNamespace(resources=SimpleNamespace(loaded=True))
+    await _async_unregister_lovelace_resource(hass)
+    hass.data["lovelace"] = SimpleNamespace(resources=None)
+    await _async_unregister_lovelace_resource(hass)
+    hass.data.pop("lovelace", None)
+    await _async_unregister_lovelace_resource(hass)
+
+
+async def test_lovelace_resource_reregistered_after_final_removal_and_race_guarded(
+    hass: HomeAssistant,
+) -> None:
+    """Re-adding a MyHOME entry in the same HA session re-registers the Lovelace resource, and late retries respect removal."""
+    from types import SimpleNamespace
+
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome import _async_register_frontend, async_remove_entry
+    from custom_components.myhome.const import DOMAIN
+
+    items: list[dict[str, str]] = []
+
+    async def _create_item(data: dict[str, str]) -> None:
+        items.append({"id": f"res_{len(items) + 1}", "url": data["url"]})
+
+    async def _delete_item(res_id: str) -> None:
+        items[:] = [it for it in items if it.get("id") != res_id]
+
+    resources = SimpleNamespace(
+        loaded=True,
+        async_load=AsyncMock(),
+        async_items=lambda: list(items),
+        async_create_item=AsyncMock(side_effect=_create_item),
+        async_update_item=AsyncMock(),
+        async_delete_item=AsyncMock(side_effect=_delete_item),
+    )
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+
+    with (
+        patch(
+            "custom_components.myhome.gateway.OWNSession.test_connection",
+            return_value={"Success": True, "Message": None},
+        ),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+        patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.sending_loop"),
+    ):
+        entry1 = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "192.168.0.35", "port": 20000, "password": "pass", "mac": "00:03:50:00:00:11", "name": "F454"},
+            unique_id="00:03:50:00:00:11",
+        )
+        entry1.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry1.entry_id)
+        await hass.async_block_till_done()
+        assert len(items) == 1
+
+        # Remove final entry -> resource deleted
+        assert await hass.config_entries.async_remove(entry1.entry_id)
+        await hass.async_block_till_done()
+        assert items == []
+
+        # Re-add a new entry in the SAME Home Assistant session (async_setup is NOT called again by HA Core)
+        entry2 = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "192.168.0.36", "port": 20000, "password": "pass", "mac": "00:03:50:00:00:12", "name": "F454"},
+            unique_id="00:03:50:00:00:12",
+        )
+        entry2.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry2.entry_id)
+        await hass.async_block_till_done()
+        assert len(items) == 1
+
+        assert await hass.config_entries.async_remove(entry2.entry_id)
+        await hass.async_block_till_done()
+        assert items == []
+
+    # Guard 1: _delayed_retry scheduled while hass.is_running, then final entry removed before sleep finishes
+    hass.data.pop("lovelace", None)
+    entry3 = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:00:13"}, entry_id="gw3")
+    entry3.add_to_hass(hass)
+    captured_coros = []
+    with (
+        patch.object(hass, "is_running", True),
+        patch.object(hass, "async_create_task", side_effect=lambda coro: captured_coros.append(coro)),
+    ):
+        await _async_register_frontend(hass)
+    assert len(captured_coros) == 1
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+    await async_remove_entry(hass, entry3)
+    await hass.config_entries.async_remove(entry3.entry_id)
+    with patch("custom_components.myhome.asyncio.sleep", AsyncMock()):
+        await captured_coros[0]
+    assert items == []
+
+    # Guard 2: _on_ha_started registered while not running, then final entry removed before EVENT_HOMEASSISTANT_STARTED
+    hass.data.pop("lovelace", None)
+    entry4 = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:00:14"}, entry_id="gw4")
+    entry4.add_to_hass(hass)
+    with patch.object(hass, "is_running", False):
+        await _async_register_frontend(hass)
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
+    await async_remove_entry(hass, entry4)
+    await hass.config_entries.async_remove(entry4.entry_id)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert items == []
+
+
 # --- resync echo -----------------------------------------------------------
 
 
@@ -274,7 +438,11 @@ async def test_ssdp_rediscovery_only_updates_the_host(hass: HomeAssistant) -> No
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={"host": "192.0.2.10", "port": 20001, "mac": "00:03:50:00:12:34", "name": "My own name"},
+        # Found over SSDP (it stores the location): a gateway added by hand is not followed (#947, #948).
+        data={
+            "host": "192.0.2.10", "port": 20001, "mac": "00:03:50:00:12:34", "name": "My own name",
+            "ssdp_location": "http://192.0.2.10:49153/description.xml",
+        },
         unique_id="00:03:50:00:12:34",
     )
     entry.add_to_hass(hass)

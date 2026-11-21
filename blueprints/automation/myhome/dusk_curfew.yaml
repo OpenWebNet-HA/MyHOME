@@ -12,6 +12,7 @@ blueprint:
     the bus, and does nothing while Home Assistant or the gateway is down. Nothing in
     this blueprint isolates a circuit: switch off the breaker before working on wiring.
   domain: automation
+  source_url: https://github.com/OpenWebNet-HA/MyHOME/blob/master/blueprints/automation/myhome/dusk_curfew.yaml
   input:
     target_light:
       name: Hardware-Coupled Light

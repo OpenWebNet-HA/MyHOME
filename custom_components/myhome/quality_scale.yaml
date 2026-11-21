@@ -16,7 +16,7 @@ rules:
     comment: local_push; only temperature sensors poll (5 min) and probes (WHERE >= 100) are receive-only unless the push stream goes silent.
   brands:
     status: done
-    comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, logo.png, logo@2x.png) for HA 2026.3+ and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
+    comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, dark_icon.png, dark_icon@2x.png, logo.png, logo@2x.png, dark_logo.png, dark_logo@2x.png) for HA 2026.8+, Home Assistant Marketplace (2026.11+), and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
   common-modules:
     status: done
     comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements); the per-gateway frame router in router.py that delivers bus frames to the entities owning their addresses.
@@ -31,7 +31,7 @@ rules:
     comment: OWNd is published on PyPI from the public OpenWebNet-HA/OWNd repository with CI; Apache-2.0 licensed.
   docs-actions:
     status: done
-    comment: docs/configuration/services.md documents all eleven services and their fields (services.yaml, strings.json and icons.json list the same eleven).
+    comment: docs/configuration/services.md documents all 17 services and their fields (services.yaml, strings.json and icons.json list the same 17).
   docs-triggers:
     status: done
     comment: docs/configuration/cen_cenplus.md documents CEN / CEN+ device triggers.
@@ -43,10 +43,10 @@ rules:
     comment: README.md opens with what the integration does and which hardware it targets.
   docs-installation-instructions:
     status: done
-    comment: README.md "Installation & Updating" (terminal, manual, HACS).
+    comment: README.md "Installation & Updating" (terminal, manual, Home Assistant Marketplace / HACS).
   docs-removal-instructions:
     status: done
-    comment: README.md "Removing the Integration" covers deleting the entry, removing the code (HACS / manual) and the optional leftovers (myhome.yaml, dashboard resource, automations).
+    comment: README.md "Removing the Integration" covers deleting the entry, removing the code (Marketplace / HACS / manual) and the optional leftovers (myhome.yaml, dashboard resource, automations).
   entity-event-setup:
     status: done
     comment: Entities subscribe to dispatcher signals in async_added_to_hass and unsubscribe via async_on_remove.
@@ -93,7 +93,7 @@ rules:
     comment: Grace period and connection supervisor log once on loss and once on recovery, without spamming.
   parallel-updates:
     status: done
-    comment: PARALLEL_UPDATES = 0 declared across all 10 platform files for push-driven event streaming.
+    comment: PARALLEL_UPDATES = 0 declared across all 11 platform files for push-driven event streaming.
   reauthentication-flow:
     status: done
     comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.
@@ -110,7 +110,7 @@ rules:
     comment: Native diagnostics.py sanitizes credentials and exports gateway and bus telemetry.
   discovery-update-info:
     status: done
-    comment: Updates gateway host and port dynamically if IP changes on rediscovery.
+    comment: A gateway found over SSDP that is announced at a new address gets the address updated and the entry reloaded; the port is not announced and is kept. A gateway added by hand and an ignored gateway are not updated.
   discovery:
     status: done
     comment: Automatically discovers F454, MyHomeServer1, and MH200 gateways via SSDP/UPnP.

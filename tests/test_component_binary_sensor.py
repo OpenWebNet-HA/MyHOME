@@ -20,6 +20,7 @@ from custom_components.myhome.binary_sensor import (
     async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.typing_compat import device_info_to_dict
 from tests.conftest import attach_runtime, bind_entity
 
 
@@ -207,11 +208,11 @@ async def test_motion_sensor(hass):
     sensor.handle_event(event)
     assert sensor.is_on
 
-    # Test timeout event
+    # Test timeout event (60s + 3s grace = 63s)
     event.message_type = MESSAGE_TYPE_MOTION_TIMEOUT
     event.motion_timeout = timedelta(seconds=60)
     sensor.handle_event(event)
-    assert sensor._timeout == timedelta(seconds=75)
+    assert sensor._timeout == timedelta(seconds=63)
 
     # Test PIR sensitivity event
     event.message_type = MESSAGE_TYPE_PIR_SENSITIVITY
@@ -731,11 +732,11 @@ async def test_motion_sensor_zero_padded_where_and_legrand_048834_frames(hass):
         await hass.async_block_till_done()
         assert sensor.extra_state_attributes["Sensitivity"] == "high"
 
-        # 3. Timeout frame: *#1*0015*7*0*0*10##
+        # 3. Timeout frame: *#1*0015*7*0*0*10## (10s + 3s grace = 13s)
         timeout_msg = OWNEvent.parse("*#1*0015*7*0*0*10##")
         async_dispatcher_send(hass, f"myhome_message_{mac}", timeout_msg)
         await hass.async_block_till_done()
-        assert sensor.extra_state_attributes["Timeout"] == 25.0
+        assert sensor.extra_state_attributes["Timeout"] == 13.0
 
 
 async def test_motion_sensor_0015_and_switch_15_coexistence(hass):
@@ -799,9 +800,11 @@ async def test_motion_sensor_0015_and_switch_15_coexistence(hass):
         sw = switch_entities[0]
 
         # Crucial check: Device identifiers MUST be distinct
-        assert motion.device_info["identifiers"] == {(DOMAIN, f"{mac}-1-0015")}
-        assert sw.device_info["identifiers"] == {(DOMAIN, f"{mac}-1-15")}
-        assert motion.device_info["identifiers"] != sw.device_info["identifiers"]
+        motion_info = device_info_to_dict(motion.device_info)
+        sw_info = device_info_to_dict(sw.device_info)
+        assert motion_info["identifiers"] == {(DOMAIN, f"{mac}-1-0015")}
+        assert sw_info["identifiers"] == {(DOMAIN, f"{mac}-1-15")}
+        assert motion_info["identifiers"] != sw_info["identifiers"]
 
         motion.hass = hass
         motion.async_write_ha_state = MagicMock()
@@ -1013,7 +1016,7 @@ async def test_moving_device_class_dry_contact_restoration_and_deduplication(has
         assert bs._where == "331"
         assert bs._attr_device_class == BinarySensorDeviceClass.MOVING
         assert bs.unique_id == f"{mac}-25-331-moving"
-        assert (DOMAIN, f"{mac}-25-331") in bs.device_info["identifiers"]
+        assert (DOMAIN, f"{mac}-25-331") in device_info_to_dict(bs.device_info)["identifiers"]
 
 
 @pytest.mark.asyncio
@@ -1085,7 +1088,7 @@ async def test_who9_auxiliary_sensor_with_motion_device_class_restoration(hass):
         assert bs._where == "1"
         assert bs._attr_device_class == BinarySensorDeviceClass.MOTION
         assert bs.unique_id == f"{mac}-9-1-motion"
-        assert (DOMAIN, f"{mac}-9-1") in bs.device_info["identifiers"]
+        assert (DOMAIN, f"{mac}-9-1") in device_info_to_dict(bs.device_info)["identifiers"]
 
 
 def test_registry_entry_without_class_or_who_is_not_a_binary_sensor():

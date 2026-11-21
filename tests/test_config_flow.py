@@ -2467,6 +2467,86 @@ async def test_ssdp_discovery_null_serial(hass: HomeAssistant) -> None:
         assert result["reason"] == "no_serial"
 
 
+async def test_options_flow_standalone_zones(hass: HomeAssistant) -> None:
+    """The "Standalone thermostats" option is validated, stored as zone numbers and shown again."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_STANDALONE_ZONES
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.168.1.135", "port": 20000, "password": "pass", "name": "F461"},
+        options={"command_worker_count": 1, "generate_events": False},
+        unique_id="00:03:50:00:12:98",
+    )
+    entry.add_to_hass(hass)
+    base = {"command_worker_count": 1, "generate_events": False, "address": "192.168.1.135", "password": "pass"}
+
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        result = await _open_gateway_options(hass, entry.entry_id)
+    assert result["type"] == FlowResultType.FORM
+
+    for bad in ("2, #0", "102", "2#1", "zone 2"):
+        refused = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={**base, CONF_STANDALONE_ZONES: bad}
+        )
+        assert refused["type"] == FlowResultType.FORM
+        assert refused["errors"][CONF_STANDALONE_ZONES] == "invalid_standalone_zone"
+
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        saved = await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input={**base, CONF_STANDALONE_ZONES: "7, 02"}
+        )
+        await hass.async_block_till_done()
+    assert saved["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_STANDALONE_ZONES] == ["2", "7"]
+
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        reopened = await _open_gateway_options(hass, entry.entry_id)
+    key = [k for k in reopened["data_schema"].schema if str(k) == CONF_STANDALONE_ZONES][0]
+    assert key.description["suggested_value"] == "2, 7"
+
+    # The frontend leaves a cleared field out of user_input: the list is emptied.
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        cleared = await hass.config_entries.options.async_configure(reopened["flow_id"], user_input=dict(base))
+        await hass.async_block_till_done()
+    assert cleared["type"] == FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_STANDALONE_ZONES] == []
+
+
+async def test_options_flow_reloads_when_only_the_address_changes_after_a_save(hass: HomeAssistant) -> None:
+    """Options unchanged (the standalone list included), connection data changed: the explicit reload."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.168.1.135", "port": 20000, "password": "pass", "name": "F461"},
+        options={"command_worker_count": 1, "generate_events": False},
+        unique_id="00:03:50:00:12:99",
+    )
+    entry.add_to_hass(hass)
+    base = {"command_worker_count": 1, "generate_events": False, "address": "192.168.1.135", "password": "pass"}
+
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        first = await _open_gateway_options(hass, entry.entry_id)
+    with patch.object(hass.config_entries, "async_reload", return_value=True):
+        await hass.config_entries.options.async_configure(first["flow_id"], user_input=dict(base))
+        await hass.async_block_till_done()
+    stored = dict(entry.options)
+
+    with patch("custom_components.myhome.config_flow.find_gateways"):
+        second = await _open_gateway_options(hass, entry.entry_id)
+    with patch.object(hass.config_entries, "async_schedule_reload") as reload:
+        moved = await hass.config_entries.options.async_configure(
+            second["flow_id"], user_input={**base, "address": "192.168.1.136"}
+        )
+        await hass.async_block_till_done()
+    assert moved["type"] == FlowResultType.CREATE_ENTRY
+    assert dict(entry.options) == stored
+    assert entry.data["host"] == "192.168.1.136"
+    reload.assert_called_once_with(entry.entry_id)
+
+
 async def test_options_flow_ignored_addresses(hass: HomeAssistant) -> None:
     """Test options flow successfully validates, parses, and saves ignored_addresses."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry

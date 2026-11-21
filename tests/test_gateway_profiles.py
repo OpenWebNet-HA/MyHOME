@@ -176,8 +176,8 @@ def _sound_row_cells(profile_name: str) -> str:
     from OWNd.profiles import get_gateway_profile
 
     if get_gateway_profile(profile_name).supports_who(16):
-        return "WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`)"
-    return "WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`)"
+        return "WHO 1, 2, 4, 16, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`, `*#16*0*5##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`)"
+    return "WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`)"
 
 
 def test_generate_gateway_discovery_table_and_verify_oracle():
@@ -186,9 +186,9 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     assert ugp.DISCOVERY_START_MARKER in block
     assert ugp.DISCOVERY_END_MARKER in block
     # Rows whose profile has not changed between OWNd releases: the literal cells.
-    assert "| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
+    assert "| **F454** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`; `*#4*0#0*20##` sent in place of `*#4*0##`) |" in block
     assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
-    assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 4, 18 |" in block
+    assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*0#0*20##` sent in place of `*#4*0##`) |" in block
     assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
     assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
     assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
@@ -272,10 +272,10 @@ def test_discovery_row_drops_who16_when_the_profile_does(monkeypatch: pytest.Mon
     assert rows["**MH202**"]["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
     block = ugp.build_discovery_block()
     assert (
-        "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | "
+        "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) | "
         "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only"
     ) in block
-    assert "| **MyHomeServer1** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | " in block
+    assert "| **MyHomeServer1** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) | " in block
 
 
 def test_discovery_table_without_ownd_uses_the_pinned_rows(monkeypatch: pytest.MonkeyPatch):
@@ -495,7 +495,7 @@ def test_discovery_table_without_ownd_follows_the_pinned_rows_at_the_pin_bump(mo
     assert calibrated["**MH202**"]["sweep_omits"] == ["*#4*0##", "*#16*0*5##"]
     monkeypatch.setattr(ugp, "GATEWAY_DISCOVERY_METADATA", rows)
     block = ugp.build_discovery_block()
-    assert "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`) | Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only" in block
+    assert "| **F461** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`) | Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only" in block
     assert "| **MH202** | WHO 1, 2, 4, 5, 16, 18 | WHO 1, 2, 5, 18 (firmware drops `*#4*0##`, `*#16*0*5##`) |" in block
 
 
@@ -630,3 +630,100 @@ def test_oracle_check_enforces_who16_pin_now_that_manifest_pins_ownd_2_0_0b13(
     assert len(violations) == 2
     # ... and tolerated only by a manifest that still pins OWNd==2.0.0b11 (the closed window).
     assert ugp.verify_profiles_against_oracle(manifest_path=pre_bump_manifest) == []
+
+
+def test_generate_gateway_options_table_introspects_and_validates_parity(tmp_path: Path):
+    """Options table introspects all 48 Options Flow keys and raises ValueError on any drift."""
+    import json
+
+    flow_keys = ugp.extract_options_flow_keys()
+    strings_keys = ugp.extract_strings_options_keys()
+    assert len(flow_keys) == 48
+    assert flow_keys == strings_keys
+
+    table = ugp.generate_gateway_options_table()
+    for expected in (
+        "`command_worker_count`",
+        "`command_session_default`",
+        "`transition_mode`",
+        "`generate_events`",
+        "`broadcast_resync`",
+        "`address`",
+        "`password`",
+        "`name`",
+        "`ignored_addresses`",
+        "`bus_topology`",
+        "`gateway_role`",
+        "`primary_gateway`",
+        "`delegated_whos`",
+        "`auto_join_streaming`",
+        "`tuner_pictures`",
+        "`source_1_name`..`source_4_name`",
+        "`source_1_tuner`..`source_4_tuner`",
+        "`default_source_env_1`..`default_source_env_9`",
+        "`decoder_1_entity`..`decoder_4_entity`",
+        "`decoder_1_source`..`decoder_4_source`",
+        "`decoder_1_pre_gain`..`decoder_4_pre_gain`",
+        "`decoder_1_companion`..`decoder_4_companion`",
+        "min(1.0, 0.75 + pre_gain / 100)",
+    ):
+        assert expected in table
+
+    # 1. Extra key in strings.json raises ValueError
+    strings_data = json.loads(ugp.STRINGS_JSON.read_text(encoding="utf-8"))
+    strings_extra = copy.deepcopy(strings_data)
+    strings_extra["options"]["step"]["user"]["data"]["orphan_extra_key"] = "Orphan"
+    extra_strings_file = tmp_path / "strings_extra.json"
+    extra_strings_file.write_text(json.dumps(strings_extra), encoding="utf-8")
+    with pytest.raises(ValueError, match="orphan_extra_key"):
+        ugp.generate_gateway_options_table(strings_path=extra_strings_file)
+
+    # 2. Missing key in strings.json raises ValueError
+    strings_missing = copy.deepcopy(strings_data)
+    del strings_missing["options"]["step"]["user"]["data"]["tuner_pictures"]
+    missing_strings_file = tmp_path / "strings_missing.json"
+    missing_strings_file.write_text(json.dumps(strings_missing), encoding="utf-8")
+    with pytest.raises(ValueError, match="tuner_pictures"):
+        ugp.generate_gateway_options_table(strings_path=missing_strings_file)
+
+    # 3. Missing key in GATEWAY_OPTIONS_SPECS raises ValueError
+    incomplete_specs = [s for s in ugp.GATEWAY_OPTIONS_SPECS if s["keys"] != ("tuner_pictures",)]
+    with pytest.raises(ValueError, match="tuner_pictures"):
+        ugp.generate_gateway_options_table(specs=incomplete_specs)
+
+    # 4. Duplicate key in GATEWAY_OPTIONS_SPECS raises ValueError
+    dup_specs = [*ugp.GATEWAY_OPTIONS_SPECS, ugp.GATEWAY_OPTIONS_SPECS[0]]
+    with pytest.raises(ValueError, match="Duplicate keys"):
+        ugp.generate_gateway_options_table(specs=dup_specs)
+
+    # 5. Orphaned key in options.step.user.data_description raises ValueError
+    strings_orphan_desc = copy.deepcopy(strings_data)
+    strings_orphan_desc["options"]["step"]["user"]["data_description"]["yaml_path"] = "Stale description"
+    orphan_desc_file = tmp_path / "strings_orphan_desc.json"
+    orphan_desc_file.write_text(json.dumps(strings_orphan_desc), encoding="utf-8")
+    with pytest.raises(ValueError, match="yaml_path"):
+        ugp.generate_gateway_options_table(strings_path=orphan_desc_file)
+
+
+def test_all_translation_catalogs_free_of_audit_regressions():
+    """strings.json and all translations/*.json are free of 'Syncronize', '0 to stop', and stale F500 station claims."""
+    catalogs = [
+        ugp.STRINGS_JSON,
+        *sorted((ugp.REPO_ROOT / "custom_components" / "myhome" / "translations").glob("*.json")),
+    ]
+    assert len(catalogs) >= 5
+    forbidden_substrings = (
+        "Syncronize",
+        "syncronize",
+        "0 to stop",
+        "0 pour arrêter",
+        "1–5 sur F500",
+        "1–5 su F500",
+        "1–5 op F500",
+    )
+    for catalog in catalogs:
+        text = catalog.read_text(encoding="utf-8")
+        for bad in forbidden_substrings:
+            assert bad not in text, f"Found forbidden stale wording {bad!r} in {catalog.name}"
+
+

@@ -234,8 +234,8 @@
           "source_4_name": "Sorgente 4 — nome di ciò che è collegato all'ingresso S4 della matrice (lasciare vuoto se non è collegato nulla)",
           "source_4_tuner": "La sorgente 4 è un sintonizzatore (F500): aggiunge un'entità radio con stazioni, frequenza e RDS",
           "address": "Indirizzo IP",
+          "name": "Modello del gateway",
           "password": "Password",
-          "config_file_path": "Percorso del file di configurazione",
           "command_worker_count": "Numero di sessioni di comando simultanee",
           "generate_events": "Genera eventi in Home Assistant per ogni messaggio ricevuto",
           "broadcast_resync": "Interroga gli indirizzi di gruppo/area/generale dopo una finestra di silenzio",
@@ -315,8 +315,8 @@
   },
   "services": {
     "sync_time": {
-      "name": "Syncronize time",
-      "description": "Syncronize gateway's time to HA local time.",
+      "name": "Sincronizza l'ora",
+      "description": "Sincronizza l'ora del gateway con l'ora locale di Home Assistant.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -347,8 +347,8 @@
           "description": "Name(s) of entities that will start sending instant power information."
         },
         "duration": {
-          "name": "Duration",
-          "description": "For how long the instant power information will be sent in minutes (0 to stop)."
+          "name": "Durata",
+          "description": "Durata in minuti (1–255) dell'invio automatico della potenza istantanea; chiama myhome.stop_sending_instant_power per interrompere anticipatamente la trasmissione."
         }
       }
     },
@@ -399,6 +399,10 @@
         "gateway": {
           "name": "Gateway",
           "description": "Indirizzo MAC del gateway (opzionale; predefinito per tutti i gateway attivi)."
+        },
+        "force": {
+          "name": "Forza scansione",
+          "description": "Forza la scansione su tutti i sottosistemi (inclusi Antifurto ed Energia) indipendentemente dalle restrizioni del profilo del gateway, comprese le richieste generali normalmente scartate dal firmware."
         }
       }
     },
@@ -426,7 +430,7 @@
       "fields": {
         "station": {
           "name": "Stazione",
-          "description": "Numero della memoria preimpostata (1–5 su F500, fino a 1–15 su F500N)."
+          "description": "Numero della memoria preimpostata (1–15). Le posizioni 6–15 richiedono il supporto WHO = 22 del gateway (1–5 sui gateway solo WHO = 16)."
         }
       }
     },
@@ -596,7 +600,7 @@
       "message": "{name}: la corsa di chiusura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare questa tapparella - usa il cronometro (Stop & Save) oppure imposta travel_time manualmente"
     },
     "cover_reports_position": {
-      "message": "{name} segnala la propria posizione (advanced: true in myhome.yaml); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, rimuovere advanced: true da myhome.yaml."
+      "message": "{name} segnala la propria posizione (Dimension 10 / advanced: true); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, impostare advanced: false o rimuovere advanced: true da myhome.yaml."
     },
     "calibration_in_progress": {
       "message": "{name} è già in fase di calibrazione"
@@ -724,6 +728,9 @@
       },
       "energy_month": {
         "name": "Energia (mese corrente)"
+      },
+      "actuator_output_level": {
+        "name": "Livello uscita attuatore {actuator}"
       }
     },
     "switch": {

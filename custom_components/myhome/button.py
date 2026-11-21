@@ -26,20 +26,34 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
+    CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_DEVICE_MODEL,
     CONF_MANUFACTURER,
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
+    CONF_STRATEGY,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
     LOGGER,
     SERVICE_CALIBRATE_COVER,
 )
+from .cover import (
+    _can_auto_promote_advanced,
+    _is_stored_advanced_cover,
+    _stored_calibration,
+)
+from .cover_scope import CoverScope
 from .data import MyHOMEConfigEntry, get_runtime_data
-from .discovery import Address, parse_unique_id, prune_orphaned_companions
+from .discovery import (
+    Address,
+    actuator_only_on_primary,
+    config_for,
+    parse_unique_id,
+    prune_orphaned_companions,
+)
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 from .sound_source import source_address, tuner_source, uses_who22_commands
@@ -51,6 +65,47 @@ PLATFORM = Platform.BUTTON
 def _valid_device_address(address: str) -> bool:
     """Accept numeric WHERE and optional bus routing, without rewriting either."""
     return re.fullmatch(r"[0-9]+(?:#4#[0-9]+)?", address) is not None
+
+
+def _is_non_calibratable_cover(
+    hass: HomeAssistant | None,
+    config_entry: MyHOMEConfigEntry | None,
+    gateway_mac: str,
+    device_id: str,
+    entity_id: str | None = None,
+) -> bool:
+    """Return True when a WHO=2 cover is known not to support timed travel-time calibration."""
+    address = Address.from_device_id(device_id)
+    if CoverScope.of(address.where, address.interface) is not None:
+        return True
+    if hass is not None:
+        if entity_id is None:
+            entity_id = er.async_get(hass).async_get_entity_id(
+                "cover", DOMAIN, f"{gateway_mac}-2-{device_id}"
+            )
+        if entity_id and (state := hass.states.get(entity_id)) is not None:
+            if (
+                "min_position_delta" in state.attributes
+                and "travel_time" not in state.attributes
+            ):
+                return True
+    runtime = get_runtime_data(config_entry) if config_entry is not None else None
+    cover_platforms = runtime.platforms.get("cover", {}) if runtime is not None else {}
+    cfg = config_for(
+        cover_platforms, address, device_id, f"2-{address.key}", f"2-{address.clean_key}"
+    )
+    if cfg.get(CONF_STRATEGY) == "native":
+        return True
+    if (
+        bool(cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)))
+        and cfg.get(CONF_STRATEGY) not in ("timed", "simple", "venetian")
+    ):
+        return True
+    if _is_stored_advanced_cover(config_entry, device_id):
+        return _can_auto_promote_advanced(
+            cfg, _stored_calibration(config_entry, device_id), None
+        )
+    return False
 
 
 async def async_setup_entry(
@@ -86,6 +141,14 @@ async def async_setup_entry(
             return []
         if is_exposed_on_bus(hass, config_entry, 2, dev_str):
             return []
+        if _is_non_calibratable_cover(hass, config_entry, gateway.mac, dev_str):
+            reg = er.async_get(hass)
+            for prefix_mac in {gateway.mac, mac}:
+                if old_entity_id := reg.async_get_entity_id(
+                    "button", DOMAIN, f"{prefix_mac}-2-{dev_str}-calibrate"
+                ):
+                    reg.async_remove(old_entity_id)
+            return []
         known_calibration_covers.add(dev_str)
         address = Address.from_device_id(dev_str)
         return [
@@ -97,6 +160,7 @@ async def async_setup_entry(
                 interface=address.interface,
                 name=name or f"Cover {address.where}",
                 gateway=gateway,
+                config_entry=config_entry,
             )
         ]
 
@@ -169,7 +233,27 @@ async def async_setup_entry(
         )
         return [DisableCommandButtonEntity(**common), EnableCommandButtonEntity(**common)]
 
+    def _pruned_in_favour_of_primary(dev_id: str | int, cfg: dict[str, Any]) -> bool:
+        """A follower's ``myhome.yaml`` actuator that lives on the primary gateway only.
+
+        ``PlatformDiscovery`` does not create such an actuator again (#453), and
+        ``prune_orphaned_companions`` has just removed its buttons: creating them here
+        would bring them back at every start, on a device that has nothing else
+        (live F455 standby next to an F461, 2026-11-14: 20 lock / unlock buttons on
+        10 otherwise empty devices).
+        """
+        primary_mac = runtime.primary_gateway_mac
+        if not runtime.is_follower or not primary_mac:
+            return False
+        who = str(cfg.get(CONF_WHO, "1"))
+        address = Address.from_config(str(dev_id), cfg)
+        return actuator_only_on_primary(
+            er.async_get(hass), f"{gateway.mac}-{who}-{address.clean_key}", mac, primary_mac
+        )
+
     for _button in list(_configured_buttons.keys()):
+        if _pruned_in_favour_of_primary(_button, _configured_buttons[_button]):
+            continue
         _buttons.extend(_create_buttons_for_device(_button, _configured_buttons[_button]))
 
     # Discovered actuators are restored by their platforms from the registry.
@@ -423,6 +507,7 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
         interface: str | None,
         name: str,
         gateway: MyHOMEGatewayHandler,
+        config_entry: MyHOMEConfigEntry | None = None,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -441,6 +526,36 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
         self._attr_unique_id = f"{gateway.mac}-2-{device_id}-calibrate"
         self._interface = interface
         self._poll_on_add = False
+        self._config_entry: MyHOMEConfigEntry | None = (
+            config_entry if config_entry is not None else getattr(gateway, "config_entry", None)
+        )
+
+    @property
+    def available(self) -> bool:
+        """Unavailable if disconnected or if the cover reports native Dimension 10 position."""
+        return bool(super().available) and not _is_non_calibratable_cover(
+            self.hass or self._hass,
+            self._config_entry,
+            self._gateway_handler.mac,
+            self._device_id,
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Register listeners when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                f"myhome_cover_promoted_{self._gateway_handler.mac}",
+                self._handle_cover_promoted,
+            )
+        )
+
+    @callback
+    def _handle_cover_promoted(self, device_id: str) -> None:
+        """Refresh availability when this cover auto-promotes to Dimension 10."""
+        if device_id == self._device_id:
+            self.async_write_ha_state()
 
     async def async_update(self) -> None:
         """Buttons have no state to request."""
@@ -493,10 +608,22 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
                 self._handle_registry_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                f"myhome_cover_promoted_{self._gateway_handler.mac}",
+                self._handle_cover_promoted,
+            )
+        )
 
     @callback
     def _handle_availability_update(self) -> None:
         """Write state when gateway availability changes."""
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_cover_promoted(self, _device_id: str) -> None:
+        """Refresh availability when any cover on this gateway auto-promotes."""
         self.async_write_ha_state()
 
     @callback
@@ -513,11 +640,26 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
 
     def _cover_entity_ids(self) -> list[str]:
         registry = er.async_get(self.hass)
-        return sorted(
-            e.entity_id
-            for e in er.async_entries_for_config_entry(registry, self._config_entry.entry_id)
-            if e.domain == "cover" and not e.disabled
-        )
+        entry_mac = str(self._config_entry.data.get(CONF_MAC, self._gateway_handler.mac))
+        result: list[str] = []
+        for e in er.async_entries_for_config_entry(registry, self._config_entry.entry_id):
+            if e.domain != "cover" or e.disabled:
+                continue
+            who, device_id = parse_unique_id(
+                e.unique_id or "", self._gateway_handler.mac, entry_mac
+            )
+            if who is not None and who != "2":
+                continue
+            if device_id and _is_non_calibratable_cover(
+                self.hass,
+                self._config_entry,
+                self._gateway_handler.mac,
+                device_id,
+                entity_id=e.entity_id,
+            ):
+                continue
+            result.append(e.entity_id)
+        return sorted(result)
 
     async def async_press(self) -> None:
         if not self.available:

@@ -1,0 +1,135 @@
+# WHO=1004 Thermoregulation Diagnostic — central/probe bitmasks & OWNHeatingDiagnosticCommand vectors.
+
+- id: thermo_diag.capture.dim11.device66
+  frame: "*#1004*66*11*111111111111111111111111##"
+  direction: dimension_response
+  who: 1004
+  what: null
+  where: "66"
+  dimension: 11
+  dimension_values: ["111111111111111111111111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Probe/device 66 Dimension 11 diagnostic bitmask reply (@andrea-mag H/L4684 FW 6.0.11 capture, MyHOME#839)"
+  roundtrip: true
+
+- id: thermo_diag.capture.dim22.zone66
+  frame: "*#1004*#66*22*1111111111111111##"
+  direction: dimension_response
+  who: 1004
+  what: null
+  where: "#66"
+  dimension: 22
+  dimension_values: ["1111111111111111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Zone #66 Dimension 22 diagnostic bitmask reply (@andrea-mag H/L4684 FW 6.0.11 capture, MyHOME#839)"
+  roundtrip: true
+
+- id: thermo_diag.capture.dim11.central
+  frame: "*#1004*#0*11*111111111111111111111111##"
+  direction: dimension_response
+  who: 1004
+  what: null
+  where: "#0"
+  dimension: 11
+  dimension_values: ["111111111111111111111111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Central unit #0 Dimension 11 diagnostic bitmask reply (@andrea-mag H/L4684 FW 6.0.11 capture, MyHOME#839)"
+  roundtrip: true
+
+- id: thermo_diag.capture.req.status.zone2
+  frame: "*#1004*2##"
+  direction: status_request
+  who: 1004
+  what: null
+  where: "2"
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Diagnostic status inquiry on zone 2 (probe only: sent to an F461 (FW 2.0.11) and answered NACK, never received in a stored trace; MyHOME trace f461_live_2026-10-15)"
+  roundtrip: true
+
+- id: thermo_diag.req.central.dim7
+  frame: "*#1004*#0*7##"
+  direction: dimension_request
+  who: 1004
+  what: null
+  where: "#0"
+  dimension: 7
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Request central unit (#0) diagnostic status bitmask (Dimension 7)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingDiagnosticCommand
+    method: request_central_diagnostic
+    args: ["#0"]
+    kwargs:
+      dimension: 7
+
+- id: thermo_diag.req.device66.dim7
+  frame: "*#1004*66*7##"
+  direction: dimension_request
+  who: 1004
+  what: null
+  where: "66"
+  dimension: 7
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Request probe/device 66 diagnostic status bitmask (Dimension 7)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingDiagnosticCommand
+    method: request_device_diagnostic
+    args: [66]
+    kwargs:
+      dimension: 7
+
+- id: thermo_diag.req.zones_with_failures
+  frame: "*#1004*#0*20##"
+  direction: dimension_request
+  who: 1004
+  what: null
+  where: "#0"
+  dimension: 20
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Request bitmask of zones with active failures (Dimension 20)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingDiagnosticCommand
+    method: request_zones_with_failures
+    args: ["#0"]
+
+- id: thermo_diag.req.zone66.diagnostic
+  frame: "*#1004*#66*21##"
+  direction: dimension_request
+  who: 1004
+  what: null
+  where: "#66"
+  dimension: 21
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Request per-zone diagnostic bitmask for zone #66 (Dimension 21)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingDiagnosticCommand
+    method: request_zone_diagnostic
+    args: ["#66"]
+
+- id: thermo_diag.req.fault_counts
+  frame: "*#1004*#0*23##"
+  direction: dimension_request
+  who: 1004
+  what: null
+  where: "#0"
+  dimension: 23
+  source: encyclopedia
+  mcp_valid: true
+  mcp_notes: "Thermoregulation Diagnostic (WHO 1004): Request central unit fault counters (Dimension 23)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingDiagnosticCommand
+    method: request_fault_counts
+    args: ["#0"]
