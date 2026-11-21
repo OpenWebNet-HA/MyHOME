@@ -27,6 +27,7 @@ from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway, OWNS
 from OWNd.message import OWNCommand
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
+from .actuator_lock import ActuatorLockManager
 from .bus_monitor import BusMonitor
 from .const import (
     BUS_ROUTING,
@@ -583,6 +584,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._event_dispatcher = GatewayEventDispatcher(self)
         self._resync_manager = LightingResyncManager(self)
         self._echo_watchdog = LightEchoWatchdog(self)
+        self._actuator_locks = ActuatorLockManager(self)
         self._event_runner = EventSessionRunner(self)
         self._command_pool = CommandWorkerPool(
             self,
@@ -1578,6 +1580,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             self._unavailable_timer()
         self._resync_manager.cancel_all()
         self._echo_watchdog.cancel_all()
+        self._actuator_locks.clear()
         if self._zone_request_task is not None:
             self._zone_request_task.cancel()
             self._zone_request_task = None

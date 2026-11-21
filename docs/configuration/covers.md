@@ -101,6 +101,18 @@ cover:
 
 ---
 
+## 🔒 Actuator Lock (`WHO = 14`)
+
+Every `WHO = 2` cover device provides `Lock` (`*14*0*<WHERE>##`) and `Unlock` (`*14*1*<WHERE>##`) configuration buttons. Because gateways NACK `*#14*<WHERE>##` status queries in `~50 ms`, lock state cannot be polled at startup and is tracked passively from event-session `*14*0*<WHERE>##` / `*14*1*<WHERE>##` broadcasts (`actuator_locked` attribute stays absent until observed, then reports `true` or `false`, isolated per `#4#II` interface).
+
+When `actuator_locked` becomes `true`:
+
+* **Immediate Freeze & Calibration Abort**: Active travel-time calibration (`myhome.calibrate_cover`) is interrupted cleanly without saving partial runs, active slat tilting stops, and any in-progress timed run freezes at its current interpolated position.
+* **Non-Optimistic Commands & Calibration Refusal**: `myhome.calibrate_cover` raises `HomeAssistantError`. `open_cover`, `close_cover`, `set_cover_position`, `set_cover_tilt_position`, `open_cover_tilt`, `close_cover_tilt`, and `stop_cover` still transmit the command onto the bus (honouring `stop_before_move` / pre-move stops on `MH201` / `MH202` and arming timed auto-stop recovery for intermediate timed positions and Venetian tilt pulses without mutating `is_opening`, `is_closing`, `is_closed`, `current_cover_position`, or `current_cover_tilt_position` while locked), so an offline-unlocked actuator recovers cleanly without over-traveling to `0 %` / `100 %`. Scope runs (`GEN` / `A` / `GR`) skip arming member travel timers on locked members.
+* **Stop & Translation Filtering + Self-Healing**: On physical actuators (`F411/2`), locking emits `*2*0*<WHERE>##` ~54 ms after `*14*0*<WHERE>##`, and UP/DOWN commands while locked emit only `*2*1000#0*<WHERE>##` + `*2*1000#1/2*<WHERE>##` command translations. Neither stops nor translations clear `actuator_locked` or start motion; only `*14*1*<WHERE>##` or a genuine non-translation active motion frame (`*2*1*`, `*2*2*`, `WHAT 11`/`12`, or moving `Dimension 10`) clears `actuator_locked` back to `false`.
+
+---
+
 ## 📐 Calibrating Travel Time (Zero YAML)
 
 You never need to edit YAML files to calibrate travel times in v2.
@@ -243,7 +255,7 @@ Its state comes from the shutters it moves, not from the bus. At the end of a ru
 | Area `1`…`9`, `00`, `100` | the covers of that area on the same bus: area `1` is `11`…`19` and `0110`…`0115` |
 | Group `#1`…`#255` | the covers listed under `members:`; group membership is programmed in the actuators and cannot be read from the bus |
 
-Because standard timed actuators emit no per-member direction status when a `GEN`, `A` or `GR` broadcast starts (and actuators configured at `M=4` or behind single-frame gateways emit no per-member stop at the end either), a scope open or close settles every matched timed member on that bus/interface on its own `travel_time + 2 s` timer — including actuators silently locked via WHO 14 or covers listed under `members:` in `myhome.yaml` that are not physically programmed into that group. Keep `members:` aligned with your physical actuator group configuration.
+Because standard timed actuators emit no per-member direction status when a `GEN`, `A` or `GR` broadcast starts (and actuators configured at `M=4` or behind single-frame gateways emit no per-member stop at the end either), a scope open or close settles every unlocked matched timed member on that bus/interface on its own `travel_time + 2 s` timer — including actuators locked before Home Assistant observed a `WHO = 14` broadcast (`*#14*<WHERE>##` is NACKed) or covers listed under `members:` in `myhome.yaml` that are not physically programmed into that group. Members already known to be locked via observed `WHO = 14` frames (`actuator_locked: true`) do not start phantom travel timers on scope commands. Keep `members:` aligned with your physical actuator group configuration.
 
 ```yaml
 cover:
@@ -386,6 +398,7 @@ Because monostable relays only send a momentary pulse (`open` / `stop` / `close`
 - With a `state_sensor` it knows the real position: `open_cover` on an open or opening door and `close_cover` on a closed or closing door send nothing, because a pulse would only undo the request. Without a sensor the position is assumed and every pulse goes out as asked.
 - `stop_cover` is never withheld.
 - If the OFF that ends a software pulse cannot be delivered it is retried, and the relay is released before the next pulse.
+- `WHO = 14` actuator lock (`actuator_locked`): while locked (`*14*0*<WHERE>##`), the `WHO = 1` pulse is still transmitted onto the bus so an offline-unlocked relay can actuate, without advancing optimistic `is_opening` / `is_closing` / `is_closed` when `state_sensor` is absent; an `is_on` confirmation of that recovery pulse inside the `1.0 s` echo window (or any external non-translation `is_on` frame outside it, ignoring `WHAT 30` / `31` dim steps) clears `actuator_locked` back to `false` and advances the cover state.
 
 Who may operate the door, from where and with which confirmation is a policy of your installation. Build it with automations or blueprints, or switch on the optional supervised workflow below with an `access:` block.
 

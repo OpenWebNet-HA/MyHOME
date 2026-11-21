@@ -241,7 +241,20 @@ The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged po
 - **Only a status that says on or off counts.** A request or a write that the gateway relays on its event session (an `MH202` relays a level write about 30 ms before the dimmer's status), a frame with no on / off meaning (colour, toggle, motion, anomaly) and a dim step (`*1*30*<where>##` / `*1*31*<where>##`, which the light entity ignores) neither end the wait nor replace the status remembered for the light.
 - **The read-back carries the whole `WHERE`**: `09#4#01` behind an interface, `<id>#9` on a Zigbee gateway.
 - **Only for commands this gateway entry sent.** When another client switches several lights at once (another gateway, a scenario module), the `F455` leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.
-- **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, and `WHO = 2` covers, whose position model is anchored on the write time.
+- **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, addresses currently known to be locked via `WHO = 14`, and `WHO = 2` covers, whose position model is anchored on the write time.
+- **Post-`#964` dimension and rejected-write read-backs.** When a point-to-point command lacks an immediate status and `#964` reads back `*#1*<where>##`, `MyHOMELight` resolves DALI / ballast plain `*1*1*<where>##` answers by requesting `Dimension 1` brightness (`*#1*<where>*1##`), triggers `Dimension 14` (`get_color_temperature`) or `Dimension 12` (`get_hsv_color`) read-backs for pending colour writes, and restores `_last_brightness_pct` plus pre-write colour state if a rejected write to an OFF dimmer reads back `*1*0*<where>##` or `0 %` (`Dimension 1`).
+
+---
+
+## 🔒 Actuator lock tracking (`WHO = 14`) & non-optimistic writes
+
+Every `WHO = 1` / `WHO = 2` light, switch, cover, and impulse cover tracks `WHO = 14` lock state via `ActuatorLockManager` (`actuator_lock.py`):
+
+- **Observed passively, never polled.** Gateways running `bt_luci` NACK `*#14*<WHERE>##` in `~50 ms` (`tests/fixtures/traces/f461_who14_live_2026-10-18/`). `actuator_locked` is therefore absent from entity attributes until an event-session (`*99*1##`) `OWNActuatorLockEvent` (`*14*0*<WHERE>##` lock / `*14*1*<WHERE>##` unlock) is observed for that point, its area (`00` / `1..9` / `100` vs point `10`), or general (`0`), scoped strictly per `#4#II` interface and routed to the primary gateway during active warm standby failover (ignoring `#G` groups, translations, and exposed virtual addresses).
+- **Non-optimistic writes while locked.** While `actuator_locked` is `true`, Home Assistant still sends the bus command so an actuator unlocked offline can react and recover (honouring `stop_before_move` / pre-move stops and arming timed/tilt auto-stop recovery for intermediate cover positions and Venetian tilt pulses, and skipping `#964` `LightEchoWatchdog` polls), while suppressing optimistic `on` / brightness / colour / position / tilt mutations, software fades, `_last_brightness_pct` overwrites, `myhome.calibrate_cover`, and phantom scope/idle timers.
+- **Unlock refresh & self-healing.** On `*14*1*<WHERE>##`, lights commanded while locked are refreshed (`status`, `get_brightness`, plus `Dimension 14` / `12` reads when supported). If an actuator unlocks offline and acts on the bus, `actuator_locked` clears to `false` automatically — on lights/switches only when state, level, `Dimension 14` colour temperature, or `Dimension 12` HSV/RGB/value actually changes (ignoring unchanged poll replies such as `*#1*55*1*120*5##` and relative dim steps `WHAT 30` / `31`), on `WHO = 2` covers only on non-translation active motion (`*2*1*` / `*2*2*` / `WHAT 11` / `12` / moving `Dimension 10`, ignoring `*2*0*` stops and `*2*1000#...*` translations), and on `WHO = 1` impulse covers on a confirmed recovery `is_on` frame inside the `1.0 s` echo window or an external non-translation `is_on` frame outside it (ignoring `WHAT 30` / `31`).
+
+*(#964, #976)*
 
 ---
 

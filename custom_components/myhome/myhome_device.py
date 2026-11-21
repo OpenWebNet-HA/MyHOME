@@ -15,6 +15,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .actuator_lock import actuator_locks_of, apply_actuator_lock_state
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
@@ -76,6 +77,8 @@ class MyHOMEEntity(RestoreEntity):
         self._model = model
         self._gateway_handler = gateway
         self._availability_listener_registered = False
+        self._actuator_locked: bool | None = None
+        self._actuator_lock_registered = False
         self._device_name = name
         if translation_key:
             self._attr_translation_key = translation_key
@@ -226,6 +229,40 @@ class MyHOMEEntity(RestoreEntity):
         raise NotImplementedError  # pragma: no cover
 
     @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Apply a WHO=14 actuator lock state change."""
+        apply_actuator_lock_state(self, bool(locked))
+        self._publish_state()
+
+    @callback
+    def _clear_actuator_lock_on_actuation(self) -> None:
+        """Clear cached lock state after observed physical actuation on the bus."""
+        if self._actuator_locked is not True:
+            return
+        apply_actuator_lock_state(self, False)
+        mgr = actuator_locks_of(self._gateway_handler)
+        if mgr is not None:
+            mgr.clear_lock_from_actuation(self._where, getattr(self, "_interface", None))
+
+    @callback
+    def _register_actuator_lock(self) -> None:
+        """Register WHO=1/2 actuator entities with the gateway's lock manager once."""
+        if self._actuator_lock_registered or str(self._who) not in ("1", "2"):
+            return
+        mgr = actuator_locks_of(self._gateway_handler)
+        if mgr is None:
+            return
+        unsub = mgr.register(self)
+        self._actuator_lock_registered = True
+
+        @callback
+        def _cleanup() -> None:
+            self._actuator_lock_registered = False
+            unsub()
+
+        self.async_on_remove(_cleanup)
+
+    @callback
     def _handle_availability_update(self) -> None:
         """Write state when the gateway availability changes."""
         self.async_write_ha_state()
@@ -233,6 +270,7 @@ class MyHOMEEntity(RestoreEntity):
     @callback
     def _register_availability_listener(self) -> None:
         """Register the gateway availability listener once."""
+        self._register_actuator_lock()
         if self._availability_listener_registered:
             return
         target_hass = self.hass or self._hass

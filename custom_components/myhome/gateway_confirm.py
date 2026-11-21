@@ -43,6 +43,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import OWNLightingCommand, OWNLightingEvent, OWNMessage
 
+from .actuator_lock import actuator_locks_of
 from .const import LOGGER
 from .where_grammar import expose_message_where
 
@@ -161,6 +162,8 @@ class LightEchoWatchdog:
         previous = self._watches.pop(where, None)
         if previous is not None:
             previous.cancel()
+        if self._is_known_locked(where):
+            return
         seen = self._recent_status.get(where)
         if seen is not None and seen[0] >= written_at and _matches(expected_on, seen[1]):
             return  # the status overtook the ACK
@@ -214,7 +217,7 @@ class LightEchoWatchdog:
     def _confirm(self, where: str) -> None:
         """The status of ``where`` did not arrive: request it once."""
         watch = self._watches.pop(where, None)
-        if watch is None or self._closing():
+        if watch is None or self._closing() or self._is_known_locked(where):
             return
         LOGGER.debug(
             "%s No status of light %s %.1f s after `%s`; requesting it.",
@@ -227,6 +230,13 @@ class LightEchoWatchdog:
             self.handler.send_status_request(OWNLightingCommand.status(where)),
             name=f"myhome_light_{where}_echo_confirm",
         )
+
+    def _is_known_locked(self, where: str) -> bool:
+        """Return True when WHO = 14 currently marks ``where`` as locked."""
+        owner_fn = getattr(self.handler, "actuator_lock_owner", None)
+        owner = owner_fn() if callable(owner_fn) else self.handler
+        locks = actuator_locks_of(owner)
+        return locks is not None and locks.is_locked(where) is True
 
     def _closing(self) -> bool:
         """Whether the gateway's listener or its sender is being closed: nothing is armed or sent."""

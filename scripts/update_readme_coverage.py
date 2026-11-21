@@ -23,6 +23,7 @@ END_MARKER = "<!-- END_COVERAGE_TABLE -->"
 COMPONENT_NOTES = {
     "custom_components/myhome/__init__.py": "Setup/unload lifecycle, static Lovelace card registration & cleanup, and migrations",
     "custom_components/myhome/access_policy.py": "Human-in-the-loop approval, pre-warning, and watchdog policy for impulse gates/doors",
+    "custom_components/myhome/actuator_lock.py": "WHO=14 actuator lock state tracking and routing across lighting and cover endpoints",
     "custom_components/myhome/alarm_control_panel.py": "Read-only WHO=5 burglar alarm central unit status (3485/3486) and broadcast sync",
     "custom_components/myhome/binary_sensor.py": "WHO=1 PIR motion, WHO=9 AUX channels, and WHO=25 dry contacts with state inversion",
     "custom_components/myhome/bus_monitor.py": "In-band 500-frame circular ring buffer tap (0 extra gateway sockets)",

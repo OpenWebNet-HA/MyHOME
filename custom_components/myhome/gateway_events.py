@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import (
+    OWNActuatorLockEvent,
     OWNAlarmEvent,
     OWNAutomationEvent,
     OWNAuxEvent,
@@ -30,6 +31,7 @@ from OWNd.message import (
     OWNSceneEvent,
 )
 
+from .actuator_lock import actuator_locks_of
 from .const import (
     BUS_ROUTING,
     CONF_LONG_PRESS,
@@ -373,6 +375,12 @@ class GatewayEventDispatcher:
             echo_watchdog = echo_watchdog_of(self.handler)
             if echo_watchdog is not None:
                 echo_watchdog.status_seen(message)
+            if self._is_active_for_who(1) or self._is_active_for_who(2):
+                owner_fn = getattr(self.handler, "actuator_lock_owner", None)
+                lock_owner = owner_fn() if callable(owner_fn) else self.handler
+                actuator_locks = actuator_locks_of(lock_owner)
+                if actuator_locks is not None:
+                    actuator_locks.observe(message)
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
@@ -871,6 +879,12 @@ class GatewayEventDispatcher:
                     self.handler.log_id,
                     message.human_readable_log,
                 )
+        elif isinstance(message, OWNActuatorLockEvent):
+            self._logger.debug(
+                "%s %s",
+                self.handler.log_id,
+                message.human_readable_log,
+            )
         else:
             self._logger.debug(
                 "%s Unsupported message type: `%s`",
