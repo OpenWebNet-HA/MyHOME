@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 from .const import CONF_IGNORED_ADDRESSES, CONF_WHERE, CONF_WHO
+from .where_grammar import canonical_contact_where
 
 _PAIR_PATTERN = re.compile(
     r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?(#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?)$",
@@ -150,6 +151,9 @@ class IgnoredAddresses:
             who = int(who_str)
             self._entries.add((who, where))
             self._normalized.add((who, self._norm_where(where)))
+            if who == 25:
+                # A dry contact typed as an F455 spells it (301) is the 31 of the other gateways
+                self._normalized.add((who, self._norm_where(canonical_contact_where(where))))
 
     @staticmethod
     def _norm_where(where: str) -> str:
@@ -193,6 +197,8 @@ class IgnoredAddresses:
         for c in list(candidates):
             if c.startswith("#"):
                 candidates.add(c.removeprefix("#"))
+        if who_int == 25:
+            candidates.update([canonical_contact_where(c) for c in candidates])
 
         for c in candidates:
             if (who_int, c) in self._entries:

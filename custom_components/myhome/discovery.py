@@ -488,6 +488,10 @@ class PlatformDiscovery:
     route_translations:
         Route command-translation frames (``is_translation``) to known entities
         and scope handlers without discovering new devices from them.
+    peer_spellings:
+        Optional: other unique ids the same device may have on the primary
+        gateway, given this follower's unique id rewritten onto the primary
+        (a dry contact an F455 registered as ``301`` is the primary's ``31``).
     """
 
     def __init__(
@@ -515,6 +519,7 @@ class PlatformDiscovery:
         route_keys: Callable[[Any, Address | None], Iterable[str]] | None = None,
         one_per_address: bool = True,
         route_translations: bool = False,
+        peer_spellings: Callable[[str], Iterable[str]] | None = None,
     ) -> None:
         self.hass = hass
         self.config_entry = config_entry
@@ -538,6 +543,7 @@ class PlatformDiscovery:
         self.route_keys = route_keys
         self.one_per_address = one_per_address
         self.route_translations = route_translations
+        self.peer_spellings = peer_spellings
         self.runtime: MyHOMERuntimeData = config_entry.runtime_data
         # Signals are keyed on the entry's MAC (what the gateway handler publishes under).
         self.mac: str = str(config_entry.data.get(CONF_MAC) or self.runtime.mac)
@@ -702,7 +708,8 @@ class PlatformDiscovery:
             return False
         # Unique ids start with the gateway's normalised MAC; the entry's stored MAC may differ in case
         peer = peer_unique_id(unique_id, str(self.runtime.mac), primary_mac)
-        return peer is not None and isinstance(registry.async_get_entity_id(self.platform, DOMAIN, peer), str)
+        peers = [peer, *(self.peer_spellings(peer) if self.peer_spellings else ())] if peer else []
+        return any(isinstance(registry.async_get_entity_id(self.platform, DOMAIN, p), str) for p in peers)
 
     def _discovers(self) -> bool:
         """Whether this gateway creates new entities of this platform's WHO from bus traffic.
