@@ -606,9 +606,7 @@ def parse_apl_where(where: str | None) -> tuple[int, int, str | None] | None:
         return None
     if len(base) == 2:
         return (int(base[0]), int(base[1]), iface)
-    if len(base) == 4:
-        return (int(base[:2]), int(base[2:]), iface)
-    return None
+    return (int(base[:2]), int(base[2:]), iface)
 
 
 def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:

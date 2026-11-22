@@ -300,7 +300,7 @@ def test_apl_where_encode_parse_and_diagnose():
     for bad_pl in (0, 16, False, "8"):
         with pytest.raises(ValueError):
             encode_apl_where(1, bad_pl)  # type: ignore[arg-type]
-    for bad_if in (-1, 16, "16", "abc", True):
+    for bad_if in (-1, 16, "16", "abc", True, 1.5):
         with pytest.raises(ValueError):
             encode_apl_where(8, 8, bad_if)  # type: ignore[arg-type]
 
@@ -349,7 +349,7 @@ def test_apl_where_encode_parse_and_diagnose():
         assert diagnose_apl_where(scope) == ("invalid_where_group_or_scope", {})
     for bad_if_str in ("88#4#1", "88#4#16", "88#3"):
         assert diagnose_apl_where(bad_if_str) == ("invalid_where_interface", {})
-    for bad_apl in ("abc", "#bad", "12345"):
+    for bad_apl in ("abc", "#bad", "12345", "899"):
         assert diagnose_apl_where(bad_apl) == ("invalid_where_apl", {})
 
     # YAML expose_entry_schema includes targeted hints on point-to-point errors
@@ -4467,4 +4467,167 @@ async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
     assert entry.subentries[sub_w4_id].data[CONF_WHO] == 1
     assert entry.subentries[sub_w4_id].data["where"] == "64"
     assert CONF_DIMENSION not in entry.subentries[sub_w4_id].data
+
+
+def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
+    """Cover direct validation, defaults, and subentry duplicate-check fallbacks."""
+    handler = ExposeSubentryFlowHandler()
+    subentries: dict[str, Any] = {}
+    mock_entry = SimpleNamespace(
+        entry_id="entry_edge",
+        runtime_data=None,
+        subentries=subentries,
+    )
+
+    with patch.object(handler, "_get_entry", return_value=mock_entry):
+        # _initial_step2_defaults edge branches
+        assert handler._initial_step2_defaults(1, {CONF_WHO: "bad"}) == {}
+        assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "#legacy"}) == {
+            "where": "#legacy"
+        }
+        assert handler._initial_step2_defaults(
+            18, {CONF_WHO: 18, "where": "51", CONF_DIMENSION: 54}
+        ) == {"where": "51", CONF_DIMENSION: 54}
+        assert handler._initial_step2_defaults(13, {CONF_WHO: 13, CONF_DIMENSION: 0}) == {
+            CONF_DIMENSION: 0
+        }
+
+        # _validate_and_clean WHO, dimension, WHERE, and A/PL selector error branches
+        assert handler._validate_and_clean(99, {}) == (
+            {},
+            {"base": "invalid_expose"},
+            {},
+            "",
+        )
+
+        _, err_w1_dim, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "8",
+                "entity_id": "light.x",
+                CONF_DIMENSION: "51",
+            },
+        )
+        assert err_w1_dim[CONF_DIMENSION] == "invalid_dimension"
+
+        _, err_w4_dim, _, _ = handler._validate_and_clean(
+            4,
+            {"where": "50", "entity_id": "sensor.t", CONF_DIMENSION: True},
+        )
+        assert err_w4_dim[CONF_DIMENSION] == "invalid_dimension"
+
+        cleaned_w13, err_w13, _, _ = handler._validate_and_clean(13, {})
+        assert err_w13 == {}
+        assert cleaned_w13[CONF_DIMENSION] == 22
+
+        _, err_w13_bool, _, _ = handler._validate_and_clean(13, {CONF_DIMENSION: True})
+        assert err_w13_bool[CONF_DIMENSION] == "invalid_dimension"
+
+        cleaned_w18, err_w18, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "51", "entity_id": "sensor.p"},
+        )
+        assert err_w18 == {}
+        assert cleaned_w18[CONF_DIMENSION] == 113
+
+        _, err_w18_req, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "", "entity_id": "sensor.p"},
+        )
+        assert err_w18_req["where"] == "where_required"
+
+        _, err_range, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "11",
+                CONF_EXPOSE_POINT: "16",
+                CONF_BUS_INTERFACE: True,
+                "entity_id": "light.x",
+            },
+        )
+        assert err_range == {
+            CONF_EXPOSE_AREA: "invalid_area",
+            CONF_EXPOSE_POINT: "invalid_point",
+            CONF_BUS_INTERFACE: "invalid_bus_interface",
+        }
+
+        _, err_nonint, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "abc",
+                CONF_EXPOSE_POINT: "xyz",
+                CONF_BUS_INTERFACE: "zz",
+                "entity_id": "light.x",
+            },
+        )
+        assert err_nonint == {
+            CONF_EXPOSE_AREA: "invalid_area",
+            CONF_EXPOSE_POINT: "invalid_point",
+            CONF_BUS_INTERFACE: "invalid_bus_interface",
+        }
+
+        _, err_iface_oob, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "8",
+                CONF_BUS_INTERFACE: "16",
+                "entity_id": "light.x",
+            },
+        )
+        assert err_iface_oob == {CONF_BUS_INTERFACE: "invalid_bus_interface"}
+
+        # Optional attribute, value_template, and comma-separated on_states formatting
+        cleaned_opt, err_opt, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "7",
+                CONF_EXPOSE_POINT: "3",
+                "entity_id": "light.x",
+                "attribute": "brightness",
+                "value_template": "{{ value }}",
+                "on_states": "on, home",
+            },
+        )
+        assert err_opt == {}
+        assert cleaned_opt["attribute"] == "brightness"
+        assert cleaned_opt["value_template"] == "{{ value }}"
+        assert cleaned_opt["on_states"] == ["on", "home"]
+
+        # Stored-subentry duplicate checks with malformed/defaulted subentry records
+        subentries.update(
+            {
+                "s_none": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE, data={CONF_WHO: None}
+                ),
+                "s_bad_who": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE, data={CONF_WHO: "bad"}
+                ),
+                "s_bad_dim": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "51", CONF_DIMENSION: "bad"},
+                ),
+                "s_other_dim": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "51", CONF_DIMENSION: 54},
+                ),
+                "s_who13_default": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE, data={CONF_WHO: 13}
+                ),
+                "s_who18_default": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "51"},
+                ),
+            }
+        )
+
+        _, err_dup13, _, _ = handler._validate_and_clean(13, {})
+        assert err_dup13 == {"base": "already_configured"}
+
+        _, err_dup18, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "51", "entity_id": "sensor.p"},
+        )
+        assert err_dup18 == {"base": "already_configured"}
 
