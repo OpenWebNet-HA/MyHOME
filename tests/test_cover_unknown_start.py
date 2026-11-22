@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import restore_state
 from homeassistant.helpers.entity_platform import EntityPlatform
 from homeassistant.helpers.restore_state import RestoredExtraData
+from homeassistant.util import dt as dt_util
 from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -932,3 +933,38 @@ async def test_advanced_cover_stores_no_position_and_restores_its_last_run(hass,
     assert restarted.current_cover_position is None
     assert restarted.extra_state_attributes["last_run_seconds"] == 15.36
     assert restarted.extra_state_attributes["last_run_direction"] == "close"
+
+
+async def test_closed_by_actuator_before_restore(hass, gateway, clock, fake_time):
+    cover = _make_cover(hass, gateway)
+    # A live run happens while startup is still fetching the previous state (the close and stop
+    # frames of the tests above).
+    cover.handle_event(OWNEvent.parse("*2*2*05##"))
+    clock.now += 20
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover.current_cover_position == 0 and cover.is_closed
+    cover.async_get_last_state = AsyncMock(
+        return_value=State("cover.shutter_05", "unavailable", {})
+    )
+    cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False})
+    )
+    await cover.async_added_to_hass()
+    assert (cover.current_cover_position, cover.is_closed) == (0, True)
+
+
+async def test_unavailable_reload_preserves_recent_relay_hold(hass, gateway, clock, fake_time):
+    gateway.emits_cover_pre_move_stop = False
+    c = _make_cover(hass, gateway)
+    ts = (dt_util.utcnow() - timedelta(seconds=20)).isoformat()
+    record = {
+        "position": 0,
+        "is_closed": True,
+        "last_run": {"ended_at": ts, "direction": "close", "seconds": 6},
+    }
+    c.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData(record))
+    await c.async_restore_last_state(State("cover.x", "unavailable", {}))
+    assert c.current_cover_position == 0 and c.extra_state_attributes["last_run_ended_at"] == ts
+    assert c._stops_before_move(False), (
+        "same recent stop would arm relay interlock after a reachable save"
+    )

@@ -1542,12 +1542,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_is_closed = True
                 elif last_state.state in (STATE_OPEN, "open"):
                     self._attr_is_closed = False
-                elif saved_unavailable and isinstance(record.get("is_closed"), bool):
+                elif saved_unavailable and self.is_closed is None and isinstance(record.get("is_closed"), bool):
                     self._attr_is_closed = record["is_closed"]
         elif not self._advanced:
             restored = False
             last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
-            if last_pos is None and saved_unavailable:
+            # The record fills what is unknown, never what a run since startup set.
+            if last_pos is None and saved_unavailable and self._attr_current_cover_position is None:
                 last_pos = record.get("position")
             if last_pos is not None:
                 try:
@@ -1563,7 +1564,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     was_closed = True
                 elif last_state.state in (STATE_OPEN, "open"):
                     was_closed = False
-                elif saved_unavailable and isinstance(record.get("is_closed"), bool):
+                elif saved_unavailable and self.is_closed is None and isinstance(record.get("is_closed"), bool):
                     was_closed = record["is_closed"]
                 if was_closed is True:
                     self._attr_current_cover_position = 0
@@ -1592,6 +1593,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._arm_relay_hold(time.monotonic(), opening=last_state.state == "opening")
             else:
                 raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
+                if not raw_ts and saved_unavailable:
+                    last_run = record.get("last_run")
+                    if isinstance(last_run, Mapping):
+                        raw_ts = last_run.get("ended_at")
                 if isinstance(raw_ts, str) and (parsed_dt := dt_util.parse_datetime(raw_ts)) is not None:
                     age = (dt_util.utcnow() - parsed_dt).total_seconds()
                     if 0.0 <= age < M0_RELAY_HOLD_WINDOW:
