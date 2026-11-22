@@ -2,8 +2,8 @@
 
 Plant: an F461 2.0.11 and an F455 1.0.76 on one SCS bus, an automation dry-contact interface
 with contacts 1 and 2. The same answer of contact 1 reached the two event sessions 13 ms apart
-as ``*25*31#0*301##`` (F455) and ``*25*31#0*31##`` (F461); each gateway accepted the other's
-spelling in ``*#25*WHERE##``. The WHO 25 PDF writes contact 1 as ``31`` (WHERE = ``3`` +
+as ``*25*31#0*301##`` (F455) and ``*25*31#0*31##`` (F461); each gateway put the other's
+spelling of the status request on the bus. The WHO 25 PDF writes contact 1 as ``31`` (WHERE = ``3`` +
 ``[1-201]``), like the F454, MH200N and MH202 captures of issue_466.
 
 * Entities were keyed on the raw WHERE, so with the F461 as primary and the F455 as warm
@@ -18,15 +18,21 @@ Frames: tests/fixtures/traces/dry_contact_where_f455_f461_2026_11_18/frames.json
 
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.binary_sensor import _contact_peer_spellings, _contact_spellings
+from custom_components.myhome.binary_sensor import (
+    MyHOMEDryContact,
+    _contact_peer_spellings,
+    _contact_spellings,
+)
 from custom_components.myhome.const import (
     CONF_BUS_TOPOLOGY,
     CONF_GATEWAY_ROLE,
@@ -38,6 +44,7 @@ from custom_components.myhome.const import (
     TOPOLOGY_SHARED,
 )
 from custom_components.myhome.gateway import AVAILABILITY_GRACE
+from custom_components.myhome.legacy_yaml import CONF_MIGRATED_YAML_PLATFORMS
 from custom_components.myhome.where_grammar import canonical_contact_where
 from tests.test_multi_gateway_regressions import PRI, SB, _set_up, _setup_patches
 
@@ -50,7 +57,8 @@ FRAMES = json.loads(
         / "frames.json"
     ).read_text()
 )
-# Contact 1 opening as an MH200N, an MH202 and an F454 reported it (issue_466 traces)
+# Contact 1 opening as an F454 and an MH200N reported it (issue_466 traces) and an MH202
+# (mh202_sound_intercom_ducking trace)
 CONTACT_1_OFF = "*25*32#1*31##"
 SHARED_PRIMARY = {CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY}
 SHARED_STANDBY = {CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_STANDBY, CONF_PRIMARY_GATEWAY: PRI}
@@ -300,3 +308,88 @@ async def test_an_ignored_contact_stays_ignored_in_either_spelling(hass: HomeAss
         await _feed(hass, entry, *(raw for _t, _gw, raw in FRAMES["status_read_301_302"]))
 
         assert _unique_ids(hass, entry) == [f"{PRI}-32-opening"]
+
+
+@pytest.mark.parametrize(
+    ("where", "request_frame"),
+    [("301", "*#25*31##"), ("302", "*#25*32##"), ("31", "*#25*31##"), ("344", "*#25*344##")],
+)
+async def test_the_status_request_of_a_contact_uses_the_unpadded_where(
+    hass: HomeAssistant, where: str, request_frame: str
+) -> None:
+    """A contact an F455 registered as ``301`` is read with ``*#25*31##``.
+
+    Live 2026-11-22: an F461 2.0.11 answered ``*#25*301##`` on its command session with NACK
+    (four reads of four) and acknowledged ``*#25*31##``; an F455 1.0.76 relayed the short request
+    and the contact answered (fixture README, ``failover_read_31_through_f455``).
+    """
+    gateway = MagicMock()
+    gateway.mac = "mac"
+    gateway.send_status_request = AsyncMock()
+    hass.data = {DOMAIN: {"mac": {"platforms": {"binary_sensor": {f"dry_{where}": {"entities": {}}}}}}}
+    sensor = MyHOMEDryContact(
+        hass=hass,
+        name="Device",
+        entity_name="Sensor",
+        device_id=f"dry_{where}",
+        who="25",
+        where=where,
+        inverted=False,
+        device_class=BinarySensorDeviceClass.OPENING,
+        manufacturer="M",
+        model="M",
+        gateway=gateway,
+    )
+
+    await sensor.async_update()
+
+    (sent,), _kwargs = gateway.send_status_request.call_args
+    assert str(sent) == request_frame
+
+
+def test_only_the_whole_padded_where_is_rewritten() -> None:
+    """Anything after the contact number other than a ``#4#II`` suffix leaves the WHERE as given.
+
+    A negative input, not a captured address.
+    """
+    event = OWNMessage.parse(FRAMES["status_read_301_302"][1][2])
+    opaque = f"{event.where}#1"
+
+    assert canonical_contact_where(opaque) == opaque
+    assert canonical_contact_where("301#4#01") == "31#4#01"
+
+
+async def test_a_named_device_key_ending_in_301_is_not_contact_1(hass: HomeAssistant) -> None:
+    """A migrated yaml key such as ``gate-301`` is a name, not a WHERE.
+
+    The sensor is configured at WHERE ``329`` (an F453 capture has ``*25*32#1*329##``,
+    ``tests/fixtures/traces/discussion_770_f453_n4692``); contact 1's report must not move it.
+    """
+    name = "gate-301"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=PRI,
+        data={"host": "127.0.0.1", "mac": PRI, "port": 20000, "password": "pass"},
+        options={
+            CONF_MIGRATED_YAML_PLATFORMS: {
+                "binary_sensor": {name: {"who": "25", "where": "329", "name": "Gate", "class": "opening"}}
+            }
+        },
+    )
+    entry.add_to_hass(hass)
+    unique_id = f"{PRI}-{name}-opening"
+    er.async_get(hass).async_get_or_create(
+        "binary_sensor", DOMAIN, unique_id, config_entry=entry, original_device_class="opening"
+    )
+    p1, p2, p3 = _setup_patches()
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        _connected(entry)
+        await _feed(hass, entry, "*25*32#1*329##")
+        assert _state(hass, unique_id) == "off"
+
+        await _feed(hass, entry, FRAMES["status_read_301_302"][2][2])
+
+        assert _state(hass, unique_id) == "off"
+        assert f"{PRI}-31-opening" in _unique_ids(hass, entry)

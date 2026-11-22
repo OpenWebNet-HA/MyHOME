@@ -692,19 +692,21 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
 # an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
 # ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
 # that one padding zero in front of a single digit was captured, so only that is rewritten.
-_PADDED_CONTACT_RE = re.compile(r"^30([1-9])$")
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#[0-9]{2})?)$")
 
 
 def canonical_contact_where(where: str) -> str:
     """``301`` -> ``31`` (WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given.
 
     The spelling of the WHO 25 PDF examples (``*25*31#1*31##`` is contact 1) and of every other
-    gateway with a capture (F454, MH200N, MH202: ``31``, ``33``). Both gateways accept either
-    spelling in ``*#25*WHERE##``, so an entity may keep the one it was created with.
+    gateway with a capture (F454, MH200N, MH202: ``31``, ``33``). Both gateways put either
+    spelling of the status request on the bus, but an F461 2.0.11 answered the padded request
+    ``*#25*301##`` on its command session with NACK (four reads of four, the contact's answer
+    ``*25*31#0*31##`` was on the bus) and acknowledged ``*#25*31##``; requests are therefore
+    written with this spelling, and an entity keeps the unique id it was created with.
     """
-    base, sep, rest = str(where).partition("#")
-    match = _PADDED_CONTACT_RE.match(base)
-    return f"3{match[1]}{sep}{rest}" if match else str(where)
+    match = _PADDED_CONTACT_RE.match(str(where))
+    return f"3{match[1]}{match[2]}" if match else str(where)
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:
