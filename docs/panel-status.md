@@ -70,12 +70,16 @@ not a PR intended for merge.
    remain development previews, disabled by default; assigning a profile through
    Change profile is implemented and must not be confused with those previews.
 3. **Upstream cover changes:** [#975](https://github.com/OpenWebNet-HA/MyHOME/pull/975)
-   (remaining-travel/drift settle timer) and
+   merged upstream on 22 November 2026. This integration applies its exact commit
+   `5b742669094be1907f48ee0f4f69380171614667` after the #21 baseline, without claiming
+   a full upstream sync. Linear timed covers gain the remaining-travel/drift settle
+   timer; the panel's nonlinear model retains its own geometry-based settle.
+   Profile changes invalidate drift when their effective timings change, native
+   timing edits remain durable before application, and unavailable covers still
+   interrupt panel calibration.
    [#977](https://github.com/OpenWebNet-HA/MyHOME/pull/977) (WHO 14 lock tracking)
-   were still open on this date and are outside the #21 integration. Review their
-   final upstream state before integrating them, preserving nonlinear timing,
-   profile protections and calibration interruption. WHO 14 wizard handling is a
-   separate follow-up after the backend settles.
+   remains separate and was still open at this update. Review its final upstream
+   state before integration; WHO 14 wizard handling follows after the backend settles.
 4. **Release decision:** keep #374 draft until the combined result and remaining
    scope have been reviewed. No public-preview or release date is committed here.
 
