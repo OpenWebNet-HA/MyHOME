@@ -82,9 +82,10 @@ async def test_off_pressed_during_the_pair_goes_out_after_the_restore() -> None:
     await _until(lambda: len(futures) == 2)
     assert _sent(gateway) == [COOL, RESTORE]
     futures[1].set_result(time.monotonic())
-    await asyncio.wait_for(asyncio.gather(cool, off), 1)
+    await _until(lambda: len(futures) == 3)
     assert _sent(gateway)[-1] == "*4*303*#0##"
-    futures[2].set_result(time.monotonic())
+    futures[2].set_result(time.monotonic())  # `off` waits for the gateway's answer
+    await asyncio.wait_for(asyncio.gather(cool, off), 1)
 
 
 async def test_refused_restore_raises_and_clears_only_its_echo() -> None:
