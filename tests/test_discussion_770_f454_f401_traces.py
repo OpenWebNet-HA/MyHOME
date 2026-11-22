@@ -8,9 +8,11 @@ Contributed by @eC0y0te on https://github.com/orgs/OpenWebNet-HA/discussions/770
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.cover import ATTR_POSITION, ATTR_TILT_POSITION
@@ -390,6 +392,158 @@ async def test_discussion_770_trace2_slat_tilt_schema_and_replay(
                     router.publish("2", (str(where),), msg)
 
     assert cover.current_cover_position == 2
+
+
+# README "Trace 2" table, steps 1-10: the tilt asked for by each pulse, in capture order.
+TRACE2_TILT_TARGETS = [15, 0, 20, 0, 25, 0, 50, 0, 100, 0]
+_REAL_SLEEP = asyncio.sleep
+
+
+def _trace2_pulses() -> list[tuple[int, int]]:
+    """(index of the pulse's direction tx, index of its last frame) for the ten tilt pulses."""
+    frames = _load_json(TRACE2_PATH)["frames"]
+    starts = [
+        i for i, f in enumerate(frames) if f["direction"] == "tx" and f["raw"] in ("*2*1*21##", "*2*2*21##")
+    ][1:]  # the first tx is the initial close sync, a curtain run
+    ends = [*(i - 1 for i in starts[1:]), next(i for i, f in enumerate(frames) if f["raw"] == "*#2*21*#11#001*2##") - 1]
+    return list(zip(starts, ends, strict=True))
+
+
+async def _replay_trace2_pulse(
+    cover: MyHOMECover, clock: SimpleNamespace, first: int, last: int, target: int, *, skip: tuple[str, ...] = ()
+) -> None:
+    """One HA tilt request on the capture's own clock: its rx frames at their offsets, its stop at the tx stop's."""
+    frames = _load_json(TRACE2_PATH)["frames"]
+    assert frames[first]["direction"] == "tx"
+    release = asyncio.Event()
+
+    async def _sleep(delay: float, *args, **kwargs) -> None:
+        if delay > 0:
+            await release.wait()
+        await _REAL_SLEEP(0)
+
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_sleep):
+        clock.now = frames[first]["timestamp"]
+        await cover.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: target})
+        for frame in frames[first + 1 : last + 1]:
+            clock.now = frame["timestamp"]
+            if frame["direction"] == "tx":
+                assert frame["raw"] == "*2*0*21##"
+                release.set()  # the pulse's auto-stop writes its stop where the capture has it
+                await asyncio.wait_for(cover._stop_task, 1.0)
+                continue
+            if frame["raw"] in skip:
+                continue
+            cover.handle_event(OWNMessage.parse(frame["raw"]))
+            for _ in range(3):
+                await _REAL_SLEEP(0)
+
+
+@pytest.fixture
+def trace2_cover():
+    """Cover 21 as trace 2 had it (advanced F401, slat_time 1.4, min_motor_pulse 0.2), on a clock the test sets."""
+    clock = SimpleNamespace(now=0.0)
+    gateway = MagicMock()
+    gateway.mac = gateway.unique_id = MAC
+    gateway.log_id = "[F454]"
+    gateway.sent = []
+
+    gateway.hold_stop_write = False
+    gateway.held = []
+
+    async def _send(message, *args, **kwargs):
+        gateway.sent.append(str(message))
+        written = asyncio.get_running_loop().create_future()
+        if gateway.hold_stop_write and str(message) == "*2*0*21##":
+            gateway.held.append(written)  # queued, its write not confirmed yet
+        else:
+            written.set_result(clock.now)
+        return written
+
+    gateway.send = AsyncMock(side_effect=_send)
+    gateway.send_status_request = AsyncMock()
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=None, name="Shutter 21", entity_name=None, device_id="21", who="2", where="21", interface=None,
+            advanced=True, manufacturer="BTicino", model="F401", gateway=gateway, travel_time=25,
+            slat_tilt=True, slat_time=1.4, min_motor_pulse=0.2,
+        )
+    cover.entity_id = "cover.shutter_21"
+    cover.async_schedule_update_ha_state = MagicMock()
+    # After the capture's initial close sync (2 % -> 0 %): closed, slats closed.
+    cover._attr_current_cover_position = 0
+    cover._attr_current_cover_tilt_position = 0
+    with patch("custom_components.myhome.cover.time", SimpleNamespace(monotonic=lambda: clock.now)):
+        yield cover, clock, gateway
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_trace2_tilt_pulses_keep_their_angle(trace2_cover) -> None:
+    """Every tilt pulse of trace 2 ends at the angle asked for, whatever level the F401 books for it.
+
+    The F401 counts the pulse as travel and reports `*#2*21*10*10*1*001*15##` (level 0 -> 1) or
+    `...*10*10*0*...` (1 -> 0) 96-134 ms after the pulse's stop. That report was taken as an external
+    level jump and turned the slats a full rotation: 15 %, 25 % and 50 % all ended at 100 %.
+    """
+    cover, clock, gateway = trace2_cover
+    frames = _load_json(TRACE2_PATH)["frames"]
+    pulses = _trace2_pulses()
+    assert len(pulses) == len(TRACE2_TILT_TARGETS) == 10
+    seen: list[tuple[int, int]] = []
+    for (first, last), target in zip(pulses, TRACE2_TILT_TARGETS, strict=True):
+        gateway.sent.clear()
+        await _replay_trace2_pulse(cover, clock, first, last, target)
+        assert gateway.sent == [frames[first]["raw"], "*2*0*21##"], (first, target)
+        assert cover._is_tilting is False
+        assert cover.is_opening is False and cover.is_closing is False
+        seen.append((cover.current_cover_tilt_position, cover.current_cover_position))
+    # (tilt, level the F401 reported): README table, columns "Tilt Command" and "Reported Dimension 10 Level".
+    assert seen == [(15, 1), (0, 0), (20, 0), (0, 0), (25, 1), (0, 0), (50, 1), (0, 0), (100, 1), (0, 0)]
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_level_change_after_a_pulse_is_external_outside_its_window(trace2_cover) -> None:
+    """The pulse's own level is taken only right after it, and only in its direction (#868 stays as it was)."""
+    cover, clock, _gateway = trace2_cover
+    first, last = _trace2_pulses()[0]
+    await _replay_trace2_pulse(cover, clock, first, last, 15)  # 0 -> 15 %, level 0 -> 1
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (15, 1)
+
+    # The opposite way inside the window (the capture's own closed report, here without a pulse): a move down.
+    clock.now += 0.2
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*0*001*15##"))
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (0, 0)
+
+    await _replay_trace2_pulse(cover, clock, first, last, 15)
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (15, 1)
+    # The same way, but long after the pulse and with no motion frame (the capture's last report, 2 %):
+    # somebody moved the curtain up, which turns the slats open.
+    clock.now += 5.0
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*2*001*15##"))
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (100, 2)
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_level_report_before_the_stop_write_is_confirmed(trace2_cover) -> None:
+    """The F401's report of the pulse's stop can beat the gateway's confirmation of that stop.
+
+    Constructed from pulse 1 of trace 2: the stop's write stays unconfirmed and the command
+    translation `*2*1000#0*21##` is left out (F453, F455, MH200, MH201 relay none in the
+    corpus), so `*#2*21*10*10*1*001*15##` is the first frame after the stop. The pulse ends
+    there: the motor ran 0.320 s (README step 1) of a 1.4 s rotation.
+    """
+    cover, clock, gateway = trace2_cover
+    first, last = _trace2_pulses()[0]
+    gateway.hold_stop_write = True
+    await _replay_trace2_pulse(cover, clock, first, last, 15, skip=("*2*1000#0*21##",))
+    assert cover._is_tilting is False
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (23, 1)
+    (stop_written,) = gateway.held
+    stop_written.set_result(clock.now)
+    for _ in range(3):
+        await _REAL_SLEEP(0)
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (23, 1)
+    assert cover._pulse_stop_written is None
 
 
 def test_discussion_770_trace3_schema_and_frame_parsing() -> None:
