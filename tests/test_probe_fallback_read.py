@@ -65,6 +65,7 @@ def gateway():
     gw.log_id = "[F455 gateway]"
     gw.device_registry_id = None
     gw.is_connected = True
+    gw._who4_target = MagicMock(return_value=gw)  # no secondary and no standby: it serves WHO 4 itself
     return gw
 
 

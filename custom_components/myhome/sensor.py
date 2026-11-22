@@ -1424,11 +1424,31 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         self._fallback_read_refused = False
         # The gateway's event-session count when the refusal came: a reconnect asks once more.
         self._fallback_refused_on_connection: int | None = None
+        # The gateway that refused it (the one that served the read): another gateway is asked once.
+        self._fallback_refused_by: Any = None
 
     @property
     def _is_probe(self) -> bool:
         """Return True for slave/external probe addresses (ZPP >= 100)."""
         return is_probe(str(self._where).split("#")[0])
+
+    def _read_gateway(self) -> Any:
+        """The gateway that serves this sensor's read: a delegated secondary or the warm standby, else its own."""
+        who4_target = getattr(self._gateway_handler, "_who4_target", None)
+        return who4_target() if callable(who4_target) else self._gateway_handler
+
+    def _fallback_refusal_stands(self) -> bool:
+        """Whether the gateway that would serve the read now is the one, on the connection, that refused it.
+
+        It also stands while no gateway can serve the read: an outage is no takeover.
+        """
+        target = self._read_gateway()
+        if getattr(target, "is_connected", False) is not True:
+            return True
+        if target is not self._fallback_refused_by:
+            return False
+        connections = getattr(target, "event_connections", None)
+        return not isinstance(connections, int) or connections == self._fallback_refused_on_connection
 
     def _fallback_read(self) -> OWNHeatingCommand:
         """The read of this sensor: dimension 0, except for an external probe (``N00``).
@@ -1477,7 +1497,13 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         power cut on the plant, another gateway taking over). One refused read per outage is the
         cost; without it one command timeout latched the probe until the entry was reloaded.
         """
-        if self._fallback_read_refused and getattr(self._gateway_handler, "is_connected", False) is True:
+        target = self._read_gateway()
+        if (
+            self._fallback_read_refused
+            and getattr(target, "is_connected", False) is True
+            # This signal is about the entity's own gateway: it ends the refusal of that gateway only.
+            and (target is self._gateway_handler or not self._fallback_refusal_stands())
+        ):
             self._fallback_read_refused = False
             LOGGER.debug(
                 "%s %s: the gateway is available again; probe %s is asked once more when it stays silent",
@@ -1492,33 +1518,37 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         if self._push_is_fresh():
             return
         if self._is_probe and self._fallback_read_refused:
-            # A reconnect of the event session (also one too short to make the gateway
-            # unavailable) asks the probe once more.
-            connections = getattr(self._gateway_handler, "event_connections", None)
-            if isinstance(connections, int) and connections != self._fallback_refused_on_connection:
-                self._fallback_read_refused = False
-            else:
+            # Asked once more by another gateway than the one that refused (the standby taking over, the
+            # primary coming back), and after a reconnect of the event session of the one that refused
+            # (also one too short to make the gateway unavailable).
+            if self._fallback_refusal_stands():
                 return
+            self._fallback_read_refused = False
         if (
-            self._is_probe
-            and BUS_ROUTING in str(self._where)
+            BUS_ROUTING in str(self._where)
             and getattr(self._gateway_handler, "interface_zone_request_refused", False) is True
         ):
-            # A probe behind an interface where the gateway does not route WHO 4: its own
-            # reports are all it has.
+            # Behind an interface where the gateway does not route WHO 4, a probe has only its own
+            # reports, and the read of a zone would be answered for the local zone of that number.
             return
         cmd = self._fallback_read()
         pushes_before = self._pushes
+        served_by = self._read_gateway()
+        asked_on = getattr(served_by, "event_connections", None)
         written = await self._gateway_handler.send_status_request(cmd)
         if self._is_probe and isinstance(written, asyncio.Future):
             # Not awaited here: a refusal can take 9 s (above), and the update must not wait for it.
-            written.add_done_callback(lambda future: self._fallback_read_done(future, pushes_before))
+            written.add_done_callback(
+                lambda future: self._fallback_read_done(future, pushes_before, served_by, asked_on)
+            )
 
-    def _fallback_read_done(self, written: asyncio.Future[Any], pushes_before: int) -> None:
+    def _fallback_read_done(
+        self, written: asyncio.Future[Any], pushes_before: int, served_by: Any = None, asked_on: Any = None
+    ) -> None:
         """Stop the fallback read of a probe once the gateway refused it.
 
         Refused: the gateway answered the written read with a NACK (``_gateway_nack``), or with
-        nothing before the command timeout (``_command_timeout``), while it was connected. The
+        nothing before the command timeout (``_command_timeout``), while the gateway that served it was connected. The
         sender sets these marks. Not a refusal: every other cancelled read (the command session
         could not be opened or lost its socket, the read was dropped because it collected another
         zone's frame (#886), the queue was shut down), a read cancelled with the connection, and
@@ -1531,12 +1561,21 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
             or getattr(written, "_command_timeout", False) is True
         ):
             return
-        if getattr(self._gateway_handler, "is_connected", False) is not True:
+        gateway = served_by if served_by is not None else self._gateway_handler
+        if getattr(gateway, "is_connected", False) is not True:
+            return
+        connections = getattr(gateway, "event_connections", None)
+        if isinstance(asked_on, int) and connections != asked_on:
+            # The connection that was asked is gone: this says nothing about the new one.
+            return
+        if gateway is not self._read_gateway():
+            # Another gateway serves the read by now: a late answer of this one does not stop it.
             return
         if self._pushes != pushes_before:
             return
         self._fallback_read_refused = True
-        self._fallback_refused_on_connection = getattr(self._gateway_handler, "event_connections", None)
+        self._fallback_refused_by = gateway
+        self._fallback_refused_on_connection = connections
         LOGGER.debug(
             "%s %s: the gateway refused the read of probe %s; it is not asked again, its own reports are used",
             self._gateway_handler.log_id,

@@ -22,6 +22,7 @@ entity's business: ``MyHOMEClimate._standalone``.
 
 import asyncio
 import inspect
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -70,6 +71,10 @@ CANDIDATE_ECHO_WINDOW = 5.0
 # Maximum lifetime of an unconfirmed candidate zone before its held frame expires (#966).
 CANDIDATE_MAX_AGE = 3600.0
 # The states of a climate entity that only a thermostat's own frames produce.
+# The unique id 2.0.0 gave a central unit configured as ``zone: "0"`` with ``central: true``:
+# ``<mac>-4-#0#0``, behind an interface ``<mac>-4-#0#0#4#II``.
+_SAVED_CENTRAL_ZERO = re.compile(r"(.+-4-#0)#0((?:#4#\d{1,2})?)")
+
 _REAL_HVAC_STATES = frozenset(
     {
         HVACMode.HEAT.value,
@@ -497,6 +502,36 @@ class ZoneDiscovery:
 
 
 
+    def correct_saved_central_address(self) -> None:
+        """Give a central unit that 2.0.0 saved as ``#0#0`` its address ``#0`` back.
+
+        ``zone: "0"`` with ``central: true`` was filed under ``#0#0`` (``#0#0#4#II`` behind an
+        interface), an address the WHERE table does not have (WHO 4 PDF p. 6: ``#0`` Central
+        Unit; a 4-zone central unit is ``#0#1`` to ``#0#4``). The saved entity keeps its entity
+        id and its settings under ``#0``. Where a ``#0`` entity is saved too (the one found on
+        the bus), that one stays and the ``#0#0`` one is removed: both would now be the same
+        central unit.
+        """
+        try:
+            registry = er.async_get(self._hass)
+            entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))
+        except Exception:  # registry not loaded in some harnesses (as ``PlatformDiscovery.registry_entries``)
+            return
+        for entry in entries:
+            match = _SAVED_CENTRAL_ZERO.fullmatch(str(entry.unique_id))
+            if entry.domain != Platform.CLIMATE or match is None:
+                continue
+            corrected = f"{match[1]}{match[2]}"
+            if registry.async_get_entity_id(entry.domain, entry.platform, corrected):
+                registry.async_remove(entry.entity_id)
+                LOGGER.info(
+                    "climate: %s was saved as central unit #0#0 next to the central unit #0; removed",
+                    entry.entity_id,
+                )
+            else:
+                registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
+                LOGGER.info("climate: %s was saved as central unit #0#0; it is the central unit #0", entry.entity_id)
+
     def duplicate(self, entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         """Whether a registry entry is not a zone of its own and is removed."""
         pair = _zone_pair(ctx.address)
@@ -522,8 +557,14 @@ class ZoneDiscovery:
         was seen first no local zone was ever created.
         """
         keys = [*default_known_keys(ctx), ctx.config_id or ""]
+        if ctx.address.interface and ctx.address.clean_where == "0":
+            # The same central unit behind an interface: its frames come under ``#0#4#II``.
+            keys.append(f"#0{BUS_ROUTING}{ctx.address.interface}")
         if not ctx.address.interface:
             keys += [ctx.address.where, ctx.address.clean_where]
+            if ctx.address.clean_where == "0":
+                # A central unit configured as `0` is the 99-zone central unit: its frames come under `#0`.
+                keys.append("#0")
             if "#" not in ctx.address.clean_where.removeprefix("#"):
                 keys.append(zone_number(ctx.address.where))
         return [k for k in keys if k]

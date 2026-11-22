@@ -317,6 +317,7 @@ async def async_setup_entry(
         return entity
 
     zones = ZoneDiscovery(hass, config_entry, runtime, build)
+    zones.correct_saved_central_address()
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="4", event_type=OWNHeatingEvent, build=zones.build,
@@ -453,6 +454,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._attr_fan_mode: str | None = None
         self._attr_fan_modes: list[str] | None = None
         self._running_fan_speed: str | None = None
+        # Set when dimension 11 reported the fan off (15) and no speed since.
+        self._fan_off_reported = False
         # Per-actuator state from dimension 20 (*#4*Z#N*20*V##), exposed as ``actuators``.
         self._actuator_states: dict[str, bool] = {}
         # Per-actuator proportional 0-10 V output level (0..100 %) from dimension 20 codes
@@ -592,9 +595,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._poll_on_add = False
 
     @property
+    def _health_address(self) -> tuple[int, str] | None:
+        """A central unit configured as ``0`` files its faults under ``#0``, as the gateway's tracker does."""
+        address = super()._health_address
+        if address is None or self._where.removeprefix("4-") != "0":
+            return address
+        return address[0], "#0" + str(getattr(self, "_full_where", self._where)).removeprefix("4-")[1:]
+
+    @property
     def _bus_where(self) -> str:
-        """The WHERE written on the bus: the configured one without the ``4-`` prefix."""
-        return self._where.removeprefix("4-")
+        """The WHERE written on the bus: the configured one without the ``4-`` prefix; a central unit
+        configured as ``0`` is the 99-zone central unit ``#0`` (WHERE ``0`` on the bus is "general probes").
+        """
+        where = self._where.removeprefix("4-")
+        return "#0" if where == "0" else where
 
     @property
     def _request_where(self) -> str:
@@ -863,10 +877,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     # The saved ``nominal_temperature`` is the commanded setpoint (dimension 14);
                     # the value shown can be the setpoint in force or a protection setpoint
                     # (#383). A state saved before the attribute existed keeps the old rules.
+                    # A knob position the zone reported before the restore is live.
                     try:
-                        self._local_offset = int(float(last_state.attributes.get("local_offset") or 0))
+                        saved_offset = int(float(last_state.attributes.get("local_offset") or 0))
                     except (ValueError, TypeError):
-                        pass
+                        saved_offset = 0
+                    if not self._local_offset_reported:
+                        self._local_offset = saved_offset
                     saved_nominal: float | None = None
                     if not self._central:
                         try:
@@ -879,17 +896,26 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._target_temperature = (
                             round(saved_nominal, 1) if saved_nominal is not None else None
                         )
+                        if self._target_temperature is not None:
+                            self._restored_nominal = (self._target_temperature, self._target_temperature)
                     else:
                         # Shown: the setpoint in force less the offset (#820). The commanded
                         # setpoint saved next to it is what `heat` / `cool` write until the zone
                         # reports again (``_effective_nominal_temperature``).
-                        self._target_temperature = round(shown - self._local_offset, 1)
+                        self._target_temperature = round(shown - saved_offset, 1)
                         if saved_nominal is not None:
                             self._restored_nominal = (self._target_temperature, round(saved_nominal, 1))
+                        # The value shown was saved with the knob where it was then.
+                        shown = round(self._target_temperature + self._local_offset, 1)
                     self._local_target_base = None
                     self._nominal_from_dim12 = False
                     self._local_target_temperature = shown
                     self._target_temperature_restored = True
+                    if last_state.state == HVACMode.OFF.value and mode_live and self._attr_hvac_mode != HVACMode.OFF:
+                        # The zone said it is running before the saved state was read: what was
+                        # saved while off is its protection setpoint (#383), not what it runs at.
+                        self._local_target_temperature = None
+                        self._show_nominal()
             if "program" in last_state.attributes:
                 try:
                     self._program = int(last_state.attributes["program"])
@@ -939,7 +965,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._set_standalone_detected(True)
                 self._refresh_hvac_modes()
             restored_knob = last_state.attributes.get("knob_pos")
-            if isinstance(restored_knob, str) and restored_knob and restored_knob != "UNKNOWN":
+            if (
+                isinstance(restored_knob, str)
+                and restored_knob
+                and restored_knob != "UNKNOWN"
+                and not self._local_offset_reported
+            ):
                 self._knob_pos = restored_knob
             if (
                 "fan_coil_heating" in last_state.attributes
@@ -1682,8 +1713,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         shown_known = self.native_target_temperature is not None and not self._target_temperature_restored
         # A zone seen only off or in protection shows its protection setpoint; the commanded one
-        # (dimension 14) is what `heat` / `cool` writes, so it is asked.
-        nominal_missing = not self._central and self._attr_hvac_mode == HVACMode.OFF and self._target_temperature is None
+        # (dimension 14) is what `heat` / `cool` writes, so it is asked. A commanded setpoint that
+        # is still the saved one is asked too (a restored value is, `_silent_zone_reads`).
+        nominal_missing = not self._central and (
+            (self._attr_hvac_mode == HVACMode.OFF and self._target_temperature is None) or self._nominal_is_saved()
+        )
         return shown_known and not nominal_missing
 
     def _silent_zone_reads(self) -> list[str]:
@@ -1789,6 +1823,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._target_temperature is not None
                 and not self._target_temperature_restored
                 and not self._nominal_from_dim12
+                and not self._nominal_is_saved()
             )
             mode_known = self._attr_hvac_mode is not None and not self._hvac_mode_restored
             return commanded or (mode_known and self._commanded_setpoint_known())
@@ -2759,6 +2794,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return None
         return restored[1]
 
+    def _nominal_is_saved(self) -> bool:
+        """Whether the commanded setpoint is the one saved before a restart.
+
+        No dimension 14 since, and no dimension 12 of the running zone either: that one becomes
+        the commanded setpoint (``_reconcile_local_target``), also when it is the same value.
+        """
+        restored: tuple[float, float] | None = getattr(self, "_restored_nominal", None)
+        return restored is not None and self._target_temperature == restored[1] and not self._nominal_from_dim12
+
     def _effective_nominal_temperature(self) -> float | None:
         """Return the nominal setpoint to write in mode changes.
 
@@ -3204,9 +3248,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         value: list[str] = getattr(message, "dimension_value", None) or []
         return bool(len(value) > 1 and value[1] == "3" and self._attr_hvac_mode is None)
 
-    def _remember_nominal(self) -> None:
+    def _remember_nominal(self, saved_nominal: float | None = None) -> None:
         """Keep the nominal setpoint a dimension 12 frame is about to replace."""
-        self._nominal_before_dim12 = (self._target_temperature, time.monotonic())
+        nominal = saved_nominal if saved_nominal is not None else self._target_temperature
+        self._nominal_before_dim12 = (nominal, time.monotonic())
 
     def _restore_nominal_before_protection(self) -> None:
         """A protection setpoint arrives just before the frame that turns the zone OFF.
@@ -3232,11 +3277,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         Used when the zone leaves OFF (the dimension 12 value seen while OFF was the protection
         setpoint) or a frame carries a new setpoint of its own.
         """
-        if self._target_temperature is None:
+        nominal = self._saved_nominal_in_force()
+        if nominal is not None:
+            # From here the saved commanded setpoint is also the base a knob report adds its offset to:
+            # the setpoint in force saved next to it was replaced by the protection the zone has left.
+            self._target_temperature = nominal
+            self._restored_nominal = (nominal, nominal)
+        else:
+            nominal = self._target_temperature
+        if nominal is None:
             return
-        self._local_target_temperature = round(
-            self._target_temperature + self._local_offset, 1
-        )
+        self._local_target_temperature = round(nominal + self._local_offset, 1)
         self._local_target_reported = False
         self._local_target_base = None
         self._dim12_at = None
@@ -3724,6 +3775,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._target_temperature = message.set_temperature
             self._nominal_from_dim12 = False
             self._target_temperature_restored = False
+            self._restored_nominal = None  # the zone reported its commanded setpoint
             self._written_target_temperature = None
             # A dimension 14 report is the commanded setpoint, also while the zone is in
             # protection, so the snapshot taken before the dimension 12 frame is no longer what
@@ -3840,6 +3892,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 else None
             )
             is_protection_or_off = self._dimension_3_is_protection(message)
+            saved_nominal = self._saved_nominal_in_force()
+            if is_protection_or_off and saved_nominal is not None:
+                # A protection setpoint ends the restored setpoint in force; the commanded
+                # setpoint saved beside it is what the zone goes back to.
+                self._target_temperature = saved_nominal
             if not (is_protection_or_off and self._target_temperature is None):
                 # A zone restored as off with no saved nominal (a state from before
                 # ``nominal_temperature`` existed): what it reports while off is its protection
@@ -3863,7 +3920,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._paired_burst = None
                 self._unpaired_dim12_at = self._dim12_at
             if not is_protection_or_off:
-                self._remember_nominal()
+                self._remember_nominal(saved_nominal)
                 if self._reconcile_local_target():
                     self._paired_burst = (raw_msg, now)
         elif message.message_type == MESSAGE_TYPE_SEASON:
@@ -4081,6 +4138,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
             self._scenario = getattr(message, "scenario", None)
+            if not self._central:
+                # As in the mode branch: manual (110 / 210 / 310) with its setpoint; anything not
+                # in the table clears it.
+                raw_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
+                self._zone_operation = _ZONE_OPERATION.get(raw_what.split("#", 1)[0])
             if message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
                 LOGGER.debug(
                     "%s %s",
@@ -4299,6 +4361,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._running_fan_speed = self._decode_running_fan_speed(
                         msg_fan_on, msg_fan_speed
                     )
+                    # What the fan runs at now comes from this report, no longer from dimension 11.
+                    self._fan_off_reported = False
                     if self._running_fan_speed == "off":
                         self._actuator_fan_speeds = dict.fromkeys(
                             self._actuator_fan_speeds, "off"
@@ -4356,6 +4420,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._enable_fan_mode()
             self._fan_mode_reported = True
             speed = getattr(message, "fan_speed", None)
+            if (speed in (0, 1, 2, 3) or getattr(message, "fan_on", None) is True) and self._fan_off_reported:
+                # A speed again: the "off" of dimension 11 is over; what the fan runs at is not
+                # in this frame.
+                self._fan_off_reported = False
+                if not self._actuator_fan_speeds and self._running_fan_speed == "off":
+                    self._running_fan_speed = None
             if speed == 0:
                 self._attr_fan_mode = "auto"
             elif speed == 1:
@@ -4376,6 +4446,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # state is ``running_fan_speed``, unless an actuator of the zone reports it
                 # itself (dimension 20).
                 self._running_fan_speed = "off"
+                self._fan_off_reported = True
         elif self._central and (diag_what := _central_diagnostic_what(message)) is not None:
             LOGGER.debug(
                 "%s %s",

@@ -82,6 +82,7 @@ from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
 from .typing_compat import device_info_to_dict
 from .where_grammar import (
+    is_central_thermo_where,
     parse_thermo_actuator_where,
     thermo_dim19_status,
     thermo_dim20_actuator_target,
@@ -1046,7 +1047,15 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         if dim20_active is not None:
             dim20_level = thermo_dim20_level(message)
             act_id = thermo_event_actuator(message)
-            if act_id == "0":
+            names_actuator = thermo_dim20_actuator_target(message) is not None
+            if act_id != "0" and not (act_id.isascii() and act_id.isdigit() and 1 <= int(act_id) <= 9):
+                return
+            if is_central_thermo_where(message):
+                # A central unit's WHERE (``#0#N``, ``#Z``) is neither the whole zone nor one of its actuators.
+                return
+            # A WHERE that names no actuator (``Z#0``, or the bare zone, for which OWNd reports
+            # actuator 1) is the whole zone: it proves no actuator number.
+            if act_id == "0" or not names_actuator:
                 if self._actuator is not None:
                     self._actuator_states[self._actuator] = dim20_active
                 elif self._actuator_states:
@@ -1060,18 +1069,15 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             else:
                 if self._actuator is not None and act_id != self._actuator:
                     return
-                if not (act_id.isascii() and act_id.isdigit() and 1 <= int(act_id) <= 9):
-                    return
                 self._actuator_states[act_id] = dim20_active
                 self._aggregate_actuators.discard(act_id)
-                if thermo_dim20_actuator_target(message) is not None:
-                    if dim20_level is not None:
-                        self._actuator_levels[act_id] = dim20_level
-                    elif act_id in self._actuator_levels:
-                        if dim20_active:
-                            self._actuator_levels.pop(act_id, None)
-                        else:
-                            self._actuator_levels[act_id] = 0
+                if dim20_level is not None:
+                    self._actuator_levels[act_id] = dim20_level
+                elif act_id in self._actuator_levels:
+                    if dim20_active:
+                        self._actuator_levels.pop(act_id, None)
+                    else:
+                        self._actuator_levels[act_id] = 0
                 new_state = (
                     dim20_active
                     if self._actuator is not None

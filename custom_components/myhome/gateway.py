@@ -1676,11 +1676,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         """Queue a command; the returned future resolves to the monotonic write time."""
         delegated = self._delegated_target(message)
         if delegated is not None:
+            # Read by ``command_in_flight``: the gateway that writes it, whatever the options say later.
+            setattr(message, "_myhome_handed_to", delegated)
             if is_cancel:
                 return await delegated.send(message, is_cancel=True)
             return await delegated.send(message)
         standby = self._failover_target(message)
         if standby is not None:
+            # Read by ``command_in_flight``: the gateway that writes it, whatever the options say later.
+            setattr(message, "_myhome_handed_to", standby)
             if is_cancel:
                 return await standby.send(message, is_cancel=True)
             return await standby.send(message)
@@ -1709,9 +1713,21 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return await self._command_pool.send_status_request(message)
 
     def command_in_flight(self, message: Any) -> bool:
-        """Whether ``message`` is being written by the command pool right now (it may be on the wire)."""
-        pool = getattr(self, "_command_pool", None)
-        return any(sent is message for sent in getattr(pool, "_in_flight_messages", ()))
+        """Whether ``message`` is being written right now (it may be on the wire).
+
+        By this gateway's command pool, or by the pool of the gateway ``send`` handed it to (the
+        secondary of a delegated WHO, the warm standby). Both are looked at whatever is connected
+        now: the command was routed when it was sent, and the same object is in no other pool.
+        """
+        pools = [getattr(self, "_command_pool", None)]
+        # The gateway ``send`` handed it to, whatever the options say by now.
+        pools.append(getattr(getattr(message, "_myhome_handed_to", None), "_command_pool", None))
+        who = getattr(message, "who", getattr(message, "_who", None))
+        if who is not None and who not in (13, 1013):
+            if who in self.delegated_away_whos:
+                pools.append(getattr(self._get_secondary_for_who(who), "_command_pool", None))
+            pools.append(getattr(self._get_standby_gateway(), "_command_pool", None))
+        return any(sent is message for pool in pools for sent in getattr(pool, "_in_flight_messages", ()))
 
     def claim_in_flight_dimension_where(self, who: int, dimension: int) -> str | None:
         """Claim the sole point-to-point WHERE with an in-flight dimension request (#777)."""

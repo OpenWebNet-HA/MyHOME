@@ -148,6 +148,7 @@ from .const import (
 )
 from .where_grammar import (
     canonical_point_spelling,
+    canonical_thermo_zone,
     parse_thermo_actuator_where,
     validate_thermo_trigger_command,
 )
@@ -364,6 +365,9 @@ class MyHomeDeviceSchema(Schema):
         # its bare zone number. Where the file has a zone with that number too, the number
         # is the zone's whatever the order of the two entries: filed last, without replacing.
         _central_aliases: list[tuple[str, typing.Any]] = []
+        # The number of a zone written ``#1`` or ``01`` (``1``, ``zone_1``, ``4-1``): the zone's,
+        # ahead of a central unit's alias, behind an entry that is written with that number.
+        _zone_numbers: list[tuple[str, typing.Any]] = []
 
         for device in data:
             data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
@@ -375,7 +379,11 @@ class MyHomeDeviceSchema(Schema):
                 _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
             elif CONF_ZONE in data[device]:
                 _new_key = f"{data[device][CONF_WHO]}-{data[device][CONF_ZONE]}{routing}"
-                data[device][CONF_ZONE] = f"#0#{data[device][CONF_ZONE]}" if data[device][CONF_CENTRAL] and data[device][CONF_ZONE] != "#0" else data[device][CONF_ZONE]
+                zone = str(data[device][CONF_ZONE])
+                if data[device][CONF_CENTRAL]:
+                    # 0, #0 and #0#0 are the 99-zone central unit (#0); #0#N is the 4-zone one already.
+                    zone = "#0" if zone in ("0", "#0", "#0#0") else zone if zone.startswith("#0#") else f"#0#{zone}"
+                data[device][CONF_ZONE] = zone
                 data[device][CONF_NAME] = (
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
                 )
@@ -389,6 +397,16 @@ class MyHomeDeviceSchema(Schema):
                     _central_aliases.extend((alias, data[device]) for alias in _zone_aliases)
                 else:
                     _rekeyed_data.update(dict.fromkeys(_zone_aliases, data[device]))
+                    # ``1``, ``01`` and ``#1`` are zone 1; ``001`` is all the probes of zone 1, another address.
+                    if (
+                        (digits := zone.removeprefix("#")).isdigit()
+                        and len(digits) <= 2
+                        and (canon := canonical_thermo_zone(zone)) is not None
+                    ):
+                        _numbers = [f"{data[device][CONF_WHO]}-{canon}{routing}", f"{canon}{routing}"]
+                        if not routing:
+                            _numbers.append(f"zone_{canon}")
+                        _zone_numbers.extend((alias, data[device]) for alias in _numbers if alias not in _zone_aliases)
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
             if CONF_ICON not in data[device]:
@@ -404,6 +422,8 @@ class MyHomeDeviceSchema(Schema):
             if CONF_DEVICE_CLASS not in data[device]:
                 data[device][CONF_DEVICE_CLASS] = SwitchDeviceClass.SWITCH
 
+        for alias, entry in _zone_numbers:
+            _rekeyed_data.setdefault(alias, entry)
         for alias, central in _central_aliases:
             _rekeyed_data.setdefault(alias, central)
         return _rekeyed_data

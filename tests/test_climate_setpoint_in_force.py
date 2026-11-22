@@ -304,7 +304,8 @@ async def test_zone_saved_in_antifreeze_goes_back_to_its_nominal_after_a_restart
     assert restored.extra_state_attributes["nominal_temperature"] == 25.0
     _feed(restored, "*4*102*3##", "*#4*3*12*0070*3##")  # the zone reports again, still in antifreeze
     assert restored.target_temperature == 7.0
-    assert "*#4*3*14##" not in restored._silent_zone_reads()  # nothing left to ask about the setpoint
+    # The commanded setpoint is the saved one: asked until the zone reports it (a restored value is).
+    assert "*#4*3*14##" in restored._silent_zone_reads()
     await restored.async_set_hvac_mode(HVACMode.HEAT)
     restored._gateway_handler.send.assert_awaited_once()
     assert str(restored._gateway_handler.send.await_args.args[0]) == "*#4*#3*#14*0250*1##"
