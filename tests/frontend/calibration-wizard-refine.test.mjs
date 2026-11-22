@@ -258,6 +258,32 @@ describe("automatic runs and arrivals", async () => {
     assert.equal(translations.en.wiz_T720, "Positioning the cover");
   });
 
+  test("A-16 says the runs in the order each path takes them: Perfeziona half down then half up, the full measure half up then half down", async () => {
+    // Perfeziona (the saved times): from the top, half the closing time first.
+    const context = await mount({ language: "it" });
+    const { backend, wiz, code, type } = context;
+    await toFineTuning(context);
+    await tick();
+    backend.started(); backend.tick(14.3); backend.busStop(); await tick(8);
+    await type("160");
+    assert.deepEqual([backend.session.step, code()], ["half_close", "A-16"]);
+    assert.equal(wiz().querySelector(".wiz-body").textContent.trim(), it.wiz_T075_keep.replaceAll("**", ""));
+    // Each path's text, in both languages; a Perfeziona briefing shown at the half ascent (a page reloaded there)
+    // keeps Perfeziona's order.
+    for (const [language, strings] of [["it", it], ["en", translations.en]]) {
+      const tl = (key) => strings[key] || key;
+      const body = (view, local = {}) => buildScreen({ t: tl, language, stage: "session", path: "A", local: { ackDescent: true, ...local }, cover, view: { ...geometry, ...fineTuned, phase: "briefing", ...view }, elapsed: null, previews: false });
+      const refine = body({ step: "half_close" }), full = body({ keep_times: false, step: "half_open" }), reloaded = body({ step: "half_open" });
+      assert.deepEqual([refine.code, refine.body], ["A-16", strings.wiz_T075_keep], `${language}: Perfeziona`);
+      assert.deepEqual([full.code, full.body], ["A-16", strings.wiz_T075], `${language}: the full measure`);
+      assert.equal(reloaded.body, strings.wiz_T075_keep, `${language}: Perfeziona at the half ascent`);
+    }
+    assert.match(it.wiz_T075_keep, /percorrerà metà del tempo di discesa e si fermerà; poi farà lo stesso con metà del tempo di salita\./);
+    assert.match(it.wiz_T075, /percorrerà metà del tempo di salita e si fermerà; poi farà lo stesso con metà del tempo di discesa\./);
+    assert.match(translations.en.wiz_T075_keep, /travel for half the closing time, then stop; then it will do the same for half the opening time\./);
+    assert.match(translations.en.wiz_T075, /travel for half the opening time, then stop; then it will do the same for half the closing time\./);
+  });
+
   test("once «Avvia il movimento» is pressed the run is said as it goes, with its time left", async () => {
     const context = await mount({ language: "it" });
     const { backend, panel, wiz, code, press } = context;

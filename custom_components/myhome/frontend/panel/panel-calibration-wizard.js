@@ -514,8 +514,10 @@ export class CalibrationWizard {
     }
     // The medium dialog's column has its title «Passi»; the sheet has its own head.
     // The phone's «Passi» sheet is headed as the medium dialog's column: the process, its variant under it.
-    const titled = this._stepperMarkup(screen, { title: true });
-    for (const target of [root.querySelector(".wiz-steps"), root.querySelector(".wiz-sheet-steps")]) if (target.innerHTML !== titled) target.innerHTML = titled;
+    // The sheet's head also carries the cover's whole name while the bar cuts it (measured as the sheet opens).
+    const titled = this._stepperMarkup(screen, { title: true }), sheetTitled = this._stepperMarkup(screen, { title: true, cover: this._sheetCover });
+    for (const [target, markup] of [[root.querySelector(".wiz-steps"), titled], [root.querySelector(".wiz-sheet-steps"), sheetTitled]]) if (target.innerHTML !== markup) target.innerHTML = markup;
+    this._stepperScreen = screen;
     root.querySelector(".wiz-compact-line").textContent = screen.stepper.line;
     const phase = root.querySelector(".wiz-head-phase");
     const barLine = screen.stepper.barLine ?? screen.stepper.line;
@@ -850,13 +852,26 @@ export class CalibrationWizard {
     if (x.dataset.wiz === "close") this._finish(); else this._exit();
   }
 
-  _stepperMarkup(screen, { title = false } = {}) {
+  /**
+   * The bar keeps a long cover name on one line, cut («…»); the steps sheet then opens with the whole name over
+   * the process, on as many lines as it takes. Measured at each opening (after a rotation, a wider window); a name
+   * read whole in the bar adds nothing. The medium dialog's column never carries it.
+   */
+  _sheetName(sheet) {
+    const cover = this._frame?.querySelector(".wiz-head .wiz-cover");
+    const name = cover && cover.scrollWidth > cover.clientWidth ? cover.textContent : null;
+    if (name === this._sheetCover) return;
+    this._sheetCover = name;
+    if (this._stepperScreen) sheet.querySelector(".wiz-sheet-steps").innerHTML = this._stepperMarkup(this._stepperScreen, { title: true, cover: name });
+  }
+
+  _stepperMarkup(screen, { title = false, cover = null } = {}) {
     // The medium dialog's column is headed by the process («Perfeziona») and the variant chosen under it
     // («Solo i tempi»), in place of the generic «Passi» (which still names the column and the phone's sheet). The
     // two as one head (the process 14/600 in the text colour, the variant 12/400 grey, 4 px apart, 16 px over
-    // the first step), the phone's «Passi» sheet headed the same way.
+    // the first step), the phone's «Passi» sheet headed the same way, the cover's name over it when the bar cuts it.
     const { process, variant } = screen.stepper;
-    return `${title ? `<div class="wiz-steps-head"><h5 class="wiz-steps-title">${esc(process || this._context.t("wiz_T274"))}</h5>${variant ? `<p class="wiz-steps-variant">${esc(variant)}</p>` : ""}</div>` : ""}<p class="wiz-steps-line">${esc(screen.stepper.line)}</p>
+    return `${title ? `<div class="wiz-steps-head">${cover ? `<p class="wiz-steps-cover">${esc(cover)}</p>` : ""}<h5 class="wiz-steps-title">${esc(process || this._context.t("wiz_T274"))}</h5>${variant ? `<p class="wiz-steps-variant">${esc(variant)}</p>` : ""}</div>` : ""}<p class="wiz-steps-line">${esc(screen.stepper.line)}</p>
       <ol>${screen.stepper.phases.map((phase) => {
         // The variant under the title is not said again under «Scelta del percorso».
         const substeps = title && variant && phase.key === "intro" ? phase.substeps.filter((item) => item.label || item.value !== variant) : phase.substeps;
@@ -1070,6 +1085,7 @@ export class CalibrationWizard {
       // The phone bar's «Passi» toggles the sheet that drops from under it.
       const sheet = this._frame.querySelector(".wiz-sheet");
       if (!sheet.hidden && !sheet.classList.contains("is-leaving")) { this._act("steps-close"); return; }
+      this._sheetName(sheet);
       sheet.hidden = false;
       stepsExpanded(this._frame, true);
       focusOnOpen(sheet.querySelector(".wiz-sheet-card"), shown(sheet.querySelectorAll("button")));

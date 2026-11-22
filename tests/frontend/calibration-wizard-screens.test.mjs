@@ -286,6 +286,42 @@ describe("steps column, drawings and red actions", async () => {
     void move;
   });
 
+  test("a name the bar cuts («…») is read whole over the process in the phone's «Passi» sheet, measured at each opening; one the bar shows whole adds nothing", async () => {
+    const { wiz, startFor, press, panel } = await mount({ language: "it" });
+    await startFor("cover.living_one");
+    const cover = wiz().querySelector(".wiz-head .wiz-cover"), name = cover.textContent;
+    // jsdom lays nothing out (both widths 0): the bar's widths are set by hand on the name's own node.
+    const widths = (scroll, client) => {
+      Object.defineProperty(cover, "scrollWidth", { configurable: true, get: () => scroll });
+      Object.defineProperty(cover, "clientWidth", { configurable: true, get: () => client });
+    };
+    const head = () => wiz().querySelector(".wiz-sheet-steps > .wiz-steps-head");
+    const open = async () => { wiz().querySelector('.wiz-head [data-wiz="steps"]').click(); await tick(); assert.equal(wiz().querySelector(".wiz-sheet").hidden, false); };
+    const close = async () => { await press("steps-close"); await new Promise((resolve) => setTimeout(resolve, 260)); };
+    // Cut in the bar: the whole name first in the sheet's head, the process under it.
+    widths(320, 180);
+    await open();
+    assert.deepEqual([...head().children].map((element) => [element.className, element.textContent]),
+      [["wiz-steps-cover", name], ["wiz-steps-title", "Calibra"], ["wiz-steps-variant", "Col metro"]]);
+    assert.equal(wiz().querySelector(".wiz-steps .wiz-steps-cover"), null, "the medium dialog's column never carries it");
+    // The sheet patched while open keeps it.
+    panel._calibrationTab._wizard.relayout();
+    assert.equal(head().querySelector(".wiz-steps-cover")?.textContent, name);
+    await close();
+    // A wider window (or a rotation): the bar shows it whole; at the next opening the sheet starts from the process.
+    widths(180, 180);
+    await open();
+    assert.equal(head().querySelector(".wiz-steps-cover"), null);
+    assert.equal(head().firstElementChild.className, "wiz-steps-title");
+    await close();
+    // Narrower again: measured again.
+    widths(320, 120);
+    await open();
+    assert.equal(head().firstElementChild.textContent, name);
+    // 14/600 in the text colour, as the process under it; the name wraps on as many lines as it takes.
+    assert.equal(rule(cascadeCss, ".wiz-steps-head .wiz-steps-cover"), "margin: 0; font-size: var(--cal-fs-14); line-height: var(--cal-lh-14); font-weight: 600; color: var(--primary-text-color); overflow-wrap: anywhere;");
+  });
+
   test("every illustrated step reads title → drawing → text → field → its message → its help, on every screen that has a drawing", async () => {
     const { ILLUSTRATED } = await import("../../custom_components/myhome/frontend/panel/panel-calibration-screens.js");
     assert.ok(Object.values(ILLUSTRATED).every((entry) => entry.position === "after-title"), "one place in the inventory");
