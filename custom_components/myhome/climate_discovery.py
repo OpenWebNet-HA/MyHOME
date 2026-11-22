@@ -676,8 +676,12 @@ class ZoneDiscovery:
             run.close()
 
     async def _read_under_confirm(self, pair: ZonePair) -> bool | None:
-        """Read ``pair``'s temperature while allowing identical reply frames to confirm it."""
-        if pair not in self._candidates:
+        """Read ``pair``'s temperature while allowing identical reply frames to confirm it.
+
+        The exposure check is made here, with the startup lock held, because the address can
+        become exposed on the bus while the read waits for the lock.
+        """
+        if pair not in self._candidates or is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0]):
             return None
         self._confirming_pair = pair
         try:
@@ -738,9 +742,15 @@ class ZoneDiscovery:
                             answered = await self._read_under_confirm(pair)
                     else:
                         answered = await self._read_under_confirm(pair)
-                    if pair not in self._candidates or answered is not None:
+                    if (
+                        pair not in self._candidates
+                        or answered is not None
+                        or is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0])
+                    ):
                         break
-                if pair not in self._candidates:
+                if pair not in self._candidates or is_exposed_on_bus(
+                    self._hass, self._config_entry, 4, pair[0]
+                ):
                     continue
                 if answered in (False, True):
                     self._candidates_unanswered.add(pair)

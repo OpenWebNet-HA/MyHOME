@@ -765,6 +765,10 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
                 act: "on" if active else "off"
                 for act, active in sorted(self._actuator_states.items())
             }
+            if self._aggregate_actuators:
+                # From an aggregate report (``Z#0``): no actuator number proven; saved so a
+                # restart does not turn them into write targets.
+                attrs["aggregate_actuators"] = sorted(self._aggregate_actuators)
             if self._actuator_levels:
                 attrs["actuator_levels"] = {
                     act: level
@@ -779,6 +783,12 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         await super().async_restore_last_state(last_state)
         raw_actuators = last_state.attributes.get("actuators")
         if self._actuator is None and isinstance(raw_actuators, dict):
+            raw_aggregate = last_state.attributes.get("aggregate_actuators")
+            aggregate = (
+                {str(act) for act in raw_aggregate}
+                if isinstance(raw_aggregate, (list, tuple))
+                else set()
+            )
             for act, val in raw_actuators.items():
                 act = str(act)
                 # A live report is never overwritten; one shown only from an aggregate report is.
@@ -786,10 +796,16 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
                     continue
                 if val in ("on", True):
                     self._actuator_states[act] = True
-                    self._aggregate_actuators.discard(act)
+                    if act in aggregate:
+                        self._aggregate_actuators.add(act)
+                    else:
+                        self._aggregate_actuators.discard(act)
                 elif val in ("off", False):
                     self._actuator_states[act] = False
-                    self._aggregate_actuators.discard(act)
+                    if act in aggregate:
+                        self._aggregate_actuators.add(act)
+                    else:
+                        self._aggregate_actuators.discard(act)
         if (
             self._attr_is_on is not None
             and self._off_icon is not None
@@ -904,10 +920,12 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         return [f"*#4*{self._full_where}*#20*{value}##"]
 
     async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
-        """Turn the thermo actuator on via custom trigger or direct Dimension 20 write."""
+        """Turn the thermo actuator on via custom trigger or direct Dimension 20 write.
+
+        A configured command the gateway refuses is raised like a built one.
+        """
         if self._turn_on_command:
-            cmd = cast(OWNCommand, OWNCommand.parse(self._turn_on_command))
-            await self._gateway_handler.send(cmd)
+            self._raise_refused(await self._deliver_frames([self._turn_on_command]))
             return
         self._refuse_interface_write()
         self._pending_direct_write = (True, time.monotonic(), False)
@@ -916,34 +934,61 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the thermo actuator off via custom trigger or direct Dimension 20 write."""
         if self._turn_off_command:
-            cmd = cast(OWNCommand, OWNCommand.parse(self._turn_off_command))
-            await self._gateway_handler.send(cmd)
+            self._raise_refused(await self._deliver_frames([self._turn_off_command]))
             return
         self._refuse_interface_write()
         self._pending_direct_write = (False, time.monotonic(), False)
         await self._send_direct_writes(0)
 
+    async def _deliver_frames(self, frames: list[str]) -> list[str]:
+        """Queue every frame, then wait once for all of them; return the frames the gateway refused."""
+        written: list[tuple[str, asyncio.Future[Any]]] = []
+        for frame in frames:
+            future: Any = await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
+            if isinstance(future, asyncio.Future):
+                written.append((frame, future))
+        if written:
+            await asyncio.wait(
+                [future for _frame, future in written], timeout=DIRECT_WRITE_DELIVERY_TIMEOUT
+            )
+        return [
+            frame
+            for frame, future in written
+            if future.done() and future.cancelled() and getattr(future, "_gateway_nack", False) is True
+        ]
+
+    def _raise_refused(self, refused: list[str]) -> None:
+        """Raise for the frames the gateway refused (NACK); return when there is none."""
+        if not refused:
+            return
+        frames = ", ".join(refused)
+        raise HomeAssistantError(
+            f"{self._device_name}: the gateway refused {frames}",
+            translation_domain=DOMAIN,
+            translation_key="thermo_switch_write_refused",
+            translation_placeholders={"name": self._device_name, "frames": frames},
+        )
+
     async def _send_direct_writes(self, value: int) -> None:
         """Send every direct dimension 20 write, then raise for the ones the gateway refused (NACK).
 
-        A write nothing answered within ``DIRECT_WRITE_DELIVERY_TIMEOUT`` is not raised.
+        Every write is queued before any answer is waited for, so a later service call of this
+        entity is queued behind all of them. The whole call waits once, at most
+        ``DIRECT_WRITE_DELIVERY_TIMEOUT``; a write nothing answered in that time is not raised.
+        A call whose every write was refused disarms its own revert check, not a newer call's.
         """
-        refused: list[str] = []
-        for frame in self._direct_write_frames(value):
-            written: Any = await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
-            if not isinstance(written, asyncio.Future):
-                continue
-            await asyncio.wait([written], timeout=DIRECT_WRITE_DELIVERY_TIMEOUT)
-            if written.done() and written.cancelled() and getattr(written, "_gateway_nack", False) is True:
-                refused.append(frame)
-        if refused:
-            frames = ", ".join(refused)
-            raise HomeAssistantError(
-                f"{self._device_name}: the gateway refused {frames}",
-                translation_domain=DOMAIN,
-                translation_key="thermo_switch_write_refused",
-                translation_placeholders={"name": self._device_name, "frames": frames},
-            )
+        pending = self._pending_direct_write
+        frames = self._direct_write_frames(value)
+        refused = await self._deliver_frames(frames)
+        if (
+            refused
+            and len(refused) == len(frames)
+            and pending is not None
+            and self._pending_direct_write is not None
+            and self._pending_direct_write[1] == pending[1]
+        ):
+            self._pending_direct_write = None
+        self._raise_refused(refused)
 
     def _check_direct_write_revert(self, new_state: bool) -> None:
         """Detect MyHomeServer1 bt_thermo_manager immediate revert after a #20 write."""
