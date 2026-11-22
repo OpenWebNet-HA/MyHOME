@@ -1,4 +1,46 @@
-# Calibration tab and wizard (panel 0.43.0)
+# Calibration tab and wizard
+
+## Current behaviour
+
+Updated **22 November 2026**, after fork PR #23 (`c08484e1`). See
+[panel status](panel-status.md) for integration history, validation and remaining work.
+
+- The Calibration list offers one suggested action per cover and secondary
+  actions in its menu. A cover opens in an Overview/Details frame, with travel,
+  slats, effective values, history and its profile. Change profile assigns or
+  unlinks from this frame; transient failures can be retried without reopening it.
+- Basic calibration measures both directions and, for covers with slats, a
+  separate lift-off step. Tape refinement is live, including the `keep_times`
+  path on saved times. The full tape path performs the half ascent before the
+  half descent; saved-time refinement performs them in the opposite order.
+- New measurements save into a new profile, or into the followed profile when
+  the cover is its source. Shared review loads the impact preview automatically.
+  Save stays disabled while the preview is absent/stale; a refused preview offers
+  Retry, which never saves. After a valid preview is displayed, one fresh Save
+  tap commits. The notice explicitly distinguishes changed and unchanged followers.
+- On phones the wizard opens as a bottom sheet (below 512 px); medium windows
+  use a 480 px dialog, and desktop windows from 1024 px use an 880 px dialog
+  with the steps beside the content. If the bar truncates a cover name, the
+  steps sheet shows it in full, measured again each time the sheet opens.
+- The Calibration tab's old sequence-selection UI is removed. Batch sessions
+  started from the existing profile dialog remain supported separately.
+- Session ownership, read-only observers, Stop, cancellation and reconnection
+  use the live session engine. Start refused because the cover is moving returns
+  to the briefing with its error, allowing a retry.
+- Development-only profile-check/points-only previews are disabled by default.
+  They are distinct from the implemented Change profile flow and the positioning
+  check within geometry calibration. A standalone check-only flow remains follow-up work.
+
+Current regression coverage includes `calibration-wizard-base.test.mjs`,
+`calibration-wizard-refine.test.mjs`, `calibration-profile-sheet.test.mjs`,
+`calibration-wizard-screens.test.mjs` and `calibration-texts.test.mjs`.
+
+## Historical mockup mapping
+
+The following tables preserve the original screen-design mapping. They include
+superseded layouts, removed sequence controls and capabilities that were previews
+at that time; they are not the current feature-availability or UI contract.
+The current overview above takes precedence.
 
 > Texts no screen draws any more were removed from the panel in the final review (0.43.0): calTabBusy, calTabEmptyTitle, calTabIntro, wizTopReached, T038, T083, T086, T100, T112, T123, T170, T173, T177, T201, T262, T268, T281, T282, T283, T285, T286, T289, T323, T324, T325, T326, T327, T328, T329, T330, T331, T332, T333, T334, T335, T336, T337, T338, T339, T340, T341, T342, T343, T344, T345, T346, T347, T348, T349, T350, T351, T352, T353, T354, T355, T356, T357, T358, T359, T360, T361, T362, T363, T367, T375, T376, T380, T389, T393, T394, T396, T397, T398, T421, T449, T451, T462, T508, T527, T528, T547. Where the tables below still name one of them, it is the mockup's text, not the panel's.
 

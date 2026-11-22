@@ -1,4 +1,18 @@
-# MyHOME sidepanel — first version
+# MyHOME sidepanel
+
+## Current development status — 22 November 2026
+
+The development branch includes the new Calibration tab, basic calibration,
+tape refinement, Change profile and the shared-save fixes through fork PR #23.
+Upstream PR #374 remains draft while the combined workflow is validated on real
+installations. See the [implementation and validation status](panel-status.md)
+for the merged work, evidence and remaining scope.
+
+The sections below are versioned implementation history. In particular, older
+save destinations, layouts and references to pending geometry work do not
+describe the current wizard. Use the
+[current Calibration UI overview](panel-calibration-screens.md#current-behaviour)
+for that workflow.
 
 ## Compact panel navigation (0.34.0)
 
@@ -614,7 +628,7 @@ requirements, limits and real-gateway validation steps.
 
 ## Panel versioning
 
-The panel has an independent version, currently **0.22.2**, defined by
+The panel has an independent version, currently **0.43.0**, defined by
 `PANEL_VERSION` in `custom_components/myhome/panel.py`. Its version appears under
 the MyHOME header; the integration version is shown separately at the bottom.
 The label uses the version of the JavaScript module actually loaded by the tab.

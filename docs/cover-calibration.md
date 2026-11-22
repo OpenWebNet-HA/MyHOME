@@ -1,5 +1,15 @@
 # Guided and automatic travel measurement — panel 0.24.0
 
+> **Historical protocol guide:** the versioned sections below describe the earlier
+> travel-measurement implementation. For the current wizard and validation status,
+> see [panel status](panel-status.md) and
+> [Calibration UI](panel-calibration-screens.md#current-behaviour).
+> Basic calibration and tape refinement now save to a new profile or an eligible
+> shared profile; the cover-only save destination described below is no longer
+> offered for those sessions. Shared updates require a valid impact preview and a
+> deliberate Save tap. Session recovery is implemented; physical validation of the
+> combined workflow remains outstanding.
+
 Panel 0.24.0 adds [bounded backend session recovery](sidepanel.md#session-recovery-0240).
 The recovery rules below supersede the older socket-loss descriptions in the
 versioned 0.18–0.20 sections. Legacy clients still cancel on disconnect.

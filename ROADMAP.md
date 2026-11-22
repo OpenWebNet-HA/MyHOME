@@ -125,10 +125,14 @@ Legrand advanced shutter actuators (such as the `067557`, `LN4672M2`, and `F401`
 * **Delivery Failure Motion Abort (#380)**: Immediately stops virtual movement and prevents phantom position advance when a cover frame is rejected or unconfirmed by the gateway.
 
 #### Active Community Collaboration: Dedicated Administration Panel (#374):
-Work is actively underway in **PR #374** (by @xtimmy86x, following [Discussion #270](https://github.com/orgs/OpenWebNet-HA/discussions/270)) introducing an experimental administration panel:
+As of **22 November 2026**, the development branch includes the calibration and
+profile improvements through fork PR #23. Upstream
+[PR #374](https://github.com/OpenWebNet-HA/MyHOME/pull/374) remains **draft** for
+combined field validation. See the [current panel status](docs/panel-status.md)
+for merged work, checks and remaining scope.
 
 * **Asymmetric Travel Profiles**: Configurable independent opening and closing durations per cover.
-* **Guided & Batch Calibration**: Guided, automatic, and selected-cover batch calibration workflows with explicit preview and atomic persistence.
+* **Calibration & Profiles**: Basic calibration, tape refinement using saved times, Change profile and shared updates with impact shown before Save. The Calibration tab handles one cover at a time; the existing profile-dialog batch flow remains separate.
 * **Integrated Diagnostics & Bus Monitor**: Embedded live trace capture, frame filtering, transmission, and diagnostic export directly inside the administration panel.
 * **WHO Category Inventory**: Categorized gateway entity inventory with search and area management.
 

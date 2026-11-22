@@ -2,6 +2,12 @@
 
 Welcome to the development roadmap and architectural status overview for the **MyHOME for Home Assistant** integration.
 
+> **Administration panel update — 22 November 2026:** development work through
+> fork PR #23 is merged into `feat/myhome-sidepanel`. Upstream
+> [#374](https://github.com/OpenWebNet-HA/MyHOME/pull/374) remains draft for combined
+> field validation. The panel is separate from the shipped integration features
+> listed below. See [panel implementation and validation status](panel-status.md).
+
 Our overarching mission is to provide the most reliable, complete, and high-performance integration between Home Assistant and the BTicino / Legrand SCS OpenWebNet ecosystem. We adhere to strict standards: **zero-latency asynchronous architecture**, **hardware-level protocol fidelity**, **100% automated test coverage**, and **full Home Assistant Core 2025/2026 compatibility**.
 
 > [!TIP]
