@@ -251,11 +251,18 @@ export class CalibrationWizard {
       profiles: this._profiles(), followed, followerNames: cover ? names(cover.followers, language) : "",
       // A cover named as the list shows it (never its entity id), null when Home Assistant has none.
       coverName: (id) => this._covers().find((entry) => entry.cover.entity_id === id)?.name || hass.states?.[id]?.attributes?.friendly_name || null,
-      // While only the preview of the profile's update is in flight Save stays on: a press waits for it (`_save`).
-      view: gateway?.view || null, status: this._previewing() ? { ...gateway.status, locked: !!gateway.status.lost || !!gateway.view?.read_only } : gateway?.status || {}, elapsed: gateway?.elapsed() ?? null, runPosition: local.run?.position ?? null, now: Date.now(),
+      view: gateway?.view || null, status: gateway?.status || {}, elapsed: gateway?.elapsed() ?? null, runPosition: local.run?.position ?? null, now: Date.now(),
       preview: !!gateway?.preview, previews: this._previews, supports: (target) => gateway ? gateway.supports(target) : false,
       // A-35: the covers that can be given the profile just written, and whether Home Assistant assigns several.
       assign: local.stage === "assign" ? this._assignInfo() : null, assignable: this._gatewayData()?.capabilities?.profile_assignment !== false });
+    // «Salva nel profilo «X»» only with its impact in view (`_sharedState`): off, the same words, until the preview of
+    // this view is back; refused, «Riprova» in its place (it asks the preview again, never saves; off while it comes).
+    const shared = screen.actions.some((action) => action.id === "save" && action.target === "profile_update") ? this._sharedState() : null;
+    if (shared && shared !== "ready") {
+      const retry = { id: "shared-retry", label: t("wiz_T247"), kind: "primary" };
+      screen.actions = screen.actions.map((action) => action.id !== "save" ? action : shared === "refused" ? retry
+        : { ...(shared === "retrying" ? retry : action), disabled: true, settling: true });
+    }
     // From the press of Save until Home Assistant has written the store (its disk can take seconds) the
     // button says so, off with the passing look; a reader sees the owner's «saving» the same way.
     if (local.stage === "session" && (gateway?.view?.phase === "saving" || this._local.saving)) {
@@ -418,26 +425,45 @@ export class CalibrationWizard {
     this._askShared();
   }
 
-  /** Only the preview of the profile's update in flight (no other command). */
-  _previewing() { return !!this._local.sharedAsk?.pending && !!this._gateway?.status.busy; }
+  /** The view whose preview of the profile's update is asked (`session:sequence`), null where none is asked. */
+  _sharedKey() {
+    const gateway = this._gateway, view = gateway?.view;
+    if (!gateway?.previewShared || gateway.preview || !view || view.read_only || view.phase !== "review" || this._local.stage !== "session") return null;
+    return `${view.session_id}:${view.sequence}`;
+  }
+
+  /**
+   * Where the preview of the profile's update stands for this view, which «Salva nel profilo «X»» waits for: "ready"
+   * (back and valid: one press saves with its confirmation), "asking" (not back yet, or stale and asked again),
+   * "refused" (back without one: «Riprova»), "retrying" («Riprova» pressed, not back yet). Null when there is none to
+   * wait for (a gateway without previews saves at once).
+   */
+  _sharedState() {
+    const key = this._sharedKey(), asked = this._local.sharedAsk;
+    if (!key) return null;
+    if (asked?.key !== key) return "asking";
+    if (asked.pending) return asked.retry ? "retrying" : "asking";
+    return this._local.sharedPreview ? "ready" : "refused";
+  }
 
   /**
    * «Aggiorna il profilo «X»» on the summary: its preview (Home Assistant's `preview_save`, who and what changes for
    * the covers that follow the profile, and the confirmation Save carries) asked once on arrival, not at the press, so
    * the impact is in view before Save. Asked again once stale: another choice, or a new view of the session (a check
-   * repeated, new values). `again`: a preview refused is asked once more (the press of Save). The promise of the
+   * repeated, new values). `again`: a preview refused is asked once more (the press of «Riprova»). The promise of the
    * preview (null when refused), or null when there is none to ask.
    */
   _askShared(again = false) {
-    const gateway = this._gateway, view = gateway?.view, local = this._local;
-    if (!gateway?.previewShared || gateway.preview || !view || view.read_only || view.phase !== "review" || local.stage !== "session") return null;
+    const gateway = this._gateway, local = this._local, key = this._sharedKey();
+    if (!key) return null;
     // Whichever is chosen: the note under «Aggiorna il profilo «X»» says the same in grey under «Nuovo profilo».
     if (!this._current?.profileBlock?.choice?.options?.some((option) => option.value === "update")) return null;
-    const key = `${view.session_id}:${view.sequence}`, asked = local.sharedAsk;
+    const asked = local.sharedAsk;
     if (asked?.key === key && (asked.pending || !again || local.sharedPreview)) return asked.promise;
     // A command still waiting for its answer: asked at the next view.
     if (gateway.status.busy) return null;
-    const ask = { key, pending: true };
+    // Asked again after a refusal of this view: «Riprova» stays in place (off) until it is back.
+    const ask = { key, pending: true, retry: again && asked?.key === key };
     Object.assign(local, { sharedAsk: ask, sharedPreview: null });
     ask.promise = Promise.resolve(gateway.previewShared()).catch(() => null).then((preview) => {
       ask.pending = false;
@@ -754,9 +780,7 @@ export class CalibrationWizard {
       // The hold after a change (CONFIRM_GUARD_MS) no longer draws the buttons off (they flashed half
       // transparent): `_click` drops the taps meant for the old bar instead. A request in flight still holds them.
       // «Non ha fatto quello che doveva» is a Stop too: it never waits for an answer (it stays in the hold).
-      // Save is not held by the preview of the profile's update it waits for anyway (`_save`).
-      const waits = inFlight && !["stop", "misbehaved"].includes(action.id) && !(action.id === "save" && this._previewing());
-      button.disabled = !!action.disabled || empty || waits || (held && action.id !== "stop");
+      button.disabled = !!action.disabled || empty || ((inFlight && !["stop", "misbehaved"].includes(action.id)) || (held && action.id !== "stop"));
       if (following && button.disabled) button.tabIndex = -1; else button.removeAttribute("tabindex");
       // Off only for a moment, enabling by itself (a request or the motor settling) keeps the light
       // primary look; off until the user acts is the neutral grey.
@@ -1256,6 +1280,8 @@ export class CalibrationWizard {
     if (id === "take") { local.arm = null; return gateway?.claim(); }
     if (id === "reconnect") { local.arm = null; return gateway?.reconnect(); }
     if (id === "save") return this._save();
+    // «Riprova» after a refused preview of the profile's update: asked again, nothing saved (Save then wants a new press).
+    if (id === "shared-retry") { if (this._sharedState() === "refused") { this._askShared(true); this._render(); } return; }
     if (id === "refine") return this._previews ? this._fineTune() : undefined;
     // A-34's «Perfeziona col metro» after a basic calibration: fine-tuning with the tape takes the same frame.
     if (id === "refine-tape") return this._refineTape();
@@ -1501,18 +1527,11 @@ export class CalibrationWizard {
     const screen = this._current = this._screen(), local = this._local;
     const action = screen.actions.find((item) => item.id === "save");
     if (!action || action.disabled || !this._gateway) return;
-    // «Salva nel profilo» saves at the first press, with the confirmation of the preview asked on arrival (its impact
-    // already in yellow under the choice). Pressed before the preview is back: «Salvataggio…» while it comes, then saved.
-    // Refused: nothing is saved, the refusal is said (a gateway without previews saves at once).
-    if (action.target === "profile_update" && this._gateway.previewShared && !local.sharedPreview) {
-      const gateway = this._gateway;
-      local.saving = true;
-      this._patch(this._screen());
-      let preview = null;
-      try { preview = await this._askShared(true); } finally { local.saving = false; }
-      if (gateway !== this._gateway || this._local !== local) return;
-      if (!preview) { if (this._root && local.stage === "session") this._render(); return; }
-    }
+    // «Salva nel profilo» saves at one press, only with its impact in view: the preview of this view (asked on
+    // arrival) back and valid, and the confirmation sent the one it carries. Never queued: a press without it (still
+    // coming, refused, stale) saves nothing (Save is off then, or «Riprova»). A gateway without previews saves at once.
+    if (action.target === "profile_update" && this._sharedState() !== null
+      && (this._sharedState() !== "ready" || this._gateway.savePreview !== local.sharedPreview)) return;
     const name = screen.profileBlock?.name?.value;
     // Path B saves no measured value: the cover follows the chosen profile.
     local.pendingSave = local.path === "B" ? { target: "follow_profile", name: null } : { target: action.target || "profile_new", name };

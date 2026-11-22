@@ -180,7 +180,7 @@ describe("names with their type", async () => {
   const PANEL = "../../custom_components/myhome/frontend/panel/";
   const { translations } = await import(`${PANEL}panel-translations.js`);
   const text = await import(`${PANEL}panel-calibration-text.js`);
-  const { sharedNotice } = await import(`${PANEL}panel-calibration-screens.js`);
+  const { sharedNotice, sharedUnchanged } = await import(`${PANEL}panel-calibration-screens.js`);
   const it = translations.it, en = translations.en;
   /** A window `width` px wide and 800 high for `matchMedia`, motion reduced. */
   const windowOf = (width) => (query) => ({ matches: query.split(",").some((part) => [...part.matchAll(/\(\s*([a-z-]+)\s*:\s*([a-z0-9-]+)\s*\)/g)].every(([, name, value]) =>
@@ -314,6 +314,29 @@ describe("names with their type", async () => {
       "The times and intermediate positions of the {count} covers that follow it change too: {names}.", "The times and intermediate positions of the other cover that follows it change too: {names}.",
       "The intermediate positions of the {count} covers that follow it change too: {names}.", "The intermediate positions of the other cover that follows it change too: {names}."]);
     assert.equal(text.fill(it.calAssignSlatsYesNoNamed, { cover: "Door" }), "La tapparella Door ha le lamelle, il profilo no: vicino alla chiusura le posizioni possono essere meno precise. Assegna comunque?");
+  });
+
+  test("followers whose preview confirms nothing changes for them: «Le altre N tapparelle che lo seguono non cambiano: …», one or more, IT and EN; nothing when none follows", () => {
+    const same = { opening: { before: 20, after: 20 }, closing: { before: 19, after: 19 } };
+    const unchanged = (followers, table = it, { coverFollowers = [], followerNames = "" } = {}) => {
+      const ctx = { t: (key) => table[key], cover: { entity_id: "cover.a", profile: { name: "tall" }, followers: coverFollowers },
+        view: { entity_id: "cover.a" }, followerNames, coverName: (id) => ({ "cover.b": "Office", "cover.c": "Kitchen" })[id] };
+      // Only when the impact is empty: never next to «Cambiano anche…».
+      assert.equal(sharedNotice(ctx, { followers }), "");
+      return sharedUnchanged(ctx, { followers });
+    };
+    const b = { entity_id: "cover.b", changes: same, loses_check: false }, c = { entity_id: "cover.c", changes: same, loses_check: false };
+    assert.equal(unchanged([{ entity_id: "cover.a", changes: same }, b]), "L’altra tapparella che lo segue non cambia: Office.");
+    assert.equal(unchanged([b, c]), "Le altre 2 tapparelle che lo seguono non cambiano: Office, Kitchen.");
+    assert.equal(unchanged([b], en), "The other cover that follows it doesn't change: Office.");
+    assert.equal(unchanged([b, c], en), "The other 2 covers that follow it don't change: Office, Kitchen.");
+    // The preview lists none of them: the covers that follow the profile, as the panel names them.
+    assert.equal(unchanged([], it, { coverFollowers: ["cover.b", "cover.c"], followerNames: "Office e Kitchen" }), "Le altre 2 tapparelle che lo seguono non cambiano: Office e Kitchen.");
+    assert.equal(unchanged([], en, { coverFollowers: ["cover.b"], followerNames: "Office" }), "The other cover that follows it doesn't change: Office.");
+    // None follows it: nothing (the note keeps «Nessun’altra tapparella lo segue.»).
+    assert.equal(unchanged([{ entity_id: "cover.a", changes: same }]), "");
+    assert.deepEqual([it.wiz_T725, it.wiz_T725_one, en.wiz_T725, en.wiz_T725_one], ["Le altre {count} tapparelle che lo seguono non cambiano: {names}.",
+      "L’altra tapparella che lo segue non cambia: {names}.", "The other {count} covers that follow it don't change: {names}.", "The other cover that follows it doesn't change: {names}."]);
   });
 
   test("no key reworded here is used by the Profili or Dispositivi tabs; their shared texts are as they were", () => {

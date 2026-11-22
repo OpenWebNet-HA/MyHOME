@@ -3663,6 +3663,17 @@ test("counts of zero and one use their own forms", () => {
   const en = (key) => translations.en[key] || key;
   assert.deepEqual(buildScreen({ t: en, language: "en", stage: "profile", path: "B", cover: cover([]), local: {},
     profiles: [{ id: "p", name: "tall", followerNames: ["X", "Y", "Z", "W"], measuredOn: "Hall" }] }).choice.options[0].note, ["Followed by the covers X, Y, Z and 1 more"]);
+  // «Aggiorna il profilo «X»»'s preview back, nothing changing for the covers that follow it: the same note says so, in
+  // grey whatever is chosen, one cover or more, never «Cambierà anche…».
+  const unchanged = (tr, language, followers, saveChoice) => buildScreen({ t: tr, language, stage: "session", path: "A", cover: cover(followers), view,
+    local: { saveProfile: true, saveChoice, sharedPreview: { followers: followers.map((name, index) => ({ entity_id: `cover.s${index}`, name,
+      changes: { opening: { before: 20, after: 20 } }, loses_check: false })) } }, followerNames: followers.join(" e ") }).profileBlock.choice.options[0].note;
+  assert.deepEqual(unchanged(t, "it", ["Sala 3"], "update"), { text: "L’altra tapparella che lo segue non cambia: Sala 3.", tone: "muted" });
+  assert.deepEqual(unchanged(t, "it", ["Sala 2", "Sala 3"], "new"), { text: "Le altre 2 tapparelle che lo seguono non cambiano: Sala 2, Sala 3.", tone: "muted" });
+  assert.deepEqual(unchanged(en, "en", ["Room 3"], "update"), { text: "The other cover that follows it doesn't change: Room 3.", tone: "muted" });
+  assert.deepEqual(unchanged(en, "en", ["Room 2", "Room 3"], "update"), { text: "The other 2 covers that follow it don't change: Room 2, Room 3.", tone: "muted" });
+  // None follows it: as before.
+  assert.deepEqual(unchanged(t, "it", [], "update"), { text: "Nessun’altra tapparella lo segue.", tone: "muted" });
 });
 
 test("a refusal is forgotten once the session moves to another phase", async () => {

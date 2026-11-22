@@ -481,6 +481,9 @@ export const translations = {
     wiz_T723_one: "The times and intermediate positions of the other cover that follows it change too: {names}.",
     wiz_T724: "The intermediate positions of the {count} covers that follow it change too: {names}.",
     wiz_T724_one: "The intermediate positions of the other cover that follows it change too: {names}.",
+    // «Aggiorna il profilo «X»»: covers follow it, but its preview says nothing changes for them (grey).
+    wiz_T725: "The other {count} covers that follow it don't change: {names}.",
+    wiz_T725_one: "The other cover that follows it doesn't change: {names}.",
     wiz_T710: "The covers {names} will lose their check.",
     wiz_T710_one: "The cover {names} will lose its check.",
     wiz_T701: "Fine-tuning takes a few minutes: the cover moves by itself and you read with the tape measure where it stops: three readings, then a check. The times saved stay as they are. You can stop whenever you like: **saving only happens at the final summary**.\n\n**You will need a tape measure.** Stand in front of the cover, clearly visible and easy to reach for the readings.",
@@ -1626,6 +1629,8 @@ export const translations = {
     wiz_T723_one: "Cambiano anche i tempi e le posizioni intermedie dell’altra tapparella che lo segue: {names}.",
     wiz_T724: "Cambiano anche le posizioni intermedie delle {count} tapparelle che lo seguono: {names}.",
     wiz_T724_one: "Cambiano anche le posizioni intermedie dell’altra tapparella che lo segue: {names}.",
+    wiz_T725: "Le altre {count} tapparelle che lo seguono non cambiano: {names}.",
+    wiz_T725_one: "L’altra tapparella che lo segue non cambia: {names}.",
     wiz_T710: "Perderanno la verifica le tapparelle {names}.",
     wiz_T710_one: "Perderà la verifica la tapparella {names}.",
     wiz_T701: "Il perfezionamento dura qualche minuto: la tapparella si muove da sola e tu leggi col metro dove si ferma: tre letture, poi una verifica. I tempi salvati restano quelli. Puoi terminare quando vuoi: **il salvataggio verrà fatto solo al riepilogo finale**.\n\n**Ti servirà un metro.** Devi trovarti davanti alla tapparella, visibile e facilmente accessibile per le letture.",
