@@ -316,21 +316,34 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 "so every dimension 22 frame is refused",
             )
             raise ServiceValidationError(
-                f"Refusing to send `{message}`: this WHO 4 dimension 22 form crashes the "
-                "thermostat service of several gateways; nothing was sent",
+                f'Refusing to send "{message}": WHO 4 dimension 22 frames are blocked as a '
+                "precaution unless they are one of the published split forms this installation "
+                "can recognise; nothing was sent",
                 translation_domain=DOMAIN,
                 translation_key="send_message_refused_frame",
                 translation_placeholders={"message": message},
             )
-        own_message = OWNCommand.parse(message)
-        if own_message is None or not own_message.is_valid:
+
+        def _invalid_frame() -> ServiceValidationError:
             _LOGGER.error("Could not parse message `%s`, not sending it.", message)
-            raise ServiceValidationError(
+            return ServiceValidationError(
                 f"`{message}` is not a valid OpenWebNet frame; nothing was sent",
                 translation_domain=DOMAIN,
                 translation_key="send_message_invalid_frame",
                 translation_placeholders={"message": message},
             )
+
+        # A frame is made of 0-9, * and # only, starts with * and ends with ##
+        # (OpenWebNet introduction, "Syntax of an OPEN message"); checked as typed, nothing
+        # stripped.
+        if re.fullmatch(r"\*[0-9*#]*##", message, re.ASCII) is None:
+            raise _invalid_frame()
+        try:
+            own_message = OWNCommand.parse(message)
+        except Exception as err:
+            raise _invalid_frame() from err
+        if own_message is None or not own_message.is_valid:
+            raise _invalid_frame()
         _LOGGER.debug(
             "%s Sending valid OpenWebNet Message: `%s`",
             handler.log_id,

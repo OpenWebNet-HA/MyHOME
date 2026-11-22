@@ -400,8 +400,8 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         """Press the button; raise when the gateway rejects or never receives the frame."""
         cmd = OWNCommand.parse(f"*14*0*{self._full_where}##")
         if cmd is not None:
-            # Not every gateway routes WHO 14 (a live F455 1.0.76 answers it with NACK):
-            # the press must fail visibly instead of returning success.
+            # A live F455 1.0.76 answered this frame with NACK (an F461 2.0.11 acknowledged it;
+            # why the F455 refused is unknown): the press must fail visibly, not return success.
             await async_send_confirmed(self._gateway_handler, cmd, name=self._display_name)
 
 
@@ -463,8 +463,8 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         """Press the button; raise when the gateway rejects or never receives the frame."""
         cmd = OWNCommand.parse(f"*14*1*{self._full_where}##")
         if cmd is not None:
-            # Not every gateway routes WHO 14 (a live F455 1.0.76 answers it with NACK):
-            # the press must fail visibly instead of returning success.
+            # A live F455 1.0.76 answered this frame with NACK (an F461 2.0.11 acknowledged it;
+            # why the F455 refused is unknown): the press must fail visibly, not return success.
             await async_send_confirmed(self._gateway_handler, cmd, name=self._display_name)
 
 

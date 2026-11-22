@@ -746,10 +746,10 @@
       "message": "{name}: gateway {gateway} rejected the command ({frame}) with NACK"
     },
     "command_not_delivered": {
-      "message": "{name}: the command ({frame}) could not be delivered to gateway {gateway}"
+      "message": "{name}: the command ({frame}) could not be sent to gateway {gateway}, or the connection was lost before its answer; it may or may not have been executed"
     },
     "command_not_confirmed": {
-      "message": "{name}: gateway {gateway} did not confirm the command ({frame}) within {timeout} s; it was withdrawn if it had not been sent yet"
+      "message": "{name}: gateway {gateway} did not confirm the command ({frame}) in time; it may or may not have been executed"
     },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
@@ -887,7 +887,7 @@
       "message": "\"{message}\" is not a valid OpenWebNet frame; nothing was sent"
     },
     "send_message_refused_frame": {
-      "message": "Refusing to send \"{message}\": this WHO 4 dimension 22 form crashes the thermostat service of several gateways; nothing was sent"
+      "message": "Refusing to send \"{message}\": WHO 4 dimension 22 frames are blocked as a precaution unless they are one of the published split forms this installation can recognise; nothing was sent"
     },
     "sync_time_unsupported_offset": {
       "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."

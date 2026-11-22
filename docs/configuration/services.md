@@ -45,7 +45,7 @@ Sends an arbitrary, valid OpenWebNet message through the gateway command session
 | `message` | string | **Yes** | Valid OpenWebNet frame ending with `##`. | `"*1*0*0##"` |
 
 > [!NOTE]
-> **Nothing sent means an error, not a log line.** The action raises `ServiceValidationError` and queues nothing when `message` is empty or is not a valid OpenWebNet frame (`send_message_invalid_frame`), when it is a refused `WHO = 4` Dimension 22 form (`send_message_refused_frame`), when `gateway` matches no loaded gateway (`gateway_not_found`), or when no MyHOME gateway is set up (`no_gateway_loaded`). A frame that was queued and that the gateway later answers with `NACK` is still only logged.
+> **Nothing sent means an error, not a log line.** An empty `message` is refused by the service schema. The action raises `ServiceValidationError` and queues nothing when `message` is not a frame (characters other than `0-9`, `*` and `#`, no leading `*` or trailing `##`, or not parsable: `send_message_invalid_frame`), when it is a refused `WHO = 4` Dimension 22 form (`send_message_refused_frame`), when `gateway` matches no loaded gateway (`gateway_not_found`), or when no MyHOME gateway is set up (`no_gateway_loaded`). A frame that was queued and that the gateway later answers with `NACK` is still only logged.
 
 ### Example YAML Call
 ```yaml
@@ -94,7 +94,7 @@ data:
 
 ## 3. `myhome.sync_time`
 
-Synchronizes the gateway's real-time clock (RTC) with Home Assistant's local time using `WHO = 13` dimension frames. This ensures scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules) run in lockstep with real time.
+Asks the gateway to set its real-time clock (RTC) to Home Assistant's local time: it queues the `WHO = 13` dimension frames on the named gateway, or on every primary gateway when `gateway` is omitted. It does not wait for the gateway's answer and does not verify the clock afterwards. The clock matters for scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules).
 
 > [!NOTE]
 > - **Shared-Bus Topology**: When `gateway` is omitted, follower (`secondary` / `standby`) gateways on a shared SCS bus are automatically skipped so only primary gateways broadcast clock updates.

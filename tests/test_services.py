@@ -5,6 +5,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.myhome import services
 from custom_components.myhome.const import (
     ATTR_GATEWAY,
     ATTR_MESSAGE,
@@ -735,7 +736,7 @@ def test_send_message_schema_refuses_an_empty_message() -> None:
     assert SEND_MESSAGE_SCHEMA({ATTR_MESSAGE: "*1*1*12##"}) == {ATTR_MESSAGE: "*1*1*12##"}
 
 
-@pytest.mark.parametrize("frame", ["garbage", "*1*1*", " ", "*1*1*12#"])
+@pytest.mark.parametrize("frame", ["garbage", "*1*1*", " ", "*1*1*12#", "*##", "*1*1##"])
 async def test_send_message_raises_for_a_frame_that_does_not_parse(
     hass: HomeAssistant, sending_gateway, frame: str, caplog
 ) -> None:
@@ -785,3 +786,72 @@ async def test_valid_calls_still_queue_their_frames(hass: HomeAssistant, sending
     frames = [str(c.args[0]) for c in sending_gateway.send.await_args_list]
     assert len(frames) == 4
     assert all(f.startswith(("*#13**#22*", "*#13**#0*")) for f in frames)
+
+
+async def test_newline_after_frame(hass, sending_gateway):
+    # Deliberately invalid service input: published frame (test_services.py:777) plus a pasted newline.
+    with pytest.raises(ServiceValidationError) as exc:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*1*1*12##" + "\n"}, blocking=True
+        )
+    assert exc.value.translation_key == "send_message_invalid_frame"
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_partial_clock_write_raises_translated_validation_error(hass, sending_gateway):
+    message = "*#13**#0*15*00##"  # ownd/tests/test_message_protocol.py:256
+    try:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: message}, blocking=True
+        )
+    except Exception as err:
+        assert isinstance(err, ServiceValidationError), repr(err)
+        assert err.translation_key == "send_message_invalid_frame"
+        assert err.translation_placeholders == {"message": message}
+    else:
+        pytest.fail("Partial clock write was accepted")
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_non_ascii_digits_not_sent(hass, sending_gateway):
+    # Localized decimal WHERE substituted into the good service example (tests/test_services.py:777).
+    message = "*1*1*12##".replace("12", "\u0661\u0662")
+    with pytest.raises(ServiceValidationError) as exc:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: message}, blocking=True
+        )
+    assert exc.value.translation_key == "send_message_invalid_frame"
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_truncated_time_is_invalid(hass, sending_gateway):
+    frame = "*#13**#0*15*00##"  # ownd/tests/test_message_protocol.py:256
+    try:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True
+        )
+    except Exception as exc:
+        assert isinstance(exc, ServiceValidationError), repr(exc)
+        assert exc.translation_key == "send_message_invalid_frame"
+        assert exc.translation_placeholders == {"message": frame}
+    else:
+        pytest.fail("accepted truncated clock")
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_precautionary_refusal_is_not_a_confirmed_firmware_fault(
+    hass, sending_gateway, monkeypatch
+):
+    # Safe split read from tests/test_dimension22_guard.py:43-48, intentionally blocked when the detector is absent.
+    monkeypatch.setattr(services, "_is_dimension_22_crash_form", None)
+    frame = "*#4*3#2#1*22##"
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True
+        )
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+    assert "crashes the thermostat service" not in str(err.value), (
+        "precautionary compatibility refusal presented as a confirmed crash"
+    )

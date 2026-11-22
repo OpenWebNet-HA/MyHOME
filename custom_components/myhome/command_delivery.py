@@ -34,6 +34,29 @@ def gateway_label(gateway: Any) -> str:
     return "MyHOME gateway"
 
 
+def _not_confirmed(placeholders: dict[str, str], timeout: str) -> HomeAssistantError:
+    """The error of a command the gateway did not confirm in time."""
+    return HomeAssistantError(
+        f"{placeholders['name']}: gateway {placeholders['gateway']} did not confirm the command "
+        f"({placeholders['frame']}) in time; it may or may not have been executed",
+        translation_domain=DOMAIN,
+        translation_key="command_not_confirmed",
+        translation_placeholders={**placeholders, "timeout": timeout},
+    )
+
+
+def _not_delivered(placeholders: dict[str, str]) -> HomeAssistantError:
+    """The error of a command not sent, or whose session was lost before the answer."""
+    return HomeAssistantError(
+        f"{placeholders['name']}: the command ({placeholders['frame']}) could not be sent to "
+        f"gateway {placeholders['gateway']}, or the connection was lost before its answer; "
+        "it may or may not have been executed",
+        translation_domain=DOMAIN,
+        translation_key="command_not_delivered",
+        translation_placeholders=placeholders,
+    )
+
+
 async def async_confirm_delivery(
     written: Any,
     *,
@@ -44,25 +67,19 @@ async def async_confirm_delivery(
 ) -> None:
     """Wait for a queued command's delivery future; raise a translated error if it failed.
 
-    ``written`` is what ``MyHOMEGatewayHandler.send()`` returned. Anything that is not a
-    future (a gateway double without delivery information) is taken as delivered, as the
-    cover and lock platforms do. A cancellation of the calling task is passed on untouched.
+    ``written`` is what ``MyHOMEGatewayHandler.send()`` returned: an ``asyncio.Future``.
+    Anything else (a gateway double without delivery information) is taken as delivered by
+    this helper. A cancellation of the calling task is passed on untouched.
     """
     if not isinstance(written, asyncio.Future):
         return
     placeholders = {"name": name, "gateway": gateway_label(gateway), "frame": frame}
     done, _pending = await asyncio.wait((written,), timeout=timeout)
     if not done:
-        # Withdraw the queued frame: the worker skips a cancelled future, so a command
-        # the user was told had failed is not written later.
+        # Withdraw the queued frame: the worker skips a cancelled future it has not started
+        # on (a frame already handed to a reconnecting session can still go out).
         written.cancel()
-        raise HomeAssistantError(
-            f"{name}: gateway {placeholders['gateway']} did not confirm the command ({frame}) "
-            f"within {timeout:.0f} s; it was withdrawn if it had not been sent yet",
-            translation_domain=DOMAIN,
-            translation_key="command_not_confirmed",
-            translation_placeholders={**placeholders, "timeout": f"{timeout:.0f}"},
-        )
+        raise _not_confirmed(placeholders, f"{timeout:.0f}")
     cause: BaseException | None = None
     if not written.cancelled():
         cause = written.exception()
@@ -76,14 +93,12 @@ async def async_confirm_delivery(
             translation_key="command_rejected",
             translation_placeholders=placeholders,
         )
-    # Cancelled without that mark: the session was lost or could not be opened, or the
+    if getattr(written, "_no_answer", False) is True:
+        # The worker marks the future of a written command the gateway did not answer in time.
+        raise _not_confirmed(placeholders, "the gateway's answer time")
+    # Cancelled without those marks: the session was lost or could not be opened, or the
     # queue was closed (unload, shutdown).
-    raise HomeAssistantError(
-        f"{name}: the command ({frame}) could not be delivered to gateway {placeholders['gateway']}",
-        translation_domain=DOMAIN,
-        translation_key="command_not_delivered",
-        translation_placeholders=placeholders,
-    ) from cause
+    raise _not_delivered(placeholders) from cause
 
 
 async def async_send_confirmed(
@@ -93,6 +108,26 @@ async def async_send_confirmed(
     name: str,
     timeout: float = COMMAND_DELIVERY_TIMEOUT,
 ) -> None:
-    """Queue ``command`` on ``gateway`` and return once it was acknowledged, else raise."""
-    written = await gateway.send(command)
-    await async_confirm_delivery(written, name=name, frame=str(command), gateway=gateway, timeout=timeout)
+    """Queue ``command`` on ``gateway`` and return once it was acknowledged, else raise.
+
+    One deadline covers the queueing and the confirmation.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    frame = str(command)
+    placeholders = {"name": name, "gateway": gateway_label(gateway), "frame": frame}
+    try:
+        written = await asyncio.wait_for(gateway.send(command), timeout)
+    except asyncio.CancelledError:
+        raise
+    except TimeoutError as err:
+        raise _not_confirmed(placeholders, f"{timeout:.0f}") from err
+    except Exception as err:
+        raise _not_delivered(placeholders) from err
+    await async_confirm_delivery(
+        written,
+        name=name,
+        frame=frame,
+        gateway=gateway,
+        timeout=max(0.0, deadline - loop.time()),
+    )

@@ -1610,6 +1610,13 @@ class CommandWorkerPool:
                                 setattr(written, "_command_timeout", True)
                             self._pause_status_after_desync()
                         elif (
+                            getattr(last_error, "reason", None) == "command_timeout"
+                            and isinstance(written, asyncio.Future)
+                            and not written.done()
+                        ):
+                            # A written command the gateway did not answer in time.
+                            setattr(written, "_no_answer", True)
+                        elif (
                             getattr(last_error, "reason", None) == "nack"
                             and isinstance(written, asyncio.Future)
                             and not written.done()

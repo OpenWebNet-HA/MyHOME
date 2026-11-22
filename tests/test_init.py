@@ -246,11 +246,15 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
         gateway.send.assert_called_once()
         gateway.send.reset_mock()
 
-        # Test sync_time with invalid MAC format (lines 237-241)
-        with patch("homeassistant.helpers.device_registry.format_mac", return_value=None):
+        # Test sync_time with a gateway that is no MAC of a loaded gateway: nothing sent, the
+        # caller is told
+        gateway.send.reset_mock()
+        with pytest.raises(ServiceValidationError) as err:
             await hass.services.async_call(
                 DOMAIN, "sync_time", {ATTR_GATEWAY: "invalid_mac"}, blocking=True
             )
+        assert err.value.translation_key == "gateway_not_found"
+        gateway.send.assert_not_called()
 
         # Test sync_time with unconfigured valid MAC: nothing sent, and the caller is told
         gateway.send.reset_mock()
@@ -262,11 +266,14 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
         assert err.value.translation_placeholders == {"gateway": "00:03:50:00:99:99"}
         gateway.send.assert_not_called()
 
-        # Test send_message with invalid MAC format (lines 270-275)
-        with patch("homeassistant.helpers.device_registry.format_mac", return_value=None):
+        # Test send_message with a gateway that is no MAC of a loaded gateway
+        gateway.send.reset_mock()
+        with pytest.raises(ServiceValidationError) as err:
             await hass.services.async_call(
                 DOMAIN, "send_message", {ATTR_GATEWAY: "invalid_mac", ATTR_MESSAGE: "*1*1*12##"}, blocking=True
             )
+        assert err.value.translation_key == "gateway_not_found"
+        gateway.send.assert_not_called()
 
         # Test sweep_bus service with specific gateway
         gateway.send.reset_mock()

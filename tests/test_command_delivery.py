@@ -20,6 +20,7 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.exceptions import HomeAssistantError
+from OWNd.message import OWNCommand
 
 from custom_components.myhome.button import DisableCommandButtonEntity, EnableCommandButtonEntity
 from custom_components.myhome.command_delivery import (
@@ -39,6 +40,7 @@ from custom_components.myhome.const import (
     DOMAIN,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from custom_components.myhome.gateway_sessions import FrameScheduler
 from tests.mock_gateway_harness import MockGatewayHarness
 
 GW = MagicMock(model="F455")
@@ -113,6 +115,23 @@ async def test_cancelling_the_caller_is_not_reported_as_a_gateway_failure() -> N
         await task
     assert not pending.done()
     pending.cancel()
+
+
+async def test_cancelling_the_caller_while_the_command_is_being_queued_passes_through() -> None:
+    """A caller cancelled while `send()` still waits for room in the queue is cancelled, not told of a failure."""
+    entered = asyncio.Event()
+
+    async def _blocked_send(_command: str) -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    gateway = MagicMock(model="F461")
+    gateway.send = _blocked_send
+    task = asyncio.create_task(async_send_confirmed(gateway, "*14*0*05##", name="Light 05 Lock"))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def test_send_confirmed_queues_then_waits() -> None:
@@ -213,3 +232,56 @@ async def test_lock_button_raises_when_the_connection_drops_before_the_answer(pl
     assert err.value.translation_key == "command_not_delivered"
     # Written once: a command is not replayed after its socket was lost (OWNd#131).
     assert harness.received_messages.count("*14*0*05##") == 2
+
+
+async def test_full_startup_queue_bounds_the_entire_action(hass):
+    handler = MyHOMEGatewayHandler(hass, _entry(1))
+    # Startup with the event session not ready: workers do not consume the queue.
+    handler._command_pool.send_buffer = FrameScheduler(maxsize=1)
+    await handler.send(OWNCommand.parse("*1*1*12##"))  # tests/test_services.py:777
+    cmd = OWNCommand.parse("*14*0*05##")  # tests/test_command_delivery.py:181
+    press = asyncio.create_task(
+        async_send_confirmed(handler, cmd, name="Light 05 Lock", timeout=0.02)
+    )
+    try:
+        finished, _ = await asyncio.wait([press], timeout=0.3)
+        assert finished, "still blocked in send_buffer.put well past command delivery deadline"
+        with pytest.raises(HomeAssistantError) as e:
+            await press
+        assert e.value.translation_key == "command_not_confirmed"
+    finally:
+        press.cancel()
+        await asyncio.gather(press, return_exceptions=True)
+        handler._command_pool.close()
+
+
+async def test_send_raises_before_delivery_future_exists(hass):
+    handler = MyHOMEGatewayHandler(hass, _entry(1))
+    handler._command_pool.send_buffer.shutdown(immediate=True)
+    button = EnableCommandButtonEntity(
+        hass, "button", "Light 05", "light_05", "1", "05", None, "BTicino", "F411", handler
+    )
+    try:
+        await button.async_press()
+    except Exception as exc:
+        assert isinstance(exc, HomeAssistantError), "scheduler exception escaped the action"
+        assert exc.translation_key == "command_not_delivered"
+        assert (
+            exc.translation_placeholders["frame"] == "*14*1*05##"
+        )  # tests/test_command_delivery.py:195
+    else:
+        assert False, "succeeded against shut-down queue"
+
+
+async def test_open_socket_silence_is_not_non_delivery(plant, monkeypatch):
+    from OWNd.connection import command_session
+
+    harness, _, (lock, unlock) = plant
+    await unlock.async_press()  # opens command channel
+    # No reply, not even EOF. Shorten the OWNd response deadline only.
+    monkeypatch.setattr(command_session, "COMMAND_TIMEOUT", 0.05)
+    harness.set_custom_handler(lambda msg, writer: None)
+    with pytest.raises(HomeAssistantError) as exc:
+        await lock.async_press()
+    assert harness.received_messages.count("*14*0*05##") == 1  # tests/test_command_delivery.py:194
+    assert exc.value.translation_key == "command_not_confirmed"
