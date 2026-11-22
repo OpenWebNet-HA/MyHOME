@@ -705,3 +705,83 @@ def test_send_message_and_sync_time_have_selectors() -> None:
         for name, field in services[service]["fields"].items():
             assert "selector" in field, f"{service}.{name}"
     assert services[SERVICE_SEND_MESSAGE]["fields"][ATTR_MESSAGE]["required"] is True
+
+
+# ── send_message / sync_time tell the caller when nothing was sent (#805 follow-up) ──
+
+
+@pytest.fixture
+async def sending_gateway(hass: HomeAssistant, attach_gateway):
+    """One loaded gateway whose queue methods record what the actions hand over."""
+    from unittest.mock import AsyncMock
+
+    await async_setup_services(hass)
+    handler = MagicMock()
+    handler.log_id = "[F461]"
+    handler.send = AsyncMock()
+    handler.send_status_request = AsyncMock()
+    attach_gateway("00:03:50:aa:bb:cc", handler)
+    return handler
+
+
+def test_send_message_schema_refuses_an_empty_message() -> None:
+    """An empty frame is a missing one: refused by the registration schema, like `None` (#805 review)."""
+    import voluptuous as vol
+
+    from custom_components.myhome.services import SEND_MESSAGE_SCHEMA
+
+    with pytest.raises(vol.Invalid):
+        SEND_MESSAGE_SCHEMA({ATTR_MESSAGE: ""})
+    assert SEND_MESSAGE_SCHEMA({ATTR_MESSAGE: "*1*1*12##"}) == {ATTR_MESSAGE: "*1*1*12##"}
+
+
+@pytest.mark.parametrize("frame", ["garbage", "*1*1*", " ", "*1*1*12#"])
+async def test_send_message_raises_for_a_frame_that_does_not_parse(
+    hass: HomeAssistant, sending_gateway, frame: str, caplog
+) -> None:
+    """B7-3: `garbage` / `*1*1*` used to log an ERROR and return success (local F461 HA, 2026-11-18)."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True)
+    assert err.value.translation_key == "send_message_invalid_frame"
+    assert err.value.translation_domain == DOMAIN
+    assert err.value.translation_placeholders == {"message": frame}
+    assert f"Could not parse message `{frame}`, not sending it." in caplog.text
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_send_message_and_sync_time_raise_for_an_unknown_gateway(hass: HomeAssistant, sending_gateway) -> None:
+    """A MAC that matches no loaded gateway sends nothing: the caller gets `gateway_not_found`."""
+    for service, data in (
+        (SERVICE_SEND_MESSAGE, {ATTR_GATEWAY: "00:03:50:99:99:99", ATTR_MESSAGE: "*1*1*12##"}),
+        (SERVICE_SYNC_TIME, {ATTR_GATEWAY: "00:03:50:99:99:99"}),
+    ):
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(DOMAIN, service, data, blocking=True)
+        assert err.value.translation_key == "gateway_not_found"
+        assert err.value.translation_placeholders == {"gateway": "00:03:50:99:99:99"}
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_send_message_and_sync_time_raise_when_no_gateway_is_set_up(hass: HomeAssistant) -> None:
+    """With no loaded entry both actions raise `no_gateway_loaded` instead of logging and returning."""
+    await async_setup_services(hass)
+    for service, data in ((SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*1*1*12##"}), (SERVICE_SYNC_TIME, {})):
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(DOMAIN, service, data, blocking=True)
+        assert err.value.translation_key == "no_gateway_loaded"
+
+
+async def test_valid_calls_still_queue_their_frames(hass: HomeAssistant, sending_gateway) -> None:
+    """The error paths change nothing for a valid call: one command, one request, two clock frames."""
+    await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*1*1*12##"}, blocking=True)
+    assert [str(c.args[0]) for c in sending_gateway.send.await_args_list] == ["*1*1*12##"]
+    await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*#13**15##"}, blocking=True)
+    assert [str(c.args[0]) for c in sending_gateway.send_status_request.await_args_list] == ["*#13**15##"]
+    sending_gateway.send.reset_mock()
+    sending_gateway.is_follower = False
+    await hass.services.async_call(DOMAIN, SERVICE_SYNC_TIME, {}, blocking=True)
+    await hass.services.async_call(DOMAIN, SERVICE_SYNC_TIME, {ATTR_GATEWAY: "00:03:50:aa:bb:cc"}, blocking=True)
+    frames = [str(c.args[0]) for c in sending_gateway.send.await_args_list]
+    assert len(frames) == 4
+    assert all(f.startswith(("*#13**#22*", "*#13**#0*")) for f in frames)

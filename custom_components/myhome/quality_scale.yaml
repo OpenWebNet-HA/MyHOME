@@ -72,7 +72,7 @@ rules:
   # 🥈 Silver
   action-exceptions:
     status: done
-    comment: Handled in services.py with parameter validation and robust logging.
+    comment: services.py validates parameters with closed schemas and raises translated ServiceValidationError when nothing can be sent (send_message - empty, unparsable or refused frame; send_message / sync_time / send_scenario_plus_command - unknown gateway or no gateway set up; sync_time - half-hour time zone). A frame that was queued and is NACKed by the gateway afterwards is logged, not raised, by these three actions.
   config-entry-unloading:
     status: done
     comment: async_unload_entry unloads platforms via async_unload_platforms and closes the gateway sessions; listeners are registered with entry.async_on_unload.
