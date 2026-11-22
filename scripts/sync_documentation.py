@@ -194,19 +194,27 @@ def get_gateway_discovery_block() -> str:
     CI jobs with unreleased OWNd@master and CI jobs without OWNd agree on the same
     table. Once manifest.json bumps past 2.0.0b11, `use_pinned` flips to False and
     both `verify_profiles_against_oracle()` and `--check` enforce regenerating the rows.
+    While manifest.json pins OWNd==2.0.1 (before OWNd #184, which adds WHO 18 to the MH200N
+    profile, is in a pinned release), the MH200N row alone tracks its pinned WHOs
+    (`profiles_following_the_pin`); every other row follows the installed OWNd.
     """
     try:
         from scripts.update_gateway_profiles import (
             build_discovery_block,
             manifest_pins_pre_who16_ownd,
+            profiles_following_the_pin,
         )
     except ImportError:
         from update_gateway_profiles import (
             build_discovery_block,
             manifest_pins_pre_who16_ownd,
+            profiles_following_the_pin,
         )
     manifest_path = CUSTOM_COMPONENTS_DIR / "manifest.json"
-    return build_discovery_block(use_pinned=manifest_pins_pre_who16_ownd(manifest_path))
+    return build_discovery_block(
+        use_pinned=manifest_pins_pre_who16_ownd(manifest_path),
+        pinned_profiles=profiles_following_the_pin(manifest_path),
+    )
 
 
 def sync_gateway_discovery(update: bool = False) -> tuple[bool, list[str]]:

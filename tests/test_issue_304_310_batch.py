@@ -256,6 +256,8 @@ async def test_brightness_restore_does_not_downgrade_color_light(hass, mock_gate
 
 # OWNd up to 2.0.0b8 omits WHO 16 from the MH200N profile; OWNd#63 enables it.
 _OWND_MH200N_HAS_SOUND = MH200NProfile().supports_who(16)
+# OWNd #184 adds WHO 18 to the MH200N profile; releases up to 2.0.1 do not list it.
+_OWND_MH200N_HAS_ENERGY = MH200NProfile().supports_who(18)
 
 
 async def test_discovery_skips_unsupported_who(gateway_handler, fast_bus_pacing):
@@ -284,7 +286,10 @@ async def test_discovery_asks_an_mh200n_for_its_amplifiers(gateway_handler, fast
     queued = []
     while not gateway_handler.send_buffer.empty():
         queued.append(str(gateway_handler.send_buffer.get_nowait()["message"]))
-    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    expected = ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    if _OWND_MH200N_HAS_ENERGY:
+        expected += ["*#18*51*51##", "*#18*51*113##"]
+    assert queued == expected
 
 
 # OWNd up to 2.0.0b8 gives the MH200 the MH200N profile, which advertises no WHO 16.

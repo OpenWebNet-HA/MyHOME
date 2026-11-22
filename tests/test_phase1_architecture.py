@@ -92,6 +92,9 @@ from tests.mock_gateway_harness import MockGatewayHarness
 # release ships the fix.
 _OWND_MH200_IS_MH200N = isinstance(get_gateway_profile("MH200"), MH200NProfile)
 _OWND_MH200N_HAS_SOUND = MH200NProfile().supports_who(WHO_SOUND)
+# OWNd #184 adds WHO 18 to the MH200N profile and, with it, the instant power request;
+# releases up to 2.0.1 have neither.
+_OWND_MH200N_HAS_ENERGY = MH200NProfile().supports_who(18)
 # OWNd releases up to and including 2.0.0b8 gave F455 audio support by default;
 # OWNd#74 aligns F455 with single-bus hardware constraints (MyHOME#466).
 _OWND_F455_HAS_SOUND = F455Profile().supports_who(WHO_SOUND)
@@ -142,12 +145,12 @@ class TestGatewayProfiles:
         assert profile.max_queue_size == 100
         assert profile.command_queue_delay == 0.15
         assert profile.supports_audio is _OWND_MH200N_HAS_SOUND
-        assert profile.supports_energy_instant_power is False
+        assert profile.supports_energy_instant_power is _OWND_MH200N_HAS_ENERGY
         # OWNd releases up to 2.0.0b8 omit WHO 16 from MH200N; OWNd#63 enables it
         assert profile.supports_who(WHO_LIGHTING) is True
         assert profile.supports_who(WHO_AUTOMATION) is True
         assert profile.supports_who(WHO_SOUND) is _OWND_MH200N_HAS_SOUND
-        assert profile.supports_who(WHO_ENERGY) is False
+        assert profile.supports_who(WHO_ENERGY) is _OWND_MH200N_HAS_ENERGY
         assert profile.can_support_workers(1) is True
         assert profile.can_support_workers(2) is False
 

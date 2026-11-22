@@ -180,6 +180,18 @@ def _sound_row_cells(profile_name: str) -> str:
     return "WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*#0##`, `*#4*0#0*20##` sent in place of `*#4*0##`)"
 
 
+def _mh200n_row_cells() -> str:
+    """The advertised and sent cells of the MH200N row for the installed OWNd profile.
+
+    OWNd #184 adds WHO 18 to the MH200N profile; the generator follows the installed profile.
+    """
+    from OWNd.profiles import get_gateway_profile
+
+    if get_gateway_profile("MH200N").supports_who(18):
+        return "WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18"
+    return "WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16"
+
+
 def test_generate_gateway_discovery_table_and_verify_oracle():
     """The discovery table follows the installed OWNd profiles and the oracle check passes."""
     block = ugp.build_discovery_block()
@@ -190,7 +202,7 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
     assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*0#0*20##` sent in place of `*#4*0##`) |" in block
     assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
-    assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
+    assert f"| **MH200N** | {_mh200n_row_cells()} |" in block
     assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
     assert "| **H4684 / H/L4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
     # Rows that follow the OWNd profile (WHO 16 on the F461 / MyHomeServer1 is being dropped
@@ -330,15 +342,17 @@ def test_discovery_table_with_ownd_matches_the_committed_docs():
     end = doc.index(ugp.DISCOVERY_END_MARKER) + len(ugp.DISCOVERY_END_MARKER)
     committed = doc[start:end].splitlines()
     generated = ugp.build_discovery_block().splitlines()
-    rows_off_the_pin = (
-        {
-            str(row["model"])
-            for row in ugp.GATEWAY_DISCOVERY_METADATA
-            if ugp.discovery_whos_for(get_gateway_profile(str(row["profile_name"]))) != row["pinned_whos"]
-        }
-        if ugp.manifest_pins_pre_who16_ownd()
-        else set()
-    )
+    # A row may be off its pin only inside an open window: every row while manifest.json pins
+    # OWNd==2.0.0b11 (OWNd #142), the MH200N row while it pins OWNd==2.0.1 (OWNd #184).
+    rows_off_the_pin = {
+        str(row["model"])
+        for row in ugp.GATEWAY_DISCOVERY_METADATA
+        if ugp.discovery_whos_for(get_gateway_profile(str(row["profile_name"]))) != row["pinned_whos"]
+        and (
+            ugp.manifest_pins_pre_who16_ownd()
+            or str(row["profile_name"]) in ugp.profiles_following_the_pin()
+        )
+    }
     assert len(generated) == len(committed)
     for got, want in zip(generated, committed, strict=True):
         model = got.split(" | ")[0].lstrip("| ")
@@ -348,6 +362,8 @@ def test_discovery_table_with_ownd_matches_the_committed_docs():
             assert got == want
     if not rows_off_the_pin:
         assert ugp.build_discovery_block() == doc[start:end]
+    # What the docs check compares with: the rows of an open window stay on their pin.
+    assert ugp.build_discovery_block(pinned_profiles=ugp.profiles_following_the_pin()) == doc[start:end]
 
 
 def test_pinned_rows_are_ignored_when_ownd_is_importable(monkeypatch: pytest.MonkeyPatch):
@@ -629,7 +645,13 @@ def test_oracle_check_enforces_who16_pin_now_that_manifest_pins_ownd_2_0_0b13(
     assert [v for v in violations if "**MyHomeServer1** pinned_whos=[1, 2, 4, 18] disagrees" in v]
     assert len(violations) == 2
     # ... and tolerated only by a manifest that still pins OWNd==2.0.0b11 (the closed window).
-    assert ugp.verify_profiles_against_oracle(manifest_path=pre_bump_manifest) == []
+    # That manifest does not open the MH200N window (OWNd==2.0.1), so an installed OWNd with
+    # #184 is flagged for that row there: not this test's subject.
+    assert [
+        v
+        for v in ugp.verify_profiles_against_oracle(manifest_path=pre_bump_manifest)
+        if "**MH200N**" not in v
+    ] == []
 
 
 def test_generate_gateway_options_table_introspects_and_validates_parity(tmp_path: Path):
@@ -727,3 +749,95 @@ def test_all_translation_catalogs_free_of_audit_regressions():
             assert bad not in text, f"Found forbidden stale wording {bad!r} in {catalog.name}"
 
 
+class _WithWho18:
+    """A profile that advertises WHO 18 or not, whatever the installed OWNd says."""
+
+    def __init__(self, base, with_who18: bool):
+        self._base = base
+        self._with_who18 = with_who18
+
+    def __getattr__(self, attr: str):
+        return getattr(self._base, attr)
+
+    def supports_who(self, who: int) -> bool:
+        if who == 18:
+            return self._with_who18
+        return bool(self._base.supports_who(who))
+
+
+def _patch_who18(monkeypatch: pytest.MonkeyPatch, model: str, with_who18: bool) -> None:
+    import OWNd.profiles as ownd_profiles
+
+    real = ownd_profiles.get_gateway_profile
+    while hasattr(real, "__wrapped_real__"):
+        real = real.__wrapped_real__
+
+    def _patched(name: str, *args, **kwargs):
+        base = real(name, *args, **kwargs)
+        if getattr(base, "model_name", None) == model:
+            return _WithWho18(base, with_who18)
+        return base
+
+    _patched.__wrapped_real__ = real  # type: ignore[attr-defined]
+    monkeypatch.setattr(ownd_profiles, "get_gateway_profile", _patched)
+    monkeypatch.setattr(ugp, "_patched_ownd_profiles", lambda: [])
+
+
+def test_mh200n_who18_window_is_open_while_manifest_pins_ownd_2_0_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """OWNd #184 adds WHO 18 to the MH200N profile; manifest.json still pins OWNd==2.0.1.
+
+    Until the pin bump the MH200N row may differ from the installed profile by WHO 18, and
+    only that row (it declares ``notes_with_who18``); the committed table keeps the pinned row.
+    Against a manifest that pins another release the difference is a stale pin.
+    """
+    assert ugp.manifest_pins_pre_mh200n_who18_ownd() is True
+    assert ugp.manifest_pins_pre_mh200n_who18_ownd(tmp_path / "missing.json") is False
+    assert ugp.profiles_following_the_pin() == frozenset({"MH200N"})
+
+    bumped_manifest = tmp_path / "manifest.json"
+    bumped_manifest.write_text('{"requirements": ["OWNd==2.0.2"]}', encoding="utf-8")
+    assert ugp.manifest_pins_pre_mh200n_who18_ownd(bumped_manifest) is False
+    assert ugp.profiles_following_the_pin(bumped_manifest) == frozenset()
+
+    mh200n = next(row for row in ugp.GATEWAY_DISCOVERY_METADATA if row["profile_name"] == "MH200N")
+    assert mh200n["pinned_whos"] == [1, 2, 4, 16]
+    assert [row["profile_name"] for row in ugp.GATEWAY_DISCOVERY_METADATA if row.get("notes_with_who18")] == ["MH200N"]
+
+    doc = (ugp.REPO_ROOT / "docs" / "getting-started" / "hardware-compatibility.md").read_text(encoding="utf-8")
+    start = doc.index(ugp.DISCOVERY_START_MARKER)
+    end = doc.index(ugp.DISCOVERY_END_MARKER) + len(ugp.DISCOVERY_END_MARKER)
+
+    for with_who18 in (False, True):
+        _patch_who18(monkeypatch, "MH200N", with_who18)
+        # Inside the window both sides of #184 pass, and the committed table is the pinned row.
+        assert ugp.verify_profiles_against_oracle() == []
+        assert ugp.build_discovery_block(pinned_profiles=ugp.profiles_following_the_pin()) == doc[start:end]
+
+    # The generator itself follows the installed profile: WHO 18 and its own notes.
+    _patch_who18(monkeypatch, "MH200N", True)
+    rows = {str(row["model"]): row for row in ugp.calibrate_discovery_with_ownd()}
+    assert rows["**MH200N**"]["queried_whos"] == [1, 2, 4, 16, 18]
+    assert "energy meter 51 queries" in str(rows["**MH200N**"]["notes"])
+    assert "notes_with_who18" not in rows["**MH200N**"]
+    pinned_rows = {
+        str(row["model"]): row
+        for row in ugp.calibrate_discovery_with_ownd(pinned_profiles=frozenset({"MH200N"}))
+    }
+    assert pinned_rows["**MH200N**"]["queried_whos"] == [1, 2, 4, 16]
+    assert "energy queries omitted" in str(pinned_rows["**MH200N**"]["notes"])
+
+    # Past the pin bump the same difference is a stale pin ...
+    violations = ugp.verify_profiles_against_oracle(manifest_path=bumped_manifest)
+    assert len(violations) == 1
+    assert "**MH200N** pinned_whos=[1, 2, 4, 16] disagrees with the installed MH200N profile [1, 2, 4, 16, 18]" in violations[0]
+    # ... and the pinned side still passes.
+    _patch_who18(monkeypatch, "MH200N", False)
+    assert ugp.verify_profiles_against_oracle(manifest_path=bumped_manifest) == []
+
+
+def test_mh200n_who18_window_covers_no_other_row(monkeypatch: pytest.MonkeyPatch):
+    """WHO 18 appearing on a row without ``notes_with_who18`` (the MH200) is flagged inside the window too."""
+    assert ugp.manifest_pins_pre_mh200n_who18_ownd() is True
+    _patch_who18(monkeypatch, "MH200", True)
+    violations = ugp.verify_profiles_against_oracle()
+    assert [v for v in violations if "**MH200** *(Legacy)* pinned_whos=[1, 2, 4, 16] disagrees with the installed" in v]

@@ -39,6 +39,8 @@ DISCOVERY_END_MARKER = "<!-- GATEWAY_DISCOVERY_END -->"
 
 ORACLE_JSON = REPO_ROOT / "tests" / "golden" / "firmware_oracle.json"
 PRE_WHO16_OWND_PIN = "OWNd==2.0.0b11"
+# The last release whose MH200N profile has no WHO 18 (OWNd #184 adds it).
+PRE_MH200N_WHO18_OWND_PIN = "OWNd==2.0.1"
 STARTUP_DISCOVERY_WHOS: tuple[int, ...] = (1, 2, 4, 5, 16, 18)
 
 FOOTER_NOTE = (
@@ -189,7 +191,9 @@ GATEWAY_METADATA: list[dict[str, object]] = [
 # request (``_heating_startup_requests`` in gateway.py; tests/test_review_955_third_pass_2026_11_18.py
 # checks the lists against the sweep itself), so the column does not read as "no WHO 4 request".
 # ``notes`` describes the row; where a profile may list or drop WHO 16 between
-# OWNd releases, ``notes_without_who16`` is used instead when the row does not carry WHO 16.
+# OWNd releases, ``notes_without_who16`` is used instead when the row does not carry WHO 16, and
+# where a profile gains WHO 18 (the MH200N, OWNd #184), ``notes_with_who18`` is used when the row
+# carries WHO 18.
 GENERAL_ZONE_STATUS = "*#4*0##"
 SOUND_STATUS = "*#16*0*5##"
 CENTRAL_UNIT_STATUS = "*#4*#0##"
@@ -270,6 +274,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "pinned_whos": [1, 2, 4, 16],
         "sweep_omits": [],
         "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.",
+        "notes_with_who18": "Lighting, cover, climate, sound (`bt_difson` hardware and firmware-verified), and energy meter 51 queries (a physical MH200N 1.1.8 answers `*#18*51*51##`, `tests/fixtures/traces/issue_466`). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm query omitted.",
     },
     {
         "model": "**H4684 / H/L4684**",
@@ -352,17 +357,42 @@ def extract_ssdp_models_from_manifest(manifest_path: Path = MANIFEST_JSON) -> se
         return set()
 
 
-def manifest_pins_pre_who16_ownd(manifest_path: Path = MANIFEST_JSON) -> bool:
-    """Return True while manifest.json still pins the pre-OWNd#142 release (OWNd==2.0.0b11)."""
+def _manifest_pins(pin: str, manifest_path: Path) -> bool:
+    """Return True when manifest.json lists ``pin`` among its requirements."""
     if not manifest_path.exists():
         return False
 
     try:
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
         reqs = manifest_data.get("requirements", [])
-        return isinstance(reqs, list) and PRE_WHO16_OWND_PIN in reqs
+        return isinstance(reqs, list) and pin in reqs
     except Exception:
         return False
+
+
+def manifest_pins_pre_who16_ownd(manifest_path: Path = MANIFEST_JSON) -> bool:
+    """Return True while manifest.json still pins the pre-OWNd#142 release (OWNd==2.0.0b11)."""
+    return _manifest_pins(PRE_WHO16_OWND_PIN, manifest_path)
+
+
+def manifest_pins_pre_mh200n_who18_ownd(manifest_path: Path = MANIFEST_JSON) -> bool:
+    """Return True while manifest.json still pins the pre-OWNd#184 release (OWNd==2.0.1)."""
+    return _manifest_pins(PRE_MH200N_WHO18_OWND_PIN, manifest_path)
+
+
+def profiles_following_the_pin(manifest_path: Path = MANIFEST_JSON) -> frozenset[str]:
+    """Name the profiles whose committed discovery row stays on ``pinned_whos`` for now.
+
+    While manifest.json pins OWNd==2.0.1 that is every row that declares ``notes_with_who18``
+    (the MH200N): the jobs that install OWNd from its repository (with OWNd #184) and the jobs
+    that install the pinned release, or no OWNd at all, then agree on the same committed
+    table. Every other row still follows the installed profile.
+    """
+    if not manifest_pins_pre_mh200n_who18_ownd(manifest_path):
+        return frozenset()
+    return frozenset(
+        str(row["profile_name"]) for row in GATEWAY_DISCOVERY_METADATA if row.get("notes_with_who18")
+    )
 
 
 def calibrate_metadata_with_ownd(
@@ -928,6 +958,7 @@ def calibrate_discovery_with_ownd(
     discovery_metadata: list[dict[str, object]] | None = None,
     *,
     use_pinned: bool = False,
+    pinned_profiles: frozenset[str] = frozenset(),
 ) -> list[dict[str, object]]:
     """Derive the startup discovery rows from OWNd.profiles.
 
@@ -935,7 +966,8 @@ def calibrate_discovery_with_ownd(
     sound wording follow the installed profile unless ``use_pinned=True``. Without an
     importable OWNd (or when ``use_pinned=True``) the rows carry ``pinned_whos`` (what the
     pinned OWNd yields), so the generated table matches the pinned release either way; nothing
-    else is guessed.
+    else is guessed. A row whose profile is named in ``pinned_profiles`` carries
+    ``pinned_whos`` whatever OWNd is installed (see ``profiles_following_the_pin``).
     """
     if use_pinned:
         get_gateway_profile = None
@@ -952,7 +984,8 @@ def calibrate_discovery_with_ownd(
         pinned = pinned_whos(row) or []
         row.pop("pinned_whos", None)
         without_who16 = row.pop("notes_without_who16", None)
-        if get_gateway_profile is None:
+        with_who18 = row.pop("notes_with_who18", None)
+        if get_gateway_profile is None or str(row.get("profile_name")) in pinned_profiles:
             queried = in_sweep_order(pinned)
         else:
             prof_name = row.get("profile_name")
@@ -966,12 +999,16 @@ def calibrate_discovery_with_ownd(
         ]
         if queried and without_who16 and 16 not in queried:
             row["notes"] = without_who16
+        if with_who18 and 18 in queried:
+            row["notes"] = with_who18
     return calibrated
 
 
-def generate_gateway_discovery_table(*, use_pinned: bool = False) -> str:
+def generate_gateway_discovery_table(
+    *, use_pinned: bool = False, pinned_profiles: frozenset[str] = frozenset()
+) -> str:
     """Generate the markdown table for Gateway Startup Discovery Capabilities."""
-    rows = calibrate_discovery_with_ownd(use_pinned=use_pinned)
+    rows = calibrate_discovery_with_ownd(use_pinned=use_pinned, pinned_profiles=pinned_profiles)
     lines = [
         "| Gateway Model | Profile Subsystems (advertised) | Startup Sweep Requests (sent) | Profile Support Notes |",
         "| :--- | :--- | :--- | :--- |",
@@ -993,9 +1030,11 @@ def generate_gateway_discovery_table(*, use_pinned: bool = False) -> str:
     return "\n".join(lines)
 
 
-def build_discovery_block(*, use_pinned: bool = False) -> str:
+def build_discovery_block(
+    *, use_pinned: bool = False, pinned_profiles: frozenset[str] = frozenset()
+) -> str:
     """Return the complete marker-wrapped startup discovery table block."""
-    table = generate_gateway_discovery_table(use_pinned=use_pinned)
+    table = generate_gateway_discovery_table(use_pinned=use_pinned, pinned_profiles=pinned_profiles)
     return f"{DISCOVERY_START_MARKER}\n{table}\n{DISCOVERY_END_MARKER}"
 
 
@@ -1089,6 +1128,7 @@ def verify_profiles_against_oracle(
                 )
 
     allow_who16_transition = manifest_pins_pre_who16_ownd(manifest_path)
+    allow_mh200n_who18_transition = manifest_pins_pre_mh200n_who18_ownd(manifest_path)
     for row in GATEWAY_DISCOVERY_METADATA:
         prof_name = str(row.get("profile_name", ""))
         prof = get_gateway_profile(prof_name)
@@ -1117,12 +1157,15 @@ def verify_profiles_against_oracle(
         # (``notes_without_who16``): the one profile change the fallback absorbs between the
         # pinned release and the next (OWNd #142). Once manifest.json bumps past 2.0.0b11,
         # ``allow_who16_transition`` flips to False and any difference is flagged as stale.
+        # The same for WHO 18 on a row that declares ``notes_with_who18`` (the MH200N, OWNd #184)
+        # while manifest.json still pins OWNd==2.0.1: the pin bump that follows adds 18 to
+        # ``pinned_whos`` and the window closes.
         expected_whos = discovery_whos_for(prof)
-        tolerated = (
-            {16}
-            if (allow_who16_transition and row.get("notes_without_who16"))
-            else set()
-        )
+        tolerated: set[int] = set()
+        if allow_who16_transition and row.get("notes_without_who16"):
+            tolerated.add(16)
+        if allow_mh200n_who18_transition and row.get("notes_with_who18"):
+            tolerated.add(18)
         if (set(pinned) ^ set(expected_whos)) - tolerated:
             violations.append(
                 f"Discovery row {row.get('model')} pinned_whos={pinned} disagrees with the installed "
