@@ -8,9 +8,11 @@ from __future__ import annotations
 import asyncio
 import collections
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.const import CONF_MAC
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
@@ -28,6 +30,7 @@ from .const import (
     normalize_where,
 )
 from .discovery import Address, parse_unique_id
+from .where_grammar import canonical_point_spelling
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -78,6 +81,9 @@ class LightingResyncManager:
         # (scope, commanded state) -> times of its last sweeps / its storm, if any.
         self._sweep_times: dict[tuple[str, bool], collections.deque[float]] = {}
         self._sweep_storms: dict[tuple[str, bool], _SweepStorm] = {}
+        # Sweeps running now (a routed sweep may wait in the full command queue):
+        # `cancel_all` cancels them so none queues a read after unload.
+        self._sweep_tasks: set[asyncio.Task[Any]] = set()
 
     @property
     def hass(self) -> HomeAssistant:
@@ -128,7 +134,8 @@ class LightingResyncManager:
         """Normalize a point-to-point WHERE while preserving any ``#4#<interface>`` suffix."""
         where_str = str(raw_where).strip()
         base_part, sep, iface_part = where_str.partition(BUS_ROUTING)
-        clean_base = str(normalize_where(base_part.split("#", 1)[0]))
+        # `0009` is the area-zero point `09` (the one alias the integration renames).
+        clean_base = canonical_point_spelling(str(normalize_where(base_part.split("#", 1)[0])))
         iface = iface_part if (sep and iface_part) else (str(interface).strip() if interface else "")
         if iface:
             iface_norm = iface.zfill(2) if iface.isdigit() else iface
@@ -240,15 +247,29 @@ class LightingResyncManager:
         Keyed per bus: `05` belongs to `00`, `09#4#01` to `00#4#01` (`_area_scope`).
         """
         area_map: dict[str, set[str]] = {}
-        config_entry = getattr(self.handler, "config_entry", None)
+        # A warm standby carrying the primary's traffic reads the primary's lights:
+        # their registry entries belong to the primary's config entry.
+        owner: Any = self.handler
+        if getattr(owner, "is_standby", False) is True:
+            primary = owner._get_primary_gateway()
+            primary_entry = getattr(primary, "config_entry", None) if primary is not None else None
+            if primary_entry is not None and isinstance(getattr(primary_entry, "entry_id", None), str):
+                owner = primary
+        config_entry = getattr(owner, "config_entry", None)
         if not config_entry or not hasattr(config_entry, "entry_id") or not isinstance(config_entry.entry_id, str):
             return area_map
 
+        # Both identities, as the switch platform's setup parses them: the ids carry
+        # the config entry's MAC, which can differ from the live gateway's (else the
+        # MAC is read as the WHO and a WHO 4 switch passes for a light).
+        entry_data = getattr(config_entry, "data", None)
+        raw_entry_mac = entry_data.get(CONF_MAC) if isinstance(entry_data, Mapping) else None
+        entry_mac = raw_entry_mac if isinstance(raw_entry_mac, str) else None
         registry = er.async_get(self.hass)
         entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
         for entry in entries:
             if entry.domain in ("light", "switch"):
-                who, key = parse_unique_id(entry.unique_id, self.handler.mac)
+                who, key = parse_unique_id(entry.unique_id, str(owner.mac), entry_mac)
                 if not key or (who is not None and who.isdigit() and who != "1"):
                     continue
                 address = Address.from_device_id(key)
@@ -501,34 +522,48 @@ class LightingResyncManager:
         expected_on = self._resync_expected_on.pop(where, None)
         if getattr(self.handler, "_terminate_listener", False):
             return
-
-        now = float(self._time.monotonic())
-        if isinstance(expected_on, bool):
-            key = (where, expected_on)
-            self._sweep_times.setdefault(key, collections.deque(maxlen=RESYNC_STORM_SWEEPS)).append(now)
-            storm = self._sweep_storms.get(key)
-            if storm is not None:
-                storm.trailing_done = True
-                storm.last_activity = now
-        if not where.startswith("#") and BUS_ROUTING in where:
-            # An area behind an F422 interface is read light by light:
-            # `*#1*<APL>#4#<Int>##` is answered on a physical F461 2.0.11 and F455 1.0.76
-            # (`*#1*09#4#01##` -> `*1*0*09#4#01##`, live 2026-11-17). No capture or
-            # oracle row holds an area request on an interface (`*#1*<A>#4#<Int>##`).
-            for member in sorted(self.known_area_entities(where)):
-                await self.handler.send_status_request(OWNLightingCommand.status(member))
+        routed = not where.startswith("#") and BUS_ROUTING in where
+        members = sorted(self.known_area_entities(where)) if routed else []
+        if routed and not members:
+            # Nothing to read: not a sweep, so it does not count towards a storm.
             return
-        written = await self.handler.send_status_request(OWNLightingCommand.status(where))
-        if isinstance(written, asyncio.Future):
-            # From here until the request is closed, a frame for this scope that states
-            # the command being read back is its answer (`_is_own_sweep_reply`).
-            self._own_sweeps[where] = (now, expected_on)
-            self._reply_guard.pop(where, None)
 
-            def _answered(_fut: asyncio.Future[Any], w: str = where, started: float = now) -> None:
-                self._sweep_answered(w, started)
+        task = asyncio.current_task()
+        if task is not None:
+            self._sweep_tasks.add(task)
+        try:
+            now = float(self._time.monotonic())
+            if isinstance(expected_on, bool):
+                key = (where, expected_on)
+                self._sweep_times.setdefault(key, collections.deque(maxlen=RESYNC_STORM_SWEEPS)).append(now)
+                storm = self._sweep_storms.get(key)
+                if storm is not None:
+                    storm.trailing_done = True
+                    storm.last_activity = now
+            if routed:
+                # An area behind an F422 interface is read light by light:
+                # `*#1*<APL>#4#<Int>##` is answered on a physical F461 2.0.11 and F455 1.0.76
+                # (`*#1*09#4#01##` -> `*1*0*09#4#01##`, live 2026-11-17). No capture or
+                # oracle row holds an area request on an interface (`*#1*<A>#4#<Int>##`).
+                for member in members:
+                    if getattr(self.handler, "_terminate_listener", False):
+                        return
+                    await self.handler.send_status_request(OWNLightingCommand.status(member))
+                return
+            written = await self.handler.send_status_request(OWNLightingCommand.status(where))
+            if isinstance(written, asyncio.Future):
+                # From here until the request is closed, a frame for this scope that states
+                # the command being read back is its answer (`_is_own_sweep_reply`).
+                self._own_sweeps[where] = (now, expected_on)
+                self._reply_guard.pop(where, None)
 
-            written.add_done_callback(_answered)
+                def _answered(_fut: asyncio.Future[Any], w: str = where, started: float = now) -> None:
+                    self._sweep_answered(w, started)
+
+                written.add_done_callback(_answered)
+        finally:
+            if task is not None:
+                self._sweep_tasks.discard(task)
 
     _execute_resync = execute_resync
     _resync_broadcast = execute_resync
@@ -538,6 +573,11 @@ class LightingResyncManager:
         for t in self._resync_timers.values():
             t()
         self._resync_timers.clear()
+        current = asyncio.current_task()
+        for sweep in self._sweep_tasks:
+            if not sweep.done() and sweep is not current:
+                sweep.cancel()
+        self._sweep_tasks.clear()
         self._resync_group_echoes.clear()
         self._resync_area_echoes.clear()
         self._resync_echoed_members.clear()

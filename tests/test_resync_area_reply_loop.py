@@ -52,6 +52,7 @@ from custom_components.myhome.const import (
     RESYNC_STORM_WINDOW_S,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from tests.test_issue_368_resync import MAC
 
 #: The reply to one `*#1*00##`, offsets in seconds from its first frame (capture above).
 AREA_00_REPLY: tuple[tuple[float, str], ...] = (
@@ -348,3 +349,21 @@ def test_storm_constants() -> None:
     assert RESYNC_STORM_SWEEPS == 3
     assert RESYNC_STORM_WINDOW_S == 30.0
     assert RESYNC_STORM_WINDOW_S > RESYNC_LEADING_WINDOW_S > RESYNC_DEBOUNCE_S
+
+
+# A routed area cannot have been swept before its first light was registered.
+async def test_empty_sweeps_do_not_hold_first_real_read(hass):
+    handler = _make_handler(hass, MAC, ())
+    bus = _Bus(hass, [handler], replies={})
+    # The area command and its point read are those of
+    # `test_area_sweep_stays_on_the_bus_of_the_area_frame` (tests/test_issue_368_resync.py).
+    for when in (0, 1, 2):
+        bus.frame(when, "*1*0*1#4#01##")
+    await bus.run(2.9)
+    assert bus.sent == []
+    er.async_get(hass).async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-11#4#01", config_entry=handler.config_entry
+    )
+    bus.frame(3, "*1*0*1#4#01##")
+    await bus.run(4)
+    assert bus.polls(0, "*#1*11#4#01##") == [3.5]

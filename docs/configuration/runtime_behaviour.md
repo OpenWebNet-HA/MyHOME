@@ -69,18 +69,22 @@ Instead, the integration debounces across a bidirectional window:
 4. Otherwise, one status request is sent:
 
     - **Group** `#G`: `*#1*#G##` (the group's own status).
-    - **Area** `A`: `*#1*A##`, using the frame's own `WHERE` (`"00"`, `"1"`.."9", `"100"`)
-      - never a value re-derived from an integer, which would risk emitting the banned
-      `*#1*0##`.
-    - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
-      (`light` or `switch` in the entity registry), never `*#1*0##`.
+    - **Area** `A` of the gateway's own bus: `*#1*A##`, using the frame's own `WHERE`
+      (`"00"`, `"1"`.."9", `"100"`) - never a value re-derived from an integer, which
+      would risk emitting the banned `*#1*0##`.
+    - **General** of the gateway's own bus: one `*#1*A##` per area of that bus that has
+      at least one known WHO=1 actuator (`light` or `switch` in the entity registry),
+      never `*#1*0##`.
     - **Behind an F422 interface** (`*1*x*A#4#<Int>##`, `*1*x*0#4#<Int>##`): the same
       `A` / `PL` exists on every bus, so an area behind interface `Int` is a scope of
       its own (`A#4#<Int>`). Its echoes do not count for the gateway's own area `A`
       and the other way round, and it is read light by light with
-      `*#1*<APL>#4#<Int>##` for each known light of that scope. `*1*x*0#4#<Int>##`
-      sweeps the scopes of that interface only; `*1*x*0##` (general of the system)
-      sweeps every known scope.
+      `*#1*<APL>#4#<Int>##` for each known light of that scope (no area request is
+      sent behind an interface). A scope behind an interface with no known light
+      sends nothing. `*1*x*0#4#<Int>##` sweeps the scopes of that interface only.
+    - **General of the whole system** (`*1*x*0##`): selects every known scope, and each
+      scope is read its own way: an area of the gateway's own bus with `*#1*A##`, an
+      area behind an interface with one point request per known light.
 
 A status request is answered with `*1*<status>*<where>##` frames, on the command and on
 the event session, and for a scope that is the frame of a scope command: a physical F461

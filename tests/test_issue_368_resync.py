@@ -1,5 +1,6 @@
 """Test issue #368 PR A: debounced re-sync for group / area / general frames."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import homeassistant.util.dt as dt_util
@@ -21,6 +22,7 @@ from custom_components.myhome.const import (
     area_of_where,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from custom_components.myhome.gateway_sessions import FrameScheduler
 
 MAC = "00:03:50:00:00:01"
 
@@ -1193,3 +1195,75 @@ async def test_point_to_point_dim_steps_are_not_member_echoes(
     assert "#6" not in handler._resync_timers
     await _advance(hass)
     handler.send_status_request.assert_not_called()
+
+
+# A blocked routed sweep is a producer even after its timer has fired.
+async def test_unload_cancels_remaining_routed_point_reads(hass):
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    for where in ("11#4#01", "12#4#01"):
+        er.async_get(hass).async_get_or_create(
+            "light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry
+        )
+    queue = handler._command_pool.send_buffer = FrameScheduler(maxsize=2)
+    # One occupied slot: only the first of the two point reads fits.
+    queue.put_nowait(
+        {"message": OWNMessage.parse("*1*0*11##")}
+    )
+    handler.send_status_request = handler._command_pool.send_status_request
+    sweep = asyncio.create_task(handler._resync_broadcast("1#4#01"))
+    await asyncio.sleep(0)
+    assert queue.status_qsize == 1 and not sweep.done()
+    await handler.close_listener()
+    await asyncio.sleep(0)
+    assert queue.status_qsize == 0, list(queue._queue)
+    await asyncio.gather(sweep, return_exceptions=True)
+
+
+async def test_sweep_after_registry_refused_canonical_rename(hass):
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    # Registry spelling left on a rename conflict (tests/test_canonical_point_where.py:248-259).
+    # Routed spellings: tests/test_canonical_point_where.py:96.
+    er.async_get(hass).async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-0009#4#01", config_entry=entry
+    )
+    await handler._process_message(
+        OWNMessage.parse("*1*1*0#4#01##")
+    )
+    await _advance(hass)
+    # tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl:44
+    assert _sent(handler) == ["*#1*09#4#01##"]
+
+
+async def test_routed_thermo_switch_not_polled_as_an_unregistered_light(hass):
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    handler.gateway.serial = "001122334455"  # live identity != config-entry identity
+    assert handler.mac != MAC
+    # A supported routed thermo switch: tests/test_issue_785_thermo_actuator_switch.py:1494.
+    er.async_get(hass).async_get_or_create(
+        "switch", DOMAIN, f"{MAC}-4-12#1#4#01", config_entry=entry
+    )
+    await handler._process_message(
+        OWNMessage.parse("*1*0*1#4#01##")
+    )
+    await _advance(hass)
+    assert _sent(handler) == []  # no WHO 1 point is registered here
+
+
+async def test_a_routed_sweep_stops_between_point_reads_once_the_gateway_is_closing(hass):
+    """A routed scope is read light by light; no further read is sent once the listener is closing."""
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    for where in ("11#4#01", "12#4#01"):
+        er.async_get(hass).async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+
+    async def _close_after_the_first_read(_message: object) -> None:
+        handler._terminate_listener = True
+
+    handler.send_status_request = AsyncMock(side_effect=_close_after_the_first_read)
+    await handler._resync_broadcast("1#4#01")
+
+    # The first of the two reads of `test_area_sweep_stays_on_the_bus_of_the_area_frame`.
+    assert _sent(handler) == ["*#1*11#4#01##"]

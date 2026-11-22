@@ -12,6 +12,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.config_flow import MyhomeOptionsFlowHandler
@@ -43,6 +44,7 @@ from custom_components.myhome.services import (
     _get_gateway_handler,
     async_setup_services,
 )
+from tests.test_issue_368_resync import MAC, _advance, _sent
 
 
 def _create_mock_gateway(
@@ -3633,6 +3635,27 @@ async def test_door_entry_generic_delegation_and_runtime_who13_resolution(
         await lk.async_will_remove_from_hass()
 
 
-
-
-
+async def test_failover_routed_sweep_uses_entity_owner_registry(hass):
+    entry, primary = _create_mock_gateway(hass, MAC, topology=TOPOLOGY_SHARED, role=ROLE_PRIMARY)
+    _, standby = _create_mock_gateway(
+        hass,
+        "0200000000ff",
+        topology=TOPOLOGY_SHARED,
+        role=ROLE_STANDBY,
+        primary_gateway=primary.mac,
+    )
+    primary.is_connected = False
+    standby.is_connected = True
+    standby._available = True
+    standby.send_status_request = AsyncMock()
+    for where in ("11#4#01", "12#4#01"):
+        er.async_get(hass).async_get_or_create(
+            "light", DOMAIN, f"{primary.mac}-1-{where}", config_entry=entry
+        )
+    assert primary._known_light_areas() == ["1#4#01"]
+    # The area frame and its two point reads are those of
+    # `test_area_sweep_stays_on_the_bus_of_the_area_frame` (tests/test_issue_368_resync.py).
+    await standby._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    assert list(standby._resync_timers) == ["1#4#01"]
+    await _advance(hass)
+    assert _sent(standby) == ["*#1*11#4#01##", "*#1*12#4#01##"]
