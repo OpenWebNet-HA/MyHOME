@@ -274,11 +274,12 @@ class EventSessionRunner:
         while not self._terminate_listener:
             message = await _event_session.get_next()
             self._update_event_watchdog(progress=True)
-            if message is None and isinstance(getattr(_event_session, "last_error", None), OWNAuthError):
+            last_error = getattr(_event_session, "last_error", None)
+            if message is None and isinstance(last_error, OWNAuthError):
                 # The reconnect inside get_next() was refused for the password. Calling
                 # get_next() again would present it again (once per RECONNECT_PAUSE_FATAL,
                 # for as long as Home Assistant runs), so the listener ends here.
-                self.handler._on_auth_refused(_event_session.last_error.reason, "event")
+                self.handler._on_auth_refused(last_error.reason, "event")
                 return
             if message is None:
                 reachable = session_is_open(_event_session)
