@@ -232,6 +232,8 @@ class AccessController:
         # supervised yet; set (and dropped) once the phase says what became of it.
         self._pulse_outcome: asyncio.Event | None = None
         self._pulse_sent = False
+        # The intent of the approved pulse behind ``_pulse_outcome``; read only with it.
+        self._pulse_intent: Intent | None = None
         self._task: asyncio.Task[None] | None = None
         self._failed_pins: dict[str, tuple[int, float]] = {}
         self._expected_sensor_state: str | None = None
@@ -303,6 +305,8 @@ class AccessController:
 
         Returns False in one case only: the stop arrived while the approved pulse was
         being written, that pulse went out, and the door is not supervised afterwards.
+        When that approved pulse was itself a STOP, the stop asked for is the one that
+        was just sent: True, and no second pulse or approval follows.
         """
         if self.cancel("stop requested"):
             return True
@@ -312,10 +316,14 @@ class AccessController:
             # supervising it). Wait for its fate - the write is bounded by the cover -
             # and stop the door if it did start, instead of returning as if it had been
             # stopped.
+            in_flight = self._pulse_intent
             await outcome.wait()
             if self.phase is not Phase.MONITORING:
                 if not self._pulse_sent:
                     LOGGER.info("%s: stop requested while the pulse was being sent; it was not sent, nothing moves", self._name)
+                    return True
+                if in_flight is Intent.STOP:
+                    LOGGER.info("%s: stop requested while a stop was being sent; the stop asked for is the one just sent", self._name)
                     return True
                 return False
         if self.phase is not Phase.MONITORING:
@@ -663,6 +671,7 @@ class AccessController:
                     raise AccessDenied(f"{self._name}: cancelled during the warning")
                 self._revalidate(pending, approved=True)
             self._pulse_sent = False
+            self._pulse_intent = pending.intent
             outcome = self._pulse_outcome = asyncio.Event()
             try:
                 self._pulse_sent = await self._send_pulse(pending.intent, pending.effect)

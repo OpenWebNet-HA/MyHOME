@@ -474,10 +474,7 @@ async def test_f461_live_what18_hardware_timed_pulse_and_impulse_cover_replay(
         assert unpop_res["events_after"] == []
 
     # 3. Replay captured bus sequence through MyHOMEImpulseCover at WHERE="06"
-    try:
-        from custom_components.myhome.cover import MyHOMEImpulseCover
-    except ImportError:  # pragma: no cover
-        return
+    from custom_components.myhome.cover import MyHOMEImpulseCover
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
@@ -604,10 +601,7 @@ async def test_f461_unpopulated_relay_nack_reaches_the_impulse_cover_as_a_failed
     from homeassistant.exceptions import HomeAssistantError
     from OWNd.connection import OWNCommandSession
 
-    try:
-        from custom_components.myhome.cover import MyHOMEImpulseCover
-    except ImportError:  # pragma: no cover
-        return
+    from custom_components.myhome.cover import MyHOMEImpulseCover
 
     data = json.loads(F461_FIXTURE_PATH.read_text(encoding="utf-8"))
     cmd_rows = [
@@ -702,7 +696,7 @@ async def test_f461_unpopulated_relay_nack_reaches_the_impulse_cover_as_a_failed
         try:
             # Hardware-timed pulse: NACKed, written twice by OWNd's one retry.
             timed = _cover(0.5)
-            with pytest.raises(HomeAssistantError, match="pulse was not sent"):
+            with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
                 await timed.async_open_cover()
             assert written == ["*1*18*71##", "*1*18*71##"]
             assert timed.is_opening is False
@@ -711,7 +705,7 @@ async def test_f461_unpopulated_relay_nack_reaches_the_impulse_cover_as_a_failed
 
             # Software pulse: the ON is NACKed too, and its OFF stays owed.
             written.clear()
-            with pytest.raises(HomeAssistantError, match="pulse was not sent"):
+            with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
                 await software.async_open_cover()
             assert written == ["*1*1*71##", "*1*1*71##"]
             assert software._off_pending is True

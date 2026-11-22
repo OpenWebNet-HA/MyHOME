@@ -4091,7 +4091,14 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         self._attr_assumed_state = state_sensor is None
 
         self._last_pulse_time: float = -1e9
+        # Monotonic time of the last relay ON frame that was not this cover's own echo
+        # (wall button, radio remote): the door may be starting while the contact still
+        # reads closed.
+        self._relay_seen_at: float = -1e9
         self._pulse_in_flight = False
+        # Why the last pulse was not confirmed; None when it was refused locally
+        # (deadband, another pulse being written) and nothing was handed to the gateway.
+        self._last_pulse_error: str | None = None
         self._pulse_off_cancel: CALLBACK_TYPE | None = None
         # True while the software OFF of the last pulse is not confirmed on the bus: the
         # relay may still be energised, so the next command and the removal retry the OFF.
@@ -4144,6 +4151,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             @callback
             def _sensor_state_changed(event: Any) -> None:
                 new_state = event.data.get("new_state")
+                old_state = event.data.get("old_state")
+                if old_state is not None and new_state is not None and old_state.state == new_state.state:
+                    return  # attribute-only update (battery level ...): the door did not move
                 self._handle_sensor_update(new_state.state if new_state is not None else None)
 
             self.async_on_remove(
@@ -4155,6 +4165,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     @callback
     def _handle_sensor_update(self, state_str: str | None) -> None:
         """Mirror the contact sensor: off = closed, on = not closed, anything else = unknown."""
+        if state_str == STATE_OFF and self._attr_is_closed is False:
+            # The door has just come to closed: an earlier wall-button start is over.
+            self._relay_seen_at = -1e9
         if state_str == STATE_OFF:
             self._attr_is_closed = True
         elif state_str == STATE_ON:
@@ -4226,6 +4239,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
 
     async def _async_send_impulse(self) -> bool:
         """Send the momentary pulse with confirmed delivery to the bus."""
+        self._last_pulse_error = None
         now = time.monotonic()
         if self._pulse_in_flight or now - self._last_pulse_time < self._min_cycle_time:
             LOGGER.warning(
@@ -4248,6 +4262,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             # bus): release it first, and refuse to start another pulse on top of it.
             if self._off_pending:
                 if not await self._async_send_off():
+                    self._last_pulse_error = "the relay of the previous pulse could not be released"
                     return False
                 await asyncio.sleep(OFF_SETTLE_DELAY)
 
@@ -4261,20 +4276,28 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 self._last_pulse_time = time.monotonic()
                 return True
 
-            # Custom duration: send ON, await confirmed write to the bus, then schedule OFF.
-            # From the moment the ON is handed to the gateway the relay may be energised,
+            # Custom duration: send ON, arm the OFF timer as soon as the ON is handed over,
+            # then await the confirmed write. From that moment the relay may be energised,
             # whatever becomes of the confirmation: a frame whose acknowledgement was lost
             # (timeout, socket reset) has still been written. So the OFF is owed from here,
-            # confirmed pulse or not; on a relay that never closed it changes nothing.
+            # confirmed pulse or not, and timed from the handover, not from the
+            # acknowledgement; on a relay that never closed it changes nothing. An OFF
+            # firing before the confirmation is queued behind the ON for the same WHERE.
             cmd_on = OWNLightingCommand.switch_on(self._full_where)
             self._off_pending = True
+            off_armed = False
             try:
-                await self._async_confirm_write(await self._gateway_handler.send(cmd_on), withdraw=True)
-            finally:
+                write_fut = await self._gateway_handler.send(cmd_on)
                 self._schedule_off()
+                off_armed = True
+                await self._async_confirm_write(write_fut, withdraw=True)
+            finally:
+                if not off_armed:
+                    self._schedule_off()
             self._last_pulse_time = time.monotonic()
             return True
         except Exception as err:
+            self._last_pulse_error = str(err)
             LOGGER.error(
                 "%s: Failed to write impulse command to gateway: %s",
                 self._display_name,
@@ -4356,7 +4379,11 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         step-by-step controller the pulse would open the door (the reason
         ``access_policy.classify`` refuses the same request under ``access:``). In every
         other state the door may be moving without Home Assistant knowing (wall button,
-        radio remote), so STOP is sent.
+        radio remote), so STOP is sent. Two such states come before the contact lifts:
+        this cover's own pulse is still being written (the STOP then reaches
+        ``_async_send_impulse``, which refuses it while that write is pending, and the
+        caller gets an error instead of a silent success), and a relay ON that was not
+        this cover's echo was seen within ``travel_time`` (wall button, radio remote).
         """
         if (intent is Intent.OPEN and self._attr_is_closing) or (
             intent is Intent.CLOSE and self._attr_is_opening
@@ -4371,14 +4398,26 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             if intent is Intent.CLOSE and (self._attr_is_closed is True or self._attr_is_closing):
                 LOGGER.debug("%s: already closed or closing, close request ignored", self._display_name)
                 return
-            if intent is Intent.STOP and self._attr_is_closed is True and not (self._attr_is_opening or self._attr_is_closing):
+            if (
+                intent is Intent.STOP
+                and self._attr_is_closed is True
+                and not (self._attr_is_opening or self._attr_is_closing)
+                and not self._pulse_in_flight
+                and time.monotonic() - self._relay_seen_at >= self._travel_time
+            ):
                 LOGGER.debug("%s: closed and at rest, stop request ignored (a pulse would open it)", self._display_name)
                 return
         effect = Effect.OPEN if intent is Intent.OPEN else Effect.MAY_CLOSE
         if not await self._async_pulse(intent, effect):
+            if self._last_pulse_error is None:
+                raise HomeAssistantError(
+                    f"{self._display_name}: the pulse was not sent "
+                    f"(within the {self._min_cycle_time:.1f} s deadband, or another pulse is being written)"
+                )
             raise HomeAssistantError(
-                f"{self._display_name}: the pulse was not sent "
-                f"(within the {self._min_cycle_time:.1f} s deadband, or the write failed)"
+                f"{self._display_name}: the pulse was not confirmed by the gateway "
+                f"({self._last_pulse_error}); the relay may or may not have been switched: "
+                "check the door before trying again"
             )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
@@ -4451,6 +4490,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         # or within 1.0s after it
         if self._pulse_in_flight or time.monotonic() - self._last_pulse_time < 1.0:
             return
+        self._relay_seen_at = time.monotonic()
 
         # The button has already closed the relay and started the motor: pressing it
         # never aborts anything. Only Home Assistant's own pending request or
