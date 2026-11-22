@@ -339,7 +339,17 @@ def _split_where(where: str) -> tuple[str, str | None]:
 
 
 def _same_cover_where(first: str, second: str) -> bool:
-    """Whether two WHO 2 WHEREs address the exact same physical cover actuator."""
+    """Whether two WHO 2 WHEREs may address the same cover, for the overlap check only.
+
+    Besides the same address on the same bus, two numbers with the same value count
+    as one (``02`` and ``2``, ``0011`` and ``11``). They are different addresses:
+    ``2`` is area 2 and ``02`` is point A=00 PL=02 (WHO 2 specification, WHERE
+    table; Encyclopedia ``who-2-automation/addressing.md``: leading zeroes are
+    significant), and an F453 capture has ``*2*0*2##`` followed by the stops of
+    ``21``..``25`` (``tests/fixtures/traces/discussion_856``). Treating them as
+    overlapping only costs a wait (``_wheres_overlap``); it must not decide which
+    queued frame a cancel drops (``_PriorityQueueStorage.drop_superseded``).
+    """
     if first == second:
         return True
     base_a, if_a = _split_where(first)
@@ -479,7 +489,11 @@ def _extract_target_key(item: Any) -> tuple[int, str] | None:
 
 
 def _same_target(first: tuple[int, str], second: tuple[int, str]) -> bool:
-    """Return True if two target keys represent the same physical target."""
+    """Return True if two target keys may be one target (lenient for WHO 2, see ``_same_cover_where``).
+
+    Used to release an in-flight lock. What a new frame supersedes is decided on
+    the exact key instead (``_PriorityQueueStorage.drop_superseded``).
+    """
     if first[0] != second[0]:
         return False
     if first[1] == second[1]:
@@ -764,6 +778,48 @@ class _PriorityQueueStorage:
             return self._others.popleft()
         raise IndexError("pop from an empty priority queue")
 
+    def _find_eligible(
+        self,
+        in_flight_targets: set[tuple[int, str]],
+        *,
+        allow_status: bool = True,
+    ) -> tuple[collections.deque[Any], int] | None:
+        """Locate the highest priority item a worker may take now, as ``(tier, index)``.
+
+        An item waits while its target overlaps one being written by another worker.
+        It also waits while it overlaps an item queued ahead of it that is itself
+        waiting, so frames that can reach the same actuator leave in queue order.
+        Overlap is not transitive for WHO 2 (point ``11`` overlaps area ``1``, area
+        ``1`` overlaps point ``12``, ``11`` and ``12`` do not overlap): with
+        ``*2*1*11##`` in flight and ``[*2*1*1##, *2*0*12##]`` queued, checking the
+        in-flight set alone handed the stop for 12 to the second worker ahead of the
+        area frame it was queued behind, and the bus got stop 12, then area 1 up.
+        That is the #645 rule ("a stop never overtakes an unwritten frame for a
+        cover it stops") across workers, as the #694 review asked ("wait only for
+        overlapping frames with an earlier ticket").
+        """
+        tiers = (
+            (self._commands, self._fade_steps, self._status, self._others)
+            if allow_status
+            else (self._commands, self._fade_steps, self._others)
+        )
+        waiting: list[tuple[int, str]] = []
+        for q in tiers:
+            for idx, item in enumerate(q):
+                if not in_flight_targets:
+                    return q, idx
+                target = _extract_target_key(item)
+                if target is None:
+                    return q, idx
+                if any(
+                    _targets_overlap(target, held)
+                    for held in itertools.chain(in_flight_targets, waiting)
+                ):
+                    waiting.append(target)
+                    continue
+                return q, idx
+        return None
+
     def pop_eligible(
         self,
         in_flight_targets: set[tuple[int, str]],
@@ -773,23 +829,13 @@ class _PriorityQueueStorage:
         """Pop and return the highest priority item eligible under target and status gates."""
         if not in_flight_targets and allow_status:
             return self.popleft()
-        tiers = (
-            (self._commands, self._fade_steps, self._status, self._others)
-            if allow_status
-            else (self._commands, self._fade_steps, self._others)
-        )
-        for q in tiers:
-            for idx, item in enumerate(q):
-                if not in_flight_targets:
-                    del q[idx]
-                    return item
-                target = _extract_target_key(item)
-                if target is None or not any(
-                    _targets_overlap(target, active) for active in in_flight_targets
-                ):
-                    del q[idx]
-                    return item
-        raise IndexError("no eligible item in priority queue")
+        found = self._find_eligible(in_flight_targets, allow_status=allow_status)
+        if found is None:
+            raise IndexError("no eligible item in priority queue")
+        q, idx = found
+        item = q[idx]
+        del q[idx]
+        return item
 
     def has_eligible(
         self,
@@ -800,21 +846,7 @@ class _PriorityQueueStorage:
         """Return True if at least one queued item is eligible under target and status gates."""
         if not in_flight_targets and allow_status:
             return bool(self)
-        tiers = (
-            (self._commands, self._fade_steps, self._status, self._others)
-            if allow_status
-            else (self._commands, self._fade_steps, self._others)
-        )
-        for q in tiers:
-            if not in_flight_targets and q:
-                return True
-            for item in q:
-                target = _extract_target_key(item)
-                if target is None or not any(
-                    _targets_overlap(target, active) for active in in_flight_targets
-                ):
-                    return True
-        return False
+        return self._find_eligible(in_flight_targets, allow_status=allow_status) is not None
 
     def drop_superseded(self, new_item: Any) -> list[dict[str, Any]]:
         """Drop queued frames superseded by new_item for the same physical (who, where) target."""
@@ -823,13 +855,18 @@ class _PriorityQueueStorage:
             return []
         tier = _classify_tier(new_item)
         dropped: list[dict[str, Any]] = []
+        # The same target is the same canonical key (``_extract_target_key``: interface
+        # ``#4#2`` / ``#4#02`` and group ``#03`` / ``#3`` are already one spelling there).
+        # A WHERE that merely has the same number is another address: a cancel for point
+        # ``05`` used to drop a queued command for area ``5``, and one for ``0011`` a
+        # command for ``11``, and their callers got a cancelled write.
         if tier in (_TIER_COMMANDS, _TIER_FADE_STEPS) and self._fade_steps:
             kept_fades: collections.deque[Any] = collections.deque()
             for existing in self._fade_steps:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                 ):
                     dropped.append(existing)
@@ -842,7 +879,7 @@ class _PriorityQueueStorage:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                     and not _is_cancel_item(existing)
                 ):
@@ -863,7 +900,7 @@ class _PriorityQueueStorage:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                     and _is_status_report_item(existing)
                     and (

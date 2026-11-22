@@ -989,7 +989,7 @@ async def test_workers_preserve_cover_fifo_with_zero_queue_delay(mock_handler: M
         pool.sending_workers = workers
         await asyncio.sleep(0.02)
 
-        # Worker 0 dequeues STOP and suspends in _enter_cover_write waiting for ticket 1 (UP)
+        # STOP stays queued: its target is in flight on the worker writing UP (FrameScheduler)
         await pool.send(OWNCommand("*2*0*11##"))
         await asyncio.sleep(0.02)
 
