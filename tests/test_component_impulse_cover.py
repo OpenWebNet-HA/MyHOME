@@ -760,7 +760,7 @@ async def test_direct_cover_needs_no_approval_and_no_user(hass: HomeAssistant, d
 async def test_direct_cover_with_sensor_skips_a_pulse_that_would_undo_the_request(
     hass: HomeAssistant, direct_gate, mock_gateway
 ):
-    """Open on an open door and close on a closed door send nothing; STOP is always sent."""
+    """Open on an open door and close on a closed door send nothing; STOP of a door that may move is sent."""
     cover = direct_gate(state_sensor="binary_sensor.garage_contact")
     cover._handle_sensor_update(STATE_OFF)  # closed
     await cover.async_close_cover()
@@ -1395,3 +1395,223 @@ async def test_configured_impulse_cover_still_blocks_light_at_same_address(
     assert len(covers) == 1 and isinstance(covers[0], MyHOMEImpulseCover)
     assert reg.async_get(active_cov.entity_id) is not None
 
+
+# ── A write the gateway does not confirm (the worker cancels the delivery future) ──
+
+
+def _rejected(hass: HomeAssistant) -> asyncio.Future:
+    """A delivery future the command worker cancels: NACK, lost ACK or no command session.
+
+    `gateway_sessions._cancel_written` is all the entity sees of the `*#*0##` the F461 returns
+    2.065 s after `*1*18*71##` to an address without an actuator
+    (tests/fixtures/traces/issue_667/myhome_trace_F461_impulse_intercom_2026-10-19.json).
+    """
+    fut: asyncio.Future = hass.loop.create_future()
+    hass.loop.call_soon(fut.cancel)
+    return fut
+
+
+async def test_rejected_pulse_is_a_reported_failure_not_a_cancellation(hass: HomeAssistant, direct_gate, mock_gateway):
+    """A NACKed WHAT 18 pulse raises the documented error and starts no deadband or motion."""
+    cover = direct_gate()
+    cover._min_cycle_time = 5.0
+    mock_gateway.send.return_value = _rejected(hass)
+
+    with pytest.raises(HomeAssistantError, match="pulse was not sent"):
+        await cover.async_open_cover()
+
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*18*24##"]
+    assert cover._pulse_in_flight is False
+    assert cover._last_pulse_time == -1e9  # nothing confirmed: no lockout (PR 667 audit 2.6)
+    assert cover.is_opening is False
+    assert cover._off_pending is False  # WHAT 18 releases the relay in hardware
+
+    mock_gateway.send.return_value = None
+    await cover.async_open_cover()  # the retry is not locked out
+    assert cover.is_opening is True
+
+
+async def test_unconfirmed_software_on_still_owes_the_off(hass: HomeAssistant, direct_gate, mock_gateway):
+    """An ON whose confirmation is lost may have closed the relay: the OFF goes out all the same."""
+    cover = direct_gate()
+    cover._pulse_duration = 1.0
+    mock_gateway.send.return_value = _rejected(hass)
+
+    with pytest.raises(HomeAssistantError, match="pulse was not sent"):
+        await cover.async_open_cover()
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*1*24##"]
+    assert cover._off_pending is True
+    assert cover._pulse_off_cancel is not None
+    assert cover._last_pulse_time == -1e9
+
+    mock_gateway.send.return_value = None
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
+    await hass.async_block_till_done()
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*1*24##", "*1*0*24##"]
+    assert cover._off_pending is False
+
+
+async def test_rejected_off_is_retried_and_stays_owed(hass: HomeAssistant, direct_gate, mock_gateway):
+    """Every OFF attempt the gateway rejects counts as failed: three attempts, relay still owed."""
+    cover = direct_gate()
+    cover._off_pending = True
+    mock_gateway.send.side_effect = lambda *a, **k: _rejected(hass)
+
+    assert await cover._async_send_off() is False
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*0*24##"] * 3
+    assert cover._off_pending is True
+
+    # The next pulse releases the relay first and is refused while that fails.
+    mock_gateway.send.reset_mock()
+    with pytest.raises(HomeAssistantError, match="pulse was not sent"):
+        await cover.async_open_cover()
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*0*24##"] * 3
+
+
+async def test_unconfirmed_pulse_is_withdrawn_after_the_timeout(hass: HomeAssistant, direct_gate, mock_gateway, monkeypatch):
+    """A pulse still unconfirmed after IMPULSE_WRITE_TIMEOUT is withdrawn; an OFF never is."""
+    monkeypatch.setattr("custom_components.myhome.cover.IMPULSE_WRITE_TIMEOUT", 0.01)
+    cover = direct_gate()
+    stuck: asyncio.Future = hass.loop.create_future()  # the worker never gets to it
+    mock_gateway.send.return_value = stuck
+
+    with pytest.raises(HomeAssistantError, match="pulse was not sent"):
+        await cover.async_open_cover()
+    assert stuck.cancelled()  # the worker skips a withdrawn frame (gateway_sessions sending_loop)
+    assert cover._pulse_in_flight is False
+
+    cover._off_pending = True
+    offs: list[asyncio.Future] = []
+
+    def _stuck_off(*args, **kwargs):
+        offs.append(hass.loop.create_future())
+        return offs[-1]
+
+    mock_gateway.send.side_effect = _stuck_off
+    assert await cover._async_send_off() is False
+    assert len(offs) == 3
+    assert not any(f.cancelled() for f in offs)  # written late, an OFF still releases the relay
+    for fut in offs:
+        fut.cancel()
+
+
+async def test_cancelled_request_withdraws_the_pulse_and_keeps_the_off(hass: HomeAssistant, direct_gate, mock_gateway):
+    """A service call cancelled while its pulse waits withdraws the frame; a software ON still owes its OFF."""
+    cover = direct_gate()
+    queued: asyncio.Future = hass.loop.create_future()
+    mock_gateway.send.return_value = queued
+    task = asyncio.create_task(cover.async_open_cover())
+    await asyncio.sleep(0.01)
+    assert cover._pulse_in_flight is True
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert queued.cancelled()
+    assert cover._pulse_in_flight is False
+    assert cover._off_pending is False
+
+    cover._pulse_duration = 1.0
+    queued_on: asyncio.Future = hass.loop.create_future()
+    mock_gateway.send.return_value = queued_on
+    task = asyncio.create_task(cover.async_open_cover())
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert queued_on.cancelled()
+    assert cover._off_pending is True
+    assert cover._pulse_off_cancel is not None
+
+
+async def test_delivery_awaitable_that_is_not_a_future(hass: HomeAssistant, direct_gate, mock_gateway):
+    """A gateway stub handing back a plain awaitable is awaited (bounded) like a future."""
+    cover = direct_gate()
+
+    async def _written() -> float:
+        return 0.05
+
+    mock_gateway.send.side_effect = lambda *a, **k: _written()
+    await cover.async_open_cover()
+    assert cover.is_opening is True
+
+
+async def test_rejected_pulse_after_approval_does_not_wedge_the_access_policy(hass: HomeAssistant, impulse_gate, mock_gateway):
+    """With `access:`, an approved pulse the gateway rejects ends in `idle`, not in a stuck `pending_approval`."""
+    user = await hass.auth.async_create_user("Alice")
+    hass.states.async_set("person.alice", "home", {"user_id": user.id})
+    calls = async_mock_service(hass, "notify", "mobile_app_phone")
+    impulse_gate._access.config = AccessConfig(
+        allowed_users=(user.id,),
+        approvers={user.id: "notify.mobile_app_phone"},
+        remote_close=RemoteClose.AT_HOME,
+        safety_devices_verified=dt_util.now().date(),
+        prewarn_seconds=0.01,
+    )
+    impulse_gate._context = Context(user_id=user.id)
+    mock_gateway.send.return_value = _rejected(hass)
+
+    await impulse_gate.async_open_cover()
+    approve = calls[-1].data["data"]["actions"][0]["action"]
+    hass.bus.async_fire("mobile_app_notification_action", {"action": approve}, context=Context(user_id=user.id))
+    await hass.async_block_till_done()
+
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == [PULSE_FRAME]
+    assert impulse_gate.extra_state_attributes["access_phase"] == "idle"
+    assert any("Not executed" in str(c.data.get("message", "")) for c in calls)
+
+    # The next request is taken, and STOP still drops it.
+    await impulse_gate.async_open_cover()
+    assert impulse_gate.extra_state_attributes["access_phase"] == "pending_approval"
+    await impulse_gate.async_stop_cover()
+    assert impulse_gate.extra_state_attributes["access_phase"] == "idle"
+    await impulse_gate._access.async_shutdown()
+
+
+# ── stop_cover on a door at rest ─────────────────────────────────────────
+
+
+async def test_stop_of_a_door_the_sensor_reports_closed_sends_nothing(hass: HomeAssistant, direct_gate, mock_gateway):
+    """A stop pulse on a closed, resting door would open it (PR 667 state diagram: Closed -> Opening on a pulse)."""
+    cover = direct_gate(state_sensor="binary_sensor.garage_contact")
+    cover._handle_sensor_update(STATE_OFF)  # closed, and Home Assistant started nothing
+
+    await cover.async_stop_cover()
+    assert _pulses(mock_gateway) == 0
+    assert cover.is_closed is True
+    assert cover.is_opening is False
+
+    # Home Assistant just started it: the contact has not lifted yet, STOP goes out.
+    await cover.async_open_cover()
+    assert cover.is_opening is True
+    await cover.async_stop_cover()
+    assert _pulses(mock_gateway) == 2
+    assert cover.is_opening is False
+
+
+@pytest.mark.parametrize("sensor_state", [STATE_ON, "unavailable", None])
+async def test_stop_is_sent_whenever_the_door_may_be_moving(hass: HomeAssistant, direct_gate, mock_gateway, sensor_state):
+    """Not closed, sensor not reporting, or no sensor at all: the door may move unseen, STOP is never withheld."""
+    if sensor_state is None:
+        cover = direct_gate()
+    else:
+        cover = direct_gate(state_sensor="binary_sensor.garage_contact")
+        cover._handle_sensor_update(sensor_state)
+
+    await cover.async_stop_cover()
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == [PULSE_FRAME.replace("22", "24")]
+
+
+async def test_open_on_a_door_stopped_part_way_sends_nothing_but_close_does(hass: HomeAssistant, direct_gate, mock_gateway):
+    """A closed-contact sensor cannot tell part-way from open: no pulse for open (it could close), a pulse for close."""
+    cover = direct_gate(state_sensor="binary_sensor.garage_contact")
+    cover._handle_sensor_update(STATE_OFF)
+    await cover.async_open_cover()
+    cover._handle_sensor_update(STATE_ON)
+    await cover.async_stop_cover()  # stopped part-way by Home Assistant
+    assert _pulses(mock_gateway) == 2
+    assert cover.is_opening is False and cover.is_closed is False
+
+    await cover.async_open_cover()
+    assert _pulses(mock_gateway) == 2
+    await cover.async_close_cover()
+    assert _pulses(mock_gateway) == 3

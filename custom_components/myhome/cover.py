@@ -195,6 +195,11 @@ OFF_ATTEMPTS = 3
 OFF_RETRY_DELAY = 1.0
 OFF_SETTLE_DELAY = 0.2
 
+# Longest an impulse-cover frame may wait for its write confirmation, the bound a
+# door-entry unlock has (lock.LOCK_WRITE_TIMEOUT, MyHOME#835): a pulse written long after
+# the request would move the gate when nobody is watching any more, so it is withdrawn.
+IMPULSE_WRITE_TIMEOUT = 15.0
+
 _clamp_slat_time = clamp_slat_time
 
 
@@ -4025,8 +4030,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     By default the cover is a hardware interface: ``open_cover``, ``close_cover``
     and ``stop_cover`` pulse the relay (with deadband and delivery checks), the
     optional ``state_sensor`` decides whether a pulse is still useful, and STOP
-    is never withheld. Who may operate the door, and how, is the installation's
-    policy (automations, dashboards, blueprints).
+    is never withheld from a door that may be moving. Who may operate the door,
+    and how, is the installation's policy (automations, dashboards, blueprints).
 
     An ``access:`` block opts in to the supervised workflow instead: every
     request then needs approval on an allowed person's phone through the cover's
@@ -4171,6 +4176,54 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             self._travel_timer_cancel()
             self._travel_timer_cancel = None
 
+    async def _async_confirm_write(self, write_fut: Any, *, withdraw: bool) -> None:
+        """Wait until the gateway confirmed a queued frame; raise when it did not.
+
+        The command worker *cancels* the delivery future of a frame the gateway NACKed,
+        whose acknowledgement timed out or that was never written
+        (``gateway_sessions._cancel_written``). That is a failed delivery, not a
+        cancellation of this task, and must not escape as ``asyncio.CancelledError``
+        (a ``BaseException`` no ``except Exception`` sees). ``withdraw`` cancels a frame
+        that is still unconfirmed when the wait ends, so the worker never writes it late.
+        """
+        if not inspect.isawaitable(write_fut):
+            return
+        if not isinstance(write_fut, asyncio.Future):
+            await asyncio.wait_for(write_fut, IMPULSE_WRITE_TIMEOUT)
+            return
+        try:
+            done, _ = await asyncio.wait((write_fut,), timeout=IMPULSE_WRITE_TIMEOUT)
+        except asyncio.CancelledError:
+            # This task was cancelled (service call aborted, entity removed): nobody waits
+            # for the frame any more.
+            if withdraw:
+                write_fut.cancel()
+            raise
+        if not done:
+            if withdraw:
+                write_fut.cancel()
+            raise HomeAssistantError(
+                f"not confirmed by the gateway within {IMPULSE_WRITE_TIMEOUT:.0f} s"
+                + ("; withdrawn if it had not been written yet" if withdraw else "")
+            )
+        if write_fut.cancelled():
+            raise HomeAssistantError(
+                "rejected or dropped by the gateway (NACK, acknowledgement timeout or command session unavailable)"
+            )
+        write_fut.result()  # re-raises a delivery error
+
+    def _schedule_off(self) -> None:
+        """Arm the timer that ends a software pulse with the OFF frame."""
+
+        @callback
+        def _turn_off(_now: Any = None) -> None:
+            self._pulse_off_cancel = None
+            if self.hass is not None:
+                self.hass.async_create_task(self._async_send_off())
+
+        if self.hass is not None:
+            self._pulse_off_cancel = async_call_later(self.hass, self._pulse_duration, _turn_off)
+
     async def _async_send_impulse(self) -> bool:
         """Send the momentary pulse with confirmed delivery to the bus."""
         now = time.monotonic()
@@ -4204,30 +4257,22 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 # preventing the relay from ever staying latched if Home Assistant terminates.
                 # (OWNd releases up to 2.0.0b10 lack the builder: they take the ON/OFF path.)
                 cmd = OWNLightingCommand.switch_on_timed(self._full_where, 18)
-                write_fut = await self._gateway_handler.send(cmd)
-                if inspect.isawaitable(write_fut):
-                    await write_fut
+                await self._async_confirm_write(await self._gateway_handler.send(cmd), withdraw=True)
                 self._last_pulse_time = time.monotonic()
                 return True
 
-            # Custom duration: send ON, await confirmed write to the bus, then schedule OFF
+            # Custom duration: send ON, await confirmed write to the bus, then schedule OFF.
+            # From the moment the ON is handed to the gateway the relay may be energised,
+            # whatever becomes of the confirmation: a frame whose acknowledgement was lost
+            # (timeout, socket reset) has still been written. So the OFF is owed from here,
+            # confirmed pulse or not; on a relay that never closed it changes nothing.
             cmd_on = OWNLightingCommand.switch_on(self._full_where)
-            write_fut = await self._gateway_handler.send(cmd_on)
-            if inspect.isawaitable(write_fut):
-                await write_fut
-            self._last_pulse_time = time.monotonic()
             self._off_pending = True
-
-            @callback
-            def _turn_off(_now: Any = None) -> None:
-                self._pulse_off_cancel = None
-                if self.hass is not None:
-                    self.hass.async_create_task(self._async_send_off())
-
-            if self.hass is not None:
-                self._pulse_off_cancel = async_call_later(
-                    self.hass, self._pulse_duration, _turn_off
-                )
+            try:
+                await self._async_confirm_write(await self._gateway_handler.send(cmd_on), withdraw=True)
+            finally:
+                self._schedule_off()
+            self._last_pulse_time = time.monotonic()
             return True
         except Exception as err:
             LOGGER.error(
@@ -4244,13 +4289,13 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
 
         A lost OFF leaves the relay energised, which the gate controller reads as a
         button held down. ``_off_pending`` stays set until the write is confirmed, so
-        the next command (and removal) try again.
+        the next command (and removal) try again. An OFF is never withdrawn: written
+        late it still releases the relay.
         """
         for attempt in range(1, OFF_ATTEMPTS + 1):
             try:
                 fut = await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-                if inspect.isawaitable(fut):
-                    await fut
+                await self._async_confirm_write(fut, withdraw=False)
             except Exception as err:
                 LOGGER.error(
                     "%s: Failed to send OFF to gateway (attempt %d/%d): %s",
@@ -4300,11 +4345,18 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         return True
 
     async def _async_direct(self, intent: Intent) -> None:
-        """Pulse the relay without a policy (no `access:` block); STOP always goes out.
+        """Pulse the relay without a policy (no `access:` block); STOP of a door that may move goes out.
 
         With a state sensor a pulse that would only undo the request is skipped: the
         door is already there or already on its way. Without one the direction is
         unknown and the pulse goes out as asked.
+
+        STOP is withheld in one case only: the sensor reports the door closed and Home
+        Assistant has not just started it. There is nothing to stop then, and on a
+        step-by-step controller the pulse would open the door (the reason
+        ``access_policy.classify`` refuses the same request under ``access:``). In every
+        other state the door may be moving without Home Assistant knowing (wall button,
+        radio remote), so STOP is sent.
         """
         if (intent is Intent.OPEN and self._attr_is_closing) or (
             intent is Intent.CLOSE and self._attr_is_opening
@@ -4312,10 +4364,15 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             intent = Intent.STOP
         elif self._state_sensor is not None:
             if intent is Intent.OPEN and (self._attr_is_closed is False or self._attr_is_opening):
-                LOGGER.debug("%s: already open or opening, open request ignored", self._display_name)
+                # `on` only says "not closed": open, or stopped part-way. A pulse could
+                # close the door in either case, so it is not sent for an open request.
+                LOGGER.debug("%s: not closed (open or stopped part-way) or opening, open request ignored", self._display_name)
                 return
             if intent is Intent.CLOSE and (self._attr_is_closed is True or self._attr_is_closing):
                 LOGGER.debug("%s: already closed or closing, close request ignored", self._display_name)
+                return
+            if intent is Intent.STOP and self._attr_is_closed is True and not (self._attr_is_opening or self._attr_is_closing):
+                LOGGER.debug("%s: closed and at rest, stop request ignored (a pulse would open it)", self._display_name)
                 return
         effect = Effect.OPEN if intent is Intent.OPEN else Effect.MAY_CLOSE
         if not await self._async_pulse(intent, effect):
@@ -4339,7 +4396,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             await self._access.async_request(Intent.CLOSE, self._context)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        """Pulse the relay to stop; with `access:` a stop of a moving door is immediate too."""
+        """Pulse the relay to stop (not a door proven closed and at rest); with `access:` a stop of a moving door is immediate too."""
         if self._access is None:
             await self._async_direct(Intent.STOP)
         else:
