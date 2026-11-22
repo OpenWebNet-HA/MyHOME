@@ -2,14 +2,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.cover import ATTR_CURRENT_POSITION
+from homeassistant.components.cover import ATTR_CURRENT_POSITION, ATTR_CURRENT_TILT_POSITION
 from homeassistant.core import State
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import restore_state
+from homeassistant.helpers.entity_platform import EntityPlatform
+from homeassistant.helpers.restore_state import RestoredExtraData
 from OWNd.message import OWNEvent
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.myhome import cover as cover_platform
+from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.cover import CoverFamily, CoverScope, MyHOMECover, MyHOMEScopeCover
 
 
@@ -726,3 +734,201 @@ async def test_scope_stop_on_the_main_bus_leaves_the_settling_members_unknown(ha
         assert member.extra_state_attributes["last_run_seconds"] == pytest.approx(2.05)
     assert area.is_opening is False
     assert area.current_cover_position is None
+
+
+# -- A state saved while the gateway is unreachable has no attributes (CL-8 of the 2026-11-18 audit) --
+#
+# Home Assistant writes "unavailable" without the entity's state attributes
+# (homeassistant/helpers/entity.py, Entity.__async_calculate_state: `if available:`), and
+# that is the state the restore cache keeps at the 15-minute dump, on an entry reload and
+# at a stop. Seen on a live F461 2.0.11: four covers restored with their positions, the
+# gateway became unreachable, the entry was reloaded, and all four came back `unknown`.
+
+
+def _restore_gateway():
+    """A gateway stand-in whose availability the test switches, usable on a real platform."""
+    gw = MagicMock()
+    gw.mac = gw.unique_id = "00:03:50:00:00:05"
+    gw.log_id = "[F461 gateway - test]"
+    gw.availability_signal = "myhome_avail"
+    gw.device_registry_id = None
+    gw.device_health = None
+    gw.send_status_request = AsyncMock()
+    gw.config_entry = MagicMock()
+    gw.config_entry.options = {}
+    gw.reachable = True
+    gw.is_who_available = MagicMock(side_effect=lambda who: gw.reachable)
+    gw.sweep_active = False
+    gw.initial_discovery_pending = False
+    return gw
+
+
+def _cover_platform(hass) -> EntityPlatform:
+    platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="cover",
+        platform_name=DOMAIN,
+        platform=cover_platform,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:00:00:05"}, unique_id="00:03:50:00:00:05")
+    entry.add_to_hass(hass)
+    platform.config_entry = entry
+    return platform
+
+
+def _platform_cover(hass, gw, **kwargs) -> MyHOMECover:
+    kwargs.setdefault("travel_time", 6)
+    return MyHOMECover(
+        hass=hass, gateway=gw, name="Shutter 05", entity_name=None, device_id="05", who="2", where="05",
+        interface=None, advanced=False, manufacturer="BTicino", model="F411/2", **kwargs,
+    )
+
+
+async def test_position_survives_a_reload_while_the_gateway_is_unreachable(hass) -> None:
+    """Through Home Assistant's own state machine and restore cache: 40 % stays 40 %."""
+    gw = _restore_gateway()
+    platform = _cover_platform(hass)
+    cover = _platform_cover(hass, gw, slat_tilt=True, slat_time=1.4)
+    cover._attr_current_cover_position = cover._start_position = 40
+    cover._attr_current_cover_tilt_position = 15
+    cover._attr_is_closed = False
+    cover._last_run = {"seconds": 2.05, "direction": "close", "ended_at": "2026-11-18T02:19:18.000+00:00"}
+    cover._refresh_travel_attributes()
+    await platform.async_add_entities([cover])
+    await hass.async_block_till_done()
+    entity_id = cover.entity_id
+    assert hass.states.get(entity_id).attributes[ATTR_CURRENT_POSITION] == 40
+
+    gw.reachable = False
+    cover.async_write_ha_state()
+    unavailable = hass.states.get(entity_id)
+    assert unavailable.state == "unavailable"
+    assert ATTR_CURRENT_POSITION not in unavailable.attributes  # what Home Assistant keeps of it
+    assert "last_run_seconds" not in unavailable.attributes
+
+    await platform.async_remove_entity(entity_id)  # the entry reloads, or Home Assistant stops
+    stored = restore_state.async_get(hass).last_states[entity_id]
+    assert stored.state.state == "unavailable"
+    assert stored.extra_data.as_dict() == {
+        "position": 40,
+        "is_closed": False,
+        "tilt": 15,
+        "last_run": {"seconds": 2.05, "direction": "close", "ended_at": "2026-11-18T02:19:18.000+00:00"},
+    }
+
+    gw.reachable = True
+    restarted = _platform_cover(hass, gw, slat_tilt=True, slat_time=1.4)
+    await platform.async_add_entities([restarted])
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state == "open"
+    assert state.attributes[ATTR_CURRENT_POSITION] == 40
+    assert state.attributes[ATTR_CURRENT_TILT_POSITION] == 15
+    assert state.attributes["last_run_seconds"] == 2.05
+    assert state.attributes["last_run_direction"] == "close"
+    assert state.attributes["last_run_ended_at"] == "2026-11-18T02:19:18.000+00:00"
+    restarted._check_position_target(50)  # a partial target is no longer refused
+    await platform.async_remove_entity(entity_id)
+
+
+async def test_last_run_survives_a_restart_with_the_gateway_reachable(hass) -> None:
+    """B3-4: `last_run_*` came back empty after every restart; the state attributes were never read."""
+    gw = _restore_gateway()
+    platform = _cover_platform(hass)
+    cover = _platform_cover(hass, gw)
+    cover._attr_current_cover_position = cover._start_position = 0
+    cover._attr_is_closed = True
+    cover._last_run = {"seconds": 15.54, "direction": "open", "ended_at": "2026-11-18T01:02:03.000+00:00"}
+    cover._refresh_travel_attributes()
+    await platform.async_add_entities([cover])
+    await hass.async_block_till_done()
+    entity_id = cover.entity_id
+    await platform.async_remove_entity(entity_id)
+
+    restarted = _platform_cover(hass, gw)
+    await platform.async_add_entities([restarted])
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert (state.state, state.attributes[ATTR_CURRENT_POSITION]) == ("closed", 0)
+    assert state.attributes["last_run_seconds"] == 15.54
+    assert state.attributes["last_run_direction"] == "open"
+    # A run measured since the restart is not overwritten by a late restore.
+    restarted._last_run = {"seconds": 3.0, "direction": "close", "ended_at": None}
+    restarted._restore_last_run({"last_run": {"seconds": 15.54, "direction": "open", "ended_at": None}})
+    assert restarted._last_run["seconds"] == 3.0
+    await platform.async_remove_entity(entity_id)
+
+
+@pytest.mark.parametrize(
+    ("record", "position", "is_closed", "state"),
+    [
+        ({"position": 40, "is_closed": False}, 40, False, "open"),
+        ({"position": 0, "is_closed": True}, 0, True, "closed"),
+        ({"is_closed": False}, None, False, "open"),  # open at an unknown height (review of #795)
+        ({"is_closed": True}, 0, True, "closed"),  # "closed" is a height
+        ({"position": "n/a", "is_closed": False}, None, False, "open"),
+        ({}, None, None, None),
+        (None, None, None, None),
+    ],
+)
+async def test_unavailable_last_state_restores_from_the_entity_record(
+    hass, gateway, record, position, is_closed, state
+) -> None:
+    cover = _make_cover(hass, gateway)
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData(record) if record is not None else None
+    )
+    await cover.async_added_to_hass()
+    assert cover.current_cover_position == position
+    assert cover.is_closed is is_closed
+    assert cover.state == state
+
+
+async def test_entity_record_never_overrides_a_state_that_has_its_attributes(hass, gateway) -> None:
+    """The record only stands in for an `unavailable` state; what Home Assistant saved wins otherwise."""
+    cover = _make_cover(hass, gateway)
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.x", "open", {ATTR_CURRENT_POSITION: 30}))
+    cover.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData({"position": 80, "is_closed": False}))
+    await cover.async_added_to_hass()
+    assert cover.current_cover_position == 30
+
+    unknown = _make_cover(hass, gateway)
+    unknown.async_get_last_state = AsyncMock(return_value=State("cover.x", "unknown", {}))
+    unknown.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData({"position": 80, "is_closed": False}))
+    await unknown.async_added_to_hass()
+    assert unknown.current_cover_position is None
+    assert unknown.is_closed is None
+
+
+async def test_simple_cover_keeps_its_closed_state_across_an_unavailable_save(hass, gateway) -> None:
+    """An assumed-state cover (travel_time 0) has only open / closed to lose."""
+    cover = _make_cover(hass, gateway, travel_time=0)
+    assert cover._strategy.assumed_state is True
+    cover._attr_is_closed = True
+    assert cover.extra_restore_state_data.as_dict() == {"is_closed": True}
+    restarted = _make_cover(hass, gateway, travel_time=0)
+    restarted.async_get_last_state = AsyncMock(return_value=State("cover.x", "unavailable", {}))
+    restarted.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData({"is_closed": True}))
+    await restarted.async_added_to_hass()
+    assert restarted.is_closed is True
+    assert restarted.state == "closed"
+
+
+async def test_advanced_cover_stores_no_position_and_restores_its_last_run(hass, gateway) -> None:
+    """An advanced cover reads its level from the actuator; only the measured run is kept."""
+    cover = _make_cover(hass, gateway, advanced=True, model="F401")
+    assert cover.extra_restore_state_data is None
+    cover._attr_current_cover_position = 75
+    cover._last_run = {"seconds": 15.36, "direction": "close", "ended_at": "2026-11-05T12:13:06.444+00:00"}
+    assert cover.extra_restore_state_data.as_dict() == {"last_run": cover._last_run}
+    restarted = _make_cover(hass, gateway, advanced=True, model="F401")
+    restarted.async_get_last_extra_data = AsyncMock(return_value=cover.extra_restore_state_data)
+    with patch.object(restarted, "_async_poll_if_needed", AsyncMock()):
+        await restarted.async_added_to_hass()
+    assert restarted.current_cover_position is None
+    assert restarted.extra_state_attributes["last_run_seconds"] == 15.36
+    assert restarted.extra_state_attributes["last_run_direction"] == "close"

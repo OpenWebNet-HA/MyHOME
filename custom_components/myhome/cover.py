@@ -30,6 +30,7 @@ from homeassistant.const import (
     STATE_OFF,
     STATE_ON,
     STATE_OPEN,
+    STATE_UNAVAILABLE,
 )
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -1499,6 +1500,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             health, address = self._device_health(), self._health_address
             if health is not None and address is not None:
                 health.name_address(*address, self._device_name, owner=self._health_owner)
+            self._restore_last_run(await self._async_last_restore_record())
             await self._async_poll_if_needed()
         else:
             await super().async_added_to_hass()
@@ -1527,6 +1529,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
+        record = await self._async_last_restore_record()
+        # Home Assistant keeps a state's attributes only while the entity is available
+        # (Entity.__async_calculate_state), so a state saved while the gateway was
+        # unreachable (the 15-minute dump, an entry reload, a stop) is "unavailable"
+        # with no position. What the entity knew then is in its own restore record.
+        saved_unavailable = last_state.state == STATE_UNAVAILABLE
         moving_on_add = bool(self._attr_is_opening or self._attr_is_closing)
         if self._strategy.assumed_state:
             if not moving_on_add:
@@ -1534,9 +1542,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_is_closed = True
                 elif last_state.state in (STATE_OPEN, "open"):
                     self._attr_is_closed = False
+                elif saved_unavailable and isinstance(record.get("is_closed"), bool):
+                    self._attr_is_closed = record["is_closed"]
         elif not self._advanced:
             restored = False
             last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
+            if last_pos is None and saved_unavailable:
+                last_pos = record.get("position")
             if last_pos is not None:
                 try:
                     self._attr_current_cover_position = max(0, min(100, int(round(float(last_pos)))))
@@ -1546,11 +1558,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 except (ValueError, TypeError):
                     restored = False
             if not restored:
+                was_closed: bool | None = None
                 if last_state.state in (STATE_CLOSED, "closed"):
+                    was_closed = True
+                elif last_state.state in (STATE_OPEN, "open"):
+                    was_closed = False
+                elif saved_unavailable and isinstance(record.get("is_closed"), bool):
+                    was_closed = record["is_closed"]
+                if was_closed is True:
                     self._attr_current_cover_position = 0
                     self._start_position = 0
                     self._attr_is_closed = False if moving_on_add else True
-                elif last_state.state in (STATE_OPEN, "open"):
+                elif was_closed is False:
                     # "open" says nothing about the height: open, position unknown
                     # until an end stop (review of #795). "closed" is a height.
                     self._attr_current_cover_position = None
@@ -1561,6 +1580,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if self._slat_tilt:
             last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
+            if last_tilt is None and saved_unavailable:
+                last_tilt = record.get("tilt")
             if last_tilt is not None:
                 try:
                     self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
@@ -1577,25 +1598,55 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         deadline = time.monotonic() + (M0_RELAY_HOLD_WINDOW - age)
                         if self._relay_hold_until is None or deadline > self._relay_hold_until:
                             self._relay_hold_until = deadline
-        await self._async_restore_strategy_state()
+        self._restore_last_run(record)
+        self._restore_strategy_state(record)
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData | None:
-        """The strategy's model state, kept across restarts when it has any."""
-        state = self._strategy.export_state()
-        if state is None:
-            return None
-        return RestoredExtraData({"strategy": self._strategy.name, "state": state})
+        """What a restart must not lose: the strategy's model state and the entity's own.
 
-    async def _async_restore_strategy_state(self) -> None:
-        """Hand the strategy the state it exported before the restart (same strategy only)."""
+        The position, the slat angle and the closed state are also state attributes,
+        but Home Assistant drops those from a state written while the entity is
+        unavailable; the last measured run is never read back from them. This record
+        is stored whatever the availability. ``None`` while there is nothing to keep.
+        """
+        data: dict[str, Any] = {}
+        state = self._strategy.export_state()
+        if state is not None:
+            data["strategy"] = self._strategy.name
+            data["state"] = state
+        if not self._advanced:
+            # An advanced cover reads its position from the actuator after a restart.
+            if (position := self.current_cover_position) is not None:
+                data["position"] = position
+            if (is_closed := self.is_closed) is not None:
+                data["is_closed"] = is_closed
+            if self._slat_tilt and (tilt := self.current_cover_tilt_position) is not None:
+                data["tilt"] = tilt
+        if self._last_run:
+            data["last_run"] = dict(self._last_run)
+        return RestoredExtraData(data) if data else None
+
+    async def _async_last_restore_record(self) -> dict[str, Any]:
+        """The record ``extra_restore_state_data`` stored before the restart (empty if none)."""
         try:
             extra = await self.async_get_last_extra_data()
         except Exception:  # pylint: disable=broad-except  # not registered with the restore cache
+            return {}
+        return extra.as_dict() if extra is not None else {}
+
+    def _restore_last_run(self, record: Mapping[str, Any]) -> None:
+        """Show the last measured run again (``last_run_*`` attributes) after a restart."""
+        last_run = record.get("last_run")
+        if not isinstance(last_run, Mapping) or self._last_run:
             return
-        data = extra.as_dict() if extra is not None else {}
-        if data.get("strategy") == self._strategy.name and isinstance(data.get("state"), dict):
-            self._strategy.restore_state(data["state"])
+        self._last_run = {key: last_run.get(key) for key in ("seconds", "direction", "ended_at")}
+        self._refresh_travel_attributes()
+
+    def _restore_strategy_state(self, record: Mapping[str, Any]) -> None:
+        """Hand the strategy the state it exported before the restart (same strategy only)."""
+        if record.get("strategy") == self._strategy.name and isinstance(record.get("state"), dict):
+            self._strategy.restore_state(record["state"])
 
     async def async_will_remove_from_hass(self) -> None:
         """Run when entity will be removed from hass."""
