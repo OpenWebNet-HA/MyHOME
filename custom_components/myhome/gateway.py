@@ -40,6 +40,7 @@ from .const import (
     LOGGER,
 )
 from .device_health import DeviceHealth
+from .gateway_confirm import LightEchoWatchdog
 from .gateway_events import GatewayEventDispatcher
 from .gateway_resync import LightingResyncManager
 from .gateway_sessions import (
@@ -88,6 +89,8 @@ from .topology import (
 __all__ = [
     "AVAILABILITY_GRACE",
     "COMMAND_SESSION_IDLE_TIMEOUT",
+    "COVER_PRE_MOVE_STOP_EMITTED",
+    "COVER_PRE_MOVE_STOP_OMITTED",
     "CommandPriorityQueue",
     "CommandWorkerPool",
     "EVENT_INACTIVITY_TIMEOUT",
@@ -127,6 +130,7 @@ __all__ = [
     "command_session_limit",
     "dr",
     "er",
+    "gateway_emits_cover_pre_move_stop",
     "get_gateway_profile",
     "read_who13",
     "read_who1013",
@@ -390,12 +394,24 @@ KNOWN_GATEWAY_MODELS = frozenset(
         "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
     }
 )
+# WHO 2 SCS pre-move STOP behavior (#959): 11 of 12 emulated Linux automation gateways
+# (5 bt_luci + 6 coso libplug_automation_tr.so) synthesize a 2-telegram SCS sequence
+# ($03<W>00120A STOP + $03<W>001208/1209 UP/DOWN) for *2*1*W## / *2*2*W## (firmware_oracle.json
+# and mcp_index.json). MH202 (010024, older coso without pre-STOP) and bare-metal MH201 (3.3.6,
+# live plant trace) emit only the single direction telegram, so energized timed relay actuators
+# (L4671/2, F411/2, F411/4, F411U2) stop instead of reversing unless HA stops first.
+COVER_PRE_MOVE_STOP_EMITTED = frozenset(
+    {"3488", "F453", "F453AV", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH200N", "MYHOMESERVER1"}
+)
+COVER_PRE_MOVE_STOP_OMITTED = frozenset({"MH201", "MH202"})
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
     | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL
     | KNOB_READ_IN_SILENT_ZONE_POLL
-    | ZONE_ACTUATOR_REQUEST_REFUSED,
+    | ZONE_ACTUATOR_REQUEST_REFUSED
+    | COVER_PRE_MOVE_STOP_EMITTED
+    | COVER_PRE_MOVE_STOP_OMITTED,
     key=len,
     reverse=True,
 )
@@ -427,6 +443,38 @@ def _resolved_model(word: str) -> str | None:
     if isinstance(profile, GenericGatewayProfile):
         return None
     return _alnum(profile.model_name)
+
+
+def _resolve_model_key(model: str | None, *, profile: Any = None) -> str:
+    """Resolve a gateway model string and optional OWNd profile to a table key (``F461``, ``MH201``)."""
+    if profile is not None and not isinstance(profile, GenericGatewayProfile):
+        name: object = getattr(profile, "model_name", None) or model or ""
+    else:
+        name = model or ""
+    for word in re.findall(r"[A-Za-z0-9]+", str(name)):
+        resolved = _resolved_model(word)
+        if resolved is not None:
+            return resolved
+    normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
+    return next((known for known in _ZONE_REQUEST_MODELS if known in normalized), normalized)
+
+
+def gateway_emits_cover_pre_move_stop(model: str | None, *, profile: Any = None) -> bool | None:
+    """Return whether a gateway injects an SCS STOP (120A) ahead of UP/DOWN (1208/1209) (#959).
+
+    Read from the OWNd profile first when present; otherwise from the firmware-oracle and
+    live-trace tables (``True`` on 11/12 emulated Linux automation gateways, ``False`` on
+    ``MH201`` and ``MH202``, ``None`` when unmeasured).
+    """
+    emits = getattr(profile, "emits_cover_pre_move_stop", None)
+    if isinstance(emits, bool):
+        return emits
+    key = _resolve_model_key(model, profile=profile)
+    if key in COVER_PRE_MOVE_STOP_EMITTED:
+        return True
+    if key in COVER_PRE_MOVE_STOP_OMITTED:
+        return False
+    return None
 
 
 # A WHO 4 zone address: ``Z`` (0..99), ``#Z``, ``Z#N`` (actuator 0..9), each optionally behind
@@ -534,6 +582,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
         self._event_dispatcher = GatewayEventDispatcher(self)
         self._resync_manager = LightingResyncManager(self)
+        self._echo_watchdog = LightEchoWatchdog(self)
         self._event_runner = EventSessionRunner(self)
         self._command_pool = CommandWorkerPool(
             self,
@@ -724,16 +773,23 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         ``"BTicino-L4684"`` and ``"F454 (003598)"`` resolve too.
         """
         profile = getattr(self.gateway, "profile", None)
-        if profile is not None and not isinstance(profile, GenericGatewayProfile):
-            name = getattr(profile, "model_name", None) or self.model
-        else:
-            name = self.model
-        for word in re.findall(r"[A-Za-z0-9]+", str(name)):
-            resolved = _resolved_model(word)
-            if resolved is not None:
-                return resolved
-        normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
-        return next((model for model in _ZONE_REQUEST_MODELS if model in normalized), normalized)
+        return _resolve_model_key(self.model, profile=profile)
+
+    def _who2_target(self) -> MyHOMEGatewayHandler:
+        """The gateway a WHO 2 command goes through (delegated or failover peer when active)."""
+        probe = OWNCommand.parse("*2*0*0##")
+        if probe is None:  # pragma: no cover - a fixed, well-formed frame
+            return self
+        return self._delegated_target(probe) or self._failover_target(probe) or self
+
+    @property
+    def emits_cover_pre_move_stop(self) -> bool | None:
+        """Whether the gateway serving WHO 2 injects an SCS STOP (120A) before UP/DOWN (1208/1209)."""
+        target = self._who2_target()
+        return gateway_emits_cover_pre_move_stop(
+            target.model,
+            profile=getattr(target.gateway, "profile", None),
+        )
 
     def _who4_target(self) -> MyHOMEGatewayHandler:
         """The gateway a WHO 4 status request goes through, the way ``send_status_request`` routes it.
@@ -1521,6 +1577,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self._unavailable_timer is not None:
             self._unavailable_timer()
         self._resync_manager.cancel_all()
+        self._echo_watchdog.cancel_all()
         if self._zone_request_task is not None:
             self._zone_request_task.cancel()
             self._zone_request_task = None
