@@ -82,28 +82,31 @@ async def test_probe_dimension_15_discovery_and_update(mock_gateway, mock_config
     assert len(dispatch_callbacks) == 1
     handle_message = dispatch_callbacks[0]
 
-    # 1. Dispatch probe 100 frame 1 from Issue #264: *#4*100*15*1*0200*0001##
+    # 1. Dispatch probe 100 frame 1 from Issue #264: *#4*100*15*1*0200*0001## (deferred until 2nd independent reading)
     msg1 = OWNEvent.parse("*#4*100*15*1*0200*0001##")
     handle_message(msg1)
+    assert len(discovered_entities) == 0
+
+    # 2. Dispatch 2nd independent reading: *#4*100*15*1*0196*0001## (19.6°C)
+    msg2 = OWNEvent.parse("*#4*100*15*1*0196*0001##")
+    handle_message(msg2)
 
     assert len(discovered_entities) == 1
     probe_sensor: MyHOMETemperatureSensor = discovered_entities[0]
     assert probe_sensor._where == "100"
     assert probe_sensor._device_id == "4-100"  # same id as a myhome.yaml probe (#441)
     assert probe_sensor.native_unit_of_measurement == UnitOfTemperature.CELSIUS
-    assert probe_sensor.native_value == 20.0
+    assert probe_sensor.native_value == 19.6
     assert probe_sensor._display_name == "Probe 100 Temperature"
     assert probe_sensor.unique_id == f"{mac}-4-100-temperature"
 
-    # 2. Dispatch subsequent update: *#4*100*15*1*0196*0001## (19.6°C)
-    msg2 = OWNEvent.parse("*#4*100*15*1*0196*0001##")
-    handle_message(msg2)
-
-    # Should not create duplicate entity
+    # 3. Dispatch subsequent update: *#4*100*15*1*0200*0001## (20.0°C)
+    msg3 = OWNEvent.parse("*#4*100*15*1*0200*0001##")
+    handle_message(msg3)
     assert len(discovered_entities) == 1
-    assert probe_sensor.native_value == 19.6
+    assert probe_sensor.native_value == 20.0
 
-    # 3. Dispatch negative temperature probe reading: *#4*100*15*1*1050*0001## (-5.0°C)
+    # 4. Dispatch negative temperature probe reading: *#4*100*15*1*1050*0001## (-5.0°C)
     msg_neg = OWNEvent.parse("*#4*100*15*1*1050*0001##")
     handle_message(msg_neg)
     assert len(discovered_entities) == 1
@@ -144,9 +147,13 @@ async def test_probe_dimension_0_discovery(mock_gateway, mock_config_entry):
 
     handle_message = dispatch_callbacks[0]
 
-    # Secondary probe 105 reporting 21.5°C via dimension 0
-    msg = OWNEvent.parse("*#4*105*0*0215##")
-    handle_message(msg)
+    # Secondary probe 105 reporting via dimension 0: 1st frame defers, 2nd independent reading creates
+    msg1 = OWNEvent.parse("*#4*105*0*0210##")
+    handle_message(msg1)
+    assert len(discovered_entities) == 0
+
+    msg2 = OWNEvent.parse("*#4*105*0*0215##")
+    handle_message(msg2)
 
     assert len(discovered_entities) == 1
     sensor = discovered_entities[0]
