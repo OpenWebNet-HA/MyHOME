@@ -57,6 +57,7 @@ from .const import (
 from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
+from .where_grammar import canonical_contact_where
 
 PARALLEL_UPDATES = 0
 
@@ -123,7 +124,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     Unique ids carry the device class (``{mac}-25-31-opening``), and the same
     contact may be spelled ``0031`` or ``31``: every entity is remembered under
-    all of its spellings, and frames are routed under all of theirs.
+    all of its spellings, and frames are routed under all of theirs. A dry contact
+    an F455 spells ``301`` is the ``31`` of every other gateway: its frames are read
+    as ``31``, and an entity already registered as ``301`` keeps its unique id and
+    answers to both.
     """
     runtime = config_entry.runtime_data
     gateway = runtime.gateway
@@ -141,7 +145,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     def duplicate(entry, ctx: DeviceContext) -> bool:  # type: ignore
         # A second registry entry for a contact already restored under another spelling
-        return any(key in ctx_discovery[ctx.who].known for key in _spellings(ctx.address.where))
+        return any(key in ctx_discovery[ctx.who].known for key in _spellings_for(ctx.who)(ctx.address.where))
 
     ctx_discovery: dict[str, PlatformDiscovery] = {}
 
@@ -261,14 +265,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     def known_keys(ctx: DeviceContext) -> list[str]:
         """Every spelling of the contact: the frame's, the configured, the normalized, the entity's."""
-        keys = [ctx.key, ctx.config_id or "", *_spellings(ctx.address.where)]
+        spellings = _spellings_for(ctx.who)
+        keys = [ctx.key, ctx.config_id or "", *spellings(ctx.address.where)]
         cfg_where = ctx.cfg.get(CONF_WHERE) if ctx.source != "bus" else None
         if cfg_where:
-            keys.extend(_spellings(str(cfg_where)))
+            keys.extend(spellings(str(cfg_where)))
         return [k for k in keys if k]
 
     def route_keys(message, address: Address | None) -> list[str]:  # type: ignore
-        return _spellings(address.where) if address is not None else []
+        return _spellings_for(str(getattr(message, "who", "")))(address.where) if address is not None else []
 
     @callback
     def anonymous_sensor_reply(message: typing.Any) -> None:
@@ -285,7 +290,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     ctx_discovery["25"] = PlatformDiscovery(
         who="25", event_type=OWNDryContactEvent, build=build_dry_contact,
         registry_address=registry_address("25"), reject_registry_entry=duplicate, accept=yaml_who(25),
-        known_keys=known_keys, route_keys=route_keys, address=_contact_address, **common,  # type: ignore
+        known_keys=known_keys, route_keys=route_keys, address=_contact_address,
+        peer_spellings=_contact_peer_spellings, **common,  # type: ignore
     )
     ctx_discovery["9"] = PlatformDiscovery(
         who="9", event_type=OWNAuxEvent, build=build_auxiliary,
@@ -322,6 +328,25 @@ def _spellings(where: str) -> list[str]:
     """``0031`` may also appear as ``31``, and a legacy ``25-0031`` as either."""
     clean = where.split("-")[-1]
     return list(dict.fromkeys(k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k))
+
+
+def _contact_spellings(where: str) -> list[str]:
+    """:func:`_spellings` of a WHO 25 contact, plus ``31`` for an F455's ``301``."""
+    keys = _spellings(where)
+    return list(dict.fromkeys([*keys, *(canonical_contact_where(key) for key in keys)]))
+
+
+def _contact_peer_spellings(unique_id: str) -> list[str]:
+    """``{mac}-301-opening`` (an F455's spelling) is ``{mac}-31-opening`` on any other gateway."""
+    stem = _strip_class_suffix(unique_id)
+    head, _, where = stem.rpartition("-")
+    canonical = canonical_contact_where(where)
+    return [f"{head}-{canonical}{unique_id[len(stem):]}"] if head and canonical != where else []
+
+
+def _spellings_for(who: str) -> typing.Callable[[str], list[str]]:
+    """The spellings of an address of ``who``: only a WHO 25 contact has a padded one."""
+    return _contact_spellings if str(who) == "25" else _spellings
 
 
 def _first_config(configured: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -414,7 +439,8 @@ def _primary(where: str) -> str:
 
 
 def _contact_address(message) -> Address | None:  # type: ignore
-    return Address(_primary(str(message.where)))
+    # An F455 pads the contact number (301), every other gateway and the WHO 25 PDF do not (31)
+    return Address(canonical_contact_where(_primary(str(message.where))))
 
 
 def _aux_address(message) -> Address | None:  # type: ignore

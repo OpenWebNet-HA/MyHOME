@@ -197,6 +197,7 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "canonical_contact_where",
     "canonical_thermo_zone",
     "central_report_zone",
     "central_unit_season",
@@ -683,6 +684,27 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
         return ("invalid_where_apl", {})
 
     return ("invalid_where_apl", {})
+
+
+# A WHO 25 dry contact is ``3`` + its number, [1-201] for the automation interface and Z N
+# ([1-9][1-9]) for the alarm / IR one (WHO 25 PDF, WHERE table), so no published WHERE has a
+# ``0`` right after the ``3``. An F455 1.0.76 writes contacts 1 and 2 as ``301`` / ``302`` where
+# an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
+# ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
+# that one padding zero in front of a single digit was captured, so only that is rewritten.
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])$")
+
+
+def canonical_contact_where(where: str) -> str:
+    """``301`` -> ``31`` (WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given.
+
+    The spelling of the WHO 25 PDF examples (``*25*31#1*31##`` is contact 1) and of every other
+    gateway with a capture (F454, MH200N, MH202: ``31``, ``33``). Both gateways accept either
+    spelling in ``*#25*WHERE##``, so an entity may keep the one it was created with.
+    """
+    base, sep, rest = str(where).partition("#")
+    match = _PADDED_CONTACT_RE.match(base)
+    return f"3{match[1]}{sep}{rest}" if match else str(where)
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:
