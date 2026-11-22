@@ -94,6 +94,26 @@ PARALLEL_UPDATES = 0
 _COARSE_ONLY_SPEED = 240
 # One Dimension 1 read per burst of WHAT 2..10 echoes on a fine dimmer (#851).
 _BRIGHTNESS_REFRESH_WINDOW_S = 1.0
+# A level 0 is shown on while its status check is out only when the light's "on" status is at
+# most this old: the captured level followed its status by 0.14 to 0.63 s, an MH200 off came
+# 2.6 s after "on" (tests/fixtures/traces/dimmer_on_at_level_0_2026_11_20).
+_LEVEL_ZERO_STATUS_FRESH_S = 2.0
+# A dimmer confirmed on at level 0 is verified again at most this often; also the window of
+# the burst limit below.
+_LEVEL_ZERO_STATUS_CHECK_INTERVAL_S = 30.0
+# Status checks of one light in one interval.
+_LEVEL_ZERO_CHECK_BURST = 3
+# How long a status check waits for its request to be closed.
+_LEVEL_ZERO_CHECK_TIMEOUT_S = 20.0
+# Wait after the request is closed: the gateway handler resolves the delivery future before it
+# hands the collected replies to the entities, and a reply may come on the event session only.
+_LEVEL_ZERO_CHECK_GRACE_S = 1.0
+# The command pool drops a reply identical to a frame received 0.1 s before the request was taken
+# (gateway_sessions.py, ``has_frame_since``) or 0.2 s before the reply (bus_monitor.py dedup
+# window): an "on" status this close before the write may be the hidden answer of the check.
+_LEVEL_ZERO_HIDDEN_ANSWER_S = 0.2
+# What a dimmer that is on at level 0 is shown at: the lowest level a light that is on can have.
+_LEVEL_ZERO_ON_PCT = 1
 
 # Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
 ATTR_COLOR_TEMP = "color_temp"
@@ -538,6 +558,24 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._exact_level_seen = False
         self._coarse_speed_seen = False
         self._brightness_refresh_after: float = 0.0
+        # What the light's last on / off status frame (``*1*<what>*<where>##``, not a level
+        # report) said, and when: it decides what an exact level 0 means (``_level_zero_while_on``).
+        self._status_on: bool | None = None
+        self._status_on_at: float = 0.0
+        self._status_check_after: float = 0.0
+        # Confirmed: the light answered a status check with "on"; pending: a check is out, unsettled.
+        self._level_zero_on = False
+        self._level_zero_pending = False
+        self._level_zero_shown_on = False
+        self._level_zero_fine = False
+        self._level_zero_check_task: asyncio.Task[None] | None = None
+        self._level_zero_check_times: list[float] = []
+        # The delivery futures of checks given up at their timeout with the request still out: once
+        # one is closed, its replies may still arrive and answer nothing (only the check's own).
+        self._level_zero_abandoned: list[asyncio.Future[Any]] = []
+        # Whether the last "on" status is one that confirms (plain on or lowest preset) and can be
+        # the hidden answer of a check (no off status just before it).
+        self._status_confirms = False
 
     @property
     def color_temp(self) -> int | None:
@@ -783,9 +821,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             cmd = OWNLightingCommand.set_brightness(self._full_where, pct, 0)
             send_fade = getattr(self._gateway_handler, "send_fade_step", None)
             if self._fade_engine.is_fading and inspect.iscoroutinefunction(send_fade):
-                await send_fade(cmd)
+                self._supersede_level_zero_check(await send_fade(cmd))
             else:
-                await self._gateway_handler.send(cmd)
+                await self._send_switch_on(cmd)
 
     async def _maybe_instant_brightness(
         self, start_pct: int, target_pct: int, is_on: bool | None = None
@@ -815,6 +853,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         await self._cancel_fade_robustly()
+        if self._level_zero_check_task is not None:
+            self._level_zero_check_task.cancel()
         await super().async_will_remove_from_hass()
 
     async def _async_fade_to(
@@ -850,7 +890,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 or ColorMode.RGB in self._attr_supported_color_modes
             )
         ):
-            await self._gateway_handler.send(
+            await self._send_switch_on(
                 OWNLightingCommand.set_brightness(self._full_where, target_pct)
             )
             self._apply_brightness_state(target_pct, is_on=True)
@@ -862,19 +902,53 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             minutes=minutes,
             seconds=seconds,
         )
-        await self._gateway_handler.send(cmd)
+        await self._send_switch_on(cmd)
         self._attr_is_on = True
         self._is_on_restored = False
         self.async_write_ha_state()
 
+    async def _send_switch_on(self, message: Any) -> Any:
+        """Send a frame that switches the light on; return its delivery future."""
+        written = await self._gateway_handler.send(message)
+        self._supersede_level_zero_check(written)
+        return written
+
+    def _supersede_level_zero_check(self, written: Any) -> None:
+        """A switch-on from Home Assistant: once written, the check that is out must not show the light off.
+
+        A frame that is never written (its delivery future cancelled or failed), or one that has
+        not even been queued, supersedes nothing: that check still decides.
+        """
+        task = self._level_zero_check_task
+        if task is None:
+            return
+
+        def supersede(_: Any = None) -> None:
+            if self._level_zero_check_task is not task:
+                return
+            if isinstance(written, asyncio.Future) and (
+                written.cancelled() or written.exception() is not None
+            ):
+                return
+            self._level_zero_pending = False
+
+        if isinstance(written, asyncio.Future) and not written.done():
+            written.add_done_callback(supersede)
+        else:
+            supersede()
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
+        await self._async_turn_on(**kwargs)
+
+    async def _async_turn_on(self, **kwargs: Any) -> None:
+        """Send the switch-on Home Assistant asked for."""
         if ATTR_FLASH in kwargs and self._attr_supported_features & LightEntityFeature.FLASH:
             if kwargs[ATTR_FLASH] == FLASH_SHORT:
-                await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 0.5))
+                await self._send_switch_on(OWNLightingCommand.flash(self._full_where, 0.5))
                 return
             elif kwargs[ATTR_FLASH] == FLASH_LONG:
-                await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 1.5))
+                await self._send_switch_on(OWNLightingCommand.flash(self._full_where, 1.5))
                 return
 
         # HS / HSV color control (DALI F429)
@@ -909,7 +983,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 cmd = OWNLightingCommand.set_hsv_color(self._full_where, h_int, s_int, v_int)
             else:  # pragma: no cover
                 cmd = OWNLightingCommand.set_rgb_color(self._full_where, int(r), int(g), int(b))
-            await self._gateway_handler.send(cmd)
+            await self._send_switch_on(cmd)
             self._attr_hs_color = (round(float(h), 1), round(float(s), 1))
             self._attr_rgb_color = (int(r), int(g), int(b))
             self._attr_color_mode = ColorMode.HS
@@ -928,7 +1002,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 target_mireds = int(kwargs[ATTR_COLOR_TEMP])
                 target_kelvin = color_temperature_mired_to_kelvin(target_mireds)
 
-            await self._gateway_handler.send(
+            await self._send_switch_on(
                 OWNLightingCommand.set_color_temperature(self._full_where, target_mireds)
             )
             self._attr_color_temp = target_mireds
@@ -972,7 +1046,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     return
                 start_pct = (
                     self._attr_brightness_pct
-                    if self._attr_is_on and self._attr_brightness_pct is not None
+                    if self._attr_is_on
+                    and self._attr_brightness_pct is not None
+                    # The minimum shown for an unverified level 0 is not a level the light has:
+                    # the requested level is sent.
+                    and not (
+                        self._attr_brightness_pct == _LEVEL_ZERO_ON_PCT
+                        and self._level_zero_shown_on
+                        and not self._level_zero_on
+                    )
                     else 0
                 )
 
@@ -987,13 +1069,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
                 # native path (exact pre-existing)
                 if ATTR_TRANSITION in kwargs:
-                    await self._gateway_handler.send(
+                    await self._send_switch_on(
                         OWNLightingCommand.set_brightness(
                             self._full_where, target_pct, int(transition)
                         )
                     )
                 else:
-                    await self._gateway_handler.send(
+                    await self._send_switch_on(
                         OWNLightingCommand.set_brightness(self._full_where, target_pct)
                     )
                 if target_pct > 0:
@@ -1020,7 +1102,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     return
 
                 # native switch_on with speed
-                await self._gateway_handler.send(
+                await self._send_switch_on(
                     OWNLightingCommand.switch_on(self._full_where, int(transition))
                 )
                 self._apply_brightness_state(target_pct, is_on=True)
@@ -1028,7 +1110,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 return
         else:
             # plain on path (preserved)
-            await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
+            await self._send_switch_on(OWNLightingCommand.switch_on(self._full_where))
             if (
                 ColorMode.BRIGHTNESS in self._attr_supported_color_modes
                 or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
@@ -1039,42 +1121,58 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the device off."""
+        status_on, level_zero_on, pending = (
+            self._status_on, self._level_zero_on, self._level_zero_pending
+        )
+        # An MH200 reports the off that follows as a DIMENSION 1 level 0 only (``*#1*62*1*100*2##``,
+        # tests/fixtures/traces/dimmer_on_at_level_0_2026_11_20/review_frames.json:12).
+        self._status_on = None
+        self._level_zero_on = False
+        self._level_zero_pending = False
 
-        if (
-            ATTR_TRANSITION in kwargs
-            and self._attr_supported_features & LightEntityFeature.TRANSITION
-        ):
-            transition = float(kwargs[ATTR_TRANSITION])
-            start_pct = (
-                self._attr_brightness_pct
-                if self._attr_is_on and self._attr_brightness_pct is not None
-                else 0
-            )
+        try:
+            if (
+                ATTR_TRANSITION in kwargs
+                and self._attr_supported_features & LightEntityFeature.TRANSITION
+            ):
+                transition = float(kwargs[ATTR_TRANSITION])
+                start_pct = (
+                    self._attr_brightness_pct
+                    if self._attr_is_on and self._attr_brightness_pct is not None
+                    else 0
+                )
 
-            await self._cancel_fade_robustly()
+                await self._cancel_fade_robustly()
 
-            if self._should_use_software_stepped(transition):
-                if await self._maybe_instant_brightness(start_pct, 0, is_on=False):
+                if self._should_use_software_stepped(transition):
+                    if await self._maybe_instant_brightness(start_pct, 0, is_on=False):
+                        return
+                    self._fade_engine.start_fade(start_pct, 0, transition)
                     return
-                self._fade_engine.start_fade(start_pct, 0, transition)
+
+                # native
+                await self._gateway_handler.send(
+                    OWNLightingCommand.switch_off(self._full_where, int(transition))
+                )
                 return
 
-            # native
-            await self._gateway_handler.send(
-                OWNLightingCommand.switch_off(self._full_where, int(transition))
-            )
-            return
+            if ATTR_FLASH in kwargs and self._attr_supported_features & LightEntityFeature.FLASH:
+                if kwargs[ATTR_FLASH] == FLASH_SHORT:
+                    await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 0.5))
+                    return
+                elif kwargs[ATTR_FLASH] == FLASH_LONG:
+                    await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 1.5))
+                    return
 
-        if ATTR_FLASH in kwargs and self._attr_supported_features & LightEntityFeature.FLASH:
-            if kwargs[ATTR_FLASH] == FLASH_SHORT:
-                await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 0.5))
-                return
-            elif kwargs[ATTR_FLASH] == FLASH_LONG:
-                await self._gateway_handler.send(OWNLightingCommand.flash(self._full_where, 1.5))
-                return
-
-        # plain off (preserved)
-        await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
+            # plain off (preserved)
+            await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
+        except (Exception, asyncio.CancelledError):
+            # A switch-off that was never sent ends nothing, unless the light has reported since.
+            if self._status_on is None:
+                self._status_on = status_on
+                self._level_zero_on = level_zero_on
+                self._level_zero_pending = pending and self._level_zero_check_task is not None
+            raise
 
     @callback
     def _learn_dimmer_kind(self, message: OWNLightingEvent) -> None:
@@ -1116,6 +1214,258 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             name=f"myhome_light_{self._where}_brightness_refresh",
         )
 
+    def _request_status_check(self, background: bool) -> bool:
+        """Ask the light for its on / off status; return whether a check was started.
+
+        One check at a time. A background check (a confirmed dimmer) at most once per
+        ``_LEVEL_ZERO_STATUS_CHECK_INTERVAL_S``; any other at most ``_LEVEL_ZERO_CHECK_BURST``
+        times in that interval. A check that a status frame has settled while its task still
+        runs is followed by a new one, sent when that task has ended.
+        """
+        hass = getattr(self, "hass", None)
+        if hass is None:
+            return False
+        previous = self._level_zero_check_task
+        if previous is not None and self._level_zero_pending:
+            return False
+        now = time.monotonic()
+        self._level_zero_check_times = [
+            at for at in self._level_zero_check_times if now - at < _LEVEL_ZERO_STATUS_CHECK_INTERVAL_S
+        ]
+        if background:
+            if now < self._status_check_after:
+                return False
+        elif len(self._level_zero_check_times) >= _LEVEL_ZERO_CHECK_BURST:
+            return False
+        self._level_zero_check_times.append(now)
+        self._status_check_after = now + _LEVEL_ZERO_STATUS_CHECK_INTERVAL_S
+        self._level_zero_pending = True
+        self._level_zero_shown_on = False
+        task = hass.async_create_task(
+            self._async_level_zero_check(previous),
+            name=f"myhome_light_{self._where}_status_check",
+        )
+        if task.done():
+            # Started eagerly and failed before its first wait (the send queue is shut down): the
+            # check has settled itself and holds no slot; this level 0 cannot be verified.
+            if not task.cancelled() and task.exception() is not None:
+                LOGGER.debug(
+                    "%s light %s: status request not queued: %r",
+                    self._gateway_handler.log_id,
+                    self._full_where,
+                    task.exception(),
+                )
+            return False
+        self._level_zero_check_task = task
+        return True
+
+    async def _async_level_zero_check(self, previous: asyncio.Task[None] | None = None) -> None:
+        """Send the status request of a level 0 check and wait until the gateway has closed it.
+
+        Then settle the check: a status frame of the light may have settled it meanwhile. A check
+        that follows ``previous`` (settled, still running) sends its request when that has ended.
+        """
+        answered = False
+        try:
+            if previous is not None:
+                await asyncio.wait([previous])
+            written: Any = None
+            timed_out = False
+            confirmed = self._level_zero_on
+            # A request given up earlier and closed before this one began has had its replies.
+            self._level_zero_abandoned = [f for f in self._level_zero_abandoned if not f.done()]
+            try:
+                # The bound covers the wait for room in the send queue too; it never cancels the
+                # delivery future, which belongs to the command pool.
+                async with asyncio.timeout(_LEVEL_ZERO_CHECK_TIMEOUT_S):
+                    written = await self._gateway_handler.send_status_request(
+                        OWNLightingCommand.status(self._full_where)
+                    )
+                    if not confirmed:
+                        # An "on" status received before the request was queued answers nothing.
+                        self._level_zero_on = False
+                    if isinstance(written, asyncio.Future):
+                        await asyncio.wait([written])
+                        self._level_zero_abandoned = [
+                            f for f in self._level_zero_abandoned if not f.done()
+                        ]
+            except TimeoutError:
+                timed_out = True
+                if written is None and not confirmed:
+                    self._level_zero_on = False
+                if isinstance(written, asyncio.Future) and not written.done():
+                    self._level_zero_abandoned.append(written)
+            if isinstance(written, asyncio.Future):
+                answered = written.done() and not written.cancelled() and written.exception() is None
+            else:
+                answered = not timed_out
+            if answered:
+                await asyncio.sleep(_LEVEL_ZERO_CHECK_GRACE_S)
+                if (
+                    isinstance(written, asyncio.Future)
+                    and self._level_zero_check_task is asyncio.current_task()
+                    # Closed with no frame on the command session: the pool dropped no copy.
+                    and getattr(written, "_empty_reply", False) is not True
+                ):
+                    self._hidden_level_zero_answer(written.result())
+        except asyncio.CancelledError:
+            if self._level_zero_check_task is asyncio.current_task():
+                self._level_zero_pending = False
+            raise
+        finally:
+            # A check followed by a newer one leaves the light to that one.
+            if self._level_zero_check_task is asyncio.current_task():
+                self._level_zero_check_task = None
+                self._settle_level_zero(answered)
+
+    @callback
+    def _hidden_level_zero_answer(self, written_at: Any) -> None:
+        """Confirm a check whose "on" answer the command pool dropped as a copy.
+
+        The pool hands no reply identical to a frame received just before the request was written
+        (``_LEVEL_ZERO_HIDDEN_ANSWER_S``): a confirming "on" status that close is taken as the answer.
+        """
+        if (
+            self._level_zero_pending
+            and self._status_on is True
+            and self._status_confirms
+            and isinstance(written_at, (int, float))
+            and not isinstance(written_at, bool)
+            and written_at - _LEVEL_ZERO_HIDDEN_ANSWER_S <= self._status_on_at <= written_at
+        ):
+            self._confirm_level_zero()
+            self._level_zero_pending = False
+
+    @callback
+    def _confirm_level_zero(self) -> None:
+        """The light answered a check with "on": it is on at level 0 (``_LEVEL_ZERO_ON_PCT``)."""
+        self._level_zero_on = True
+        self._status_check_after = time.monotonic() + _LEVEL_ZERO_STATUS_CHECK_INTERVAL_S
+        if self._level_zero_fine:
+            self._exact_level_seen = True
+
+    @callback
+    def _settle_level_zero(self, answered: bool) -> None:
+        """End a level 0 check that no status frame of the light has settled: the light is off."""
+        if not self._level_zero_pending:
+            return
+        self._level_zero_pending = False
+        if self._level_zero_on and not answered:
+            # A confirmed dimmer whose verification could not be made keeps its state.
+            return
+        shown_on = self._level_zero_on or self._level_zero_shown_on
+        self._level_zero_on = False
+        self._status_on = None
+        if not (shown_on and self._attr_is_on):
+            return
+        # Off as for an off status: a software fade must not switch it on again.
+        self._cancel_fade_if_active()
+        self._attr_is_on = False
+        if not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
+            # An on / off only light locked against levels keeps no level (#288).
+            self._attr_brightness_pct = 0
+            self._attr_brightness = 0
+        if self._off_icon is not None and self._on_icon is not None:
+            self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
+        self._publish_state()
+
+    def _note_on_off_status(self, message: OWNLightingEvent, is_no_load: bool) -> None:
+        """Keep what the light itself last said about being on or off.
+
+        Its status frame (``*1*0*<where>##``, ``*1*1*<where>##``, a level ``2..10``) and the no
+        load report. A DIMENSION 4 level 0 counts as "off" too: it is what an F418 answers a
+        level read with while it is off (F454, F455, F461; the one that is on at level 0
+        answers in DIMENSION 1). Other level reports and dim steps say nothing here.
+        A plain on (``WHAT 1``) or the lowest preset (``WHAT 2``), with no ``#`` parameter (an
+        on at a speed, ``*1*1#0*32##``, is a command), answering a level 0 check confirms "on at
+        level 0"; an off, a no load report, a DIMENSION 4 level 0, a level above 0 or another
+        "on" ``WHAT`` ends the confirmation.
+        """
+        if is_no_load:
+            self._status_on = False
+            self._status_confirms = False
+            self._level_zero_on = False
+            self._level_zero_pending = False
+        elif getattr(message, "dimension", None) is None:
+            if message.is_on is None or getattr(message, "what", None) in (30, 31):
+                return
+            # An off status this close before an "on": a reply the command pool dropped as a copy
+            # may be either of them, so that "on" is not taken as a hidden answer.
+            after_off = (
+                self._status_on is False
+                and time.monotonic() - self._status_on_at <= _LEVEL_ZERO_HIDDEN_ANSWER_S
+            )
+            self._status_on = message.is_on
+            if message.is_on:
+                confirms = not getattr(message, "what_param", None) and (
+                    getattr(message, "what", None) == 1
+                    or getattr(message, "brightness_preset", None) == 2
+                )
+                # A request given up earlier has just been closed: this "on" may be its reply,
+                # which answers nothing; the check that is out still decides.
+                late_reply = any(
+                    f.done() and not f.cancelled() for f in self._level_zero_abandoned
+                )
+                answers_check = (
+                    self._level_zero_check_task is not None
+                    and self._level_zero_pending
+                    and not late_reply
+                )
+                if confirms and answers_check:
+                    self._confirm_level_zero()
+                elif not confirms:
+                    self._level_zero_on = False
+                if not late_reply:
+                    self._level_zero_pending = False
+                self._status_confirms = confirms and not after_off
+            else:
+                self._status_confirms = False
+                self._level_zero_on = False
+                self._level_zero_pending = False
+        elif getattr(message, "dimension", None) == 4 and message.brightness == 0:
+            self._status_on = False
+            self._status_confirms = False
+            self._level_zero_on = False
+            self._level_zero_pending = False
+        else:
+            if message.brightness:
+                self._level_zero_on = False
+                self._level_zero_pending = False
+            return
+        self._status_on_at = time.monotonic()
+
+    def _level_zero_while_on(self, message: OWNLightingEvent) -> bool:
+        """Whether a DIMENSION 1 level 0 is shown as a dimmer that is on (at 1 %).
+
+        An F418 that is on can report level 0 (F461, F455); an MH200 reports an off with a
+        ramp the same way. After an "on" status the light is asked once: an "on" answer
+        confirms (on at every later level 0, verified in the background), anything else is
+        off. Until the answer it is on only when the "on" status is at most
+        ``_LEVEL_ZERO_STATUS_FRESH_S`` old; a level 0 that cannot be verified is off.
+        """
+        if getattr(message, "dimension", None) != 1 or message.brightness != 0:
+            return False
+        self._level_zero_fine = (
+            getattr(message, "transition", None) != _COARSE_ONLY_SPEED
+            and getattr(message, "is_coarse_dimmer", None) is not True
+        )
+        if self._status_on is not True:
+            return False
+        if self._level_zero_on:
+            self._request_status_check(background=True)
+            return True
+        shown_on = time.monotonic() - self._status_on_at <= _LEVEL_ZERO_STATUS_FRESH_S
+        if self._level_zero_check_task is not None and self._level_zero_pending:
+            # Still unanswered: this level 0 is judged by the end of that check, and shown on
+            # only by the age of the "on" status now.
+            self._level_zero_shown_on = shown_on
+            return shown_on
+        # A check that a status frame has settled says nothing about this level 0: a new one.
+        if not self._request_status_check(background=False):
+            return False
+        self._level_zero_shown_on = shown_on
+        return shown_on
+
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message.
 
@@ -1141,6 +1491,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         preset = getattr(message, "brightness_preset", None)
         has_preset = isinstance(preset, int) and not isinstance(preset, bool)
         update_bus_state_complete = False
+        level_zero_while_on = self._level_zero_while_on(message)
+        self._note_on_off_status(message, is_no_load)
 
         if is_no_load:
             self._attr_is_on = False
@@ -1163,9 +1515,36 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         elif message.is_on is not None and getattr(message, "what", None) not in (30, 31):
             # A WHAT 30/31 dim step is a relative command, not a state: OWNd 2.0.0b11
             # still reports it as `is_on True`, and a step from 0 % may leave the light off (#367).
-            self._attr_is_on = message.is_on
+            self._attr_is_on = True if level_zero_while_on else message.is_on
             self._is_on_restored = False
             update_bus_state_complete = True
+            # A status "on" without a level (``*1*1*0010##``) left the light shown on at 0 %
+            # after a level 0: show the confirmed minimum or the last known level instead.
+            if (
+                message.is_on
+                and message.brightness is None
+                and not has_preset
+                and getattr(message, "dimension", None) is None
+                and (
+                    self._attr_brightness_pct == 0
+                    # or the minimum shown for a level 0 that was not confirmed
+                    or (
+                        self._attr_brightness_pct == _LEVEL_ZERO_ON_PCT
+                        and self._level_zero_shown_on
+                        and not self._level_zero_on
+                    )
+                )
+                and not self._fade_engine.is_fading
+            ):
+                restored = (
+                    _LEVEL_ZERO_ON_PCT
+                    if self._level_zero_on
+                    else max(_LEVEL_ZERO_ON_PCT, self._last_brightness_pct)
+                )
+                self._attr_brightness_pct = restored
+                self._attr_brightness = percent_to_eight_bits(restored)
+                if self._is_fine_dimmer(message):
+                    self._request_brightness_refresh()
             self._attr_extra_state_attributes.pop("unknown_state", None)
             if message.is_on and self._attr_extra_state_attributes.pop("no_load", None):
                 LOGGER.info(
@@ -1305,12 +1684,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             and message.brightness is not None
             and not has_preset
         ):
+            # A dimmer that is on at level 0 is shown at the lowest level, never at 0.
+            level = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
             if is_fading:
                 # Precise policy during fade: only apply significant physical changes.
                 # Pre-09W29 coarse dimmers (is_coarse_dimmer=True, #767) quantize levels
                 # onto BTicino's coarse ladder where 86% -> WHAT 10 -> 100% spans 14 pp.
                 current_opt = self._attr_brightness_pct or 0
-                reported = message.brightness
+                reported = level
                 cancel_delta = (
                     25 if getattr(message, "is_coarse_dimmer", None) is True else 10
                 )
@@ -1319,8 +1700,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._apply_brightness_state(reported)
                 # else: keep optimistic state
             else:
-                self._attr_brightness_pct = message.brightness
-                self._attr_brightness = percent_to_eight_bits(message.brightness)
+                self._attr_brightness_pct = level
+                self._attr_brightness = percent_to_eight_bits(level)
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
             self._learn_dimmer_kind(message)

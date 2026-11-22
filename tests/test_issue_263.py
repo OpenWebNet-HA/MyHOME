@@ -111,9 +111,10 @@ async def test_probe_frame_does_not_create_climate_entity(hass, mock_gateway):
 
     assert len(discovered_entities) == 0
 
-    # Legitimate zone event *#4*2*0*0215## should be discovered
+    # Legitimate zone event *#4*2*0*0215## confirms cleanly on second distinct zone frame *4*1*2## (#966)
     zone_event = OWNHeatingEvent("*#4*2*0*0215##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", zone_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*1*2##"))
     await hass.async_block_till_done()
 
     assert len(discovered_entities) == 1

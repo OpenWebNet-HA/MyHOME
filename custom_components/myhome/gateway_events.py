@@ -44,6 +44,7 @@ from .const import (
     DOMAIN,
     LOGGER,
 )
+from .gateway_confirm import echo_watchdog_of
 from .topology import peer_handles_who
 from .where_grammar import (
     central_report_zone,
@@ -369,6 +370,9 @@ class GatewayEventDispatcher:
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
             self.tell_central_unit(message, *central)
+            echo_watchdog = echo_watchdog_of(self.handler)
+            if echo_watchdog is not None:
+                echo_watchdog.status_seen(message)
             self.handler._correlate_shared_bus_traffic(message)
             self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:

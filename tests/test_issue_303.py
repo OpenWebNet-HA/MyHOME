@@ -71,9 +71,9 @@ async def test_standalone_zone_auto_discovery_exposes_fan_by_default(hass: HomeA
     attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, added_entities.extend)
 
-    # Deliver a frame from zone 1 to trigger auto-discovery
-    event = OWNEvent.parse("*#4*1*0*0234##")
-    async_dispatcher_send(hass, f"myhome_message_{MAC}", event)
+    # Deliver two distinct frames from zone 1 to confirm auto-discovery
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*0*0234##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1*1##"))
     await hass.async_block_till_done()
 
     assert len(added_entities) == 1
@@ -151,8 +151,9 @@ async def test_plant_with_central_unit_and_zone_1_radiator_has_no_fan(hass: Home
 
     # 1. Discover central unit #0
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*#0*0*0215##"))
-    # 2. Discover zone 1 (radiator, emits temperature reading)
+    # 2. Discover zone 1 (radiator, emits temperature reading + mode confirmation)
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*0*0205##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1*1##"))
     await hass.async_block_till_done()
 
     assert len(added_entities) == 2
@@ -485,12 +486,18 @@ async def test_issue_303_bus_trace_replay(hass: HomeAssistant, mock_gateway):
 
     by_where = {e._where: e for e in added_entities}
 
-    # All zones 1, 2, 3, 5, 6 should be discovered
-    assert "1" in by_where
-    assert "2" in by_where
-    assert "3" in by_where
+    # Zones 1, 2, 3, 6 have >= 2 distinct frames and confirm immediately; Zone 5 has 1 frame and waits
+    assert {"1", "2", "3", "6"} <= set(by_where)
+    assert "5" not in by_where
+
+    # Second distinct frame confirms Zone 5 and replays its held dim 20 fan speed frame
+    confirm_z5 = OWNEvent.parse("*#4*5*0*0220##")
+    assert confirm_z5 is not None
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", confirm_z5)
+    await hass.async_block_till_done()
+
+    by_where = {e._where: e for e in added_entities}
     assert "5" in by_where
-    assert "6" in by_where
 
     # All should have fan support enabled
     for zone in ("1", "2", "3", "5", "6"):

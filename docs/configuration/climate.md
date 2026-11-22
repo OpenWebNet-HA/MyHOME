@@ -11,8 +11,9 @@ In v2, setup and management are **100% UI-first**: climate zones and central uni
 When your gateway connects to Home Assistant:
 
 1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 4` temperature and setpoint messages broadcast on the SCS bus.
-2. **Entity Creation**: Each active thermoregulation zone (`WHERE = 1..99` or central unit `#0`) is registered as a Home Assistant `climate` entity linked to your gateway.
-3. **UI Customization**: You can rename the zone, assign it to an Area (e.g. *Master Bedroom*, *Living Room*), and adjust temperature step increments directly in the Home Assistant UI.
+2. **Candidate Confirmation (Bit-Flip & Phantom Zone Guard)**: An unconfigured bus zone (`WHERE = 1..99`) is held as a candidate on its first frame rather than creating a permanent entity from a single SCS telegram corruption (for example, a 1-bit flip turning Zone `1` `*#4*1*0*0190##` into phantom Zone `65` `*#4*65*0*0190##`). A local unrouted zone is confirmed either passively by a second independent frame within 1 hour (ignoring identical repeats within `5.0 s` from gateways such as `MyHomeServer1`) or actively once the bus is quiet by querying `*#4*Z*0##`: a thermostat answers with its temperature, whereas a gateway `NACK` or an `MH202` empty `ACK` with no reply evicts the candidate without creating an entity. Zones already in `myhome.yaml` or the entity registry and central units (`#0` / `#0#N`) are accepted immediately; zones behind an `F422` interface (`Z#4#II`) are never actively queried and confirm passively on a second independent frame.
+3. **Entity Creation**: Each confirmed thermoregulation zone (`WHERE = 1..99` or central unit `#0`) is registered as a Home Assistant `climate` entity linked to your gateway, replaying the held first frame so no initial state is lost.
+4. **UI Customization**: You can rename the zone, assign it to an Area (e.g. *Master Bedroom*, *Living Room*), and adjust temperature step increments directly in the Home Assistant UI.
 
 ---
 

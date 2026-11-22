@@ -273,6 +273,7 @@ async def test_sweep_bus_holds_back_polls_of_the_cover_and_zone_it_discovers(
             # Frames that reveal new devices without their full state
             async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*2*1*19##"))
             async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*#4*2*0*0215##"))
+            async_dispatcher_send(hass, f"myhome_message_{mac}", OWNMessage.parse("*4*1*2##"))
             for _ in range(50):
                 if hass.states.get("cover.cover_19") and hass.states.async_entity_ids("climate"):
                     break
