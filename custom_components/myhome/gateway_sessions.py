@@ -1432,6 +1432,16 @@ class CommandWorkerPool:
         if is_fade_step:
             envelope["is_fade_step"] = True
         await self.send_buffer.put(envelope)
+        if self._refused_meanwhile():
+            # The refusal landed while put() was suspended: no worker reads the queue.
+            LOGGER.debug(
+                "%s Message `%s` not sent: the gateway refused the password; "
+                "waiting for re-authentication.",
+                self.log_id,
+                message,
+            )
+            written.cancel()
+            return written
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
             self.log_id,
@@ -1791,16 +1801,27 @@ class CommandWorkerPool:
         if backoff > 0:
             self.send_buffer.pause_status(backoff)
 
+    def _refused_meanwhile(self) -> bool:
+        """The refusal flag, read again after an await (it can be set while ``put()`` is suspended)."""
+        return self._auth_refused
+
     def stop_after_auth_refusal(self) -> None:
         """Stop every worker and refuse new frames: the gateway refused the password."""
         self._auth_refused = True
         self.close()
+        # A worker in connect()'s retry delay, or holding a dequeued frame while its
+        # session reopens, would log in again or write that frame: cancel it (not
+        # awaited). A refusal reported from inside a worker returns by itself.
+        current = asyncio.current_task()
+        for worker in self.sending_workers:
+            if not worker.done() and worker is not current:
+                worker.cancel()
+        # No worker is left to read the stop sentinels close() just put; removing them
+        # also wakes a producer suspended in put() (see _enqueue).
+        self._drain_queue()
 
-    def close(self) -> None:
-        """Cancel queued frames and unblock workers."""
-        self._terminate_sender = True
-        self._sender_stop.set()
-
+    def _drain_queue(self) -> None:
+        """Take every queued item off the send queue, cancelling its delivery future."""
         while True:
             try:
                 task = self.send_buffer.get_nowait()
@@ -1809,6 +1830,13 @@ class CommandWorkerPool:
             if task is not None:
                 _cancel_written(task)
             self.send_buffer.task_done()
+
+    def close(self) -> None:
+        """Cancel queued frames and unblock workers."""
+        self._terminate_sender = True
+        self._sender_stop.set()
+
+        self._drain_queue()
 
         if isinstance(self.send_buffer, FrameScheduler):
             self.send_buffer._in_flight_targets.clear()

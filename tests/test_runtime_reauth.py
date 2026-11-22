@@ -29,19 +29,25 @@ from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from OWNd.connection import OWNCommandSession, OWNEventSession, event_session
+from OWNd.connection import event_session as es
 from OWNd.connection import event_session as ownd_event_session
+from OWNd.connection import session as own_session
 from OWNd.exceptions import OWNAuthError
 from OWNd.message import OWNCommand
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+import custom_components.myhome.gateway as gw
 import custom_components.myhome.gateway as gw_module
-from custom_components.myhome.const import CONF_OWN_PASSWORD, DOMAIN
+from custom_components.myhome.const import CONF_OWN_PASSWORD, CONF_SSDP_LOCATION, DOMAIN
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.gateway_sessions import CommandWorkerPool, EventSessionRunner
 from tests.mock_gateway_harness import MockGatewayHarness
+from tests.test_issue_947_ssdp_firmware_reload_loop import _announce, _Announcement
 
 MAC = "00:03:50:00:00:61"
 DUMMY_PASSWORD = "dummy-test-pass"
+ROTATED_PASSWORD = "dummy-test-pass-2"
 # Server random string of an HMAC-SHA2 handshake: 128 decimal digits.
 SERVER_RANDOM = "*#" + "".join(f"{i % 16:02d}" for i in range(64)) + "##"
 
@@ -172,7 +178,7 @@ async def test_command_session_refused_stops_the_event_listener_too(
     handler.sending_workers.append(asyncio.create_task(handler.sending_loop(1)))
 
     await asyncio.wait_for(asyncio.gather(*handler.sending_workers), timeout=5)
-    await asyncio.gather(handler.listening_worker, return_exceptions=True)
+    await asyncio.wait_for(asyncio.gather(handler.listening_worker, return_exceptions=True), timeout=5)
     await hass.async_block_till_done()
 
     # Two workers opened their session at the same moment; neither tries again.
@@ -217,8 +223,8 @@ async def test_reauth_reloads_the_entry_and_commands_are_written_again(
 ) -> None:
     """Whole path on a set-up entry: refusal, reauth form, reload, new workers, a frame on the wire.
 
-    The password typed into the form is the stored one: the refusal was temporary
-    (or the password was changed and changed back). The reload must still happen.
+    The password typed into the form is a new one (the password was changed on the
+    gateway): the reload must store it and the reloaded runtime gateway must use it.
     """
     monkeypatch.setattr(ownd_event_session, "RECONNECT_PAUSE_FATAL", 0.05)
     gateway = RefusingGateway(harness, protect=())
@@ -240,7 +246,7 @@ async def test_reauth_reloads_the_entry_and_commands_are_written_again(
 
     gateway.protect = ()
     (flow,) = _reauth_flows(hass)
-    result = await hass.config_entries.flow.async_configure(flow["flow_id"], {CONF_OWN_PASSWORD: DUMMY_PASSWORD})
+    result = await hass.config_entries.flow.async_configure(flow["flow_id"], {CONF_OWN_PASSWORD: ROTATED_PASSWORD})
     await hass.async_block_till_done()
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
@@ -258,6 +264,10 @@ async def test_reauth_reloads_the_entry_and_commands_are_written_again(
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
+    # The reloaded runtime gateway uses the password typed into the form (checked after
+    # the unload, so that a failure here does not leave the entry loaded).
+    assert entry.data[CONF_PASSWORD] == ROTATED_PASSWORD
+    assert second.gateway.password == ROTATED_PASSWORD
 
 
 async def test_refusal_inside_send_stops_the_worker(
@@ -320,3 +330,273 @@ async def test_a_refused_connection_is_not_an_authentication_failure(hass: HomeA
 
     assert pool._connect_refused({"Success": False, "Message": "password_required"}, 0)
     handler._on_auth_refused.assert_called_once_with("password_required", "command")
+
+
+async def test_other_login_stops_even_inside_connect_retry(handler, harness):
+    script = RefusingGateway(harness, protect=())
+    monitor = []
+
+    def reply(msg, writer):
+        if msg == "*99*1##":  # tests/test_runtime_reauth.py:60
+            monitor.append(writer)
+        elif msg == "*99*0##" and harness.received_messages.count(msg) == 1:
+            # Lost command connection mid-negotiation; connect() is about to retry.
+            writer.close()
+            return None
+        return script._reply(msg, writer)
+
+    harness.set_custom_handler(reply)
+    handler.listening_worker = asyncio.create_task(handler.listening_loop())
+    worker = asyncio.create_task(handler.sending_loop(0))
+    handler.sending_workers.append(worker)
+    await _until(lambda: "*99*0##" in harness.received_messages, "command connection attempted")
+    script.protect = ("*99*1##", "*99*0##")  # tests/test_runtime_reauth.py:140
+    monitor[0].close()
+    await _until(lambda: handler._auth_refused, "event password refused")
+    assert script.proofs == 1
+    at_stop = len(harness.received_messages)
+    await asyncio.wait_for(asyncio.gather(worker, return_exceptions=True), 3)
+    assert "*99*0##" not in harness.received_messages[at_stop:], (
+        "command worker presented password again after event refusal"
+    )
+
+
+async def test_dequeued_command_not_written_after_terminal_refusal(handler, harness, monkeypatch):
+    # The normal idle close, only accelerated to avoid waiting for the real timeout.
+    monkeypatch.setattr(type(handler), "command_session_idle_timeout", property(lambda _: 0.05))
+    script = RefusingGateway(harness, protect=())
+    monitor, reopening = [], []
+
+    def reply(msg, writer):
+        if msg == "*99*1##":  # tests/test_runtime_reauth.py:60
+            monitor.append(writer)
+        if msg == "*99*0##" and harness.received_messages.count(msg) == 2:
+            reopening.append(writer)
+            return None
+        return script._reply(msg, writer)
+
+    harness.set_custom_handler(reply)
+    handler.listening_worker = asyncio.create_task(handler.listening_loop())
+    worker = asyncio.create_task(handler.sending_loop(0))
+    handler.sending_workers.append(worker)
+    await _until(
+        lambda: "*99*0##" in harness.received_messages and len(harness.connected_clients) == 1,
+        "idle command socket closed",
+    )
+    cmd = "*1*1*21##"  # tests/test_runtime_reauth.py:195
+    written = await handler.send(OWNCommand.parse(cmd))
+    await _until(lambda: bool(reopening), "worker reopening for the dequeued command")
+    script.protect = ("*99*1##",)
+    monitor[0].close()
+    await _until(lambda: handler._auth_refused, "event login refused")
+    # The delayed acceptance of the earlier command session selector arrives last.
+    if not reopening[0].is_closing():
+        reopening[0].write(b"*#*1##")  # tests/mock_gateway_harness.py:120
+    await asyncio.wait_for(asyncio.gather(worker, return_exceptions=True), 4)
+    assert cmd not in harness.received_messages and written.cancelled(), (
+        "command was still transmitted after shutdown"
+    )
+
+
+async def test_blocked_sender_is_failed(handler, harness):
+    # Size a real scheduler to force backpressure with one queued user command.
+    handler.send_buffer._maxsize = 1
+    command = await handler.send(OWNCommand.parse("*1*1*21##"))  # tests/test_runtime_reauth.py:203
+    waiter = asyncio.create_task(handler.send_status_request(OWNCommand.parse("*#1*21##")))  # :204
+    await asyncio.sleep(0)
+    assert not waiter.done()
+    RefusingGateway(harness, protect=("*99*1##",))  # tests/test_runtime_reauth.py:60-66
+    try:
+        await handler.listening_loop()
+        await asyncio.sleep(0)
+        assert command.cancelled()
+        assert waiter.done() and waiter.result().cancelled(), (
+            "producer blocked in put was not failed on refusal"
+        )
+    finally:
+        waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
+
+
+async def test_event_recycle_does_not_swallow_stop_from_command_worker(
+    handler, harness, monkeypatch
+):
+    # Use a real keepalive-enabled profile (ownd/OWNd/profiles.py:372-378).
+    handler.gateway.profile = gw._profile_for_model("F454", "")
+    assert handler.gateway.profile.event_keepalive_interval
+    command_has_result, event_recycling = asyncio.Event(), asyncio.Event()
+
+    class AlignResult(OWNCommandSession):
+        async def connect(self, **kwargs):
+            result = await super().connect(**kwargs)
+            if result and result.get("Message") == "password_error":
+                command_has_result.set()
+                await event_recycling.wait()  # deliver real result when event teardown is underway
+            return result
+
+    class ObserveRecycle(OWNEventSession):
+        async def _stop_keepalive(self):
+            if self._keepalive_task is not None:
+                event_recycling.set()
+            await super()._stop_keepalive()
+
+    monkeypatch.setattr(gw, "OWNCommandSession", AlignResult)
+    monkeypatch.setattr(gw, "OWNEventSession", ObserveRecycle)
+    script = RefusingGateway(harness, protect=("*99*0##",))  # tests/test_runtime_reauth.py:169
+    handler.listening_worker = asyncio.create_task(handler.listening_loop())
+    worker = asyncio.create_task(handler.sending_loop(0))
+    handler.sending_workers.append(worker)
+    await asyncio.wait_for(command_has_result.wait(), 3)
+    assert script.proofs == 1
+    script.protect = ("*99*1##",)  # tests/test_runtime_reauth.py:60-66
+    await harness.disconnect_all_clients()
+    await asyncio.wait_for(
+        asyncio.gather(worker, handler.listening_worker, return_exceptions=True), 3
+    )
+    assert handler._auth_refused
+    assert harness.received_messages.count("*99*1##") == 1, (
+        "listener submitted a new event selector after command refusal"
+    )
+
+
+async def test_auth_on_second_reconnect_ends_listener_without_retry_pause(
+    handler, harness, monkeypatch
+):
+    # Collapse only the transient-failure retry burst; leave the fatal delay longer
+    # than the assertion. The parent fixture normally shortens it to 50 ms.
+    monkeypatch.setattr(own_session, "MAX_CONNECT_ATTEMPTS", 1)
+    monkeypatch.setattr(
+        event_session, "RECONNECT_PAUSE_FATAL", 60
+    )  # ownd/OWNd/connection/session.py:86
+    script = RefusingGateway(harness, protect=())
+
+    def reply(msg, writer):
+        if msg == "*99*1##":  # tests/test_runtime_reauth.py:60
+            n = harness.received_messages.count(msg)
+            if n == 2:  # dropped reconnect: get_next returns with no streams
+                writer.close()
+                return None
+            if n == 3:
+                script.protect = (msg,)
+        return script._reply(msg, writer)
+
+    harness.set_custom_handler(reply)
+    handler.listening_worker = asyncio.create_task(handler.listening_loop())
+    await _until(lambda: handler.available, "connected")
+    await harness.disconnect_all_clients()
+    await _until(lambda: handler._auth_refused, "refusal handled")
+    done, _ = await asyncio.wait([handler.listening_worker], timeout=0.2)
+    assert done, "listener still sleeping in fatal reconnect delay after its terminal refusal"
+
+
+async def test_late_refusal_while_platforms_are_unloading(hass, harness, entry, monkeypatch):
+    script = RefusingGateway(harness, protect=())
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    gateway = entry.runtime_data.gateway
+    await _until(lambda: gateway.available, "connected")
+    real = hass.config_entries.async_unload_platforms
+    arrived, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_unload(*args):
+        arrived.set()
+        await release.wait()
+        return await real(*args)
+
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", slow_unload)
+    unload = asyncio.create_task(hass.config_entries.async_unload(entry.entry_id))
+    try:
+        await asyncio.wait_for(arrived.wait(), 5)
+        assert entry.state == ConfigEntryState.UNLOAD_IN_PROGRESS
+        script.protect = ("*99*1##",)  # tests/test_runtime_reauth.py:60-66
+        await harness.disconnect_all_clients()
+        await _until(lambda: gateway.listening_worker.done(), "refused listener finished")
+        await hass.async_block_till_done()
+        assert not _reauth_flows(hass), "password prompt for an unloading entry"
+    finally:
+        release.set()
+        await unload
+
+
+async def test_ssdp_fills_missing_metadata_while_waiting_for_password(
+    hass, entry, harness, monkeypatch
+):
+    # A discoverable HMAC profile per docs/openwebnet-who-specifications.md:174.
+    ad = _Announcement(
+        host=entry.data[CONF_HOST],
+        modelName="F454",
+        friendlyName="F454",
+        serialNumber=entry.unique_id,
+    )
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, "name": "F454", CONF_SSDP_LOCATION: ad.ssdp_location}
+    )
+    monkeypatch.setattr(es, "RECONNECT_PAUSE_FATAL", 0.01)
+    gateway = RefusingGateway(harness, protect=())  # tests/test_runtime_reauth.py:59-67
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    try:
+        await hass.async_block_till_done()
+        first = entry.runtime_data.gateway
+        await _until(lambda: first.available, "event session up")
+        gateway.protect = ("*99*0##", "*99*1##")  # tests/test_runtime_reauth.py:231
+        await harness.disconnect_all_clients()
+        await _until(lambda: bool(_reauth_flows(hass)), "prompt")
+        await asyncio.gather(first.listening_worker, *first.sending_workers, return_exceptions=True)
+        proofs = gateway.proofs
+        assert proofs > 0
+        result = await _announce(hass, ad)
+        assert result["reason"] == "already_configured"
+        assert gateway.proofs == proofs, (
+            "SSDP used the refused password again without any form submission"
+        )
+    finally:
+        if entry.state is ConfigEntryState.LOADED:
+            await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_a_refusal_reported_only_by_get_next_ends_the_listener(
+    hass: HomeAssistant, entry: MockConfigEntry, handler: MyHOMEGatewayHandler
+) -> None:
+    """A session that reports the refusal only through ``get_next()`` (no hook call) ends the listener too."""
+
+    class _Session:
+        is_connected = True
+        last_error: Any = None
+
+        async def connect(self) -> dict[str, Any]:
+            return {"Success": True}
+
+        async def get_next(self) -> None:
+            self.last_error = OWNAuthError("password refused", reason="password_error")
+
+    await asyncio.wait_for(handler._event_runner._read_event_session(_Session()), timeout=5)  # type: ignore[arg-type]
+    await hass.async_block_till_done()
+
+    assert handler._auth_refused is True
+    assert handler.available is False
+    assert len(_reauth_flows(hass)) == 1
+
+
+async def test_the_listener_cancel_is_repeated_until_the_task_has_ended(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """A listener that swallows cancellations (OWNd does while it recycles a socket) is cancelled again."""
+    swallowed = 0
+
+    async def _stubborn() -> None:
+        nonlocal swallowed
+        while swallowed < 12:
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                swallowed += 1
+
+    listener = asyncio.create_task(_stubborn())
+    await asyncio.sleep(0)
+
+    handler._cancel_listener(listener)
+    await asyncio.wait_for(listener, timeout=5)
+
+    assert swallowed == 12
+    await asyncio.sleep(0.15)  # the last delayed repeat finds the task ended and schedules nothing
+    handler._cancel_listener(listener)  # ended: nothing more is scheduled

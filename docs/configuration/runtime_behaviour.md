@@ -109,6 +109,8 @@ OWNd's event session returns *no message* for the read cycle in which it transpa
 
 If the gateway rejects the OpenWebNet password during setup, the integration raises `ConfigEntryAuthFailed`. Home Assistant then shows the entry as **Reauthentication required** with a repair prompt, instead of *Failed to set up*, and opens the reauth flow itself. Any other connection-test failure raises `ConfigEntryNotReady` so Home Assistant retries with backoff.
 
+If the gateway refuses the password while the entry is loaded (the gateway's password was changed, or it refuses the stored one on a reconnect of the event or command session), both sessions stop, every entity of the gateway becomes unavailable, no command is sent, and the password is not presented again: the integration opens the reauth flow once. Entering the password there reloads the entry. A connection that is only refused or lost (no password involved) does not open it; the normal reconnect goes on. An SSDP announcement of the gateway does not reload an entry that waits for its password: the announced data is stored and applied by the reload after the password is entered.
+
 ---
 
 ## 🌡️ Zones that have not reported ask once, 30 s after the sweep

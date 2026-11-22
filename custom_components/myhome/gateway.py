@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -1307,15 +1307,34 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._command_pool.stop_after_auth_refusal()
         self._event_runner.close()
         listener = self.listening_worker
-        if listener is not None and not listener.done() and listener is not asyncio.current_task():
+        # The hook can run inside the listener itself: it is then cancelled from the loop.
+        reported_by_listener = listener is asyncio.current_task()
+        if listener is not None and not listener.done():
             # Blocked in get_next() on a session that may still be open (a refusal on the
             # command session only): a drop would make OWNd log in again from inside it.
-            listener.cancel()
+            # Repeated: OWNd suppresses one CancelledError while it recycles a socket.
+            if reported_by_listener:
+                self.hass.loop.call_soon(self._cancel_listener, listener)
+            else:
+                self._cancel_listener(listener)
         # Nothing recovers without the user, so no reconnect grace period.
         self.is_connected = False
         self._event_runner.is_connected = False
         self._mark_unavailable(None)
+        if self.config_entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS:
+            return
         self.config_entry.async_start_reauth(self.hass)
+
+    @callback
+    def _cancel_listener(self, listener: asyncio.Task[None], attempt: int = 0) -> None:
+        """Cancel the stopped event listener until it has ended (bounded)."""
+        if listener.done() or attempt >= 60:
+            return
+        listener.cancel()
+        if attempt < 10:
+            self.hass.loop.call_soon(self._cancel_listener, listener, attempt + 1)
+        else:
+            self.hass.loop.call_later(0.1, self._cancel_listener, listener, attempt + 1)
 
     @callback
     def _mark_unavailable(self, _now: Any) -> None:
@@ -1344,7 +1363,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def listening_loop(self) -> None:
         """Run the event session, recreating it whenever it dies or stalls."""
-        await self._event_runner.listening_loop()
+        try:
+            await self._event_runner.listening_loop()
+        except asyncio.CancelledError:
+            if not self._ended_by_auth_refusal():
+                raise
 
     def profile_supports_who(self, who: int) -> bool:
         """Return whether the startup sweep asks this gateway's profile about a WHO."""
@@ -1390,7 +1413,26 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def sending_loop(self, worker_id: int) -> None:
         """Run sending loop for worker."""
-        await self._command_pool.sending_loop(worker_id)
+        try:
+            await self._command_pool.sending_loop(worker_id)
+        except asyncio.CancelledError:
+            if not self._ended_by_auth_refusal():
+                raise
+
+    def _ended_by_auth_refusal(self) -> bool:
+        """A listener or worker cancelled by ``_on_auth_refused`` ends normally.
+
+        The refusal stops both sessions by cancelling their tasks; that is the
+        intended end of the task, not an outside cancellation, so whoever awaits
+        it sees it finish instead of a ``CancelledError``.
+        """
+        if not self._auth_refused:
+            return False
+        task = asyncio.current_task()
+        if task is not None:
+            while task.cancelling():
+                task.uncancel()
+        return True
 
     @property
     def initial_discovery_pending(self) -> bool:

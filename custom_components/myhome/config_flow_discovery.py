@@ -10,7 +10,7 @@ import typing
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
-from homeassistant.config_entries import SOURCE_IGNORE
+from homeassistant.config_entries import SOURCE_IGNORE, SOURCE_REAUTH
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -271,9 +271,22 @@ class ConfigFlowDiscoveryMixin:
         # An already configured or ignored gateway is announced again every few minutes, and
         # Home Assistant's search finds it again every ten: DEBUG for those, INFO for a new one.
         LOGGER.debug("SSDP announcement of gateway %s at %s", gateway.unique_id, gateway.address)
-        self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
-            updates=self._ssdp_entry_updates(gateway)
+        # An entry waiting for its password (reauth flow open, or the loaded gateway refused
+        # the stored one) is not reloaded: the reload would present the refused password
+        # again. The metadata is still stored; the reauth's own reload applies it.
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)  # type: ignore[attr-defined]
+        waits_for_password = entry is not None and (
+            any(entry.async_get_active_flows(self.hass, {SOURCE_REAUTH}))
+            or getattr(getattr(getattr(entry, "runtime_data", None), "gateway", None), "_auth_refused", False)
         )
+        if waits_for_password:
+            self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+                updates=self._ssdp_entry_updates(gateway), reload_on_update=False
+            )
+        else:
+            self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+                updates=self._ssdp_entry_updates(gateway)
+            )
         LOGGER.info("Found gateway: %s", gateway.address)
 
         self.gateway_handler = gateway
