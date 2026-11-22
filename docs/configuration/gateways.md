@@ -24,6 +24,9 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
 <!-- GATEWAY_PROFILES_END -->
 
+> [!NOTE]
+> **MH201 Configuration & Firmware Updates**: Because the **MH201** belongs to Legrand / BTicino's hotel product line (*MH201 hotel room scenario manager*), updating its firmware (for example to `3.6.44`) requires **MyHotelSuite** — plain **MyHOME_Suite** fails with a null-reference error when attempting to update an MH201.
+
 ---
 
 ## 🔌 Connection Setup via Config Flow
@@ -174,7 +177,7 @@ This placeholder can cause date and time parsing failures or dropped gateway dia
 > The **F461** gateway is configured exclusively via the Home + Project app and maintains its clock via NTP. Its firmware always reports `999` over OpenWebNet even when configured; the integration recognizes this and automatically exempts the F461 from this warning.
 
 ### How to resolve:
-1. Log into the gateway's web administration interface, or open **MyHOME_Suite** / **TiMyHome** / **MyHOME_Up**.
+1. Log into the gateway's web administration interface, or open **MyHOME_Suite** / **MyHotelSuite** (for `MH201`) / **TiMyHome** / **MyHOME_Up**.
 2. Navigate to the **Date & Time** or **Clock** settings.
 3. Configure the correct local time and timezone (or enable NTP synchronization if supported by your gateway).
 4. Save the configuration and reboot or restart the gateway.
