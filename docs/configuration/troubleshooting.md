@@ -18,7 +18,7 @@ logger:
 Log: `Gateway could not be reached or connection failed at <host>` or `Gateway connection test failed at <host>: <reason>`.
 
 - The gateway must answer on TCP port `20000` (OpenWebNet). Check with `nc -vz <host> 20000` from the Home Assistant host; a router firewall between VLANs is the usual cause.
-- Only one client can hold a command session on MH200 / MH200N / MH201. Close the BTicino configuration software (MyHOME_Suite) or another OpenWebNet client, then reload the entry.
+- Only one client can hold a command session on MH200 / MH200N / MH201. Close the BTicino configuration software (MyHOME_Suite / MyHotelSuite) or another OpenWebNet client, then reload the entry.
 - The gateway's OpenWebNet "IP range" setting must include the Home Assistant address, or the gateway silently drops the connection after the handshake.
 
 ### "Reauthentication required"

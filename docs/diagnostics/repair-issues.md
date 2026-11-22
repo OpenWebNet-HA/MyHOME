@@ -30,7 +30,7 @@ OpenWebNet gateways maintain an internal real-time clock (RTC) queried via WHO=1
     - Navigate to **System Configuration** → **Date & Time** (or **Device Settings** → **Clock**).
     - Set the local timezone and enable NTP network time synchronization (e.g. `pool.ntp.org`).
     - Save and reboot.
-2. **MyHOME_Suite / TiMyHome (MH200N, MH201, MH202, F452)**:
+2. **MyHOME_Suite / MyHotelSuite / TiMyHome (MH200N, MH201, MH202, F452)** *(use **MyHotelSuite** for MH201 firmware updates)*:
     - Connect to the gateway via USB or Ethernet.
     - Open **Gateway Settings** → **Date & Time**.
     - Configure local time, timezone, and automatic DST.
