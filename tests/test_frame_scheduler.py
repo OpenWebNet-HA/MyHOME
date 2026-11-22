@@ -6,7 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from OWNd.message import OWNCommand
+from OWNd.message import OWNAutomationCommand, OWNCommand
 
 from custom_components.myhome.gateway import FrameScheduler, MyHOMEGatewayHandler
 from custom_components.myhome.gateway_sessions import (
@@ -827,3 +827,46 @@ async def test_shutdown_sentinel_is_handed_out_while_frames_are_held() -> None:
         scheduler.acquire_nowait()
     scheduler.complete_task(in_flight)
     assert str(scheduler.acquire_nowait()["message"]) == "*2*1*1##"
+
+
+def test_same_target_is_exact_outside_who_2() -> None:
+    """Only WHO 2 has the lenient numeric overlap; elsewhere a target is its exact key."""
+    assert _same_target((1, "05"), (1, "05"))
+    assert not _same_target((1, "05"), (1, "5"))
+    assert not _same_target((1, "05"), (2, "05"))
+
+
+async def test_withdrawn_area_must_not_block_an_independent_stop():
+    s = FrameScheduler()
+    s.put_nowait(_cmd("*2*1*11##"))
+    held = s.acquire_nowait()
+    # A cancelled `written` future: the area frame will not be written (the worker
+    # discards a withdrawn frame), so it must not hold the stop of another cover.
+    written = asyncio.get_running_loop().create_future()
+    s.put_nowait(dict(_cmd("*2*1*1##"), written=written))
+    s.put_nowait(_cmd("*2*0*12##"))
+    written.cancel()
+    delivered = []
+    while True:
+        try:
+            item = s.acquire_nowait()
+        except asyncio.QueueEmpty:
+            break
+        if not (item.get("written") and item["written"].cancelled()):
+            delivered.append(str(item["message"]))
+        s.complete_task(item)
+    assert delivered == ["*2*0*12##"]
+    s.complete_task(held)
+
+
+async def test_new_direction_cancels_stale_motion_for_alias():
+    # `0009` is the area-zero point `09` (tests/test_canonical_point_where.py): one address, two spellings.
+    scheduler = FrameScheduler()
+    written = asyncio.get_running_loop().create_future()
+    await scheduler.put(
+        {"message": OWNAutomationCommand.raise_shutter("09#4#01"), "written": written}
+    )
+    await scheduler.put(
+        {"message": OWNAutomationCommand.stop_shutter("0009#4#01"), "is_cancel": True}
+    )
+    assert written.cancelled(), [str(i["message"]) for i in scheduler._queue]

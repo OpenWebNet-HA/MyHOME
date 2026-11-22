@@ -996,8 +996,8 @@ async def test_workers_preserve_cover_fifo_with_zero_queue_delay(mock_handler: M
         # DOWN is queued behind STOP
         await pool.send(OWNCommand("*2*2*11##"))
 
-        # Release worker 1 from UP. With command_queue_delay=0, worker 1 completes UP and immediately
-        # dequeues DOWN before worker 0 can send STOP. Worker 1 must wait for ticket 2 (STOP).
+        # Release worker 1 from UP. When UP completes its target is released: STOP is the first
+        # eligible frame for that cover, DOWN waits behind it.
         worker_1_pause_up.set()
         await asyncio.sleep(0.05)
 

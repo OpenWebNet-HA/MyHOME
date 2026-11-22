@@ -24,7 +24,12 @@ from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
 from .gateway_confirm import echo_watchdog_of
 from .gateway_events import GatewayEventDispatcher
-from .where_grammar import expose_message_where, normalize_where, where_param
+from .where_grammar import (
+    canonical_point_spelling,
+    expose_message_where,
+    normalize_where,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
@@ -343,10 +348,14 @@ def _same_cover_where(first: str, second: str) -> bool:
 
     Besides the same address on the same bus, two numbers with the same value count
     as one (``02`` and ``2``, ``0011`` and ``11``). They are different addresses:
-    ``2`` is area 2 and ``02`` is point A=00 PL=02 (WHO 2 specification, WHERE
-    table; Encyclopedia ``who-2-automation/addressing.md``: leading zeroes are
-    significant), and an F453 capture has ``*2*0*2##`` followed by the stops of
-    ``21``..``25`` (``tests/fixtures/traces/discussion_856``). Treating them as
+    the WHO 2 WHERE table lists the areas (``2`` is area 2) and the four-digit point
+    spelling (A=00 with PL 01-15, ``0002``; Encyclopedia
+    ``who-2-automation/addressing.md``: leading zeroes are significant). The
+    two-character spelling of such a point (``02``) is not in that table: a
+    MyHomeServer1 local room keypad sends ``*2*2*02##`` at its actuator's point
+    address (``tests/fixtures/traces/issue_445/README.md:43``). An F453 capture has
+    ``*2*0*2##`` followed by the stops of ``21``..``25``
+    (``tests/fixtures/traces/discussion_856``). Treating them as
     overlapping only costs a wait (``_wheres_overlap``); it must not decide which
     queued frame a cancel drops (``_PriorityQueueStorage.drop_superseded``).
     """
@@ -431,8 +440,9 @@ def _normalize_target_where(who: int, raw_where: str) -> str:
     """Canonicalize a target WHERE string across OpenWebNet subsystems.
 
     Normalizes leading zeros on non-APL numeric addresses via ``normalize_where``,
-    canonicalizes local bus interface suffixes (``#4#2`` -> ``#4#02``), and strips
-    leading zeros on group numbers (``#03`` -> ``#3``).
+    canonicalizes local bus interface suffixes (``#4#2`` -> ``#4#02``), strips
+    leading zeros on group numbers (``#03`` -> ``#3``), and for WHO 1 / 2 writes the
+    area-zero point spelling ``0009`` as ``09`` (``canonical_point_spelling``).
     """
     where_s = str(raw_where).strip()
     if not where_s:
@@ -446,6 +456,8 @@ def _normalize_target_where(who: int, raw_where: str) -> str:
         suffix = ""
 
     norm_base = normalize_where(base)
+    if who in (1, 2):
+        norm_base = canonical_point_spelling(norm_base)
     if norm_base.startswith("#") and norm_base[1:].isdigit():
         norm_base = "#" + (norm_base[1:].lstrip("0") or "0")
     elif who not in (1, 2) and norm_base.isdigit() and norm_base not in ("0", "00", "100"):
@@ -797,6 +809,8 @@ class _PriorityQueueStorage:
         That is the #645 rule ("a stop never overtakes an unwritten frame for a
         cover it stops") across workers, as the #694 review asked ("wait only for
         overlapping frames with an earlier ticket").
+        A frame its caller withdrew (cancelled ``written`` future) is handed out at
+        once, for the worker to discard, and holds nothing back.
         """
         tiers = (
             (self._commands, self._fade_steps, self._status, self._others)
@@ -808,6 +822,10 @@ class _PriorityQueueStorage:
             for idx, item in enumerate(q):
                 if not in_flight_targets:
                     return q, idx
+                if isinstance(item, dict):
+                    written = item.get("written")
+                    if isinstance(written, asyncio.Future) and written.cancelled():
+                        return q, idx
                 target = _extract_target_key(item)
                 if target is None:
                     return q, idx
@@ -859,7 +877,8 @@ class _PriorityQueueStorage:
         # ``#4#2`` / ``#4#02`` and group ``#03`` / ``#3`` are already one spelling there).
         # A WHERE that merely has the same number is another address: a cancel for point
         # ``05`` used to drop a queued command for area ``5``, and one for ``0011`` a
-        # command for ``11``, and their callers got a cancelled write.
+        # command for ``11``, and their callers got a cancelled write. The one alias is
+        # the area-zero point spelling (``0009`` is ``09``, ``_normalize_target_where``).
         if tier in (_TIER_COMMANDS, _TIER_FADE_STEPS) and self._fade_steps:
             kept_fades: collections.deque[Any] = collections.deque()
             for existing in self._fade_steps:
@@ -1136,9 +1155,18 @@ class FrameScheduler:
         self._queue.append(item)
         self._unfinished_tasks += 1
         self._finished.clear()
+        if isinstance(item, dict):
+            written = item.get("written")
+            if isinstance(written, asyncio.Future) and not written.done():
+                written.add_done_callback(self._on_written_done)
         self._wakeup_next(self._getters)
         if not self.full():
             self._wakeup_next(self._putters)
+
+    def _on_written_done(self, written: asyncio.Future[Any]) -> None:
+        """Wake the waiting workers when a queued frame is withdrawn: it may have held others back."""
+        if written.cancelled() and self._getters:
+            self._wakeup_all_getters()
 
     async def put(self, item: Any) -> None:
         """Put an item into the queue, prioritizing command waiters when full."""
