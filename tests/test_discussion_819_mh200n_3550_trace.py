@@ -431,6 +431,21 @@ async def test_mh200n_3550_live_integration_replay(hass: HomeAssistant) -> None:
             for e in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
             if e.domain == "climate"
         ]
+        # Central unit #0 skips confirmation; #1..#5 only received identical <5 s `*4*111*#Z##` bursts
+        assert [c.unique_id for c in climates] == [f"{mac}-4-#0"]
+
+        # Confirm #1..#5 passively with a second distinct frame per zone (`*4*1*Z##` season/heating)
+        for zone_num in range(1, 6):
+            confirm_msg = OWNEvent.parse(f"*4*1*{zone_num}##")
+            assert confirm_msg is not None
+            await handler._event_dispatcher.process_message(confirm_msg)
+        await hass.async_block_till_done()
+
+        climates = [
+            e
+            for e in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
+            if e.domain == "climate"
+        ]
         assert len(climates) == 6
 
         central_state = hass.states.get("climate.climate_zone_0")

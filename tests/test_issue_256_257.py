@@ -87,6 +87,10 @@ async def test_climate_auto_discovery_from_temperature_event(hass, mock_gateway)
     assert event.main_temperature == 23.0
 
     async_dispatcher_send(hass, f"myhome_message_{mac}", event)
+    assert len(added_entities) == 0
+
+    # Confirm Zone 2 with a second independent frame; held temperature replays.
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*1*2##"))
 
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
@@ -127,6 +131,10 @@ async def test_climate_auto_discovery_from_humidity_event(hass, mock_gateway):
     assert event.main_humidity == 55.0
 
     async_dispatcher_send(hass, f"myhome_message_{mac}", event)
+    assert len(added_entities) == 0
+
+    # Confirm Zone 3 with a second independent frame; held humidity replays.
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*1*3##"))
 
     assert len(added_entities) == 1
     climate_entity = added_entities[0]
@@ -163,6 +171,10 @@ async def test_climate_auto_discovery_from_heating_call_event(hass, mock_gateway
     # Frame *4*4001#2*0#3##: zone 2 calls pump 3 (actuator 3 of zone 0), not a zone 3 (#431)
     event = OWNHeatingEvent("*4*4001#2*0#3##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", event)
+    assert added_entities == []
+
+    # Confirm Zone 2 with a second independent frame.
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*4001*2##"))
 
     assert [e._where for e in added_entities] == ["2"]
 
@@ -192,9 +204,13 @@ async def test_climate_auto_discovery_deduplication(hass, mock_gateway):
     attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, mock_add_entities)
 
-    # Event 1: 21.0°C
+    # Event 1: 21.0°C (held until confirmed)
     event1 = OWNHeatingEvent("*#4*5*0*0210##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", event1)
+    assert added_entities == []
+
+    # Confirm Zone 5; held 21.0°C replays
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*1*5##"))
     assert len(added_entities) == 1
     assert added_entities[0].current_temperature == 21.0
 
@@ -539,10 +555,15 @@ async def test_climate_f422_interface_naming(hass, mock_gateway):
     attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, mock_add_entities)
 
-    # Frame with interface: *#4*2#4#02*0*0230##
+    # Frame with interface: *#4*2#4#02*0*0230## (held until confirmed passively)
     event = OWNHeatingEvent("*#4*2#4#02*0*0230##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", event)
     await hass.async_block_till_done()  # let the handler finish its zone dispatch
+    assert added_entities == []
+
+    # Second independent frame behind interface 02 confirms Zone 2I02
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*1*2#4#02##"))
+    await hass.async_block_till_done()
 
     assert len(added_entities) == 1
     assert added_entities[0]._display_name == "Climate Zone 2I02"
@@ -810,8 +831,10 @@ async def test_climate_discovery_what_param_and_invalid_params(hass, mock_gatewa
     attach_runtime(hass, config_entry)
     await async_setup_climate_entry(hass, config_entry, added.extend)
 
-    # 1. Zone 3 calls pump 1: the what parameter is the zone
+    # 1. Zone 3 calls pump 1: the what parameter is the zone (confirmed on 2nd frame)
     async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*4001#3*0#1##"))
+    assert added == []
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*#4*3*0*0210##"))
     assert [e._where for e in added] == ["3"]
 
     # 2. Message with what=4001 and non-numeric what_param (hits ValueError exception)

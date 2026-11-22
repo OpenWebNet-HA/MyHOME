@@ -241,7 +241,11 @@ async def test_a_zone_configured_as_heating_only_stays_so_whatever_was_saved(no_
 
 async def test_the_zones_and_the_central_unit_built_from_the_bus(hass: HomeAssistant) -> None:
     handler, zones = await _bus_plant(hass)
-    await _receive(hass, handler, ["*4*102*#0##", "*#4*3*0*0260##", "*#4*4*0*0258##"])
+    await _receive(
+        hass,
+        handler,
+        ["*4*102*#0##", "*#4*3*0*0260##", "*4*1*3##", "*#4*4*0*0258##", "*4*1*4##"],
+    )
     by_where = {zone._where: zone for zone in zones}
     assert by_where["#0"]._cooling is True and by_where["#0"]._cooling_configured is True  # a central unit runs both seasons
     assert by_where["3"]._cooling is False and by_where["3"]._cooling_configured is False
