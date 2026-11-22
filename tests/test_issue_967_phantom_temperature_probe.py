@@ -303,10 +303,10 @@ async def test_canonical_probe_spelling_change_within_echo_window_confirms(
 
 
 @pytest.mark.asyncio
-async def test_dimension_15_on_zone_where_requires_second_reading(
+async def test_dimension_15_on_zone_where_ignored_and_probe_requires_second_reading(
     hass: HomeAssistant,
 ) -> None:
-    """Unconfigured Dimension 15 frame on WHERE < 100 also defers until a 2nd independent reading."""
+    """Dimension 15 on non-probe WHERE < 100 never collides with climate companions (#981), while probe Dimension 15 defers until a 2nd reading (#967)."""
     clock = _FakeClock()
     entry, gateway, added = await _setup_sensor_platform(hass)
 
@@ -317,21 +317,31 @@ async def test_dimension_15_on_zone_where_requires_second_reading(
         async_dispatcher_send(
             hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*5*15*1*0200*0001##")
         )
-        await hass.async_block_till_done()
-        assert added == []
-
         clock.advance(0.5)
         async_dispatcher_send(
             hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*5*15*1*0205*0001##")
         )
         await hass.async_block_till_done()
+        assert added == []
+
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105*15*1*0200*0001##")
+        )
+        await hass.async_block_till_done()
+        assert added == []
+
+        clock.advance(0.5)
+        async_dispatcher_send(
+            hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*105*15*1*0205*0001##")
+        )
+        await hass.async_block_till_done()
 
         assert len(added) == 1
-        assert added[0].unique_id == f"{MAC}-4-5-temperature"
+        assert added[0].unique_id == f"{MAC}-4-105-temperature"
         assert added[0].native_value == 20.5
 
         added[0].hass = hass
-        added[0].entity_id = "sensor.zone_5_temperature"
+        added[0].entity_id = "sensor.probe_105_temperature"
         with patch.object(added[0], "async_get_last_state", AsyncMock(return_value=None)):
             await added[0].async_added_to_hass()
         assert added[0]._poll_on_add is False

@@ -287,6 +287,64 @@ def _thermo_hold_slot(message: Any) -> str:
     return f"raw:{message}"
 
 
+def _entity_live_and_restored_states(hass: HomeAssistant, entity_id: str) -> tuple[Any, Any]:
+    """Return ``(live_state, restored_state)`` for ``entity_id`` across HA 2026.10 and 2026.11+."""
+    states_obj = getattr(hass, "states", None)
+    live = states_obj.get(entity_id) if states_obj is not None else None
+    hass_data = getattr(hass, "data", None)
+    restore_obj = hass_data.get(DATA_RESTORE_STATE) if isinstance(hass_data, dict) else None
+    # HA 2026.11+ (core#183906) indexes stored states by entity registry ID and
+    # exposes async_get_stored_state(entity_id); HA <= 2026.10 stores a dict on
+    # RestoreStateData.last_states keyed by entity_id.
+    get_stored = getattr(restore_obj, "async_get_stored_state", None)
+    if callable(get_stored):
+        stored = get_stored(entity_id)
+    else:
+        last_states = getattr(restore_obj, "last_states", None)
+        stored = last_states.get(entity_id) if isinstance(last_states, dict) else None
+    restored = getattr(stored, "state", None)
+    return live, restored
+
+
+def has_thermostat_state(hass: HomeAssistant, entity_id: str) -> bool:
+    """Whether Home Assistant holds a state of ``entity_id`` that only a thermostat produces."""
+    # MyHOMEClimate.async_restore_last_state coerces STATE_UNKNOWN /
+    # STATE_UNAVAILABLE into HVACMode.OFF ("off"), which HA then persists in
+    # .storage/core.restore_state across restarts (#263). Bare state == "off"
+    # without thermostat telemetry is therefore not evidence of a physical
+    # thermostat (#785).
+    for st in _entity_live_and_restored_states(hass, entity_id):
+        if st is None:
+            continue
+        attrs = getattr(st, "attributes", None) or {}
+        if (
+            attrs.get("current_temperature") is not None
+            or attrs.get("temperature") is not None
+            or attrs.get("current_humidity") is not None
+            or attrs.get("season") is not None
+            or attrs.get("program") is not None
+            or attrs.get("holiday_days") is not None
+            or attrs.get("scenario") is not None
+            or attrs.get("knob_pos") not in (None, "UNKNOWN")
+            or attrs.get("fan_coil_cooling") is True
+            or attrs.get("fan_coil_heating") is True
+            or getattr(st, "state", None) in _REAL_HVAC_STATES
+        ):
+            return True
+    return False
+
+
+def has_humidity_state(hass: HomeAssistant, entity_id: str) -> bool:
+    """Whether ``entity_id`` holds a live or restored ``current_humidity`` attribute."""
+    for st in _entity_live_and_restored_states(hass, entity_id):
+        if st is None:
+            continue
+        attrs = getattr(st, "attributes", None) or {}
+        if attrs.get("current_humidity") is not None:
+            return True
+    return False
+
+
 class ZoneDiscovery:
     """The heating zones of one gateway: what creates a zone entity, and the reads at start.
 
@@ -619,44 +677,7 @@ class ZoneDiscovery:
 
     def _has_thermostat_state(self, entity_id: str) -> bool:
         """Whether Home Assistant holds a state of this entity that only a thermostat produces."""
-        # MyHOMEClimate.async_restore_last_state coerces STATE_UNKNOWN /
-        # STATE_UNAVAILABLE into HVACMode.OFF ("off"), which HA then persists in
-        # .storage/core.restore_state across restarts (#263). Bare state == "off"
-        # without thermostat telemetry is therefore not evidence of a physical
-        # thermostat (#785).
-        states_obj = getattr(self._hass, "states", None)
-        live = states_obj.get(entity_id) if states_obj is not None else None
-        hass_data = getattr(self._hass, "data", None)
-        restore_obj = hass_data.get(DATA_RESTORE_STATE) if isinstance(hass_data, dict) else None
-        # HA 2026.11+ (core#183906) indexes stored states by entity registry ID and
-        # exposes async_get_stored_state(entity_id); HA <= 2026.10 stores a dict on
-        # RestoreStateData.last_states keyed by entity_id.
-        get_stored = getattr(restore_obj, "async_get_stored_state", None)
-        if callable(get_stored):
-            stored = get_stored(entity_id)
-        else:
-            last_states = getattr(restore_obj, "last_states", None)
-            stored = last_states.get(entity_id) if isinstance(last_states, dict) else None
-        restored = getattr(stored, "state", None)
-        for st in (live, restored):
-            if st is None:
-                continue
-            attrs = getattr(st, "attributes", None) or {}
-            if (
-                attrs.get("current_temperature") is not None
-                or attrs.get("temperature") is not None
-                or attrs.get("current_humidity") is not None
-                or attrs.get("season") is not None
-                or attrs.get("program") is not None
-                or attrs.get("holiday_days") is not None
-                or attrs.get("scenario") is not None
-                or attrs.get("knob_pos") not in (None, "UNKNOWN")
-                or attrs.get("fan_coil_cooling") is True
-                or attrs.get("fan_coil_heating") is True
-                or getattr(st, "state", None) in _REAL_HVAC_STATES
-            ):
-                return True
-        return False
+        return has_thermostat_state(self._hass, entity_id)
 
 
     async def _ask_actuator_only_zones(self) -> None:

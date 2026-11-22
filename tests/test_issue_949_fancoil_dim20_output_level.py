@@ -69,6 +69,7 @@ from custom_components.myhome.const import (
 from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.sensor import (
     MyHOMEActuatorOutputSensor,
+    MyHOMEClimateTemperatureSensor,
     MyHOMESensorEntity,
 )
 from custom_components.myhome.sensor import async_setup_entry as sensor_setup_entry
@@ -358,15 +359,21 @@ async def test_issue_949_nine_captured_frames_unseeded(
         for ent in entities:
             ent.hass = hass
             ent.platform = MagicMock()
-            ent.entity_id = f"sensor.zone_{ent._where.replace('#', '_')}_output_level"
+            suffix = "temp" if isinstance(ent, MyHOMEClimateTemperatureSensor) else "output_level"
+            ent.entity_id = f"sensor.zone_{ent._where.replace('#', '_')}_{suffix}"
             ent.async_schedule_update_ha_state = MagicMock()
             added_sensors.append(ent)
+
+    def _actuators() -> list[MyHOMEActuatorOutputSensor]:
+        return [s for s in added_sensors if isinstance(s, MyHOMEActuatorOutputSensor)]
 
     await climate_setup_entry(hass, entry, _add_climates)
     await sensor_setup_entry(hass, entry, _add_sensors)
     assert len(added_climates) == 1
     zone1 = added_climates[0]
-    assert added_sensors == []
+    assert _actuators() == []
+    assert [s.unique_id for s in added_sensors] == [f"{gw.mac}-4-1-temperature"]
+    assert isinstance(added_sensors[0], MyHOMEClimateTemperatureSensor)
 
     signal = f"myhome_message_{gw.mac}"
 
@@ -375,13 +382,13 @@ async def test_issue_949_nine_captured_frames_unseeded(
     await hass.async_block_till_done()
     assert zone1.extra_state_attributes["actuators"] == {"2": "on"}
     assert "actuator_levels" not in zone1.extra_state_attributes
-    assert added_sensors == []
+    assert _actuators() == []
 
     # Frame 1: *#4*1#3*20*120## (20 %) -> actuators {"2": "on", "3": "on"} + sensor 1#3 at 20 %
     async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[1]))
     await hass.async_block_till_done()
-    assert len(added_sensors) == 1
-    act3_sensor = added_sensors[0]
+    assert len(_actuators()) == 1
+    act3_sensor = _actuators()[0]
     assert isinstance(act3_sensor, MyHOMEActuatorOutputSensor)
     assert act3_sensor.native_value == 20
     assert zone1.extra_state_attributes["actuators"] == {"2": "on", "3": "on"}
@@ -394,7 +401,7 @@ async def test_issue_949_nine_captured_frames_unseeded(
         assert act3_sensor.native_value == expected_pct
         assert zone1.extra_state_attributes["actuators"] == {"2": "on", "3": "on"}
         assert zone1.extra_state_attributes["actuator_levels"] == {"3": expected_pct}
-        assert len(added_sensors) == 1
+        assert len(_actuators()) == 1
 
     # Frame 6: *#4*1#3*20*100## (0 % off)
     async_dispatcher_send(hass, signal, OWNMessage.parse(raw_frames[6]))
@@ -420,7 +427,7 @@ async def test_issue_949_nine_captured_frames_unseeded(
         "3": "off",
     }
     assert zone1.extra_state_attributes["actuator_levels"] == {"3": 0}
-    assert len(added_sensors) == 1
+    assert len(_actuators()) == 1
     assert not any(s._where in ("1#1", "1#2") for s in added_sensors)
 
 
@@ -1055,10 +1062,20 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
 
     await sensor_setup_entry(hass, entry, _add)
 
+    def _actuators() -> list[MyHOMEActuatorOutputSensor]:
+        return [e for e in added if isinstance(e, MyHOMEActuatorOutputSensor)]
+
     # Stale 7#1 entry was pruned from entity registry; valid 6#3 was restored!
     assert ent_reg.async_get(stale_entry.entity_id) is None
     assert ent_reg.async_get(restored_entry.entity_id) is not None
-    assert [e.unique_id for e in added] == [f"{gw.mac}-4-6#3-output-level"]
+    assert [e.unique_id for e in _actuators()] == [f"{gw.mac}-4-6#3-output-level"]
+    temps = [e for e in added if isinstance(e, MyHOMEClimateTemperatureSensor)]
+    assert {e.unique_id for e in temps} == {
+        f"{gw.mac}-4-9-temperature",
+        f"{gw.mac}-4-1-temperature",
+        f"{gw.mac}-4-4-temperature",
+        f"{gw.mac}-4-5#4#01-temperature",
+    }
 
     signal = f"myhome_message_{gw.mac}"
     ignored_frames = [
@@ -1088,7 +1105,7 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     for raw in ignored_frames:
         async_dispatcher_send(hass, signal, OWNMessage.parse(raw))
     await hass.async_block_till_done()
-    assert len(added) == 1
+    assert len(_actuators()) == 1
 
     # Zone 1 HAS explicit climate config ("#1", "Living Room"), so 1#3 discovers and links to "#1"!
     async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*1#3*20*175##"))
@@ -1098,9 +1115,9 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*4#1*20*130##"))
     async_dispatcher_send(hass, signal, OWNMessage.parse("*#4*5#1#4#01*20*120##"))
     await hass.async_block_till_done()
-    assert len(added) == 5
+    assert len(_actuators()) == 5
 
-    living_act3 = added[1]
+    living_act3 = _actuators()[1]
     assert living_act3.unique_id == f"{gw.mac}-4-1#3-output-level"
     assert living_act3._device_id == "#1"
     assert device_info_to_dict(living_act3.device_info)["identifiers"] == {
@@ -1110,15 +1127,16 @@ async def test_sensor_non_creation_and_thermo_switch_pruning(
     assert living_act3.native_value == 75
     assert living_act3._standalone is False
 
-    bed_act3 = added[2]
+    bed_act3 = _actuators()[2]
     assert bed_act3.unique_id == f"{gw.mac}-4-2#3-output-level"
     assert bed_act3._device_name == "Master Bedroom"
     assert bed_act3._manufacturer == "Legrand"
     assert bed_act3._model == "Smarter"
     assert bed_act3.native_value == 40
 
-    assert added[3]._device_name == "Direct Zone 4"
-    assert added[4]._device_name == "Subbus Zone 5"
+    assert _actuators()[3]._device_name == "Direct Zone 4"
+    assert _actuators()[4]._device_name == "Subbus Zone 5"
+    assert _actuators()[4]._device_id == "5#4#01"
 
     assert await sensor_unload_entry(hass, entry)
 

@@ -52,6 +52,7 @@ from OWNd.message import (
     MESSAGE_TYPE_CURRENT_MONTH_CONSUMPTION,
     MESSAGE_TYPE_ENERGY_TOTALIZER,
     MESSAGE_TYPE_ILLUMINANCE,
+    MESSAGE_TYPE_MAIN_HUMIDITY,
     MESSAGE_TYPE_MAIN_TEMPERATURE,
     MESSAGE_TYPE_MODE,
     MESSAGE_TYPE_MODE_TARGET,
@@ -73,12 +74,14 @@ from voluptuous import (
     Range,
 )
 
+from .climate_discovery import has_humidity_state, has_thermostat_state
 from .const import (
     BUS_ROUTING,
     CONF_BUS_INTERFACE,
     CONF_CENTRAL,
     CONF_DEVICE_CLASS,
     CONF_DEVICE_MODEL,
+    CONF_HUMIDITY_SUPPORT,
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     CONF_STANDALONE_ZONES,
@@ -87,6 +90,8 @@ from .const import (
     CONF_ZONE,
     DOMAIN,
     LOGGER,
+    SIGNAL_CLIMATE_HUMIDITY,
+    SIGNAL_NEW_CLIMATE_ZONE,
     central_mode_signal,
     normalize_where,
 )
@@ -98,13 +103,19 @@ from .discovery import (
     config_for,
     is_broadcast_where,
     parse_unique_id,
+    prune_entity,
 )
+from .expose import is_exposed_on_bus
 from .gateway import MyHOMEGatewayHandler
+from .ignored import IgnoredAddresses
+from .migrate import _carry_entity_customisations
 from .myhome_device import MyHOMEEntity
 from .thermo_switch import load_thermo_switch_subentries
+from .topology import peer_unique_id
 from .typing_compat import as_any
 from .where_grammar import (
     canonical_thermo_zone,
+    is_actuator_where,
     is_central_thermo_where,
     is_central_unit_report,
     is_external_probe,
@@ -116,6 +127,7 @@ from .where_grammar import (
     thermo_dim20_status,
     thermo_event_interface,
     thermo_event_zone,
+    thermo_zone_sensor_target,
     validate_standalone_zones,
 )
 
@@ -186,12 +198,27 @@ ENERGY_UNIQUE_ID = re.compile(r"([0-9#]+)-(power|total-energy|daily-energy|month
 ACTUATOR_OUTPUT_UNIQUE_ID = re.compile(
     r"^4-([1-9][0-9]?#[1-9])(?:#4#([0-9]{2}))?-output-level$"
 )
+CLIMATE_HUMIDITY_UNIQUE_ID = re.compile(
+    r"^4-([1-9][0-9]?)(?:#4#([0-9]{2}))?-humidity$"
+)
+LEGACY_ZONE_TEMP_TAIL = re.compile(
+    r"^(?:0([1-9])|#0?([1-9][0-9]?))(?:#4#(0?[0-9]|1[0-5]))?$"
+)
+
+
+def _finite_float(value: Any) -> float | None:
+    """Return finite float for numeric non-bool values, else ``None``."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    fval = float(value)
+    return fval if math.isfinite(fval) else None
 
 
 def _climate_zone_config(
     configured: dict[str, Any], zone: str, interface: str | None
 ) -> dict[str, Any]:
     """Return the ``myhome.yaml`` ``climate`` entry for ``(zone, interface)``, if any."""
+    canon_zone = canonical_thermo_zone(zone) or zone
     address = Address(zone, interface)
     key = address.key
     if interface:
@@ -212,21 +239,32 @@ def _climate_zone_config(
             f"zone_{zone}",
         )
     if found:
-        return found
+        found_addr = Address.from_device_id(
+            str(found.get(CONF_WHERE, found.get(CONF_ZONE, ""))).removeprefix("4-")
+        )
+        if (
+            not is_actuator_where(found_addr.where)
+            and canonical_thermo_zone(found_addr.where) == canon_zone
+        ):
+            return found
     for cfg in configured.values():
         if not isinstance(cfg, dict):
             continue
         raw_where = cfg.get(CONF_WHERE, cfg.get(CONF_ZONE))
         if raw_where is None:
             continue
+        cfg_addr = Address.from_device_id(str(raw_where).removeprefix("4-"))
         raw_if = cfg.get(CONF_BUS_INTERFACE)
-        cfg_addr = Address(
-            str(raw_where).removeprefix("4-"),
+        eff_iface = (
             str(raw_if).zfill(2)
             if raw_if is not None and str(raw_if).isdigit()
-            else (str(raw_if) if raw_if is not None else None),
+            else (str(raw_if) if raw_if is not None else cfg_addr.interface)
         )
-        if canonical_thermo_zone(cfg_addr.where) == zone and cfg_addr.interface == interface:
+        if (
+            not is_actuator_where(cfg_addr.where)
+            and canonical_thermo_zone(cfg_addr.where) == canon_zone
+            and eff_iface == interface
+        ):
             return dict(cfg)
     return {}
 
@@ -267,7 +305,30 @@ async def async_setup_entry(
     load_thermo_switch_subentries(config_entry, runtime.platforms)
     gateway = runtime.gateway
     entry_mac = str(config_entry.data[CONF_MAC])
-    _migrate_temperature_unique_ids(hass, config_entry.entry_id, gateway.mac, entry_mac)
+    _migrate_temperature_unique_ids(
+        hass, config_entry.entry_id, gateway.mac, entry_mac, runtime.platforms[PLATFORM]
+    )
+
+    def _safe_registry_entries() -> tuple[er.EntityRegistry | None, list[er.RegistryEntry]]:
+        try:
+            reg = er.async_get(hass)
+            return reg, list(er.async_entries_for_config_entry(reg, config_entry.entry_id))
+        except Exception:
+            return None, []
+
+    def _apply_legacy_compat_name(
+        sensor: MyHOMEEntity, reg: er.EntityRegistry | None
+    ) -> None:
+        eid = (
+            reg.async_get_entity_id(PLATFORM, DOMAIN, str(sensor.unique_id))
+            if reg is not None
+            else None
+        )
+        ent = reg.async_get(eid) if reg is not None and eid is not None else None
+        if ent is not None and not ent.has_entity_name and ent.name:
+            sensor._legacy_compat_name = ent.name
+
+    reg_obj, reg_entries = _safe_registry_entries()
 
     configured_climate = runtime.platforms.get("climate", {})
     # Zones the owner marked as standalone thermostats in the gateway options (local bus),
@@ -519,12 +580,12 @@ async def async_setup_entry(
         if is_broadcast_where(where):
             return None
         clean = where.split("-")[-1].split("#")[0]
-        if not clean:
+        if not is_probe(clean):
             return None
         if _probe_frame_without_reading(message):
             return None  # no sensor is created for a frame that carries no reading
         is_probe_reading = dimension == 15 or message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
-        is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
+        is_probe_main = message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
             return None
         addr = Address.from_device_id(_canonical_temperature_where(where))
@@ -532,9 +593,20 @@ async def async_setup_entry(
 
     temperature_yaml_or_registry_accept = yaml_class(SensorDeviceClass.TEMPERATURE)
 
+    def _is_who4_temp_cfg(cfg: Any) -> bool:
+        return (
+            isinstance(cfg, dict)
+            and str(cfg.get(CONF_WHO)) == "4"
+            and (cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class"))
+            in (None, SensorDeviceClass.TEMPERATURE)
+        )
+
     def accept_temperature(ctx: DeviceContext) -> bool:
-        """Confirm unconfigured WHO=4 bus probes passively on a second independent reading (#967)."""
-        if ctx.source != "bus" or bool(ctx.cfg):
+        """Confirm unconfigured WHO=4 bus probes passively on a second independent reading (#967),
+        while keeping non-probe zone addresses owned by climate companions unless in YAML (#981)."""
+        if ctx.source != "yaml" and not is_probe(ctx.address.clean_where):
+            return False
+        if ctx.source != "bus" or _is_who4_temp_cfg(ctx.cfg):
             return temperature_yaml_or_registry_accept(ctx)
         probe_key = Address(
             _canonical_temperature_where(ctx.address.where),
@@ -568,11 +640,6 @@ async def async_setup_entry(
         )
         return True
 
-    def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
-        if ctx.cfg:
-            return False
-        return is_broadcast_where(ctx.address.clean_where)
-
     def build_temperature(ctx: DeviceContext) -> MyHOMETemperatureSensor | None:
         if ctx.source == "yaml":
             cfg = ctx.cfg
@@ -583,11 +650,13 @@ async def async_setup_entry(
             ).key
             raw_dev_id = ctx.config_id or ctx.key
             dev_id = f"4-{canon_key}" if raw_dev_id.startswith("4-") else raw_dev_id
-            return MyHOMETemperatureSensor(
+            sensor = MyHOMETemperatureSensor(
                 hass=hass, device_id=dev_id, who=cfg[CONF_WHO], where=canon_key,
                 name=cfg[CONF_NAME], device_class=SensorDeviceClass.TEMPERATURE, manufacturer=cfg[CONF_MANUFACTURER],
                 model=cfg[CONF_DEVICE_MODEL], gateway=gateway,
             )
+            _apply_legacy_compat_name(sensor, reg_obj)
+            return sensor
         where = ctx.address.where
         clean = where.split("-")[-1].split("#")[0]
         primary = _canonical_temperature_where(where) or _canonical_temperature_where(clean)
@@ -667,7 +736,8 @@ async def async_setup_entry(
         standalone_cfg: bool | None = None
         if cfg and not bool(cfg.get(CONF_CENTRAL, False)):
             raw_zone = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, zone)))
-            cfg_addr = Address(raw_zone.removeprefix("4-"), iface)
+            parsed_zone = Address.from_device_id(raw_zone.removeprefix("4-"))
+            cfg_addr = Address(parsed_zone.where, iface or parsed_zone.interface)
             raw_standalone = cfg.get(CONF_STANDALONE)
             if isinstance(raw_standalone, bool):
                 standalone_cfg = raw_standalone
@@ -798,6 +868,321 @@ async def async_setup_entry(
         zone_key = f"{zone}{BUS_ROUTING}{iface}" if iface else zone
         return [f"actuator_output_zone:{zone_key}"]
 
+    # ── WHO 4: companion temperature & humidity sensors on climate zones (#981) ──
+    yaml_zone_temp_pairs: set[tuple[str, str | None]] = set()
+    for cfg_id, cfg in runtime.platforms[PLATFORM].items():
+        if not isinstance(cfg, dict) or str(cfg.get(CONF_WHO)) != "4" or CONF_WHERE not in cfg:
+            continue
+        dev_cls = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
+        if dev_cls != SensorDeviceClass.TEMPERATURE:
+            continue
+        cfg_addr = Address.from_config(str(cfg_id), cfg)
+        if not is_probe(cfg_addr.clean_where) and not is_actuator_where(cfg_addr.clean_where):
+            cfg_zone = canonical_thermo_zone(cfg_addr.clean_where)
+            if cfg_zone is not None:
+                yaml_zone_temp_pairs.add((cfg_zone, cfg_addr.interface))
+
+    ignored_addresses = IgnoredAddresses.from_config_entry(config_entry)
+    is_follower = getattr(runtime, "is_follower", False) is True
+    primary_mac = getattr(runtime, "primary_gateway_mac", None)
+    known_climate_temp: dict[tuple[str, str | None], MyHOMEClimateTemperatureSensor] = {}
+    known_climate_humidity: set[tuple[str, str | None]] = set()
+
+    def _zone_key(zone: str, iface: str | None) -> str:
+        return f"{zone}{BUS_ROUTING}{iface}" if iface else zone
+
+    def _climate_companion_owned_by_primary(
+        reg: er.EntityRegistry | None,
+        zone: str,
+        iface: str | None,
+        zone_dev_id: str | None,
+        suffix: str,
+    ) -> bool:
+        if reg is None or not is_follower or not isinstance(primary_mac, str) or not primary_mac:
+            return False
+        zkey = _zone_key(zone, iface)
+        peer_sensor = peer_unique_id(f"{gateway.mac}-4-{zkey}{suffix}", str(runtime.mac), primary_mac)
+        if peer_sensor is not None and reg.async_get_entity_id("sensor", DOMAIN, peer_sensor) is not None:
+            return True
+        resolved_dev_id = zone_dev_id or _resolve_climate_device_meta(zone, iface)[0]
+        for dev_id in dict.fromkeys((zkey, resolved_dev_id)):
+            peer_climate = peer_unique_id(f"{gateway.mac}-4-{dev_id}", str(runtime.mac), primary_mac)
+            if peer_climate is not None and reg.async_get_entity_id("climate", DOMAIN, peer_climate) is not None:
+                return True
+        return False
+
+    def _has_central_climate_config(zone: str, iface: str | None) -> bool:
+        z_cfg = _climate_zone_config(configured_climate, zone, iface) or (
+            _climate_zone_config(configured_climate, f"0{zone}", iface)
+            if len(zone) == 1
+            else {}
+        )
+        return bool(z_cfg.get(CONF_CENTRAL, False))
+
+    def _is_climate_companion_excluded(
+        zone: str, iface: str | None, *, has_live_climate: bool = False
+    ) -> bool:
+        zkey = _zone_key(zone, iface)
+        if (
+            ignored_addresses.is_ignored(4, zone, iface)
+            or is_exposed_on_bus(hass, config_entry, 4, zkey)
+            or _has_central_climate_config(zone, iface)
+        ):
+            return True
+        pair = (zone, iface)
+        if pair in thermo_switch_whole_zones:
+            return True
+        return pair in thermo_switch_actuator_zones and not has_live_climate
+
+    def _build_climate_temp(
+        zone: str,
+        iface: str | None,
+        *,
+        device_id: str | None = None,
+        name: str | None = None,
+        manufacturer: str | None = None,
+        model: str | None = None,
+        initial_value: float | None = None,
+        has_live_climate: bool = False,
+        reg: er.EntityRegistry | None = None,
+    ) -> MyHOMEClimateTemperatureSensor | None:
+        pair = (zone, iface)
+        if pair in known_climate_temp or pair in yaml_zone_temp_pairs:
+            return None
+        if _is_climate_companion_excluded(zone, iface, has_live_climate=has_live_climate):
+            return None
+        meta_dev_id, meta_name, meta_mfg, meta_model, _ = _resolve_climate_device_meta(zone, iface)
+        zone_dev_id = device_id or meta_dev_id
+        if _climate_companion_owned_by_primary(reg, zone, iface, zone_dev_id, "-temperature"):
+            return None
+        sensor = MyHOMEClimateTemperatureSensor(
+            hass=hass,
+            name=name or meta_name,
+            device_id=zone_dev_id,
+            zone=zone,
+            interface=iface,
+            manufacturer=manufacturer or meta_mfg,
+            model=model or meta_model,
+            gateway=gateway,
+            initial_value=initial_value,
+        )
+        _apply_legacy_compat_name(sensor, reg)
+        known_climate_temp[pair] = sensor
+        sensor.async_on_remove(
+            runtime.router.subscribe(
+                "4", [f"climate_sensor_zone:{_zone_key(zone, iface)}"], sensor.handle_event
+            )
+        )
+        return sensor
+
+    def _build_climate_humidity(
+        zone: str,
+        iface: str | None,
+        *,
+        device_id: str | None = None,
+        name: str | None = None,
+        manufacturer: str | None = None,
+        model: str | None = None,
+        initial_value: float | None = None,
+        has_live_climate: bool = False,
+        reg: er.EntityRegistry | None = None,
+    ) -> MyHOMEClimateHumiditySensor | None:
+        pair = (zone, iface)
+        if pair in known_climate_humidity:
+            return None
+        if _is_climate_companion_excluded(zone, iface, has_live_climate=has_live_climate):
+            return None
+        meta_dev_id, meta_name, meta_mfg, meta_model, _ = _resolve_climate_device_meta(zone, iface)
+        zone_dev_id = device_id or meta_dev_id
+        if _climate_companion_owned_by_primary(reg, zone, iface, zone_dev_id, "-humidity"):
+            return None
+        known_climate_humidity.add(pair)
+        sensor = MyHOMEClimateHumiditySensor(
+            hass=hass,
+            name=name or meta_name,
+            device_id=zone_dev_id,
+            zone=zone,
+            interface=iface,
+            manufacturer=manufacturer or meta_mfg,
+            model=model or meta_model,
+            gateway=gateway,
+            initial_value=initial_value,
+        )
+        sensor.async_on_remove(
+            runtime.router.subscribe(
+                "4", [f"climate_sensor_zone:{_zone_key(zone, iface)}"], sensor.handle_event
+            )
+        )
+        return sensor
+
+    live_climates = runtime.entities.get("climate", {})
+
+    def _live_climate_seed(
+        zone: str, iface: str | None
+    ) -> tuple[float | None, float | None, bool]:
+        clim_ent = live_climates.get(_zone_key(zone, iface))
+        if clim_ent is None:
+            return (None, None, False)
+        init_temp = (
+            _finite_float(getattr(clim_ent, "_attr_native_current_temperature", None))
+            if not getattr(clim_ent, "_current_temperature_restored", True)
+            else None
+        )
+        raw_hum = (
+            _finite_float(getattr(clim_ent, "_attr_current_humidity", None))
+            if getattr(clim_ent, "_humidity_reported", False) is True
+            else None
+        )
+        init_hum = raw_hum if raw_hum is not None and 0.0 <= raw_hum <= 100.0 else None
+        return (
+            init_temp,
+            init_hum,
+            init_hum is not None or bool(getattr(clim_ent, "_humidity", False)),
+        )
+
+    startup_zones: dict[tuple[str, str | None], tuple[str | None, bool]] = {}
+    for ent in reg_entries:
+        if ent.domain != "climate" or not ent.unique_id:
+            continue
+        c_who, c_dev_id = parse_unique_id(ent.unique_id, gateway.mac, entry_mac)
+        if c_who != "4":
+            continue
+        c_addr = Address.from_device_id(c_dev_id)
+        if is_probe(c_addr.where) or is_actuator_where(c_addr.where):
+            continue
+        c_zone = canonical_thermo_zone(c_addr.where)
+        if c_zone is None:
+            continue
+        c_pair = (c_zone, c_addr.interface)
+        c_cfg = _climate_zone_config(configured_climate, c_zone, c_addr.interface)
+        if not c_cfg and len(c_zone) == 1:
+            c_cfg = _climate_zone_config(configured_climate, f"0{c_zone}", c_addr.interface)
+        if c_cfg and bool(c_cfg.get(CONF_CENTRAL, False)):
+            continue
+        if c_pair in thermo_switch_whole_zones:
+            continue
+        if c_pair in thermo_switch_actuator_zones and not (c_cfg or has_thermostat_state(hass, ent.entity_id)):
+            continue
+        startup_zones[c_pair] = (
+            c_dev_id,
+            (bool(c_cfg.get(CONF_HUMIDITY_SUPPORT, False)) if c_cfg else False)
+            or has_humidity_state(hass, ent.entity_id),
+        )
+
+    seen_climate_cfgs: set[int] = set()
+    for cfg_id, cfg in configured_climate.items():
+        if not isinstance(cfg, dict) or id(cfg) in seen_climate_cfgs:
+            continue
+        seen_climate_cfgs.add(id(cfg))
+        if bool(cfg.get(CONF_CENTRAL, False)) or cfg.get(CONF_WHERE, cfg.get(CONF_ZONE)) is None:
+            continue
+        c_addr = Address.from_config(str(cfg_id), cfg)
+        if is_probe(c_addr.where) or is_actuator_where(c_addr.where):
+            continue
+        c_zone = canonical_thermo_zone(c_addr.where)
+        if c_zone is None:
+            continue
+        c_pair = (c_zone, c_addr.interface)
+        prev_dev_id, prev_hum = startup_zones.get(c_pair, (None, False))
+        startup_zones[c_pair] = (
+            prev_dev_id,
+            prev_hum or bool(cfg.get(CONF_HUMIDITY_SUPPORT, False)),
+        )
+
+    for zkey in live_climates:
+        l_addr = Address.from_device_id(str(zkey))
+        if (l_zone := canonical_thermo_zone(l_addr.where)) is not None:
+            l_pair = (l_zone, l_addr.interface)
+            prev_dev_id, prev_hum = startup_zones.get(l_pair, (None, False))
+            startup_zones[l_pair] = (prev_dev_id, prev_hum)
+
+    confirmed_climate_zones: set[tuple[str, str | None]] = set(startup_zones)
+
+    restored_humidity_zones: set[tuple[str, str | None]] = set()
+    for ent in reg_entries:
+        if ent.domain != PLATFORM or not ent.unique_id:
+            continue
+        after_mac = ent.unique_id.replace(f"{gateway.mac}-", "", 1)
+        if entry_mac and entry_mac != gateway.mac:
+            after_mac = after_mac.replace(f"{entry_mac}-", "", 1)
+        match = CLIMATE_HUMIDITY_UNIQUE_ID.fullmatch(after_mac)
+        if match is None:
+            continue
+        h_zone, h_iface = match.groups()
+        h_pair = (h_zone, h_iface)
+        h_live = h_pair in confirmed_climate_zones
+        if reg_obj is not None and (
+            _is_climate_companion_excluded(h_zone, h_iface, has_live_climate=h_live)
+            or _climate_companion_owned_by_primary(
+                reg_obj, h_zone, h_iface, None, "-humidity"
+            )
+        ):
+            prune_entity(hass, reg_obj, ent, config_entry.entry_id)
+            continue
+        restored_humidity_zones.add(h_pair)
+
+    companion_sensors: list[Entity] = []
+    for (s_zone, s_iface), (s_dev_id, wants_hum) in startup_zones.items():
+        seed_temp, seed_hum, live_wants_hum = _live_climate_seed(s_zone, s_iface)
+        if (temp := _build_climate_temp(
+            s_zone,
+            s_iface,
+            device_id=s_dev_id,
+            initial_value=seed_temp,
+            has_live_climate=True,
+            reg=reg_obj,
+        )) is not None:
+            companion_sensors.append(temp)
+        if wants_hum or live_wants_hum or (s_zone, s_iface) in restored_humidity_zones:
+            if (hum := _build_climate_humidity(
+                s_zone,
+                s_iface,
+                device_id=s_dev_id,
+                initial_value=seed_hum,
+                has_live_climate=True,
+                reg=reg_obj,
+            )) is not None:
+                companion_sensors.append(hum)
+
+    def duplicate_temperature(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if (
+            ctx.source == "yaml"
+            or _is_who4_temp_cfg(ctx.cfg)
+            or is_configured(
+                "4",
+                ctx.address.where,
+                SensorDeviceClass.TEMPERATURE,
+                interface=ctx.address.interface,
+            )
+        ):
+            return False
+        if is_broadcast_where(ctx.address.clean_where):
+            if reg_obj is not None and isinstance(entry, er.RegistryEntry):
+                prune_entity(hass, reg_obj, entry, config_entry.entry_id)
+            return True
+        if not is_probe(ctx.address.clean_where):
+            c_zone = canonical_thermo_zone(ctx.address.clean_where)
+            if c_zone is not None:
+                pair = (c_zone, ctx.address.interface)
+                if pair not in yaml_zone_temp_pairs and (
+                    _is_climate_companion_excluded(
+                        c_zone,
+                        ctx.address.interface,
+                        has_live_climate=pair in confirmed_climate_zones,
+                    )
+                    or _climate_companion_owned_by_primary(
+                        reg_obj,
+                        c_zone,
+                        ctx.address.interface,
+                        None,
+                        "-temperature",
+                    )
+                ):
+                    if reg_obj is not None and isinstance(entry, er.RegistryEntry):
+                        prune_entity(hass, reg_obj, entry, config_entry.entry_id)
+                    return True
+        return False
+
     common_args: dict[str, Any] = dict(
         hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM,
         route_keys=route_keys, one_per_address=False,
@@ -835,26 +1220,142 @@ async def async_setup_entry(
         one_per_address=False,
     )
 
-    sensors: list[Entity] = []
+    sensors: list[Entity] = list(companion_sensors)
     for discovery in discovery_for.values():
         sensors.extend(discovery.start(listen=False, add=False))
-    async_add_entities(sensors)
+    if sensors:
+        async_add_entities(sensors)
+
+    @callback
+    def _async_new_climate_zone(info: dict[str, Any]) -> None:
+        zone = canonical_thermo_zone(str(info.get("zone", "")))
+        if zone is None:
+            return
+        raw_iface = info.get("interface")
+        iface = str(raw_iface) if isinstance(raw_iface, str) and raw_iface else None
+        raw_dev_id = info.get("device_id")
+        zone_dev_id = str(raw_dev_id) if isinstance(raw_dev_id, str) and raw_dev_id else None
+        raw_name = info.get("name")
+        dev_name = str(raw_name) if isinstance(raw_name, str) and raw_name else None
+        raw_mfg = info.get("manufacturer")
+        mfg = str(raw_mfg) if isinstance(raw_mfg, str) and raw_mfg else None
+        raw_model = info.get("model")
+        model = str(raw_model) if isinstance(raw_model, str) and raw_model else None
+        cur_reg, _ = _safe_registry_entries()
+
+        added: list[Entity] = []
+        init_temp = _finite_float(info.get("temperature"))
+        if (temp := _build_climate_temp(
+            zone,
+            iface,
+            device_id=zone_dev_id,
+            name=dev_name,
+            manufacturer=mfg,
+            model=model,
+            initial_value=init_temp,
+            has_live_climate=True,
+            reg=cur_reg,
+        )) is not None:
+            added.append(temp)
+        elif init_temp is not None:
+            existing_temp = known_climate_temp.get((zone, iface))
+            if existing_temp is not None and not existing_temp._bus_state_complete:
+                existing_temp._bus_state_complete = True
+                if existing_temp._attr_native_value != init_temp:
+                    existing_temp._attr_native_value = init_temp
+                    existing_temp._publish_state()
+
+        init_hum = _finite_float(info.get("current_humidity"))
+        if init_hum is not None and not (0.0 <= init_hum <= 100.0):
+            init_hum = None
+        if bool(info.get("humidity")) or init_hum is not None or (zone, iface) in restored_humidity_zones:
+            if (hum := _build_climate_humidity(
+                zone,
+                iface,
+                device_id=zone_dev_id,
+                name=dev_name,
+                manufacturer=mfg,
+                model=model,
+                initial_value=init_hum,
+                has_live_climate=True,
+                reg=cur_reg,
+            )) is not None:
+                added.append(hum)
+        if added:
+            async_add_entities(added)
+
+    @callback
+    def _async_climate_humidity(info: dict[str, Any]) -> None:
+        zone = canonical_thermo_zone(str(info.get("zone", "")))
+        if zone is None:
+            return
+        init_hum = _finite_float(info.get("current_humidity"))
+        if init_hum is None or not (0.0 <= init_hum <= 100.0):
+            return
+        raw_iface = info.get("interface")
+        iface = str(raw_iface) if isinstance(raw_iface, str) and raw_iface else None
+        raw_dev_id = info.get("device_id")
+        zone_dev_id = str(raw_dev_id) if isinstance(raw_dev_id, str) and raw_dev_id else None
+        raw_name = info.get("name")
+        dev_name = str(raw_name) if isinstance(raw_name, str) and raw_name else None
+        raw_mfg = info.get("manufacturer")
+        mfg = str(raw_mfg) if isinstance(raw_mfg, str) and raw_mfg else None
+        raw_model = info.get("model")
+        model = str(raw_model) if isinstance(raw_model, str) and raw_model else None
+        cur_reg, _ = _safe_registry_entries()
+
+        if (hum := _build_climate_humidity(
+            zone,
+            iface,
+            device_id=zone_dev_id,
+            name=dev_name,
+            manufacturer=mfg,
+            model=model,
+            initial_value=init_hum,
+            has_live_climate=True,
+            reg=cur_reg,
+        )) is not None:
+            async_add_entities([hum])
 
     @callback
     def handle_message(message: Any) -> None:
         if not isinstance(message, (OWNEnergyEvent, OWNHeatingEvent, OWNLightingEvent)):
             return
+        mtype = getattr(message, "message_type", None)
+        dim = getattr(message, "dimension", None)
         if (
-            getattr(message, "message_type", None) is None
-            and not (isinstance(message, OWNLightingEvent) and getattr(message, "dimension", None) == 6)
-            and not (isinstance(message, OWNHeatingEvent) and getattr(message, "dimension", None) in (0, 15))
+            mtype is None
+            and not (isinstance(message, OWNLightingEvent) and dim == 6)
+            and not (isinstance(message, OWNHeatingEvent) and dim in (0, 15, 60))
         ):
             return
         for discovery in discovery_for.values():
             discovery.handle_message(message)
+        if (
+            isinstance(message, OWNHeatingEvent)
+            and getattr(message, "is_translation", None) is not True
+            and (
+                mtype in (MESSAGE_TYPE_MAIN_TEMPERATURE, MESSAGE_TYPE_MAIN_HUMIDITY)
+                or (mtype is None and dim in (0, 60))
+            )
+        ):
+            target = thermo_zone_sensor_target(message)
+            if target is not None:
+                zone, iface = target
+                runtime.router.publish("4", [f"climate_sensor_zone:{_zone_key(zone, iface)}"], message)
 
     config_entry.async_on_unload(
         async_dispatcher_connect(hass, f"myhome_message_{gateway.mac}", handle_message)
+    )
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_NEW_CLIMATE_ZONE.format(gateway.mac), _async_new_climate_zone
+        )
+    )
+    config_entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, SIGNAL_CLIMATE_HUMIDITY.format(gateway.mac), _async_climate_humidity
+        )
     )
     return True
 
@@ -873,39 +1374,103 @@ def _migrate_power_unique_id(hass: HomeAssistant, device_id: str) -> None:
         pass
 
 
-def _migrate_temperature_unique_ids(hass: HomeAssistant, entry_id: str, mac: str, entry_mac: str) -> None:
+def _temp_entries(
+    registry: er.EntityRegistry, entry_id: str, mac: str, entry_mac: str, marker: str
+) -> list[tuple[er.RegistryEntry, str]]:
+    """Return ``(entry, after_mac_without_marker)`` for temperature sensors of ``entry_id``."""
+    return [
+        (entry, entry.unique_id[len(prefix) : -len(marker)])
+        for entry in er.async_entries_for_config_entry(registry, entry_id)
+        if entry.domain == PLATFORM
+        and entry.unique_id.endswith(marker)
+        and (
+            prefix := next(
+                (f"{m}-" for m in (mac, entry_mac) if entry.unique_id.startswith(f"{m}-")),
+                None,
+            )
+        )
+        is not None
+    ]
+
+
+def _apply_temp_unique_id_migration(
+    registry: er.EntityRegistry,
+    entry: er.RegistryEntry,
+    target: str,
+    *,
+    carry_customisations: bool = False,
+) -> None:
+    """Move ``entry`` to ``target`` unique id, or remove it when ``target`` already exists."""
+    canonical = registry.async_get_entity_id(PLATFORM, DOMAIN, target)
+    try:
+        if canonical is not None:
+            if carry_customisations:
+                _carry_entity_customisations(registry, canonical, entry)
+            registry.async_remove(entry.entity_id)
+            LOGGER.info(
+                "Removed duplicate temperature sensor %s in favor of %s",
+                entry.entity_id,
+                canonical,
+            )
+        else:
+            registry.async_update_entity(entry.entity_id, new_unique_id=target)
+            LOGGER.info("Migrated temperature sensor %s to unique id %s", entry.entity_id, target)
+    except ValueError as err:
+        LOGGER.warning("Could not migrate temperature sensor %s: %s", entry.entity_id, err)
+
+
+def _migrate_temperature_unique_ids(
+    hass: HomeAssistant,
+    entry_id: str,
+    mac: str,
+    entry_mac: str,
+    configured_sensors: dict[str, Any] | None = None,
+) -> None:
     """Restored and discovered probes were ``<mac>-<where>-temperature``, a myhome.yaml
     probe ``<mac>-4-<where>-temperature`` (#441). Move the first form to the second; when
     both exist, the WHO-less one is the duplicate (``sensor.<name>_2``) and goes.
+
+    Then canonicalize unconfigured legacy WHO=4 zone ids (``4-01-temperature``,
+    ``4-#1-temperature``, with optional ``#4#II``) to ``4-<zone>[#4#<iface>]-temperature``
+    so removing a zero-padded ``myhome.yaml`` zone sensor preserves entity_id and LTS (#981).
     """
     marker = f"-{SensorDeviceClass.TEMPERATURE}"
     try:
         registry = er.async_get(hass)
-        entries = list(er.async_entries_for_config_entry(registry, entry_id))
+        pass1 = _temp_entries(registry, entry_id, mac, entry_mac, marker)
     except Exception:  # registry not loaded in some harnesses
         return
-    for entry in entries:
-        if entry.domain != PLATFORM or not entry.unique_id.endswith(marker):
-            continue
-        prefix = next((f"{m}-" for m in (mac, entry_mac) if entry.unique_id.startswith(f"{m}-")), None)
-        if prefix is None:
-            continue
-        where = entry.unique_id[len(prefix) : -len(marker)]
+    for entry, where in pass1:
         raw_where = where.removeprefix("4-")
         canon_where = _canonical_temperature_where(raw_where)
         if not raw_where or "-" in raw_where or (where.startswith("4-") and canon_where == raw_where):
             continue
-        target = f"{mac}-4-{canon_where}{marker}"
-        canonical = registry.async_get_entity_id(PLATFORM, DOMAIN, target)
-        try:
-            if canonical is not None:
-                registry.async_remove(entry.entity_id)
-                LOGGER.info("Removed duplicate temperature sensor %s in favor of %s", entry.entity_id, canonical)
-            else:
-                registry.async_update_entity(entry.entity_id, new_unique_id=target)
-                LOGGER.info("Migrated temperature sensor %s to unique id %s", entry.entity_id, target)
-        except ValueError as err:
-            LOGGER.warning("Could not migrate temperature sensor %s: %s", entry.entity_id, err)
+        _apply_temp_unique_id_migration(registry, entry, f"{mac}-4-{canon_where}{marker}")
+
+    active_yaml_tails: set[str] = {
+        Address.from_config(str(cfg_id), cfg).clean_key
+        for cfg_id, cfg in (configured_sensors or {}).items()
+        if isinstance(cfg, dict)
+        and str(cfg.get(CONF_WHO)) == "4"
+        and CONF_WHERE in cfg
+        and (cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")) == SensorDeviceClass.TEMPERATURE
+    }
+    for entry, raw in _temp_entries(registry, entry_id, mac, entry_mac, marker):
+        tail = raw.removeprefix("4-")
+        if (
+            tail == raw
+            or tail in active_yaml_tails
+            or (match := LEGACY_ZONE_TEMP_TAIL.fullmatch(tail)) is None
+        ):
+            continue
+        canon_zone = cast(str, match.group(1) or match.group(2))
+        routing = f"{BUS_ROUTING}{int(match.group(3)):02d}" if match.group(3) is not None else ""
+        _apply_temp_unique_id_migration(
+            registry,
+            entry,
+            f"{mac}-4-{canon_zone}{routing}{marker}",
+            carry_customisations=True,
+        )
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntry) -> bool:
@@ -1438,6 +2003,14 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         who4_target = getattr(self._gateway_handler, "_who4_target", None)
         return who4_target() if callable(who4_target) else self._gateway_handler
 
+    @property
+    def _interface_poll_refused(self) -> bool:
+        """Return True when ``_where`` carries ``#4#II`` and the serving gateway refuses routed WHO=4 polls."""
+        return (
+            BUS_ROUTING in str(self._where)
+            and getattr(self._read_gateway(), "interface_zone_request_refused", False) is True
+        )
+
     def _fallback_refusal_stands(self) -> bool:
         """Whether the gateway that would serve the read now is the one, on the connection, that refused it.
 
@@ -1483,7 +2056,9 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         self._register_entity_ref(str(self._attr_device_class))
         # Probes start receive-only: no initial poll, the push stream fills in
         # and the periodic update only polls if it stays silent (issue #308).
-        self._poll_on_add = self._poll_on_add and not self._is_probe
+        self._poll_on_add = (
+            self._poll_on_add and not self._is_probe and not self._interface_poll_refused
+        )
         await super().async_added_to_hass()
 
     async def async_will_remove_from_hass(self) -> None:
@@ -1528,12 +2103,9 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
             if self._fallback_refusal_stands():
                 return
             self._fallback_read_refused = False
-        if (
-            BUS_ROUTING in str(self._where)
-            and getattr(self._gateway_handler, "interface_zone_request_refused", False) is True
-        ):
-            # Behind an interface where the gateway does not route WHO 4, a probe has only its own
-            # reports, and the read of a zone would be answered for the local zone of that number.
+        if self._interface_poll_refused:
+            # Behind an interface where the serving gateway does not route WHO 4, a probe has only its
+            # own reports, and the read of a zone would be answered for the local zone of that number.
             return
         cmd = self._fallback_read()
         pushes_before = self._pushes
@@ -1891,3 +2463,178 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         if self._attr_native_value != new_val:
             self._attr_native_value = new_val
             self._publish_state()
+
+
+class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
+    """Base class for passive companion sensors attached to a WHO=4 climate zone (#981)."""
+
+    _name_from_device_class = True
+    _unique_id_suffix: str
+
+    def __init__(
+        self,
+        hass: HomeAssistant | None,
+        name: str,
+        device_id: str,
+        zone: str,
+        interface: str | None,
+        manufacturer: str | None,
+        model: str | None,
+        gateway: MyHOMEGatewayHandler,
+        device_class: SensorDeviceClass,
+        native_unit: str,
+        initial_value: float | None = None,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            platform=PLATFORM,
+            device_id=device_id,
+            who="4",
+            where=zone,
+            manufacturer=manufacturer,
+            model=model,
+            gateway=gateway,
+        )
+        self._zone = zone
+        self._interface = interface
+        self._zone_key = (
+            f"{self._zone}{BUS_ROUTING}{self._interface}"
+            if self._interface is not None
+            else self._zone
+        )
+        self._full_where = self._zone_key
+        self._attr_device_class = device_class
+        self._attr_unique_id = f"{gateway.mac}-4-{self._zone_key}{self._unique_id_suffix}"
+        self._attr_native_unit_of_measurement = native_unit
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_entity_registry_enabled_default = True
+        self._attr_should_poll = False
+        self._poll_on_add = False
+        self._attr_native_value = _finite_float(initial_value)
+        attrs: dict[str, Any] = {"zone": int(self._zone)}
+        if self._interface is not None:
+            attrs["Int"] = self._interface
+        self._attr_extra_state_attributes = attrs
+
+    async def async_update(self) -> None:
+        """Strictly passive: readings arrive via climate zone bus frames."""
+        return
+
+    def _matches_zone(self, message: OWNHeatingEvent) -> bool:
+        """Return True when ``message`` targets this sensor's zone and F422 interface."""
+        return thermo_zone_sensor_target(message) == (self._zone, self._interface)
+
+    def _apply_reading(self, message: OWNHeatingEvent, value: float | None) -> None:
+        """Publish a finite reading when it changes."""
+        if value is None or not math.isfinite(value):
+            return
+        if hasattr(message, "human_readable_log") and message.human_readable_log:
+            LOGGER.debug(
+                "%s %s",
+                self._gateway_handler.log_id,
+                message.human_readable_log,
+            )
+        self._bus_state_complete = True
+        if self._attr_native_value != value:
+            self._attr_native_value = value
+            self._publish_state()
+
+
+class MyHOMEClimateTemperatureSensor(_MyHOMEClimateZoneSensor):
+    """Passive temperature sensor attached to a confirmed WHO=4 climate zone (#981)."""
+
+    _unique_id_suffix = "-temperature"
+
+    def __init__(
+        self,
+        hass: HomeAssistant | None,
+        name: str,
+        device_id: str,
+        zone: str,
+        interface: str | None,
+        manufacturer: str | None,
+        model: str | None,
+        gateway: MyHOMEGatewayHandler,
+        initial_value: float | None = None,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            device_id=device_id,
+            zone=zone,
+            interface=interface,
+            manufacturer=manufacturer,
+            model=model,
+            gateway=gateway,
+            device_class=SensorDeviceClass.TEMPERATURE,
+            native_unit=UnitOfTemperature.CELSIUS,
+            initial_value=initial_value,
+        )
+
+    @callback
+    def handle_event(self, message: OWNHeatingEvent) -> None:
+        """Update temperature from WHO=4 Dimension 0 readings for this zone."""
+        if not self._matches_zone(message):
+            return
+        val: float | None = None
+        msg_type = getattr(message, "message_type", None)
+        if msg_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
+            val = _finite_float(getattr(message, "main_temperature", None))
+        elif msg_type is None and getattr(message, "dimension", None) == 0:
+            dim_val = getattr(message, "dimension_value", None)
+            if dim_val:
+                val = _finite_float(who4_temperature(str(dim_val[0])))
+        self._apply_reading(message, val)
+
+
+class MyHOMEClimateHumiditySensor(_MyHOMEClimateZoneSensor):
+    """Passive humidity sensor attached to a humidity-capable WHO=4 climate zone (#981)."""
+
+    _unique_id_suffix = "-humidity"
+
+    def __init__(
+        self,
+        hass: HomeAssistant | None,
+        name: str,
+        device_id: str,
+        zone: str,
+        interface: str | None,
+        manufacturer: str | None,
+        model: str | None,
+        gateway: MyHOMEGatewayHandler,
+        initial_value: float | None = None,
+    ) -> None:
+        super().__init__(
+            hass=hass,
+            name=name,
+            device_id=device_id,
+            zone=zone,
+            interface=interface,
+            manufacturer=manufacturer,
+            model=model,
+            gateway=gateway,
+            device_class=SensorDeviceClass.HUMIDITY,
+            native_unit=PERCENTAGE,
+            initial_value=initial_value,
+        )
+
+    @callback
+    def handle_event(self, message: OWNHeatingEvent) -> None:
+        """Update humidity from WHO=4 Dimension 60 readings for this zone."""
+        if not self._matches_zone(message):
+            return
+        val: float | None = None
+        msg_type = getattr(message, "message_type", None)
+        if msg_type == MESSAGE_TYPE_MAIN_HUMIDITY:
+            val = _finite_float(getattr(message, "main_humidity", None))
+        elif msg_type is None and getattr(message, "dimension", None) == 60:
+            dim_val = getattr(message, "dimension_value", None)
+            if dim_val:
+                try:
+                    val = _finite_float(float(str(dim_val[0])))
+                except (ValueError, TypeError):
+                    val = None
+        if val is not None and not (0.0 <= val <= 100.0):
+            return
+        self._apply_reading(message, val)
