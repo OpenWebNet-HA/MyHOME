@@ -331,8 +331,11 @@ def _spellings(where: str) -> list[str]:
 
 
 def _contact_spellings(where: str) -> list[str]:
-    """:func:`_spellings` of a WHO 25 contact, plus ``31`` for an F455's ``301``."""
+    """:func:`_spellings` of a WHO 25 contact, plus ``31`` for an F455's ``301`` (a WHERE or a legacy ``25-`` id only)."""
     keys = _spellings(where)
+    head, sep, _tail = where.rpartition("-")
+    if sep and head != "25":
+        return keys
     return list(dict.fromkeys([*keys, *(canonical_contact_where(key) for key in keys)]))
 
 
@@ -601,7 +604,7 @@ class MyHOMEDryContact(_MyHOMEInvertibleBinarySensor):
 
         Only used by the generic entity update service.
         """
-        await self._gateway_handler.send_status_request(OWNDryContactCommand.status(self._where))
+        await self._gateway_handler.send_status_request(OWNDryContactCommand.status(canonical_contact_where(self._where)))
 
 
 class MyHOMEAuxiliary(_MyHOMEInvertibleBinarySensor):
