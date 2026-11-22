@@ -11,7 +11,14 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.const import CONF_FRIENDLY_NAME, CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
+from homeassistant.const import (
+    CONF_FRIENDLY_NAME,
+    CONF_HOST,
+    CONF_MAC,
+    CONF_NAME,
+    CONF_PASSWORD,
+    CONF_PORT,
+)
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.myhome.button import DisableCommandButtonEntity, EnableCommandButtonEntity
