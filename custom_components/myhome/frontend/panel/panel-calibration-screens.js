@@ -1204,22 +1204,17 @@ function summaryScreen(screen, ctx, tx, n, values) {
     // Fine-tuning is offered once this is saved (A-34), not here. Above the threshold the check can be repeated.
     actions: [saveAs(target, block.name?.value ?? ""), ...(liveCheck && !liveCheck.passed ? [{ id: "check-start", label: t("wiz_T143"), kind: "secondary" }] : [])] });
   withSupport(screen, ctx, target);
-  sharedConfirm(screen, ctx, target);
   // After the notices that matter more (what cannot be saved comes first).
   if (liveCheck) screen.results = [...(screen.results || []), liveCheck.tile];
   return screen;
 }
 
 /**
- * «Aggiorna il profilo «X»» asks first. Its preview (Home Assistant's `preview_save`)
- * names the other covers whose times change, or says there are none; Save becomes «Conferma e salva nel profilo «X»»,
- * with «Annulla» beside it. Any other choice drops it (the wizard).
- */
-/**
  * Of the other covers on the profile (Home Assistant's preview), those whose times
- * updating it changes (`times`); those whose times stay but whose intermediate positions change, the model or a value
- * of its geometry being different (`positions`, never one already in `times`); and apart those that lose their check
- * (`loses_check`). Only the source updates its profile: they are all covers that follow it.
+ * updating it changes (`times`, and of them `both`, those whose intermediate positions change too); those whose times
+ * stay but whose intermediate positions change, the model or a value of its geometry being different (`positions`,
+ * never one already in `times`); and apart those that lose their check (`loses_check`). Only the source updates its
+ * profile: they are all covers that follow it.
  */
 export function sharedImpact(preview, ...self) {
   const others = (preview?.followers || []).filter((item) => !self.includes(item.entity_id));
@@ -1229,25 +1224,43 @@ export function sharedImpact(preview, ...self) {
   const reshaped = (item) => item.model_before !== item.model_after
     || Object.values(item.geometry_changes || {}).some((value) => value?.before !== value?.after);
   const times = others.filter(changed);
-  return { times, positions: others.filter((item) => !times.includes(item) && reshaped(item)),
+  return { others, times, both: times.filter(reshaped), positions: others.filter((item) => !times.includes(item) && reshaped(item)),
     checks: others.filter((item) => item.loses_check === true) };
 }
 
-export function sharedConfirm(screen, ctx, target) {
-  const { t, local = {}, cover, view } = ctx, preview = local.sharedConfirm;
-  if (target !== "profile_update" || !preview) return screen;
-  const { times, positions, checks } = sharedImpact(preview, cover?.entity_id, view?.entity_id);
-  // The names the panel shows; Home Assistant's own only when it is not the entity id.
-  const names = (items) => items.map((item) => ctx.coverName?.(item.entity_id) || (item.name && item.name !== item.entity_id ? item.name : null) || t("wiz_T679")).join(", ");
-  // For example: «Cambiano i tempi delle tapparelle A, B. Cambiano le posizioni intermedie della tapparella C.
-  // Perderà la verifica la tapparella B.» The names said as covers, one («della tapparella X») or more («delle tapparelle X, Y»).
-  const text = [times.length ? fill(t(times.length === 1 ? "wiz_T709_one" : "wiz_T709"), { names: names(times) }) : "",
-    positions.length ? fill(t(positions.length === 1 ? "wiz_T721_one" : "wiz_T721"), { names: names(positions) }) : "",
-    checks.length ? fill(t(checks.length === 1 ? "wiz_T710_one" : "wiz_T710"), { names: names(checks) }) : ""].filter(Boolean).join(" ");
-  screen.notices.push({ tone: "info", result: true, text: text || t("wiz_T678") });
-  screen.actions = screen.actions.map((action) => action.id === "save" ? { ...action, label: fill(t("wiz_T675"), { name: cover?.profile?.name ?? "" }) } : action);
-  screen.actions.push({ id: "shared-cancel", label: t("wiz_T025"), kind: "secondary" });
-  return screen;
+/**
+ * What updating the profile changes for the covers that follow it, from its preview: who and what, said under
+ * «Aggiorna il profilo «X»» in yellow before Save (a shared change shows its impact before it is saved). For example:
+ * «Cambiano anche i tempi delle 2 tapparelle che lo seguono: A, B. Perderà la verifica la tapparella B.» Empty when
+ * nothing changes for them.
+ */
+export function sharedNotice(ctx, preview) {
+  const { t, cover, view } = ctx;
+  const { times, both, positions, checks } = sharedImpact(preview, cover?.entity_id, view?.entity_id);
+  const names = (items) => sharedNames(ctx, items);
+  const said = (key, items) => items.length ? fill(t(items.length === 1 ? `${key}_one` : key), { names: names(items), count: items.length }) : "";
+  // The times (with the intermediate positions when every one of those covers changes them too), then the covers whose
+  // intermediate positions alone change (after the times, the sentence of today), then the check lost.
+  return [said(times.length && both.length === times.length ? "wiz_T723" : "wiz_T722", times), said(times.length ? "wiz_T721" : "wiz_T724", positions),
+    said("wiz_T710", checks)].filter(Boolean).join(" ");
+}
+
+/** The covers of a preview named as the panel shows them; Home Assistant's own name only when it is not the entity id. */
+function sharedNames(ctx, items) {
+  return items.map((item) => ctx.coverName?.(item.entity_id) || (item.name && item.name !== item.entity_id ? item.name : null) || ctx.t("wiz_T679")).join(", ");
+}
+
+/**
+ * Covers follow the profile but its preview confirms that nothing changes for them (no time, no intermediate position,
+ * no check lost): said so, never «Cambierà anche…». For example: «Le altre 2 tapparelle che lo seguono non cambiano:
+ * A, B.» The others the preview lists, or (when it lists none) those that follow the profile. Empty when none follows it.
+ */
+export function sharedUnchanged(ctx, preview) {
+  const { t, cover, view } = ctx;
+  const { others } = sharedImpact(preview, cover?.entity_id, view?.entity_id);
+  const count = others.length || (cover?.followers?.length ?? 0);
+  if (!count) return "";
+  return fill(t(count === 1 ? "wiz_T725_one" : "wiz_T725"), { names: others.length ? sharedNames(ctx, others) : ctx.followerNames || "—", count });
 }
 
 /**
@@ -1295,8 +1308,7 @@ function basicSummary(screen, ctx, tx, n, values, { base, saveAs }) {
       : { title: t("wiz_T280"), body: counted(t, cover?.profile ? "wiz_T287" : "wizSaveCoverOnly", trueFollowers(cover), values) },
     actions: [{ ...saveAs(target, block.name?.value ?? ""), ...(refusal ? { disabled: true } : {}) },
       ...(refusal ? [{ id: "restart", label: t("wiz_T261"), kind: "secondary" }] : [])] });
-  withSupport(screen, ctx, target);
-  return sharedConfirm(screen, ctx, target);
+  return withSupport(screen, ctx, target);
 }
 
 /**
@@ -1328,10 +1340,18 @@ function profileBlock(ctx, tx, pathC) {
   // saves a profile of its own.
   const source = follows && !!cover.entity_id && cover.profile.provenance?.opening?.origin_entity_id === cover.entity_id;
   const updatable = source && (ctx.supports ? ctx.supports("profile_update") : true);
+  // Under «Aggiorna il profilo «X»», always the same note, chosen or not: who follows it (until its preview is back),
+  // then who and what changes for them (the preview, asked whichever is chosen). Only its tone tells the choice
+  // (the choice is told by the tone alone): yellow while «Aggiorna» is chosen and the others change, grey otherwise, same shape and words.
+  const who = updatable ? counted(t, "wiz_T110", cover.followers?.length ?? 0, { names: ctx.followerNames || "—" }) : "";
+  // Followed, but the preview confirms nothing changes for them: said so, in grey (no impact), whatever is chosen.
+  const preview = local.sharedPreview, impact = preview ? sharedNotice(ctx, preview) : "";
+  const unchanged = preview && !impact ? sharedUnchanged(ctx, preview) : "";
+  const changes = preview ? !!impact : !!cover.followers?.length;
+  const note = updatable ? { text: impact || unchanged || who, tone: (local.saveChoice || "update") === "update" && changes ? "warning" : "muted" } : null;
   const choice = on && updatable ? { name: "save_choice", value: local.saveChoice || "update",
     // Listed as in A-21d: update first, then a new profile.
-    options: [{ value: "update", label: tx("wiz_T109", { profile: cover.profile.name }),
-      description: counted(t, "wiz_T110", cover.followers?.length ?? 0, { names: ctx.followerNames || "—" }) },
+    options: [{ value: "update", label: tx("wiz_T109", { profile: cover.profile.name }), note },
     { value: "new", label: t("wiz_T111") }] } : null;
   const creating = on && (!choice || choice.value === "new");
   // The new profile is named as the cover is shown («Living room shutter 1»), a readable variant

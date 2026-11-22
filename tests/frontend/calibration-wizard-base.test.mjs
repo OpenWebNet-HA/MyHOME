@@ -394,7 +394,7 @@ describe("«Ripeti» and the save", async () => {
     assert.equal(wiz().querySelector('[data-wiz="lift"]').disabled, false, "«Si è staccato» ready again");
   });
 
-  test("the basic calibration always saves into a profile: «Aggiorna il profilo» (asked first, the followers named) or «Nuovo profilo»; no switch, no «Solo questa tapparella»; the profile card keeps its 16 px", async () => {
+  test("the basic calibration always saves into a profile: «Aggiorna il profilo» (its impact in yellow before Save, one press) or «Nuovo profilo»; no switch, no «Solo questa tapparella»; the profile card keeps its 16 px", async () => {
     const context = await mount({ overview: sourceOverview(), language: "it" });
     const { backend, wiz, code, press, tab } = context;
     backend.hass.states["cover.living_one"] = { state: "closed", attributes: { current_position: 0 } };
@@ -411,19 +411,30 @@ describe("«Ripeti» and the save", async () => {
     assert.deepEqual([...wiz().querySelectorAll('[name="save_choice"]')].map((input) => input.closest("label").querySelector(".wiz-radio-label")?.textContent.trim() ?? ""),
       ["Aggiorna il profilo «tall_two_leaf»", "Nuovo profilo"]);
     assert.doesNotMatch(wiz().textContent, /prossima versione|non disponibile/i);
-    await press("save"); await tick(4);
-    assert.match(wiz().querySelector(".wiz-result-notices").textContent, /Cambiano i tempi delle tapparelle Kitchen shutter 2, Living room shutter 3\./);
-    // Another choice drops the question.
-    const nw = wiz().querySelector('[name="save_choice"][value="new"]'); nw.checked = true; nw.dispatchEvent(new Event("change", { bubbles: true })); await tick();
+    // The preview asked once on arrival: who and what changes, in yellow under «Aggiorna», before any press.
+    await tick(4);
+    const previews = () => backend.calls.filter((message) => message.action === "preview_save").length;
+    const option = (value) => wiz().querySelector(`[name="save_choice"][value="${value}"]`).closest("label");
+    const yellow = () => option("update").querySelector(".cal-note.is-warning")?.textContent.replace(/\u00a0/g, " ") ?? null;
+    assert.equal(previews(), 1, "asked once, on arrival");
+    assert.equal(yellow(), "Cambiano anche i tempi delle 2 tapparelle che lo seguono: Kitchen shutter 2, Living room shutter 3.");
+    assert.equal(option("update").querySelector("small.muted"), null, "the yellow notice in the grey line's place");
+    assert.equal(wiz().querySelector(".wiz-result-notices").textContent, "", "nothing said at the top");
+    // «Nuovo profilo»: the same note under «Aggiorna», same words, in grey; back on «Aggiorna», yellow again. One preview.
+    const nw = wiz().querySelector('[name="save_choice"][value="new"]'); nw.checked = true; nw.dispatchEvent(new Event("change", { bubbles: true })); await tick(4);
+    assert.equal(yellow(), null);
+    assert.equal(option("update").querySelector(".cal-note.is-muted.wiz-option-note").textContent.replace(/\u00a0/g, " "), "Cambiano anche i tempi delle 2 tapparelle che lo seguono: Kitchen shutter 2, Living room shutter 3.");
+    assert.equal(option("update").querySelector("small.muted"), null, "the same note, not another line");
+    const up = wiz().querySelector('[name="save_choice"][value="update"]'); up.checked = true; up.dispatchEvent(new Event("change", { bubbles: true })); await tick(4);
+    assert.equal(previews(), 1, "the preview kept: the choice does not change it");
+    assert.match(yellow(), /^Cambiano anche i tempi delle 2 tapparelle/);
+    // One press saves, with the preview's confirmation: no «Conferma e salva», no «Annulla».
+    assert.equal(wiz().querySelector('[data-wiz="save"]').textContent, "Salva nel profilo «tall_two_leaf»");
     assert.equal(wiz().querySelector('[data-wiz="shared-cancel"]'), null);
-    const up = wiz().querySelector('[name="save_choice"][value="update"]'); up.checked = true; up.dispatchEvent(new Event("change", { bubbles: true })); await tick();
-    await press("save"); await tick(4);
-    await press("shared-cancel");
-    assert.equal(wiz().querySelector('[data-wiz="save"]').textContent, "Salva nel profilo «tall_two_leaf»", "«Annulla» goes back to the choice");
-    await press("save"); await tick(4);
     await press("save"); await tick(4);
     const save = backend.calls.filter((message) => message.action === "save").at(-1);
     assert.deepEqual([save.save_mode, save.confirmation], ["shared", "shared:session-1"]);
+    assert.equal(previews(), 1, "Save asks nothing more");
     assert.equal(code(), "A-34");
     const css = (await import("node:fs")).readFileSync(new URL("../../custom_components/myhome/frontend/panel/panel-calibration.css", import.meta.url), "utf8");
     assert.match(css, /\.wiz \.wiz-profile-section \.cal-card > \.wiz-profile-block \{ box-sizing: border-box; padding: var\(--cal-sp-12\) var\(--cal-sp-16\) var\(--cal-sp-16\); \}/);
@@ -657,7 +668,7 @@ describe("runs, end stops and the summary", async () => {
     assert.deepEqual([code(), wiz().querySelector('[data-wiz="run:open"]').disabled], ["C-11", false]);
   });
 
-  test("a refusal of «Aggiorna il profilo» (its preview or its save) is said in the summary's notices, in view, never silence", async () => {
+  test("a refusal of «Aggiorna il profilo»'s preview is said in the summary's notices, in view, never silence; «Riprova» in Save's place asks it again and saves nothing", async () => {
     const overview = sampleOverview();
     overview.profiles[0].provenance.opening.origin_entity_id = "cover.kitchen_two";  // «Aggiorna» on the source only.
     const context = await mount({ overview, language: "it" });
@@ -667,10 +678,6 @@ describe("runs, end stops and the summary", async () => {
     const no = wiz().querySelector('input[name="slats"][value="no"]'); if (no) { no.checked = true; no.dispatchEvent(new Event("change", { bubbles: true })); await tick(); }
     await press("begin");
     await bothRuns(context);
-    await press("ack:descent");
-    assert.equal(code(), "A-21b");
-    const update = wiz().querySelector('[name="save_choice"][value="update"]');
-    update.checked = true; update.dispatchEvent(new Event("change", { bubbles: true })); await tick();
     const original = backend.hass.callWS, scrolled = [];
     const proto = dom.window.HTMLElement.prototype, saved = proto.scrollIntoView;
     proto.scrollIntoView = function () { scrolled.push(this); };
@@ -678,12 +685,27 @@ describe("runs, end stops and the summary", async () => {
       if (message.action === "preview_save") { backend.calls.push(message); throw { code: "calibration_busy", message: "busy" }; }
       return original(message);
     };
+    const error = () => wiz().querySelector(".wiz-result-notices .wiz-notice[data-tone=error], .wiz-notices .wiz-notice[data-tone=error]");
     try {
-      await press("save"); await tick(6);
-      const notice = wiz().querySelector(".wiz-result-notices .wiz-notice[data-tone=error], .wiz-notices .wiz-notice[data-tone=error]");
-      assert.ok(notice, "the refusal is said");
-      assert.equal(notice.textContent, i18n.it.profileError_calibration_busy);
-      assert.ok(scrolled.some((element) => element.contains?.(notice) || element === notice), "brought into view");
+      // Asked on arrival, refused: said and brought into view.
+      await press("ack:descent"); await tick(6);
+      assert.equal(code(), "A-21b");
+      assert.ok(wiz().querySelector('[name="save_choice"][value="update"]').checked);
+      assert.ok(error(), "the refusal is said");
+      assert.equal(error().textContent, i18n.it.profileError_calibration_busy);
+      assert.ok(scrolled.some((element) => element.contains?.(error()) || element === error()), "brought into view");
+      // Until a preview is back the yellow notice says who follows the profile.
+      assert.match(wiz().querySelector(".wiz-profile-block .cal-note.is-warning").textContent.replace(/\u00a0/g, " "), /^Cambierà anche l’altra tapparella che lo segue: Living room shutter 3\.$/);
+      // No Save without its impact: «Riprova» in its place, the primary.
+      const bar = () => [...wiz().querySelectorAll(".wiz-actions .wiz-action")].map((button) => [button.dataset.wiz, button.textContent, button.disabled]);
+      assert.deepEqual(bar(), [["shared-retry", "Riprova", false]]);
+      assert.ok(wiz().querySelector('[data-wiz="shared-retry"]').classList.contains("primary"), "the primary");
+      // «Riprova» asks the preview once more, refused again: nothing saved, the refusal said, «Riprova» again.
+      await press("shared-retry"); await tick(6);
+      assert.deepEqual(backend.calls.filter((message) => ["preview_save", "save"].includes(message.action)).map((message) => message.action), ["preview_save", "preview_save"]);
+      assert.equal(error().textContent, i18n.it.profileError_calibration_busy);
+      assert.deepEqual(bar(), [["shared-retry", "Riprova", false]]);
+      assert.equal(code(), "A-21b");
     } finally {
       backend.hass.callWS = original;
       proto.scrollIntoView = saved;
@@ -886,7 +908,7 @@ describe("runs, end stops and the summary", async () => {
     assert.equal(i18n.en.wiz_T702, "The profile \"{profile}\" was measured on this cover: the values measured can update it, or become a new profile.");
   });
 
-  test("«Aggiorna»'s confirmation names the covers as the panel shows them, never by entity id", async () => {
+  test("«Aggiorna»'s impact names the covers as the panel shows them, never by entity id", async () => {
     // From the source, the only cover that updates its profile.
     const context = await mount({ overview: sourceData(), language: "it" });
     const { backend, wiz, code, press } = context;
@@ -895,9 +917,6 @@ describe("runs, end stops and the summary", async () => {
     const no = wiz().querySelector('input[name="slats"][value="no"]'); if (no) { no.checked = true; no.dispatchEvent(new Event("change", { bubbles: true })); await tick(); }
     await press("begin");
     await bothRuns(context);
-    await press("ack:descent");
-    assert.equal(code(), "A-21b");
-    assert.ok(wiz().querySelector('[name="save_choice"][value="update"]').checked, "updating is the default on the source");
     // Home Assistant's preview names a cover by its entity id (no name of its own in the store).
     const original = backend.hass.callWS;
     backend.hass.callWS = async (message) => {
@@ -906,14 +925,16 @@ describe("runs, end stops and the summary", async () => {
       return result;
     };
     try {
-      await press("save"); await tick(4);
+      await press("ack:descent"); await tick(4);
     } finally { backend.hass.callWS = original; }
-    const notices = [...wiz().querySelectorAll(".wiz-notice")].map((notice) => notice.textContent.replace(/ /g, " ")).join(" | ");
-    assert.match(notices, /Cambiano i tempi delle tapparelle Kitchen shutter 2, Living room shutter 3\./);
-    assert.doesNotMatch(notices, /cover\./);
+    assert.equal(code(), "A-21b");
+    assert.ok(wiz().querySelector('[name="save_choice"][value="update"]').checked, "updating is the default on the source");
+    const said = wiz().querySelector(".wiz-profile-block .cal-note.is-warning").textContent.replace(/\u00a0/g, " ");
+    assert.equal(said, "Cambiano anche i tempi delle 2 tapparelle che lo seguono: Kitchen shutter 2, Living room shutter 3.");
+    assert.doesNotMatch(said, /cover\./);
   });
 
-  test("with no other cover on the profile «Salva nel profilo» saves at once, no «Conferma e salva»; with others it asks", async () => {
+  test("with no other cover on the profile no yellow notice (its grey line as before), and «Salva nel profilo» saves at once with the preview's confirmation", async () => {
     const data = sampleOverview();
     Object.assign(data.profiles[0], { assigned_to: ["cover.kitchen_two"] });
     data.profiles[0].provenance.opening.origin_entity_id = "cover.kitchen_two";
@@ -925,10 +946,12 @@ describe("runs, end stops and the summary", async () => {
     const no = wiz().querySelector('input[name="slats"][value="no"]'); if (no) { no.checked = true; no.dispatchEvent(new Event("change", { bubbles: true })); await tick(); }
     await press("begin");
     await bothRuns(context);
-    await press("ack:descent");
+    await press("ack:descent"); await tick(4);
     assert.equal(code(), "A-21b");
     const update = wiz().querySelector('[name="save_choice"][value="update"]');
-    update.checked = true; update.dispatchEvent(new Event("change", { bubbles: true })); await tick();
+    assert.ok(update.checked);
+    assert.equal(update.closest("label").querySelector(".cal-note.is-warning"), null, "no yellow notice: no other cover changes");
+    assert.equal(update.closest("label").querySelector(".cal-note.is-muted").textContent, "Nessun’altra tapparella lo segue.");
     assert.match(wiz().querySelector('.wiz-actions [data-wiz="save"]').textContent, /Salva nel profilo/);
     await press("save"); await tick(6);
     const sent = backend.calls.filter((message) => ["preview_save", "save"].includes(message.action)).map((message) => [message.action, message.save_mode, message.confirmation ?? null]);
@@ -1148,20 +1171,29 @@ describe("updating the profile from its source", async () => {
   const saves = (backend) => backend.calls.filter((message) => ["preview_save", "save"].includes(message.action))
     .map((message) => [message.action, message.save_mode ?? null, message.name ?? null]);
 
-  test("on the source «Aggiorna il profilo» is the default, «Nuovo profilo» the other choice; its confirmation names whose times change and, apart, who loses the check", async () => {
+  /** The yellow notice under «Aggiorna il profilo «X»» (null when there is none), and the grey line under it. */
+  const yellow = (wiz) => wiz().querySelector('[name="save_choice"][value="update"]').closest("label").querySelector(".cal-note.is-warning")?.textContent.replace(/\u00a0/g, " ") ?? null;
+  const grey = (wiz) => wiz().querySelector('[name="save_choice"][value="update"]').closest("label").querySelector(".cal-note.is-muted")?.textContent.replace(/\u00a0/g, " ") ?? null;
+  const previews = (backend) => saves(backend).filter(([action]) => action === "preview_save").length;
+
+  test("on the source «Aggiorna il profilo» is the default, «Nuovo profilo» the other choice; the yellow notice under it names, before Save, whose times change and, apart, who loses the check; one press saves", async () => {
     const context = await mount({ overview: sourceData(), language: "it" });
     const { backend, wiz, press } = context;
-    await summary(context, "cover.living_one");
+    await summary(context, "cover.living_one"); await tick(4);
     const options = [...wiz().querySelectorAll('[name="save_choice"]')];
     assert.deepEqual(options.map((option) => [option.value, option.checked]), [["update", true], ["new", false]]);
     assert.match(options[0].closest("label").textContent, /Aggiorna il profilo «tall_two_leaf»/);
     assert.match(options[1].closest("label").textContent, /Nuovo profilo/);
-    await press("save"); await tick(4);
-    const notices = [...wiz().querySelectorAll(".wiz-notice")].map((notice) => notice.textContent.replace(/ /g, " ")).join(" | ");
-    assert.match(notices, /Cambiano i tempi delle tapparelle Kitchen shutter 2, Living room shutter 3\. Perderà la verifica la tapparella Kitchen shutter 2\./);
-    assert.match(wiz().querySelector('.wiz-actions [data-wiz="save"]').textContent, /Conferma e salva nel profilo «tall_two_leaf»/);
+    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"]], "asked on arrival, once");
+    assert.equal(yellow(wiz), "Cambiano anche i tempi delle 2 tapparelle che lo seguono: Kitchen shutter 2, Living room shutter 3. Perderà la verifica la tapparella Kitchen shutter 2.");
+    assert.equal(grey(wiz), null);
+    assert.equal(wiz().querySelectorAll(".wiz-notices .wiz-notice, .wiz-result-notices .wiz-notice").length, 0, "no notice at the top");
+    assert.deepEqual([...wiz().querySelectorAll(".wiz-actions .wiz-action")].map((button) => [button.dataset.wiz, button.textContent]), [["save", "Salva nel profilo «tall_two_leaf»"]],
+      "no «Conferma e salva», no «Annulla»");
     await press("save"); await tick(6);
-    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]]);
+    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]], "saved at the first press");
+    assert.equal(backend.calls.find((message) => message.action === "save").confirmation, "shared:session-1");
+    assert.equal(context.code(), "A-34");
   });
 
   /**
@@ -1180,54 +1212,179 @@ describe("updating the profile from its source", async () => {
   const same = { opening: { before: 22, after: 22, scaled: false, overridden: false }, closing: { before: 21.6, after: 21.6, scaled: false, overridden: false } };
   const geometry = (roll) => ({ slat_time_s: { before: 3, after: 3, scaled: false }, opening_roll: { before: 1, after: roll, scaled: false },
     closing_roll: { before: 1, after: 1, scaled: false } });
-  const notices = (wiz) => [...wiz().querySelectorAll(".wiz-notice")].map((notice) => notice.textContent.replace(/ /g, " ")).join(" | ");
 
-  test("times the same but the intermediate positions changed (the roll, or the model), no check saved: the first Save asks, naming them; the second saves", async () => {
+  test("times the same but the intermediate positions changed (the roll, or the model), no check saved: said in yellow before Save, naming them; one press saves", async () => {
     const context = await mount({ overview: sourceData(), language: "it" });
     const { backend, wiz, press } = context;
-    await summary(context, "cover.living_one");
     // Kitchen shutter 2: a roll changes; Living room shutter 3: the model only.
     const restore = previewAs(backend, (item) => Object.assign(item, { changes: structuredClone(same), loses_check: false },
       item.entity_id === "cover.living_three" ? { model_before: "linear_time", model_after: "slat_roll", geometry_changes: geometry(1) }
         : { model_before: "slat_roll", model_after: "slat_roll", geometry_changes: geometry(1.4) }));
     try {
-      await press("save"); await tick(4);
+      await summary(context, "cover.living_one"); await tick(4);
     } finally { restore(); }
-    assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save"], "not saved at the first click");
-    const said = notices(wiz);
-    assert.match(said, /Cambiano le posizioni intermedie delle tapparelle Kitchen shutter 2, Living room shutter 3\./);
-    assert.doesNotMatch(said, /Cambiano i tempi|Perderà la verifica|Perderanno la verifica/);
-    assert.match(wiz().querySelector('.wiz-actions [data-wiz="save"]').textContent, /Conferma e salva nel profilo «tall_two_leaf»/);
+    // The geometry alone changes (the maintainer's #18, point 2): its impact is in view before the press.
+    assert.equal(yellow(wiz), "Cambiano anche le posizioni intermedie delle 2 tapparelle che lo seguono: Kitchen shutter 2, Living room shutter 3.");
+    assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save"], "nothing saved before the press");
     await press("save"); await tick(6);
-    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]], "saved at «Conferma»");
+    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]], "saved at the first press");
   });
 
-  test("the geometry listed but the same, times the same, no check saved: «Salva nel profilo» saves at once, as before", async () => {
+  test("the geometry listed but the same, times the same, no check saved: no yellow, the grey note says the followers do not change (never «Cambierà anche…»), «Salva nel profilo» saves at one press", async () => {
     const context = await mount({ overview: sourceData(), language: "it" });
     const { backend, wiz, press } = context;
-    await summary(context, "cover.living_one");
     const restore = previewAs(backend, (item) => Object.assign(item, { changes: structuredClone(same), loses_check: false,
       model_before: "slat_roll", model_after: "slat_roll", geometry_changes: geometry(1) }));
     try {
-      await press("save"); await tick(6);
+      await summary(context, "cover.living_one"); await tick(4);
     } finally { restore(); }
+    assert.equal(yellow(wiz), null, "nothing changes for the others");
+    assert.equal(grey(wiz), "Le altre 2 tapparelle che lo seguono non cambiano: Kitchen shutter 2, Living room shutter 3.");
+    assert.doesNotMatch(text(wiz), /Cambierà anche/);
+    // Grey whatever is chosen.
+    const nw = wiz().querySelector('[name="save_choice"][value="new"]'); nw.checked = true; nw.dispatchEvent(new Event("change", { bubbles: true })); await tick(4);
+    assert.equal(grey(wiz), "Le altre 2 tapparelle che lo seguono non cambiano: Kitchen shutter 2, Living room shutter 3.");
+    const up = wiz().querySelector('[name="save_choice"][value="update"]'); up.checked = true; up.dispatchEvent(new Event("change", { bubbles: true })); await tick(4);
+    assert.equal(yellow(wiz), null);
+    await press("save"); await tick(6);
     assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]]);
     assert.equal(wiz()?.querySelector('[data-wiz="shared-cancel"]') ?? null, null, "no confirmation");
   });
 
-  test("times and intermediate positions both changed: only the sentence of the times, the cover not named twice", async () => {
+  test("times and intermediate positions both changed: one sentence for both, the cover not named twice", async () => {
     const context = await mount({ overview: sourceData(), language: "it" });
-    const { backend, wiz, press } = context;
-    await summary(context, "cover.living_one");
+    const { backend, wiz } = context;
     const restore = previewAs(backend, (item) => Object.assign(item, { loses_check: false,
       model_before: "slat_roll", model_after: "slat_roll", geometry_changes: geometry(1.4) }));
     try {
-      await press("save"); await tick(4);
+      await summary(context, "cover.living_one"); await tick(4);
     } finally { restore(); }
     assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save"]);
-    const said = notices(wiz);
-    assert.match(said, /Cambiano i tempi delle tapparelle Kitchen shutter 2, Living room shutter 3\./);
-    assert.doesNotMatch(said, /posizioni intermedie/);
+    assert.equal(yellow(wiz), "Cambiano anche i tempi e le posizioni intermedie delle 2 tapparelle che lo seguono: Kitchen shutter 2, Living room shutter 3.");
+  });
+
+  /**
+   * Home Assistant's preview of the update held until `release()` (each one its own confirmation, `fresh-N`), and the
+   * confirmations Save sent (passed on as the fake expects). Returns { held, sent, restore }.
+   */
+  function slowPreview(backend, { refuse = () => false } = {}) {
+    const original = backend.hass.callWS, held = [], sent = [];
+    let count = 0;
+    backend.hass.callWS = async (message) => {
+      if (message.action === "preview_save") {
+        await new Promise((resolve) => held.push(resolve));
+        if (refuse()) { backend.calls.push(message); throw { code: "calibration_busy", message: "busy" }; }
+        const result = await original(message);
+        return { ...result, save_preview: { ...result.save_preview, confirmation: `fresh-${++count}` } };
+      }
+      if (message.action === "save") { sent.push(message.confirmation); return original({ ...message, confirmation: "shared:session-1" }); }
+      return original(message);
+    };
+    return { held, sent, release: async () => { held.splice(0).forEach((resolve) => resolve()); await tick(8); }, restore: () => { backend.hass.callWS = original; } };
+  }
+  const saveButton = (wiz) => wiz().querySelector('.wiz-actions [data-wiz="save"]');
+  const bar = (wiz) => [...wiz().querySelectorAll(".wiz-actions .wiz-action")].map((button) => [button.dataset.wiz, button.textContent, button.disabled]);
+
+  test("a slow preview: Save off (the same words) until it is back; a press meanwhile saves nothing and queues nothing; once back one press saves with its confirmation", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz, press } = context;
+    const slow = slowPreview(backend);
+    try {
+      await summary(context, "cover.living_one"); await tick(4);
+      assert.equal(slow.held.length, 1, "asked on arrival, not answered yet");
+      assert.equal(yellow(wiz), "Cambierà anche le 2 tapparelle che lo seguono: Kitchen shutter 2 e Living room shutter 3.", "who, until the preview is back");
+      assert.deepEqual(bar(wiz), [["save", "Salva nel profilo «tall_two_leaf»", true]], "off, the same words");
+      assert.ok(saveButton(wiz).classList.contains("is-settling"), "off for a moment: the light primary look");
+      // A tap on the button off, and a Save reaching the wizard by another way: nothing sent, nothing waiting.
+      saveButton(wiz).click(); await tick(4);
+      await context.panel._calibrationTab._wizard._act("save"); await tick(4);
+      assert.equal(backend.calls.some((message) => message.action === "save"), false, "nothing saved");
+      assert.equal(slow.held.length, 1, "no other preview asked");
+      await slow.release();
+      // Back: Save on, and still nothing saved (no save queued by the taps above).
+      assert.deepEqual(bar(wiz), [["save", "Salva nel profilo «tall_two_leaf»", false]]);
+      assert.match(yellow(wiz), /^Cambiano anche i tempi delle 2 tapparelle/);
+      await tick(8);
+      assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save"], "nothing saved by itself");
+      await press("save"); await tick(8);
+    } finally { slow.restore(); }
+    assert.deepEqual(saves(backend).map(([action, mode]) => [action, mode]), [["preview_save", "shared"], ["save", "shared"]]);
+    assert.deepEqual(slow.sent, ["fresh-1"], "with that preview's confirmation");
+    assert.equal(context.code(), "A-34");
+  });
+
+  test("a preview refused: «Riprova» in Save's place, asks it again and saves nothing (off while it comes); back valid, Save again and a new press saves; refused twice, «Riprova» again", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz, press } = context;
+    let refusing = true;
+    const slow = slowPreview(backend, { refuse: () => refusing });
+    const error = () => wiz().querySelector(".wiz-result-notices .wiz-notice[data-tone=error], .wiz-notices .wiz-notice[data-tone=error]")?.textContent ?? null;
+    try {
+      await summary(context, "cover.living_one"); await tick(4);
+      await slow.release();
+      assert.equal(error(), translations.it.profileError_calibration_busy, "the refusal in red");
+      assert.deepEqual(bar(wiz), [["shared-retry", "Riprova", false]]);
+      // Refused twice in a row: «Riprova» again, nothing saved.
+      await press("shared-retry"); await tick(4);
+      assert.deepEqual(bar(wiz), [["shared-retry", "Riprova", true]], "off while it comes");
+      assert.equal(error(), translations.it.profileError_calibration_busy, "the refusal stays while it comes");
+      await slow.release();
+      assert.deepEqual(bar(wiz), [["shared-retry", "Riprova", false]]);
+      assert.equal(error(), translations.it.profileError_calibration_busy);
+      assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save", "preview_save"]);
+      // Accepted this time: Save again, the refusal gone, nothing saved until a new press.
+      refusing = false;
+      await press("shared-retry"); await tick(4);
+      assert.deepEqual(bar(wiz), [["shared-retry", "Riprova", true]]);
+      await slow.release(); await tick(8);
+      assert.deepEqual(bar(wiz), [["save", "Salva nel profilo «tall_two_leaf»", false]]);
+      assert.equal(error(), null, "the refusal gone with a valid preview");
+      assert.match(yellow(wiz), /^Cambiano anche i tempi delle 2 tapparelle/);
+      assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save", "preview_save", "preview_save"], "no save by itself");
+      await press("save"); await tick(8);
+    } finally { slow.restore(); }
+    assert.deepEqual(saves(backend).map(([action]) => action), ["preview_save", "preview_save", "preview_save", "save"]);
+    assert.deepEqual(slow.sent, ["fresh-1"]);
+    assert.equal(context.code(), "A-34");
+  });
+
+  test("a stale preview (a new view of the session): Save off while it is asked again, the old confirmation never sent", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz, press } = context;
+    const slow = slowPreview(backend);
+    try {
+      await summary(context, "cover.living_one"); await tick(4);
+      await slow.release();
+      assert.deepEqual(bar(wiz), [["save", "Salva nel profilo «tall_two_leaf»", false]], "the first preview back");
+      // A new view (a check repeated, new values): the preview is stale.
+      backend.emit(); await tick(4);
+      assert.equal(slow.held.length, 1, "asked again for the new view");
+      assert.deepEqual(bar(wiz), [["save", "Salva nel profilo «tall_two_leaf»", true]], "off until it is back");
+      await context.panel._calibrationTab._wizard._act("save"); await tick(4);
+      assert.equal(backend.calls.some((message) => message.action === "save"), false, "the old confirmation never sent");
+      await slow.release();
+      assert.deepEqual(bar(wiz), [["save", "Salva nel profilo «tall_two_leaf»", false]]);
+      assert.equal(backend.calls.some((message) => message.action === "save"), false, "nothing saved by itself");
+      await press("save"); await tick(8);
+    } finally { slow.restore(); }
+    assert.equal(previews(backend), 2);
+    assert.deepEqual(slow.sent, ["fresh-2"], "the fresh confirmation, never fresh-1");
+    assert.equal(context.code(), "A-34");
+  });
+
+  test("a new view of the session (new values, a check repeated) makes the preview stale: asked again, the yellow notice on who until it is back", async () => {
+    const context = await mount({ overview: sourceData(), language: "it" });
+    const { backend, wiz } = context;
+    await summary(context, "cover.living_one"); await tick(4);
+    assert.equal(previews(backend), 1);
+    assert.match(yellow(wiz), /^Cambiano anche i tempi delle 2 tapparelle/);
+    backend.emit(); await tick(6);
+    assert.equal(previews(backend), 2, "asked again for the new view");
+    assert.match(yellow(wiz), /^Cambiano anche i tempi delle 2 tapparelle/);
+    // The same view drawn again asks nothing.
+    const nw = wiz().querySelector('[name="save_choice"][value="new"]'); nw.checked = true; nw.dispatchEvent(new Event("change", { bubbles: true })); await tick(4);
+    assert.equal(yellow(wiz), null, "«Nuovo profilo»: no yellow");
+    assert.equal(previews(backend), 2);
   });
 
   for (const [label, data, entity] of [

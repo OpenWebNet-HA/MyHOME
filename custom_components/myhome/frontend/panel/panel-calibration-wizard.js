@@ -255,6 +255,14 @@ export class CalibrationWizard {
       preview: !!gateway?.preview, previews: this._previews, supports: (target) => gateway ? gateway.supports(target) : false,
       // A-35: the covers that can be given the profile just written, and whether Home Assistant assigns several.
       assign: local.stage === "assign" ? this._assignInfo() : null, assignable: this._gatewayData()?.capabilities?.profile_assignment !== false });
+    // «Salva nel profilo «X»» only with its impact in view (`_sharedState`): off, the same words, until the preview of
+    // this view is back; refused, «Riprova» in its place (it asks the preview again, never saves; off while it comes).
+    const shared = screen.actions.some((action) => action.id === "save" && action.target === "profile_update") ? this._sharedState() : null;
+    if (shared && shared !== "ready") {
+      const retry = { id: "shared-retry", label: t("wiz_T247"), kind: "primary" };
+      screen.actions = screen.actions.map((action) => action.id !== "save" ? action : shared === "refused" ? retry
+        : { ...(shared === "retrying" ? retry : action), disabled: true, settling: true });
+    }
     // From the press of Save until Home Assistant has written the store (its disk can take seconds) the
     // button says so, off with the passing look; a reader sees the owner's «saving» the same way.
     if (local.stage === "session" && (gateway?.view?.phase === "saving" || this._local.saving)) {
@@ -329,6 +337,8 @@ export class CalibrationWizard {
           ? (active.name ? `[name="${active.name}"]` : active.dataset?.wiz ? `[data-wiz="${active.dataset.wiz}"]` : null) : null,
       };
       this._signature = signature;
+      // Each drawing counted: the next frame's restore belongs to the last one only (a later one kept its own place).
+      const drawn = this._drawn = (this._drawn ?? 0) + 1;
       this._renderedCode = screen.code;
       this._renderedFamily = family;
       this._root.dataset.code = screen.code;
@@ -404,7 +414,7 @@ export class CalibrationWizard {
         // At once (before the frame is painted), and once more on the next frame in case a layout pass moved it.
         restore();
         const frame = this._frame;
-        (globalThis.requestAnimationFrame || ((callback) => setTimeout(callback, 16)))(() => { if (this._frame === frame && this._renderedFamily === family) restore(); });
+        (globalThis.requestAnimationFrame || ((callback) => setTimeout(callback, 16)))(() => { if (this._frame === frame && this._renderedFamily === family && this._drawn === drawn) restore(); });
       }
       // A new screen starts from its top (a new content box) and the focus goes to its title (the dialog's first
       // focus too); nothing scrolls the page.
@@ -412,6 +422,57 @@ export class CalibrationWizard {
     }
     this._barStep = barStep;
     this._patch(screen);
+    this._askShared();
+  }
+
+  /** The view whose preview of the profile's update is asked (`session:sequence`), null where none is asked. */
+  _sharedKey() {
+    const gateway = this._gateway, view = gateway?.view;
+    if (!gateway?.previewShared || gateway.preview || !view || view.read_only || view.phase !== "review" || this._local.stage !== "session") return null;
+    return `${view.session_id}:${view.sequence}`;
+  }
+
+  /**
+   * Where the preview of the profile's update stands for this view, which «Salva nel profilo «X»» waits for: "ready"
+   * (back and valid: one press saves with its confirmation), "asking" (not back yet, or stale and asked again),
+   * "refused" (back without one: «Riprova»), "retrying" («Riprova» pressed, not back yet). Null when there is none to
+   * wait for (a gateway without previews saves at once).
+   */
+  _sharedState() {
+    const key = this._sharedKey(), asked = this._local.sharedAsk;
+    if (!key) return null;
+    if (asked?.key !== key) return "asking";
+    if (asked.pending) return asked.retry ? "retrying" : "asking";
+    return this._local.sharedPreview ? "ready" : "refused";
+  }
+
+  /**
+   * «Aggiorna il profilo «X»» on the summary: its preview (Home Assistant's `preview_save`, who and what changes for
+   * the covers that follow the profile, and the confirmation Save carries) asked once on arrival, not at the press, so
+   * the impact is in view before Save. Asked again once stale: another choice, or a new view of the session (a check
+   * repeated, new values). `again`: a preview refused is asked once more (the press of «Riprova»). The promise of the
+   * preview (null when refused), or null when there is none to ask.
+   */
+  _askShared(again = false) {
+    const gateway = this._gateway, local = this._local, key = this._sharedKey();
+    if (!key) return null;
+    // Whichever is chosen: the note under «Aggiorna il profilo «X»» says the same in grey under «Nuovo profilo».
+    if (!this._current?.profileBlock?.choice?.options?.some((option) => option.value === "update")) return null;
+    const asked = local.sharedAsk;
+    if (asked?.key === key && (asked.pending || !again || local.sharedPreview)) return asked.promise;
+    // A command still waiting for its answer: asked at the next view.
+    if (gateway.status.busy) return null;
+    // Asked again after a refusal of this view: «Riprova» stays in place (off) until it is back.
+    const ask = { key, pending: true, retry: again && asked?.key === key };
+    Object.assign(local, { sharedAsk: ask, sharedPreview: null });
+    ask.promise = Promise.resolve(gateway.previewShared()).catch(() => null).then((preview) => {
+      ask.pending = false;
+      if (this._gateway !== gateway || this._local !== local || local.sharedAsk !== ask) return null;
+      local.sharedPreview = preview ?? null;
+      if (this._root && local.stage === "session") this._render();
+      return local.sharedPreview;
+    });
+    return ask.promise;
   }
 
   /** The countdowns on screen, each its time only (an element of its own). */
@@ -970,7 +1031,7 @@ export class CalibrationWizard {
       ${block.fixed ? "" : `<label class="wiz-switch"><input type="checkbox" role="switch" name="save_profile" ${block.on ? "checked" : ""}><span>${esc(block.switchLabel)}</span></label>`}
       <p class="muted">${esc(block.explanation)}</p>
       ${block.choice ? `<fieldset class="wiz-radios">${block.choice.options.map((option) => `<label class="wiz-radio${option.disabled ? " is-disabled" : ""}"><input type="radio" name="save_choice" value="${esc(option.value)}" ${option.value === block.choice.value ? "checked" : ""} ${option.disabled ? "disabled" : ""}>
-        <span class="wiz-radio-text"><span class="wiz-radio-label">${esc(option.label)}</span>${option.warning ? `<span class="cal-note is-warning wiz-radio-notice wiz-option-note">${esc(option.warning)}</span>` : ""}${option.description ? `<small class="muted">${esc(option.description)}</small>` : ""}</span></label>`).join("")}</fieldset>` : ""}
+        <span class="wiz-radio-text"><span class="wiz-radio-label">${esc(option.label)}</span>${option.note ? `<span class="cal-note is-${option.note.tone} wiz-radio-notice wiz-option-note">${esc(option.note.text)}</span>` : ""}${option.description ? `<small class="muted">${esc(option.description)}</small>` : ""}</span></label>`).join("")}</fieldset>` : ""}
       ${block.name ? `<label>${esc(block.name.label)}<input class="wiz-name-input" name="profile_name" maxlength="64" autocomplete="off" value="${esc(block.name.value)}" aria-describedby="wiz-name-error wiz-name-hint"></label>
         <p id="wiz-name-error" class="wiz-name-error" role="alert" hidden></p>
         <p id="wiz-name-hint" class="muted">${esc(block.name.hint)}</p>${block.name.line ? `<p class="wiz-name-line">${esc(block.name.line)}</p>` : ""}` : ""}</div>
@@ -1039,9 +1100,9 @@ export class CalibrationWizard {
       this._patch(this._screen());
       return;
     }
-    // Another choice of where to save drops a preview of the profile's update.
-    if (name === "save_profile") { this._local.saveProfile = checked; this._local.sharedConfirm = null; this._render(); }
-    else if (name === "save_choice") { this._local.saveChoice = value; this._local.sharedConfirm = null; this._render(); }
+    // Another choice of where to save drops a preview of the profile's update (asked again when it is chosen again).
+    if (name === "save_profile") { this._local.saveProfile = checked; Object.assign(this._local, { sharedPreview: null, sharedAsk: null }); this._render(); }
+    else if (name === "save_choice") { this._local.saveChoice = value; this._render(); }
     // On the basic calibration the answer adds or drops the step «Lamelle» (the header's «2 di 6» / «2 di 5»).
     else if (name === "slats") { this._local.slats = value !== "no"; if (this._local.path === "base") this._patch(this._screen()); }
     else if (name === "case") { this._local.scope = value; this._render(); }
@@ -1219,7 +1280,8 @@ export class CalibrationWizard {
     if (id === "take") { local.arm = null; return gateway?.claim(); }
     if (id === "reconnect") { local.arm = null; return gateway?.reconnect(); }
     if (id === "save") return this._save();
-    if (id === "shared-cancel") { local.sharedConfirm = null; this._gateway && (this._gateway.savePreview = null); return this._render(); }
+    // «Riprova» after a refused preview of the profile's update: asked again, nothing saved (Save then wants a new press).
+    if (id === "shared-retry") { if (this._sharedState() === "refused") { this._askShared(true); this._render(); } return; }
     if (id === "refine") return this._previews ? this._fineTune() : undefined;
     // A-34's «Perfeziona col metro» after a basic calibration: fine-tuning with the tape takes the same frame.
     if (id === "refine-tape") return this._refineTape();
@@ -1465,18 +1527,11 @@ export class CalibrationWizard {
     const screen = this._current = this._screen(), local = this._local;
     const action = screen.actions.find((item) => item.id === "save");
     if (!action || action.disabled || !this._gateway) return;
-    // Updating the profile followed is confirmed first, the covers that follow it named (its preview).
-    if (action.target === "profile_update" && !local.sharedConfirm) {
-      const gateway = this._gateway, preview = await gateway.previewShared?.();
-      if (gateway !== this._gateway) return;
-      // Asked only when other covers change (their times, their intermediate positions, their check); otherwise
-      // «Salva nel profilo» saves at once (the preview's confirmation is the gateway's).
-      const impact = preview ? screens.sharedImpact(preview, this._item()?.cover.entity_id, gateway.view?.entity_id) : null;
-      if (!impact || impact.times.length || impact.positions.length || impact.checks.length) {
-        if (preview) local.sharedConfirm = preview;
-        return this._render();
-      }
-    }
+    // «Salva nel profilo» saves at one press, only with its impact in view: the preview of this view (asked on
+    // arrival) back and valid, and the confirmation sent the one it carries. Never queued: a press without it (still
+    // coming, refused, stale) saves nothing (Save is off then, or «Riprova»). A gateway without previews saves at once.
+    if (action.target === "profile_update" && this._sharedState() !== null
+      && (this._sharedState() !== "ready" || this._gateway.savePreview !== local.sharedPreview)) return;
     const name = screen.profileBlock?.name?.value;
     // Path B saves no measured value: the cover follows the chosen profile.
     local.pendingSave = local.path === "B" ? { target: "follow_profile", name: null } : { target: action.target || "profile_new", name };
@@ -1770,6 +1825,8 @@ export class CalibrationWizard {
       this._render();
       return;
     }
+    // The preview of the profile's update belongs to the view it was asked on (a check repeated, new values: asked again).
+    if (local.sharedAsk && local.sharedAsk.key !== `${view?.session_id}:${view?.sequence}`) Object.assign(local, { sharedAsk: null, sharedPreview: null });
     // A refused value belongs to the step it was typed for; a refusal from Home Assistant to the phase it came in.
     if (view?.sequence !== local.fieldSequence) { local.fieldError = null; local.fieldSettled = null; local.fieldSequence = view?.sequence; }
     if (view && view.phase !== local.errorPhase) { if (local.errorPhase !== undefined) this._gateway.clearError?.(); local.errorPhase = view.phase; }
@@ -2178,7 +2235,7 @@ function accepted(input) {
  * Fine-tuning keeps its base on purpose (`_startRefine` passes it again).
  */
 function freshFlags() {
-  return { slatsKnown: null, rehomeRepeat: false, saving: false, sharedConfirm: null, ackLift: false, ackAscent: false, ackDescent: false, ackReadings: false, arm: null, run: null, fullRun: null, invalidRun: null, repeatQueued: false, moreOpen: false, travelTyped: null, discarded: null, misbehaved: false, stopSent: false, barStep: null, autoStart: null,
+  return { slatsKnown: null, rehomeRepeat: false, saving: false, sharedPreview: null, sharedAsk: null, ackLift: false, ackAscent: false, ackDescent: false, ackReadings: false, arm: null, run: null, fullRun: null, invalidRun: null, repeatQueued: false, moreOpen: false, travelTyped: null, discarded: null, misbehaved: false, stopSent: false, barStep: null, autoStart: null,
     review: null, pendingSave: null, fieldError: null, fieldSettled: null, fieldSequence: undefined, errorPhase: undefined, saveProfile: undefined, saveChoice: undefined,
     profileName: undefined, refining: false, lastGap: null, liftOrigin: null, baseReadings: null, fineReadings: null, pathChoice: null, reachedPhase: null,
     // The lift-off run measured, the first leg's planned time, the start of a stop's wait.

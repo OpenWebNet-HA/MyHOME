@@ -180,7 +180,7 @@ describe("names with their type", async () => {
   const PANEL = "../../custom_components/myhome/frontend/panel/";
   const { translations } = await import(`${PANEL}panel-translations.js`);
   const text = await import(`${PANEL}panel-calibration-text.js`);
-  const { sharedConfirm } = await import(`${PANEL}panel-calibration-screens.js`);
+  const { sharedNotice, sharedUnchanged } = await import(`${PANEL}panel-calibration-screens.js`);
   const it = translations.it, en = translations.en;
   /** A window `width` px wide and 800 high for `matchMedia`, motion reduced. */
   const windowOf = (width) => (query) => ({ matches: query.split(",").some((part) => [...part.matchAll(/\(\s*([a-z-]+)\s*:\s*([a-z0-9-]+)\s*\)/g)].every(([, name, value]) =>
@@ -271,26 +271,72 @@ describe("names with their type", async () => {
       "Check this cover’s movement times", "Let’s check this cover again from the start"]);
   });
 
-  test("one cover or more, each in its own form: «Seguito da…», «Cambiano i tempi…», «Perderà la verifica…», the source's warning", () => {
+  test("one cover or more, each in its own form: «Seguito da…», «Cambiano anche i tempi…», «Perderà la verifica…», the source's warning", () => {
     const t = (key) => it[key];
     assert.equal(text.followedBy(t, ["Office"], "it").replace(/ /g, " "), "Seguito dalla tapparella Office");
     assert.equal(text.followedBy(t, ["Office", "Kitchen"], "it").replace(/ /g, " "), "Seguito dalle tapparelle Office e Kitchen");
     assert.equal(text.followedBy((key) => en[key], ["Office"], "en").replace(/ /g, " "), "Followed by the cover Office");
-    const notice = (followers) => {
-      const screen = sharedConfirm({ notices: [], actions: [{ id: "save", label: "" }] }, { t, cover: { entity_id: "cover.a", profile: { name: "tall" } },
-        local: { sharedConfirm: { followers } }, view: { entity_id: "cover.a" }, coverName: (id) => ({ "cover.b": "Office", "cover.c": "Kitchen" })[id] }, "profile_update");
-      return [screen.notices[0].text, screen.actions[0].label];
-    };
+    // What updating the profile changes for the others, said in yellow under «Aggiorna il profilo «tall»» before Save.
+    const notice = (followers, table = it) => sharedNotice({ t: (key) => table[key], cover: { entity_id: "cover.a", profile: { name: "tall" } },
+      view: { entity_id: "cover.a" }, coverName: (id) => ({ "cover.b": "Office", "cover.c": "Kitchen" })[id] }, { followers });
     const changed = { opening: { before: 20, after: 21 } };
-    assert.deepEqual(notice([{ entity_id: "cover.b", changes: changed, loses_check: true }]),
-      ["Cambiano i tempi della tapparella Office. Perderà la verifica la tapparella Office.", "Conferma e salva nel profilo «tall»"]);
-    assert.deepEqual(notice([{ entity_id: "cover.b", changes: changed, loses_check: true }, { entity_id: "cover.c", changes: changed, loses_check: true }])[0],
-      "Cambiano i tempi delle tapparelle Office, Kitchen. Perderanno la verifica le tapparelle Office, Kitchen.");
-    // The intermediate positions after the times and before the check; a cover whose times change is said with the times only.
     const reshaped = { model_before: "slat_roll", model_after: "slat_roll", geometry_changes: { opening_roll: { before: 1, after: 1.4 } } };
-    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }, { entity_id: "cover.c", ...reshaped, loses_check: true }])[0],
-      "Cambiano i tempi della tapparella Office. Cambiano le posizioni intermedie della tapparella Kitchen. Perderà la verifica la tapparella Kitchen.");
+    // The times only, one cover or two; the check lost after them.
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, loses_check: true }]),
+      "Cambiano anche i tempi dell’altra tapparella che lo segue: Office. Perderà la verifica la tapparella Office.");
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, loses_check: true }, { entity_id: "cover.c", changes: changed, loses_check: true }]),
+      "Cambiano anche i tempi delle 2 tapparelle che lo seguono: Office, Kitchen. Perderanno la verifica le tapparelle Office, Kitchen.");
+    // The times and the intermediate positions, every cover whose times change changing those too.
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }]),
+      "Cambiano anche i tempi e le posizioni intermedie dell’altra tapparella che lo segue: Office.");
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }, { entity_id: "cover.c", changes: changed, ...reshaped }]),
+      "Cambiano anche i tempi e le posizioni intermedie delle 2 tapparelle che lo seguono: Office, Kitchen.");
+    // The intermediate positions only.
+    assert.equal(notice([{ entity_id: "cover.b", ...reshaped }]), "Cambiano anche le posizioni intermedie dell’altra tapparella che lo segue: Office.");
+    assert.equal(notice([{ entity_id: "cover.b", ...reshaped }, { entity_id: "cover.c", ...reshaped }]),
+      "Cambiano anche le posizioni intermedie delle 2 tapparelle che lo seguono: Office, Kitchen.");
+    // Mixed: the times' sentence, then today's for the covers whose intermediate positions alone change, then the check.
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }, { entity_id: "cover.c", ...reshaped, loses_check: true }]),
+      "Cambiano anche i tempi e le posizioni intermedie dell’altra tapparella che lo segue: Office. Cambiano le posizioni intermedie della tapparella Kitchen. Perderà la verifica la tapparella Kitchen.");
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }, { entity_id: "cover.c", changes: changed }]),
+      "Cambiano anche i tempi delle 2 tapparelle che lo seguono: Office, Kitchen.", "not every one changes its positions: the times' sentence");
+    // Nothing changes for the others (this cover itself not counted): nothing said.
+    assert.equal(notice([{ entity_id: "cover.a", changes: changed }, { entity_id: "cover.b", changes: { opening: { before: 20, after: 20 } } }]), "");
+    assert.equal(notice([{ entity_id: "cover.b", changes: changed, ...reshaped }], en), "The times and intermediate positions of the other cover that follows it change too: Office.");
+    assert.equal(notice([{ entity_id: "cover.b", ...reshaped }, { entity_id: "cover.c", changes: changed }], en),
+      "The times of the other cover that follows it change too: Kitchen. Intermediate positions change for the cover Office.");
+    assert.deepEqual([it.wiz_T722, it.wiz_T722_one, it.wiz_T723, it.wiz_T723_one, it.wiz_T724, it.wiz_T724_one], [
+      "Cambiano anche i tempi delle {count} tapparelle che lo seguono: {names}.", "Cambiano anche i tempi dell’altra tapparella che lo segue: {names}.",
+      "Cambiano anche i tempi e le posizioni intermedie delle {count} tapparelle che lo seguono: {names}.", "Cambiano anche i tempi e le posizioni intermedie dell’altra tapparella che lo segue: {names}.",
+      "Cambiano anche le posizioni intermedie delle {count} tapparelle che lo seguono: {names}.", "Cambiano anche le posizioni intermedie dell’altra tapparella che lo segue: {names}."]);
+    assert.deepEqual([en.wiz_T722, en.wiz_T722_one, en.wiz_T723, en.wiz_T723_one, en.wiz_T724, en.wiz_T724_one], [
+      "The times of the {count} covers that follow it change too: {names}.", "The times of the other cover that follows it change too: {names}.",
+      "The times and intermediate positions of the {count} covers that follow it change too: {names}.", "The times and intermediate positions of the other cover that follows it change too: {names}.",
+      "The intermediate positions of the {count} covers that follow it change too: {names}.", "The intermediate positions of the other cover that follows it change too: {names}."]);
     assert.equal(text.fill(it.calAssignSlatsYesNoNamed, { cover: "Door" }), "La tapparella Door ha le lamelle, il profilo no: vicino alla chiusura le posizioni possono essere meno precise. Assegna comunque?");
+  });
+
+  test("followers whose preview confirms nothing changes for them: «Le altre N tapparelle che lo seguono non cambiano: …», one or more, IT and EN; nothing when none follows", () => {
+    const same = { opening: { before: 20, after: 20 }, closing: { before: 19, after: 19 } };
+    const unchanged = (followers, table = it, { coverFollowers = [], followerNames = "" } = {}) => {
+      const ctx = { t: (key) => table[key], cover: { entity_id: "cover.a", profile: { name: "tall" }, followers: coverFollowers },
+        view: { entity_id: "cover.a" }, followerNames, coverName: (id) => ({ "cover.b": "Office", "cover.c": "Kitchen" })[id] };
+      // Only when the impact is empty: never next to «Cambiano anche…».
+      assert.equal(sharedNotice(ctx, { followers }), "");
+      return sharedUnchanged(ctx, { followers });
+    };
+    const b = { entity_id: "cover.b", changes: same, loses_check: false }, c = { entity_id: "cover.c", changes: same, loses_check: false };
+    assert.equal(unchanged([{ entity_id: "cover.a", changes: same }, b]), "L’altra tapparella che lo segue non cambia: Office.");
+    assert.equal(unchanged([b, c]), "Le altre 2 tapparelle che lo seguono non cambiano: Office, Kitchen.");
+    assert.equal(unchanged([b], en), "The other cover that follows it doesn't change: Office.");
+    assert.equal(unchanged([b, c], en), "The other 2 covers that follow it don't change: Office, Kitchen.");
+    // The preview lists none of them: the covers that follow the profile, as the panel names them.
+    assert.equal(unchanged([], it, { coverFollowers: ["cover.b", "cover.c"], followerNames: "Office e Kitchen" }), "Le altre 2 tapparelle che lo seguono non cambiano: Office e Kitchen.");
+    assert.equal(unchanged([], en, { coverFollowers: ["cover.b"], followerNames: "Office" }), "The other cover that follows it doesn't change: Office.");
+    // None follows it: nothing (the note keeps «Nessun’altra tapparella lo segue.»).
+    assert.equal(unchanged([{ entity_id: "cover.a", changes: same }]), "");
+    assert.deepEqual([it.wiz_T725, it.wiz_T725_one, en.wiz_T725, en.wiz_T725_one], ["Le altre {count} tapparelle che lo seguono non cambiano: {names}.",
+      "L’altra tapparella che lo segue non cambia: {names}.", "The other {count} covers that follow it don't change: {names}.", "The other cover that follows it doesn't change: {names}."]);
   });
 
   test("no key reworded here is used by the Profili or Dispositivi tabs; their shared texts are as they were", () => {

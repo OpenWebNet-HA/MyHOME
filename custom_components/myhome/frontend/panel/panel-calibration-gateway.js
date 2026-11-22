@@ -118,7 +118,8 @@ class WizardSession extends CoverCalibration {
   }
   _perform(action, extra) {
     // The sequence a command was sent against, to recognise a refusal the session has since moved past.
-    if (action !== "heartbeat") { this.error = null; this.notice = null; this._sentSequence = this._state?.sequence ?? null; return super._perform(action, extra); }
+    // A preview of the profile's update asked again keeps a refusal in view until one is back (`previewShared`).
+    if (action !== "heartbeat") { if (action !== "preview_save") this.error = null; this.notice = null; this._sentSequence = this._state?.sequence ?? null; return super._perform(action, extra); }
     const beat = {};
     this._beats.add(beat);
     return super._perform(action, beat);
@@ -307,12 +308,16 @@ export class LiveCalibrationGateway {
 
   /**
    * What updating the profile followed would do (`preview_save` with `save_mode: "shared"`): the profile
-   * before and after and every cover that follows it, with the confirmation Save then carries. Null when refused.
+   * before and after and every cover that follows it, with the confirmation Save then carries. Null when refused (or
+   * not sent): never the preview of an earlier answer. A refusal said before stays until a preview is back.
    */
   async previewShared() {
     this.savePreview = null;
-    await this._engine._perform("preview_save", { save_mode: "shared" });
-    this.savePreview = this._engine.lastView?.save_preview ?? null;
+    const engine = this._engine, before = engine.lastView;
+    await engine._perform("preview_save", { save_mode: "shared" });
+    const after = engine.lastView;
+    this.savePreview = after !== before ? after?.save_preview ?? null : null;
+    if (this.savePreview) engine.error = null;
     return this.savePreview;
   }
 
