@@ -635,14 +635,21 @@ class ZoneDiscovery:
                 return
             asked.add(pair)
             answered: bool | None = None
+            exposed = False
             for _attempt in range(2):
                 if isinstance(lock, asyncio.Lock):
                     async with lock:
-                        answered = await gateway.read_zone_temperature(pair[0])
+                        # The address can become exposed on the bus while the read waits for the lock,
+                        # or its thermostat can report and build the zone (it leaves ``_held``).
+                        exposed = is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0])
+                        if not exposed and pair in self._held:
+                            answered = await gateway.read_zone_temperature(pair[0])
                 else:
                     answered = await gateway.read_zone_temperature(pair[0])
-                if answered is not None:
+                if exposed or answered is not None or pair not in self._held:
                     break
+            if exposed:
+                continue  # not read: it counts neither as a zone that did not answer nor as a busy gateway
             if pair not in self._held:
                 silent = 0  # built from its answer
                 continue

@@ -514,6 +514,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._central_reported_idle: bool | None = None
         self._central_reported_season: str | None = None
         self._central_reported_season_at: float | None = None
+        # How many reports of its own state the central unit has made in this session: `off` and
+        # the program are not shown over a report that came while their delivery was awaited.
+        self._central_report_count = 0
         # The gateway's ``central_season_learned_at`` when it learned its season from this entity's
         # own echoed command (the dispatcher stores it before the echo is filtered): that season
         # is not the plant's while the gateway has learned nothing since. Not persisted.
@@ -1671,7 +1674,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self.async_on_remove(_cancel_silent_zone_poll)
 
     def _commanded_setpoint_known(self) -> bool:
-        """Whether the commanded setpoint (dimension 14) of this zone is known."""
+        """Whether the silent poll leaves the commanded setpoint (dimension 14) unasked.
+
+        True when the zone has reported a setpoint in this session, in force (dimension 12) or
+        commanded (dimension 14), unless it was seen only off or in protection without its
+        commanded setpoint.
+        """
         shown_known = self.native_target_temperature is not None and not self._target_temperature_restored
         # A zone seen only off or in protection shows its protection setpoint; the commanded one
         # (dimension 14) is what `heat` / `cool` writes, so it is asked.
@@ -1774,7 +1782,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return self._local_offset_reported
         setpoint_known = self.native_target_temperature is not None and not self._target_temperature_restored
         if frame.endswith("*14##"):
-            return setpoint_known
+            # The commanded setpoint itself, or a setpoint in force once the mode is known: one in
+            # force that came before the mode can be the protection setpoint of a zone that turns
+            # out to be in protection, and that zone is asked for its commanded one.
+            commanded = (
+                self._target_temperature is not None
+                and not self._target_temperature_restored
+                and not self._nominal_from_dim12
+            )
+            mode_known = self._attr_hvac_mode is not None and not self._hvac_mode_restored
+            return commanded or (mode_known and self._commanded_setpoint_known())
         if frame.endswith("*12##"):
             return setpoint_known and self._attr_hvac_mode is not None and not self._hvac_mode_restored
         if frame.endswith("*19##"):
@@ -1840,9 +1857,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         pace = getattr(handler, "pace_startup_status_write", None)
         own_requests = getattr(handler, "wait_for_zone_requests", None)
         for frame in reads:
-            # The list was made before the first read; a commanded setpoint that arrived since is not asked.
-            if frame.endswith("*14##") and self._commanded_setpoint_known():
-                continue
             if frame.endswith("*19##") and (self._active_source == "zone" or self._fan_coil_sides_pending()):
                 # Asked meanwhile because an actuator report showed a fan coil
                 # (``_ask_fan_coil_sides``), or answered and still in the lead. That request
@@ -1860,6 +1874,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     # bus as this poll. It is let through first, with its own quiet time,
                     # instead of being written back to back with the next read.
                     await own_requests()
+                # The list was made before the first read, and the zone's own requests were let
+                # through just now: a setpoint (and, for ``*12``, the mode) that arrived since is
+                # not asked. The same test as for a read the desync guard dropped, below.
+                if frame.endswith(("*14##", "*12##")) and self._silent_read_answered(frame):
+                    written = None
+                    break
                 try:
                     written = await handler.send_status_request(request)
                 except Exception:  # a transport error must not end the task silently
@@ -2645,7 +2665,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
-        """Update subordinate zone mode when central unit changes seasonal mode."""
+        """Take over what the central unit reports for all its zones: off, or the season.
+
+        The central unit's ``auto`` is its program command (or a program frame without a season):
+        it says nothing about a zone, so the zone keeps the mode it shows until it or the central
+        unit reports a season (decision of 2026-11-22; a program is shown ``heat`` / ``cool``,
+        never ``auto``). Live 3550, 2026-11-22: before this, zones 3 and 4 were shown ``auto`` for
+        0.15 s on the instance that sent the command and never on the instance of the other
+        gateway.
+        """
         if self._standalone_detected:
             return  # found not to be run by the central unit: its own frames say what it does
         self._check_season_against_central()
@@ -2659,9 +2687,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode
-        elif master_mode == HVACMode.AUTO:
-            if self._attr_hvac_mode != HVACMode.OFF and HVACMode.AUTO in self._attr_hvac_modes:
-                self._attr_hvac_mode = HVACMode.AUTO
         self._hydrate_nominal_from_local(prev_mode)
         self._refresh_hvac_modes()
         if self.hass is not None:
@@ -3295,9 +3320,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 restore = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode="auto")
                 await self._send_central_command(restore, "_central_restore_echo", written_required=True)
             return
-        # `off` and the program are not shown, nor sent on to the zones, for a frame the gateway
-        # handed back refused: a NACK raises (`central_command_refused`).
+        # `off` and the program are shown, and sent on to the zones, once the gateway has answered
+        # the frame (or after ``SETPOINT_DELIVERY_TIMEOUT`` without an answer, or at once when the
+        # frame was dropped without a NACK); a refusal raises (`central_command_refused`) and
+        # nothing is shown. A report of the central unit that came
+        # while the delivery was awaited is newer than the command: it stays what is shown.
+        reports_before = self._central_report_count
         await self._send_central_command(command, "_central_echo", refusal_raises=True)
+        if self._central_report_count != reports_before:
+            return
         self._central_operation = None
         if hvac_mode == HVACMode.OFF:
             self._attr_hvac_action = HVACAction.OFF
@@ -3355,6 +3386,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # WHERE 0 is the general probes, not the central unit #0 (WHO 4 WHERE table).
         if str(getattr(message, "where", "") or "").strip().removeprefix("4-") != "#0":
             return
+        self._central_report_count += 1
         if idle is not None:
             self._central_reported_idle = idle
         season = getattr(message, "season", None)
@@ -3367,9 +3399,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     ) -> None:
         """Send a central unit command with the echo filter armed for it in ``slot``.
 
-        With ``refusal_raises`` a delivery future the gateway hands back already refused (a NACK)
-        raises; it is not waited for (the echo window is anchored on the write, see above), and a
-        frame cancelled without a NACK returns as without it.
+        With ``refusal_raises`` (the central unit's ``off`` and program) the delivery is waited for,
+        at most ``SETPOINT_DELIVERY_TIMEOUT``: a refusal (NACK) raises ``central_command_refused``;
+        a frame that is confirmed, one that is cancelled without a NACK and one nothing answered
+        in that time return, as without it. The future is not cancelled and the echo stays armed
+        (the done callback anchors or clears it).
 
         With ``written_required`` (the season frame and its restore) the delivery future the
         gateway hands back is awaited: a frame that is not written (cancelled, refused by a
@@ -3401,6 +3435,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._central_echo_writes[slot] = written
         written.add_done_callback(_on_written)
         if not written_required:
+            if refusal_raises:
+                await asyncio.wait((written,), timeout=SETPOINT_DELIVERY_TIMEOUT)
             if refusal_raises and written.done() and written.cancelled() and (
                 getattr(written, "_gateway_nack", False) is True
             ):

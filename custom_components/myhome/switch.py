@@ -976,10 +976,22 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         entity is queued behind all of them. The whole call waits once, at most
         ``DIRECT_WRITE_DELIVERY_TIMEOUT``; a write nothing answered in that time is not raised.
         A call whose every write was refused disarms its own revert check, not a newer call's.
+        A cancelled call disarms its own revert check as well.
         """
         pending = self._pending_direct_write
         frames = self._direct_write_frames(value)
-        refused = await self._deliver_frames(frames)
+        try:
+            refused = await self._deliver_frames(frames)
+        except asyncio.CancelledError:
+            # A cancelled call no longer watches for a revert of its write (the frames stay
+            # queued and may still be refused).
+            if (
+                pending is not None
+                and self._pending_direct_write is not None
+                and self._pending_direct_write[1] == pending[1]
+            ):
+                self._pending_direct_write = None
+            raise
         if (
             refused
             and len(refused) == len(frames)
