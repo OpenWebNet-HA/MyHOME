@@ -153,7 +153,6 @@ from .cover_strategies import (
     CoverKinematicsStrategy,
     NativePositionStrategy,
     SimpleUpDownStopStrategy,
-    TimedCurtainStrategy,
     VenetianTiltStrategy,
     clamp_slat_time,
     resolve_cover_strategy,
@@ -808,10 +807,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._position_drift_bound = None
         super()._handle_availability_update()
 
-    def _uses_bounded_settle(self) -> bool:
-        """Return True for built-in linear timed/Venetian strategies (#973)."""
-        return type(self._strategy) in (TimedCurtainStrategy, VenetianTiltStrategy)
-
     def _accumulate_position_drift(self, segment_seconds: float, opening: bool) -> None:
         """Widen the position-drift bound after an unconfirmed timed movement segment."""
         if self._advanced or self._strategy.assumed_state:
@@ -826,8 +821,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _full_run_settle_travel(self, opening: bool) -> float:
         """Return full-run settle seconds (before ``END_SETTLE_MARGIN``) for the active run (#973)."""
         full_travel = self._travel_for(opening)
-        if not self._uses_bounded_settle():
-            return full_travel
         start_pos = (
             self._run_start_position
             if self._run_start_position is not None
@@ -835,11 +828,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         if start_pos is None or self._position_drift_bound is None:
             return full_travel
-        target = 100 if opening else 0
-        direction = "open" if opening else "close"
-        nominal_remaining = self._strategy.duration_for(
-            start_pos, target, direction, entity=self
+        nominal_remaining = self._strategy.remaining_travel_for(
+            start_pos, opening, entity=self
         )
+        if nominal_remaining is None:
+            return full_travel
         return compute_bounded_settle_travel(
             start_pos,
             opening,
@@ -2009,8 +2002,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._travel_time_down = round(float(down), 2)
             self._travel_time_up = round(float(up), 2)
             self._travel_time = int(round(self._travel_time_down))
-            self._position_drift_bound = None
-            self._recompute_active_settle()
 
         if slat_time is not None:
             if not MIN_SLAT_TIME <= slat_time <= MAX_SLAT_TIME:
@@ -2025,6 +2016,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._slat_time = round(float(slat_time), 2)
             if getattr(self, "_attr_extra_state_attributes", None) is not None:
                 self._attr_extra_state_attributes["slat_time"] = self._slat_time
+
+        if not self._advanced and (has_travel or slat_time is not None):
+            self._position_drift_bound = None
+            self._recompute_active_settle()
 
         if has_travel:
             self._copied_from = str(copied_from) if copied_from else None
@@ -2130,13 +2125,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._travel_time_down = base_travel
         self._travel_time_up = base_travel
         self._travel_time = int(round(base_travel))
+        # The stored record (and any slat time set with the service) is gone too.
+        self._slat_time = _clamp_slat_time(cfg.get(CONF_SLAT_TIME))
         self._position_drift_bound = None
         self._recompute_active_settle()
         self._calibration_source = source
         self._calibrated_at = None
         self._copied_from = None
-        # The stored record (and any slat time set with the service) is gone too.
-        self._slat_time = _clamp_slat_time(cfg.get(CONF_SLAT_TIME))
         if self._slat_tilt:
             self._attr_extra_state_attributes["slat_time"] = self._slat_time
 
@@ -2872,7 +2867,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             )
             self._attr_current_cover_position = self._start_position = position
             self._attr_is_closed = position == 0
-            self._accumulate_position_drift(elapsed, direction == "open")
+        self._accumulate_position_drift(elapsed, direction == "open")
 
     def _abort_tilt(self) -> None:
         """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
@@ -3420,7 +3415,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_position = position
                     if not self._advanced:
                         self._start_position = position
-                        self._position_drift_bound = 0.0
+                        if not self._calibrating:
+                            self._position_drift_bound = 0.0
                     if (is_closed := getattr(message, "is_closed", None)) is not None:
                         self._attr_is_closed = bool(is_closed)
                     else:
@@ -3436,7 +3432,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_current_cover_position = position
             if not self._advanced:
                 self._start_position = position
-                self._position_drift_bound = 0.0
+                if not self._calibrating:
+                    self._position_drift_bound = 0.0
             self._move_start_time = None
             self._attr_is_opening = False
             self._attr_is_closing = False

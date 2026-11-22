@@ -27,7 +27,13 @@ from custom_components.myhome.cover_motion import (
     compute_bounded_settle_travel,
 )
 from custom_components.myhome.cover_scope import MyHOMEScopeCover
-from custom_components.myhome.cover_strategies import TimedCurtainStrategy
+from custom_components.myhome.cover_strategies import (
+    BaseCoverStrategy,
+    NativePositionStrategy,
+    SimpleUpDownStopStrategy,
+    TimedCurtainStrategy,
+    VenetianTiltStrategy,
+)
 
 _REAL_SLEEP = asyncio.sleep
 
@@ -545,6 +551,23 @@ async def test_calibration_strategy_switches_venetian_and_edge_branches(
     clock.now += 21.0
     cal_cov._freeze_position(clock.now)
     assert cal_cov._position_drift_bound is None
+    TimedCurtainStrategy(travel_time=21.0).reanchor_on_stop_echo(
+        cal_cov,
+        {
+            "run_started_at": clock.now - 22.0,
+            "run_start_position": None,
+            "is_opening": True,
+            "is_closing": False,
+        },
+        clock.now,
+    )
+    assert cal_cov._position_drift_bound is None
+    cal_cov._is_tilting = True
+    cal_cov.handle_event(OWNEvent.parse("*#2*31*10*10*50*000*0##"))
+    assert cal_cov._position_drift_bound is None
+    cal_cov._is_tilting = False
+    cal_cov.handle_event(OWNEvent.parse("*#2*31*10*10*50*000*0##"))
+    assert cal_cov._position_drift_bound is None
     cal_cov._interrupt_calibration("user cancelled")
     assert cal_cov._position_drift_bound is None
     cal_cov._calibrating = False
@@ -608,12 +631,28 @@ async def test_calibration_strategy_switches_venetian_and_edge_branches(
     assert ven._position_drift_bound == 0.0
     ven._is_tilting = False
 
-    # Slat pulse overshoot moves curtain -> accumulates drift.
+    # Non-overshoot slat pulse still energizes motor without end-stop -> accumulates drift.
+    ven._tilt_start_time = clock.now - 0.8
+    ven._tilt_direction = "open"
+    ven._tilt_initial_position = 50
+    ven._carry_overshoot_into_curtain(clock.now)
+    assert ven.current_cover_position == 50
+    assert ven._position_drift_bound == pytest.approx(
+        SEGMENT_STOP_DRIFT + SEGMENT_TRAVEL_DRIFT_FACTOR * 0.8
+    )
+
+    # Slat pulse overshoot moves curtain -> accumulates additional drift.
     ven._tilt_start_time = clock.now - 3.5
     ven._tilt_direction = "open"
     ven._tilt_initial_position = 50
     ven._carry_overshoot_into_curtain(clock.now)
-    assert ven._position_drift_bound is not None and ven._position_drift_bound > 0.0
+    assert ven._position_drift_bound is not None and ven._position_drift_bound > 1.0
+
+    # Editing slat_time alone on a Venetian blind invalidates drift bound.
+    ven._position_drift_bound = 0.0
+    ven._device_config = lambda: {CONF_TRAVEL_TIME: 20}  # type: ignore[method-assign]
+    await ven.async_set_travel_time(slat_time=2.0)
+    assert ven._position_drift_bound is None
 
     # Idle explicit Dimension 10 report confirms drift = 0.0 again; remaining slat lead is included in bounded settle.
     ven.handle_event(OWNEvent.parse("*#2*36*10*10*50*000*0##"))
@@ -638,13 +677,185 @@ async def test_calibration_strategy_switches_venetian_and_edge_branches(
     assert echo_cov.current_cover_position == 100
     assert echo_cov._position_drift_bound == 0.0
 
-    # 6. Custom non-linear CoverKinematicsStrategy keeps full travel even with drift = 0.0.
-    class _CustomStrategy(TimedCurtainStrategy):
+    # 6. Default remaining_travel_for returns None for base/simple/native, zero-travel, and unopted-in subclasses,
+    #    while TimedCurtainStrategy returns linear remaining travel without min_motor_pulse clamping.
+    assert BaseCoverStrategy().remaining_travel_for(50, True) is None
+    assert SimpleUpDownStopStrategy().remaining_travel_for(50, True) is None
+    assert NativePositionStrategy().remaining_travel_for(50, True) is None
+
+    zero_timed = TimedCurtainStrategy(travel_time=10.0)
+    zero_timed.travel_time_up = 0.0
+    assert zero_timed.remaining_travel_for(50, True) is None
+
+    fine_timed = TimedCurtainStrategy(
+        travel_time=20.0,
+        travel_time_up=20.0,
+        travel_time_down=16.0,
+        min_motor_pulse=0.8,
+    )
+    assert fine_timed.remaining_travel_for(99, True) == pytest.approx(0.20)
+    assert fine_timed.remaining_travel_for(1, False) == pytest.approx(0.16)
+
+    class _CustomTimedStrategy(TimedCurtainStrategy):
+        pass
+
+    class _CustomVenetianStrategy(VenetianTiltStrategy):
         pass
 
     custom_cov = _make_cover(hass, gw, where="38", travel_time=21.0, pos=80, confirmed=True)
-    custom_cov._strategy = _CustomStrategy(travel_time=21.0)
-    assert custom_cov._uses_bounded_settle() is False
+    custom_cov._strategy = _CustomTimedStrategy(travel_time=21.0)
+    assert custom_cov.strategy.remaining_travel_for(80, True, entity=custom_cov) is None
     assert custom_cov._full_run_settle_travel(True) == 21.0
 
+    custom_ven = _CustomVenetianStrategy(slat_time=2.0, travel_time=20.0)
+    assert custom_ven.remaining_travel_for(80, True, entity=ven) is None
+
     assert CONF_STRATEGY == "strategy"
+
+
+@pytest.mark.asyncio
+async def test_calibrated_curve_strategy_hook_and_late_wall_stop(
+    hass: HomeAssistant, clock: _Clock, fake_clock: list[float]
+) -> None:
+    """Review #975: a calibrated curve strategy supplies remaining_travel_for without cover.py edits;
+    drift margin keeps late wall stops active past nominal linear arrival."""
+    gw = _make_gateway(clock=clock)
+
+    slat_lead = 2.0
+    up_curtain = 22.0
+    down_curtain = 18.0
+
+    def _curve_fraction(pos: float) -> float:
+        # Non-linear shutter curve: 0..30% takes 50% of curtain time; 30..100% takes 50%.
+        clamped = max(0.0, min(100.0, pos))
+        if clamped <= 30.0:
+            return 0.5 * (clamped / 30.0)
+        return 0.5 + 0.5 * ((clamped - 30.0) / 70.0)
+
+    def _inv_curve_fraction(frac: float) -> float:
+        clamped = max(0.0, min(1.0, frac))
+        if clamped <= 0.5:
+            return (clamped / 0.5) * 30.0
+        return 30.0 + ((clamped - 0.5) / 0.5) * 70.0
+
+    class _CalibratedCurveStrategy(TimedCurtainStrategy):
+        def __init__(self) -> None:
+            super().__init__(
+                travel_time=slat_lead + down_curtain,
+                travel_time_up=slat_lead + up_curtain,
+                travel_time_down=slat_lead + down_curtain,
+            )
+
+        def curtain_travel_for(self, opening: bool) -> float:
+            return up_curtain if opening else down_curtain
+
+        def lead_time_for(self, opening: bool, *, entity: Any = None) -> float:
+            return slat_lead
+
+        def position_after(
+            self,
+            start: int,
+            elapsed: float,
+            direction: str,
+            *,
+            entity: Any = None,
+            lead: float | None = None,
+        ) -> int | None:
+            opening = direction == "open"
+            curtain_total = self.curtain_travel_for(opening)
+            eff_lead = slat_lead if lead is None else max(0.0, float(lead))
+            moved_s = max(0.0, elapsed - eff_lead)
+            delta_frac = moved_s / curtain_total
+            end_frac = _curve_fraction(start) + (delta_frac if opening else -delta_frac)
+            return int(round(_inv_curve_fraction(end_frac)))
+
+        def duration_for(
+            self,
+            start: int,
+            target: int,
+            direction: str | None = None,
+            *,
+            entity: Any = None,
+        ) -> float:
+            if start == target:
+                return 0.0
+            opening = (direction == "open") if direction in ("open", "close") else (target > start)
+            curtain_total = self.curtain_travel_for(opening)
+            return slat_lead + abs(_curve_fraction(target) - _curve_fraction(start)) * curtain_total
+
+        def remaining_travel_for(
+            self,
+            start: int,
+            opening: bool,
+            *,
+            entity: Any = None,
+        ) -> float | None:
+            endpoint = 100 if opening else 0
+            curtain_total = self.curtain_travel_for(opening)
+            return slat_lead + abs(_curve_fraction(endpoint) - _curve_fraction(start)) * curtain_total
+
+    curved = _make_cover(hass, gw, where="39", travel_time=20.0, pos=None)
+    curved._strategy = _CalibratedCurveStrategy()
+
+    # 1. Unconfirmed initial run from unknown uses full directional travel (24.0 + 2.0 = 26.0 s).
+    fake_clock.clear()
+    await _start_run(curved, "open")
+    assert curved._stop_task is not None
+    await curved._stop_task
+    assert fake_clock[-1] == pytest.approx(24.0 + END_SETTLE_MARGIN)
+    assert curved._position_drift_bound == 0.0
+
+    # 2. Close for 5.0 s (2.0 s lead + 3.0 s curtain = 1/6 of 18 s -> frac 1.0 - 1/6 = 5/6 -> pos 77%),
+    #    then reverse open: curved remaining from 77% is 2.0 + (1 - _curve_fraction(77)) * 22.0 = 5.6142857 s
+    #    (NOT linear 23% * 24 = 5.52 s), plus drift (0.5 + 0.15 * 5.0 = 1.25 s) + END_SETTLE_MARGIN.
+    clock.hold_settle = True
+    clock.release = asyncio.Event()
+    await _start_run(curved, "close")
+    close_task = curved._stop_task
+    assert close_task is not None
+    await _yield_loop(4)
+    clock.now += 5.0
+    assert curved.current_cover_position == 77
+
+    clock.hold_settle = False
+    fake_clock.clear()
+    await _start_run(curved, "open")
+    assert curved._stop_task is not None
+    await curved._stop_task
+    with contextlib.suppress(asyncio.CancelledError):
+        await close_task
+    expected_curved_rem = slat_lead + (1.0 - _curve_fraction(77)) * up_curtain
+    expected_drift = SEGMENT_STOP_DRIFT + SEGMENT_TRAVEL_DRIFT_FACTOR * 5.0
+    assert fake_clock[-1] == pytest.approx(
+        expected_curved_rem + expected_drift + END_SETTLE_MARGIN
+    )
+    assert curved.current_cover_position == 100
+    assert curved._position_drift_bound == 0.0
+
+    # 3. Endpoint re-home on calibrated curve strategy still uses full directional travel (24.0 + 2.0 s).
+    fake_clock.clear()
+    await _start_run(curved, "open")
+    assert curved._stop_task is not None
+    await curved._stop_task
+    assert fake_clock[-1] == pytest.approx(24.0 + END_SETTLE_MARGIN)
+
+    # 4. Late wall stop pressed past naive linear arrival + 2 s (5.99 s), inside drift margin (7.09 s),
+    #    is still caught and cancels settle rather than being ignored as already settled.
+    late_cov = _make_cover(hass, gw, where="40", travel_time=21.0, pos=100, confirmed=True)
+    base_dt = dt_util.utcnow()
+    with patch("custom_components.myhome.cover.time") as cover_time:
+        cover_time.monotonic.side_effect = lambda: clock.now
+        late_cov.handle_event(OWNEvent.parse("*2*2*40##"))
+        clock.now += 4.0
+        late_cov.handle_event(OWNEvent.parse("*2*1*40##"))
+        assert late_cov._wall_settle_unsub is not None
+
+        # Advance 6.5 s (> naive 3.99 + 2.0 = 5.99 s, < bounded 7.09 s): still opening, wall stop freezes!
+        clock.now += 6.5
+        async_fire_time_changed(hass, base_dt + timedelta(seconds=6.5))
+        await hass.async_block_till_done()
+        assert late_cov.is_opening is True
+        late_cov.handle_event(OWNEvent.parse("*2*1000#0*40##"))
+        late_cov.handle_event(OWNEvent.parse("*2*0*40##"))
+        assert late_cov.is_opening is False
+        assert late_cov._wall_settle_unsub is None

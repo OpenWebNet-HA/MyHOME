@@ -411,6 +411,7 @@ def test_builtin_transitions_carry_the_timing_parameters() -> None:
     assert demoted.demoted() is demoted
 
     base = BaseCoverStrategy()
+    assert base.remaining_travel_for(50, True) is None
     assert base.export_state() is None
     base.restore_state({})
     base.on_run_started(None, "open", 0, 0.0)
