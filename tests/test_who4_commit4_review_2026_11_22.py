@@ -32,7 +32,6 @@ from OWNd.message import OWNHeatingEvent, OWNMessage
 from custom_components.myhome import climate_discovery
 from custom_components.myhome import switch as switch_module
 from custom_components.myhome.switch import MyHOMEThermoSwitch
-from tests.crew_findings.test_w4fix_zone_requests_by_number import _fan_zone
 from tests.test_climate_setpoint_in_force import F461_POLL_REPLY
 from tests.test_climate_setpoint_in_force import _feed as _feed_zone
 from tests.test_climate_setpoint_in_force import _zone as _setpoint_zone
@@ -43,6 +42,7 @@ from tests.test_issue_785_thermo_actuator_switch import _mock_gateway
 from tests.test_issue_966_phantom_climate_zone import _plant, _receive, _settle
 from tests.test_probe_fallback_read import _refused
 from tests.test_who4_candidate_kept_2026_11_21 import ZONE_1_TEMPERATURE
+from tests.test_zone_silent_poll_reads import _fan_zone
 
 
 def _switch(hass, gateway, *, where="3", actuator=None, turn_on_command=None):
@@ -63,7 +63,7 @@ def _sent(gateway) -> list[str]:
 async def test_a_newer_off_is_not_overtaken_by_the_rest_of_an_older_on(hass):
     gateway = _mock_gateway()
     switch = _switch(hass, gateway)
-    for frame in ("*#4*3#2*20*0##", "*#4*3#1*20*0##"):  # tests/crew_findings/test_w4fix_s1_switch_partial_nack.py:15
+    for frame in ("*#4*3#2*20*0##", "*#4*3#1*20*0##"):  # tests/test_issue_785_thermo_actuator_switch.py:2419-2420
         switch.handle_event(OWNHeatingEvent(frame))
     slow = hass.loop.create_future()
     done = hass.loop.create_future()
@@ -83,7 +83,7 @@ async def test_a_newer_off_is_not_overtaken_by_the_rest_of_an_older_on(hass):
 async def test_a_whole_zone_switch_waits_one_delivery_timeout_not_one_per_actuator(hass, monkeypatch):
     gateway = _mock_gateway()
     switch = _switch(hass, gateway)
-    # tests/crew_findings/test_w4fix_s1_switch_partial_nack.py:15; tests/test_issue_908_fancoil_dim20_100.py:855
+    # tests/test_issue_785_thermo_actuator_switch.py:2419-2420; tests/test_issue_908_fancoil_dim20_100.py:855
     for frame in ("*#4*3#2*20*0##", "*#4*3#1*20*0##", "*#4*3#3*20*5##"):
         switch.handle_event(OWNHeatingEvent(frame))
     pending = [hass.loop.create_future() for _ in range(3)]
@@ -117,7 +117,7 @@ async def test_a_partly_refused_zone_write_still_names_the_refused_frame(hass):
 async def test_a_refused_write_does_not_arm_the_revert_warning(hass, caplog):
     gateway = _mock_gateway()
     switch = _switch(hass, gateway)
-    off = OWNHeatingEvent("*#4*3#1*20*0##")  # tests/crew_findings/test_w4fix_s1_switch_partial_nack.py:15
+    off = OWNHeatingEvent("*#4*3#1*20*0##")  # tests/test_issue_785_thermo_actuator_switch.py:2420
     on = OWNHeatingEvent("*#4*3#1*20*1##")  # tests/fixtures/traces/zone_short_off_2026_11_19/frames.json:433
     switch.handle_event(off)
     gateway.send.return_value = _refused(hass)
@@ -138,7 +138,7 @@ async def test_an_aggregate_report_is_not_a_proven_actuator_after_a_restart(hass
     await after.async_restore_last_state(saved)
     assert after.extra_state_attributes["actuators"] == {"1": "on"}
     await after.async_turn_off()
-    # tests/crew_findings/test_w4fix_all_actuator_report_invents_member.py:14
+    # The same case before a restart: tests/test_thermo_actuators_and_probes.py, test_all_actuator_report_invents_member
     assert _sent(gateway) == ["*#4*3*#20*0##"]
 
     # An actuator that reported by its number is a proven one, before and after a restart.
@@ -185,7 +185,7 @@ async def test_auto_through_the_central_unit_refused_by_the_gateway_is_an_error(
 
 async def test_auto_on_a_standalone_zone_without_a_setpoint_is_an_error(hass):
     zone = _setpoint_zone(hass, "3", standalone=True)
-    _feed_zone(zone, "*4*102*3##", "*#4*3*12*0070*3##")  # tests/crew_findings/test_w4fix_missing_setpoint_success.py:11
+    _feed_zone(zone, "*4*102*3##", "*#4*3*12*0070*3##")  # tests/test_climate_zone_operation.py:189
     assert HVACMode.AUTO in zone.hvac_modes
     with pytest.raises(ServiceValidationError):
         await zone.async_set_hvac_mode(HVACMode.AUTO)
@@ -210,7 +210,7 @@ async def test_a_refused_off_of_the_central_unit_is_an_error_and_no_zone_goes_of
     _replay(central, [HEATING_PROGRAM])
     mode_before = central.hvac_mode
     zone = _climate(gateway, "3", standalone=False)
-    _replay(zone, ["*4*110*#3##"])  # tests/crew_findings/test_w4fix_preadd_zone_operation.py:11
+    _replay(zone, ["*4*110*#3##"])  # tests/test_climate_zone_operation.py:82
     unsubscribe = async_dispatcher_connect(hass, f"myhome_central_mode_{gateway.mac}", zone._handle_central_mode_update)
     try:
         gateway.send.return_value = _refused(hass)

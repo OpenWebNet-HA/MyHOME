@@ -34,7 +34,7 @@ from tests.test_issue_785_thermo_actuator_switch import _mock_gateway
 from tests.test_thermo_discovery_at_start import _after_the_sweep, _plant, _receive
 from tests.test_who4_commit4_review_2026_11_22 import _switch
 
-ACTUATOR_1_OFF = "*#4*3#1*20*0##"  # tests/crew_findings/test_w4fix_s1_switch_partial_nack.py:15
+ACTUATOR_1_OFF = "*#4*3#1*20*0##"  # tests/test_issue_785_thermo_actuator_switch.py:2420
 ACTUATOR_1_ON = "*#4*3#1*20*1##"  # tests/fixtures/traces/zone_short_off_2026_11_19/frames.json:433
 
 
