@@ -182,10 +182,14 @@ class _Bus:
 @pytest.mark.parametrize(
     ("trigger", "expected_polls"),
     [
-        # The frame that started the loop live. It commands ON and the area answers
-        # `*1*0*00##`: the first answer is read as a new (OFF) command, the answers
-        # to that second request state what it reads back, and the chain ends.
-        ("*1*1*0#4#01##", [RESYNC_DEBOUNCE_S, 1.651]),
+        # The frame that started the loop live: the general of the bus behind
+        # interface 01 no longer asks the gateway's own area 00 at all.
+        ("*1*1*0#4#01##", []),
+        # A general ON of the system. It commands ON and the area answers `*1*0*00##`:
+        # that is read as a new (OFF) command, which the four local lights have just
+        # echoed (the two behind the interface are no longer waited for), so no
+        # second request goes out.
+        ("*1*1*0##", [RESYNC_DEBOUNCE_S]),
         # The wall General OFF of #746, and a real area command.
         ("*1*0*0##", [RESYNC_DEBOUNCE_S]),
         ("*1*0*00##", [RESYNC_DEBOUNCE_S]),

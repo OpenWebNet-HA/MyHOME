@@ -251,7 +251,7 @@ async def test_known_light_areas_from_registry(hass: HomeAssistant, entry: MockC
         registry.async_get_or_create(
             "light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry,
         )
-    # Routed address: Address.from_device_id("12#4#01") extracts where="12", yielding area "1".
+    # Routed address: area 1 of the bus behind F422 interface 01, a scope of its own.
     registry.async_get_or_create(
         "light", DOMAIN, f"{MAC}-1-12#4#01", config_entry=entry,
     )
@@ -268,7 +268,9 @@ async def test_known_light_areas_from_registry(hass: HomeAssistant, entry: MockC
         "light", DOMAIN, f"{MAC}-", config_entry=entry,
     )
 
-    assert handler._known_light_areas() == ["00", "1", "100", "2"]
+    assert handler._known_light_areas() == ["00", "1", "1#4#01", "100", "2"]
+    assert handler._resync_manager.known_area_entities("1") == {"12"}
+    assert handler._resync_manager.known_area_entities("1#4#01") == {"12#4#01"}
 
 
 @pytest.mark.asyncio
@@ -831,6 +833,109 @@ async def test_group_resync_preserves_bus_interface_on_members_and_group_key(
     assert assumed_routed.is_on is None
     assumed_routed.handle_event(OWNMessage.parse("*1*1*#7#4#01##"))
     assert assumed_routed.is_on is True
+
+
+def _sent(handler: MyHOMEGatewayHandler) -> list[str]:
+    return [str(call[0][0]) for call in handler.send_status_request.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_area_sweep_stays_on_the_bus_of_the_area_frame(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """An area behind an F422 interface is not the gateway's own area (#749, #740).
+
+    `*1*1*1#4#01##` / `*1*0*1#4#01##` are captured on a physical F461
+    (`tests/fixtures/traces/f461_live_2026-10-15`). Area 1 behind interface 01 is read
+    light by light (`*#1*<APL>#4#01##`, answered live on an F461 and an F455); the
+    gateway's own area 1 is not asked, and the other way round.
+    """
+    handler = _handler(hass, entry)
+    mgr = handler._resync_manager
+    registry = er.async_get(hass)
+    for where in ("11", "11#4#01", "12#4#01", "13#4#02"):
+        registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+    assert mgr.known_light_areas() == ["1", "1#4#01", "1#4#02"]
+
+    # 1. Area 1 of interface 01: its two lights are asked, nothing on the local bus.
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    assert list(handler._resync_timers) == ["1#4#01"]
+    # The local light 11 echoing is not an echo of area 1 behind the interface.
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    assert "1#4#01" in handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*11#4#01##", "*#1*12#4#01##"]
+
+    # 2. Both lights of the interface area echo the command: nothing to ask.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*1*1#4#01##"))
+    await handler._process_message(OWNMessage.parse("*1*1*11#4#01##"))
+    assert "1#4#01" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*1*12#4#01##"))
+    assert not handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == []
+
+    # 3. The gateway's own area 1: an echo from behind the interface does not cancel
+    # its sweep, and the lights behind the interface are not waited for.
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*1##"))
+    assert list(handler._resync_timers) == ["1"]
+    await handler._process_message(OWNMessage.parse("*1*0*11#4#01##"))
+    assert "1" in handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*1##"]
+
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*1*1##"))
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    assert not handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == []
+
+    # 4. An interface area with no known light has nothing to read.
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*2#4#01##"))
+    assert list(handler._resync_timers) == ["2#4#01"]
+    await _advance(hass)
+    assert _sent(handler) == []
+
+
+@pytest.mark.asyncio
+async def test_general_sweep_follows_the_bus_of_the_general_frame(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """`0#4#<Int>` is the general of one local bus, `0` the general of the system.
+
+    Live, 2026-11-18, F461 and F455: `*1*1*0#4#01##` switched `09#4#01` and `03#4#01`
+    on with no status frame from either, MyHOME asked `*#1*00##` (the gateway's own
+    area) and both lights stayed `off` in Home Assistant.
+    """
+    handler = _handler(hass, entry)
+    mgr = handler._resync_manager
+    registry = er.async_get(hass)
+    for where in ("05", "07", "09#4#01", "03#4#01", "21#4#02"):
+        registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+
+    # General of the bus behind interface 01: only its lights.
+    await handler._process_message(OWNMessage.parse("*1*1*0#4#01##"))
+    assert list(handler._resync_timers) == ["00#4#01"]
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*03#4#01##", "*#1*09#4#01##"]
+
+    # General of the system: every known scope, each on its own bus.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*0##"))
+    assert sorted(handler._resync_timers) == ["00", "00#4#01", "2#4#02"]
+    # The local lights echo: area 00 is done without the lights behind the interface.
+    await handler._process_message(OWNMessage.parse("*1*0*05##"))
+    await handler._process_message(OWNMessage.parse("*1*0*07##"))
+    assert sorted(handler._resync_timers) == ["00#4#01", "2#4#02"]
+    await _advance(hass)
+    assert sorted(_sent(handler)) == ["*#1*03#4#01##", "*#1*09#4#01##", "*#1*21#4#02##"]
 
 
 @pytest.mark.asyncio

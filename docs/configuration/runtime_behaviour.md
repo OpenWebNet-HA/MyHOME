@@ -74,6 +74,13 @@ Instead, the integration debounces across a bidirectional window:
       `*#1*0##`.
     - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
       (`light` or `switch` in the entity registry), never `*#1*0##`.
+    - **Behind an F422 interface** (`*1*x*A#4#<Int>##`, `*1*x*0#4#<Int>##`): the same
+      `A` / `PL` exists on every bus, so an area behind interface `Int` is a scope of
+      its own (`A#4#<Int>`). Its echoes do not count for the gateway's own area `A`
+      and the other way round, and it is read light by light with
+      `*#1*<APL>#4#<Int>##` for each known light of that scope. `*1*x*0#4#<Int>##`
+      sweeps the scopes of that interface only; `*1*x*0##` (general of the system)
+      sweeps every known scope.
 
 A status request is answered with `*1*<status>*<where>##` frames, on the command and on
 the event session, and for a scope that is the frame of a scope command: a physical F461

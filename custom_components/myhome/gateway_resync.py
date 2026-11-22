@@ -135,6 +135,21 @@ class LightingResyncManager:
             return f"{clean_base}{BUS_ROUTING}{iface_norm}"
         return clean_base
 
+    @staticmethod
+    def _area_scope(area: str, interface: str | None = None) -> str:
+        """Return the sweep scope of an area: ``A``, or ``A#4#<interface>`` behind an F422.
+
+        `<A>` is an area of the gateway's own bus and `<A>#4#<Int>` an area of the bus
+        behind interface `Int` (WHO 1 PDF, WHERE table). The same `A` / `PL` exists on
+        every bus, so the two are different sets of lights: a status request for `A`
+        is not answered by the lights behind the interface, and their echoes say
+        nothing about the lights of `A`.
+        """
+        iface = str(interface).strip() if interface else ""
+        if not iface:
+            return area
+        return f"{area}{BUS_ROUTING}{iface.zfill(2) if iface.isdigit() else iface}"
+
     def register_group_members(self, group_where: str, members: list[str] | set[str]) -> None:
         """Register the point-to-point member WHERE addresses belonging to a group."""
         key = self._normalize_group_key(group_where)
@@ -166,9 +181,12 @@ class LightingResyncManager:
         """Handle point-to-point lighting message echo cancellation."""
         now = float(self._time.monotonic())
         self._prune_recent_ptp(now)
-        ptp_where = self._normalize_ptp_where(message.where, self._message_interface(message))
+        interface = self._message_interface(message)
+        ptp_where = self._normalize_ptp_where(message.where, interface)
         clean_where = normalize_where(str(message.where).split("#", 1)[0])
-        area = area_of_where(clean_where)
+        bare_area = area_of_where(clean_where)
+        # The area on the echo's own bus: `09#4#01` reports for `00#4#01`, not for `00`.
+        area = self._area_scope(bare_area, interface) if bare_area else None
         msg_on = getattr(message, "is_on", None)
         self._recent_ptp.append((now, ptp_where, area))
         self._ptp_polarities[(now, ptp_where)] = msg_on
@@ -183,10 +201,10 @@ class LightingResyncManager:
                 and msg_on != expected_area_on
             ):
                 if area in self._resync_area_echoes:
-                    self._resync_area_echoes[area].discard(clean_where)
+                    self._resync_area_echoes[area].discard(ptp_where)
             else:
                 echoed = self._resync_area_echoes.setdefault(area, set())
-                echoed.add(clean_where)
+                echoed.add(ptp_where)
                 if self._area_fully_echoed(area, echoed):
                     LOGGER.debug("%s area %s echoed point status, cancelling sweep", self.handler.log_id, area)
                     self._resync_timers.pop(area)()
@@ -217,7 +235,10 @@ class LightingResyncManager:
                 self._resync_expected_on.pop(g, None)
 
     def _known_area_map(self) -> dict[str, set[str]]:
-        """Return mapping of area code to registered light/switch WHERE addresses."""
+        """Return mapping of area scope to registered light/switch WHERE addresses.
+
+        Keyed per bus: `05` belongs to `00`, `09#4#01` to `00#4#01` (`_area_scope`).
+        """
         area_map: dict[str, set[str]] = {}
         config_entry = getattr(self.handler, "config_entry", None)
         if not config_entry or not hasattr(config_entry, "entry_id") or not isinstance(config_entry.entry_id, str):
@@ -234,17 +255,18 @@ class LightingResyncManager:
                 clean_where = normalize_where(address.clean_where)
                 area = area_of_where(clean_where)
                 if area:
-                    area_map.setdefault(area, set()).add(clean_where)
+                    scope = self._area_scope(area, address.interface)
+                    area_map.setdefault(scope, set()).add(self._normalize_ptp_where(clean_where, address.interface))
         return area_map
 
     def known_light_areas(self) -> list[str]:
-        """Return sorted list of configured light/switch areas."""
+        """Return sorted list of configured light/switch area scopes (``A`` / ``A#4#<interface>``)."""
         return sorted(self._known_area_map().keys())
 
     _known_light_areas = known_light_areas
 
     def known_area_entities(self, area: str) -> set[str]:
-        """Return configured light/switch WHERE addresses in a given area."""
+        """Return configured light/switch WHERE addresses in a given area scope."""
         return self._known_area_map().get(area, set())
 
     def _area_fully_echoed(self, area: str, echoed_wheres: set[str]) -> bool:
@@ -252,7 +274,8 @@ class LightingResyncManager:
 
         When the entity registry has one or more configured entities for ``area``,
         every registered entity in that area must have echoed before the area
-        resync query (`*#1*<area>##`) can be skipped or cancelled. When no
+        resync query (`*#1*<area>##`, or the point requests of an area behind an
+        F422 interface) can be skipped or cancelled. When no
         entities are registered for ``area`` (e.g. unit tests mocking
         ``_known_light_areas`` without populating the entity registry), any
         echo in ``area`` is treated as sufficient.
@@ -365,11 +388,10 @@ class LightingResyncManager:
             for t, w, entry_a in self._recent_ptp:
                 if entry_a != target_area:
                     continue
-                clean_w = normalize_where(str(w).split("#", 1)[0])
-                latest_pol[clean_w] = self._ptp_polarities.get((t, str(w)))
+                latest_pol[str(w)] = self._ptp_polarities.get((t, str(w)))
             return {
-                clean_w
-                for clean_w, entry_pol in latest_pol.items()
+                ptp_w
+                for ptp_w, entry_pol in latest_pol.items()
                 if not has_known or entry_pol is None or msg_is_on is None or entry_pol == msg_is_on
             }
 
@@ -408,7 +430,9 @@ class LightingResyncManager:
             group_seed_echoes[group_key] = matching_wheres
             targets.append(group_key)
         elif getattr(message, "is_area", False):
-            raw_where = str(message.where)
+            # The frame's own WHERE, on the frame's own bus: `*1*0*1#4#01##` is area 1
+            # behind interface 01, not the gateway's area 1.
+            raw_where = self._area_scope(str(message.where), self._message_interface(message))
             if self._is_own_sweep_reply(raw_where, msg_is_on, now):
                 LOGGER.debug("%s area %s frame answers our own status request, not sweeping", self.handler.log_id, raw_where)
                 return
@@ -424,7 +448,13 @@ class LightingResyncManager:
                 if hasattr(self.handler, "_known_light_areas")
                 else self.known_light_areas()
             )
+            # `0` is the general of the system and `0#4#<Int>` the general of the bus
+            # behind interface `Int` (WHO 1 PDF, WHERE table): the first sweeps every
+            # known scope, the second only the scopes of that bus.
+            general_iface = self._area_scope("", self._message_interface(message))
             for a in known_areas:
+                if general_iface and not a.endswith(general_iface):
+                    continue
                 leading_echoes = _leading_echoes_for_area(a)
                 if self._area_fully_echoed(a, leading_echoes):
                     LOGGER.debug("%s general sweep skipping area %s (had leading echoes)", self.handler.log_id, a)
@@ -480,6 +510,14 @@ class LightingResyncManager:
             if storm is not None:
                 storm.trailing_done = True
                 storm.last_activity = now
+        if not where.startswith("#") and BUS_ROUTING in where:
+            # An area behind an F422 interface is read light by light:
+            # `*#1*<APL>#4#<Int>##` is answered on a physical F461 2.0.11 and F455 1.0.76
+            # (`*#1*09#4#01##` -> `*1*0*09#4#01##`, live 2026-11-17). No capture or
+            # oracle row holds an area request on an interface (`*#1*<A>#4#<Int>##`).
+            for member in sorted(self.known_area_entities(where)):
+                await self.handler.send_status_request(OWNLightingCommand.status(member))
+            return
         written = await self.handler.send_status_request(OWNLightingCommand.status(where))
         if isinstance(written, asyncio.Future):
             # From here until the request is closed, a frame for this scope that states
