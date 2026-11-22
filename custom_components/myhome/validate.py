@@ -1036,7 +1036,7 @@ _WHO18_EXPOSE_WHERE_RE = re.compile(
 
 def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Validate cross-field constraints on a single expose entry."""
-    from .where_grammar import is_apl_address, normalize_expose_where
+    from .where_grammar import diagnose_apl_where, is_apl_address, normalize_expose_where
 
     who = int(item[CONF_WHO])
     raw_where_val = item.get(CONF_WHERE)
@@ -1092,8 +1092,24 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             or not is_apl_address(base_where)
             or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
         ):
+            hint = ""
+            diag = diagnose_apl_where(raw_where)
+            if diag is not None:
+                err_key, placeholders = diag
+                if err_key in (
+                    "invalid_where_use_2_digits",
+                    "invalid_where_use_4_digits",
+                ):
+                    hint = (
+                        f"; for A={placeholders['area']}, PL={placeholders['point']} "
+                        f"use '{placeholders['suggested']}'"
+                    )
+                elif err_key == "invalid_where_pl_zero":
+                    hint = "; PL=0 is invalid, PL must be 1..15"
+                elif err_key == "invalid_where_interface":
+                    hint = "; local-bus suffix must be #4#00..#4#15"
             raise Invalid(
-                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
+                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r}){hint}"
             )
     elif who == 4:
         if not _WHO4_EXPOSE_PROBE_RE.fullmatch(where):
