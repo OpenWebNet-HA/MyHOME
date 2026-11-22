@@ -573,6 +573,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._failover_active = False
         self._setup_at = time.monotonic()
         self._unavailable_timer: CALLBACK_TYPE | None = None
+        # Set when the gateway refused the stored password while the entry was loaded.
+        self._auth_refused = False
         self.listening_worker: asyncio.Task[None] | None = None
         self.bus_monitor = BusMonitor()
         self.device_health = DeviceHealth(self)
@@ -1278,6 +1280,42 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 AVAILABILITY_GRACE,
                 self._mark_unavailable,
             )
+
+    @callback
+    def _on_auth_refused(self, reason: str | None, session: str) -> None:
+        """The gateway refused the stored password while the entry is loaded.
+
+        Setup answers this with ``ConfigEntryAuthFailed``; here the entry is already
+        loaded, so the reauth flow is started by hand (OWNd's ``on_auth_error`` was
+        added for this, OpenWebNet-HA/OWNd#132). Both sessions stop for good: a refused
+        password is never presented again, by either session, until the user has
+        entered a new one and the entry reloads. An HMAC gateway disables its
+        authentication service after 3 failed handshakes in 60 s
+        (kb/sources/text/openwebnet-hmac.txt:58-59).
+        """
+        if self._auth_refused or self._terminate_listener:
+            return
+        self._auth_refused = True
+        LOGGER.error(
+            "%s The gateway refused the OpenWebNet password (%s) on the %s session. "
+            "Both sessions are stopped so that it is not presented again; "
+            "enter the password in the re-authentication prompt.",
+            self.log_id,
+            reason or "password_error",
+            session,
+        )
+        self._command_pool.stop_after_auth_refusal()
+        self._event_runner.close()
+        listener = self.listening_worker
+        if listener is not None and not listener.done() and listener is not asyncio.current_task():
+            # Blocked in get_next() on a session that may still be open (a refusal on the
+            # command session only): a drop would make OWNd log in again from inside it.
+            listener.cancel()
+        # Nothing recovers without the user, so no reconnect grace period.
+        self.is_connected = False
+        self._event_runner.is_connected = False
+        self._mark_unavailable(None)
+        self.config_entry.async_start_reauth(self.hass)
 
     @callback
     def _mark_unavailable(self, _now: Any) -> None:
