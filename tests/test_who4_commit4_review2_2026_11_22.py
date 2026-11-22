@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.components.climate import HVACMode
+from homeassistant.core import State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import OWNHeatingEvent, OWNMessage
@@ -137,3 +138,16 @@ async def test_a_cancelled_switch_call_does_not_leave_its_revert_check_armed(has
     switch.handle_event(on)
     switch.handle_event(off)
     assert "reverted to OFF" not in caplog.text
+
+
+async def test_an_aggregate_actuator_saved_off_is_still_no_write_target_after_a_restart(hass):
+    """The saved state of a switch last seen off through an aggregate report (built attributes, no frame)."""
+    gateway = _mock_gateway()
+    switch = _switch(hass, gateway)
+    saved = State("switch.radiators", "off", {"actuators": {"1": "off"}, "aggregate_actuators": ["1"]})
+    await switch.async_restore_last_state(saved)
+    assert switch.extra_state_attributes["actuators"] == {"1": "off"}
+    assert switch.extra_state_attributes["aggregate_actuators"] == ["1"]
+    await switch.async_turn_on()
+    # The zone form, not actuator 1: tests/test_issue_785_thermo_actuator_switch.py:2416
+    assert [str(call.args[0]) for call in gateway.send.await_args_list] == ["*#4*3*#20*1##"]
