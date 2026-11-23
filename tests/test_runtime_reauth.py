@@ -600,3 +600,171 @@ async def test_the_listener_cancel_is_repeated_until_the_task_has_ended(
     assert swallowed == 12
     await asyncio.sleep(0.15)  # the last delayed repeat finds the task ended and schedules nothing
     handler._cancel_listener(listener)  # ended: nothing more is scheduled
+
+
+async def test_late_connected_callback_after_auth_refusal_keeps_gateway_unavailable(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """A late on_state_change(True) arriving after _on_auth_refused must not mark the gateway available."""
+    handler._on_event_connection_state_change(True)
+    assert handler.available is True
+    handler._on_auth_refused("password_error", "command")
+    assert handler.available is False
+
+    handler._on_event_connection_state_change(True)
+    assert handler.is_connected is False
+    assert handler.available is False
+
+
+async def test_multiple_blocked_producers_all_unblock_on_auth_refusal(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Two producers blocked in a full send_buffer both cancel cleanly without leaking or deadlocking."""
+    from custom_components.myhome.gateway_sessions import FrameScheduler
+
+    pool = handler._command_pool
+    pool.send_buffer = FrameScheduler(maxsize=1)
+    first = await pool.send(OWNCommand.parse("*1*1*11##"))
+    prod_a = asyncio.create_task(pool.send(OWNCommand.parse("*1*1*12##")))
+    prod_b = asyncio.create_task(pool.send(OWNCommand.parse("*1*1*13##")))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert not prod_a.done() and not prod_b.done()
+
+    pool.stop_after_auth_refusal()
+    fut_a, fut_b = await asyncio.wait_for(asyncio.gather(prod_a, prod_b), timeout=2.0)
+    assert first.cancelled() and fut_a.cancelled() and fut_b.cancelled()
+    assert pool.send_buffer.empty()
+
+
+async def test_cancel_listener_stops_when_event_session_is_closing(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """Once the event runner enters finally-cleanup, _cancel_listener stops cancelling it."""
+    cancels = 0
+
+    async def _closing() -> None:
+        nonlocal cancels
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancels += 1
+            handler._event_runner._closing_session = True
+            await asyncio.sleep(0.05)
+            handler._event_runner._closing_session = False
+
+    listener = asyncio.create_task(_closing())
+    await asyncio.sleep(0)
+    handler._cancel_listener(listener)
+    await asyncio.wait_for(listener, timeout=2.0)
+    assert cancels == 1
+
+
+async def test_split_auth_reauth_rejects_wrong_command_session_password(
+    hass: HomeAssistant, entry: MockConfigEntry, harness: MockGatewayHarness
+) -> None:
+    """When command session (*99*0##) triggered reauth while monitor (*99*1##) stays open,
+    entering a wrong password in the reauth form must fail instead of reloading into a loop.
+    """
+    script = RefusingGateway(harness, protect=())
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    handler = entry.runtime_data.gateway
+    try:
+        await _until(lambda: handler.available, "event session up")
+        script.protect = ("*99*0##",)
+        await harness.disconnect_all_clients()
+        await handler.send(OWNCommand.parse("*1*1*21##"))
+        await _until(lambda: bool(_reauth_flows(hass)), "reauth flow started")
+        assert handler._auth_refused_session == "command"
+        (flow,) = _reauth_flows(hass)
+        # Wrong password: monitor (*99*1##) still accepts, command (*99*0##) refuses
+        result = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {CONF_OWN_PASSWORD: "still_wrong"}
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "password"
+        assert result["errors"].get(CONF_OWN_PASSWORD) == "password_error"
+    finally:
+        script.protect = ()
+        if entry.state is ConfigEntryState.LOADED:
+            await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_split_auth_reauth_handles_command_session_connect_and_close_exceptions(
+    hass: HomeAssistant, entry: MockConfigEntry, harness: MockGatewayHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If verifying the command session raises on connect() and close(), reauth reports cannot_connect."""
+    import custom_components.myhome.config_flow_discovery as cfd
+
+    class _ExplodingCommandSession:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def connect(self) -> dict[str, Any]:
+            raise OSError("network down")
+
+        async def close(self) -> None:
+            raise OSError("close failed")
+
+    script = RefusingGateway(harness, protect=())
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    handler = entry.runtime_data.gateway
+    try:
+        await _until(lambda: handler.available, "event session up")
+        script.protect = ("*99*0##",)
+        await harness.disconnect_all_clients()
+        await handler.send(OWNCommand.parse("*1*1*21##"))
+        await _until(lambda: bool(_reauth_flows(hass)), "reauth flow started")
+        monkeypatch.setattr(cfd, "OWNCommandSession", _ExplodingCommandSession)
+        (flow,) = _reauth_flows(hass)
+        result = await hass.config_entries.flow.async_configure(
+            flow["flow_id"], {CONF_OWN_PASSWORD: "still_wrong"}
+        )
+        assert result["type"] is FlowResultType.ABORT
+        assert result["reason"] == "cannot_connect"
+    finally:
+        script.protect = ()
+        if entry.state is ConfigEntryState.LOADED:
+            await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_close_listener_cancels_pending_repeat_cancel_handle(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """close_listener() cancels any scheduled _cancel_listener repeat timer."""
+    handle = MagicMock()
+    handler._cancel_listener_handle = handle
+    await handler.close_listener()
+    handle.cancel.assert_called_once()
+    assert handler._cancel_listener_handle is None
+
+
+async def test_enqueue_handles_non_refusal_put_error_and_post_put_refusal_race(
+    hass: HomeAssistant, handler: MyHOMEGatewayHandler
+) -> None:
+    """A non-refusal put() error propagates; a refusal landing while put() yields drains the queue."""
+    pool = handler._command_pool
+
+    class _FailingPutBuffer:
+        async def put(self, _item: Any) -> None:
+            raise RuntimeError("boom")
+
+    orig_buf = pool.send_buffer
+    pool.send_buffer = _FailingPutBuffer()  # type: ignore[assignment]
+    with pytest.raises(RuntimeError, match="boom"):
+        await pool.send(OWNCommand.parse("*1*1*11##"))
+
+    # Refusal races with put() succeeding: item is drained and written future cancelled.
+    pool.send_buffer = orig_buf
+    orig_put = orig_buf.put
+
+    async def _racing_put(item: Any) -> None:
+        await orig_put(item)
+        pool._auth_refused = True
+
+    pool.send_buffer.put = _racing_put  # type: ignore[method-assign]
+    fut = await pool.send(OWNCommand.parse("*1*1*12##"))
+    assert fut.cancelled()
+    assert pool.send_buffer.empty()

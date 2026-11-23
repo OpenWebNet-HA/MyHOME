@@ -535,6 +535,33 @@ class ConfigFlowDiscoveryMixin:
             await _cf.asyncio.sleep(_cf.TEST_CONNECTION_RETRY_DELAY)
             test_result = await _run_test_connection()
 
+        if test_result.get("Success") and self._existing_entry:
+            refused_session = getattr(
+                getattr(getattr(self._existing_entry, "runtime_data", None), "gateway", None),
+                "_auth_refused_session",
+                None,
+            )
+            if refused_session == "command":
+                # Split authentication: monitor session (*99*1##) can be open while
+                # the command session (*99*0##) requires the password. Verify the
+                # command session too so a wrong password does not reload into a loop.
+                cmd_session = OWNCommandSession(gateway=gateway, logger=LOGGER)
+                try:
+                    cmd_res: typing.Any = await cmd_session.connect()
+                except Exception:  # pylint: disable=broad-except
+                    cmd_res = {"Success": False, "Message": "cannot_connect"}
+                finally:
+                    try:
+                        await cmd_session.close()
+                    except Exception:  # pylint: disable=broad-except
+                        pass
+                if not isinstance(cmd_res, dict) or not cmd_res.get("Success"):
+                    test_result = (
+                        cmd_res
+                        if isinstance(cmd_res, dict)
+                        else {"Success": False, "Message": "cannot_connect"}
+                    )
+
         if test_result.get("Success"):
             if self._existing_entry:
                 new_data = dict(self._existing_entry.data)

@@ -575,6 +575,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._unavailable_timer: CALLBACK_TYPE | None = None
         # Set when the gateway refused the stored password while the entry was loaded.
         self._auth_refused = False
+        self._auth_refused_session: str | None = None
+        self._cancel_listener_handle: asyncio.Handle | None = None
         self.listening_worker: asyncio.Task[None] | None = None
         self.bus_monitor = BusMonitor()
         self.device_health = DeviceHealth(self)
@@ -1224,6 +1226,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @callback
     def _on_event_connection_state_change(self, connected: bool) -> None:
         """Gate commands and publish sustained event-session availability."""
+        if connected and (self._auth_refused or self._terminate_listener):
+            # A late reconnect callback arriving after auth refusal or shutdown must not
+            # flip availability back on while sessions are torn down.
+            self.is_connected = False
+            self._event_runner.is_connected = False
+            return
         was_connected = self.is_connected
         self.is_connected = connected
         self._event_runner.is_connected = connected
@@ -1291,11 +1299,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         password is never presented again, by either session, until the user has
         entered a new one and the entry reloads. An HMAC gateway disables its
         authentication service after 3 failed handshakes in 60 s
-        (kb/sources/text/openwebnet-hmac.txt:58-59).
+        (OpenWebNet HMAC Specification 1.1, "Simple Authentication Mode (SAM)").
         """
         if self._auth_refused or self._terminate_listener:
             return
         self._auth_refused = True
+        self._auth_refused_session = session
         LOGGER.error(
             "%s The gateway refused the OpenWebNet password (%s) on the %s session. "
             "Both sessions are stopped so that it is not presented again; "
@@ -1327,14 +1336,19 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @callback
     def _cancel_listener(self, listener: asyncio.Task[None], attempt: int = 0) -> None:
-        """Cancel the stopped event listener until it has ended (bounded)."""
-        if listener.done() or attempt >= 60:
+        """Cancel the stopped event listener until it has ended or entered session cleanup (bounded)."""
+        if listener.done() or self._event_runner._closing_session or attempt >= 60:
+            self._cancel_listener_handle = None
             return
         listener.cancel()
         if attempt < 10:
-            self.hass.loop.call_soon(self._cancel_listener, listener, attempt + 1)
+            self._cancel_listener_handle = self.hass.loop.call_soon(
+                self._cancel_listener, listener, attempt + 1
+            )
         else:
-            self.hass.loop.call_later(0.1, self._cancel_listener, listener, attempt + 1)
+            self._cancel_listener_handle = self.hass.loop.call_later(
+                0.1, self._cancel_listener, listener, attempt + 1
+            )
 
     @callback
     def _mark_unavailable(self, _now: Any) -> None:
@@ -1721,6 +1735,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         LOGGER.info("%s Closing event listener", self.log_id)
         if self._unavailable_timer is not None:
             self._unavailable_timer()
+        if self._cancel_listener_handle is not None:
+            self._cancel_listener_handle.cancel()
+            self._cancel_listener_handle = None
         self._resync_manager.cancel_all()
         self._echo_watchdog.cancel_all()
         if self._zone_request_task is not None:

@@ -50,8 +50,8 @@ EVENT_INACTIVITY_TIMEOUT: float | None = None
 # connect() results that mean the gateway refused the stored password (OWNd
 # `_AUTH_NEGOTIATION_ERRORS`). Presenting it again cannot succeed, and an HMAC
 # gateway disables its authentication service after repeated failures
-# (kb/sources/text/openwebnet-hmac.txt:58-59), so both sessions stop and Home
-# Assistant asks for the password again (reauth).
+# (OpenWebNet HMAC Specification 1.1, "Simple Authentication Mode (SAM)"), so
+# both sessions stop and Home Assistant asks for the password again (reauth).
 AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
 
 
@@ -94,6 +94,7 @@ class EventSessionRunner:
         self._terminate_listener: bool = False
         self._event_session_ready: asyncio.Event = asyncio.Event()
         self._event_watchdog: asyncio.Timeout | None = None
+        self._closing_session: bool = False
         self.is_connected: bool = False
 
     @property
@@ -220,8 +221,12 @@ class EventSessionRunner:
                 LOGGER.exception("%s Event listener failed.", self.log_id)
         finally:
             self._event_watchdog = None
-            with contextlib.suppress(Exception):
-                await asyncio.shield(_event_session.close())
+            self._closing_session = True
+            try:
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(_event_session.close())
+            finally:
+                self._closing_session = False
         return not self._terminate_listener
 
     def _on_auth_error(self, error: Any) -> None:
@@ -1432,9 +1437,23 @@ class CommandWorkerPool:
         }
         if is_fade_step:
             envelope["is_fade_step"] = True
-        await self.send_buffer.put(envelope)
+        try:
+            await self.send_buffer.put(envelope)
+        except Exception:
+            if self._refused_meanwhile():
+                LOGGER.debug(
+                    "%s Message `%s` not sent: the gateway refused the password; "
+                    "waiting for re-authentication.",
+                    self.log_id,
+                    message,
+                )
+                written.cancel()
+                return written
+            raise
         if self._refused_meanwhile():
-            # The refusal landed while put() was suspended: no worker reads the queue.
+            # The refusal landed while put() was suspended: drain anything put during
+            # the race so no item leaks in the queue and no other producer stalls.
+            self._drain_queue()
             LOGGER.debug(
                 "%s Message `%s` not sent: the gateway refused the password; "
                 "waiting for re-authentication.",
@@ -1817,8 +1836,10 @@ class CommandWorkerPool:
         for worker in self.sending_workers:
             if not worker.done() and worker is not current:
                 worker.cancel()
-        # No worker is left to read the stop sentinels close() just put; removing them
-        # also wakes a producer suspended in put() (see _enqueue).
+        # Shut down the queue (waking every suspended producer in put() with
+        # QueueShutDown) and drain any remaining items so nothing leaks.
+        if isinstance(self.send_buffer, FrameScheduler):
+            self.send_buffer.shutdown(immediate=True)
         self._drain_queue()
 
     def _drain_queue(self) -> None:
