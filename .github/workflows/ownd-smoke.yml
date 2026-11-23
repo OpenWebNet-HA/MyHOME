@@ -61,7 +61,7 @@ jobs:
           pip install homeassistant
           HA_CONSTRAINTS=$(python -c 'import homeassistant, os; print(os.path.join(os.path.dirname(homeassistant.__file__), "package_constraints.txt"))')
           echo "PIP_CONSTRAINT=$HA_CONSTRAINTS" >> "$GITHUB_ENV"
-          pip install -c "$HA_CONSTRAINTS" pytest pytest-asyncio pytest-cov pytest-socket execnet syrupy time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml packaging
+          pip install -c "$HA_CONSTRAINTS" pytest pytest-asyncio pytest-cov pytest-socket pytest-freezer execnet syrupy time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml packaging
 
       - name: Run OWNd Smoke Test (${{ matrix.ownd-target }})
         env:

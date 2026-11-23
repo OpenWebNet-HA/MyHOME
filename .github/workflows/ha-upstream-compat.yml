@@ -74,7 +74,7 @@ jobs:
             echo "PIP_CONSTRAINT=$HA_CONSTRAINTS" >> "$GITHUB_ENV"
             CONSTRAINT_ARGS=(-c "$HA_CONSTRAINTS")
           fi
-          pip install "${CONSTRAINT_ARGS[@]}" pytest pytest-asyncio pytest-cov pytest-socket execnet syrupy time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml
+          pip install "${CONSTRAINT_ARGS[@]}" pytest pytest-asyncio pytest-cov pytest-socket pytest-freezer execnet syrupy time-machine python-dateutil pytz freezegun requests-mock respx paho-mqtt tqdm jsonschema pyyaml
           if [ "$HA_CHANNEL" != "stable" ]; then
             pip install pytest-homeassistant-custom-component --no-deps
             # Seed translations/en.json for git installs (no-op for wheels) and

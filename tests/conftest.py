@@ -2,6 +2,7 @@
 import asyncio
 import contextlib
 import importlib
+import importlib.util
 import json
 import logging
 import os
@@ -459,6 +460,10 @@ def event_loop():
 def pytest_configure(config):
     """Configure pytest to ignore third-party HA dependency warnings."""
     get_ha_deprecation_guard()
+    if importlib.util.find_spec("pytest_freezer") is None:
+        config.addinivalue_line(
+            "markers", "freeze_time(...): use freezegun to freeze time"
+        )
     config.addinivalue_line(
         "filterwarnings",
         "ignore::aiohttp.web_exceptions.NotAppKeyWarning",
@@ -624,3 +629,18 @@ def fast_bus_pacing(monkeypatch):
     monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.01)
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.01)
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.005)
+
+
+if importlib.util.find_spec("pytest_freezer") is None:
+    import freezegun
+
+    freezegun.configure(extend_ignore_list=["_pytest.terminal", "_pytest.runner"])
+
+    @pytest.fixture
+    def freezer(request):
+        """Provide freezegun time control when pytest-freezer is not installed."""
+        marker = request.node.get_closest_marker("freeze_time")
+        args = getattr(marker, "args", ())
+        kwargs = getattr(marker, "kwargs", {})
+        with freezegun.freeze_time(*args, **kwargs) as frozen:
+            yield frozen
