@@ -101,8 +101,6 @@ async def _settle() -> None:
         await _REAL_SLEEP(0)
 
 
-
-
 def _own(frame: dict[str, Any]) -> bool:
     """A frame of the blind under test (the capture also holds another blind, lights and the gateway's clock)."""
     return str(frame["who"]) == "2" and frame["where"] == WHERE

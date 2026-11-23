@@ -412,3 +412,35 @@ async def test_a_scope_cover_whose_members_stopped_can_tilt(blind: Blind) -> Non
     await _settle()
     assert gateway.sent[-1] == "*2*0*3##"
     assert not area._is_tilting and not cover._is_tilting
+
+
+@pytest.mark.asyncio
+async def test_failed_mid_pulse_reversal_clears_pulse_end_claim(blind: Blind) -> None:
+    """If reversing a running tilt pulse fails to send, the old pulse is not claimed as ended."""
+    cover, clock, gateway, _release = blind
+    await _pulse_running(blind, 0, 0, 50)
+    assert cover._is_tilting and cover._tilt_direction == "open"
+    gateway.send = AsyncMock(side_effect=RuntimeError("gateway unavailable"))
+    with pytest.raises(RuntimeError, match="gateway unavailable"):
+        await cover.async_set_cover_tilt_position(tilt_position=0)
+    assert cover._pulse_ended_at is None
+    await _receive(cover, clock, _raw(18, "*#2*31*10*10*1*001*0##"), after=0.1)
+    assert cover.current_cover_tilt_position == 100
+
+
+@pytest.mark.asyncio
+async def test_follower_checks_leaders_pulse_written_failure(blind: Blind) -> None:
+    """A member following a scope pulse checks the leader's _pulse_written before claiming a pulse end."""
+    cover, clock, gateway, _release = blind
+    area = _area_3(blind)
+    cover._attr_current_cover_position = 2
+    cover._attr_current_cover_tilt_position = 100
+    pending: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    gateway.send = AsyncMock(return_value=pending)
+    await area.async_set_cover_tilt_position(tilt_position=0)
+    assert cover._is_tilting and cover._tilt_follows is area
+    pending.set_exception(RuntimeError("nack"))
+    pending.exception()  # mark retrieved
+    assert cover._pulse_direction_failed() is True
+    cover._apply_tilt_stop(clock.now)
+    assert cover._pulse_ended_at is None
