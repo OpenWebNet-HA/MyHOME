@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.core import State
+from homeassistant.exceptions import ServiceValidationError
 from OWNd.message import OWNHeatingEvent
 
 from custom_components.myhome import climate as climate_module
@@ -250,6 +251,154 @@ async def test_unreadable_restored_setpoint_is_ignored(hass):
     await restored.async_restore_last_state(State("climate.zone_2", "heat", {"temperature": "warm", "local_offset": 2}))
     assert restored.target_temperature is None
     assert restored._local_offset == 0
+
+
+# ------------------------------------------------------------------ a restart while off / in protection (#383)
+
+# Zone 3 of a 3550 (heating actuator only), F461 2.0.11 event session of the test plant,
+# 2026-11-17 23:24:58 - 23:25:07: the zone in manual heating at 25.0, then put in antifreeze by
+# the central unit (zone 3 `auto` while the 3550 is in antifreeze).
+ZONE_3_MANUAL_25 = ("*#4*3*12*0250*3##", "*4*1*3##", "*4*110*#3##", "*#4*#3*14*0250*1##")
+ZONE_3_ANTIFREEZE = ("*4*102*#3##", "*4*102*3##", "*#4*3*0*0255##", "*#4*3*12*0070*3##", "*4*102*3##")
+
+
+def _central_plant_gateway():
+    gateway = MagicMock()
+    gateway.mac = "00:03:50:00:04:97"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    gateway.has_central_unit = True
+    gateway.supports_zone_status = False  # an F455: the zone is not asked `*#4*3##` after a restart
+    return gateway
+
+
+def _saved(zone):
+    return State(
+        zone.entity_id,
+        zone.hvac_mode.value,
+        {"temperature": zone.target_temperature, **zone.extra_state_attributes},
+    )
+
+
+async def test_zone_saved_in_antifreeze_goes_back_to_its_nominal_after_a_restart(hass):
+    """HEAT after a restart writes the setpoint the zone had, not the 7.0 it holds in antifreeze.
+
+    The slider of a zone that is off or in protection shows the protection setpoint (#383), and
+    that is what Home Assistant saves as `temperature`. Restored as the nominal, HEAT sent
+    `*#4*#3*#14*0070*1##` (live F455 plant, 2026-11-18 02:03:28) and zone 3 heated to 7.0; the
+    entity that had not restarted sent `*#4*#3*#14*0250*1##` (same plant, 2026-11-17 23:25:15).
+    """
+    live = _zone(hass, where="3", gateway=_central_plant_gateway(), standalone=None)
+    _feed(live, *ZONE_3_MANUAL_25, *ZONE_3_ANTIFREEZE)
+    assert live.hvac_mode == HVACMode.OFF
+    assert live.target_temperature == 7.0
+    saved = _saved(live)
+    assert saved.state == "off"
+    assert saved.attributes["temperature"] == 7.0
+    assert saved.attributes["nominal_temperature"] == 25.0
+
+    restored = _zone(hass, where="3", gateway=_central_plant_gateway(), standalone=None)
+    await restored.async_restore_last_state(saved)
+    assert restored.hvac_mode == HVACMode.OFF
+    assert restored.target_temperature == 7.0  # still what the zone holds (#383)
+    assert restored.extra_state_attributes["nominal_temperature"] == 25.0
+    _feed(restored, "*4*102*3##", "*#4*3*12*0070*3##")  # the zone reports again, still in antifreeze
+    assert restored.target_temperature == 7.0
+    # The commanded setpoint is the saved one: asked until the zone reports it (a restored value is).
+    assert "*#4*3*14##" in restored._silent_zone_reads()
+    await restored.async_set_hvac_mode(HVACMode.HEAT)
+    restored._gateway_handler.send.assert_awaited_once()
+    assert str(restored._gateway_handler.send.await_args.args[0]) == "*#4*#3*#14*0250*1##"
+    # the 3550's answer on the live plant (23:25:15.919 - 23:25:16.824)
+    _feed(restored, "*4*1*3##", "*#4*3*0*0255##", "*4*110*#3##", "*#4*#3*14*0250*1##", "*#4*3*12*0250*3##")
+    assert restored.hvac_mode == HVACMode.HEAT
+    assert restored.target_temperature == 25.0
+
+
+async def test_zone_saved_in_antifreeze_shows_its_nominal_when_it_leaves_protection(hass):
+    """A zone that leaves protection by itself after a restart shows the nominal, as on the live path."""
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY, "*4*102*2##", "*#4*2*12*0070*3##")
+    restored = _zone(hass)
+    await restored.async_restore_last_state(_saved(live))
+    assert restored.target_temperature == 7.0
+    _feed(restored, "*4*1*2##")
+    assert restored.hvac_mode == HVACMode.HEAT
+    assert restored.target_temperature == 21.0  # the commanded setpoint, until dimension 12 says more
+    _feed(restored, "*#4*2*12*0235*3##")
+    assert restored.target_temperature == 23.5
+
+
+async def test_saved_nominal_carries_no_knob_offset(hass):
+    """`nominal_temperature` is the commanded value; the shown one has the knob offset on top."""
+    live = _zone(hass)
+    _feed(live, "*4*1*2##", "*#4*2*14*0210*3##", "*#4*2*13*02##")
+    assert live.target_temperature == 23.0
+    assert live.extra_state_attributes["nominal_temperature"] == 21.0
+    _feed(live, "*4*303*2##")
+    restored = _zone(hass)
+    await restored.async_restore_last_state(_saved(live))
+    assert restored._target_temperature == 21.0
+    assert restored._local_offset == 2
+    _feed(restored, "*4*1*2##")
+    assert restored.target_temperature == 23.0
+
+
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {"temperature": 7.0, "local_offset": 0},
+        {"temperature": 7.0, "local_offset": 0, "nominal_temperature": None},
+        {"temperature": 7.0, "local_offset": 0, "nominal_temperature": "warm"},
+    ],
+    ids=["saved-before-the-attribute", "nominal-none", "unreadable-nominal"],
+)
+async def test_zone_saved_off_without_a_nominal_does_not_write_the_saved_value(hass, attributes, caplog):
+    """A state saved while off by an older version has no nominal: nothing is written, the call fails.
+
+    The value shown while off cannot be told from a protection setpoint, so it is not written as
+    a heating setpoint; the zone's next dimension 14 brings the nominal.
+    """
+    restored = _zone(hass, where="3", gateway=_central_plant_gateway(), standalone=None)
+    await restored.async_restore_last_state(State("climate.zone_3", "off", attributes))
+    assert restored.target_temperature == 7.0
+    assert restored._target_temperature is None
+    assert "nominal_temperature" not in restored.extra_state_attributes
+    _feed(restored, "*4*102*3##", "*#4*3*12*0070*3##")
+    with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+        await restored.async_set_hvac_mode(HVACMode.HEAT)
+    restored._gateway_handler.send.assert_not_awaited()
+    # what the zone said while off is its protection setpoint: the silent-zone poll still asks
+    assert "*#4*3*14##" in restored._silent_zone_reads()
+    _feed(restored, "*#4*#3*14*0250*1##")  # the 3550 reports the zone's setpoint
+    assert "*#4*3*14##" not in restored._silent_zone_reads()
+    assert restored.target_temperature == 7.0  # still in antifreeze
+    await restored.async_set_hvac_mode(HVACMode.HEAT)
+    assert str(restored._gateway_handler.send.await_args.args[0]) == "*#4*#3*#14*0250*1##"
+
+
+@pytest.mark.parametrize("state", ["heat", "unknown"], ids=["running", "mode-not-known"])
+async def test_zone_not_saved_off_keeps_the_restore_rule_of_820(hass, state):
+    """Only a state saved as `off` is read that way: a running zone's value is its setpoint in force."""
+    restored = _zone(hass)
+    await restored.async_restore_last_state(
+        State("climate.zone_2", state, {"temperature": 23.5, "local_offset": 2, "nominal_temperature": 20.0})
+    )
+    assert restored.target_temperature == 23.5
+    assert restored._target_temperature == 21.5
+
+
+async def test_central_unit_has_no_nominal_attribute_and_restores_its_setpoint_when_off(hass):
+    gateway = _central_plant_gateway()
+    central = MyHOMEClimate(
+        hass=hass, name="Central", device_id="4-#0", who="4", where="#0", heating=True, cooling=True,
+        fan=False, standalone=False, central=True, manufacturer="BTicino", model="Central Unit (3550)",
+        gateway=gateway,
+    )
+    await central.async_restore_last_state(State("climate.central", "off", {"temperature": 21.5}))
+    assert central.target_temperature == 21.5
+    assert central._target_temperature == 21.5
+    assert "nominal_temperature" not in central.extra_state_attributes
 
 
 # ------------------------------------------------------------------ H/L4684 derived local offset when dimension 13 is absent (#466)

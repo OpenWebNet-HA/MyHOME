@@ -22,6 +22,7 @@ entity's business: ``MyHOMEClimate._standalone``.
 
 import asyncio
 import inspect
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -30,11 +31,12 @@ from homeassistant.components.climate.const import HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import MESSAGE_TYPE_ACTION, OWNHeatingEvent
 
-from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, LOGGER
+from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, DOMAIN, LOGGER
 from .discovery import (
     Address,
     DeviceContext,
@@ -45,10 +47,14 @@ from .discovery import (
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 from .where_grammar import (
+    canonical_central_zone,
     canonical_thermo_zone,
+    four_zone_central_where,
+    is_central_thermo_where,
     is_central_unit_actuator_status,
     is_probe,
     is_pump,
+    is_split_unit,
     parse_thermo_actuator_where,
     thermo_dim19_status,
     thermo_dim20_status,
@@ -67,6 +73,12 @@ CANDIDATE_ECHO_WINDOW = 5.0
 # Maximum lifetime of an unconfirmed candidate zone before its held frame expires (#966).
 CANDIDATE_MAX_AGE = 3600.0
 # The states of a climate entity that only a thermostat's own frames produce.
+# The unique id 2.0.0 gave a central unit configured as ``zone: "0"`` with ``central: true``:
+# ``<mac>-4-#0#0``, behind an interface ``<mac>-4-#0#0#4#II``.
+# The device part of a central unit as 2.0.0 saved it: ``#0#`` in front of an address typed as
+# ``0`` or with the prefix already (``#0#0`` -> ``#0##0#0``, ``#0#1`` -> ``#0##0#1``).
+_SAVED_CENTRAL_DOUBLED = re.compile(r"(.+-4-)(#0#(?:0|#0#\d{1,2}))((?:#4#\d{1,2})?)")
+
 _REAL_HVAC_STATES = frozenset(
     {
         HVACMode.HEAT.value,
@@ -122,8 +134,11 @@ def _bus_zone(message: Any) -> int | None:
     actuator 1 for it. Taken as the central unit's, a fan coil value (``*#4*#0*20*5##``)
     discovered a central unit on a plant that has none, and on a plant that has one the
     frame became an actuator of the central unit.
+
+    Nor ``3#Z#N`` under DIMENSION 22: split unit ``N`` of zone ``Z``
+    (``where_grammar.is_split_unit``), which OWNd reports as zone 3.
     """
-    if is_pump(message) or is_central_unit_actuator_status(message):
+    if is_pump(message) or is_split_unit(message) or is_central_unit_actuator_status(message):
         return None
     if is_probe(str(getattr(message, "where", None))):
         return None  # probe P of zone ZZ (105 = probe 1 of zone 5), not the zone's own frame
@@ -144,6 +159,8 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     raw_where = getattr(message, "where", None)
     zone = _bus_zone(message)
     interface = thermo_event_interface(message)
+    if is_split_unit(message):
+        return [], interface  # a split unit's report is no zone's, and its WHERE ``3`` no zone 3
     # OWNHeatingEvent keeps WHAT only as ``_what``; it has no ``what`` property.
     what = getattr(message, "what", None) or getattr(message, "_what", None)
     what_param = getattr(message, "what_param", None) or getattr(message, "_what_param", None) or []
@@ -191,13 +208,22 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
     """
     zones, interface = _calling_zones(message)
     zone = _bus_zone(message)
-    keys = [] if zone is None else [f"#{zone}" if zone == 0 else str(zone)]
+    keys: list[str] = []
+    if zone is not None and zone != 0:
+        keys.append(str(zone))
+    elif zone == 0 and is_central_thermo_where(message):
+        # OWNd's zone 0 is both ``#0``, the central unit, and ``0``, "General probes (all
+        # probes)" (WHO 4 p. 6). Only the first is the central unit's frame: a general
+        # ``*4*303*0##`` under the key ``#0`` switched the central unit's entity off.
+        keys.append("#0")
     # WHERE "0" with a parameter is pump ``0#N``, not the general "0" (#431); an actuator
     # status with WHERE ``#0`` is not the central unit's (#944).
     if getattr(message, "where", None) and not is_probe(str(message.where)) and not (
-        is_pump(message) or is_central_unit_actuator_status(message)
+        is_pump(message) or is_split_unit(message) or is_central_unit_actuator_status(message)
     ):
-        keys.append(str(message.where))
+        # ``#0#N`` is zone N of a 4-zone central unit; OWNd reports its WHERE as ``#0``, the
+        # 99-zone central unit's key, under which no ``#0#N`` entity listens.
+        keys.append(four_zone_central_where(message) or str(message.where))
     keys.extend(zones)
     if interface:
         return list(dict.fromkeys(f"{key}{BUS_ROUTING}{interface}" for key in keys))
@@ -292,6 +318,9 @@ class ZoneDiscovery:
         self._candidates: dict[ZonePair, tuple[float, str]] = {}
         self._confirming_pair: ZonePair | None = None
         self._candidate_task: asyncio.Future[Any] | None = None
+        # Candidates whose confirmation read nothing answered (a NACK, or an ACK without a frame of
+        # the zone): not read again; they wait for a second frame or CANDIDATE_MAX_AGE.
+        self._candidates_unanswered: set[ZonePair] = set()
 
     def start_reads(self) -> None:
         """Ask the zones known only from their actuators, once the start-up sweep is over.
@@ -314,6 +343,7 @@ class ZoneDiscovery:
         pair = _zone_pair(ctx.address)
         if pair is not None:
             self._candidates.pop(pair, None)
+            self._candidates_unanswered.discard(pair)
             for held in self._held.pop(pair, {}).values():
                 entity.handle_event(held)
         return entity
@@ -448,6 +478,7 @@ class ZoneDiscovery:
             cand for cand, (first_at, _raw) in self._candidates.items() if now - first_at > CANDIDATE_MAX_AGE
         ]:
             self._candidates.pop(expired, None)
+            self._candidates_unanswered.discard(expired)
             self._drop_candidate_held(expired)
         raw = "" if ctx.message is None else str(ctx.message)
         if pair in self._candidates:
@@ -458,11 +489,13 @@ class ZoneDiscovery:
                 or (now - first_at) >= CANDIDATE_ECHO_WINDOW
             ):
                 self._candidates.pop(pair, None)
+                self._candidates_unanswered.discard(pair)
                 return True
             return False
         if any(s.startswith(("act:", "dim19")) for s in self._held.get(pair, ())):
             return True
         self._held.setdefault(pair, {})[_thermo_hold_slot(ctx.message)] = ctx.message
+        self._candidates_unanswered.discard(pair)
         self._candidates[pair] = (now, raw)
         self._start_candidate_reads(pair)
         LOGGER.debug(
@@ -472,6 +505,72 @@ class ZoneDiscovery:
         return False
 
 
+
+    def correct_saved_central_address(self) -> None:
+        """Give a central unit that 2.0.0 saved as ``#0#0`` its address ``#0`` back.
+
+        ``zone: "0"`` with ``central: true`` was filed under ``#0#0`` (``#0#0#4#II`` behind an
+        interface), an address the WHERE table does not have (WHO 4 PDF p. 6: ``#0`` Central
+        Unit; a 4-zone central unit is ``#0#1`` to ``#0#4``). The saved entity keeps its entity
+        id and its settings under ``#0``. Where a ``#0`` entity is saved too (the one found on
+        the bus), that one stays and the ``#0#0`` one is removed: both would now be the same
+        central unit. An address the configuration still names (``zone: "#0#0"`` typed by hand
+        without ``central``) is left alone: that entity is built under ``#0#0`` again.
+        """
+        try:
+            registry = er.async_get(self._hass)
+            entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))
+        except Exception:  # registry not loaded in some harnesses (as ``PlatformDiscovery.registry_entries``)
+            return
+        configured = {Address.from_config(key, cfg).key for key, cfg in self._configured.items() if isinstance(cfg, dict)}
+        for entry in entries:
+            match = _SAVED_CENTRAL_DOUBLED.fullmatch(str(entry.unique_id))
+            if entry.domain != Platform.CLIMATE or match is None or f"{match[2]}{match[3]}" in configured:
+                continue
+            corrected = f"{match[1]}{canonical_central_zone(match[2])}{match[3]}"
+            if kept := registry.async_get_entity_id(entry.domain, entry.platform, corrected):
+                self._hand_over_device_settings(entry.device_id, getattr(registry.async_get(kept), "device_id", None))
+                registry.async_remove(entry.entity_id)
+                LOGGER.info(
+                    "climate: %s was saved as central unit %s next to the central unit %s; removed",
+                    entry.entity_id, f"{match[2]}{match[3]}", f"{canonical_central_zone(match[2])}{match[3]}",
+                )
+            else:
+                registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
+                self._move_device_identifier(entry.device_id, str(entry.unique_id), corrected)
+                LOGGER.info(
+                    "climate: %s was saved as central unit %s; it is the central unit %s",
+                    entry.entity_id, f"{match[2]}{match[3]}", f"{canonical_central_zone(match[2])}{match[3]}",
+                )
+
+    def _hand_over_device_settings(self, removed_id: str | None, kept_id: str | None) -> None:
+        """The name and the area the user gave a removed central unit go to the one that stays.
+
+        Only where the device that stays has none of its own: what the user set there is kept.
+        """
+        devices = dr.async_get(self._hass)
+        removed = devices.async_get(removed_id) if removed_id else None
+        kept = devices.async_get(kept_id) if kept_id else None
+        if removed is None or kept is None or removed.id == kept.id:
+            return
+        if removed.name_by_user and not kept.name_by_user:
+            devices.async_update_device(kept.id, name_by_user=removed.name_by_user)
+        if removed.area_id and not kept.area_id:
+            devices.async_update_device(kept.id, area_id=removed.area_id)
+
+    def _move_device_identifier(self, device_id: str | None, old: str, new: str) -> None:
+        """The device of a renamed entity follows it: its name, area and settings stay with the entity.
+
+        A device is identified by the unique id of its entity (``MyHOMEEntity``). Left as it is
+        where the entity has no device, or another device already holds the new identifier.
+        """
+        devices = dr.async_get(self._hass)
+        device = devices.async_get(device_id) if device_id else None
+        if device is None or (DOMAIN, old) not in device.identifiers:
+            return
+        if any((DOMAIN, new) in other.identifiers for other in dr.async_entries_for_config_entry(devices, self._config_entry.entry_id)):
+            return
+        devices.async_update_device(device.id, new_identifiers=(set(device.identifiers) - {(DOMAIN, old)}) | {(DOMAIN, new)})
 
     def duplicate(self, entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         """Whether a registry entry is not a zone of its own and is removed."""
@@ -498,8 +597,22 @@ class ZoneDiscovery:
         was seen first no local zone was ever created.
         """
         keys = [*default_known_keys(ctx), ctx.config_id or ""]
+        routing = f"{BUS_ROUTING}{ctx.address.interface}" if ctx.address.interface else ""
+        if ctx.address.interface and ctx.address.clean_where in ("0", "#0"):
+            # The same central unit behind an interface, whichever of the two was there first:
+            # its frames come under ``#0#4#II``, ``myhome.yaml`` may call it ``0``.
+            keys += [f"#0{routing}", f"0{routing}"]
+        if "#" not in ctx.address.clean_where.removeprefix("#") and (
+            number := canonical_thermo_zone(ctx.address.clean_where)
+        ):
+            # ``1``, ``#1`` and ``01`` are one zone: the entity saved under one spelling is the
+            # zone ``myhome.yaml`` writes in another, on the local bus and behind an interface.
+            keys += [f"{spelling}{routing}" for spelling in (number, f"#{number}", number.zfill(2), f"#{number.zfill(2)}")]
         if not ctx.address.interface:
             keys += [ctx.address.where, ctx.address.clean_where]
+            if ctx.address.clean_where == "0":
+                # A central unit configured as `0` is the 99-zone central unit: its frames come under `#0`.
+                keys.append("#0")
             if "#" not in ctx.address.clean_where.removeprefix("#"):
                 keys.append(zone_number(ctx.address.where))
         return [k for k in keys if k]
@@ -611,14 +724,21 @@ class ZoneDiscovery:
                 return
             asked.add(pair)
             answered: bool | None = None
+            exposed = False
             for _attempt in range(2):
                 if isinstance(lock, asyncio.Lock):
                     async with lock:
-                        answered = await gateway.read_zone_temperature(pair[0])
+                        # The address can become exposed on the bus while the read waits for the lock,
+                        # or its thermostat can report and build the zone (it leaves ``_held``).
+                        exposed = is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0])
+                        if not exposed and pair in self._held:
+                            answered = await gateway.read_zone_temperature(pair[0])
                 else:
                     answered = await gateway.read_zone_temperature(pair[0])
-                if answered is not None:
+                if exposed or answered is not None or pair not in self._held:
                     break
+            if exposed:
+                continue  # not read: it counts neither as a zone that did not answer nor as a busy gateway
             if pair not in self._held:
                 silent = 0  # built from its answer
                 continue
@@ -652,8 +772,12 @@ class ZoneDiscovery:
             run.close()
 
     async def _read_under_confirm(self, pair: ZonePair) -> bool | None:
-        """Read ``pair``'s temperature while allowing identical reply frames to confirm it."""
-        if pair not in self._candidates:
+        """Read ``pair``'s temperature while allowing identical reply frames to confirm it.
+
+        The exposure check is made here, with the startup lock held, because the address can
+        become exposed on the bus while the read waits for the lock.
+        """
+        if pair not in self._candidates or is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0]):
             return None
         self._confirming_pair = pair
         try:
@@ -663,12 +787,18 @@ class ZoneDiscovery:
             self._confirming_pair = None
 
     async def _confirm_candidates(self) -> None:
-        """Actively query unrouted candidate zones once the bus is quiet to confirm or evict them."""
+        """Read each unrouted candidate zone once, when the bus is quiet.
+
+        A zone that answers is created by its own frame. One that nothing answers stays a candidate,
+        is not read again, and is created by its next independent frame (``accept``) or expires.
+        """
         gateway = self._gateway
         try:
             await asyncio.sleep(0)
             if not any(
-                cand[1] is None and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand[0])
+                cand[1] is None
+                and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand[0])
+                and cand not in self._candidates_unanswered
                 for cand in self._candidates
             ):
                 return
@@ -686,6 +816,7 @@ class ZoneDiscovery:
                         for cand_pair, data in self._candidates.items()
                         if cand_pair not in asked
                         and cand_pair[1] is None
+                        and cand_pair not in self._candidates_unanswered
                         and not is_exposed_on_bus(self._hass, self._config_entry, 4, cand_pair[0])
                     ),
                     None,
@@ -696,7 +827,9 @@ class ZoneDiscovery:
                 asked.add(pair)
                 if inspect.iscoroutinefunction(getattr(gateway, "_wait_for_bus_quiet", None)):
                     await gateway._wait_for_bus_quiet(first_at)
-                    if pair not in self._candidates:
+                    if pair not in self._candidates or is_exposed_on_bus(
+                        self._hass, self._config_entry, 4, pair[0]
+                    ):
                         continue
                 answered: bool | None = None
                 for _attempt in range(2):
@@ -705,13 +838,24 @@ class ZoneDiscovery:
                             answered = await self._read_under_confirm(pair)
                     else:
                         answered = await self._read_under_confirm(pair)
-                    if pair not in self._candidates or answered is not None:
+                    if (
+                        pair not in self._candidates
+                        or answered is not None
+                        or is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0])
+                    ):
                         break
-                if pair not in self._candidates:
+                if pair not in self._candidates or is_exposed_on_bus(
+                    self._hass, self._config_entry, 4, pair[0]
+                ):
                     continue
                 if answered in (False, True):
-                    self._candidates.pop(pair, None)
-                    self._drop_candidate_held(pair)
+                    self._candidates_unanswered.add(pair)
+                    LOGGER.debug(
+                        "%s Zone %s: nothing answered its temperature read; it stays a candidate "
+                        "for its next frame and is not read again",
+                        getattr(gateway, "log_id", gateway.mac),
+                        pair[0],
+                    )
                 else:
                     LOGGER.debug(
                         "%s Zone %s: temperature could not be read while gateway was busy; "

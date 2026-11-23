@@ -387,10 +387,14 @@ async def test_climate_edge_cases_and_properties(hass):
     climate._target_temperature = 21.5
     assert climate.target_temperature == 21.5
 
-    # async_set_hvac_mode when _target_temperature is None does not send command for HEAT or COOL
+    # async_set_hvac_mode when _target_temperature is None sends nothing for HEAT or COOL and says so
     climate._target_temperature = None
-    await climate.async_set_hvac_mode(HVACMode.HEAT)
-    await climate.async_set_hvac_mode(HVACMode.COOL)
+    from homeassistant.exceptions import ServiceValidationError
+
+    with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+        await climate.async_set_hvac_mode(HVACMode.HEAT)
+    with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+        await climate.async_set_hvac_mode(HVACMode.COOL)
     gateway.send.assert_not_called()
 
     # async_set_temperature without temperature kwarg uses _local_target_temperature
@@ -678,6 +682,40 @@ async def test_climate_fan_mode_and_attributes(hass):
     assert gateway.send_status_request.await_count == 1
     assert [str(call[0][0]) for call in gateway.send_status_request.call_args_list] == ["*#4*5##"]
     gateway.request_zone_dimension.assert_any_call("5", 19)
+
+
+async def test_fan_coil_speed_15_is_off_in_running_fan_speed_only(hass):
+    """``*#4*where*11*15*##``: "15 = OFF" (WHO 4 p. 15). The fan mode keeps the speed set (#410)."""
+    from OWNd.message import OWNEvent
+
+    gateway = MagicMock()
+    gateway.mac = "00:03:50:00:11:22"
+    gateway.log_id = "[Test Gateway]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    zone = MyHOMEClimate(
+        hass=hass, name="Fancoil", device_id="4-1", who="4", where="1", heating=True, cooling=True,
+        fan=True, standalone=True, central=False, manufacturer="BTicino", model="Fancoil Unit", gateway=gateway,
+    )
+    zone.entity_id = "climate.fancoil"
+    zone.async_schedule_update_ha_state = MagicMock()
+
+    zone.handle_event(OWNEvent.parse("*#4*1*11*3*##"))  # both dimension 11 frames: OWNd tests/test_who4_audit_fixes.py
+    assert zone.fan_mode == "high"
+    assert "running_fan_speed" not in zone.extra_state_attributes
+
+    zone.handle_event(OWNEvent.parse("*#4*1*11*15*##"))
+    assert zone.fan_mode == "high"  # the speed it is set to: "off" is not a fan mode (#410)
+    assert zone.fan_modes == ["auto", "low", "medium", "high"]
+    assert zone.extra_state_attributes["running_fan_speed"] == "off"
+    assert zone._fan_mode_reported is True  # the zone answered: the start-up poll does not ask again
+
+    # An actuator that reports the fan itself stays in charge (dimension 20, 8 = "ON Vel 3";
+    # frame of an F461 plant, tests/fixtures/plants/issue_303_f461).
+    zone.handle_event(OWNEvent.parse("*#4*1#2*20*8##"))
+    assert zone.extra_state_attributes["running_fan_speed"] == "high"
+    zone.handle_event(OWNEvent.parse("*#4*1*11*15*##"))
+    assert zone.extra_state_attributes["running_fan_speed"] == "high"
 
 
 async def test_climate_central_fan_mode_guard(hass):

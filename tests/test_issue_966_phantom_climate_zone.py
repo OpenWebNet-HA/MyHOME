@@ -264,7 +264,7 @@ async def test_active_confirmation_nack_mh202_empty_ack_and_busy_retry(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Cover NACK eviction, MH202 empty-ACK eviction, busy retry, and double-busy fallback."""
+    """Cover the unanswered read (NACK, empty ACK: kept, not read again), busy retry, and double-busy fallback."""
     now = 2000.0
     monkeypatch.setattr(climate_discovery, "time", SimpleNamespace(monotonic=lambda: now))
     caplog.set_level("DEBUG", logger="custom_components.myhome")
@@ -275,9 +275,9 @@ async def test_active_confirmation_nack_mh202_empty_ack_and_busy_retry(
     async def read(where: str) -> bool | None:
         calls.append(where)
         if where == "65":
-            return False  # NACK -> evict
+            return False  # NACK -> stays a candidate
         if where == "66":
-            return True  # MH202 empty ACK with zero reply -> evict
+            return True  # empty ACK with zero reply -> stays a candidate
         if where == "67":
             if calls.count("67") == 1:
                 return None  # busy on attempt 1 -> retry
@@ -304,7 +304,7 @@ async def test_active_confirmation_nack_mh202_empty_ack_and_busy_retry(
     assert [z._where for z in zones] == ["67"]
     assert "leaving it to confirm on its next frame" in caplog.text
 
-    # Zone 65 & 66 were evicted (identical frame < 5s later starts fresh candidate, does NOT confirm).
+    # Zones 65 and 66 are still candidates: an identical frame < 5 s later confirms nothing.
     await _receive(hass, handler, ["*#4*65*0*0190##", "*#4*66*0*0190##"])
     assert [z._where for z in zones] == ["67"]
 
@@ -312,9 +312,10 @@ async def test_active_confirmation_nack_mh202_empty_ack_and_busy_retry(
     await _receive(hass, handler, ["*#4*68*12*0210*3##"])
     assert sorted(z._where for z in zones) == ["67", "68"]
 
-    # Settle evicted 65 & 66 again cleanly.
+    # Nothing is read again for 65 and 66.
     await _settle(hass, handler)
     assert sorted(z._where for z in zones) == ["67", "68"]
+    assert calls == ["65", "66", "67", "67", "68", "68"]
 
 
 async def test_confirm_candidates_passive_confirm_during_wait_for_bus_quiet(

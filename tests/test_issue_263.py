@@ -222,12 +222,17 @@ async def test_climate_yaml_config_skips_probe_entries(hass, mock_gateway):
 @pytest.mark.parametrize(
     "restored_state_val,restored_temp,expected_mode,expected_temp",
     [
-        (STATE_UNKNOWN, "21.5", HVACMode.OFF, 21.5),
-        (STATE_UNAVAILABLE, "20.0", HVACMode.OFF, 20.0),
-        ("invalid_hvac_mode", "19.0", HVACMode.OFF, 19.0),
+        # Saved with no mode and no commanded setpoint: restored as off, and as for a state saved
+        # off the value shown may be a protection setpoint that came before the zone's mode, so it
+        # is not taken as the nominal one (tests/test_review_983_climate.py).
+        (STATE_UNKNOWN, "21.5", HVACMode.OFF, None),
+        (STATE_UNAVAILABLE, "20.0", HVACMode.OFF, None),
+        ("invalid_hvac_mode", "19.0", HVACMode.OFF, None),
         (HVACMode.HEAT, "22.0", HVACMode.HEAT, 22.0),
         (HVACMode.COOL, "23.0", HVACMode.COOL, 23.0),
-        (HVACMode.OFF, "18.0", HVACMode.OFF, 18.0),
+        # Saved while off: the value shown may be the protection setpoint (#383), so it is not
+        # taken as the nominal one (tests/test_climate_setpoint_in_force.py, restart while off).
+        (HVACMode.OFF, "18.0", HVACMode.OFF, None),
         (None, None, None, None),
         ("heat", "invalid_number", HVACMode.HEAT, None),
     ],

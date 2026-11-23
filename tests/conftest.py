@@ -599,3 +599,28 @@ def fast_bus_pacing(monkeypatch):
     monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.01)
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.01)
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.005)
+
+
+@pytest.fixture(autouse=True)
+def _cancel_open_central_cycles(monkeypatch: pytest.MonkeyPatch):
+    """Cancel the wait for the central unit's optional flags at the end of a test.
+
+    ``DeviceHealth._begin_central_cycle`` waits ``CENTRAL_FLAGS_SETTLE`` after the central unit's
+    remote-control frame; unloading the entry cancels it (``clear_all``). A test that feeds
+    such a frame through a real handler and never unloads would leave the timer behind.
+    """
+    from custom_components.myhome.device_health import DeviceHealth
+
+    created: list[DeviceHealth] = []
+    original = DeviceHealth.__init__
+
+    def _init(self: DeviceHealth, *args: object, **kwargs: object) -> None:
+        original(self, *args, **kwargs)
+        created.append(self)
+
+    monkeypatch.setattr(DeviceHealth, "__init__", _init)
+    yield
+    for health in created:
+        for cancel in list(health._central_cycles.values()):
+            cancel()
+        health._central_cycles.clear()

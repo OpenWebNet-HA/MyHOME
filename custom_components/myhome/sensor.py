@@ -87,6 +87,7 @@ from .const import (
     CONF_ZONE,
     DOMAIN,
     LOGGER,
+    central_mode_signal,
     normalize_where,
 )
 from .data import MyHOMEConfigEntry
@@ -106,6 +107,7 @@ from .where_grammar import (
     canonical_thermo_zone,
     is_central_thermo_where,
     is_central_unit_report,
+    is_external_probe,
     is_probe,
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -126,6 +128,8 @@ SCAN_INTERVAL = timedelta(seconds=300)
 # `*#4*303*15##`; the F455 1.0.76 on that plant held a command session 9.3 to 9.4 s before it
 # NACKed each of them (sent directly to the F461 on the same bus: NACK after 2.1 s). Three
 # poll intervals cover that report interval with one update to spare.
+# (That read was the dimension 15 one; a slave probe is now asked for dimension 0, see
+# `MyHOMETemperatureSensor._fallback_read`.)
 PROBE_PUSH_FRESH = 900.0
 # A single corrupted frame (e.g. zone 1 bit-7 flip -> 129) must not register a
 # permanent phantom probe sensor (#967). Unconfigured bus probes confirm passively
@@ -225,6 +229,25 @@ def _climate_zone_config(
         if canonical_thermo_zone(cfg_addr.where) == zone and cfg_addr.interface == interface:
             return dict(cfg)
     return {}
+
+def _probe_frame_without_reading(message: Any) -> bool:
+    """A WHO 4 dimension 15 frame whose sensor field and temperature are all zeros.
+
+    An MH201 3.3.6 delivered ``*#4*105*15*0*0000*0000##`` twice, 8 s apart (issue_466, sweep of
+    2026-09-25), while probe 105 of that plant reports 29.6 °C on dimension 0
+    (``*#4*105*0*0296##``, 7 min 11 s earlier in the trace of the same gateway). OWNd reads the
+    frame as sensor 0 at 0.0 °C. The dimension 15 reports in the other captures carry sensor
+    ``1``: ``*#4*100*15*1*0253*0001##`` (#308), ``*#4*100*15*1*0200*0001##`` (#264); so does the
+    touch screen's test report ``*#4*11*15*1*123*1111##``, and its request is ``15#1``
+    (Encyclopedia, WHO 4 dimensions, "Historical external-probe DIMENSION 15"). What a sensor
+    field of ``0`` stands for is not documented, so only a frame whose sensor field and
+    temperature are both zeros is taken as "no reading"; ``0000`` from sensor 1 is still 0.0 °C.
+    """
+    if getattr(message, "dimension", None) != 15:
+        return False
+    values = [str(value) for value in (getattr(message, "dimension_value", None) or [])]
+    return len(values) >= 2 and all(value != "" and set(value) == {"0"} for value in values[:2])
+
 
 
 async def async_setup_entry(
@@ -498,6 +521,8 @@ async def async_setup_entry(
         clean = where.split("-")[-1].split("#")[0]
         if not clean:
             return None
+        if _probe_frame_without_reading(message):
+            return None  # no sensor is created for a frame that carries no reading
         is_probe_reading = dimension == 15 or message_type == MESSAGE_TYPE_SECONDARY_TEMPERATURE
         is_probe_main = (message_type == MESSAGE_TYPE_MAIN_TEMPERATURE or dimension == 0) and is_probe(clean)
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
@@ -1395,13 +1420,58 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         # Readings received from the bus, to tell whether one arrived while a fallback read was out.
         self._pushes = 0
         # Set when the gateway refused the fallback read of a probe: it is not sent again (until
-        # the entry is reloaded). The readings the probe sends by itself are all it has then.
+        # the entry is reloaded, or the gateway comes back from an outage). The readings the
+        # probe sends by itself are all it has then.
         self._fallback_read_refused = False
+        # The gateway's event-session count when the refusal came: a reconnect asks once more.
+        self._fallback_refused_on_connection: int | None = None
+        # The gateway that refused it (the one that served the read): another gateway is asked once.
+        self._fallback_refused_by: Any = None
 
     @property
     def _is_probe(self) -> bool:
         """Return True for slave/external probe addresses (ZPP >= 100)."""
         return is_probe(str(self._where).split("#")[0])
+
+    def _read_gateway(self) -> Any:
+        """The gateway that serves this sensor's read: a delegated secondary or the warm standby, else its own."""
+        who4_target = getattr(self._gateway_handler, "_who4_target", None)
+        return who4_target() if callable(who4_target) else self._gateway_handler
+
+    def _fallback_refusal_stands(self) -> bool:
+        """Whether the gateway that would serve the read now is the one, on the connection, that refused it.
+
+        It also stands while no gateway can serve the read: an outage is no takeover.
+        """
+        target = self._read_gateway()
+        if getattr(target, "is_connected", False) is not True:
+            return True
+        if target is not self._fallback_refused_by:
+            return False
+        connections = getattr(target, "event_connections", None)
+        return not isinstance(connections, int) or connections == self._fallback_refused_on_connection
+
+    def _fallback_read(self) -> OWNHeatingCommand:
+        """The read of this sensor: dimension 0, except for an external probe (``N00``).
+
+        A slave probe ``PZZ`` is read like a zone: "Slave probe temperature request: where =
+        [1-8]+[01-99]", ``*#4*where*0##``, example ``*#4*301*0##`` (WHO 4 PDF, 1.5.1). Probe 303
+        of a physical plant, 2026-11-18, asked directly on a command session: ``*#4*303*0##``
+        was answered with ``*#4*303*0*0233##`` and an ACK after 0.09 s by an F455 1.0.76 and
+        after 0.14 s by an F461 2.0.11; ``*#4*303*15##`` was NACKed with no frame after 8.9 s
+        (F455) and 2.1 s (F461). Probe 105 behind an MH200N 1.1.8 and an MH201 3.3.6 reports on
+        dimension 0 too (``*#4*105*0*0296##``, issue_466); ``*#4*105*15##`` sent through that
+        MH200N was followed by no frame of the probe.
+
+        An external probe ``N00`` keeps the dimension 15 read of #308: its reports are dimension
+        15 frames (``*#4*100*15*1*0253*0001##``, a 3455 behind an L4577 on an F454), no capture
+        shows it answering a dimension 0 read, and that read is rationed by the latch below.
+        """
+        if is_external_probe(str(self._where).split("#")[0]):
+            build = getattr(OWNHeatingCommand, "get_probe_temperature", None)  # absent in old OWNd
+            if build is not None:
+                return cast(OWNHeatingCommand, build(self._where))
+        return OWNHeatingCommand.get_temperature(self._where)
 
     def _push_is_fresh(self) -> bool:
         """Return True when a reading arrived within the last poll interval (a probe: ``PROBE_PUSH_FRESH``)."""
@@ -1420,30 +1490,69 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         """When entity is removed from hass."""
         self._unregister_entity_ref(str(self._attr_device_class))
 
+    @callback
+    def _handle_availability_update(self) -> None:
+        """Ask a probe once more after the gateway came back from an outage.
+
+        The refusal was the answer of the gateway before the outage (a restart of the gateway, a
+        power cut on the plant, another gateway taking over). One refused read per outage is the
+        cost; without it one command timeout latched the probe until the entry was reloaded.
+        """
+        target = self._read_gateway()
+        if (
+            self._fallback_read_refused
+            and getattr(target, "is_connected", False) is True
+            # A gateway that comes back does so on a new event session, and a gateway that takes
+            # over is another gateway. This signal is also sent for a secondary of another WHO and
+            # for the standby: it ends nothing while the gateway that refused serves the read on
+            # the session it refused it on.
+            and not self._fallback_refusal_stands()
+        ):
+            self._fallback_read_refused = False
+            LOGGER.debug(
+                "%s %s: the gateway is available again; probe %s is asked once more when it stays silent",
+                self._gateway_handler.log_id,
+                self.entity_id,
+                self._where,
+            )
+        super()._handle_availability_update()
+
     async def async_update(self) -> None:
         """Poll the probe, unless the bus already pushed a fresh reading."""
         if self._push_is_fresh():
             return
-        if self._is_probe:
-            if self._fallback_read_refused:
+        if self._is_probe and self._fallback_read_refused:
+            # Asked once more by another gateway than the one that refused (the standby taking over, the
+            # primary coming back), and after a reconnect of the event session of the one that refused
+            # (also one too short to make the gateway unavailable).
+            if self._fallback_refusal_stands():
                 return
-            cmd = (
-                getattr(OWNHeatingCommand, "get_probe_temperature", None)
-                and OWNHeatingCommand.get_probe_temperature(self._where)
-            ) or OWNHeatingCommand.get_temperature(self._where)
-        else:
-            cmd = OWNHeatingCommand.get_temperature(self._where)
+            self._fallback_read_refused = False
+        if (
+            BUS_ROUTING in str(self._where)
+            and getattr(self._gateway_handler, "interface_zone_request_refused", False) is True
+        ):
+            # Behind an interface where the gateway does not route WHO 4, a probe has only its own
+            # reports, and the read of a zone would be answered for the local zone of that number.
+            return
+        cmd = self._fallback_read()
         pushes_before = self._pushes
+        served_by = self._read_gateway()
+        asked_on = getattr(served_by, "event_connections", None)
         written = await self._gateway_handler.send_status_request(cmd)
         if self._is_probe and isinstance(written, asyncio.Future):
             # Not awaited here: a refusal can take 9 s (above), and the update must not wait for it.
-            written.add_done_callback(lambda future: self._fallback_read_done(future, pushes_before))
+            written.add_done_callback(
+                lambda future: self._fallback_read_done(future, pushes_before, served_by, asked_on)
+            )
 
-    def _fallback_read_done(self, written: asyncio.Future[Any], pushes_before: int) -> None:
+    def _fallback_read_done(
+        self, written: asyncio.Future[Any], pushes_before: int, served_by: Any = None, asked_on: Any = None
+    ) -> None:
         """Stop the fallback read of a probe once the gateway refused it.
 
         Refused: the gateway answered the written read with a NACK (``_gateway_nack``), or with
-        nothing before the command timeout (``_command_timeout``), while it was connected. The
+        nothing before the command timeout (``_command_timeout``), while the gateway that served it was connected. The
         sender sets these marks. Not a refusal: every other cancelled read (the command session
         could not be opened or lost its socket, the read was dropped because it collected another
         zone's frame (#886), the queue was shut down), a read cancelled with the connection, and
@@ -1456,11 +1565,26 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
             or getattr(written, "_command_timeout", False) is True
         ):
             return
-        if getattr(self._gateway_handler, "is_connected", False) is not True:
+        gateway = served_by if served_by is not None else self._gateway_handler
+        if getattr(gateway, "is_connected", False) is not True:
+            return
+        connections = getattr(gateway, "event_connections", None)
+        # The session this gateway's sender wrote the read under. A read that carries no such mark
+        # (a double) is judged by the session at the time it was queued.
+        written_by, written_on = getattr(written, "_written_under", None) or (None, None)
+        if written_by is gateway and isinstance(written_on, int):
+            asked_on = written_on
+        if isinstance(asked_on, int) and connections != asked_on:
+            # The connection that was asked is gone: this says nothing about the new one.
+            return
+        if gateway is not self._read_gateway():
+            # Another gateway serves the read by now: a late answer of this one does not stop it.
             return
         if self._pushes != pushes_before:
             return
         self._fallback_read_refused = True
+        self._fallback_refused_by = gateway
+        self._fallback_refused_on_connection = connections
         LOGGER.debug(
             "%s %s: the gateway refused the read of probe %s; it is not asked again, its own reports are used",
             self._gateway_handler.log_id,
@@ -1471,6 +1595,9 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Handle an event message."""
+        if _probe_frame_without_reading(message):
+            # Not a reading and not a report: it changes neither the value nor the fallback window.
+            return None
         val = None
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
             val = message.main_temperature
@@ -1678,7 +1805,7 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
             self.async_on_remove(
                 async_dispatcher_connect(
                     target_hass,
-                    f"myhome_central_mode_{self._gateway_handler.mac}",
+                    central_mode_signal(self._gateway_handler.mac, self._interface),
                     self._handle_central_mode_update,
                 )
             )
@@ -1699,7 +1826,13 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         target = getattr(
             self._gateway_handler, "_who4_target", lambda: self._gateway_handler
         )()
-        if getattr(target, "actuator_request_refused", False) is True:
+        # Decided by the form of the read: this actuator (``Z#N``), not the zone (as the thermo
+        # switch does); a gateway double without the method keeps the zone-level check.
+        read_refused = getattr(self._gateway_handler, "actuator_read_refused", None)
+        refused = read_refused(self._where) if callable(read_refused) else None
+        if not isinstance(refused, bool):
+            refused = getattr(target, "actuator_request_refused", False) is True
+        if refused:
             return
         if (
             self._interface is not None

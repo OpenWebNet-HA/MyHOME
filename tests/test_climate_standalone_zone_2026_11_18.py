@@ -281,7 +281,9 @@ async def test_detection_puts_the_mode_right(monkeypatch: pytest.MonkeyPatch) ->
         zone2._attr_hvac_mode = shown
         zone2._hvac_mode_restored = restored
         _replay(zone2, _rx("f461_startup_zone_status"))  # *4*0*2##: season only for a zone of the central
-        assert zone2.hvac_mode == shown
+        # With F04 `restored-mode-season` in the same tree a restored HEAT already gives way to the
+        # zone's own season frame; the F455's AUTO (not restored) still waits for the first write.
+        assert zone2.hvac_mode == (HVACMode.COOL if restored else shown)
         await zone2.async_set_temperature(temperature=21.0)
         assert zone2.hvac_mode == HVACMode.COOL
         assert HVACMode.AUTO not in zone2.hvac_modes  # the central unit has no program for it (#895)

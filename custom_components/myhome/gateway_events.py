@@ -528,7 +528,18 @@ class GatewayEventDispatcher:
                     self.handler.log_id,
                     message,
                 )
-        elif isinstance(message, OWNHeatingCommand) and message.dimension is not None and message.dimension == 14 and self._is_active_for_who(4):
+        elif (
+            isinstance(message, OWNHeatingCommand)
+            and message.dimension is not None
+            and message.dimension == 14
+            # A setpoint WRITE seen on the bus (``*#4*2*#14*0200*2##``, ``*#4*#2*#14*0280*1##``:
+            # central_restore_3100_live_2026-11-12, plants/issue_333_myhomeserver1) is followed
+            # by a read of the zone. The REQUEST of the same dimension (``*#4*2*14##``, the
+            # silent-zone poll's own read; ``*#4*#2*14##``) parses to the same class and
+            # dimension and changes nothing: it must not start a zone status read.
+            and bool(getattr(message, "is_dimension_writing", False))
+            and self._is_active_for_who(4)
+        ):
             if not getattr(self.handler, "supports_zone_status", True):
                 return
             iface = getattr(message, "interface", None)

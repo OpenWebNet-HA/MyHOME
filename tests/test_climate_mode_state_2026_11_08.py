@@ -174,7 +174,7 @@ def test_zone_of_the_central_keeps_its_mode_on_a_season_frame() -> None:
 # F3: 102 / 202 on #0 are protection in their season, and HEAT / COOL on #0 waits for the 3550.
 
 
-async def test_central_heat_shows_the_antifreeze_the_3550_answers() -> None:
+async def test_central_heat_leaves_thermal_protection_with_the_last_program() -> None:
     gateway = _gateway()
     central = _climate(gateway, "#0", standalone=None, central=True)
     _replay(central, _rx("f461_central_cool"))
@@ -182,21 +182,21 @@ async def test_central_heat_shows_the_antifreeze_the_3550_answers() -> None:
     assert central.extra_state_attributes["central_operation"] == "thermal_protection"
 
     await central.async_set_hvac_mode(HVACMode.HEAT)
-    assert _sent(gateway) == _tx("f461_central_heat")
+    assert _sent(gateway) == [*_tx("f461_central_heat"), "*4*3100*#0##"]
     assert central.hvac_mode == HVACMode.COOL  # nothing reported yet
-    _replay(central, _rx("f461_central_heat"))
+    _replay(central, ["*4*102*#0##", "*4*21*#0##", "*4*31*#0##", "*4*1101*#0##", "*4*21*#0##", "*4*31*#0##"])
     assert central.hvac_mode == HVACMode.HEAT
     assert central.hvac_action != HVACAction.OFF
     attributes = central.extra_state_attributes
-    assert attributes["central_operation"] == "antifreeze"
+    assert "central_operation" not in attributes
+    assert attributes["program"] == 1
     assert attributes["season"] == "heating"
     assert attributes["battery_fault"] is True
     assert attributes["remote_control"] == "enabled"
 
-    await central.async_set_hvac_mode(HVACMode.HEAT)  # second press: the 3550 sends nothing
-    assert _sent(gateway)[-1:] == _tx("f461_central_heat_second_press")
+    await central.async_set_hvac_mode(HVACMode.HEAT)  # second press: running in that season, season frame alone
+    assert _sent(gateway)[2:] == _tx("f461_central_heat_second_press")
     assert central.hvac_mode == HVACMode.HEAT
-    assert central.extra_state_attributes["central_operation"] == "antifreeze"
 
 
 def test_central_protection_does_not_switch_the_zones_off() -> None:
@@ -372,6 +372,51 @@ async def test_restored_mode_of_a_zone_of_the_central_is_kept_on_a_season_frame(
     await zone4.async_restore_last_state(State("climate.test", "auto", {"temperature": 20.5}))
     _replay(zone4, ["*4*0*4##"])
     assert zone4.hvac_mode == HVACMode.AUTO
+
+
+@pytest.mark.parametrize(
+    ("saved", "season_frame", "mode", "modes"),
+    [
+        ("heat", "*4*0*2##", HVACMode.COOL, [HVACMode.OFF, HVACMode.AUTO, HVACMode.COOL]),
+        ("cool", "*4*1*2##", HVACMode.HEAT, [HVACMode.OFF, HVACMode.AUTO, HVACMode.HEAT]),
+    ],
+)
+async def test_restored_heat_or_cool_gives_way_to_the_zone_own_season_frame(
+    saved: str, season_frame: str, mode: HVACMode, modes: list[HVACMode]
+) -> None:
+    """A restored HEAT / COOL is not what the zone said: its season frame replaces the off-season one.
+
+    Local F461 instance, 2026-11-18: zone 2 (found on the bus of a plant with a 3550, so
+    handled as a zone of the central unit) restored `heat`, answered `*#4*2##` with `*4*0*2##`
+    and `*#4*2*14*0200*3##`, and stayed `heat` with `hvac_action: cooling`
+    ("Zone 2's season is conditioning. (season only, zone stays heat)", 02:52:02.776).
+    """
+    from homeassistant.core import State
+
+    zone2 = _climate(_gateway(), "2", standalone=None)
+    await zone2.async_restore_last_state(State("climate.test", saved, {"temperature": 20.0}))
+    _replay(zone2, [season_frame, "*#4*2*14*0200*3##"])
+    assert zone2.hvac_mode == mode
+    assert zone2.hvac_modes == modes
+    assert zone2._hvac_mode_restored is False
+
+
+def test_reported_heat_of_a_zone_of_the_central_is_still_kept_on_a_season_frame() -> None:
+    """Only a restored mode gives way: a mode the zone reported keeps the season-only handling."""
+    zone4 = _climate(_gateway(), "4", standalone=False)
+    _replay(zone4, ["*4*110*#4##", "*4*0*4##"])
+    assert zone4.hvac_mode == HVACMode.HEAT
+
+
+async def test_restored_heat_of_a_heating_only_zone_is_kept_in_the_conditioning_season() -> None:
+    from homeassistant.core import State
+
+    zone3 = _climate(_gateway(), "3", standalone=None)
+    zone3._cooling = False
+    zone3._refresh_hvac_modes()
+    await zone3.async_restore_last_state(State("climate.test", "heat", {"temperature": 20.0}))
+    _replay(zone3, ["*4*0*3##"])
+    assert zone3.hvac_mode == HVACMode.HEAT  # nothing else it could show
 
 
 def test_central_off_then_antifreeze_is_heat_and_no_longer_action_off() -> None:

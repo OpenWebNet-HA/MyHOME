@@ -12,6 +12,7 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -158,8 +159,12 @@ async def test_legacy_platforms_setup_and_execution(hass: HomeAssistant, mock_ga
 
     # Hit Climate set_temperature and hvac coverage
     await hass.services.async_call("climate", "set_temperature", {"entity_id": "climate.climate_1", "temperature": 22.0}, blocking=True)
-    await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": "climate.climate_1", "hvac_mode": "heat"}, blocking=True)
-    await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": "climate.climate_1", "hvac_mode": "cool"}, blocking=True)
+    # The zone has reported no setpoint (the double confirms no write): heat / cool say so.
+    for season in ("heat", "cool"):
+        with pytest.raises(ServiceValidationError, match="has not reported a setpoint yet"):
+            await hass.services.async_call(
+                "climate", "set_hvac_mode", {"entity_id": "climate.climate_1", "hvac_mode": season}, blocking=True
+            )
     await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": "climate.climate_1", "hvac_mode": "off"}, blocking=True)
     await hass.services.async_call("climate", "set_hvac_mode", {"entity_id": "climate.climate_1", "hvac_mode": "auto"}, blocking=True)
     # Climate Event

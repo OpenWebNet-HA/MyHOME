@@ -555,9 +555,10 @@ async def test_subordinate_zone_central_mode_update(hass: HomeAssistant, mock_ga
     climate._handle_central_mode_update(HVACMode.COOL)
     assert climate.hvac_mode == HVACMode.COOL
 
-    # Master mode AUTO when zone is not OFF -> zone mode AUTO
+    # Master mode AUTO -> the zone keeps its mode (the central unit's `auto` is a command to the
+    # central unit; a program is shown `heat` / `cool`, decisions of 2026-11-18 and 2026-11-22)
     climate._handle_central_mode_update(HVACMode.AUTO)
-    assert climate.hvac_mode == HVACMode.AUTO
+    assert climate.hvac_mode == HVACMode.COOL
 
 
 async def test_central_unit_async_set_hvac_mode(hass: HomeAssistant, mock_gateway):

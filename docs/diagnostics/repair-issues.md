@@ -146,7 +146,10 @@ A 99-zone thermoregulation central unit (`WHERE = #0`, such as a BTicino `3550`)
 
 ### How to resolve
 1. Check or replace the backup battery inside the physical central unit (`3550`) so weekly programs and internal clock settings are preserved across mains power interruptions.
-2. Once the battery fault is resolved on the hardware, the central unit omits `*4*31*#0##` from its next status burst (`*#4*#0##`), and this repair issue clears automatically.
+2. Once the battery fault is resolved on the hardware, the central unit omits `*4*31*#0##` from its next status burst (`*#4*#0##`), and this repair issue clears automatically, one second after the burst's remote-control frame (`*4*20*#0##` / `*4*21*#0##`).
+
+### If the central unit has no backup battery
+A central unit fitted without a battery repeats `*4*31*#0##` in every status burst. Use **Ignore** on the repair: the issue is left untouched while the flag keeps coming, so the Ignore holds through every burst and every reload until Home Assistant restarts: the first burst after a restart shows the repair again, as a reminder, and it can be ignored again. The repair itself ends only when a burst arrives without the flag.
 
 ---
 
@@ -177,7 +180,7 @@ You can leave a faulty actuator in the cabinet and stop seeing it in Home Assist
 | Goal | What to do | What to expect |
 | --- | --- | --- |
 | Remove it from cards and dashboards | Open the device's entity settings and **disable** the entity. Do not delete it. | A disabled entity is kept in the entity registry, so discovery treats the address as known and does not create it again. A *deleted* entity is created again by the next frame from that address. |
-| Stop the repair issue for now | Use **Ignore** on the repair. | Only temporary. The ignore is forgotten when the issue clears (any on, off or level frame for the address, for example a wall-button press) and at every restart or reload, and the next odd status raises the issue again. |
+| Stop the repair issue for now | Use **Ignore** on the repair. | Only temporary. The ignore is forgotten when the issue clears (any on, off or level frame for the address, for example a wall-button press), and the next odd status raises the issue again. A reload or restart alone keeps it. |
 | Stop the repair issue and silence the device for good | Add the address (e.g. `1/74` or `1/74#4#01`) to **Ignored addresses** in the gateway's **Configure** dialog (**Settings → Devices & Services → MyHOME**). | Permanent. The integration deletes any existing entities and button helpers from the registry, clears existing repair issues, and ignores any future status or autodiagnostic frames from that address completely. |
 
 Disabling the entity is the simple option if you still want to retain the entity entry in disabled state. When you want to completely silence a faulty device, configuring **Ignored addresses** in the gateway options permanently suppresses discovery, prunes the entity registry, and stops fault tracking. When the hardware is eventually fixed or replaced, removing the address restores normal discovery.

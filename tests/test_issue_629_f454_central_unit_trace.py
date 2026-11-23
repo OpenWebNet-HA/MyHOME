@@ -145,7 +145,7 @@ async def test_f454_central_unit_plain_status_replay(hass: HomeAssistant) -> Non
 
     Verifies that:
     1. *#4*#0## requests status of central unit #0.
-    2. Central unit responds with *4*202*#0## (thermal protection): Climate Zone 0 shows COOL.
+    2. Central unit responds with *4*202*#0## (thermal protection): Central Unit 0 shows COOL.
     3. Operational flags *4*21*#0##, *4*22*#0##, *4*24*#0## parse and process cleanly.
     4. Subordinate zone frames *4*210*#5## and *4*210*#12## set HVACMode.COOL.
     """
@@ -210,7 +210,7 @@ async def test_f454_central_unit_plain_status_replay(hass: HomeAssistant) -> Non
 
     # Central unit #0 reported thermal protection via *4*202*#0##: the conditioning season,
     # not off (WHO 4 p. 5, p. 64)
-    state_0 = hass.states.get("climate.climate_zone_0")
+    state_0 = hass.states.get("climate.central_unit_0")
     assert state_0 is not None, "Expected climate entity for Central Unit 0"
     assert state_0.state == HVACMode.COOL
     assert state_0.attributes["central_operation"] == "thermal_protection"

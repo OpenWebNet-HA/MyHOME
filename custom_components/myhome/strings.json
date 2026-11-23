@@ -630,6 +630,21 @@
     "setpoint_refused": {
       "message": "{name}: the gateway refused the setpoint write ({frame})"
     },
+    "zone_no_setpoint_known": {
+      "message": "{name} has not reported a setpoint yet: set a temperature first"
+    },
+    "zone_command_refused": {
+      "message": "{name}: the gateway refused {frame}"
+    },
+    "central_command_refused": {
+      "message": "{name}: the gateway refused {frame}"
+    },
+    "central_command_not_written": {
+      "message": "{name}: the gateway did not write {frame} within 15 seconds; it was withdrawn"
+    },
+    "central_command_unconfirmed": {
+      "message": "{name}: the gateway did not confirm {frame}; it may still have reached the central unit"
+    },
     "setpoint_not_taken_via_central": {
       "message": "{name} did not take the setpoint {temperature} °C sent through the central unit ({frame}): it still reports {reported} °C. If it is a standalone thermostat, list its zone under \"Standalone thermostats\" in the gateway options (or set `standalone: true` in myhome.yaml)"
     },
@@ -770,6 +785,12 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} is a WHO=4 thermo actuator and does not support WHO=1 hardware bus timers; use a Home Assistant automation delay instead."
+    },
+    "thermo_switch_interface_write_refused": {
+      "message": "{name} is behind bus interface {interface} and this gateway does not route WHO 4 across it: writing `{where}` would switch an actuator of the local bus. Configure a turn-on and a turn-off command for this switch instead."
+    },
+    "thermo_switch_write_refused": {
+      "message": "{name}: the gateway refused {frames}"
     },
     "invert_switch_no_timer": {
       "message": "{name} is a binary sensor configuration switch and does not support WHO=1 hardware bus timers."

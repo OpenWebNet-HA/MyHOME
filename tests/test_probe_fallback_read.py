@@ -1,7 +1,10 @@
 """The fallback read of a temperature probe (``WHERE >= 100``): a wider window and a latch.
 
-A probe sends its reading by itself (#308); the periodic update asks ``*#4*ZPP*15##`` only when
-no reading arrived for a while. On a physical plant (F455 1.0.76 and an F461 2.0.11 on one bus,
+A probe sends its reading by itself (#308); the periodic update asks it only when no reading
+arrived for a while: a slave probe ``PZZ`` with ``*#4*PZZ*0##`` (WHO 4 PDF 1.5.1; answered by an
+F455 1.0.76 and an F461 2.0.11, the two files of 2026-11-18 in issue_932), an external probe
+``N00`` with ``*#4*N00*15##`` as before. Until then every probe was asked ``*#4*ZPP*15##``, and
+the captures below are of that read. On a physical plant (F455 1.0.76 and an F461 2.0.11 on one bus,
 2026-11-17) probe 303 reported every 10 minutes (``*#4*303*0*0229##`` 08:31:22Z,
 ``*#4*303*0*0230##`` 08:41:23Z). With the poll interval (300 s) as the window every second update
 sent ``*#4*303*15##``, and the F455 NACKed each one only after 9.3 to 9.4 s, holding a command
@@ -44,11 +47,13 @@ from custom_components.myhome.gateway_sessions import (
     _who4_zone_token,
 )
 from custom_components.myhome.sensor import PROBE_PUSH_FRESH, SCAN_INTERVAL, MyHOMETemperatureSensor
+from custom_components.myhome.where_grammar import is_external_probe
 from tests.mock_gateway_harness import MockGatewayHarness
 from tests.test_command_session_contract import _handler as _handler_on_port
 from tests.test_issue_886_myhomeserver1_41_zones import _make_handler
 
-READ = "*#4*303*15##"
+READ = "*#4*303*0##"  # the read of a slave probe (PZZ)
+DIM15_READ = "*#4*303*15##"  # what probe 303 was asked in the captures of 2026-11-17; refused by both gateways
 REPORT = "*#4*303*0*0229##"
 
 
@@ -60,6 +65,8 @@ def gateway():
     gw.log_id = "[F455 gateway]"
     gw.device_registry_id = None
     gw.is_connected = True
+    gw.event_connections = 1  # the count of its event sessions, as the handler keeps it
+    gw._who4_target = MagicMock(return_value=gw)  # no secondary and no standby: it serves WHO 4 itself
     return gw
 
 
@@ -122,6 +129,70 @@ async def test_a_zone_sensor_keeps_the_poll_interval_as_its_window(hass, gateway
     assert _sent(gateway) == (["*#4*2*0##"] if asked else [])
 
 
+@pytest.mark.parametrize(
+    ("where", "read"),
+    [
+        ("303", "*#4*303*0##"),  # probe 3 of zone 03, F455 / F461 plant (issue_932)
+        ("105", "*#4*105*0##"),  # probe 1 of zone 05, MH200N / MH201 plant (issue_466)
+        ("101", "*#4*101*0##"),
+        ("899", "*#4*899*0##"),
+    ],
+)
+async def test_a_slave_probe_is_asked_for_dimension_0(hass, gateway, where, read) -> None:
+    """WHO 4 PDF 1.5.1: "Slave probe temperature request: where = [1-8]+[01-99]", ``*#4*where*0##``."""
+    probe = _sensor(hass, gateway, where)
+    assert probe._is_probe is True and is_external_probe(where) is False
+    await probe.async_update()
+    assert _sent(gateway) == [read]
+
+
+@pytest.mark.parametrize(("where", "read"), [("100", "*#4*100*15##"), ("900", "*#4*900*15##")])
+async def test_an_external_probe_keeps_the_dimension_15_read_and_its_latch(hass, gateway, where, read) -> None:
+    """``N00``: the 3455 behind an L4577 of #308 reports ``*#4*100*15*1*0253*0001##``; its read is unchanged."""
+    probe = _sensor(hass, gateway, where)
+    assert probe._is_probe is True and is_external_probe(where) is True
+    if where == "100":  # the frame of #308, as captured
+        probe.handle_event(OWNHeatingEvent("*#4*100*15*1*0253*0001##"))
+        assert probe.native_value == 25.3
+        probe._last_push_at = time.monotonic() - PROBE_PUSH_FRESH - 1
+    gateway.send_status_request.return_value = _refused(hass)
+    await probe.async_update()
+    await _settle()
+    assert _sent(gateway) == [read] and probe._fallback_read_refused is True
+    await probe.async_update()
+    assert _sent(gateway) == [read]
+
+
+def test_an_external_probe_is_a_bare_n00() -> None:
+    assert [w for w in ("100", "200", "900", "0100", "#100", "4-100") if not is_external_probe(w)] == []
+    # A slave probe, a zone, the group of a zone's probes, an actuator of zone 10, and a number above 900.
+    assert [w for w in ("101", "303", "899", "1", "99", "001", "000", "10#0", "1000", "") if is_external_probe(w)] == []
+
+
+@pytest.mark.parametrize(("gw", "answered_after", "refused_after"), [("F455", 0.089, 8.948), ("F461", 0.14, 2.133)])
+def test_the_direct_reads_of_probe_303_answer_dimension_0_and_refuse_dimension_15(
+    hass, gateway, gw, answered_after, refused_after
+) -> None:
+    """issue_932/README.md, 2026-11-18: both gateways answer ``*#4*303*0##`` and NACK ``*#4*303*15##``."""
+    folder = Path(__file__).parent / "fixtures" / "traces" / "issue_932"
+    lines = (folder / f"{gw}_direct_read_probe_303_2026-11-18.log").read_text(encoding="utf-8").splitlines()
+    at = [datetime.strptime(line.split(" ")[0], "%H:%M:%S.%f") for line in lines]
+    assert [" ".join(line.split()[1:]) for line in lines] == [
+        f">> {READ}",
+        "<< *#4*303*0*0233##",
+        "<< *#*1##",
+        f">> {DIM15_READ}",
+        "<< *#*0##",
+    ]
+    assert (at[2] - at[0]).total_seconds() == answered_after
+    assert (at[4] - at[3]).total_seconds() == refused_after
+    # The read the sensor sends is the answered one, and the answer is a reading of the probe.
+    probe = _sensor(hass, gateway)
+    assert str(probe._fallback_read()) == READ
+    probe.handle_event(OWNHeatingEvent(lines[1].split()[-1]))
+    assert probe.native_value == 23.3
+
+
 async def test_a_refused_read_is_not_sent_again(hass, gateway, caplog) -> None:
     caplog.set_level(logging.DEBUG, logger="custom_components.myhome")
     probe = _sensor(hass, gateway)
@@ -139,6 +210,33 @@ async def test_a_refused_read_is_not_sent_again(hass, gateway, caplog) -> None:
     probe._last_push_at = time.monotonic() - PROBE_PUSH_FRESH - 1
     await probe.async_update()
     assert _sent(gateway) == [READ]
+
+
+async def test_a_probe_is_asked_once_more_after_the_gateway_came_back_from_an_outage(hass, gateway, caplog) -> None:
+    """The availability signal of the gateway (sent when it is unavailable, and when it is available again)."""
+    caplog.set_level(logging.DEBUG, logger="custom_components.myhome")
+    probe = _sensor(hass, gateway)
+    probe.async_write_ha_state = MagicMock()
+    gateway.send_status_request.return_value = _refused(hass)
+    await probe.async_update()
+    await _settle()
+    assert _sent(gateway) == [READ] and probe._fallback_read_refused is True
+
+    gateway.is_connected = False  # the outage: nothing changes, and nothing is asked
+    probe._handle_availability_update()
+    assert probe._fallback_read_refused is True
+    await probe.async_update()
+    assert _sent(gateway) == [READ]
+
+    gateway.is_connected = True  # available again, on a new event session (the handler counts each one)
+    gateway.event_connections += 1
+    probe._handle_availability_update()
+    assert probe._fallback_read_refused is False
+    assert "the gateway is available again; probe 303 is asked once more" in caplog.text
+    assert probe.async_write_ha_state.call_count == 2  # the state is written as before
+    await probe.async_update()
+    await _settle()
+    assert _sent(gateway) == [READ, READ] and probe._fallback_read_refused is True  # refused again: latched again
 
 
 async def test_a_refusal_that_takes_nine_seconds_does_not_hold_the_update(hass, gateway) -> None:
@@ -254,8 +352,8 @@ def test_the_capture_of_probe_303_is_covered_by_the_window() -> None:
         datetime.fromisoformat(" ".join(line.split(" ")[:2])) for line in log
     )
     assert "Message received: `*#4*303*0*0232##`" in log[0]
-    assert f"Message `{READ}` was successfully queued." in log[1]
-    assert f"Gateway rejected status request {READ} (NACK, 0 response(s))" in log[3]
+    assert f"Message `{DIM15_READ}` was successfully queued." in log[1]
+    assert f"Gateway rejected status request {DIM15_READ} (NACK, 0 response(s))" in log[3]
     assert 0 < (received - reports[0]).total_seconds() < 1  # the report Home Assistant had is the monitor's first
     between = (reports[1] - reports[0]).total_seconds()
     asked_after = (queued - received).total_seconds()
@@ -376,7 +474,7 @@ async def test_a_probe_read_that_collected_another_zones_frames_is_dropped_by_th
     session = _command_session()
     _answers(session, [OWNMessage.parse("*#4*4*0*0256##"), OWNMessage.parse("*#4*4*12*0225*3##")])
     probe, written = await _read_through_the_sender(hass, gateway, session)
-    assert "Gateway FIFO desync on `*#4*303*15##`" in caplog.text
+    assert f"Gateway FIFO desync on `{READ}`" in caplog.text
     assert written.cancelled() and _marks(written) == {"_gateway_desync"}
     assert probe._fallback_read_refused is False
 
@@ -453,7 +551,7 @@ async def test_a_nack_through_ownds_own_command_session_carries_the_mark() -> No
     handler._event_session_ready.set()
     worker = asyncio.create_task(handler.sending_loop(0))
     try:
-        written = await handler.send_status_request(OWNHeatingCommand.get_probe_temperature("303"))
+        written = await handler.send_status_request(OWNHeatingCommand.get_temperature("303"))
         await asyncio.wait([written], timeout=5)
     finally:
         await handler.send_buffer.put(None)

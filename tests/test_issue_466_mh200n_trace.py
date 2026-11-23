@@ -208,6 +208,63 @@ def test_mh200n_thermoregulation_local_offset_wheel_progression(hass: HomeAssist
         assert zone4._local_target_temperature == 18.0 + expected_offset
 
 
+@pytest.mark.asyncio
+async def test_mh200n_zone_2_setpoint_change_reported_by_dimension_14_alone_is_the_known_limitation(
+    hass: HomeAssistant,
+) -> None:
+    """Zone 2 of the sweep capture: the documented limit of the dimension 12 hold (#791, #809).
+
+    Frame 161 `*#4*2*12*0105*3##` (setpoint in force 10.5) arms the hold; frames 168 and 182
+    `*#4*2*14*0100*3##` follow 9.7 s and 20.6 s later with no dimension 12. The commanded value
+    becomes 10.0 and the slider stays at 10.5: #809 was closed keeping #791 as merged, because
+    no rule on the timing tells this update from the dimension 14 of the same status report
+    (H/L4684 zone 66, F461 run 1). The Known Limitations row names this capture; on this gateway
+    `homeassistant.update_entity` cannot refresh it, as no `*#4*2##` is sent on an MH200N.
+    """
+    with open(SWEEP_TRACE_FILE, "r", encoding="utf-8") as f:
+        frames = json.load(f)["frames"]
+    assert frames[161]["raw"] == "*#4*2*12*0105*3##"
+    assert frames[168]["raw"] == frames[182]["raw"] == "*#4*2*14*0100*3##"
+    assert not [f for f in frames[162:] if f["raw"].startswith("*#4*2*12*")]
+    assert not [f for f in frames if f["direction"] == "tx" and f["raw"].startswith("*#4*2")]
+
+    gateway = MagicMock()
+    gateway.mac = "00:03:50:00:04:66"
+    gateway.log_id = "[MH200N]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    gateway.has_central_unit = False
+    gateway.supports_zone_status = False  # MH200N: gateway.py supports_zone_status
+    gateway.zone_temperature_poll_needed = False
+    zone2 = MyHOMEClimate(
+        hass=hass, name="Zone 2", device_id="4-2", who="4", where="2", heating=True, cooling=False,
+        fan=False, standalone=None, central=False, manufacturer="BTicino", model="Heating Zone",
+        gateway=gateway,
+    )
+    zone2.hass = hass
+    zone2.entity_id = "climate.zone_2"
+    zone2.async_write_ha_state = MagicMock()
+
+    shown: dict[int, float | None] = {}
+    for index, frame in enumerate(frames):
+        if frame["direction"] != "rx" or frame["who"] != "4":
+            continue
+        message = OWNMessage.parse(frame["raw"])
+        if isinstance(message, OWNHeatingEvent) and message.zone == 2:
+            zone2.handle_event(message)
+            shown[index] = zone2.target_temperature
+
+    assert shown[101] == 18.0  # *#4*2*14*0180*3##, *#4*2*13*00##, *4*110*#2##
+    assert shown[161] == 10.5
+    assert shown[168] == 10.5 and shown[182] == 10.5  # held: the limitation
+    assert zone2._target_temperature == 10.0  # the commanded value is kept
+    assert zone2.hvac_mode == HVACMode.HEAT
+
+    await zone2.async_update()  # what homeassistant.update_entity runs
+    gateway.send_status_request.assert_not_awaited()
+    gateway.send.assert_not_awaited()
+
+
 def test_mh200n_energy_meter_readings() -> None:
     """Verify energy totalizer responses from the MH200N trace."""
     energy_frames = [

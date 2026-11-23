@@ -286,7 +286,7 @@ async def test_climate_central_unit_auto_discovery(hass, mock_gateway):
 
     assert len(added_entities) == 1
     central_entity = added_entities[0]
-    assert central_entity._display_name == "Climate Zone 0"
+    assert central_entity._display_name == "Central Unit 0"  # the name a restart restores it under
     assert central_entity._central is True
     assert central_entity._standalone is False
 
@@ -598,21 +598,26 @@ async def test_climate_f422_interface_command_routing(hass, mock_gateway):
     sent_status = mock_gateway.send_status_request.call_args[0][0]
     assert "2#4#02" in str(sent_status)
 
-    # Test set mode executes successfully for zone 2
+    # The writes carry no interface (OWNd's builders take a zone only): ``*4*303*2##``,
+    # ``*#4*2*#14*0220*3##`` and ``*#4*2*#11*3##`` are zone 2 of the local bus, another
+    # thermostat. They are refused, as #816 decided for the gateways that do not route WHO 4;
+    # this gateway double says nothing about routing and used to get all three.
     await climate.async_set_hvac_mode(HVACMode.OFF)
-    mock_gateway.send.assert_called()
-    sent_command = mock_gateway.send.call_args[0][0]
-    assert str(sent_command) == "*4*303*2##"
-
-    # Test set temperature executes successfully
     await climate.async_set_temperature(temperature=22.0)
-    sent_command = mock_gateway.send.call_args[0][0]
-    assert "*#4*2*#14*0220*" in str(sent_command)
-
-    # Test set fan mode executes successfully
     await climate.async_set_fan_mode("high")
-    sent_command = mock_gateway.send.call_args[0][0]
-    assert str(sent_command) == "*#4*2*#11*3##"
+    mock_gateway.send.assert_not_called()
+
+    # The same zone on the local bus is written as before.
+    local = MyHOMEClimate(
+        hass=hass, name="Zone 2", device_id="2", who="4", where="2", heating=True, cooling=True, fan=True,
+        standalone=True, central=False, manufacturer="BTicino", model="Heating Zone", gateway=mock_gateway,
+    )
+    local.entity_id = "climate.climate_local"
+    local.hass = hass
+    await local.async_set_hvac_mode(HVACMode.OFF)
+    assert str(mock_gateway.send.call_args[0][0]) == "*4*303*2##"
+    await local.async_set_fan_mode("high")
+    assert str(mock_gateway.send.call_args[0][0]) == "*#4*2*#11*3##"
 
 
 async def test_f422_custom_names_override(hass, mock_gateway):
