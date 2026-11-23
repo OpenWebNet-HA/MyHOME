@@ -262,6 +262,16 @@ END_SETTLE_MARGIN: float = 2.0
 # CALIBRATION_CUTOFF_EARLY) and does not treat any configurator limit as a stop.
 END_STOP_TOLERANCE: float = 0.5
 
+# Upper-bound drift added per unconfirmed timed movement segment (#973):
+# - Fixed start/stop anchor uncertainty per segment (0.5 s): covers tubular motor
+#   start-up lag variance (~0.2-0.4 s, #466), stop relay release (~0.04-0.12 s,
+#   #705), and unrelayed write-to-bus arbitration jitter.
+# - Proportional non-linear speed / roll-diameter variance (15% of segment motor
+#   time): covers roller-shutter roll radius change and slat-gathering slack
+#   between endpoints (~15-22% midpoint deviation in docs/configuration/covers.md).
+SEGMENT_STOP_DRIFT: float = 0.5
+SEGMENT_TRAVEL_DRIFT_FACTOR: float = 0.15
+
 
 def quantize_position_delta(
     curr_pos: int | None,
@@ -358,3 +368,51 @@ def compute_freeze_position(
     if pos is not None:
         return pos
     return current_position if current_position is not None else start_position
+
+
+def accumulate_drift_bound(
+    current_drift: float | None,
+    segment_seconds: float,
+    max_travel: float,
+    *,
+    stop_drift: float = SEGMENT_STOP_DRIFT,
+    travel_factor: float = SEGMENT_TRAVEL_DRIFT_FACTOR,
+) -> float | None:
+    """Accumulate position-drift upper bound (seconds) after an unconfirmed segment.
+
+    Returns ``None`` (unbounded: full ``travel_time + END_SETTLE_MARGIN`` required)
+    when ``current_drift`` is already ``None``, ``max_travel <= 0``, or the updated
+    bound reaches ``max_travel``.
+    """
+    if current_drift is None or max_travel <= 0:
+        return None
+    if segment_seconds <= 0:
+        return current_drift if current_drift < max_travel else None
+    updated = current_drift + max(0.0, stop_drift) + max(0.0, travel_factor) * segment_seconds
+    if updated >= max_travel:
+        return None
+    return updated
+
+
+def compute_bounded_settle_travel(
+    start_position: int | None,
+    opening: bool,
+    full_travel: float,
+    nominal_remaining: float,
+    drift_bound: float | None,
+) -> float:
+    """Return full-run settle duration (before ``END_SETTLE_MARGIN``) for #973.
+
+    Falls back to full ``full_travel`` when ``start_position`` or ``drift_bound`` is
+    ``None`` (unknown start, restored state, reconnect, edited travel time, or
+    saturated drift) or on endpoint re-homes (opening from ``>= 100`` or closing
+    from ``<= 0``).
+    """
+    if full_travel <= 0:
+        return 0.0
+    if start_position is None or drift_bound is None:
+        return full_travel
+    if (opening and start_position >= 100) or (not opening and start_position <= 0):
+        return full_travel
+    bounded = max(0.0, nominal_remaining) + max(0.0, drift_bound)
+    return min(full_travel, bounded)
