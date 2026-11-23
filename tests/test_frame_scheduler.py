@@ -915,3 +915,110 @@ async def test_stop_overtakes_withdrawn_motion_for_same_cover() -> None:
     second = scheduler.acquire_nowait()
     assert second["written"].cancelled()
     scheduler.complete_task(second)
+
+
+@pytest.mark.parametrize("use_async_put", [False, True])
+async def test_superseded_scope_wakes_all_waiting_getters(use_async_put: bool) -> None:
+    """Dropping a held scope frame via cancel wakes every sleeping worker for newly eligible targets."""
+    scheduler = FrameScheduler()
+    scheduler.put_nowait(_cmd("*2*1*11##"))
+    worker0_item = scheduler.acquire_nowait()
+
+    # Area 1 waits behind in-flight cover 11 and holds back independent covers 12 and 13.
+    scheduler.put_nowait(_cmd("*2*1*1##"))
+    scheduler.put_nowait(_cmd("*2*2*12##"))
+    scheduler.put_nowait(_cmd("*2*2*13##"))
+
+    w1 = asyncio.create_task(scheduler.acquire_next())
+    w2 = asyncio.create_task(scheduler.acquire_next())
+    await asyncio.sleep(0)
+    assert not w1.done()
+    assert not w2.done()
+
+    # Superseding *2*1*1## with *2*0*1## (is_cancel=True) removes it from index 0 and appends the
+    # stop behind 12 and 13, making BOTH 12 and 13 eligible at once.
+    cancel_area = {"message": OWNCommand.parse("*2*0*1##"), "is_cancel": True}
+    if use_async_put:
+        await scheduler.put(cancel_area)
+    else:
+        scheduler.put_nowait(cancel_area)
+
+    got1, got2 = await asyncio.wait_for(asyncio.gather(w1, w2), timeout=1.0)
+    assert {str(got1["message"]), str(got2["message"])} == {"*2*2*12##", "*2*2*13##"}
+
+    scheduler.complete_task(got1)
+    scheduler.complete_task(got2)
+    scheduler.complete_task(worker0_item)
+    stop_item = scheduler.acquire_nowait()
+    assert str(stop_item["message"]) == "*2*0*1##"
+    scheduler.complete_task(stop_item)
+
+
+async def test_withdrawn_envelope_uses_dict_stamp_not_external_id_set() -> None:
+    """Withdrawn envelopes stamp `_unlocked` directly so skipping complete_task leaves no stale state."""
+    scheduler = FrameScheduler()
+    assert not hasattr(scheduler, "_unlocked_items")
+
+    withdrawn_fut = asyncio.get_running_loop().create_future()
+    env = dict(_cmd("*2*1*11##"), written=withdrawn_fut)
+    scheduler.put_nowait(env)
+    withdrawn_fut.cancel()
+
+    popped = scheduler.acquire_nowait()
+    assert popped is env
+    assert popped.get("_unlocked") is True
+    # Finishing via complete_task clears the stamp without disturbing any active lock.
+    scheduler.complete_task(popped)
+    assert "_unlocked" not in popped
+
+    # Acquiring another withdrawn envelope and calling task_done() directly leaves no side state.
+    withdrawn_fut2 = asyncio.get_running_loop().create_future()
+    scheduler.put_nowait(dict(_cmd("*2*1*11##"), written=withdrawn_fut2))
+    withdrawn_fut2.cancel()
+    popped2 = scheduler.acquire_nowait()
+    assert popped2.get("_unlocked") is True
+    scheduler.task_done()
+
+    # A subsequent live envelope for the same cover acquires and releases its lock normally.
+    scheduler.put_nowait(_cmd("*2*1*11##"))
+    live = scheduler.acquire_nowait()
+    assert (2, "11") in scheduler.in_flight_targets
+    scheduler.complete_task(live)
+    assert (2, "11") not in scheduler.in_flight_targets
+
+
+async def test_acquire_next_forwards_wakeup_when_cancelled_after_resolution() -> None:
+    """If a woken acquire_next() task is cancelled before resuming, the next waiter is woken."""
+    scheduler = FrameScheduler()
+    w1 = asyncio.create_task(scheduler.acquire_next())
+    w2 = asyncio.create_task(scheduler.acquire_next())
+    await asyncio.sleep(0)
+    assert len(scheduler._getters) == 2
+
+    # put_nowait() resolves w1's getter future; cancel w1 on the same tick before it resumes.
+    scheduler.put_nowait(_cmd("*2*1*11##"))
+    w1.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await w1
+
+    got = await asyncio.wait_for(w2, timeout=1.0)
+    assert str(got["message"]) == "*2*1*11##"
+    scheduler.complete_task(got)
+
+
+async def test_get_forwards_wakeup_when_cancelled_after_resolution() -> None:
+    """If a woken get() task is cancelled before resuming, the next waiter is woken."""
+    scheduler = FrameScheduler()
+    w1 = asyncio.create_task(scheduler.get())
+    w2 = asyncio.create_task(scheduler.get())
+    await asyncio.sleep(0)
+    assert len(scheduler._getters) == 2
+
+    scheduler.put_nowait(_cmd("*2*1*11##"))
+    w1.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await w1
+
+    got = await asyncio.wait_for(w2, timeout=1.0)
+    assert str(got["message"]) == "*2*1*11##"
+    scheduler.task_done()

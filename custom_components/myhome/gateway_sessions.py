@@ -1032,7 +1032,6 @@ class FrameScheduler:
         self._finished.set()
         self._is_shutdown = False
         self._in_flight_targets: set[tuple[int, str]] = set()
-        self._unlocked_items: set[int] = set()
         self._in_flight_status = 0
         self._status_resume_at = 0.0
         self._status_resume_handle: asyncio.TimerHandle | None = None
@@ -1144,7 +1143,7 @@ class FrameScheduler:
             if not waiter.done():
                 waiter.set_result(None)
 
-    def _drop_superseded_and_cancel(self, item: Any) -> None:
+    def _drop_superseded_and_cancel(self, item: Any) -> bool:
         """Drop superseded queued frames for the same target and cancel their futures."""
         dropped = self._queue.drop_superseded(item)
         for old_item in dropped:
@@ -1153,6 +1152,9 @@ class FrameScheduler:
                 self._unfinished_tasks -= 1
                 if self._unfinished_tasks == 0:
                     self._finished.set()
+        if dropped and self._getters:
+            self._wakeup_all_getters()
+        return bool(dropped)
 
     def put_nowait(self, item: Any) -> None:
         """Put an item into the queue without blocking."""
@@ -1230,6 +1232,8 @@ class FrameScheduler:
                 getter.cancel()
                 with contextlib.suppress(ValueError):
                     self._getters.remove(getter)
+                if not self.empty() and not getter.cancelled():
+                    self._wakeup_next(self._getters)
                 raise
         return self.get_nowait()
 
@@ -1242,7 +1246,7 @@ class FrameScheduler:
         if _is_withdrawn(item):
             # A withdrawn frame is handed out only to be discarded; it must neither
             # take a target/status lock nor release another worker's active lock.
-            self._unlocked_items.add(id(item))
+            item["_unlocked"] = True
         else:
             target = _extract_target_key(item)
             if target is not None:
@@ -1267,6 +1271,10 @@ class FrameScheduler:
                 getter.cancel()
                 with contextlib.suppress(ValueError):
                     self._getters.remove(getter)
+                if not getter.cancelled() and self._queue.has_eligible(
+                    self._in_flight_targets, allow_status=self._allow_status
+                ):
+                    self._wakeup_next(self._getters)
                 raise
         return self.acquire_nowait()
 
@@ -1290,8 +1298,7 @@ class FrameScheduler:
 
     def complete_task(self, task: Any) -> None:
         """Release a task's target/status lock and mark the queue task done."""
-        if id(task) in self._unlocked_items:
-            self._unlocked_items.discard(id(task))
+        if isinstance(task, dict) and task.pop("_unlocked", False):
             self.task_done()
             return
         was_status = _classify_tier(task) == _TIER_STATUS
