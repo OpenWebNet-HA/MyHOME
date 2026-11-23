@@ -632,3 +632,91 @@ async def test_shutdown_cancels_every_task_the_controller_started(hass: HomeAssi
     assert started == 2
     await ctrl.async_shutdown()
     assert cancelled == 2
+
+
+async def test_stop_after_wall_button_or_sensor_change_is_not_swallowed_by_prior_stop(
+    hass: HomeAssistant, bus: _Bus, make_gate
+):
+    """After a STOP inside min_cycle_time, a wall button or sensor change clears _last_pulse_intent so the next STOP goes out."""
+    gate = make_gate(state_sensor=SENSOR, min_cycle_time=60.0)
+    gate._handle_sensor_update(STATE_ON)
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED]
+
+    # Wall button restarts the door 3 s later (outside echo window, inside 60 s min_cycle_time)
+    gate._last_pulse_time -= 3.0
+    _relay_on(gate)
+    assert gate._last_pulse_intent is None
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED, TIMED]
+
+    # Radio remote opens the door (sensor flips off -> on) inside min_cycle_time
+    gate._last_pulse_time -= 3.0
+    gate._handle_sensor_update(STATE_OFF)
+    gate._handle_sensor_update(STATE_ON)
+    assert gate._last_pulse_intent is None
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED, TIMED, TIMED]
+
+
+async def test_access_controller_cancel_during_user_lookup_prevents_pulse(
+    hass: HomeAssistant, bus: _Bus, make_gate
+):
+    """A STOP or wall button arriving while _async_execute awaits _user_name cancels the pulse instead of letting it fire."""
+    gate, user, calls = await _supervised(hass, make_gate, contact=STATE_OFF)
+    ctrl = gate._access
+    assert ctrl is not None
+    await ctrl.async_request(Intent.OPEN, Context(user_id=user.id))
+
+    in_lookup = asyncio.Event()
+    resume_lookup = asyncio.Event()
+    real_user_name = ctrl._user_name
+
+    async def _slow_user_name(uid: str) -> str:
+        in_lookup.set()
+        await resume_lookup.wait()
+        return await real_user_name(uid)
+
+    ctrl._user_name = _slow_user_name  # type: ignore[method-assign]
+    await _press(hass, _approve_action(calls)["action"], user.id, wait=False)
+    await asyncio.wait_for(in_lookup.wait(), timeout=2.0)
+
+    # Cancel arrives in the pre-write gap before _pulse_outcome is armed
+    assert ctrl.cancel("wall button pressed") is True
+    resume_lookup.set()
+    await _wait_phase(ctrl, Phase.IDLE)
+    assert bus.frames == []
+
+
+async def test_unexpected_exception_before_send_does_not_mark_unconfirmed(
+    hass: HomeAssistant, bus: _Bus, make_gate
+):
+    """An exception before gateway.send() keeps outcome NOT_SENT and must not call _mark_unconfirmed()."""
+    gate = make_gate(pulse_duration=1.0)
+    gate._async_wait_off_task = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+    outcome = await gate._async_send_impulse(Intent.OPEN)
+    assert outcome is PulseOutcome.NOT_SENT
+    assert gate._unconfirmed_at == -1e9
+
+
+async def test_nack_retry_delay_does_not_collapse_software_pulse_to_zero(
+    hass: HomeAssistant, bus: _Bus, make_gate
+):
+    """If written_at precedes ACK by >= pulse_duration (e.g. OWNd 2 s NACK retry), anchor OFF to now."""
+    gate = make_gate(pulse_duration=1.0)
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    # Simulate written_at stamped 2.1 s before ACK (OWNd NACK retry before ACK)
+    bus.futures[0].set_result(time.monotonic() - 2.1)
+    bus.hold = False
+    await opening
+    assert bus.frames == [ON]
+    # Halfway through pulse_duration, OFF must NOT have fired yet
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=0.5))
+    await hass.async_block_till_done()
+    assert bus.frames == [ON]
+    # After full pulse_duration, OFF fires cleanly
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
+    await hass.async_block_till_done()
+    assert bus.frames == [ON, OFF]

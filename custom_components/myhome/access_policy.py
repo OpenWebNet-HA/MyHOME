@@ -401,7 +401,7 @@ class AccessController:
             self._settle()
             self._spawn(self._cancel_and_notify(pending.notify_service, f"{self._name}: request cancelled ({reason})"))
             return True
-        if self.phase is Phase.PREWARNING and self._cancel_event is not None:
+        if self.phase in (Phase.PENDING, Phase.PREWARNING) and self._cancel_event is not None:
             self._cancel_event.set()
             return True
         return False
@@ -655,7 +655,9 @@ class AccessController:
                 self._spawn(self._notify(pending.notify_service, f"{self._name}: wrong PIN, nothing moved"))
                 return
             self._failed_pins.pop(pending.user_id, None)
-        self._spawn(self._async_execute(pending))
+        cancel_event = asyncio.Event()
+        self._cancel_event = cancel_event
+        self._spawn(self._async_execute(pending, cancel_event))
 
     def _register_failed_pin(self, user_id: str) -> None:
         now = time.monotonic()
@@ -703,7 +705,9 @@ class AccessController:
         if effect is Effect.MAY_CLOSE:
             self._check_close_allowed(self._is_home(pending.user_id))
 
-    async def _async_execute(self, pending: PendingRequest) -> None:
+    async def _async_execute(
+        self, pending: PendingRequest, cancel_event: asyncio.Event
+    ) -> None:
         # True once this run gave the phase back (settled) or put the door under the
         # watchdog. While it is False the phase is still PENDING / PREWARNING with nothing
         # pending behind it, a state every later request is refused in and a STOP finds
@@ -711,14 +715,17 @@ class AccessController:
         handed_over = False
         try:
             user = await self._user_name(pending.user_id)
+            if cancel_event.is_set():
+                raise AccessDenied(f"{self._name}: cancelled before execution")
             what = self._describe(pending)
             self._revalidate(pending)
             if pending.effect is Effect.MAY_CLOSE:
                 self.phase = Phase.PREWARNING
                 self._publish()
-                if await self._prewarn():
+                if await self._prewarn(cancel_event):
                     raise AccessDenied(f"{self._name}: cancelled during the warning")
                 self._revalidate(pending, approved=True)
+            self._cancel_event = None
             self._pulse_sent = PulseOutcome.NOT_SENT
             self._pulse_intent = pending.intent
             outcome = self._pulse_outcome = asyncio.Event()
@@ -773,16 +780,18 @@ class AccessController:
             await self._notify(pending.notify_service, f"Execution failed: {err}")
             return
         finally:
+            if self._cancel_event is cancel_event:
+                self._cancel_event = None
             if not handed_over:
                 # asyncio.CancelledError (this task was cancelled, or something awaited
                 # below was) is a BaseException and skips both handlers above. Never
                 # leave the controller wedged in an approval nobody can answer.
                 self._settle()
 
-    async def _prewarn(self) -> bool:
+    async def _prewarn(self, cancel_event: asyncio.Event) -> bool:
         """Flash the warning light and announce; return True when cancelled."""
         hass = self._require_hass()
-        self._cancel_event = asyncio.Event()
+        self._cancel_event = cancel_event
         hass.bus.async_fire(
             EVENT_ACCESS_PREWARNING,
             {"entity_id": self._entity_id(), "name": self._name, "seconds": self.config.prewarn_seconds},
@@ -791,7 +800,6 @@ class AccessController:
         original = hass.states.get(light) if light is not None else None
         steps = max(1, int(round(self.config.prewarn_seconds)))
         interval = self.config.prewarn_seconds / steps
-        cancel_event = self._cancel_event
         try:
             for _ in range(steps):
                 if light is not None:
@@ -806,7 +814,8 @@ class AccessController:
                 if light is not None and original is not None and original.state in (STATE_ON, STATE_OFF):
                     await self._light_call("turn_on" if original.state == STATE_ON else "turn_off", light)
             finally:
-                self._cancel_event = None
+                if self._cancel_event is cancel_event:
+                    self._cancel_event = None
         # Read only now: cancel() accepts a cancellation for as long as the event exists,
         # which includes the light calls above (a toggle or the restore can take seconds
         # on a slow light). A wall-button press or a stop acknowledged there must not be

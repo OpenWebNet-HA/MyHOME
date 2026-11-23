@@ -4194,6 +4194,10 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     @callback
     def _handle_sensor_update(self, state_str: str | None) -> None:
         """Mirror the contact sensor: off = closed, on = not closed, anything else = unknown."""
+        if state_str in (STATE_OFF, STATE_ON):
+            # The door physically changed state (e.g. radio remote or completed travel):
+            # a prior HA STOP inside min_cycle_time must not suppress the next STOP.
+            self._last_pulse_intent = None
         if state_str == STATE_OFF and self._attr_is_closed is not True:
             # The door has just come to closed (from open, or from a contact that was
             # not reporting): an earlier wall-button start is over.
@@ -4407,8 +4411,13 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             if not timed:
                 # Timed from the write on the wire, not from the hand-over to the queue: an
                 # ON that waited there (command session reopened after 15 s idle, a NACKed
-                # frame retried before it) must not be followed at once by its OFF.
-                written_ok = written_at is not None and now - IMPULSE_WRITE_TIMEOUT <= written_at <= now
+                # frame retried before it) must not be followed at once by its OFF. If send()
+                # itself took >= pulse_duration (e.g. an OWNd 2 s NACK retry before ACK),
+                # anchor to now so the software pulse never collapses to 0 s.
+                written_ok = (
+                    written_at is not None
+                    and 0.0 <= now - written_at < self._pulse_duration
+                )
                 anchor = written_at if written_ok and written_at is not None else now
                 self._schedule_off(max(0.0, anchor + self._pulse_duration - now))
             self._last_pulse_time = now
@@ -4429,7 +4438,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 self._display_name,
                 err,
             )
-            self._mark_unconfirmed()
+            if outcome is PulseOutcome.UNCONFIRMED:
+                self._mark_unconfirmed()
             return outcome
         finally:
             self._pulse_in_flight = False
@@ -4661,6 +4671,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         if self._pulse_in_flight or now - self._last_handover < echo_window:
             return
         self._relay_seen_at = now
+        # An external wall button actuated the relay: a prior HA STOP inside min_cycle_time
+        # must not swallow a subsequent STOP request.
+        self._last_pulse_intent = None
 
         # The button has already closed the relay and started the motor: pressing it
         # never aborts anything. Only Home Assistant's own pending request or
