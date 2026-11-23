@@ -764,6 +764,27 @@
     },
     "lock_command_failed": {
       "message": "{name}: ontgrendelcommando voor deurintercom mislukt: {error}"
+    },
+    "command_rejected": {
+      "message": "{name}: gateway {gateway} heeft het commando ({frame}) afgewezen met NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name}: het commando ({frame}) kon niet naar gateway {gateway} worden verzonden, of de verbinding is verbroken vóór het antwoord; het is mogelijk wel uitgevoerd"
+    },
+    "command_not_confirmed": {
+      "message": "{name}: gateway {gateway} heeft het commando ({frame}) niet op tijd bevestigd; het is mogelijk wel uitgevoerd"
+    },
+    "gateway_not_found": {
+      "message": "Gateway \"{gateway}\" niet gevonden"
+    },
+    "no_gateway_loaded": {
+      "message": "Er is geen MyHOME-gateway ingesteld"
+    },
+    "send_message_invalid_frame": {
+      "message": "\"{message}\" is geen geldig OpenWebNet-frame; er is niets verzonden"
+    },
+    "send_message_refused_frame": {
+      "message": "Verzenden van \"{message}\" geweigerd: dit frame is uit voorzorg geblokkeerd omdat het gateways kan laten vastlopen; er is niets verzonden"
     }
   },
   "entity": {

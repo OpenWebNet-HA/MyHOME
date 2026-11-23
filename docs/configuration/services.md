@@ -45,7 +45,7 @@ Sends an arbitrary, valid OpenWebNet message through the gateway command session
 | `message` | string | **Yes** | Valid OpenWebNet frame ending with `##`. | `"*1*0*0##"` |
 
 > [!NOTE]
-> **Nothing sent means an error, not a log line.** An empty `message` is refused by the service schema. The action raises `ServiceValidationError` and queues nothing when `message` is not a frame (characters other than `0-9`, `*` and `#`, no leading `*` or trailing `##`, or not parsable: `send_message_invalid_frame`), when it is a refused `WHO = 4` Dimension 22 form (`send_message_refused_frame`), when `gateway` matches no loaded gateway (`gateway_not_found`), or when no MyHOME gateway is set up (`no_gateway_loaded`). A frame that was queued and that the gateway later answers with `NACK` is still only logged.
+> **Nothing sent means an error, not a log line.** An empty `message` is refused by the service schema. The action raises `ServiceValidationError` and queues nothing when `message` is not a frame (characters other than `0-9`, `*` and `#`, no leading `*` or trailing `##`, or not parsable: `send_message_invalid_frame`), when it is a refused destructive/crash frame (`WHO = 4` Dimension 22 crash forms, `WHO = 18` Dimension 52 crash forms, or bare `WHO = 22` power frames: `send_message_refused_frame`), when `gateway` matches no loaded gateway (`gateway_not_found`), or when no MyHOME gateway is set up (`no_gateway_loaded`). A frame that was queued and that the gateway later answers with `NACK` is still only logged.
 
 ### Example YAML Call
 ```yaml

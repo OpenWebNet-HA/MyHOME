@@ -304,3 +304,32 @@ async def test_handed_over_command_names_actual_gateway_on_nack() -> None:
         await async_send_confirmed(primary, cmd, name="Light 05 Lock")
     assert err.value.translation_key == "command_rejected"
     assert err.value.translation_placeholders["gateway"] == "F455"
+
+
+async def test_handed_over_command_names_actual_gateway_when_send_fails_or_times_out() -> None:
+    """When send() hands off to a peer and then raises or times out, error names the peer gateway."""
+    standby = MagicMock(model="F455", name="Standby", mac="00:03:50:00:00:02")
+    primary = MagicMock(model="F461", name="Primary", mac="00:03:50:00:00:01")
+
+    async def _send_fail(message: object) -> asyncio.Future[float]:
+        setattr(message, "_myhome_handed_to", standby)
+        raise RuntimeError("peer queue closed")
+
+    primary.send = _send_fail
+    with pytest.raises(HomeAssistantError) as err:
+        await async_send_confirmed(primary, OWNCommand.parse("*14*0*05##"), name="Light 05 Lock")
+    assert err.value.translation_key == "command_not_delivered"
+    assert err.value.translation_placeholders["gateway"] == "F455"
+
+    async def _send_hang(message: object) -> asyncio.Future[float]:
+        setattr(message, "_myhome_handed_to", standby)
+        await asyncio.sleep(5)
+        raise AssertionError("unreachable")
+
+    primary.send = _send_hang
+    with pytest.raises(HomeAssistantError) as err2:
+        await async_send_confirmed(
+            primary, OWNCommand.parse("*14*0*05##"), name="Light 05 Lock", timeout=0.01
+        )
+    assert err2.value.translation_key == "command_not_confirmed"
+    assert err2.value.translation_placeholders["gateway"] == "F455"

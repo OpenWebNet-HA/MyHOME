@@ -115,15 +115,18 @@ async def async_send_confirmed(
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     frame = str(command)
-    placeholders = {"name": name, "gateway": gateway_label(gateway), "frame": frame}
+    def _placeholders() -> dict[str, str]:
+        actual = getattr(command, "_myhome_handed_to", None) or gateway
+        return {"name": name, "gateway": gateway_label(actual), "frame": frame}
+
     try:
         written = await asyncio.wait_for(gateway.send(command), timeout)
     except asyncio.CancelledError:
         raise
     except TimeoutError as err:
-        raise _not_confirmed(placeholders) from err
+        raise _not_confirmed(_placeholders()) from err
     except Exception as err:
-        raise _not_delivered(placeholders) from err
+        raise _not_delivered(_placeholders()) from err
     actual_gateway = getattr(command, "_myhome_handed_to", None) or gateway
     await async_confirm_delivery(
         written,

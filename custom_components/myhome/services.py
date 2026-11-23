@@ -7,6 +7,7 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
+import OWNd.connection.command_session as _ownd_command_session
 import OWNd.message as _ownd_message
 import voluptuous as vol
 from homeassistant.const import CONF_MAC
@@ -52,12 +53,9 @@ _WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
 _is_dimension_22_crash_form: Callable[[object], bool] | None = getattr(
     _ownd_message, "is_who4_dimension_22_crash_form", None
 )
-try:
-    from OWNd.connection.command_session import (
-        destructive_frame_reason as _ownd_destructive_frame_reason,
-    )
-except ImportError:  # pragma: no cover - older OWNd without centralized classifier
-    _ownd_destructive_frame_reason = None
+_ownd_destructive_frame_reason: Callable[[str], str | None] | None = getattr(
+    _ownd_command_session, "destructive_frame_reason", None
+)
 
 
 def services_has_dimension_22_detector() -> bool:
