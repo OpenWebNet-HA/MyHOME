@@ -691,12 +691,17 @@ async def test_access_controller_cancel_during_user_lookup_prevents_pulse(
 async def test_unexpected_exception_before_send_does_not_mark_unconfirmed(
     hass: HomeAssistant, bus: _Bus, make_gate
 ):
-    """An exception before gateway.send() keeps outcome NOT_SENT and must not call _mark_unconfirmed()."""
+    """An exception before gateway.send() keeps outcome NOT_SENT, does not mark unconfirmed, and still sends an owed OFF."""
     gate = make_gate(pulse_duration=1.0)
+    gate._off_pending = True
     gate._async_wait_off_task = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
     outcome = await gate._async_send_impulse(Intent.OPEN)
     assert outcome is PulseOutcome.NOT_SENT
     assert gate._unconfirmed_at == -1e9
+    assert gate._off_task is not None
+    await gate._off_task
+    assert bus.frames == [OFF]
+    assert gate._off_pending is False
 
 
 async def test_nack_retry_delay_does_not_collapse_software_pulse_to_zero(

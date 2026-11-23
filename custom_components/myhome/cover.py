@@ -4440,6 +4440,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             )
             if outcome is PulseOutcome.UNCONFIRMED:
                 self._mark_unconfirmed()
+            elif self._off_pending and self._pulse_off_cancel is None:
+                self._start_off_task()
             return outcome
         finally:
             self._pulse_in_flight = False
