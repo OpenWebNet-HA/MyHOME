@@ -1581,7 +1581,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if self._slat_tilt:
             last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
-            if last_tilt is None and saved_unavailable:
+            if last_tilt is None and saved_unavailable and self._attr_current_cover_tilt_position is None:
                 last_tilt = record.get("tilt")
             if last_tilt is not None:
                 try:
@@ -1645,7 +1645,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         last_run = record.get("last_run")
         if not isinstance(last_run, Mapping) or self._last_run:
             return
-        self._last_run = {key: last_run.get(key) for key in ("seconds", "direction", "ended_at")}
+        restored = {key: last_run.get(key) for key in ("seconds", "direction", "ended_at")}
+        if not any(value is not None for value in restored.values()):
+            return
+        self._last_run = restored
         self._refresh_travel_attributes()
 
     def _restore_strategy_state(self, record: Mapping[str, Any]) -> None:

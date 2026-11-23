@@ -968,3 +968,16 @@ async def test_unavailable_reload_preserves_recent_relay_hold(hass, gateway, clo
     assert c._stops_before_move(False), (
         "same recent stop would arm relay interlock after a reachable save"
     )
+
+
+async def test_live_tilt_before_restore_is_not_overwritten_and_empty_last_run_ignored(hass, gateway) -> None:
+    """A tilt established before restore survives an unavailable restore record, and empty last_run is ignored."""
+    cover = _make_cover(hass, gateway, slat_tilt=True, slat_time=1.5)
+    cover._attr_current_cover_tilt_position = 80
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False, "tilt": 20, "last_run": {}})
+    )
+    await cover.async_added_to_hass()
+    assert cover.current_cover_tilt_position == 80
+    assert not cover._last_run
