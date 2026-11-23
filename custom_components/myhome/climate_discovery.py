@@ -77,8 +77,11 @@ CANDIDATE_MAX_AGE = 3600.0
 # The unique id 2.0.0 gave a central unit configured as ``zone: "0"`` with ``central: true``:
 # ``<mac>-4-#0#0``, behind an interface ``<mac>-4-#0#0#4#II``.
 # The device part of a central unit as 2.0.0 saved it: ``#0#`` in front of an address typed as
-# ``0`` or with the prefix already (``#0#0`` -> ``#0##0#0``, ``#0#1`` -> ``#0##0#1``).
-_SAVED_CENTRAL_DOUBLED = re.compile(r"(.+-4-)(#0#(?:0|#0#\d{1,2}))((?:#4#\d{1,2})?)")
+# ``0``, zero-padded ``01``..``04``, ``#1``..``#4``, or with the prefix already (``#0#0`` ->
+# ``#0##0#0``, ``#0#1`` -> ``#0##0#1``, ``01`` -> ``#0#01``, ``#1`` -> ``#0##1``).
+_SAVED_CENTRAL_DOUBLED = re.compile(
+    r"(.+-4-)(#0#(?:0|#0#\d{1,2}|0[1-4]|#0?[1-4]))((?:#4#\d{1,2})?)"
+)
 
 _REAL_HVAC_STATES = frozenset(
     {
@@ -247,7 +250,7 @@ def _zone_route_keys(message: Any, address: Address | None) -> list[str]:
     if getattr(message, "where", None) and not is_probe(str(message.where)) and not (
         is_pump(message) or is_split_unit(message) or is_central_unit_actuator_status(message)
     ):
-        # ``#0#N`` is zone N of a 4-zone central unit; OWNd reports its WHERE as ``#0``, the
+        # ``#0#N`` is a 4-zone central unit; OWNd reports its WHERE as ``#0``, the
         # 99-zone central unit's key, under which no ``#0#N`` entity listens.
         keys.append(four_zone_central_where(message) or str(message.where))
     keys.extend(zones)
@@ -824,13 +827,23 @@ class ZoneDiscovery:
         """Read ``pair``'s temperature while allowing identical reply frames to confirm it.
 
         The exposure check is made here, with the startup lock held, because the address can
-        become exposed on the bus while the read waits for the lock.
+        become exposed on the bus while the read waits for the lock. ``_confirming_pair`` is
+        armed after the pre-read quiet wait when the gateway supports ``before_send`` so a
+        duplicate echo arriving before the read goes out cannot falsely confirm the candidate.
         """
         if pair not in self._candidates or is_exposed_on_bus(self._hass, self._config_entry, 4, pair[0]):
             return None
-        self._confirming_pair = pair
+        read_fn = self._gateway.read_zone_temperature
+
+        def _arm() -> None:
+            self._confirming_pair = pair
+
         try:
-            result: bool | None = await self._gateway.read_zone_temperature(pair[0])
+            if "before_send" in inspect.signature(read_fn).parameters:
+                result: bool | None = await read_fn(pair[0], before_send=_arm)
+            else:
+                self._confirming_pair = pair
+                result = await read_fn(pair[0])
             return result
         finally:
             self._confirming_pair = None
@@ -842,6 +855,8 @@ class ZoneDiscovery:
         is not read again, and is created by its next independent frame (``accept``) or expires.
         """
         gateway = self._gateway
+        running = getattr(gateway, "candidate_reads", lambda _running: None)
+        started_reads = False
         try:
             await asyncio.sleep(0)
             if not any(
@@ -856,6 +871,8 @@ class ZoneDiscovery:
                 waiting = wait()
                 if inspect.isawaitable(waiting):
                     await waiting
+            running(True)
+            started_reads = True
             asked: set[ZonePair] = set()
             lock = getattr(gateway, "_who4_startup_poll_lock", None)
             while True:
@@ -913,6 +930,8 @@ class ZoneDiscovery:
                         pair[0],
                     )
         finally:
+            if started_reads:
+                running(False)
             self._confirming_pair = None
             self._candidate_task = None
 

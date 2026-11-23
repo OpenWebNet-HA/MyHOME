@@ -347,9 +347,9 @@ class DeviceHealth:
         if getattr(message, "is_translation", False) is True or getattr(message, "dimension", None) is not None:
             return
         # The flags are the 99-zone central unit's (``*4*[20-21]*#0##``, ``*4*whatn*#0##``, WHO 4
-        # p. 23-24). ``#0#N``, zone N of a 4-zone central unit, is not that address: read
-        # through ``message_where`` (OWNd: WHERE ``#0``, parameter ``N``) its frames opened and
-        # cleared the 3550's issues, and ``#0#4#4#01`` became a central unit "#0#4#4".
+        # p. 23-24). ``#0#N`` (a 4-zone central unit) is not that address: read through
+        # ``message_where`` (OWNd: WHERE ``#0``, parameter ``N``) its frames opened and cleared
+        # the 3550's issues, and ``#0#4#4#01`` became a central unit "#0#4#4".
         where = central_unit_where(message)
         if where is None or self.is_ignored(4, where):
             return

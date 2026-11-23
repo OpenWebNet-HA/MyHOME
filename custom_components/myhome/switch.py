@@ -790,7 +790,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         self._actuator_levels: dict[str, int] = {}
         self._zone_active = False
         self._active_source = "actuators"
-        self._pending_direct_write: tuple[bool, float, bool] | None = None
+        self._pending_direct_write: list[Any] | None = None
         self._revert_warned = False
 
         self._attr_device_class = (
@@ -986,7 +986,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             self._raise_refused(await self._deliver_frames([self._turn_on_command]))
             return
         self._refuse_interface_write()
-        self._pending_direct_write = (True, time.monotonic(), False)
+        self._pending_direct_write = [True, time.monotonic(), False]
         await self._send_direct_writes(1)
 
     async def async_turn_off(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
@@ -995,15 +995,34 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             self._raise_refused(await self._deliver_frames([self._turn_off_command]))
             return
         self._refuse_interface_write()
-        self._pending_direct_write = (False, time.monotonic(), False)
+        self._pending_direct_write = [False, time.monotonic(), False]
         await self._send_direct_writes(0)
 
-    async def _deliver_frames(self, frames: list[str]) -> list[str]:
+    async def _deliver_frames(
+        self, frames: list[str], *, pending: list[Any] | None = None
+    ) -> list[str]:
         """Queue every frame, then wait once for all of them; return the frames the gateway refused."""
         written: list[tuple[str, asyncio.Future[Any]]] = []
+
+        def _anchor(future: asyncio.Future[Any]) -> None:
+            if (
+                pending is not None
+                and self._pending_direct_write is pending
+                and not future.cancelled()
+                and future.exception() is None
+            ):
+                result = future.result()
+                pending[1] = (
+                    float(result)
+                    if isinstance(result, (int, float)) and not isinstance(result, bool)
+                    else time.monotonic()
+                )
+
         for frame in frames:
             future: Any = await self._gateway_handler.send(cast(OWNCommand, OWNCommand.parse(frame)))
             if isinstance(future, asyncio.Future):
+                if pending is not None:
+                    future.add_done_callback(_anchor)
                 written.append((frame, future))
         if written:
             await asyncio.wait(
@@ -1039,23 +1058,18 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         pending = self._pending_direct_write
         frames = self._direct_write_frames(value)
         try:
-            refused = await self._deliver_frames(frames)
+            refused = await self._deliver_frames(frames, pending=pending)
         except asyncio.CancelledError:
             # A cancelled call no longer watches for a revert of its write (the frames stay
             # queued and may still be refused).
-            if (
-                pending is not None
-                and self._pending_direct_write is not None
-                and self._pending_direct_write[1] == pending[1]
-            ):
+            if pending is not None and self._pending_direct_write is pending:
                 self._pending_direct_write = None
             raise
         if (
             refused
             and len(refused) == len(frames)
             and pending is not None
-            and self._pending_direct_write is not None
-            and self._pending_direct_write[1] == pending[1]
+            and self._pending_direct_write is pending
         ):
             self._pending_direct_write = None
         self._raise_refused(refused)
@@ -1070,7 +1084,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             self._pending_direct_write = None
             return
         if new_state == target:
-            self._pending_direct_write = (target, sent_at, True)
+            self._pending_direct_write[2] = True
             return
         if confirmed:
             self._pending_direct_write = None

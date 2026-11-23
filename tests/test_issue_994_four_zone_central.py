@@ -275,3 +275,113 @@ async def test_a_zone_configured_standalone_keeps_ignoring_reports_through_a_cen
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0170*#0#1##"))
     await hass.async_block_till_done()
     assert (zone.hvac_mode, zone.target_temperature) == before
+
+
+# ── audit & UI fixes ──
+
+
+async def test_central_unit_set_temperature_waits_for_bus_report(hass: HomeAssistant) -> None:
+    """Setting temperature on `#0#1` or `#0` must not write state optimistically; it follows the bus report."""
+    gateway, found = await _plant(hass, None, FIRST, SECOND)
+    central4 = found["#0#1"]
+    assert central4.target_temperature == 17.5
+    await central4.async_set_temperature(temperature=19.0)
+    assert central4.target_temperature == 17.5
+    central4.handle_event(OWNHeatingEvent("*4*110#0190*#0#1##"))
+    assert central4.target_temperature == 19.0
+
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    gw99 = _gateway(has_central_unit=False)
+    central99 = _climate(gw99, "#0", standalone=None, central=True)
+    central99.handle_event(OWNHeatingEvent("*4*110#0240*#0##"))
+    assert central99.target_temperature == 24.0
+    await central99.async_set_temperature(temperature=24.5)
+    assert central99.target_temperature == 24.0
+    central99.handle_event(OWNHeatingEvent("*4*110#0245*#0##"))
+    assert central99.target_temperature == 24.5
+
+
+async def test_zero_padded_and_hashed_central_zone_in_yaml_normalize_to_four_zone_central(
+    hass: HomeAssistant,
+) -> None:
+    from custom_components.myhome.where_grammar import canonical_central_zone
+
+    assert canonical_central_zone("01") == "#0#1"
+    assert canonical_central_zone("#0#01") == "#0#1"
+    assert canonical_central_zone("#1") == "#0#1"
+    assert canonical_central_zone("#0##1") == "#0#1"
+    assert canonical_central_zone("00") == "#0"
+    assert canonical_central_zone("#0#00") == "#0"
+    assert canonical_central_zone("01#4#01") == "#0#1#4#01"
+    assert canonical_central_zone("foo") == "#0#foo"
+
+    padded = {**REPORTERS_FILE, "centrale": {**REPORTERS_FILE["centrale"], "zone": "01"}}
+    gateway, found = await _plant(hass, padded, FIRST, SECOND)
+    assert set(found) == {"#0#1", "1", "3", "4"}
+    assert gateway.has_central_unit is False
+
+
+def test_routed_central_unit_and_output_sensor_do_not_set_local_has_central_unit(hass: HomeAssistant) -> None:
+    gateway = _gateway(has_central_unit=False)
+    MyHOMEClimate(
+        hass=hass, device_id="#0#4#01", who="4", where="#0", interface="01", name="Remote CU",
+        heating=True, cooling=True, fan=False, humidity=False, standalone=False, central=True,
+        manufacturer="BTicino", model="Central Unit (3550)", gateway=gateway,
+    )
+    assert gateway.has_central_unit is False
+
+    sensor = MyHOMEActuatorOutputSensor(
+        hass=hass, name="Climate Zone 3", device_id="3#4#01", where="3#1", zone="3", actuator="1",
+        interface="01", standalone=None, manufacturer="BTicino", model="Heating Zone", gateway=gateway,
+    )
+    sensor.handle_event(OWNHeatingEvent("*4*110*#3#4#01##"))
+    assert gateway.has_central_unit is False
+
+
+async def test_actuator_status_with_four_zone_central_where_discovers_and_mutates_nothing(
+    hass: HomeAssistant,
+) -> None:
+    from custom_components.myhome.climate_discovery import _zone_address, _zone_route_keys
+    from custom_components.myhome.where_grammar import is_central_unit_actuator_status
+
+    for raw in ("*#4*#0#1*20*5##", "*#4*#0#1*#20*1##", "*#4*#0#1#4#01*20*1##"):
+        msg = OWNEvent.parse(raw)
+        assert is_central_unit_actuator_status(msg) is True
+        assert _zone_address(msg) is None
+        assert _zone_route_keys(msg, None) == []
+
+    _gateway_, found = await _plant(hass, None, FIRST, SECOND)
+    central = found["#0#1"]
+    before_action = central.hvac_action
+    before_attrs = dict(central.extra_state_attributes)
+    central.handle_event(OWNHeatingEvent("*#4*#0#1*20*5##"))
+    assert central.hvac_action == before_action
+    assert dict(central.extra_state_attributes) == before_attrs
+
+
+async def test_standalone_zone_ignores_four_zone_central_dim14_writes(hass: HomeAssistant) -> None:
+    file = {**REPORTERS_FILE, "zona1": {"zone": "1", "name": "Zona 1", "heat": True, "cool": False, "standalone": True}}
+    _gateway_, found = await _plant(hass, file, FIRST)
+    zone = found["1"]
+    before = zone.target_temperature
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*#0#1*#14*0195*1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*#1*14*0195*1##"))
+    await hass.async_block_till_done()
+    assert zone.target_temperature == before
+
+
+def test_inline_interface_central_unit_does_not_alias_local_zone_number() -> None:
+    validated = climate_schema(
+        {
+            "remote_cu": {"zone": "0#4#01", "central": True, "name": "Remote CU"},
+            "remote_zone": {"zone": "3#4#01", "name": "Remote Zone 3"},
+        }
+    )
+    assert "01" not in validated and "zone_01" not in validated
+    assert "0#4#01" in validated and "3#4#01" in validated
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+    assert "01" not in configured["climate"] and "zone_01" not in configured["climate"]
+    assert _zone_config(configured["climate"], Address("#0", "01"), "#0#4#01").get("name") == "Remote CU"
+    assert _zone_config(configured["climate"], Address("3", "01"), "3#4#01").get("name") == "Remote Zone 3"

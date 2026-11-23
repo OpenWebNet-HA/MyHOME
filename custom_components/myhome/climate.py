@@ -469,8 +469,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._setpoint_check_by_central = False
         self._setpoint_check_central_reports = 0
         # A 4-zone central unit does not put the plant's zones under a central unit: they are
-        # written directly (#994).
-        if self._central and self._where.removeprefix("4-") not in _FOUR_ZONE_CENTRAL:
+        # written directly (#994). A central unit behind an F422 interface belongs to that bus,
+        # never the local one.
+        if (
+            self._central
+            and self._interface is None
+            and self._where.removeprefix("4-") not in _FOUR_ZONE_CENTRAL
+        ):
             gateway.has_central_unit = True
 
         self._attr_native_temperature_unit = UnitOfTemperature.CELSIUS
@@ -935,12 +940,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_restore_last_state(self, last_state: State | None) -> None:
         """Restore climate state from HA storage."""
-        # What the zone reported before it was added (the frames ``ZoneDiscovery.build`` replays)
-        # is live and stays over the saved state.
-        mode_live = not self._central and self._attr_hvac_mode is not None
-        setpoint_live = not self._central and (
-            self._local_target_reported or self._target_temperature is not None
-        )
+        # What the zone or central unit reported before it was added (the frames
+        # ``ZoneDiscovery.build`` replays) is live and stays over the saved state.
+        mode_live = self._attr_hvac_mode is not None
+        setpoint_live = self._local_target_reported or self._target_temperature is not None
         if last_state is not None:
             if not self._central:
                 self._poll_health.restore(last_state.attributes)
@@ -949,23 +952,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._zone_operation = str(restored_zone_operation)
             else:
                 self._clear_unresponsive_issue()
+                rc_live = self._remote_control is not None
                 restored_rc = last_state.attributes.get("remote_control")
-                if restored_rc in ("enabled", "disabled"):
+                if not rc_live and restored_rc in ("enabled", "disabled"):
                     self._remote_control = str(restored_rc)
                 restored_operation = last_state.attributes.get("central_operation")
-                if restored_operation in ("antifreeze", "thermal_protection"):
+                if not mode_live and restored_operation in ("antifreeze", "thermal_protection"):
                     self._central_operation = str(restored_operation)
-                self._at_least_one_probe_off = bool(
-                    last_state.attributes.get("at_least_one_probe_off", False)
-                )
-                self._at_least_one_probe_antifreeze = bool(
-                    last_state.attributes.get("at_least_one_probe_antifreeze", False)
-                )
-                self._at_least_one_probe_manual = bool(
-                    last_state.attributes.get("at_least_one_probe_manual", False)
-                )
-                self._failure_detected = bool(last_state.attributes.get("failure_detected", False))
-                self._battery_fault = bool(last_state.attributes.get("battery_fault", False))
+                if not mode_live and not rc_live:
+                    self._at_least_one_probe_off = self._at_least_one_probe_off or bool(
+                        last_state.attributes.get("at_least_one_probe_off", False)
+                    )
+                    self._at_least_one_probe_antifreeze = self._at_least_one_probe_antifreeze or bool(
+                        last_state.attributes.get("at_least_one_probe_antifreeze", False)
+                    )
+                    self._at_least_one_probe_manual = self._at_least_one_probe_manual or bool(
+                        last_state.attributes.get("at_least_one_probe_manual", False)
+                    )
+                    self._failure_detected = self._failure_detected or bool(
+                        last_state.attributes.get("failure_detected", False)
+                    )
+                    self._battery_fault = self._battery_fault or bool(
+                        last_state.attributes.get("battery_fault", False)
+                    )
         if last_state is not None and last_state.state is not None:
             self._restore_cooling_seen(last_state)  # first: `cool` is then a mode the zone can be restored in
             if not mode_live:
@@ -994,8 +1003,27 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     shown = float(target_temp)
                 except (ValueError, TypeError):
                     shown = None
+                saved_nominal: float | None = None
+                if shown is not None and not self._central:
+                    try:
+                        raw_nominal = last_state.attributes.get("nominal_temperature")
+                        saved_nominal = float(raw_nominal) if raw_nominal is not None else None
+                    except (ValueError, TypeError):
+                        saved_nominal = None
                 if shown is not None and setpoint_live and not self._central:
                     self._restore_knob_beside_live_setpoint(last_state)
+                    if (
+                        self._target_temperature is None
+                        and self._local_target_reported
+                        and saved_nominal is not None
+                    ):
+                        # Only dimension 12 replayed before the saved state (mode was unknown):
+                        # keep the saved commanded setpoint alongside the live setpoint in force
+                        # so entering protection does not lose it, and the silent poll still asks
+                        # dimension 14 until the zone reports it.
+                        self._target_temperature = round(saved_nominal, 1)
+                        self._restored_nominal = (self._target_temperature, self._target_temperature)
+                        self._nominal_from_dim12 = False
                 if shown is not None and not setpoint_live:
                     # The saved ``nominal_temperature`` is the commanded setpoint (dimension 14);
                     # the value shown can be the setpoint in force or a protection setpoint
@@ -1007,13 +1035,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         saved_offset = 0
                     if not self._local_offset_reported:
                         self._local_offset = saved_offset
-                    saved_nominal: float | None = None
-                    if not self._central:
-                        try:
-                            raw_nominal = last_state.attributes.get("nominal_temperature")
-                            saved_nominal = float(raw_nominal) if raw_nominal is not None else None
-                        except (ValueError, TypeError):
-                            saved_nominal = None
                     self._restored_nominal = None
                     # Saved off, or with no mode and no commanded setpoint at all (``unknown``:
                     # a setpoint in force that came before the zone's mode): the value shown can
@@ -1053,21 +1074,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         # saved while off is its protection setpoint (#383), not what it runs at.
                         self._local_target_temperature = None
                         self._show_nominal()
-            if "program" in last_state.attributes:
-                try:
-                    self._program = int(last_state.attributes["program"])
-                except (ValueError, TypeError):
-                    pass
-            if "holiday_days" in last_state.attributes:
-                try:
-                    self._holiday_days = int(last_state.attributes["holiday_days"])
-                except (ValueError, TypeError):
-                    pass
-            if "scenario" in last_state.attributes:
-                try:
-                    self._scenario = int(last_state.attributes["scenario"])
-                except (ValueError, TypeError):
-                    pass
+            if not mode_live:
+                if "program" in last_state.attributes:
+                    try:
+                        self._program = int(last_state.attributes["program"])
+                    except (ValueError, TypeError):
+                        pass
+                if "holiday_days" in last_state.attributes:
+                    try:
+                        self._holiday_days = int(last_state.attributes["holiday_days"])
+                    except (ValueError, TypeError):
+                        pass
+                if "scenario" in last_state.attributes:
+                    try:
+                        self._scenario = int(last_state.attributes["scenario"])
+                    except (ValueError, TypeError):
+                        pass
             restored_current = last_state.attributes.get("current_temperature")
             if restored_current is not None and self._attr_native_current_temperature is None:
                 # Shown until the zone reports again, flagged so it is not taken for a reading:
@@ -1090,7 +1112,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     )
                 )
             restored_season = last_state.attributes.get("season")
-            if restored_season in (SEASON_HEATING, "cooling", "conditioning"):
+            if not self._season_reported and restored_season in (SEASON_HEATING, "cooling", "conditioning"):
                 self._season = str(restored_season)
             if (
                 last_state.attributes.get("standalone_detected") is True
@@ -1414,17 +1436,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._bus_state_complete = bool(core_ok and fan_ok and hum_ok)
 
     def _poll_on_add_waits(self) -> bool:
-        """Also while the zones known only from their actuators are being read.
+        """Also while actuator-only or candidate-confirmation reads are running.
 
         A zone those reads create is added after the start-up sweep, when the poll on add no
         longer waits for anything: it ran next to the following zone's read, outside the
-        start-up poll lock that read holds (``climate_discovery._ask_actuator_only_zones``),
-        and an F455 hands a reply to the wrong one of two crossing reads. Left to
-        ``_async_poll_after_discovery`` it takes its turn under that lock.
+        start-up poll lock that read holds (``climate_discovery._ask_actuator_only_zones`` /
+        ``_confirm_candidates``), and an F455 hands a reply to the wrong one of two crossing
+        reads. Left to ``_async_poll_after_discovery`` it takes its turn under that lock.
         """
         return super()._poll_on_add_waits() or (
             hasattr(self._gateway_handler, "wait_for_initial_discovery")
-            and getattr(self._gateway_handler, "actuator_only_reads_running", False) is True
+            and (
+                getattr(self._gateway_handler, "actuator_only_reads_running", False) is True
+                or getattr(self._gateway_handler, "candidate_reads_running", False) is True
+            )
         )
 
     async def _async_poll_after_discovery(self) -> None:
@@ -3305,7 +3330,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         version 0.9.3 wrote, and the F454 2.0.51 plant of #994 answered ``*#4*#0#1*#14*0175*1##``
         with ``*4*110#0175*#0#1##``; the season frame (``*4*1*#0#N##``) is in no capture of such
         a plant. Without a setpoint of the central unit there is nothing to write, as for a zone;
-        the mode is shown once the write was not refused, like a setpoint of the central unit.
+        the mode is shown once the write was not refused, like off and auto of the central unit.
         """
         nominal = self._effective_nominal_temperature()
         if nominal is None:
@@ -3374,11 +3399,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     await self._write_central_setpoint(target_temperature)
             else:
                 await self._write_central_setpoint(target_temperature)
-            self._target_temperature = target_temperature
-            self._local_target_base = None
-            self._nominal_from_dim12 = False
-            if self.hass is not None:
-                self.async_write_ha_state()
+            # State follows the central unit's own bus report (``*4*110#TTTT*#0##`` /
+            # ``*4*110#TTTT*#0#N##``), not an optimistic write: when Remote Control
+            # (Telegestione) is disabled the gateway still ACKs while the central unit ignores it.
             return
         direct = self._standalone
         command = OWNHeatingCommand.set_temperature(
@@ -3601,7 +3624,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if self.hass is not None:
             self.async_write_ha_state()
             if self._where.removeprefix("4-") in ("#0", "0"):
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 async_dispatcher_send(
                     self.hass,
                     central_mode_signal(self._gateway_handler.mac, self._interface),
@@ -3688,6 +3711,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._disarm_central_echo(slot, armed_at)
             raise
         if not isinstance(written, asyncio.Future):
+            self._central_echo_writes.pop(slot, None)
             self._anchor_central_echo(armed_at, None, slot)
             return
 
@@ -3698,6 +3722,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
         if written_required and not written.done():
             self._central_echo_writes[slot] = written
+        else:
+            self._central_echo_writes.pop(slot, None)
         written.add_done_callback(_on_written)
         if not written_required:
             if refusal_raises:
@@ -3761,6 +3787,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         echo: tuple[str, float | None, float] | None = getattr(self, slot)
         if echo is not None and echo[2] == armed_at:
             setattr(self, slot, None)
+            self._central_echo_writes.pop(slot, None)
 
     @callback
     def _anchor_central_echo(
@@ -3845,7 +3872,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         if self._central or not self._standalone:
             return False
-        if message.message_type not in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+        if message.message_type not in (
+            MESSAGE_TYPE_MODE,
+            MESSAGE_TYPE_MODE_TARGET,
+            MESSAGE_TYPE_SEASON,
+            MESSAGE_TYPE_TARGET_TEMPERATURE,
+        ):
             return False
         if self._standalone_config is None and four_zone_central_where(message) == f"#0#{canonical_thermo_zone(self._where)}":
             return False
@@ -3915,15 +3947,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         teaches the knob offset it is shown with (a knob at +1 that had not reported: 21.0
         written, ``*#4*2*12*0220*3##`` back).
         """
-        if self._where.removeprefix("4-") in ("#0", "0") and (
-            central_unit_where(message) is None or is_central_unit_actuator_status(message)
-        ):
+        if (
+            self._where.removeprefix("4-") in ("#0", "0") and central_unit_where(message) is None
+        ) or (self._central and is_central_unit_actuator_status(message)):
             # The 99-zone central unit also listens under ``0`` (its zone number), the WHERE
             # of a general frame: "General probes (all probes)" (WHO 4 p. 6) is not the
-            # central unit, and neither is ``#0#N``, a zone of a 4-zone central unit. The
-            # answer to the all-zone actuator request carries WHERE ``#0`` and is no report of
-            # the central unit (#944); it reaches this entity through the sensor platform's
-            # router too.
+            # central unit, and neither is ``#0#N`` (a 4-zone central unit). An actuator
+            # status with WHERE ``#0`` or ``#0#N`` is no report of a central unit (#944, #994);
+            # it reaches this entity through the sensor platform's router too.
             return
         self._note_conditioning_report(message)  # first: the frame is then read as a cooling zone's
         try:
@@ -4261,7 +4292,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._central
                 and self.hass is not None
                 and self._attr_hvac_mode is not None
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 and self._where.removeprefix("4-") in ("#0", "0")
             ):
                 async_dispatcher_send(
@@ -4371,7 +4402,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._central
                 and self.hass is not None
                 and self._attr_hvac_mode is not None
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 and self._where.removeprefix("4-") in ("#0", "0")
             ):
                 async_dispatcher_send(
@@ -4452,7 +4483,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._central
                 and self.hass is not None
                 and self._attr_hvac_mode is not None
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 and self._where.removeprefix("4-") in ("#0", "0")
             ):
                 async_dispatcher_send(

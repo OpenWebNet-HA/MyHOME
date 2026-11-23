@@ -863,9 +863,9 @@ async def test_device_health_heating_edge_cases(hass):
     assert health.faults == []
     dispatcher.handler.config_entry = SimpleNamespace(entry_id=ENTRY_ID, options={})
 
-    # 4. Bus-routed central unit (#0#4#1 behind interface 1):
-    rc_routed_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0#4#1")
-    bat_routed_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0#4#1")
+    # 4. Bus-routed central unit (#0#4#1 behind interface 1, normalized to #0#4#01):
+    rc_routed_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0#4#01")
+    bat_routed_id = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0#4#01")
 
     await dispatcher.process_message(_frame("*4*20*#0#4#1##"))
     await dispatcher.process_message(_frame("*4*31*#0#4#1##"))

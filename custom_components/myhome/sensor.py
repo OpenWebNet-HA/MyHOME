@@ -2424,7 +2424,11 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Update output percentage from WHO=4 Dimension 20 events and zone resets."""
-        if is_central_unit_report(message) and four_zone_central_where(message) is None:
+        if (
+            is_central_unit_report(message)
+            and thermo_event_interface(message) is None
+            and four_zone_central_where(message) is None
+        ):
             self._gateway_handler.has_central_unit = True
         if thermo_event_interface(message) != self._interface:
             return

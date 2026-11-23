@@ -151,6 +151,7 @@ from .where_grammar import (
     canonical_point_spelling,
     canonical_thermo_zone,
     parse_thermo_actuator_where,
+    split_zone_routing,
     validate_thermo_trigger_command,
 )
 
@@ -390,24 +391,25 @@ class MyHomeDeviceSchema(Schema):
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
                 )
                 _rekeyed_data[str(device)] = data[device]
-                clean_zone = str(data[device][CONF_ZONE]).split("#")[-1]
+                base_zone, eff_routing = split_zone_routing(str(data[device][CONF_ZONE]), routing)
+                clean_zone = base_zone.split("#")[-1]
                 _rekeyed_data[f"{data[device][CONF_ZONE]}{routing}"] = data[device]
-                _zone_aliases = [_new_key, f"{clean_zone}{routing}"]
-                if not routing:
+                _zone_aliases = [_new_key, f"{clean_zone}{eff_routing}"]
+                if not eff_routing:
                     _zone_aliases.append(f"zone_{clean_zone}")
-                if str(data[device][CONF_ZONE]).startswith("#0#"):
+                if base_zone.startswith("#0#"):
                     _central_aliases.extend((alias, data[device]) for alias in _zone_aliases)
                 else:
                     _rekeyed_data.update(dict.fromkeys(_zone_aliases, data[device]))
                     # ``1``, ``01`` and ``#1`` are zone 1; ``001`` is all the probes of zone 1, another address.
                     if (
-                        (digits := zone.removeprefix("#")).isdigit()
+                        (digits := base_zone.removeprefix("#")).isdigit()
                         and len(digits) <= 2
-                        and (canon := canonical_thermo_zone(zone)) is not None
+                        and (canon := canonical_thermo_zone(base_zone)) is not None
                     ):
-                        _bare = f"{canon}{routing}"
+                        _bare = f"{canon}{eff_routing}"
                         _numbers = [_bare, f"{data[device][CONF_WHO]}-{_bare}"]
-                        if not routing:
+                        if not eff_routing:
                             _numbers.append(f"zone_{canon}")
                         _zone_numbers.extend((alias, _bare, data[device]) for alias in _numbers if alias not in _zone_aliases)
             if CONF_DEVICE_MODEL not in data[device]:

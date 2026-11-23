@@ -227,6 +227,7 @@ __all__ = [
     "padded_contact_where",
     "parse_apl_where",
     "parse_thermo_actuator_where",
+    "split_zone_routing",
     "thermo_dim19_status",
     "thermo_dim20_actuator_target",
     "thermo_dim20_is_active",
@@ -291,11 +292,12 @@ def canonical_thermo_zone(where: str) -> str | None:
 def canonical_central_zone(zone: str) -> str:
     """The WHERE of a ``central: true`` entry of ``myhome.yaml``, from its ``zone`` as typed or as stored.
 
-    ``0``, ``#0`` and ``#0#0`` are the 99-zone central unit ``#0``; ``N`` and ``#0#N`` are zone
-    ``N`` of a 4-zone central unit, ``#0#N`` (WHO 4 WHERE table: ``#0`` Central Unit, ``#0#1`` to
-    ``#0#4``). An interface written inside the zone (``0#4#01``) is kept behind the address.
-    2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored for an address
-    typed with the prefix (``#0##0#1``, ``#0#0``) is read back to the same address.
+    ``0``, ``00``, ``#0`` and ``#0#0`` are the 99-zone central unit ``#0``; ``N``, ``0N``, ``#N``,
+    ``#0#N`` and ``#0#0N`` are a 4-zone central unit at ``#0#N`` (WHO 4 WHERE table: ``#0``
+    Central Unit, ``#0#1`` to ``#0#4``). An interface written inside the zone (``0#4#01``) is kept
+    behind the address. 2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored
+    for an address typed with the prefix (``#0##0#1``, ``#0##1``, ``#0#01``, ``#0#0``) is read back
+    to the same address.
     """
     base, routing, interface = str(zone).rpartition("#4#")
     if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
@@ -304,11 +306,22 @@ def canonical_central_zone(zone: str) -> str:
         base, suffix = str(zone), ""
     while base.startswith("#0##0"):
         base = base[len("#0#") :]
-    if base in ("0", "#0", "#0#0"):
-        base = "#0"
-    elif not base.startswith("#0#"):
-        base = f"#0#{base}"
+    tail = base[len("#0#") :].removeprefix("#") if base.startswith("#0#") else base.removeprefix("#")
+    if tail.isascii() and tail.isdigit():
+        num = int(tail)
+        base = "#0" if num == 0 else f"#0#{num}"
+    else:
+        base = base if base.startswith("#0#") else f"#0#{base}"
     return f"{base}{suffix}"
+
+
+def split_zone_routing(zone: str, routing: str) -> tuple[str, str]:
+    """Separate an inline ``#4#II`` F422 routing suffix from ``zone`` when ``routing`` is empty."""
+    if not routing:
+        base, sep, iface = zone.rpartition("#4#")
+        if sep and base and iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2:
+            return base, f"#4#{iface.zfill(2)}"
+    return zone, routing
 
 
 def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
@@ -405,27 +418,32 @@ def is_pump(message: Any) -> bool:
 
 
 def is_split_unit(message: Any) -> bool:
-    """WHERE ``3#Z#N`` under DIMENSION 22: split unit ``N`` of zone ``Z``, not zone 3.
+    """WHERE ``3#Z#N`` or ``Z#N`` under DIMENSION 22: split unit ``N`` of zone ``Z``, not a heating zone.
 
     "Where= 3#<where actuators>, Where actuators= Z#N = [0-99]#[1-9]" (WHO 4 PDF 1.10.1 /
-    1.10.2, kb/sources/text/openwebnet-who-4.txt:3206-3212, 3265-3266; Encyclopedia
-    functional/who-4-temperature-control/addressing.md "Split control uses the additional
-    prefix ``3#Z#N`` under ``DIMENSION 22``"). OWNd reports WHERE ``3`` with the parameters
-    ``[Z, N]`` and, on a status frame, zone 3: read as that zone's, a split unit's report
-    created a "Zone 3" on a plant without one. The frame carries the split unit's mode, set
-    point, fan speed and swing, nothing of a heating zone. ``3#4#N`` is split unit ``N`` of
-    zone 4 here, not zone 3 behind interface ``N`` (:func:`is_actuator_where`). No capture
-    of the form exists in the trace corpus (2026-11-18); the reading rests on the published
-    grammar.
+    1.10.2; Encyclopedia functional/who-4-temperature-control/addressing.md "Split control uses
+    the additional prefix ``3#Z#N`` under ``DIMENSION 22``"). OWNd reports ``3#Z#N`` as WHERE
+    ``3`` with parameters ``[Z, N]`` and zone 3: read as that zone's, a split unit's report
+    created a "Zone 3" on a plant without one. Historical BTicino touchscreens and MH202
+    (``010024``, own-firmware-oracle ``findings/thermo-dim22.md:90-93``; Encyclopedia
+    ``dimensions.md`` "Historical partial split writes") also use the prefix-less ``Z#N``
+    2-token form (e.g. ``*#4*45#1*#22*3**1*1##``), emitting the same SCS ``D1`` telegram on
+    MH202; functional WHO 4 DIMENSION 22 is split-unit control only. ``3#4#N`` is split unit
+    ``N`` of zone 4 here, not zone 3 behind interface ``N`` (:func:`is_actuator_where`).
     """
+    if getattr(message, "dimension", None) != 22:
+        return False
+    where = str(getattr(message, "where", None) or "")
     params = [str(param) for param in where_param(message)]
-    if len(params) == 4 and params[2] == "4":  # ``3#Z#N#4#II``: behind an F422
-        params = params[:2]
+    if len(params) >= 3 and params[-2] == "4" and _is_ascii_uint(params[-1]):
+        params = params[:-2]
+    if where == "3" and len(params) == 2 and all(_is_ascii_uint(param) for param in params):
+        return True
     return (
-        getattr(message, "dimension", None) == 22
-        and str(getattr(message, "where", None)) == "3"
-        and len(params) == 2
-        and all(_is_ascii_uint(param) for param in params)
+        _is_ascii_uint(where)
+        and 1 <= int(where) <= 99
+        and len(params) == 1
+        and _is_ascii_uint(params[0])
     )
 
 
@@ -443,11 +461,11 @@ def _where_params(message: Any) -> list[str]:
 
 
 def four_zone_central_where(message: Any) -> str | None:
-    """``#0#N`` when a frame is addressed to zone ``N`` (1-4) of a 4-zone central unit, else ``None``.
+    """``#0#N`` when a frame is addressed to a 4-zone central unit (``N`` 1-4), else ``None``.
 
     OWNd reports ``*4*303*#0#1##`` as WHERE ``#0`` with the parameter ``1`` (and zone 1), so
     the frame's own WHERE read ``#0``: the 99-zone central unit's. ``#0#N#4#II`` is the same
-    zone behind an F422 interface (parameters ``N``, ``4``, ``II``). ``#0#4#II`` (two
+    central unit behind an F422 interface (parameters ``N``, ``4``, ``II``). ``#0#4#II`` (two
     parameters) is not one of them: it is the 99-zone central unit behind interface ``II``.
     """
     if str(getattr(message, "where", None)) != "#0":
@@ -473,7 +491,7 @@ def central_unit_where(message: Any) -> str | None:
     if not params:
         return "#0"
     if len(params) == 2 and params[0] == "4" and _is_ascii_uint(params[1]) and len(params[1]) <= 2:
-        return f"#0#4#{params[1]}"
+        return f"#0#4#{params[1].zfill(2)}"
     return None
 
 
@@ -499,20 +517,17 @@ def is_actuator_status(message: Any) -> bool:
 
 
 def is_central_unit_actuator_status(message: Any) -> bool:
-    """An actuator status with WHERE ``#0``: ``*#4*#0*20*V##`` (#944).
+    """An actuator status with WHERE ``#0`` or ``#0#N``: ``*#4*#0*20*V##``, ``*#4*#0#1*20*V##`` (#944, #994).
 
-    It names no zone and no actuator (OWNd falls back to actuator 1), and the central unit has
+    It names no zone and no actuator (OWNd falls back to actuator 1), and a central unit has
     no actuator status of its own: the WHERE of dimension 20 is ``Z#N``, ``Z#0`` or ``0#0``
     (WHO 4 p. 22, p. 62). So it discovers nothing and is delivered to no entity, like the pump
     frames ``0#N``. The same frame from behind an interface (built, no capture holds one:
-    ``*#4*#0#4#01*20*1##``, where the WHERE's tail is the interface and not a zone of a
-    4-zone central unit) is the same thing.
+    ``*#4*#0#4#01*20*1##``, ``*#4*#0#1#4#01*20*1##``) is the same thing.
     """
-    where = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
-    tail = [str(part) for part in where_param(message)]
-    interface = thermo_event_interface(message)
-    routed_only = interface is not None and len(tail) == 2 and tail[0] == "4" and tail[1].zfill(2) == interface
-    return where == "#0" and (not tail or routed_only) and is_actuator_status(message)
+    return (
+        central_unit_where(message) is not None or four_zone_central_where(message) is not None
+    ) and is_actuator_status(message)
 
 
 def is_central_unit_report(message: Any) -> bool:

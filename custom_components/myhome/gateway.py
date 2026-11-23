@@ -6,7 +6,7 @@ import collections
 import inspect
 import re
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
@@ -656,6 +656,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.standalone_detected_zones: set[tuple[str, str | None]] = set()
         # While ``climate_discovery`` creates the zones known only from their actuators.
         self._actuator_only_reads_running = False
+        # While ``climate_discovery`` confirms unconfigured candidate zones (#966 / #971).
+        self._candidate_reads_running = False
 
     @property
     def central_season(self) -> str | None:
@@ -1029,7 +1031,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             except Exception:  # a transport error must not end the task silently (#593)
                 LOGGER.exception("%s Zone requests %s could not be sent", self.log_id, frames)
 
-    async def read_zone_temperature(self, where: str) -> bool | None:
+    async def read_zone_temperature(
+        self, where: str, *, before_send: Callable[[], None] | None = None
+    ) -> bool | None:
         """Ask one heating zone for its temperature (``*#4*Z*0##``) once the bus is quiet.
 
         ``True``: the gateway acknowledged the read; the zone's frame, if any, was dispatched.
@@ -1048,6 +1052,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             return None
         if self._last_event_frame_at > 0:
             await self._wait_for_bus_quiet(self._last_event_frame_at)
+        if before_send is not None:
+            before_send()
         written: object = await self.send_status_request(cmd)
         await self._wait_for_write(written, cmd)
         if not isinstance(written, asyncio.Future):
@@ -1635,6 +1641,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._actuator_only_reads_running = running
         if not running and self._all_actuators_swept_at > 0:
             self._all_actuators_swept_at = time.monotonic()
+
+    @property
+    def candidate_reads_running(self) -> bool:
+        """While ``climate_discovery`` actively confirms unconfigured candidate zones."""
+        return self._candidate_reads_running
+
+    def candidate_reads(self, running: bool) -> None:
+        """Start or end candidate confirmation reads without refreshing ``_all_actuators_swept_at``."""
+        self._candidate_reads_running = running
 
     @callback
     def request_central_status(self) -> None:
