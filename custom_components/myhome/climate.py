@@ -3142,6 +3142,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # entity is written after both.
                 async with self._central_command_lock:
                     await self._set_central_unit_mode(hvac_mode, cmd_mode)
+            elif cmd_mode in ("heat", "cool"):
+                await self._write_four_zone_central_season(hvac_mode, cmd_mode)
             elif cmd_mode:
                 await self._set_central_unit_mode(hvac_mode, cmd_mode)
             return
@@ -3296,8 +3298,35 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 translation_placeholders={"name": self._display_name, "frame": frame},
             )
 
-    async def _write_central_setpoint(self, target_temperature: float) -> None:
-        """Write the central unit's manual setpoint; a refusal by the gateway is raised."""
+    async def _write_four_zone_central_season(self, hvac_mode: HVACMode, cmd_mode: str) -> None:
+        """Write `heat` / `cool` of a 4-zone central unit (``#0#N``) as its setpoint in that season.
+
+        ``*#4*#0#N*#14*T*M##`` with M 1 (heating) or 2 (conditioning, WHO 4 p. 23); it is what
+        version 0.9.3 wrote, and the F454 2.0.51 plant of #994 answered ``*#4*#0#1*#14*0175*1##``
+        with ``*4*110#0175*#0#1##``; the season frame (``*4*1*#0#N##``) is in no capture of such
+        a plant. Without a setpoint of the central unit there is nothing to write, as for a zone;
+        the mode is shown once the write was not refused, like a setpoint of the central unit.
+        """
+        nominal = self._effective_nominal_temperature()
+        if nominal is None:
+            raise ServiceValidationError(
+                f"{self._display_name} has not reported a setpoint yet: set a temperature first",
+                translation_domain=DOMAIN,
+                translation_key="zone_no_setpoint_known",
+                translation_placeholders={"name": self._display_name},
+            )
+        await self._write_central_setpoint(nominal, cmd_mode)
+        self._central_operation = None
+        self._attr_hvac_mode = hvac_mode
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def _write_central_setpoint(self, target_temperature: float, mode: str | None = None) -> None:
+        """Write the central unit's manual setpoint; a refusal by the gateway is raised.
+
+        ``mode`` is the season to write it in (``heat`` / ``cool``); without it the season
+        follows what the central unit shows.
+        """
         # *#4*#0*#14*T*M## puts the central unit in manual with setpoint T; M is the season
         # of that manual mode (WHO 4 p. 23: 1 heating, 2 conditioning; the monitor frame is
         # *4*110#T*#0## "Manual mode - Heating" / *4*210#T*#0## "Manual mode - Conditioning").
@@ -3305,11 +3334,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # the digit follows the season the plant is in, not only the mode shown: a central
         # unit that is OFF (*4*203*#0##) or on its program in the conditioning season was
         # written M = 1, manual heating.
-        if self._attr_hvac_mode == HVACMode.COOL:
-            mode = "cool"
-        elif self._attr_hvac_mode == HVACMode.HEAT:
-            mode = "heat"
-        else:
+        if mode is None and self._attr_hvac_mode in (HVACMode.COOL, HVACMode.HEAT):
+            mode = "cool" if self._attr_hvac_mode == HVACMode.COOL else "heat"
+        elif mode is None:
             mode = "cool" if self._season in _CONDITIONING_SEASONS else "heat"
         setpoint = OWNHeatingCommand.set_central_temperature(
             where=self._bus_where,
@@ -3538,13 +3565,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             where=self._bus_where,
             mode=cmd_mode,
         )
-        if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
+        if hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
             # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
             # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
             # or nothing when the season does not change (live F461 and F455,
-            # 2026-11-08), so the mode shown comes from that answer. A 4-zone
-            # central (#0#1..#0#4) is not polled and its reports are routed to the
-            # zone, so it keeps the mode it was set to.
+            # 2026-11-08), so the mode shown comes from that answer. `heat` / `cool`
+            # of a 4-zone central unit (#0#1..#0#4) do not come here: they are a
+            # setpoint write (`_write_four_zone_central_season`).
             # Decided before the season frame goes out, on what the central unit reported.
             leaves_idle = self._season_command_leaves_central_idle(hvac_mode)
             # The restore follows only a season frame that was written: the frame is awaited.
