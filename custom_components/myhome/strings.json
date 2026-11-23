@@ -887,7 +887,7 @@
       "message": "\"{message}\" is not a valid OpenWebNet frame; nothing was sent"
     },
     "send_message_refused_frame": {
-      "message": "Refusing to send \"{message}\": this frame is blocked as a precaution because it may crash gateways; nothing was sent"
+      "message": "Refusing to send \"{message}\": this frame is blocked as a safety precaution; nothing was sent"
     },
     "sync_time_unsupported_offset": {
       "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."

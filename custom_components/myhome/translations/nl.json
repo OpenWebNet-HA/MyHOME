@@ -784,7 +784,7 @@
       "message": "\"{message}\" is geen geldig OpenWebNet-frame; er is niets verzonden"
     },
     "send_message_refused_frame": {
-      "message": "Verzenden van \"{message}\" geweigerd: dit frame is uit voorzorg geblokkeerd omdat het gateways kan laten vastlopen; er is niets verzonden"
+      "message": "Verzenden van \"{message}\" geweigerd: dit frame is uit veiligheidsvoorzorg geblokkeerd; er is niets verzonden"
     }
   },
   "entity": {

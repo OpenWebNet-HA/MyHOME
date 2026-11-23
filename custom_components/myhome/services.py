@@ -71,7 +71,7 @@ def is_refused_dimension_22(frame: str) -> bool:
     return _WHO4_DIMENSION_22.match(frame) is not None
 
 
-def _destructive_frame_reason(frame: str) -> str | None:
+def destructive_frame_reason(frame: str) -> str | None:
     """Return a refusal reason if OWNd classifies ``frame`` as destructive (WHO 18 dim 52, bare WHO 22, etc.)."""
     if _ownd_destructive_frame_reason is None:
         return None
@@ -333,7 +333,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="send_message_refused_frame",
                 translation_placeholders={"message": message},
             )
-        destructive_reason = _destructive_frame_reason(message)
+        destructive_reason = destructive_frame_reason(message)
         if destructive_reason is not None:
             _LOGGER.error(
                 "%s Refusing to send destructive frame `%s`: %s",

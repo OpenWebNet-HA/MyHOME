@@ -333,3 +333,29 @@ async def test_handed_over_command_names_actual_gateway_when_send_fails_or_times
         )
     assert err2.value.translation_key == "command_not_confirmed"
     assert err2.value.translation_placeholders["gateway"] == "F455"
+
+
+async def test_late_future_exception_after_caller_cancellation_is_consumed() -> None:
+    """If the caller is cancelled while ``written`` is pending, a later exception logs no unretrieved error."""
+    import gc
+
+    loop = asyncio.get_running_loop()
+    loop_errors: list[dict[str, object]] = []
+    prev_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, ctx: loop_errors.append(dict(ctx)))
+    try:
+        pending: asyncio.Future[float] = loop.create_future()
+        task = asyncio.create_task(
+            async_confirm_delivery(pending, name="Light 05 Lock", frame="*14*0*05##", gateway=GW)
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        pending.set_exception(RuntimeError("late session failure"))
+        await asyncio.sleep(0)
+        del pending
+        gc.collect()
+        assert not loop_errors
+    finally:
+        loop.set_exception_handler(prev_handler)

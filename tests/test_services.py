@@ -883,4 +883,4 @@ async def test_precautionary_refusal_is_not_a_confirmed_firmware_fault(
 def test_destructive_frame_reason_returns_none_without_ownd_classifier(monkeypatch) -> None:
     """When running against an older OWNd without destructive_frame_reason, helper returns None."""
     monkeypatch.setattr(services, "_ownd_destructive_frame_reason", None)
-    assert services._destructive_frame_reason("*22*1*1##") is None
+    assert services.destructive_frame_reason("*22*1*1##") is None

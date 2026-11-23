@@ -784,7 +784,7 @@
       "message": "\"{message}\" non è un frame OpenWebNet valido; non è stato inviato nulla"
     },
     "send_message_refused_frame": {
-      "message": "Invio di \"{message}\" rifiutato: questo frame è bloccato per precauzione poiché può bloccare i gateway; non è stato inviato nulla"
+      "message": "Invio di \"{message}\" rifiutato: questo frame è bloccato per precauzione di sicurezza; non è stato inviato nulla"
     }
   },
   "entity": {

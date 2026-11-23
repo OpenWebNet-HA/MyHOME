@@ -784,7 +784,7 @@
       "message": "« {message} » n'est pas une trame OpenWebNet valide ; rien n'a été envoyé"
     },
     "send_message_refused_frame": {
-      "message": "Refus d'envoyer « {message} » : cette trame est bloquée par précaution car elle peut faire planter des passerelles ; rien n'a été envoyé"
+      "message": "Refus d'envoyer « {message} » : cette trame est bloquée par mesure de sécurité ; rien n'a été envoyé"
     }
   },
   "entity": {

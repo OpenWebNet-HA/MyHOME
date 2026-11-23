@@ -57,6 +57,12 @@ def _not_delivered(placeholders: dict[str, str]) -> HomeAssistantError:
     )
 
 
+def _consume_future_exception(fut: asyncio.Future[Any]) -> None:
+    """Retrieve any exception on an unawaited write future so the event loop stays clean."""
+    if not fut.cancelled():
+        fut.exception()
+
+
 async def async_confirm_delivery(
     written: Any,
     *,
@@ -73,6 +79,7 @@ async def async_confirm_delivery(
     """
     if not isinstance(written, asyncio.Future):
         return
+    written.add_done_callback(_consume_future_exception)
     placeholders = {"name": name, "gateway": gateway_label(gateway), "frame": frame}
     done, _pending = await asyncio.wait((written,), timeout=timeout)
     if not done:
