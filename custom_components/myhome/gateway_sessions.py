@@ -1643,6 +1643,16 @@ class CommandWorkerPool:
                             ),
                         )
                     written_at = time.monotonic()
+                    zb_inv = (
+                        getattr(self.handler, "zigbee_inventory", None)
+                        if is_zigbee and not task["is_status_request"]
+                        else None
+                    )
+                    zb_rx_seq = (
+                        zb_inv.snapshot_rx_seq(task["message"])
+                        if zb_inv is not None
+                        else None
+                    )
                     is_exposed = self._is_exposed_target(task)
                     self._in_flight_messages.append(task["message"])
                     try:
@@ -1700,6 +1710,9 @@ class CommandWorkerPool:
                             setattr(written, "_gateway_nack", True)
                             if getattr(last_error, "busy", False) is True:
                                 setattr(written, "_gateway_busy", True)
+                            err_responses = getattr(last_error, "responses", None)
+                            if isinstance(err_responses, list) and err_responses:
+                                setattr(written, "_collected_responses", list(err_responses))
                         _cancel_written(task)
                     else:
                         if (
@@ -1716,6 +1729,10 @@ class CommandWorkerPool:
                             setattr(written, "_collected_responses", collected)
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])
+                        if zb_inv is not None:
+                            zb_inv.note_unicast_command_sent(
+                                task["message"], written_at, rx_seq_before=zb_rx_seq
+                            )
                     responses_to_dispatch: Any = collected
                     if responses_to_dispatch is None and task["is_status_request"]:
                         # A standalone zone status request (*#4*Z##) that answers only some of

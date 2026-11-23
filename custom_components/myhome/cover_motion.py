@@ -7,6 +7,9 @@ from __future__ import annotations
 # motor starts (~0.55 s on a MyHOMEServer1). Frames for this cover inside the
 # window are treated as echoes of our command, not as keypad presses.
 ECHO_WINDOW: float = 1.5
+# OpenZigBee Supervisor echoes over 19200 8N1 serial + 2.4 GHz mesh take up to
+# ~2.4 s on live Legrand 3578 hardware (#233); widen the cover echo window to 4.0 s.
+ZIGBEE_ECHO_WINDOW: float = 4.0
 
 # Time from the write of a direction frame to the motor start when the gateway
 # never relays the direction status (measured 0.55 s on a MyHOMEServer1, #302).

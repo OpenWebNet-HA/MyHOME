@@ -281,8 +281,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         else:
             gateway = dr.format_mac(gateway)
 
-        _LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
         handler = _get_gateway_handler(hass, gateway)
+        _LOGGER.debug(
+            "Handling message `%s` to be sent to `%s`",
+            message,
+            getattr(handler, "log_id", None) or "unknown",
+        )
         if handler is not None:
             from OWNd.message import OWNCommand
             if is_refused_dimension_22(message):
@@ -353,8 +357,12 @@ async def async_setup_services(hass: HomeAssistant) -> None:
 
         force = bool(call.data.get("force", False))
 
-        for gw_mac, handler in target_gateways.items():
-            _LOGGER.info("Executing diagnostic bus sweep on gateway %s (force=%s)", gw_mac, force)
+        for _gw_mac, handler in target_gateways.items():
+            _LOGGER.info(
+                "Executing diagnostic bus sweep on gateway %s (force=%s)",
+                getattr(handler, "log_id", None) or "MyHOME",
+                force,
+            )
             zigbee_inv = getattr(handler, "zigbee_inventory", None)
             if (
                 getattr(handler, "is_zigbee_address_family", False) is True

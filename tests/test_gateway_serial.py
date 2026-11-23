@@ -503,3 +503,94 @@ async def test_serial_command_worker_dispatch_and_busy_nack(hass) -> None:
 
         pool.close()
         await worker_task
+
+
+async def test_serial_command_worker_nack_responses_and_unicast_watchdog_hook(
+    hass,
+) -> None:
+    """CommandWorkerPool copies NACK responses onto written future and arms ZigBee unicast watchdog."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: TEST_EUI64, CONF_SERIAL_PORT: TEST_PORT, CONF_BAUDRATE: 19200},
+        unique_id=TEST_EUI64,
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.myhome.gateway_serial.AsyncSerialTransport",
+        side_effect=lambda **kw: _FakeSerialTransport(**kw),
+    ):
+        handler = MyHOMEGatewayHandler(hass=hass, config_entry=entry)
+
+    assert handler.zigbee_inventory is not None
+    offline_ev = OWNMessage.parse("*#13*700123400#9*66*2##", gateway=handler.profile)
+    tx_cmd = OWNMessage.parse("*1*0*700123401#9##", gateway=handler.profile)
+
+    fake_cmd_session = MagicMock()
+    fake_cmd_session.is_session_open = True
+    fake_cmd_session.close = AsyncMock()
+    call_idx = 0
+
+    async def _send_side_effect(message, *, is_status_request=False, timeout=None):
+        nonlocal call_idx
+        call_idx += 1
+        if call_idx == 1:
+            fake_cmd_session.last_error = SimpleNamespace(
+                reason="nack", busy=False, responses=[offline_ev]
+            )
+            return None
+        fake_cmd_session.last_error = None
+        return True
+
+    fake_cmd_session.connect = AsyncMock(
+        return_value={"Success": True, "Message": "connected"}
+    )
+    fake_cmd_session.is_connected = True
+    fake_cmd_session.send = AsyncMock(side_effect=_send_side_effect)
+    assert handler.serial_runtime is not None
+    handler.serial_runtime.create_command_session = MagicMock(
+        return_value=fake_cmd_session
+    )
+    pool = handler._command_pool
+    pool._event_session_ready.set()
+
+    with patch.object(
+        handler.zigbee_inventory, "note_unicast_command_sent"
+    ) as spy_note:
+        worker = asyncio.create_task(pool.sending_loop(0))
+        loop = asyncio.get_running_loop()
+
+        fut_nack = loop.create_future()
+        await handler.send_buffer.put(
+            {
+                "message": "*#13**66*2##",
+                "is_status_request": True,
+                "tier_override": _TIER_OTHERS,
+                "written": fut_nack,
+            }
+        )
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(fut_nack, timeout=2.0)
+        assert getattr(fut_nack, "_gateway_nack", False) is True
+        assert getattr(fut_nack, "_collected_responses", None) == [offline_ev]
+
+        fut_tx = loop.create_future()
+        await handler.send_buffer.put(
+            {
+                "message": tx_cmd,
+                "is_status_request": False,
+                "written": fut_tx,
+            }
+        )
+        await asyncio.wait_for(fut_tx, timeout=2.0)
+        spy_note.assert_called_once()
+        assert spy_note.call_args.args[0] is tx_cmd
+
+        pool.close()
+        await asyncio.wait_for(worker, timeout=2.0)
+    await handler.close_listener()
+
+    # Real AsyncSerialTransport constructor receives auto_restore_supervisor=False
+    real_rt = SharedSerialRuntime(handler, TEST_PORT, DEFAULT_BAUDRATE, MagicMock())
+    assert real_rt.transport._auto_restore_supervisor is False
+

@@ -28,9 +28,10 @@ from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
 )
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.util.color import (
     color_hs_to_RGB,
     color_RGB_to_hs,
@@ -64,6 +65,7 @@ from .const import (
     TRANSITION_MODE_AUTO,
     TRANSITION_MODE_NATIVE,
     TRANSITION_MODE_SOFTWARE,
+    ZIGBEE_STATUS_WHAT_TO_PERCENT,
     build_timed_turn_on_command,
     eight_bits_to_min_percent,
     eight_bits_to_percent,
@@ -101,11 +103,27 @@ def _is_zigbee_toggle(message: Any) -> bool:
         or getattr(message, "what", None) == 32
     )
 
+
+def _is_zigbee_non_actuator(
+    gateway: Any, where: str, cfg: dict[str, Any] | None = None
+) -> bool:
+    """Return True when ZigBee inventory marks ``where`` as a non-actuator control."""
+    if cfg or gateway_address_family(gateway) != "zigbee":
+        return False
+    inv = getattr(gateway, "zigbee_inventory", None)
+    fn = getattr(inv, "is_non_actuator_where", None)
+    return callable(fn) and fn(where) is True
+
+
 # OWNd's DIMMER_SPEED_COARSE_ONLY: the speed slot a pre-09W29 coarse-only dimmer
 # reports on Dimension 1 (#767); such a dimmer stays on the preset table (#851).
 _COARSE_ONLY_SPEED = 240
 # One Dimension 1 read per burst of WHAT 2..10 echoes on a fine dimmer (#851).
 _BRIGHTNESS_REFRESH_WINDOW_S = 1.0
+# Debounce window for physical ZigBee dimmer + / - button taps (*1*1*WHERE#9##).
+_ZIGBEE_WHAT1_DEBOUNCE_S = 0.9
+# Bounded validity window for an in-flight ZigBee status poll reply.
+_ZIGBEE_STATUS_REPLY_WINDOW_S = 8.0
 
 # Legacy mired attribute of stored states (core dropped ATTR_COLOR_TEMP in 2025).
 ATTR_COLOR_TEMP = "color_temp"
@@ -172,8 +190,19 @@ async def async_setup_entry(
 
         # With lock_features the light is exactly what myhome.yaml declares and
         # never learns another mode from the bus (#288 / #307).
+        is_zb_gw = gateway_address_family(gateway) == "zigbee"
+        inv = getattr(gateway, "zigbee_inventory", None)
         lock_features = cfg.get(CONF_LOCK_FEATURES, False)
         dimmable = cfg.get(CONF_DIMMABLE, False)
+        if (
+            is_zb_gw
+            and inv is not None
+            and not dimmable
+            and not lock_features
+            and callable(getattr(inv, "is_dimmer_where", None))
+            and inv.is_dimmer_where(where) is True
+        ):
+            dimmable = True
         probe_dimmer_on_add = False
         if ctx.source == "bus" and not dimmable and not lock_features:
             # Auto-detect a dimmer from the first frame that carries a level or no-load status
@@ -182,7 +211,7 @@ async def async_setup_entry(
                 or ctx.message.brightness_preset is not None
                 or getattr(ctx.message, "unknown_state", None) == 19
             )
-            if not dimmable and getattr(ctx.message, "is_on", None) is True:
+            if not dimmable and not is_zb_gw and getattr(ctx.message, "is_on", None) is True:
                 probe_dimmer_on_add = (
                     getattr(gateway, "sweep_active", False) is True
                     or getattr(gateway, "initial_discovery_pending", False) is True
@@ -207,16 +236,19 @@ async def async_setup_entry(
             where=ctx.address.where,
             interface=ctx.address.interface,
             dimmable=dimmable,
-            manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
+            manufacturer=cfg.get(
+                CONF_MANUFACTURER, "Legrand / BTicino" if is_zb_gw else "BTicino"
+            ),
             model=cfg.get(CONF_DEVICE_MODEL, "Lighting Device"),
             gateway=gateway,
             **kwargs,
         )
 
     def ghost(entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
-        # A light created in an earlier session for an address that is really a switch or
-        # sensor. A light declared in myhome.yaml is never a ghost: a WHO 1 motion sensor
-        # can share its address with the actuator it drives (#777).
+        # A light created in an earlier session for an address that is really a switch,
+        # sensor, or ZigBee battery control. A light declared in myhome.yaml is never a ghost.
+        if _is_zigbee_non_actuator(gateway, ctx.address.where, ctx.cfg):
+            return True
         if not foreign.blocks_light(ctx.address, ctx.key):
             return False
         if foreign.is_sensor_only(ctx.address, ctx.key):
@@ -230,7 +262,9 @@ async def async_setup_entry(
         return True
 
     def accept(ctx: DeviceContext) -> bool:
-        return not foreign.blocks_light(ctx.address, ctx.key)
+        return not foreign.blocks_light(
+            ctx.address, ctx.key
+        ) and not _is_zigbee_non_actuator(gateway, ctx.address.where, ctx.cfg)
 
     hinted: set[str] = set()
 
@@ -245,6 +279,11 @@ async def async_setup_entry(
         if _is_zigbee_toggle(message) and address.key not in known:
             # Wireless ZigBee toggle senders (WHAT 32, ownkb:record:r000288 /
             # openwebnet4j) are event-only: never auto-discover or poll them.
+            return True
+        if _is_zigbee_non_actuator(gateway, address.where) and not foreign.is_configured_light(
+            address
+        ):
+            known.discard(address.key)
             return True
         if foreign.is_sensor_frame(message):
             foreign.mark_sensor(address)
@@ -486,7 +525,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._full_where = (
             f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
         )
-        self._probe_dimmer_on_add = probe_dimmer_on_add
+        self._probe_dimmer_on_add = False if self._is_zigbee else probe_dimmer_on_add
 
         # With lock_features the configuration is authoritative: the light
         # supports exactly the modes declared (rgb / color_temp / dimmable) and
@@ -523,7 +562,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if modes == {ColorMode.ONOFF}:
             # Plain on/off light: flash is the only extra it can do.
             self._attr_supported_features |= LightEntityFeature.FLASH
-        else:
+        elif not self._is_zigbee:
             self._attr_supported_features |= LightEntityFeature.TRANSITION
 
         self._attr_min_color_temp_kelvin = 2000
@@ -559,6 +598,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._exact_level_seen = False
         self._coarse_speed_seen = False
         self._brightness_refresh_after: float = 0.0
+        self._zigbee_what1_debounce_unsub: CALLBACK_TYPE | None = None
+        self._zigbee_awaiting_status_until: float = 0.0
 
     @property
     def color_temp(self) -> int | None:
@@ -627,6 +668,85 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_color_mode = new_mode
             self._attr_supported_features |= add_feat
             self._attr_supported_features &= ~rm_feat
+            if self._is_zigbee:
+                self._attr_supported_features &= ~LightEntityFeature.TRANSITION
+
+    def _maybe_promote_zigbee_dimmer(self) -> bool:
+        """Promote this ZigBee light to BRIGHTNESS when DIM 66 identifies a dimmer."""
+        if not self._is_zigbee or self._is_mode_forbidden(ColorMode.BRIGHTNESS):
+            return False
+        if ColorMode.BRIGHTNESS in self._attr_supported_color_modes:
+            return False
+        inv = getattr(self._gateway_handler, "zigbee_inventory", None)
+        is_dim = getattr(inv, "is_dimmer_where", None)
+        if callable(is_dim) and is_dim(self._where) is True:
+            self._promote_color_mode(ColorMode.BRIGHTNESS)
+            return True
+        return False
+
+    @callback
+    def _handle_availability_update(self) -> None:
+        """Refresh capability promotion and write state on gateway/node updates."""
+        self._maybe_promote_zigbee_dimmer()
+        super()._handle_availability_update()
+
+    def _cancel_zigbee_what1_debounce(self) -> None:
+        if self._zigbee_what1_debounce_unsub is not None:
+            self._zigbee_what1_debounce_unsub()
+            self._zigbee_what1_debounce_unsub = None
+
+    def _has_real_serial_transport(self) -> bool:
+        from OWNd.transport import AsyncSerialTransport
+
+        runtime = getattr(
+            self._gateway_handler,
+            "serial_runtime",
+            getattr(self._gateway_handler, "_serial_runtime", None),
+        )
+        return isinstance(getattr(runtime, "transport", None), AsyncSerialTransport)
+
+    def _arm_zigbee_awaiting_status_reply(self) -> None:
+        self._zigbee_awaiting_status_until = (
+            time.monotonic() + _ZIGBEE_STATUS_REPLY_WINDOW_S
+        )
+
+    def _consume_zigbee_awaiting_status_reply(self) -> bool:
+        if self._zigbee_awaiting_status_until <= 0.0:
+            return False
+        active = time.monotonic() <= self._zigbee_awaiting_status_until
+        self._zigbee_awaiting_status_until = 0.0
+        return active
+
+    async def _async_poll_zigbee_status(self) -> None:
+        if (
+            ColorMode.BRIGHTNESS in self._attr_supported_color_modes
+            and not self._has_real_serial_transport()
+        ):
+            self._arm_zigbee_awaiting_status_reply()
+        try:
+            await self._gateway_handler.send_status_request(
+                OWNLightingCommand.status(self._full_where)
+            )
+        finally:
+            self._zigbee_awaiting_status_until = 0.0
+
+    def _schedule_zigbee_what1_debounce_poll(self) -> None:
+        self._cancel_zigbee_what1_debounce()
+        target_hass = self.hass or self._hass
+        if target_hass is None:
+            return
+
+        @callback
+        def _on_debounce(_now: Any) -> None:
+            self._zigbee_what1_debounce_unsub = None
+            target_hass.async_create_task(
+                self._async_poll_zigbee_status(),
+                name=f"myhome_zigbee_light_{self._where}_what1_poll",
+            )
+
+        self._zigbee_what1_debounce_unsub = async_call_later(
+            target_hass, _ZIGBEE_WHAT1_DEBOUNCE_S, _on_debounce
+        )
 
     async def async_restore_last_state(self, last_state: State) -> None:
         """Restore previous state attributes and color modes."""
@@ -695,6 +815,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         Only used by the generic entity update service.
         """
+        if self._is_zigbee:
+            await self._async_poll_zigbee_status()
+            return
         if (
             ColorMode.HS in self._attr_supported_color_modes
             or ColorMode.RGB in self._attr_supported_color_modes
@@ -794,14 +917,30 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         return self._fade_engine.get_transition_mode()
 
     def _should_use_software_stepped(self, transition: float | None) -> bool:
+        if self._is_zigbee:
+            return False
         return self._fade_engine.should_use_software_stepped(transition)
+
+    def _build_set_brightness(
+        self, pct: int, transition: int | None = None
+    ) -> OWNLightingCommand:
+        if self._is_zigbee:
+            return OWNLightingCommand.set_brightness(
+                self._full_where,
+                pct,
+                zigbee=True,
+                gateway=getattr(self._gateway_handler, "profile", None),
+            )
+        if transition is not None:
+            return OWNLightingCommand.set_brightness(self._full_where, pct, transition)
+        return OWNLightingCommand.set_brightness(self._full_where, pct)
 
     async def _set_brightness_instant(self, pct: int) -> None:
         """Send set_brightness with transition=0, or switch_off when pct <= 0."""
         if pct <= 0:
             await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
         else:
-            cmd = OWNLightingCommand.set_brightness(self._full_where, pct, 0)
+            cmd = self._build_set_brightness(pct, 0)
             send_fade = getattr(self._gateway_handler, "send_fade_step", None)
             if self._fade_engine.is_fading and inspect.iscoroutinefunction(send_fade):
                 await send_fade(cmd)
@@ -835,6 +974,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         await self._fade_engine.cancel_fade_robustly()
 
     async def async_will_remove_from_hass(self) -> None:
+        self._cancel_zigbee_what1_debounce()
+        self._zigbee_awaiting_status_until = 0.0
         await self._cancel_fade_robustly()
         await super().async_will_remove_from_hass()
 
@@ -853,6 +994,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         brightness_pct: int | None = None,
     ) -> None:
         """Turn on light with a hardware-offloaded bus timer."""
+        self._cancel_zigbee_what1_debounce()
+        self._zigbee_awaiting_status_until = 0.0
         await self._cancel_fade_robustly()
 
         target_pct: int | None = None
@@ -871,10 +1014,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 or ColorMode.RGB in self._attr_supported_color_modes
             )
         ):
-            await self._gateway_handler.send(
-                OWNLightingCommand.set_brightness(self._full_where, target_pct)
-            )
-            self._apply_brightness_state(target_pct, is_on=True)
+            await self._gateway_handler.send(self._build_set_brightness(target_pct))
+            if not self._is_zigbee:
+                self._apply_brightness_state(target_pct, is_on=True)
 
         cmd = build_timed_turn_on_command(
             self._full_where,
@@ -884,9 +1026,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             seconds=seconds,
         )
         await self._gateway_handler.send(cmd)
-        self._attr_is_on = True
-        self._is_on_restored = False
-        self.async_write_ha_state()
+        if not self._is_zigbee:
+            self._attr_is_on = True
+            self._is_on_restored = False
+            self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
@@ -997,6 +1140,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     else 0
                 )
 
+                self._cancel_zigbee_what1_debounce()
+                self._zigbee_awaiting_status_until = 0.0
                 await self._cancel_fade_robustly()
 
                 if self._should_use_software_stepped(transition):
@@ -1006,21 +1151,17 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._fade_engine.start_fade(start_pct, target_pct, transition)
                     return
 
-                # native path (exact pre-existing)
-                if ATTR_TRANSITION in kwargs:
-                    await self._gateway_handler.send(
-                        OWNLightingCommand.set_brightness(
-                            self._full_where, target_pct, int(transition)
-                        )
+                # native path (exact pre-existing; non-optimistic on ZigBee)
+                await self._gateway_handler.send(
+                    self._build_set_brightness(
+                        target_pct, int(transition) if ATTR_TRANSITION in kwargs else None
                     )
-                else:
-                    await self._gateway_handler.send(
-                        OWNLightingCommand.set_brightness(self._full_where, target_pct)
-                    )
+                )
                 if target_pct > 0:
                     self._last_brightness_pct = target_pct
-                self._apply_brightness_state(target_pct, is_on=True)
-                self.async_schedule_update_ha_state()
+                if not self._is_zigbee:
+                    self._apply_brightness_state(target_pct, is_on=True)
+                    self.async_schedule_update_ha_state()
                 return
             else:
                 # transition-only (no brightness kwarg)
@@ -1048,9 +1189,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self.async_schedule_update_ha_state()
                 return
         else:
-            # plain on path (preserved)
+            # plain on path (preserved; skip immediate Dimension 1 poll on ZigBee)
             await self._gateway_handler.send(OWNLightingCommand.switch_on(self._full_where))
-            if (
+            if not self._is_zigbee and (
                 ColorMode.BRIGHTNESS in self._attr_supported_color_modes
                 or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
                 or ColorMode.HS in self._attr_supported_color_modes
@@ -1060,6 +1201,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the device off."""
+        self._cancel_zigbee_what1_debounce()
+        self._zigbee_awaiting_status_until = 0.0
 
         if (
             ATTR_TRANSITION in kwargs
@@ -1161,11 +1304,37 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._gateway_handler.log_id,
             message.human_readable_log,
         )
+        self._maybe_promote_zigbee_dimmer()
         unknown_state = getattr(message, "unknown_state", None)
         is_no_load = unknown_state == 19
         preset = getattr(message, "brightness_preset", None)
         has_preset = isinstance(preset, int) and not isinstance(preset, bool)
         update_bus_state_complete = False
+
+        if (
+            self._is_zigbee
+            and ColorMode.BRIGHTNESS in self._attr_supported_color_modes
+            and getattr(message, "dimension", None) is None
+        ):
+            msg_what = getattr(message, "what", None)
+            if msg_what == 0 or has_preset:
+                self._cancel_zigbee_what1_debounce()
+                self._zigbee_awaiting_status_until = 0.0
+            elif msg_what == 1:
+                awaited = (
+                    False
+                    if self._has_real_serial_transport()
+                    else self._consume_zigbee_awaiting_status_reply()
+                )
+                if getattr(message, "is_status_reply", False) is True or awaited:
+                    self._cancel_zigbee_what1_debounce()
+                    self._zigbee_awaiting_status_until = 0.0
+                    self._apply_brightness_state(
+                        ZIGBEE_STATUS_WHAT_TO_PERCENT[1], is_on=True
+                    )
+                    self._bus_state_complete = True
+                else:
+                    self._schedule_zigbee_what1_debounce_poll()
 
         if is_no_load:
             self._attr_is_on = False
@@ -1362,7 +1531,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     cast(int, preset), cast(int, preset) * 10
                 )
             self._apply_brightness_state(max(0, min(100, preset_pct)))
-            if self._is_fine_dimmer(message):
+            if self._is_zigbee:
+                self._bus_state_complete = True
+            elif self._is_fine_dimmer(message):
                 # On a fine dimmer WHAT 2..10 is a quantised view of the level: an F461
                 # answers *#1*WHERE## with *1*7*WHERE## for anything between about 44 and
                 # 57 %, and the F418's own ladder is 1, 8, 16, 24, 34, 47, 63, 79, 100 %

@@ -48,7 +48,14 @@ import yaml
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 EUI64 = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}\b")
 MAC = re.compile(r"(?<![0-9A-Fa-f]{2}:)\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b(?!:[0-9A-Fa-f]{2})")
+WHO13_DIM12 = re.compile(r"\*#13\*\*12((?:\*\d{1,3}){8}|(?:\*\d{1,3}){6})##")
+WHO13_DIM10 = re.compile(r"\*#13\*\*10((?:\*\d{1,3}){4})##")
 SERIAL_BY_ID = re.compile(r"/dev/serial/by-(?:id|path)/[^\s\"',]+")
+
+
+def _parse_octets(body: str) -> list[int] | None:
+    vals = [int(p) for p in body.lstrip("*").split("*")]
+    return vals if all(0 <= v <= 255 for v in vals) else None
 SYNTHETIC_SERIAL_BY_ID = "/dev/serial/by-id/usb-0000_0000-if00"
 YAML_KEY = re.compile(r"^(\s*)([^\s#][^:]*):(\s*)(.*)$")
 
@@ -111,8 +118,37 @@ class Anonymizer:
         base = self._plant_offset(len(self.macs))
         return self.macs.setdefault(match.group(0).lower(), f"00:03:50:00:{base >> 8:02x}:{base & 0xFF:02x}")
 
+    def who13_dim12(self, match: re.Match[str]) -> str:
+        octets = _parse_octets(match.group(1))
+        if octets is None:
+            return match.group(0)
+        hex_str = ":".join(f"{b:02x}" for b in octets)
+        if len(octets) == 8:
+            base = self._plant_offset(len(self.eui64s))
+            repl = self.eui64s.setdefault(
+                hex_str, f"00:03:50:00:00:00:{base >> 8:02x}:{base & 0xFF:02x}"
+            )
+        else:
+            base = self._plant_offset(len(self.macs))
+            repl = self.macs.setdefault(
+                hex_str, f"00:03:50:00:{base >> 8:02x}:{base & 0xFF:02x}"
+            )
+        dec = "*".join(str(int(part, 16)) for part in repl.split(":"))
+        return f"*#13**12*{dec}##"
+
+    def who13_dim10(self, match: re.Match[str]) -> str:
+        octets = _parse_octets(match.group(1))
+        if octets is None:
+            return match.group(0)
+        dotted = ".".join(str(b) for b in octets)
+        repl = self.ips.setdefault(dotted, f"192.0.2.{len(self.ips) + 1}")
+        dec = "*".join(repl.split("."))
+        return f"*#13**10*{dec}##"
+
     def scrub_text(self, text: str) -> str:
         text = SERIAL_BY_ID.sub(SYNTHETIC_SERIAL_BY_ID, text)
+        text = WHO13_DIM12.sub(self.who13_dim12, text)
+        text = WHO13_DIM10.sub(self.who13_dim10, text)
         text = EUI64.sub(self.eui64, text)
         text = MAC.sub(self.mac, text)
         return IPV4.sub(self.ip, text)
@@ -302,11 +338,23 @@ def findings(text: str, data_file: bool = True) -> list[str]:
     found: list[str] = []
     if ALLOW_SAMPLES in text:
         return found
-    if data_file and PRIVATE_IP.search(text):
+    if data_file and (
+        PRIVATE_IP.search(text)
+        or any(
+            (octs := _parse_octets(m)) is not None and octs[:3] != [192, 0, 2]
+            for m in WHO13_DIM10.findall(text)
+        )
+    ):
         found.append("LAN address")
-    if data_file and any(
-        not m.lower().startswith("00:03:50:00:")
-        for m in EUI64.findall(text) + MAC.findall(text)
+    if data_file and (
+        any(
+            not m.lower().startswith("00:03:50:00:")
+            for m in EUI64.findall(text) + MAC.findall(text)
+        )
+        or any(
+            (octs := _parse_octets(m)) is not None and octs[:4] != [0, 3, 80, 0]
+            for m in WHO13_DIM12.findall(text)
+        )
     ):
         found.append("non-synthetic MAC")
     if data_file and any(m != SYNTHETIC_SERIAL_BY_ID for m in SERIAL_BY_ID.findall(text)):

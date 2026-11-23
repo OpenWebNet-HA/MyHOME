@@ -125,11 +125,16 @@ class MyHOMEEntity(RestoreEntity):
             self._where,
             address_family=gateway_address_family(gateway),
         )
+        self._zb_parts: tuple[str, str] | None = zb_parts
+        self._is_zigbee: bool = zb_parts is not None
+        self._zb_addr: str | None = zb_parts[0] if zb_parts is not None else None
         if zb_parts is not None:
             zb_addr, zb_unit = zb_parts
             device_name = f"ZigBee {zb_addr}"
             identifiers = {(DOMAIN, f"{gateway.mac}-zigbee-{zb_addr}")}
             inventory = getattr(gateway, "zigbee_inventory", None)
+            if inventory is not None:
+                self._poll_on_add = False
             get_node_model = (
                 getattr(inventory, "get_node_model", None)
                 if inventory is not None
@@ -286,7 +291,16 @@ class MyHOMEEntity(RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._gateway_handler.is_who_available(self._who)
+        if not self._gateway_handler.is_who_available(self._who):
+            return False
+        if self._zb_addr is not None:
+            inv = getattr(self._gateway_handler, "zigbee_inventory", None)
+            products = getattr(inv, "products", None)
+            if isinstance(products, dict) and self._zb_addr in products:
+                rec = products[self._zb_addr]
+                if isinstance(rec, dict) and not rec.get("reachable", True):
+                    return False
+        return True
 
     @callback
     def handle_event(self, msg: Any) -> None:

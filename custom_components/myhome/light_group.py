@@ -25,8 +25,8 @@ from homeassistant.helpers.event import async_track_state_change_event
 from OWNd.message import OWNLightingCommand, OWNLightingEvent
 
 from .const import BUS_ROUTING, DOMAIN, eight_bits_to_min_percent, percent_to_eight_bits
-from .myhome_device import MyHOMEEntity
-from .where_grammar import is_valid_hs_tuple
+from .myhome_device import MyHOMEEntity, gateway_address_family
+from .where_grammar import is_valid_hs_tuple, parse_zigbee_group_where
 
 LOGGER = logging.getLogger(__name__)
 
@@ -121,6 +121,12 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
             raw_iface.zfill(2) if raw_iface.isdigit() else (raw_iface or None)
         )
         self._full_where = f"{base_where}{BUS_ROUTING}{self._interface}" if self._interface else base_where
+        self._is_zigbee_group: bool = (
+            parse_zigbee_group_where(
+                base_where, address_family=gateway_address_family(gateway)
+            )
+            is not None
+        )
         # Last known brightness (0-100%), used as HSV "value" when only hue/saturation
         # are being set so a colour change never silently zeroes the group's level.
         # For groups with declared members the displayed brightness is derived from
@@ -205,6 +211,14 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
                 self._attr_is_on = True
             elif msg.is_on is False:
                 self._attr_is_on = False
+            preset_pct = getattr(msg, "brightness_preset_percent", None)
+            if (
+                isinstance(preset_pct, int)
+                and not isinstance(preset_pct, bool)
+                and 0 < preset_pct <= 100
+            ):
+                self._attr_brightness = percent_to_eight_bits(preset_pct)
+                self._last_brightness_pct = preset_pct
 
         # Also parse dimension frames (status replies and the gateway's echo of a
         # group dimension write, *#1*#G*#D*...##, which OWNd parses as a command).
@@ -335,9 +349,16 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         # Dispatch brightness if specified (and not already included in HSV frame)
         if ATTR_BRIGHTNESS in kwargs and ATTR_HS_COLOR not in kwargs:
             level = eight_bits_to_min_percent(kwargs[ATTR_BRIGHTNESS])
-            await self._gateway_handler.send(
-                OWNLightingCommand.set_brightness(self._full_where, level)
-            )
+            if self._is_zigbee_group:
+                cmd = OWNLightingCommand.set_brightness(
+                    self._full_where,
+                    level,
+                    zigbee=True,
+                    gateway=getattr(self._gateway_handler, "profile", None),
+                )
+            else:
+                cmd = OWNLightingCommand.set_brightness(self._full_where, level)
+            await self._gateway_handler.send(cmd)
             if not self._member_entity_ids:
                 self._attr_brightness = kwargs[ATTR_BRIGHTNESS]
                 self._attr_is_on = True
@@ -376,6 +397,8 @@ class MyHOMELightGroup(MyHOMEEntity, LightEntity):
         if self._member_entity_ids:
             return
         await self._gateway_handler.send_status_request(OWNLightingCommand.status(self._full_where))
+        if self._is_zigbee_group:
+            return
         # A colour mode implies brightness in the HA light model, and the level
         # arrives on Dimension 1 whatever the colour mode (mirrors MyHOMELight).
         color_modes = self.supported_color_modes or set()

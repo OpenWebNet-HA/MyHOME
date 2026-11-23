@@ -741,3 +741,678 @@ async def test_gateway_resync_zigbee_services_and_init(hass) -> None:
     # Unload / remove_entry cleans up ZigBee inventory Store
     await async_remove_entry(hass, entry)
     assert await zigbee_inventory_store(hass, TEST_EUI64).async_load() is None
+
+
+async def test_fw123_offline_dim66_nack_preserves_units_and_counts_all_offline(
+    hass,
+) -> None:
+    """Offline fw 1.2.3 *#13*<ADDR>00#9*66*<IDX>## + NACK records offline nodes & preserves cached units."""
+    from datetime import timedelta
+
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.myhome.zigbee_inventory import _TierSendOutcome
+
+    profile = Legrand3578Profile("1.2.3")
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: TEST_EUI64}, unique_id=TEST_EUI64)
+    entry.add_to_hass(hass)
+
+    # Warm cached node 7000102 at index 2 already has unit 01; 5 other offline nodes are cold.
+    initial = {
+        "eui64": TEST_EUI64,
+        "firmware": "1.2.3",
+        "last_scan_at": None,
+        "product_count": 9,
+        "products": {
+            "7000102": {
+                "addr": "7000102",
+                "index": 2,
+                "reachable": True,
+                "last_seen": "2026-11-20T00:00:00+00:00",
+                "units": {
+                    "01": {
+                        "unit": "01",
+                        "where": "700010201#9",
+                        "who": 1,
+                        "dev_id": 256,
+                        "model": "On/Off switch",
+                    }
+                },
+            }
+        },
+    }
+    handler = SimpleNamespace(
+        hass=hass,
+        mac=TEST_EUI64,
+        firmware="1.2.3",
+        log_id="[3578]",
+        availability_signal=f"myhome_{TEST_EUI64}_availability",
+        config_entry=entry,
+        send_buffer=FrameScheduler(),
+        profile=profile,
+        is_connected=True,
+    )
+    store = _InMemoryStore(initial)
+    mgr = ZigbeeInventoryManager(handler, store=store)  # type: ignore[arg-type]
+    await mgr.async_load()
+
+    avail_notifications: list[bool] = []
+    from homeassistant.helpers.dispatcher import (
+        async_dispatcher_connect,
+        async_dispatcher_send,
+    )
+
+    unsub_avail = async_dispatcher_connect(
+        hass, handler.availability_signal, lambda: avail_notifications.append(True)
+    )
+
+    offline_indices = {0, 1, 2, 3, 4, 8}
+    online_defs = {
+        5: ("7000105", "01", 256),
+        6: ("7000106", "01", 258),
+        7: ("7000107", "01", 513),
+    }
+    scan_frame = str(OWNGatewayCommand.scan_network())
+    info_frames = {i: str(OWNGatewayCommand.get_product_info(i)) for i in range(9)}
+
+    async def _fake_send_lowest(cmd, *, timeout=35.0):
+        frame = str(cmd)
+        if frame == scan_frame:
+            dim67 = OWNMessage.parse("*#13**67*9##", gateway=profile)
+            async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", dim67)
+            return _TierSendOutcome(True, False, False, False, [])
+        for idx, req_frame in info_frames.items():
+            if frame == req_frame:
+                if idx in offline_indices:
+                    ev = OWNMessage.parse(
+                        f"*#13*700010{idx}00#9*66*{idx}##", gateway=profile
+                    )
+                    async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev)
+                    return _TierSendOutcome(False, False, True, False, [ev])
+                addr, unit, dev_id = online_defs[idx]
+                ev = OWNMessage.parse(
+                    f"*#13*{addr}{unit}#9*66*{idx}*{dev_id}##", gateway=profile
+                )
+                async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev)
+                return _TierSendOutcome(True, False, False, False, [ev])
+        return _TierSendOutcome(True, False, False, False, [])
+
+    with patch.object(mgr, "_send_lowest_tier", side_effect=_fake_send_lowest):
+        await mgr.async_run_scan()
+
+    summary = mgr.get_summary()
+    assert summary["product_count"] == 9
+    assert summary["reachable_count"] == 3
+    assert summary["unreachable_count"] == 6
+    # Warm cached unit 01 on unplugged node 7000102 is preserved!
+    assert mgr.products["7000102"]["reachable"] is False
+    assert "01" in mgr.products["7000102"]["units"]
+    assert mgr.products["7000102"]["last_seen"] == "2026-11-20T00:00:00+00:00"
+    assert len(avail_notifications) >= 1
+
+    unsub_avail()
+    mgr.cancel()
+    async_fire_time_changed(hass, hass.loop.time() and ( __import__("homeassistant.util.dt").util.dt.utcnow() + timedelta(seconds=10)))
+
+
+async def test_incremental_dim66_2unit_switch_and_battery_control_pruning(hass) -> None:
+    """myhome_message_{mac} ingests 2-unit DIM 66 (+32.5 ms unit 02) and prunes non-actuator controls."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    from custom_components.myhome.zigbee_inventory import _TierSendOutcome
+    from tests.conftest import attach_runtime
+
+    profile = Legrand3578Profile("1.2.3")
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: TEST_EUI64}, unique_id=TEST_EUI64)
+    entry.add_to_hass(hass)
+
+    dev_reg = dr.async_get(hass)
+    dev_2gang = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{TEST_EUI64}-zigbee-7005596")},
+        name="ZigBee 7005596",
+    )
+    dev_ctrl = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{TEST_EUI64}-zigbee-7008888")},
+        name="ZigBee 7008888",
+    )
+    ent_reg = er.async_get(hass)
+    # Stale auto-discovered light, cover, and companion calibrate button on wireless control (700888801#9)
+    stale_light = ent_reg.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{TEST_EUI64}-1-700888801#9",
+        config_entry=entry,
+        device_id=dev_ctrl.id,
+    )
+    stale_cover = ent_reg.async_get_or_create(
+        "cover",
+        DOMAIN,
+        f"{TEST_EUI64}-2-700888801#9",
+        config_entry=entry,
+        device_id=dev_ctrl.id,
+    )
+    stale_cal_btn = ent_reg.async_get_or_create(
+        "button",
+        DOMAIN,
+        f"{TEST_EUI64}-2-700888801#9-calibrate",
+        config_entry=entry,
+        device_id=dev_ctrl.id,
+    )
+    # YAML-configured light on 700888901#9 must NOT be pruned even if dev_id is control
+    yaml_light = ent_reg.async_get_or_create(
+        "light", DOMAIN, f"{TEST_EUI64}-1-700888901#9", config_entry=entry
+    )
+
+    platforms: dict[str, dict[str, dict[str, object]]] = {
+        "light": {
+            "700888901#9": {CONF_WHERE: "700888901#9"},
+            # Pre-existing unlabelled dimmer entry gets enriched on seed_configured_platforms
+            "700559701#9": {CONF_WHERE: "700559701#9"},
+        }
+    }
+    handler = SimpleNamespace(
+        hass=hass,
+        mac=TEST_EUI64,
+        firmware="1.2.3",
+        log_id="[3578]",
+        availability_signal=f"myhome_{TEST_EUI64}_availability",
+        config_entry=entry,
+        send_buffer=FrameScheduler(),
+        profile=profile,
+        is_connected=True,
+    )
+    hass.data[DOMAIN] = {TEST_EUI64: {"entity": handler, "platforms": platforms}}
+    attach_runtime(hass, entry, TEST_EUI64, handler)
+
+    mgr = ZigbeeInventoryManager(handler, store=_InMemoryStore())  # type: ignore[arg-type]
+    polled: list[str] = []
+
+    async def _fake_poll(cmd, *, timeout=6.0):
+        polled.append(str(cmd))
+        return _TierSendOutcome(True, False, False, False, [])
+
+    with patch.object(mgr, "_send_lowest_tier", side_effect=_fake_poll):
+        # Unit 01 arrives first, then +32.5 ms later Unit 02 arrives on the event stream
+        ev_u1 = OWNMessage.parse("*#13*700559601#9*66*5*256##", gateway=profile)
+        ev_u2 = OWNMessage.parse("*#13*700559602#9*66*5*256##", gateway=profile)
+        ev_dim = OWNMessage.parse("*#13*700559701#9*66*6*258##", gateway=profile)
+        ev_ctrl = OWNMessage.parse("*#13*700888801#9*66*7*266##", gateway=profile)
+        ev_yaml_ctrl = OWNMessage.parse("*#13*700888901#9*66*8*266##", gateway=profile)
+
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev_u1)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev_u2)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev_dim)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev_ctrl)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", ev_yaml_ctrl)
+        await hass.async_block_till_done()
+
+    assert set(mgr.products["7005596"]["units"].keys()) == {"01", "02"}
+    assert "700559601#9" in platforms["light"]
+    assert "700559602#9" in platforms["light"]
+    assert platforms["light"]["700559701#9"][CONF_DIMMABLE] is True
+    assert "*#1*700559601#9##" in polled
+    assert "*#1*700559602#9##" in polled
+
+    updated_dev = dev_reg.async_get(dev_2gang.id)
+    assert updated_dev is not None
+    assert updated_dev.manufacturer == "Legrand / BTicino"
+    assert updated_dev.model is not None
+
+    assert ent_reg.async_get(stale_light.entity_id) is None
+    assert ent_reg.async_get(stale_cover.entity_id) is None
+    assert ent_reg.async_get(stale_cal_btn.entity_id) is None
+    assert dev_reg.async_get(dev_ctrl.id) is None
+    assert ent_reg.async_get(yaml_light.entity_id) is not None
+
+    assert mgr.is_dimmer_where("700559701#9") is True
+    assert mgr.is_dimmer_where("700559601#9") is False
+    assert mgr.is_dimmer_where("not-zigbee") is False
+    assert mgr.is_dimmer_where("999999901#9") is False
+    assert mgr.is_non_actuator_where("700888801#9") is True
+    assert mgr.is_non_actuator_where("700559601#9") is False
+    assert mgr.is_non_actuator_where("not-zigbee") is False
+
+    mgr.cancel()
+
+
+async def test_watchdog_45s_replug_t0_passive_enrich_and_what33_what34(hass) -> None:
+    """4.5s echo watchdog handles 2.4s online echoes, marks unplugged nodes Unavailable, and handles re-plug/join/leave."""
+    import time
+    from datetime import timedelta
+
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.myhome.zigbee_inventory import _TierSendOutcome
+
+    profile = Legrand3578Profile("1.2.3")
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: TEST_EUI64}, unique_id=TEST_EUI64)
+    entry.add_to_hass(hass)
+
+    initial = {
+        "eui64": TEST_EUI64,
+        "firmware": "1.2.3",
+        "last_scan_at": None,
+        "product_count": 3,
+        "products": {
+            # Warm floating 503-box
+            "7003098": {
+                "addr": "7003098",
+                "index": 1,
+                "reachable": True,
+                "last_seen": None,
+                "units": {
+                    "01": {
+                        "unit": "01",
+                        "where": "700309801#9",
+                        "who": 1,
+                        "dev_id": 256,
+                        "model": "On/Off switch",
+                    }
+                },
+            },
+            # Cold 503-box (seen offline at boot, units={})
+            "7004099": {
+                "addr": "7004099",
+                "index": 2,
+                "reachable": False,
+                "last_seen": None,
+                "units": {},
+            },
+        },
+    }
+    handler = SimpleNamespace(
+        hass=hass,
+        mac=TEST_EUI64,
+        firmware="1.2.3",
+        log_id="[3578]",
+        availability_signal=f"myhome_{TEST_EUI64}_availability",
+        config_entry=entry,
+        send_buffer=FrameScheduler(),
+        profile=profile,
+        is_connected=True,
+    )
+    mgr = ZigbeeInventoryManager(handler, store=_InMemoryStore(initial))  # type: ignore[arg-type]
+    await mgr.async_load()
+
+    sent_low: list[str] = []
+    box_unplugged = False
+
+    async def _fake_low(cmd, *, timeout=6.0):
+        frame = str(cmd)
+        sent_low.append(frame)
+        if frame == "*#13**66*1##":
+            if box_unplugged:
+                ev = OWNMessage.parse("*#13*700309800#9*66*1##", gateway=profile)
+                return _TierSendOutcome(False, False, True, False, [ev])
+            ev = OWNMessage.parse("*#13*700309801#9*66*1*256##", gateway=profile)
+            return _TierSendOutcome(True, False, False, False, [ev])
+        if frame == "*#13**66*2##":
+            ev = OWNMessage.parse("*#13*700409901#9*66*2*258##", gateway=profile)
+            return _TierSendOutcome(True, False, False, False, [ev])
+        if frame == "*#13**67##":
+            ev67 = OWNMessage.parse("*#13**67*4##", gateway=profile)
+            return _TierSendOutcome(True, False, False, False, [ev67])
+        if frame == "*#13**66*3##":
+            ev_new = OWNMessage.parse("*#13*700900101#9*66*3*256##", gateway=profile)
+            return _TierSendOutcome(True, False, False, False, [ev_new])
+        return _TierSendOutcome(True, False, False, False, [])
+
+    with patch.object(mgr, "_send_lowest_tier", side_effect=_fake_low):
+        # Guard checks on non-WHO1/2, status request, broadcast, and post-RX race
+        mgr.note_unicast_command_sent(OWNGatewayCommand.enable_supervisor(), time.monotonic())
+        mgr.note_unicast_command_sent(
+            OWNLightingCommand.status("700309801#9"), time.monotonic()
+        )
+        bcast_cmd = OWNMessage.parse("*1*0*0#00#9##", gateway=profile)
+        mgr.note_unicast_command_sent(bcast_cmd, time.monotonic())
+        assert mgr._echo_timers == {}
+
+        # 1. Healthy online echo arriving at +2.4 s MUST cancel the 4.5 s watchdog!
+        tx_on = OWNMessage.parse("*1*1*700309801#9##", gateway=profile)
+        mgr.note_unicast_command_sent(tx_on, time.monotonic())
+        assert "7003098" in mgr._echo_timers
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2.4))
+        rx_echo = OWNMessage.parse("*1*1*700309801#9##", gateway=profile)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", rx_echo)
+        assert "7003098" not in mgr._echo_timers
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=6.0))
+        await hass.async_block_till_done()
+        assert "*#13**66*1##" not in sent_low
+
+        # Post-RX race: written_at older than _last_rx_monotonic OR rx_seq changed skips watchdog;
+        # same-tick written_at == _last_rx_monotonic (and unchanged rx_seq) MUST arm watchdog!
+        mgr.note_unicast_command_sent(tx_on, time.monotonic() - 1.0)
+        assert "7003098" not in mgr._echo_timers
+        seq_before = mgr.snapshot_rx_seq(tx_on)
+        mgr.mark_reachable("7003098")
+        mgr.note_unicast_command_sent(tx_on, time.monotonic(), rx_seq_before=seq_before)
+        assert "7003098" not in mgr._echo_timers
+
+        same_tick = mgr._last_rx_monotonic["7003098"]
+        seq_same = mgr.snapshot_rx_seq(tx_on)
+        mgr.note_unicast_command_sent(tx_on, same_tick, rx_seq_before=seq_same)
+        assert "7003098" in mgr._echo_timers
+        mgr._cancel_echo_watchdog("7003098")
+
+        # 2. Unplugged 503-box: 4.5 s expires -> probes *#13**66*1## -> NACK -> Unavailable!
+        box_unplugged = True
+        tx_off = OWNMessage.parse("*1*0*700309801#9##", gateway=profile)
+        mgr.note_unicast_command_sent(tx_off, mgr._last_rx_monotonic["7003098"])
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=12.0))
+        await hass.async_block_till_done()
+        assert "*#13**66*1##" in sent_low
+        assert mgr.is_reachable("7003098") is False
+
+        # 3. Online node whose echo was merely dropped: DIM 66 succeeds -> polls unit *#1*...##
+        box_unplugged = False
+        sent_low.clear()
+        mgr.note_unicast_command_sent(tx_off, time.monotonic() + 0.01)
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=18.0))
+        await hass.async_block_till_done()
+        assert "*#13**66*1##" in sent_low
+        assert "*#1*700309801#9##" in sent_low
+        assert mgr.is_reachable("7003098") is True
+
+        # 4. Re-plug at t = 0 s: warm node flips reachable immediately; cold node 7004099 passively enriches!
+        mgr.mark_unreachable("7003098")
+        assert mgr.is_reachable("7003098") is False
+        sent_low.clear()
+        async_dispatcher_send(
+            hass,
+            f"myhome_message_{TEST_EUI64}",
+            OWNMessage.parse("*1*1*700309801#9##", gateway=profile),
+        )
+        assert mgr.is_reachable("7003098") is True  # immediate at t = 0 s!
+
+        async_dispatcher_send(
+            hass,
+            f"myhome_message_{TEST_EUI64}",
+            OWNMessage.parse("*1*1*700409901#9##", gateway=profile),
+        )
+        await hass.async_block_till_done()
+        assert "*#13**66*2##" in sent_low
+        assert mgr.is_dimmer_where("700409901#9") is True
+
+        # 5. WHAT 33 join on warm node & brand-new node 7009001 -> rate-limited *13*66*## + tail DIM 66
+        sent_low.clear()
+        join_warm = OWNMessage.parse("*13*33*700309800#9##", gateway=profile)
+        join_new = OWNMessage.parse("*13*33*700900100#9##", gateway=profile)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", join_warm)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", join_new)
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=25.0))
+        await hass.async_block_till_done()
+
+        assert sent_low.count("*13*66*##") == 1  # debounced & rate-limited <= 1/s!
+        assert "*13*65*##" not in sent_low  # no broadcast scan!
+        assert "*#13**67##" in sent_low
+        assert "*#13**66*3##" in sent_low
+        assert "01" in mgr.products["7009001"]["units"]
+
+        # 6. WHAT 34 leave marks node unreachable immediately
+        leave_ev = OWNMessage.parse("*13*34*700309800#9##", gateway=profile)
+        async_dispatcher_send(hass, f"myhome_message_{TEST_EUI64}", leave_ev)
+        assert mgr.is_reachable("7003098") is False
+
+    mgr.cancel()
+
+
+async def test_inventory_remaining_edge_branches(hass) -> None:
+    """Exercise remaining defensive branches in ZigbeeInventoryManager for 100% coverage."""
+    import time
+    from datetime import timedelta
+
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.myhome.zigbee_inventory import _TierSendOutcome
+
+    profile = Legrand3578Profile("1.2.3")
+
+    # 1. Non-HomeAssistant handler: _spawn_bg_task closes coroutine, _notify_availability / _schedule_supervisor_restore / note_unicast_command_sent no-op
+    bare_handler = SimpleNamespace(
+        hass=SimpleNamespace(),  # not isinstance(hass, HomeAssistant)
+        mac=TEST_EUI64,
+        firmware="1.2.3",
+        log_id="[3578]",
+        config_entry=SimpleNamespace(data={CONF_MAC: TEST_EUI64}, entry_id=""),
+        send_buffer=FrameScheduler(),
+        profile=profile,
+        is_connected=True,
+    )
+    bare_mgr = ZigbeeInventoryManager(bare_handler, store=_InMemoryStore())  # type: ignore[arg-type]
+
+    async def _noop() -> None:
+        return None
+
+    assert bare_mgr._spawn_bg_task(_noop(), name="noop") is None
+    bare_mgr._notify_availability()
+    bare_mgr._schedule_supervisor_restore()
+    bare_mgr._prune_non_actuator_entities("700111101#9")
+    bare_mgr.mark_unreachable("unknown")
+    bare_mgr.note_unicast_command_sent(
+        OWNMessage.parse("*1*1*700111101#9##", gateway=profile), time.monotonic()
+    )
+    # _ingest_dim66_event with non-66 event
+    assert bare_mgr._ingest_dim66_event(
+        OWNMessage.parse("*#13**67*2##", gateway=profile)  # type: ignore[arg-type]
+    ) is False
+
+    # 2. Real hass edge branches:
+    # - _drain_pending_unit_polls re-entrant guard, unreachable skip, and WHO 2 poll timeout
+    # - WHAT 33 join with empty addr and with cold product (units={})
+    # - _async_discover_joined_node when request_product_count returns 0 / None
+    # - _verify_missing_echo on unindexed WHO 2 cover when status poll NACKs
+    # - cancel() while timers and _bg_tasks are active
+    # - async_run_scan draining _pending_unit_polls queued mid-scan
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: TEST_EUI64}, unique_id=TEST_EUI64)
+    entry.add_to_hass(hass)
+    handler = SimpleNamespace(
+        hass=hass,
+        mac=TEST_EUI64,
+        firmware="1.2.3",
+        log_id="[3578]",
+        availability_signal=f"myhome_{TEST_EUI64}_availability",
+        config_entry=entry,
+        send_buffer=FrameScheduler(),
+        profile=profile,
+        is_connected=True,
+    )
+    mgr = ZigbeeInventoryManager(
+        handler,
+        store=_InMemoryStore(
+            {
+                "eui64": TEST_EUI64,
+                "firmware": "1.2.3",
+                "last_scan_at": None,
+                "product_count": 5,
+                "products": {
+                    "7007777": {
+                        "addr": "7007777",
+                        "index": 0,
+                        "reachable": False,
+                        "last_seen": None,
+                        "units": {},
+                    },
+                    "7007778": {
+                        "addr": "7007778",
+                        "index": 1,
+                        "reachable": True,
+                        "last_seen": None,
+                        "units": {
+                            "01": {
+                                "unit": "01",
+                                "where": "700777801#9",
+                                "who": 2,
+                                "dev_id": 513,
+                                "model": "Shutter",
+                            }
+                        },
+                    },
+                },
+            }
+        ),
+    )  # type: ignore[arg-type]
+    await mgr.async_load()
+
+    # Re-entrant guard on _drain_pending_unit_polls
+    mgr._drain_polls_active = True
+    await mgr._drain_pending_unit_polls()
+    mgr._drain_polls_active = False
+
+    async def _edge_low(cmd, *, timeout=6.0):
+        frame = str(cmd)
+        if frame == "*#2*700777801#9##":
+            return _TierSendOutcome(False, True, False, False, [])
+        if frame == "*#2*700999901#9##":
+            return _TierSendOutcome(False, False, True, False, [])
+        if frame == "*#13**67##":
+            return _TierSendOutcome(True, False, False, False, [])
+        if frame == str(OWNGatewayCommand.scan_network()):
+            # Queue a pending unit poll during scan so post-scan drain runs
+            mgr._pending_unit_polls.append((1, "700777701#9"))
+            mgr._pending_unit_polls.append((2, "700777801#9"))
+            async_dispatcher_send(
+                hass,
+                f"myhome_message_{TEST_EUI64}",
+                OWNMessage.parse("*#13**67*0##", gateway=profile),
+            )
+            return _TierSendOutcome(True, False, False, False, [])
+        return _TierSendOutcome(True, False, False, False, [])
+
+    with patch.object(mgr, "_send_lowest_tier", side_effect=_edge_low):
+        # Empty addr join & cold product join
+        mgr._handle_zigbee_join(None)
+        mgr._handle_zigbee_join("7007777")
+        # Brand-new join when count returns empty -> exits cleanly; also test old_count >= new_count fallback
+        await mgr._async_discover_joined_node("7008000")
+        await hass.async_block_till_done()
+
+        # Unindexed WHO 2 cover missing echo -> status poll NACK
+        mgr.products["7009999"] = {
+            "addr": "7009999",
+            "index": 9,
+            "reachable": True,
+            "last_seen": None,
+            "units": {},
+        }
+        del mgr.products["7009999"]  # unindexed in products during _verify_missing_echo
+        await mgr._verify_missing_echo("7009999", 2, "700999901#9")
+
+        # Non-zigbee & unit-00 note_unicast_command_sent
+        mgr.note_unicast_command_sent(OWNLightingCommand.switch_on("12"), time.monotonic())
+        mgr.note_unicast_command_sent(
+            OWNMessage.parse("*1*0*700777800#9##", gateway=profile),
+            time.monotonic() + 10.0,
+        )
+
+        # Duplicate _schedule_passive_enrich skips while already enriching
+        mgr._enriching_addrs.add("7007777")
+        mgr._schedule_passive_enrich("7007777", 0)
+        mgr._enriching_addrs.discard("7007777")
+
+        # Direct _drain_pending_unit_polls with unreachable skip + WHO 2 poll timeout
+        mgr.products["7007777"]["reachable"] = False
+        mgr.products["7007778"]["reachable"] = True
+        mgr._pending_unit_polls = [(1, "700777701#9"), (2, "700777801#9")]
+        await mgr._drain_pending_unit_polls()
+        assert mgr.is_reachable("7007778") is False
+
+        # Scan with queued _pending_unit_polls
+        mgr.products["7007778"]["reachable"] = True
+        await mgr.async_run_scan()
+        assert mgr.is_reachable("7007778") is False
+
+    # Test shifted-index WHAT 33 join fallback (old_count=2, new_count=3, new node at index 0)
+    # and diagnostic-probe-stage _pending_unit_polls drain
+    mgr._data["product_count"] = 2
+
+    async def _shifted_join_and_diag(cmd, *, timeout=6.0):
+        frame = str(cmd)
+        if frame == "*#13**67##":
+            return _TierSendOutcome(
+                True,
+                False,
+                False,
+                False,
+                [OWNMessage.parse("*#13**67*3##", gateway=profile)],
+            )
+        if frame == "*#13**66*2##":
+            return _TierSendOutcome(
+                True,
+                False,
+                False,
+                False,
+                [OWNMessage.parse("*#13*700309801#9*66*2*256##", gateway=profile)],
+            )
+        if frame == "*#13**66*0##":
+            return _TierSendOutcome(
+                True,
+                False,
+                False,
+                False,
+                [OWNMessage.parse("*#13*700800201#9*66*0*256##", gateway=profile)],
+            )
+        if frame == "*#13**73#0##":
+            mgr.products["7007778"]["reachable"] = True
+            mgr._pending_unit_polls.append((2, "700777801#9"))
+            return _TierSendOutcome(True, False, False, False, [])
+        if frame == "*#2*700777801#9##":
+            return _TierSendOutcome(False, True, False, False, [])
+        if frame == str(OWNGatewayCommand.scan_network()):
+            async_dispatcher_send(
+                hass,
+                f"myhome_message_{TEST_EUI64}",
+                OWNMessage.parse("*#13**67*0##", gateway=profile),
+            )
+            return _TierSendOutcome(True, False, False, False, [])
+        return _TierSendOutcome(True, False, False, False, [])
+
+    with patch.object(mgr, "_send_lowest_tier", side_effect=_shifted_join_and_diag):
+        await mgr._async_discover_joined_node("7008002")
+        await hass.async_block_till_done()
+        assert "01" in mgr.products["7008002"]["units"]
+
+        await mgr.async_run_scan(include_diagnostic_probes=True)
+        assert mgr._pending_unit_polls == []
+        assert mgr.is_reachable("7007778") is False
+
+    # Test old_count >= new_count range fallback in _async_discover_joined_node
+    mgr._data["product_count"] = 5
+
+    async def _smaller_count(cmd, *, timeout=6.0):
+        frame = str(cmd)
+        if frame == "*#13**67##":
+            return _TierSendOutcome(
+                True,
+                False,
+                False,
+                False,
+                [OWNMessage.parse("*#13**67*1##", gateway=profile)],
+            )
+        return _TierSendOutcome(True, False, False, False, [])
+
+    with patch.object(mgr, "_send_lowest_tier", side_effect=_smaller_count):
+        await mgr._async_discover_joined_node("7008001")
+        await hass.async_block_till_done()
+
+    # Active timer + active bg_task cancellation in cancel()
+    gate = asyncio.Event()
+
+    async def _wait_forever() -> None:
+        await gate.wait()
+
+    mgr._spawn_bg_task(_wait_forever(), name="test_bg_cancel")
+    mgr._schedule_supervisor_restore()
+    mgr.note_unicast_command_sent(
+        OWNMessage.parse("*1*1*700123401#9##", gateway=profile), time.monotonic() + 10.0
+    )
+    assert mgr._echo_timers and mgr._supervisor_timer is not None and mgr._bg_tasks
+    mgr.cancel()
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=10.0))
+    await hass.async_block_till_done()
+

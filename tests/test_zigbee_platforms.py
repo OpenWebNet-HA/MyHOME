@@ -513,3 +513,404 @@ async def test_zigbee_buttons_keep_cover_calibration_and_skip_who14_locks(
     }
     assert cal_btns[0].translation_key == "calibrate_travel_time"
     assert lock_btns == []
+
+
+async def test_zigbee_dimmer_curve_900ms_debounce_1pct_status_and_dynamic_promotion(
+    hass: HomeAssistant,
+    freezer,
+) -> None:
+    """ZigBee dimmers use 1/5..100% curve, debounce + / - taps (900ms), decode status *1*1* as 1%, and promote dynamically."""
+    from datetime import timedelta
+
+    from homeassistant.components.light import (
+        ATTR_BRIGHTNESS,
+        ATTR_BRIGHTNESS_PCT,
+        ATTR_TRANSITION,
+        ColorMode,
+        LightEntityFeature,
+    )
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    is_dim_flag = False
+    reachable_map: dict[str, dict[str, object]] = {
+        "7009209": {"reachable": True, "units": {}},
+        "7000535": {"reachable": True, "units": {}},
+    }
+    inv = SimpleNamespace(
+        products=reachable_map,
+        get_node_model=lambda addr: "Dimmer Switch" if addr == "7009209" else "On/Off Switch",
+        is_dimmer_where=lambda w: w == "700920901#9" and is_dim_flag,
+        is_non_actuator_where=lambda w: w == "700888801#9",
+    )
+    gw = _make_zigbee_gateway(inventory=inv)
+    gw.sweep_active = True
+    gw.initial_discovery_pending = True
+
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: EUI64_MAC})
+    entry.add_to_hass(hass)
+
+    # Seed stale non-actuator registry entries in both light & cover to verify ghost pruning
+    reg = er.async_get(hass)
+    stale_l = reg.async_get_or_create(
+        "light", DOMAIN, f"{EUI64_MAC}-1-700888801#9", config_entry=entry
+    )
+    stale_c = reg.async_get_or_create(
+        "cover", DOMAIN, f"{EUI64_MAC}-2-700888801#9", config_entry=entry
+    )
+
+    hass.data[DOMAIN] = {
+        EUI64_MAC: {
+            "entity": gw,
+            CONF_PLATFORMS: {
+                "light": {
+                    "#25#9": {
+                        CONF_WHERE: "#25#9",
+                        CONF_NAME: "Dimmer Group",
+                        "dimmable": True,
+                        CONF_MEMBERS: [],
+                    },
+                },
+                "cover": {},
+            },
+        }
+    }
+    attach_runtime(hass, entry, EUI64_MAC, gw)
+
+    added_lights: list[object] = []
+    added_covers: list[object] = []
+    await light.async_setup_entry(hass, entry, added_lights.extend)
+    await cover.async_setup_entry(hass, entry, added_covers.extend)
+
+    # Stale wireless battery control registry entries were ghost-pruned on startup!
+    assert reg.async_get(stale_l.entity_id) is None
+    assert reg.async_get(stale_c.entity_id) is None
+
+    # Bus frames from wireless battery control 700888801#9 are blocked in both light & cover
+    ctrl_l = OWNMessage.parse("*1*1*700888801#9##", gateway=gw.profile)
+    ctrl_c = OWNMessage.parse("*2*1*700888801#9##", gateway=gw.profile)
+    async_dispatcher_send(hass, f"myhome_message_{EUI64_MAC}", ctrl_l)
+    async_dispatcher_send(hass, f"myhome_message_{EUI64_MAC}", ctrl_c)
+    await hass.async_block_till_done()
+    assert not any(
+        isinstance(e, MyHOMELight) and e._where == "700888801#9" for e in added_lights
+    )
+    assert not any(
+        isinstance(e, MyHOMECover) and e._where == "700888801#9" for e in added_covers
+    )
+
+    # Discover On/Off switch 700053501#9 and initially-untyped dimmer 700920901#9 via *1*1*...
+    sw_on = OWNMessage.parse("*1*1*700053501#9##", gateway=gw.profile)
+    dim_on = OWNMessage.parse("*1*1*700920901#9##", gateway=gw.profile)
+    async_dispatcher_send(hass, f"myhome_message_{EUI64_MAC}", sw_on)
+    async_dispatcher_send(hass, f"myhome_message_{EUI64_MAC}", dim_on)
+    await hass.async_block_till_done()
+
+    sw_ent = next(
+        e for e in added_lights if isinstance(e, MyHOMELight) and e._where == "700053501#9"
+    )
+    dim_ent = next(
+        e for e in added_lights if isinstance(e, MyHOMELight) and e._where == "700920901#9"
+    )
+    grp_ent = next(e for e in added_lights if isinstance(e, MyHOMELightGroup))
+
+    # Startup deduplication & no Dimension 1 dimmer probe on ZigBee!
+    assert sw_ent._poll_on_add is False
+    assert dim_ent._poll_on_add is False
+    assert sw_ent._probe_dimmer_on_add is False
+    assert dim_ent._probe_dimmer_on_add is False
+    assert sw_ent.supported_color_modes == {ColorMode.ONOFF}
+    assert dim_ent.supported_color_modes == {ColorMode.ONOFF}
+
+    for ent, eid in (
+        (sw_ent, "light.zigbee_7000535_unit_1"),
+        (dim_ent, "light.zigbee_7009209_unit_1"),
+        (grp_ent, "light.dimmer_group"),
+    ):
+        ent.hass = hass
+        ent.entity_id = eid
+        ent.async_write_ha_state = MagicMock()
+
+    sw_ent._register_availability_listener()
+    dim_ent._register_availability_listener()
+
+    # On/Off switch receiving status-reply *1*1*700053501#9## MUST stay ColorMode.ONOFF!
+    sw_status_reply = OWNMessage.parse(
+        "*1*1*700053501#9##", gateway=gw.profile, is_status_reply=True
+    )
+    assert isinstance(sw_status_reply, OWNLightingEvent)
+    sw_ent.handle_event(sw_status_reply)
+    assert sw_ent.supported_color_modes == {ColorMode.ONOFF}
+    assert sw_ent._attr_brightness is None
+    assert sw_ent._zigbee_what1_debounce_unsub is None
+
+    # Dynamic promotion when DIM 66 reveals 700920901#9 is a dimmer (DEV_ID 258)
+    is_dim_flag = True
+    dim_ent._handle_availability_update()
+    assert dim_ent.supported_color_modes == {ColorMode.BRIGHTNESS}
+    assert not (dim_ent.supported_features & LightEntityFeature.TRANSITION)
+    assert dim_ent._should_use_software_stepped(2.0) is False
+
+    # Entity availability tracks reachable_map[addr]["reachable"]
+    assert dim_ent.available is True
+    reachable_map["7009209"]["reachable"] = False
+    assert dim_ent.available is False
+    reachable_map["7009209"]["reachable"] = True
+    assert dim_ent.available is True
+
+    # Actuation across ZigBee dimmer presets: non-optimistic TX & coarse WHAT frames!
+    gw.send.reset_mock()
+    gw.send_status_request.reset_mock()
+    dim_ent._attr_is_on = False
+    dim_ent._attr_brightness_pct = None
+    for pct, expected_what in (
+        (1, 2),
+        (5, 2),
+        (10, 3),
+        (20, 4),
+        (30, 5),
+        (40, 6),
+        (50, 7),
+        (60, 8),
+        (75, 9),
+        (100, 10),
+    ):
+        await dim_ent.async_turn_on(**{ATTR_BRIGHTNESS_PCT: pct, ATTR_TRANSITION: 3})
+        assert str(gw.send.await_args_list[-1].args[0]) == f"*1*{expected_what}*700920901#9##"
+    # Non-optimistic: still False / None until RF echo arrives!
+    assert dim_ent._attr_is_on is False
+    assert dim_ent._attr_brightness_pct is None
+
+    # Also test _set_brightness_instant, async_turn_on_timed, plain async_turn_on, async_update
+    await dim_ent._set_brightness_instant(30)
+    assert str(gw.send.await_args_list[-1].args[0]) == "*1*5*700920901#9##"
+    await dim_ent.async_turn_on_timed(seconds=30, brightness_pct=50)
+    assert [str(c.args[0]) for c in gw.send.await_args_list[-2:]] == [
+        "*1*7*700920901#9##",
+        "*1*17*700920901#9##",
+    ]
+    assert dim_ent._attr_is_on is False  # non-optimistic on ZigBee!
+
+    gw.send_status_request.reset_mock()
+    await dim_ent.async_turn_on()
+    assert str(gw.send.await_args_list[-1].args[0]) == "*1*1*700920901#9##"
+    gw.send_status_request.assert_not_awaited()  # no 50ms Dimension 1 poll!
+
+    await dim_ent.async_update()
+    assert str(gw.send_status_request.await_args_list[-1].args[0]) == "*#1*700920901#9##"
+
+    # RX preset curve verification (WHAT 2..10 -> 5/10/20/30/40/50/60/75/100%)
+    gw.send_status_request.reset_mock()
+    for what_code, expected_pct in (
+        (2, 5),
+        (3, 10),
+        (4, 20),
+        (5, 30),
+        (6, 40),
+        (7, 50),
+        (8, 60),
+        (9, 75),
+        (10, 100),
+    ):
+        ev = OWNMessage.parse(f"*1*{what_code}*700920901#9##", gateway=gw.profile)
+        assert isinstance(ev, OWNLightingEvent)
+        dim_ent.handle_event(ev)
+        assert dim_ent._attr_brightness_pct == expected_pct
+        assert dim_ent._bus_state_complete is True
+    # Coarse ZigBee dimmer never asks Dimension 1 (_request_brightness_refresh)!
+    gw.send_status_request.assert_not_awaited()
+
+    # Rapid + / - button tap debounce: 5 taps of *1*1*... -> 1 status poll after 900 ms!
+    gw.send_status_request.reset_mock()
+    tap_ev = OWNMessage.parse("*1*1*700920901#9##", gateway=gw.profile)
+    assert isinstance(tap_ev, OWNLightingEvent)
+    for _step in range(5):
+        dim_ent.handle_event(tap_ev)
+        freezer.tick(timedelta(milliseconds=150))
+        async_fire_time_changed(hass)
+    gw.send_status_request.assert_not_awaited()
+
+    # Fire past 900 ms after last tap -> exactly 1 *#1*700920901#9## poll!
+    freezer.tick(timedelta(milliseconds=900))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    assert gw.send_status_request.await_count == 1
+    assert str(gw.send_status_request.await_args_list[-1].args[0]) == "*#1*700920901#9##"
+
+    # Status reply *1*1*700920901#9## (is_status_reply=True) -> applies 1% with ZERO follow-up polls!
+    gw.send_status_request.reset_mock()
+    reply_1pct = OWNMessage.parse(
+        "*1*1*700920901#9##", gateway=gw.profile, is_status_reply=True
+    )
+    assert isinstance(reply_1pct, OWNLightingEvent)
+    dim_ent.handle_event(reply_1pct)
+    assert dim_ent._attr_brightness_pct == 1
+    assert dim_ent._attr_is_on is True
+    assert dim_ent._zigbee_what1_debounce_unsub is None
+    freezer.tick(timedelta(seconds=2.0))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    gw.send_status_request.assert_not_awaited()
+
+    # Mock gateway fallback: untagged *1*1*... emitted synchronously DURING send_status_request
+    # is consumed as 1%, and finally: clears _zigbee_awaiting_status_until so a subsequent
+    # physical wall + tap (*1*1*..., is_status_reply=False) is NOT misclassified as 1%!
+    dim_ent._apply_brightness_state(50, is_on=True)
+
+    async def _emit_untagged_during_poll(_cmd: object) -> bool:
+        dim_ent.handle_event(tap_ev)
+        return True
+
+    gw.send_status_request.side_effect = _emit_untagged_during_poll
+    await dim_ent.async_update()
+    assert dim_ent._attr_brightness_pct == 1
+    assert dim_ent._zigbee_awaiting_status_until == 0.0
+    gw.send_status_request.side_effect = None
+    gw.send_status_request.reset_mock()
+
+    # After async_update() returns (even without emitting a status frame), a physical wall tap
+    # (*1*1*..., is_status_reply=False) must NOT be consumed as 1%; it must arm the 900ms poll!
+    dim_ent._apply_brightness_state(60, is_on=True)
+    await dim_ent.async_update()
+    assert dim_ent._zigbee_awaiting_status_until == 0.0
+    dim_ent.handle_event(tap_ev)
+    assert dim_ent._attr_brightness_pct == 60
+    assert dim_ent._zigbee_what1_debounce_unsub is not None
+    dim_ent._cancel_zigbee_what1_debounce()
+
+    # Real AsyncSerialTransport on serial_runtime: unsolicited *1*1*... (is_status_reply=False)
+    # arriving while send_status_request is queued ahead of wire TX is NOT misclassified as 1%!
+    from OWNd.transport import AsyncSerialTransport
+
+    gw.serial_runtime = SimpleNamespace(
+        transport=AsyncSerialTransport("/dev/ttyUSB0", handshake=False, reconnect=False)
+    )
+
+    async def _tap_while_queued(_cmd: object) -> bool:
+        dim_ent.handle_event(tap_ev)
+        return True
+
+    gw.send_status_request.side_effect = _tap_while_queued
+    await dim_ent.async_update()
+    assert dim_ent._attr_brightness_pct == 60
+    assert dim_ent._zigbee_what1_debounce_unsub is not None
+    dim_ent._cancel_zigbee_what1_debounce()
+    gw.send_status_request.side_effect = None
+    gw.serial_runtime = None
+
+    # Cancellation of pending debounce on *1*0*... and async_will_remove_from_hass
+    dim_ent.handle_event(tap_ev)
+    assert dim_ent._zigbee_what1_debounce_unsub is not None
+    off_ev = OWNMessage.parse("*1*0*700920901#9##", gateway=gw.profile)
+    assert isinstance(off_ev, OWNLightingEvent)
+    dim_ent.handle_event(off_ev)
+    assert dim_ent._zigbee_what1_debounce_unsub is None
+
+    dim_ent.handle_event(tap_ev)
+    await dim_ent.async_turn_off()
+    assert dim_ent._zigbee_what1_debounce_unsub is None
+
+    dim_ent.handle_event(tap_ev)
+    await dim_ent.async_will_remove_from_hass()
+    assert dim_ent._zigbee_what1_debounce_unsub is None
+
+    # Also cover build() when inv.is_dimmer_where is already True & _schedule_zigbee_what1_debounce_poll when hass=None
+    detached_dim = MyHOMELight(
+        hass=None,
+        name="Detached",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="700920901#9",
+        who="1",
+        where="700920901#9",
+        interface=None,
+        dimmable=True,
+        manufacturer="Legrand / BTicino",
+        model="Dimmer",
+        gateway=gw,
+    )
+    detached_dim._schedule_zigbee_what1_debounce_poll()
+    assert detached_dim._zigbee_what1_debounce_unsub is None
+
+    entry2 = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: EUI64_MAC})
+    entry2.add_to_hass(hass)
+    reg.async_get_or_create(
+        "light", DOMAIN, f"{EUI64_MAC}-1-700920901#9", config_entry=entry2
+    )
+    reg.async_get_or_create(
+        "cover", DOMAIN, f"{EUI64_MAC}-2-700888801#9", config_entry=entry2
+    )
+    hass.data[DOMAIN][EUI64_MAC][CONF_PLATFORMS]["light"]["700888801#9"] = {
+        CONF_WHERE: "700888801#9"
+    }
+    hass.data[DOMAIN][EUI64_MAC][CONF_PLATFORMS]["cover"]["700888801#9"] = {
+        CONF_WHERE: "700888801#9",
+        CONF_WHO: "2",
+    }
+    added_lights2: list[object] = []
+    added_covers2: list[object] = []
+    attach_runtime(hass, entry2, EUI64_MAC, gw)
+    await light.async_setup_entry(hass, entry2, added_lights2.extend)
+    await cover.async_setup_entry(hass, entry2, added_covers2.extend)
+    assert any(
+        isinstance(e, MyHOMELight)
+        and e._where == "700920901#9"
+        and ColorMode.BRIGHTNESS in (e.supported_color_modes or set())
+        for e in added_lights2
+    )
+
+    # ZigBee light group brightness TX, RX preset, and async_update skipping DIM 1
+    gw.send.reset_mock()
+    gw.send_status_request.reset_mock()
+    await grp_ent.async_turn_on(**{ATTR_BRIGHTNESS: 77})
+    assert str(gw.send.await_args_list[-1].args[0]) == "*1*5*#25#9##"
+    grp_preset = OWNMessage.parse("*1*8*#25#9##", gateway=gw.profile)
+    grp_ent.handle_event(grp_preset)
+    assert grp_ent._last_brightness_pct == 60
+    await grp_ent.async_update()
+    assert [str(c.args[0]) for c in gw.send_status_request.await_args_list] == [
+        "*#1*#25#9##"
+    ]
+
+    # Cover echo window: 4.0 s on ZigBee vs 1.5 s on SCS
+    from custom_components.myhome.cover import ECHO_WINDOW, ZIGBEE_ECHO_WINDOW
+
+    zb_cov = MyHOMECover(
+        hass=hass,
+        name="ZB Cover",
+        entity_name="",
+        device_id="700053501#9",
+        who="2",
+        where="700053501#9",
+        interface=None,  # type: ignore[arg-type]
+        advanced=False,
+        manufacturer="Legrand / BTicino",
+        model="Shutter",
+        gateway=gw,
+    )
+    scs_gw = SimpleNamespace(
+        mac="00:03:50:00:11:22",
+        unique_id="00:03:50:00:11:22",
+        log_id="[F454]",
+        profile=F454Profile(),
+        device_registry_id=None,
+        availability_signal="avail",
+        is_who_available=lambda _w: True,
+    )
+    scs_cov = MyHOMECover(
+        hass=hass,
+        name="SCS Cover",
+        entity_name="",
+        device_id="12",
+        who="2",
+        where="12",
+        interface=None,  # type: ignore[arg-type]
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter",
+        gateway=scs_gw,  # type: ignore[arg-type]
+    )
+    assert zb_cov._echo_window == ZIGBEE_ECHO_WINDOW == 4.0
+    assert scs_cov._echo_window == ECHO_WINDOW == 1.5
+

@@ -391,3 +391,79 @@ def test_anonymize_plant_fixture_eui64_and_serial_paths() -> None:
     hits = findings(dirty, data_file=True)
     assert "non-synthetic MAC" in hits
     assert "serial by-id path" in hits
+
+
+async def test_serial_bus_monitor_dedup_probes_and_who13_decimal_redaction(
+    hass: HomeAssistant,
+) -> None:
+    """Serial gateways disable 200ms dedup, update diagnostic probes, and redact *#13**10/12* decimal octets."""
+    import time
+
+    from custom_components.myhome.bus_monitor import BusMonitor
+    from custom_components.myhome.gateway import MyHOMEGatewayHandler
+    from custom_components.myhome.zigbee_inventory import DIAGNOSTIC_PROBE_FRAMES
+
+    # 1. DIAGNOSTIC_PROBE_FRAMES updated for 2.1.0b2
+    assert "*#13**71##" in DIAGNOSTIC_PROBE_FRAMES
+    assert "*#13**71#0##" not in DIAGNOSTIC_PROBE_FRAMES
+    assert "*#13**12##" not in DIAGNOSTIC_PROBE_FRAMES
+
+    # 2. Serial MyHOMEGatewayHandler sets BusMonitor(dedup_window=0.0)
+    serial_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_SERIAL_PORT: "/dev/ttyUSB0", CONF_MAC: "00:03:50:00:00:00:02:33"},
+        unique_id="00:03:50:00:00:00:02:33",
+    )
+    serial_entry.add_to_hass(hass)
+    with patch(
+        "custom_components.myhome.gateway_serial.AsyncSerialTransport",
+        return_value=MagicMock(is_connected=False, disconnect=AsyncMock()),
+    ):
+        serial_handler = MyHOMEGatewayHandler(hass=hass, config_entry=serial_entry)
+    assert serial_handler.bus_monitor._dedup_window == 0.0
+    # Two rapid *#*1## ACKs are both kept!
+    serial_handler.bus_monitor.record_frame(direction="rx", raw="*#*1##")
+    serial_handler.bus_monitor.record_frame(direction="rx", raw="*#*1##")
+    assert serial_handler.bus_monitor.total_rx == 2
+    await serial_handler.close_listener()
+
+    # 3. BusFrame & BusMonitor redact *#13**10*...## and 6/8-octet *#13**12*...##
+    mon = BusMonitor(dedup_window=0.0)
+    t0 = time.time()
+    f_ip = mon.record_frame(direction="rx", raw="*#13**10*192*168*1*50##")
+    f_mac = mon.record_frame(direction="rx", raw="*#13**12*0*3*80*32*120*1##")
+    f_eui = mon.record_frame(direction="rx", raw="*#13**12*0*18*75*0*1*2*3*4##")
+    assert f_ip.raw == "*#13**10*REDACTED##"
+    assert f_mac.raw == "*#13**12*REDACTED##"
+    assert f_eui.raw == "*#13**12*REDACTED##"
+    assert mon.has_frame_since(t0, "rx", "*#13**10*192*168*1*50##") is True
+    assert mon.has_frame_since(t0, "rx", "*#13**12*0*18*75*0*1*2*3*4##") is True
+
+    # 4. Anonymizer & findings() scrub and catch decimal-octet *#13**10* and *#13**12* frames
+    anon = Anonymizer("issue_233_3578")
+    sample = (
+        "hex=00:12:4b:00:01:02:03:04 "
+        "dec8=*#13**12*0*18*75*0*1*2*3*4## "
+        "dec6=*#13**12*0*3*80*32*120*1## "
+        "bad_oct=*#13**12*999*3*80*0*1*2## "
+        "ip_dec=*#13**10*192*168*1*35## "
+        "bad_ip=*#13**10*999*0*0*1##"
+    )
+    scrubbed = anon.scrub_text(sample)
+    # 8-octet decimal EUI-64 maps to the exact same synthetic 00:03:50:00:00:00:02:33 -> 0*3*80*0*0*0*2*51
+    assert "*#13**12*0*3*80*0*0*0*2*51##" in scrubbed
+    # 6-octet decimal MAC maps to 00:03:50:00:02:33 -> 0*3*80*0*2*51
+    assert "*#13**12*0*3*80*0*2*51##" in scrubbed
+    # Out-of-range >255 octets left untouched
+    assert "*#13**12*999*3*80*0*1*2##" in scrubbed
+    assert "*#13**10*999*0*0*1##" in scrubbed
+    # IPv4 decimal maps to 192.0.2.1 -> 192*0*2*1
+    assert "*#13**10*192*0*2*1##" in scrubbed
+    assert "192*168" not in scrubbed
+
+    assert findings('{"raw": "*#13**10*192*168*1*35##"}', data_file=True) == ["LAN address"]
+    assert findings('{"raw": "*#13**12*0*18*75*0*1*2*3*4##"}', data_file=True) == [
+        "non-synthetic MAC"
+    ]
+    assert findings('{"raw": "*#13**10*192*0*2*1##", "m": "*#13**12*0*3*80*0*0*0*2*51##"}', data_file=True) == []
+

@@ -5,6 +5,12 @@ from functools import lru_cache
 from typing import Any
 
 from homeassistant.const import Platform
+from OWNd.message import (
+    ZIGBEE_PRESET_TO_PERCENT as ZIGBEE_PRESET_TO_PERCENT,
+)
+from OWNd.message import (
+    ZIGBEE_STATUS_WHAT_TO_PERCENT as ZIGBEE_STATUS_WHAT_TO_PERCENT,
+)
 
 from .where_grammar import (
     area_of_where as area_of_where,
@@ -23,7 +29,7 @@ ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 ATTR_WHERE = "where"
 ATTR_ACTION = "action"
-INTEGRATION_VERSION = "2.1.0b1"
+INTEGRATION_VERSION = "2.1.0b2"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 

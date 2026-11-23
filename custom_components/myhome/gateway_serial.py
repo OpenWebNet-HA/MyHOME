@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import inspect
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -41,16 +42,20 @@ class SharedSerialRuntime:
         self._preflight_held = False
         self._state_callbacks: set[Callable[[bool], None]] = set()
         self.unparsed_raw_frames: collections.deque[str] = collections.deque(maxlen=100)
-        self.transport = AsyncSerialTransport(
-            port=port,
-            baudrate=baudrate,
-            log_id=handler.log_id,
-            logger=logger,
-            gateway=handler.profile,
-            on_state_change=self._fanout_state_change,
-            raw_frame_callback=self._on_raw_frame,
-            busy_retry=False,
-        )
+        transport_kwargs: dict[str, Any] = {
+            "port": port,
+            "baudrate": baudrate,
+            "log_id": handler.log_id,
+            "logger": logger,
+            "gateway": handler.profile,
+            "on_state_change": self._fanout_state_change,
+            "raw_frame_callback": self._on_raw_frame,
+            "busy_retry": False,
+        }
+        if "auto_restore_supervisor" in inspect.signature(AsyncSerialTransport).parameters:
+            transport_kwargs["auto_restore_supervisor"] = False
+        self.transport = AsyncSerialTransport(**transport_kwargs)
+        self.transport._auto_restore_supervisor = False
 
     def _fanout_state_change(self, connected: bool) -> None:
         for cb in tuple(self._state_callbacks):

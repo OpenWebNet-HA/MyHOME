@@ -484,7 +484,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._setup_at = time.monotonic()
         self._unavailable_timer: CALLBACK_TYPE | None = None
         self.listening_worker: asyncio.Task[None] | None = None
-        self.bus_monitor = BusMonitor()
+        is_serial = (
+            bool(self.serial_port)
+            or getattr(self.gateway.profile, "transport_type", "tcp") == "serial"
+        )
+        self.bus_monitor = BusMonitor(dedup_window=0.0 if is_serial else 0.2)
         self.device_health = DeviceHealth(self)
         self.device_registry_id = None
         self.broadcast_resync = broadcast_resync
