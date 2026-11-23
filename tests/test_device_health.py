@@ -5,6 +5,7 @@ state answers its status request with ``*1*19*74##`` (WHAT 19 is outside the
 published WHO 1 table), with a WHO 1001 DIMENSION 11 mask 3.45 s before it.
 """
 import json
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -673,10 +674,20 @@ def _restart_stub(hass, issue_id):
     """Leave of an ignored, non-persistent issue what ``issue_registry.async_load`` leaves after a restart."""
     registry = ir.async_get(hass)
     issue = registry.async_get_issue(DOMAIN, issue_id)
-    registry.issues[(DOMAIN, issue_id)] = ir.IssueEntry(
-        active=False, breaks_in_ha_version=None, created=issue.created, data=None,
-        dismissed_version=issue.dismissed_version, domain=DOMAIN, is_fixable=None, is_persistent=False,
-        issue_domain=None, issue_id=issue_id, learn_more_url=None, severity=None, translation_key=None,
+    assert issue is not None
+    # Use dataclasses.replace so fields added to IssueEntry in newer Home Assistant
+    # releases (config_entry_id in 2026.11+, config_subentry_id in 2026.12+) are preserved.
+    registry.issues[(DOMAIN, issue_id)] = replace(
+        issue,
+        active=False,
+        breaks_in_ha_version=None,
+        data=None,
+        is_fixable=None,
+        is_persistent=False,
+        issue_domain=None,
+        learn_more_url=None,
+        severity=None,
+        translation_key=None,
         translation_placeholders=None,
     )
     # A new Home Assistant run starts with an empty ``hass.data``
@@ -736,6 +747,62 @@ async def test_a_restart_keeps_the_ignore_of_other_faults_and_of_other_entries(h
     _health(hass)
     assert _issue(hass).dismissed_version is not None
     assert _issue(hass, other_entry_battery).dismissed_version is not None
+
+
+async def test_restart_stub_preserves_extra_issue_entry_fields_across_ha_versions(hass):
+    """``_restart_stub`` tolerates new non-default ``IssueEntry`` fields (HA 2026.11 ``config_entry_id``, 2026.12 ``config_subentry_id``)."""
+
+    @dataclass(slots=True, frozen=True)
+    class _FutureIssueEntry:
+        active: bool
+        breaks_in_ha_version: str | None
+        config_entry_id: str | None
+        config_subentry_id: str | None
+        created: object
+        data: dict | None
+        dismissed_version: str | None
+        domain: str
+        is_fixable: bool | None
+        is_persistent: bool
+        issue_domain: str | None
+        issue_id: str
+        learn_more_url: str | None
+        severity: ir.IssueSeverity | None
+        translation_key: str | None
+        translation_placeholders: dict[str, str] | None
+
+    registry = ir.async_get(hass)
+    now = dt_util.utcnow()
+    registry.issues[(DOMAIN, ISSUE_74)] = _FutureIssueEntry(  # type: ignore[assignment]
+        active=True,
+        breaks_in_ha_version="2027.1.0",
+        config_entry_id=ENTRY_ID,
+        config_subentry_id=None,
+        created=now,
+        data={"k": "v"},
+        dismissed_version="2026.12.0.dev0",
+        domain=DOMAIN,
+        is_fixable=False,
+        is_persistent=False,
+        issue_domain=DOMAIN,
+        issue_id=ISSUE_74,
+        learn_more_url="https://example.invalid",
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="unmapped_device_status",
+        translation_placeholders={"where": "74"},
+    )
+    hass.data[dh.DATA_TRACKERS_STARTED] = {ENTRY_ID}
+
+    _restart_stub(hass, ISSUE_74)
+
+    stub = registry.async_get_issue(DOMAIN, ISSUE_74)
+    assert stub is not None
+    assert stub.active is False
+    assert stub.dismissed_version == "2026.12.0.dev0"
+    assert stub.translation_key is None
+    assert getattr(stub, "config_entry_id", None) == ENTRY_ID
+    assert getattr(stub, "config_subentry_id", "missing") is None
+    assert dh.DATA_TRACKERS_STARTED not in hass.data
 
 
 def test_a_tracker_on_a_hass_without_a_data_dict_forgets_nothing():
