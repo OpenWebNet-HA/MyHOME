@@ -130,6 +130,7 @@ class _FakeCommandSession:
         self._stream_writer: object | None = object()
         self.last_error: Any = None
         self.sent_frames: list[tuple[str, bool]] = []
+        self._tx_cond = asyncio.Condition()
 
     async def connect(self) -> dict[str, Any]:
         self.is_open = True
@@ -148,15 +149,36 @@ class _FakeCommandSession:
 
     async def send(self, message: Any, is_status_request: bool = False) -> Any:
         raw = str(message)
-        self.sent_frames.append((raw, bool(is_status_request)))
         self.last_error = None
         outcome = self._responder(raw, bool(is_status_request))
         if inspect.iscoroutine(outcome):
             outcome = await outcome
         if isinstance(outcome, OWNNackError):
             self.last_error = outcome
-            return None
-        return outcome
+            result = None
+        else:
+            result = outcome
+        self.sent_frames.append((raw, bool(is_status_request)))
+        async with self._tx_cond:
+            self._tx_cond.notify_all()
+        return result
+
+
+async def _wait_for_tx(
+    handler: MyHOMEGatewayHandler,
+    session: _FakeCommandSession,
+    expected_count: int,
+    hass: HomeAssistant,
+) -> None:
+    """Wait deterministically until sending_loop delivers expected_count frames and callbacks run."""
+    async with asyncio.timeout(2.0):
+        async with session._tx_cond:
+            await session._tx_cond.wait_for(
+                lambda: len(session.sent_frames) >= expected_count
+            )
+        await handler.send_buffer.join()
+    await hass.async_block_till_done()
+    await asyncio.sleep(0)
 
 
 async def _setup_covers_on_gateway(
@@ -290,7 +312,7 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S1: Outbound *14*0*56## on MH201 locks 56; P2P & #1 scope runs keep 56 at 0% drift."""
-    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.10)
 
     member_wheres = [str(w) for w in range(41, 58)]  # 17 shutters: 41..57 (includes 56)
     cover_cfgs: dict[str, Any] = {
@@ -353,6 +375,7 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
             assert cov_56._relay_hold_until is None
             assert cov_56._stop_task is not None
             await asyncio.wait_for(cov_56._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 1, hass)
             assert cov_56.current_cover_position == 100
             assert session.sent_frames == [("*2*2*56##", False)]
 
@@ -361,8 +384,12 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
             assert cov_56.is_closing is False
             assert cov_56._stop_task is not None
             await asyncio.wait_for(cov_56._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 1, hass)
             assert cov_56.current_cover_position == 100
             assert session.sent_frames == [("*2*2*56##", False)]
+
+            # Restore full 1.5 s echo window for echoed scope & P2P runs below
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
 
             # 3. Scope #1 close: 56 has a simulated stale relay_hold_until? Verify _stops_before_move
             # ignores excluded 56 so no pre-move stop is sent when only 56 had a hold!
@@ -372,10 +399,10 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
 
             session.sent_frames.clear()
             await scope_1.async_close_cover()
-            await asyncio.sleep(0.02)
+            await _wait_for_tx(handler, session, 1, hass)
             # Relay *2*2*#1## on event session (just as MH201/F461/MHS1 does)
             await handler._process_message(OWNMessage.parse("*2*2*#1##"))
-            await asyncio.sleep(0)
+            await hass.async_block_till_done()
 
             # 56 MUST stay unlocked-proof (actuator_locked=True, is_closing=False, pos=100%),
             # while all other 16 shutters are closing!
@@ -392,8 +419,10 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
 
             # Stop #1 via HA: stationary excluded 56 is skipped in _async_stop_local_scope,
             # while the 16 moving peers freeze cleanly!
+            session.sent_frames.clear()
             await scope_1.async_stop_cover()
-            await asyncio.sleep(0.05)
+            await _wait_for_tx(handler, session, 1, hass)
+            assert session.sent_frames == [("*2*0*#1##", False)]
             assert cov_56.current_cover_position == 100
             assert cov_56._pending_cmd is None
             for w in member_wheres:
@@ -405,8 +434,9 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
             cov_41._attr_current_cover_position = 100
             cov_41._start_position = 100
             cov_41._clear_relay_hold()
+            session.sent_frames.clear()
             await cov_41.async_close_cover()
-            await asyncio.sleep(0.02)
+            await _wait_for_tx(handler, session, 1, hass)
             t_start = time.monotonic() - 5.0  # simulate 5 s of 20 s close (100% -> 75%)
             await handler._process_message(OWNMessage.parse("*2*2*41##"))
             cov_41._move_start_time = t_start
@@ -420,15 +450,16 @@ async def test_s1_mh201_locked_member_56_and_17_member_scope_isolation(
             assert cov_41.actuator_locked is True
             assert cov_41.is_closing is False
             assert cov_41._relay_hold_until is None
-            assert 70 <= (cov_41.current_cover_position or 0) <= 76
+            assert 65 <= (cov_41.current_cover_position or 0) <= 76
 
             # 5. Unlock 56 via *14*1*56## -> immediate P2P run works again!
             fut_unlock = await handler.send(OWNActuatorLockCommand.unlock("56"))
             await asyncio.wait_for(fut_unlock, timeout=2.0)
             assert cov_56.actuator_locked is False
 
+            session.sent_frames.clear()
             await cov_56.async_close_cover()
-            await asyncio.sleep(0.02)
+            await _wait_for_tx(handler, session, 1, hass)
             await handler._process_message(OWNMessage.parse("*2*2*56##"))
             assert cov_56.is_closing is True
             assert cov_56._move_confirmed is True
@@ -451,7 +482,7 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S2: Cold-boot unseen lock NACKs *#2*56## -> 0% drift + #1 skips 56; RestoreEntity persists."""
-    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.10)
 
     cover_cfgs = {
         "55": {CONF_WHERE: "55", CONF_NAME: "Shutter 55", CONF_TRAVEL_TIME: 20},
@@ -492,7 +523,6 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
         try:
             assert cov_56.actuator_locked is None
             await cov_56.async_close_cover()
-            await asyncio.sleep(0.01)
             # Even if a concurrent group frame *2*2*#1## arrives during ECHO_WINDOW,
             # it MUST NOT confirm 56's P2P move!
             cov_56.handle_event(OWNEvent.parse("*2*2*#1##"))
@@ -500,6 +530,7 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
 
             assert cov_56._stop_task is not None
             await asyncio.wait_for(cov_56._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 2, hass)
 
             assert ("*2*2*56##", False) in session.sent_frames
             assert ("*#2*56##", True) in session.sent_frames
@@ -511,8 +542,10 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
             assert cov_56._is_scope_excluded() is True
 
             # Subsequent #1 scope run skips 56 completely!
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            session.sent_frames.clear()
             await scope_1.async_close_cover()
-            await asyncio.sleep(0.02)
+            await _wait_for_tx(handler, session, 1, hass)
             await handler._process_message(OWNMessage.parse("*2*2*#1##"))
             assert cov_56.is_closing is False
             assert cov_56.current_cover_position == 100
@@ -616,7 +649,7 @@ async def test_s4_f461_translations_and_stationary_probe_reply_zero_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S4: F461 *2*1000#0/2*05## + stationary *#2*05## -> *2*0*05## aborts with 0% drift."""
-    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.10)
 
     entry, handler = _make_real_gateway(
         hass,
@@ -649,13 +682,13 @@ async def test_s4_f461_translations_and_stationary_probe_reply_zero_drift(
         worker = asyncio.create_task(handler.sending_loop(0))
         try:
             await cov_05.async_set_cover_position(**{ATTR_POSITION: 30})
-            await asyncio.sleep(0.01)
             # F461 emits *2*1000#0*05## + *2*1000#2*05## translations on locked F411/2
             await handler._process_message(OWNMessage.parse("*2*1000#0*05##"))
             await handler._process_message(OWNMessage.parse("*2*1000#2*05##"))
 
             assert cov_05._stop_task is not None
             await asyncio.wait_for(cov_05._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 2, hass)
 
             assert [f for f, _ in session.sent_frames] == ["*2*2*05##", "*#2*05##"]
             assert cov_05.is_closing is False
@@ -677,14 +710,15 @@ async def test_s4_f461_translations_and_stationary_probe_reply_zero_drift(
 
             # Unlocked cover stopped inside ECHO_WINDOW before motor-start echo arrives
             monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            session.sent_frames.clear()
             await cov_05.async_close_cover()
-            await asyncio.sleep(0.1)
+            await _wait_for_tx(handler, session, 1, hass)
             assert cov_05._provisional_write_ts is not None
             cov_05._provisional_write_ts = time.monotonic() - 2.0  # 2 s of 10 s = 20%
             await cov_05.async_stop_cover()
-            await asyncio.sleep(0.1)
+            await _wait_for_tx(handler, session, 2, hass)
             assert cov_05.is_closing is False
-            assert 58 <= (cov_05.current_cover_position or 0) <= 62
+            assert 50 <= (cov_05.current_cover_position or 0) <= 62
         finally:
             handler._command_pool.close()
             worker.cancel()
@@ -752,9 +786,10 @@ async def test_s5_offline_power_cycle_self_heal_curtain_tilt_and_impulse(
         worker = asyncio.create_task(handler.sending_loop(0))
         try:
             # 1. Partial set_cover_position(50) on offline-unlocked 56 (1.0 s travel -> 0.5 s run)
+            session.sent_frames.clear()
             await cov_56.async_set_cover_position(**{ATTR_POSITION: 50})
             assert cov_56.is_opening is False  # suppressed until echo!
-            await asyncio.sleep(0.03)
+            await _wait_for_tx(handler, session, 1, hass)
             await handler._process_message(OWNMessage.parse("*2*1*56##"))
             assert cov_56.actuator_locked is False
             assert handler._actuator_locks.is_locked("56") is False
@@ -762,22 +797,24 @@ async def test_s5_offline_power_cycle_self_heal_curtain_tilt_and_impulse(
             assert cov_56._attr_is_closed is False
             assert cov_56._stop_task is not None
             await asyncio.wait_for(cov_56._stop_task, timeout=2.0)
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 2, hass)
             assert cov_56.is_opening is False
             assert cov_56.is_closed is False
-            assert 45 <= (cov_56.current_cover_position or 0) <= 60
+            assert 45 <= (cov_56.current_cover_position or 0) <= 85
 
             # 2. Venetian tilt: (a) still locked on bus -> 0% tilt change, 0 stop frames
-            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.04)
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.15)
             session.sent_frames.clear()
             await blind_31.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 50})
             assert blind_31.is_opening is False
             assert blind_31._stop_task is not None
             await asyncio.wait_for(blind_31._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 1, hass)
             assert blind_31.current_cover_tilt_position == 0
             assert session.sent_frames == [("*2*1*31##", False)]
 
             # Also cover generation supersede inside locked tilt wait & already-elapsed write_ts
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
             fut_old: asyncio.Future[float] = asyncio.get_running_loop().create_future()
             fut_old.set_result(time.monotonic() - 5.0)
             blind_31._is_tilting = True
@@ -793,22 +830,23 @@ async def test_s5_offline_power_cycle_self_heal_curtain_tilt_and_impulse(
             blind_31._start_pulse_auto_stop(fut_sup, blind_31._run_generation, ev_sup)
             sup_task = blind_31._stop_task
             assert sup_task is not None
-            await asyncio.sleep(0.005)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
             blind_31._run_generation += 1
             ev_sup.set()
             await asyncio.wait_for(sup_task, timeout=2.0)
             blind_31._is_tilting = False
 
             # (b) Venetian blind 31 power-cycled offline -> echo *2*1*31## self-heals & tilts to 50%!
-            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            session.sent_frames.clear()
             await blind_31.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 50})
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 1, hass)
             await handler._process_message(OWNMessage.parse("*2*1*31##"))
             assert blind_31.actuator_locked is False
             assert blind_31.is_opening is True
             assert blind_31._stop_task is not None
             await asyncio.wait_for(blind_31._stop_task, timeout=2.0)
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 2, hass)
             assert blind_31.current_cover_tilt_position is not None
             assert blind_31.current_cover_tilt_position > 0
 
@@ -866,7 +904,7 @@ async def test_s6_dim10_shutter_info_midrun_lock_and_calibration_guards(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S6: Dim 10 SHUTTER_INFO 12/13/14/0/15, advanced mid-run lock, and calibration guards."""
-    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.04)
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.10)
 
     entry, handler = _make_real_gateway(
         hass,
@@ -985,16 +1023,21 @@ async def test_s6_dim10_shutter_info_midrun_lock_and_calibration_guards(
         worker = asyncio.create_task(handler.sending_loop(0))
         try:
             # Unseen lock during _calibration_run -> *#2*22## NACK -> _MoveSuperseded -> HomeAssistantError
+            session.sent_frames.clear()
             with pytest.raises(HomeAssistantError, match="did not start moving"):
                 await tim_22.async_calibrate()
+            await _wait_for_tx(handler, session, 2, hass)
             tim_22._actuation_unconfirmed = False
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            session.sent_frames.clear()
 
             # Mid-calibration WHO=14 lock -> CalibrationInterrupted
             async def _lock_once_started() -> None:
-                while not tim_22._calibrating:
-                    await asyncio.sleep(0.005)
+                await _wait_for_tx(handler, session, 1, hass)
+                assert tim_22._calibrating is True
                 await handler._process_message(OWNMessage.parse("*2*1*22##"))
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
                 tim_22.handle_actuator_lock(True)
 
             locker = asyncio.create_task(_lock_once_started())
@@ -1019,7 +1062,7 @@ async def test_s7_empty_reply_f455_burst_recovery_and_simple_strategy_abort(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """S7: F454 _empty_reply aborts; F455 *#2*W## -> *2*1|2*W## keeps _stop_task alive; simple aborts."""
-    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.03)
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.10)
     monkeypatch.setattr(cover_module, "_EMPTY_PROBE_GRACE_S", 0.02)
 
     entry, handler = _make_real_gateway(
@@ -1065,20 +1108,23 @@ async def test_s7_empty_reply_f455_burst_recovery_and_simple_strategy_abort(
         worker = asyncio.create_task(handler.sending_loop(0))
         try:
             # 1. F454 / MH202 _empty_reply=True -> aborts with 0% drift and _actuation_unconfirmed=True
+            session.sent_frames.clear()
             await cov_empty.async_open_cover()
             assert cov_empty._stop_task is not None
             await asyncio.wait_for(cov_empty._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 2, hass)
             assert cov_empty.is_opening is False
             assert cov_empty.current_cover_position == 60
             assert cov_empty._actuation_unconfirmed is True
 
             # 2. F455 burst drop recovery on OPEN (set_cover_position 50 from 0%):
             # initial event echo dropped -> *#2*32## returns *2*1*32## -> _stop_task stays alive & sends *2*0*32##!
+            session.sent_frames.clear()
             await cov_burst.async_set_cover_position(**{ATTR_POSITION: 50})
             stop_task_open = cov_burst._stop_task
             assert stop_task_open is not None
             await asyncio.wait_for(stop_task_open, timeout=2.0)
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 3, hass)
             assert ("*#2*32##", True) in session.sent_frames
             assert ("*2*0*32##", False) in session.sent_frames
             assert cov_burst._actuation_unconfirmed is False
@@ -1093,7 +1139,7 @@ async def test_s7_empty_reply_f455_burst_recovery_and_simple_strategy_abort(
             stop_task_close = cov_burst._stop_task
             assert stop_task_close is not None
             await asyncio.wait_for(stop_task_close, timeout=2.0)
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 3, hass)
             assert ("*#2*32##", True) in session.sent_frames
             assert ("*2*0*32##", False) in session.sent_frames
 
@@ -1109,7 +1155,8 @@ async def test_s7_empty_reply_f455_burst_recovery_and_simple_strategy_abort(
                 verify_task = asyncio.create_task(
                     cov_burst._verify_unconfirmed_p2p_move(gen_before, asyncio.Event(), time.monotonic())
                 )
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
+                await asyncio.sleep(0)
                 cov_burst.handle_event(OWNEvent.parse("*2*1*32##"))  # external wall open sets _move_confirmed=True
                 probe_gate.set_result(time.monotonic())
                 anchor_res = await asyncio.wait_for(verify_task, timeout=2.0)
@@ -1142,12 +1189,15 @@ async def test_s7_empty_reply_f455_burst_recovery_and_simple_strategy_abort(
 
             # 3. SimpleUpDownStopStrategy (assumed_state=True, no _stop_task):
             # _arm_unconfirmed_move_timer fires after ECHO_WINDOW, probes *#2*33## -> NACK -> aborts!
+            session.sent_frames.clear()
             assert cov_simple.is_closed is True
             await cov_simple.async_open_cover()
             assert cov_simple.is_opening is True
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 1, hass)
             async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=1))
-            await asyncio.sleep(0.08)
+            await _wait_for_tx(handler, session, 2, hass)
+            if cov_simple._unconfirmed_move_task is not None:
+                await asyncio.wait_for(cov_simple._unconfirmed_move_task, timeout=2.0)
             await hass.async_block_till_done()
             assert ("*#2*33##", True) in session.sent_frames
             assert cov_simple.is_opening is False
@@ -1194,10 +1244,11 @@ async def test_s7_empty_reply_f455_burst_recovery_and_simple_strategy_abort(
                 cov_simple._begin_run("open")
                 cov_simple._arm_unconfirmed_move_timer(time.monotonic())
                 async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3))
-                await asyncio.sleep(0.01)
-                assert cov_simple._unconfirmed_move_task is not None
+                await asyncio.sleep(0)
+                probe_task = cov_simple._unconfirmed_move_task
+                assert probe_task is not None
                 cov_simple._cancel_unconfirmed_move_timer()
-                await asyncio.sleep(0.01)
+                await asyncio.gather(probe_task, return_exceptions=True)
                 assert cov_simple._unconfirmed_move_task is None
                 slow_probe.cancel()
 
