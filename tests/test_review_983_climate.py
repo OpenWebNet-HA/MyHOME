@@ -348,3 +348,56 @@ async def test_the_battery_of_a_central_unit_configured_as_zone_0_raises_one_rep
     assert central._health_address == (4, "#0")
     repairs = [issue for domain, issue in ir.async_get(hass).issues if domain == DOMAIN and "central_battery_fault" in issue]
     assert len(repairs) == 1, repairs
+
+
+# ── what the review of the final commit found ──
+
+
+async def test_a_fan_off_of_dimension_11_after_the_valve_report_does_not_replace_it(hass: HomeAssistant) -> None:
+    zone = _zone(hass)
+    _feed(zone, "*#4*2*19*5*5##", "*#4*2*11*15##", "*#4*2*11*1##")
+    assert zone.fan_mode == "low"
+    assert zone.extra_state_attributes["running_fan_speed"] == "off"  # still what the valve report said
+
+
+@pytest.mark.parametrize(
+    ("central_plant", "frames"),
+    [
+        # MyHomeServer1: tests/fixtures/traces/issue_429/myhome_trace_MyHomeServer1_who4_2026-09-23T19-32-29.json:61, :361
+        (False, ("*#4*1*7*1*2##", "*#4*1*7*1*1*0225##")),
+        (True, ("*4*110#0160*#0#1##",)),  # a manual-with-setpoint report (issue 994)
+    ],
+)
+async def test_a_setpoint_the_zone_reports_in_another_frame_than_dimension_14_ends_the_saved_one(
+    hass: HomeAssistant, central_plant: bool, frames: tuple[str, ...]
+) -> None:
+    def zone_1() -> MyHOMEClimate:
+        return _zone(hass, where="1", gateway=_central_plant_gateway(), standalone=None) if central_plant else _zone(hass, where="1")
+
+    live = zone_1()
+    _feed(live, *frames)
+    restored = zone_1()
+    await restored.async_restore_last_state(_saved(live))
+    assert restored._nominal_is_saved()
+    _feed(restored, *frames)
+    assert restored.target_temperature == live.target_temperature
+    assert not restored._nominal_is_saved()
+    assert restored._silent_zone_reads() == live._silent_zone_reads()  # nothing asked that a zone not restarted would not ask
+
+
+@pytest.mark.parametrize("knob_first", [True, False])
+async def test_the_knob_of_a_zone_that_said_it_is_off_adds_no_offset_at_the_restore(hass: HomeAssistant, knob_first: bool) -> None:
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY)
+    saved = _saved(live)  # heat, 23.5 in force, 21.0 commanded, knob 0
+    zone = _zone(hass)
+    _feed(zone, "*4*102*2##")
+    if knob_first:
+        _feed(zone, "*#4*2*13*02##")
+    await zone.async_restore_last_state(saved)
+    if not knob_first:
+        _feed(zone, "*#4*2*13*02##")
+    attributes = zone.extra_state_attributes
+    assert zone.hvac_mode == HVACMode.OFF
+    assert zone.target_temperature == 23.5  # what was saved: no frame said 25.5
+    assert (attributes["nominal_temperature"], attributes["local_offset"], attributes["knob_pos"]) == (21.0, 2, "+2")

@@ -905,8 +905,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._target_temperature = round(shown - saved_offset, 1)
                         if saved_nominal is not None:
                             self._restored_nominal = (self._target_temperature, round(saved_nominal, 1))
-                        # The value shown was saved with the knob where it was then.
-                        shown = round(self._target_temperature + self._local_offset, 1)
+                        if not (mode_live and self._attr_hvac_mode == HVACMode.OFF):
+                            # The value shown was saved with the knob where it was then. A zone
+                            # that said it is off shows no knob offset (as in the knob branch).
+                            shown = round(self._target_temperature + self._local_offset, 1)
                     self._local_target_base = None
                     self._nominal_from_dim12 = False
                     self._local_target_temperature = shown
@@ -3338,6 +3340,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._target_temperature = temperature
             self._nominal_from_dim12 = False
             self._target_temperature_restored = False
+            self._restored_nominal = None  # the zone reported its commanded setpoint
         else:
             self._hydrate_nominal_from_local(prev_mode)
         if self._attr_hvac_mode != HVACMode.OFF and self._target_temperature is not None and (
@@ -4184,6 +4187,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._target_temperature = message.set_temperature
                 self._nominal_from_dim12 = False
                 self._target_temperature_restored = False
+                self._restored_nominal = None  # the zone reported its commanded setpoint
                 self._show_nominal()
             else:
                 self._hydrate_nominal_from_local(prev_mode)
@@ -4445,8 +4449,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # (#410: 15 is a status only, never written), so it keeps its value; the fan's
                 # state is ``running_fan_speed``, unless an actuator of the zone reports it
                 # itself (dimension 20).
+                if self._running_fan_speed != "off":
+                    # An "off" already shown came from the zone's valve report: that one stays.
+                    self._fan_off_reported = True
                 self._running_fan_speed = "off"
-                self._fan_off_reported = True
         elif self._central and (diag_what := _central_diagnostic_what(message)) is not None:
             LOGGER.debug(
                 "%s %s",

@@ -66,7 +66,7 @@ def _apply_yaml_platforms(
     # written ``#1`` or ``01``, then the bare zone number of a 4-zone central unit (``#0#1`` ->
     # ``1``, ``zone_1``, ``4-1``), also where a saved copy holds the central unit's entry under
     # those keys.
-    zone_numbers: list[tuple[str, str, Any]] = []
+    zone_numbers: list[tuple[str, str, str, Any]] = []
     central_aliases: list[tuple[str, str, Any]] = []
     for plat, devices in yaml_platforms.items():
         if plat in configured_platforms and isinstance(devices, dict):
@@ -119,9 +119,13 @@ def _apply_yaml_platforms(
                             and len(digits) <= 2
                             and (canon := canonical_thermo_zone(z_val)) is not None
                         ):
-                            numbers = [f"4-{canon}{routing}", f"{canon}{routing}"] if routing else [f"4-{canon}", canon, f"zone_{canon}"]
-                            zone_numbers.extend((plat, key, runtime_cfg) for key in numbers if key not in aliases)
-    for plat, alias, runtime_cfg in (*zone_numbers, *central_aliases):
+                            bare = f"{canon}{routing}"
+                            numbers = [bare, f"4-{bare}"] if routing else [bare, f"4-{bare}", f"zone_{bare}"]
+                            zone_numbers.extend((plat, key, bare, runtime_cfg) for key in numbers if key not in aliases)
+    for plat, alias, bare, runtime_cfg in zone_numbers:
+        # ``4-1`` and ``zone_1`` are whose ``1`` is: one zone under all three.
+        configured_platforms[plat].setdefault(alias, configured_platforms[plat].get(bare, runtime_cfg))
+    for plat, alias, runtime_cfg in central_aliases:
         configured_platforms[plat].setdefault(alias, runtime_cfg)
 
 
@@ -173,6 +177,13 @@ def canonicalise_imported_platforms(
         new_devices: dict[str, Any] = {}
         central_moved: list[str] = []
         central_fixed = False
+        # The interfaces on which the copy already holds the central unit as ``#0``: that entry
+        # stays, and one stored as ``#0#0`` for the same central unit goes, under every key.
+        held_centrals = {
+            cfg.get(CONF_BUS_INTERFACE)
+            for cfg in devices.values()
+            if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_ZONE) == "#0" and cfg.get(CONF_CENTRAL)
+        }
         for d_id, cfg in devices.items():
             who = str(cfg.get(CONF_WHO, "")) if isinstance(cfg, dict) else ""
             if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_ZONE) == "#0#0" and cfg.get(CONF_CENTRAL):
@@ -180,10 +191,12 @@ def canonicalise_imported_platforms(
                 # gives ``#0`` today. The entry is stored under several keys: the one that
                 # spells the zone moves, the others keep their key.
                 new_id = f"#0{d_id[len('#0#0'):]}" if d_id.startswith("#0#0") else d_id
-                if new_id != d_id and (new_id in devices or new_id in new_devices):
+                if cfg.get(CONF_BUS_INTERFACE) in held_centrals or (
+                    new_id != d_id and (new_id in devices or new_id in new_devices)
+                ):
                     LOGGER.warning(
                         "Imported copy of myhome.yaml, %s: dropping '%s', the copy already has '%s'",
-                        plat, d_id, new_id,
+                        plat, d_id, new_id if new_id != d_id else "#0",
                     )
                     continue
                 new_devices[new_id] = {**cfg, CONF_ZONE: "#0"}

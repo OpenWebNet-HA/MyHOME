@@ -367,7 +367,7 @@ class MyHomeDeviceSchema(Schema):
         _central_aliases: list[tuple[str, typing.Any]] = []
         # The number of a zone written ``#1`` or ``01`` (``1``, ``zone_1``, ``4-1``): the zone's,
         # ahead of a central unit's alias, behind an entry that is written with that number.
-        _zone_numbers: list[tuple[str, typing.Any]] = []
+        _zone_numbers: list[tuple[str, str, typing.Any]] = []
 
         for device in data:
             data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
@@ -403,10 +403,11 @@ class MyHomeDeviceSchema(Schema):
                         and len(digits) <= 2
                         and (canon := canonical_thermo_zone(zone)) is not None
                     ):
-                        _numbers = [f"{data[device][CONF_WHO]}-{canon}{routing}", f"{canon}{routing}"]
+                        _bare = f"{canon}{routing}"
+                        _numbers = [_bare, f"{data[device][CONF_WHO]}-{_bare}"]
                         if not routing:
                             _numbers.append(f"zone_{canon}")
-                        _zone_numbers.extend((alias, data[device]) for alias in _numbers if alias not in _zone_aliases)
+                        _zone_numbers.extend((alias, _bare, data[device]) for alias in _numbers if alias not in _zone_aliases)
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
             if CONF_ICON not in data[device]:
@@ -422,8 +423,9 @@ class MyHomeDeviceSchema(Schema):
             if CONF_DEVICE_CLASS not in data[device]:
                 data[device][CONF_DEVICE_CLASS] = SwitchDeviceClass.SWITCH
 
-        for alias, entry in _zone_numbers:
-            _rekeyed_data.setdefault(alias, entry)
+        for alias, _bare, entry in _zone_numbers:
+            # ``4-1`` and ``zone_1`` are whose ``1`` is: one zone under all three.
+            _rekeyed_data.setdefault(alias, _rekeyed_data.get(_bare, entry))
         for alias, central in _central_aliases:
             _rekeyed_data.setdefault(alias, central)
         return _rekeyed_data

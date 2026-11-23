@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from OWNd.message import OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -39,6 +40,7 @@ from custom_components.myhome.legacy_yaml import (
     canonicalise_imported_platforms,
 )
 from custom_components.myhome.switch import MyHOMEThermoSwitch
+from custom_components.myhome.typing_compat import device_info_to_dict
 from custom_components.myhome.validate import climate_schema
 from tests import test_crew_central_season_restore
 from tests.conftest import attach_runtime
@@ -552,3 +554,83 @@ async def test_a_start_without_myhome_yaml_uses_the_corrected_copy(hass: HomeAss
     _apply_imported_copy(hass, entry, configured)
     assert configured["climate"]["#0"]["zone"] == "#0" and "#0#0" not in configured["climate"]
     assert "#0#0" not in entry.options[CONF_MIGRATED_YAML_PLATFORMS]["climate"]
+
+
+# ── what the review of the final commit found ──
+
+
+def test_a_central_unit_the_copy_holds_twice_is_the_one_stored_as_hash_0_under_every_key() -> None:
+    kept = {"who": "4", "zone": "#0", "central": True, "name": "A"}
+    other = {**kept, "zone": "#0#0", "name": "B"}
+    saved = {"climate": {"#0": kept, "original": kept, "plant": other, "4-0": other, "#0#0": other, "zone_0": other}}
+    corrected, lines = canonicalise_imported_platforms(saved)
+    assert corrected == {"climate": {"#0": kept, "original": kept}} and lines == []
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms(corrected, configured)
+    assert configured["climate"]["#0"]["name"] == "A"
+
+    # The central unit of another bus is another central unit.
+    routed = {"who": "4", "zone": "#0", "central": True, "interface": "01"}
+    saved = {"climate": {"#0#4#01": routed, "#0#0": {"who": "4", "zone": "#0#0", "central": True}}}
+    corrected, lines = canonicalise_imported_platforms(saved)
+    assert set(corrected["climate"]) == {"#0#4#01", "#0"} and lines == ["climate: #0#0 -> #0"]
+
+
+@pytest.mark.parametrize("interface", [None, "01"])
+@pytest.mark.parametrize("order", [("room", "controlled"), ("controlled", "room")])
+def test_one_zone_written_twice_is_the_same_entry_under_every_number_key(order: tuple[str, str], interface: str | None) -> None:
+    routed = {"interface": interface} if interface else {}
+    raw = {"room": {"zone": "01", "name": "Probe", **routed}, "controlled": {"zone": "#1", "name": "Controlled", **routed}}
+    validated = climate_schema({key: raw[key] for key in order})
+    routing = f"#4#{interface}" if interface else ""
+    numbers = [f"1{routing}", f"4-1{routing}"] + ([] if interface else ["zone_1"])
+    assert len({id(validated[key]) for key in numbers}) == 1  # ``4-1`` and ``zone_1`` are whose ``1`` is
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+    address, key = Address("1", interface), f"1{routing}"
+    assert _zone_config(configured["climate"], address, key)["name"] == _zone_config(validated, address, key)["name"]
+    assert {configured["climate"][number]["name"] for number in numbers} == {validated[numbers[0]]["name"]}
+
+
+async def _saved_central_00_with_its_device(hass: HomeAssistant, also: str | None = None) -> tuple:
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": DISCOVERY_MAC}, unique_id=DISCOVERY_MAC)
+    entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    device = devices.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{DISCOVERY_MAC}-4-#0#0")}, name="Plant"
+    )
+    devices.async_update_device(device.id, name_by_user="Boiler room")
+    saved = er.async_get(hass).async_get_or_create(
+        "climate", DOMAIN, f"{DISCOVERY_MAC}-4-#0#0", config_entry=entry, device_id=device.id
+    )
+    if also is not None:
+        devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, also)}, name="Other")
+    gateway = MagicMock(mac=DISCOVERY_MAC, is_connected=True, send=AsyncMock(), send_status_request=AsyncMock(), device_registry_id=None)
+    runtime = attach_runtime(hass, entry, DISCOVERY_MAC, gateway)
+    runtime.platforms["climate"] = {}
+    entities: list = []
+    await climate_setup_entry(hass, entry, entities.extend)
+    return entry, device, saved, entities
+
+
+async def test_the_device_of_the_entity_saved_as_central_unit_00_follows_it(hass: HomeAssistant) -> None:
+    entry, device, saved, entities = await _saved_central_00_with_its_device(hass)
+    assert entities[0].unique_id == er.async_get(hass).async_get(saved.entity_id).unique_id == f"{DISCOVERY_MAC}-4-#0"
+    # The device the entity names is the one the user named, not a new one.
+    named = device_info_to_dict(entities[0].device_info)["identifiers"]
+    assert named == {(DOMAIN, f"{DISCOVERY_MAC}-4-#0")}
+    held = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert [(found.id, found.name_by_user, found.identifiers) for found in held] == [(device.id, "Boiler room", named)]
+
+
+async def test_a_device_that_already_holds_the_central_units_identifier_keeps_it(hass: HomeAssistant) -> None:
+    entry, device, saved, _entities = await _saved_central_00_with_its_device(hass, also=f"{DISCOVERY_MAC}-4-#0")
+    assert er.async_get(hass).async_get(saved.entity_id).unique_id == f"{DISCOVERY_MAC}-4-#0"
+    assert dr.async_get(hass).async_get(device.id).identifiers == {(DOMAIN, f"{DISCOVERY_MAC}-4-#0#0")}
+
+
+async def test_an_address_00_the_configuration_still_names_keeps_its_saved_entity(hass: HomeAssistant) -> None:
+    # ``zone: "#0#0"`` typed by hand without ``central`` is left as the validator leaves it.
+    entities = await _climate_entities(hass, ["#0#0"], {"plant": {"zone": "#0#0", "central": False}})
+    assert [entity._where for entity in entities] == ["#0#0"]
+    assert er.async_get(hass).async_get("climate.saved_0").unique_id == f"{DISCOVERY_MAC}-4-#0#0"

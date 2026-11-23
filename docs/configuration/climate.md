@@ -69,7 +69,7 @@ MyHOME installations typically deploy one of three climate topologies, all nativ
 In plants with secondary temperature sensors (e.g. BTicino `3455` radio probes connected via `L4577` radio interfaces), sensor addresses have 3 digits (e.g. `WHERE = 105` corresponds to the first secondary probe of Zone 5).
 
 * **Push-Driven Telemetry**: These sensors broadcast their temperature on the SCS bus by themselves, so the integration does not ask them when they are added.
-* **Fallback read**: a probe that stayed silent for a poll interval is asked once: a slave probe (`PZZ`) on dimension 0, an external probe (`N00`) on dimension 15. A refusal stops the read until the gateway that served it reconnects or another gateway serves the read (a delegated secondary, the warm standby, the primary when it is back); nothing is asked while no gateway is connected. A probe behind an interface is not asked where the gateway does not route WHO 4.
+* **Fallback read**: a probe that has sent nothing for 15 minutes is asked at the next periodic update (every 5 minutes): a slave probe (`PZZ`) on dimension 0, an external probe (`N00`) on dimension 15. A refusal stops the read until the gateway that served it reconnects or another gateway serves the read (a delegated secondary, the warm standby, the primary when it is back); a refused read is not asked again while no gateway is connected. A probe or a zone sensor behind an interface is not asked where the gateway does not route WHO 4.
 
 > [!TIP]
 > **Projecting External Temperatures onto the Bus**:

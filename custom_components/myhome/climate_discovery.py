@@ -31,11 +31,12 @@ from homeassistant.components.climate.const import HVACMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import MESSAGE_TYPE_ACTION, OWNHeatingEvent
 
-from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, LOGGER
+from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, DOMAIN, LOGGER
 from .discovery import (
     Address,
     DeviceContext,
@@ -510,16 +511,18 @@ class ZoneDiscovery:
         Unit; a 4-zone central unit is ``#0#1`` to ``#0#4``). The saved entity keeps its entity
         id and its settings under ``#0``. Where a ``#0`` entity is saved too (the one found on
         the bus), that one stays and the ``#0#0`` one is removed: both would now be the same
-        central unit.
+        central unit. An address the configuration still names (``zone: "#0#0"`` typed by hand
+        without ``central``) is left alone: that entity is built under ``#0#0`` again.
         """
         try:
             registry = er.async_get(self._hass)
             entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))
         except Exception:  # registry not loaded in some harnesses (as ``PlatformDiscovery.registry_entries``)
             return
+        configured = {Address.from_config(key, cfg).key for key, cfg in self._configured.items() if isinstance(cfg, dict)}
         for entry in entries:
             match = _SAVED_CENTRAL_ZERO.fullmatch(str(entry.unique_id))
-            if entry.domain != Platform.CLIMATE or match is None:
+            if entry.domain != Platform.CLIMATE or match is None or f"#0#0{match[2]}" in configured:
                 continue
             corrected = f"{match[1]}{match[2]}"
             if registry.async_get_entity_id(entry.domain, entry.platform, corrected):
@@ -530,7 +533,22 @@ class ZoneDiscovery:
                 )
             else:
                 registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
+                self._move_device_identifier(entry.device_id, str(entry.unique_id), corrected)
                 LOGGER.info("climate: %s was saved as central unit #0#0; it is the central unit #0", entry.entity_id)
+
+    def _move_device_identifier(self, device_id: str | None, old: str, new: str) -> None:
+        """The device of a renamed entity follows it: its name, area and settings stay with the entity.
+
+        A device is identified by the unique id of its entity (``MyHOMEEntity``). Left as it is
+        where the entity has no device, or another device already holds the new identifier.
+        """
+        devices = dr.async_get(self._hass)
+        device = devices.async_get(device_id) if device_id else None
+        if device is None or (DOMAIN, old) not in device.identifiers:
+            return
+        if any((DOMAIN, new) in other.identifiers for other in dr.async_entries_for_config_entry(devices, self._config_entry.entry_id)):
+            return
+        devices.async_update_device(device.id, new_identifiers=(set(device.identifiers) - {(DOMAIN, old)}) | {(DOMAIN, new)})
 
     def duplicate(self, entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
         """Whether a registry entry is not a zone of its own and is removed."""
