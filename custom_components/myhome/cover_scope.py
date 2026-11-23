@@ -222,11 +222,12 @@ class MyHOMEScopeCover(MyHOMECover):
         if self._stop_before_move is False:
             return False
         if members := self._members():
-            return any(m._stops_before_move(False) for m in members)
+            return any(not m._is_scope_excluded() and m._stops_before_move(False) for m in members)
         return super()._stops_before_move(False)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
+        if all_fan_out := self._fan_out():
+            members = [m for m in all_fan_out if not m._is_scope_excluded()]
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
@@ -236,7 +237,8 @@ class MyHOMEScopeCover(MyHOMECover):
             await self._async_run_members_to_end(True)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
+        if all_fan_out := self._fan_out():
+            members = [m for m in all_fan_out if not m._is_scope_excluded()]
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
@@ -261,7 +263,10 @@ class MyHOMEScopeCover(MyHOMECover):
         direction = "open" if opening else "close"
         if self._is_tilting:
             self._apply_tilt_stop()
-        followers = [m for m in self._members() if m._settles_full_run(opening)]
+        followers = [
+            m for m in self._members()
+            if not m._is_scope_excluded() and m._settles_full_run(opening)
+        ]
         for member in followers:
             member._begin_run(direction)
         try:
@@ -299,6 +304,10 @@ class MyHOMEScopeCover(MyHOMECover):
                         leader._cancel_stop_task()
                         tilting_leaders.append((leader, leader._run_generation))
             elif not member._advanced and not member._calibrating:
+                if member._is_scope_excluded() and not (
+                    member._attr_is_opening or member._attr_is_closing
+                ):
+                    continue
                 # Cancel each member's end-of-run settle and track the scope stop write
                 # so known members freeze (even without relayed stop frames or inside
                 # ECHO_WINDOW) and unknown members stay unknown (#770).
@@ -328,7 +337,15 @@ class MyHOMEScopeCover(MyHOMECover):
         return await self._async_stop_local_scope()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
+        if all_fan_out := self._fan_out():
+            members = [
+                m
+                for m in all_fan_out
+                if not m._is_scope_excluded()
+                or m._attr_is_opening
+                or m._attr_is_closing
+                or m._is_tilting
+            ]
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
@@ -337,7 +354,8 @@ class MyHOMEScopeCover(MyHOMECover):
         await self._async_stop_local_scope(**kwargs)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
-        if members := self._fan_out_position_members():
+        if all_fan_out := self._fan_out_position_members():
+            members = [m for m in all_fan_out if not m._is_scope_excluded()]
             if ATTR_POSITION in kwargs:
                 # Refuse before the first member moves: a member with an unknown
                 # position cannot be timed to a partial target.
@@ -357,8 +375,9 @@ class MyHOMEScopeCover(MyHOMECover):
         await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 0})
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
-            await self._pulse_members_one_by_one([m for m in members if m._slat_tilt], kwargs)
+        if all_fan_out := self._fan_out():
+            unlocked = [m for m in all_fan_out if m._slat_tilt and not m._is_scope_excluded()]
+            await self._pulse_members_one_by_one(unlocked, kwargs)
             return
         if not self._slat_tilt:
             return
@@ -398,7 +417,9 @@ class MyHOMEScopeCover(MyHOMECover):
         if is_tilting and not self._fan_out():
             # On the local bus one scope frame turns every member's slats: they
             # follow this pulse instead of reading its frames as a curtain run.
-            self._pulse_followers = [m for m in self._members() if m._slat_tilt]
+            self._pulse_followers = [
+                m for m in self._members() if m._slat_tilt and not m._is_scope_excluded()
+            ]
             for member in self._pulse_followers:
                 member._follow_pulse(self, direction)
         written = await super()._async_move(direction, is_tilting=is_tilting, pre_stopped=pre_stopped)
@@ -430,8 +451,14 @@ class MyHOMEScopeCover(MyHOMECover):
                 member._abort_tilt()
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
-        if members := self._fan_out():
-            await asyncio.gather(*(m.async_stop_cover_tilt(**kwargs) for m in members if m._slat_tilt))
+        if all_fan_out := self._fan_out():
+            await asyncio.gather(
+                *(
+                    m.async_stop_cover_tilt(**kwargs)
+                    for m in all_fan_out
+                    if m._slat_tilt and (not m._is_scope_excluded() or m._is_tilting)
+                )
+            )
             return
         if self._slat_tilt:
             await super().async_stop_cover_tilt(**kwargs)
