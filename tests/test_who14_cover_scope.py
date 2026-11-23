@@ -532,7 +532,8 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
             with pytest.raises(asyncio.CancelledError):
                 await worker
 
-    # Soft RestoreEntity persistence across HA restart
+    # Soft RestoreEntity persistence across HA restart (including recent last_run_ended_at
+    # and mid-run "closing" state: locking opened the relay, so _relay_hold_until stays None!)
     _, handler_r = _make_real_gateway(hass, mac="00:03:50:97:60:02", model="MH201")
     cov_restored = MyHOMECover(
         hass=hass,
@@ -556,7 +557,11 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
             return_value=State(
                 "cover.restored_56",
                 "open",
-                {ATTR_CURRENT_POSITION: 85, "actuator_locked": True},
+                {
+                    ATTR_CURRENT_POSITION: 85,
+                    "actuator_locked": True,
+                    "last_run_ended_at": dt_util.utcnow().isoformat(timespec="milliseconds"),
+                },
             )
         ),
     ):
@@ -564,7 +569,40 @@ async def test_s2_unseen_lock_probe_nack_marks_unconfirmed_and_restore_persists(
     assert cov_restored.current_cover_position == 85
     assert cov_restored.actuator_locked is True
     assert cov_restored.extra_state_attributes["actuator_locked"] is True
+    assert cov_restored._relay_hold_until is None
+    assert cov_restored._stops_before_move(False) is False
     assert handler_r._actuator_locks.is_locked("56") is True
+
+    cov_restored_moving = MyHOMECover(
+        hass=hass,
+        name="Restored 57",
+        entity_name=None,
+        device_id="57",
+        who="2",
+        where="57",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="L4671/2",
+        gateway=handler_r,
+    )
+    cov_restored_moving._poll_on_add = False
+    cov_restored_moving.entity_id = "cover.restored_57"
+    with patch.object(
+        cov_restored_moving,
+        "async_get_last_state",
+        AsyncMock(
+            return_value=State(
+                "cover.restored_57",
+                "closing",
+                {ATTR_CURRENT_POSITION: 50, "actuator_locked": True},
+            )
+        ),
+    ):
+        await cov_restored_moving.async_added_to_hass()
+    assert cov_restored_moving.actuator_locked is True
+    assert cov_restored_moving._relay_hold_until is None
+    assert cov_restored_moving._stops_before_move(False) is False
 
 
 # ---------------------------------------------------------------------------

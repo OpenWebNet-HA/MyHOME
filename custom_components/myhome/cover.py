@@ -1779,7 +1779,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
                 except (ValueError, TypeError):
                     pass
-        if not self._advanced:
+        if not self._advanced and self.actuator_locked is not True:
             if last_state.state in ("opening", "closing"):
                 self._arm_relay_hold(time.monotonic(), opening=last_state.state == "opening")
             else:
