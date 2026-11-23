@@ -11,7 +11,7 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ## 🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** for **v2.0.0** on `OWNd==2.0.1`.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** for **v2.0.0** on `OWNd==2.1.0b2`.
 
 ```mermaid
 gantt
@@ -77,7 +77,7 @@ The following table summarizes the completed architectural features and protocol
 
 | Priority / Feature | Subsystem | Implementation Status | Highlights |
 |---|---|---|---|
-| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.0.1`) | Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles. |
+| **Standalone Protocol Engine (P1)** | Core | ✅ **Shipped** (`OWNd==2.1.0b2`) | Fully decoupled, strongly typed async engine on PyPI; supports legacy clear-text, numeric, and modern HMAC-SHA1 / HMAC-SHA256 session handshakes plus firmware-aware gateway profiles. |
 | **Expose HA Entities to the Bus** | Core / WHO=1, 2, 4, 13, 18 | ✅ **Shipped** (#750, #883, #904) | Declarative `expose` engine: virtual WHO 1 / WHO 2 actuators, firmware-gated WHO 4 / WHO 18 virtual probes, and the WHO 13 bus clock. |
 | **Multi-Gateway Isolation Architecture** | Core / Routing | ✅ **Shipped** (#453) | Namespaced dispatchers, independent session queues, and cross-gateway bus protection eliminating cross-talk in multi-gateway installations. |
 | **CEN / CEN+ UI Device Triggers (P2)** | WHO=15 / 25 | ✅ **Shipped** | Native Home Assistant UI device triggers with preserved 4-digit addressing (`"0001"`), parent gateway isolation, and all 8 press/held/release actions with repeat debouncing. |
@@ -167,7 +167,7 @@ graph LR
     - `diagnostics`: Comprehensive diagnostics export with automatic redaction of passwords and tokens.
 
 4. **Platinum Tier**:
-    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.0.1`) on PyPI.
+    - `async-dependency`: Zero blocking network calls; standalone asynchronous client engine (`OWNd==2.1.0b2`) on PyPI.
     - `clean-separation`: OWNd engine imports zero Home Assistant symbols and runs independently on Linux/Windows/macOS.
 
 ---

@@ -31,6 +31,7 @@ from typing import Any
 
 import yaml
 from OWNd.message import OWNMessage, OWNSignaling
+from OWNd.profiles import Legrand3578Profile
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GOLDEN_CORPUS_JSON = REPO_ROOT / "tests" / "golden" / "corpus.json"
@@ -228,6 +229,23 @@ def is_session_or_auth_frame(raw: str) -> bool:
     return any(pat.match(raw) for pat in SESSION_AND_AUTH_PATTERNS)
 
 
+def _gateway_for_context(context: str | None) -> Legrand3578Profile | None:
+    """Return ``Legrand3578Profile()`` when ``context == 'zigbee'``, else ``None``."""
+    return Legrand3578Profile() if context == "zigbee" else None
+
+
+def _extract_json_context(json_path: Path) -> str | None:
+    """Return top-level ``context`` field from a JSON trace file, if present."""
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    ctx = payload.get("context")
+    return str(ctx) if isinstance(ctx, str) else None
+
+
 def extract_frames_from_json_file(
     json_path: Path,
     repo_root: Path = REPO_ROOT,
@@ -311,7 +329,9 @@ def load_golden_shapes(corpus_records: list[dict[str, Any]] | None = None) -> se
         corpus_records = json.loads(GOLDEN_CORPUS_JSON.read_text(encoding="utf-8"))
     shapes: set[ShapeKey] = set()
     for rec in corpus_records:
-        parsed = OWNMessage.parse(rec["frame"])
+        parsed = OWNMessage.parse(
+            rec["frame"], gateway=_gateway_for_context(rec.get("context"))
+        )
         if parsed is not None:
             shapes.add(message_shape_key(parsed))
     return shapes
@@ -356,6 +376,16 @@ def evaluate_trace_shape_coverage(
         fixtures_dir=fixtures_dir,
         encyclopedia_evidence_dir=encyclopedia_evidence_dir,
     )
+    source_contexts: dict[str, str | None] = {}
+    if fixtures_dir.is_dir():
+        for json_path in sorted(fixtures_dir.rglob("*.json")):
+            ctx = _extract_json_context(json_path)
+            if ctx is not None:
+                try:
+                    rel_label = json_path.relative_to(REPO_ROOT).as_posix()
+                except ValueError:
+                    rel_label = json_path.as_posix()
+                source_contexts[rel_label] = ctx
 
     local_raw_set = {raw for _src, raw in local_frames}
     stale_invalid = sorted(
@@ -385,7 +415,7 @@ def evaluate_trace_shape_coverage(
             if raw in KNOWN_INVALID_OR_ADVERSARIAL_FRAMES:
                 continue
             try:
-                parsed = OWNMessage.parse(raw)
+                parsed = OWNMessage.parse(raw, gateway=_gateway_for_context(source_contexts.get(src)))
             except Exception as exc:  # noqa: BLE001
                 unexpected_invalid.append((src, raw, f"{type(exc).__name__}: {exc}"))
                 continue
@@ -469,6 +499,8 @@ def suggest_for_trace(trace_path: Path) -> int:
         return 1
 
     golden_shapes = load_golden_shapes()
+    trace_context = _extract_json_context(trace_path)
+    trace_gateway = _gateway_for_context(trace_context)
     pairs = extract_frames_from_json_file(trace_path)
     rx_pairs = extract_frames_from_json_file(trace_path, directions=("rx",))
     received = {raw for _src, raw in rx_pairs}
@@ -481,7 +513,7 @@ def suggest_for_trace(trace_path: Path) -> int:
         ):
             continue
         try:
-            rx_parsed = OWNMessage.parse(rx_raw)
+            rx_parsed = OWNMessage.parse(rx_raw, gateway=trace_gateway)
         except Exception:  # noqa: BLE001
             continue
         if rx_parsed is None or isinstance(rx_parsed, OWNSignaling):
@@ -498,7 +530,7 @@ def suggest_for_trace(trace_path: Path) -> int:
         ):
             continue
         try:
-            parsed = OWNMessage.parse(raw)
+            parsed = OWNMessage.parse(raw, gateway=trace_gateway)
         except Exception:  # noqa: BLE001
             continue
         if parsed is None or isinstance(parsed, OWNSignaling):
@@ -510,7 +542,7 @@ def suggest_for_trace(trace_path: Path) -> int:
 
         if sk in rx_by_shape and raw not in received:
             raw = rx_by_shape[sk]
-            reparsed = OWNMessage.parse(raw)
+            reparsed = OWNMessage.parse(raw, gateway=trace_gateway)
             if reparsed is None or isinstance(reparsed, OWNSignaling):
                 continue
             parsed = reparsed
@@ -546,6 +578,8 @@ def suggest_for_trace(trace_path: Path) -> int:
                 rec["dimension_param"] = parsed.dimension_param
             if parsed.dimension_value:
                 rec["dimension_values"] = parsed.dimension_value
+        if trace_context in ("scs", "zigbee"):
+            rec["context"] = trace_context
         rec["source"] = "community-plant-capture"
         rec["mcp_valid"] = True
         rec["mcp_notes"] = (

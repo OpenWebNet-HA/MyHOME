@@ -176,7 +176,8 @@ async def test_apply_gateway_identity_refreshes_the_profile_and_log_id(hass: Hom
 async def test_manual_flow_keeps_the_typed_mac_when_the_reported_one_names_no_interface(
     hass: HomeAssistant, frame: str
 ) -> None:
-    reported = OWNMessage.parse(frame).mac_address
+    parsed = OWNMessage.parse(frame)
+    reported = parsed.mac_address if parsed is not None else None
     assert reported  # OWNd decodes all three; the flow is what must refuse them
     identify = AsyncMock(return_value=(reported, "200", "134"))
 

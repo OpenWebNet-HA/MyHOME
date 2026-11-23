@@ -301,9 +301,11 @@ async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection, attach_gat
         22, websocket_api.ERR_UNKNOWN_ERROR, "Failed to transmit frame: Gateway disconnected"
     )
 
-    # 4. Frame parse fallback to raw OWNMessage
+    # 4. Context-free OWNMessage fallback dropped: unparsed frame returns ERR_INVALID_FORMAT
     gateway.send.side_effect = None
+    gateway.send.reset_mock()
     mock_ws_connection.send_result.reset_mock()
+    mock_ws_connection.send_error.reset_mock()
     with patch("custom_components.myhome.websocket.OWNMessage.parse", return_value=None):
         ws_bus_monitor_send(
             hass,
@@ -311,9 +313,12 @@ async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection, attach_gat
             {"id": 24, "type": "myhome/bus_monitor/send", "frame": "*999*999*999##"},
         )
         await hass.async_block_till_done()
-        mock_ws_connection.send_result.assert_called_once_with(
-            24, {"success": True, "frame": "*999*999*999##"}
+        mock_ws_connection.send_error.assert_called_once_with(
+            24,
+            websocket_api.ERR_INVALID_FORMAT,
+            "Invalid OpenWebNet frame format: *999*999*999##",
         )
+        gateway.send.assert_not_awaited()
 
     # 5. Block WHO 4 dimension 22 split-unit IR frame
     mock_ws_connection.send_error.reset_mock()

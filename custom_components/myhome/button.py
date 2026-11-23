@@ -55,16 +55,20 @@ from .discovery import (
     prune_orphaned_companions,
 )
 from .expose import is_exposed_on_bus
-from .myhome_device import MyHOMEEntity
+from .myhome_device import MyHOMEEntity, gateway_address_family
 from .sound_source import source_address, tuner_source, uses_who22_commands
+from .where_grammar import is_zigbee_where
 
 PARALLEL_UPDATES = 0
 PLATFORM = Platform.BUTTON
 
 
-def _valid_device_address(address: str) -> bool:
-    """Accept numeric WHERE and optional bus routing, without rewriting either."""
-    return re.fullmatch(r"[0-9]+(?:#4#[0-9]+)?", address) is not None
+def _valid_device_address(address: str, address_family: str | None = "zigbee") -> bool:
+    """Accept numeric WHERE, optional bus routing, or OpenZigBee #9 addresses."""
+    return (
+        re.fullmatch(r"[0-9]+(?:#4#[0-9]+)?", address) is not None
+        or is_zigbee_where(address, address_family=address_family)
+    )
 
 
 def _is_non_calibratable_cover(
@@ -209,8 +213,12 @@ async def async_setup_entry(
         if who not in ("1", "2"):
             return []
         address = Address.from_config(str(dev_id), cfg)
-        if not address.where or address.where.startswith("#"):
-            return []  # groups / general have no lock
+        if (
+            not address.where
+            or address.where.startswith("#")
+            or is_zigbee_where(address.where, address_family="zigbee")
+        ):
+            return []  # groups / general / OpenZigBee actuators have no WHO 14 lock
         if is_exposed_on_bus(hass, config_entry, who, address.key):
             return []
 
@@ -272,6 +280,8 @@ async def async_setup_entry(
                     return registered.unique_id[len(prefix):]
         return ""
 
+    addr_family = gateway_address_family(gateway)
+
     # Platform setup order is not guaranteed. Determine sensor/switch ownership
     # before restoring any lights, rather than waiting for light.py's cleanup.
     # Include the interface in every key: equal WHEREs on different buses differ.
@@ -291,7 +301,7 @@ async def async_setup_entry(
                 continue
         else:
             continue
-        if _valid_device_address(address):
+        if _valid_device_address(address, address_family=addr_family):
             non_light_addresses.add(address)
 
     configured_platforms = runtime.platforms
@@ -303,7 +313,7 @@ async def async_setup_entry(
             interface = cfg.get(CONF_BUS_INTERFACE) if CONF_BUS_INTERFACE in cfg else cfg.get("interface")
             if interface is not None and "#4#" not in address:
                 address = f"{address}#4#{interface}"
-            if _valid_device_address(address):
+            if _valid_device_address(address, address_family=addr_family):
                 non_light_addresses.add(address)
 
     devices: dr.DeviceRegistry | None = None
@@ -316,7 +326,7 @@ async def async_setup_entry(
             continue
         device_id = registered_id[len(who) + 1:]
         # Do not turn corrupted IDs such as MAC-1-1-06 into command WHERE=1-06.
-        if not _valid_device_address(device_id):
+        if not _valid_device_address(device_id, address_family=addr_family):
             continue
         if registered.domain == "light" and device_id in non_light_addresses:
             continue

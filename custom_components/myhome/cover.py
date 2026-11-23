@@ -128,6 +128,7 @@ from .cover_motion import (
     MOTOR_START_DELAY,
     MOTOR_STOP_DELAY,
     WRITE_TIMEOUT,
+    ZIGBEE_ECHO_WINDOW,
     compute_freeze_position,
     compute_interpolated_position,
     compute_run_duration,
@@ -153,7 +154,8 @@ from .discovery import (
     parse_unique_id,
 )
 from .gateway import FrameScheduler, MyHOMEGatewayHandler
-from .myhome_device import MyHOMEEntity
+from .myhome_device import MyHOMEEntity, extra_where_attributes, gateway_address_family
+from .where_grammar import effective_message_where
 
 if TYPE_CHECKING:
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
@@ -318,9 +320,23 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
         return address_of
 
+    is_zb_gw = gateway_address_family(gateway) == "zigbee"
+
+    def ghost_shutter(_entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        if not is_zb_gw or ctx.cfg:
+            return False
+        inv = getattr(gateway, "zigbee_inventory", None)
+        fn = getattr(inv, "is_non_actuator_where", None)
+        return callable(fn) and fn(ctx.address.where) is True
+
     def accept_shutter(ctx: DeviceContext) -> bool:
         if ctx.source == "yaml" or ctx.cfg:
             return str(ctx.cfg.get(CONF_WHO, "2")) == "2"
+        if is_zb_gw:
+            inv = getattr(gateway, "zigbee_inventory", None)
+            fn = getattr(inv, "is_non_actuator_where", None)
+            if callable(fn) and fn(ctx.address.where) is True:
+                return False
         return True
 
     def accept_impulse(ctx: DeviceContext) -> bool:
@@ -428,7 +444,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     PlatformDiscovery(
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="2", event_type=OWNAutomationEvent, build=build, announce=True,
-        registry_address=cover_registry_address("2"), accept=accept_shutter,
+        registry_address=cover_registry_address("2"), reject_registry_entry=ghost_shutter, accept=accept_shutter,
         on_general=relay_general, on_scope=relay_scope,
         known_keys=lambda ctx: [*default_known_keys(ctx), "general"],
         route_translations=True,
@@ -629,12 +645,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._attr_assumed_state = self._strategy.assumed_state
         self._gateway_handler = gateway
 
-        self._attr_extra_state_attributes = {
-            "A": where[: len(where) // 2],
-            "PL": where[len(where) // 2 :],
-        }
-        if self._interface is not None:
-            self._attr_extra_state_attributes["Int"] = self._interface
+        self._attr_extra_state_attributes = extra_where_attributes(
+            where,
+            self._interface,
+            gateway,
+        )
         if self._slat_tilt:
             self._enable_slat_tilt()
         if not self._advanced:
@@ -793,6 +808,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     # ── Echo model helpers ───────────────────────────────────────────────
 
+    @property
+    def _echo_window(self) -> float:
+        """Return the command-echo correlation window (4.0 s on ZigBee, ECHO_WINDOW on SCS)."""
+        return ZIGBEE_ECHO_WINDOW if getattr(self, "_is_zigbee", False) else ECHO_WINDOW
+
     def _begin_command(self, cmd: str) -> None:
         """Open an echo window for a command we are about to queue.
 
@@ -803,7 +823,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         self._run_generation += 1
         self._pending_cmd = cmd
-        self._echo_until = time.monotonic() + WRITE_TIMEOUT + ECHO_WINDOW
+        self._echo_until = time.monotonic() + WRITE_TIMEOUT + self._echo_window
         self._motor_started = asyncio.Event()
         self._stop_translation_seen = False
 
@@ -813,7 +833,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # No delivery information (legacy gateway object): bound the window
             # from enqueue so an external frame can never be mistaken for an
             # echo indefinitely.
-            self._echo_until = time.monotonic() + ECHO_WINDOW
+            self._echo_until = time.monotonic() + self._echo_window
             return
         generation = self._run_generation
 
@@ -831,7 +851,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._end_echo_window()
                 return
             write_ts = fut.result()
-            self._echo_until = write_ts + ECHO_WINDOW
+            self._echo_until = write_ts + self._echo_window
             if self._is_tilting:
                 # A slat pulse never moves the curtain: no travel clock to start.
                 return
@@ -1144,9 +1164,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 ) from err
         if generation != self._run_generation:
             return self._move_start_time if self._move_start_time is not None else time.monotonic()
-        # The window ends ECHO_WINDOW after the write; computed here from the write
+        # The window ends _echo_window after the write; computed here from the write
         # time itself, as this task may run before the future's callbacks did.
-        deadline = (write_ts if write_ts is not None else time.monotonic()) + ECHO_WINDOW
+        deadline = (write_ts if write_ts is not None else time.monotonic()) + self._echo_window
         remaining = deadline - time.monotonic()
         if remaining > 0 and not motor_started.is_set():
             try:
@@ -1638,7 +1658,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     command = OWNAutomationCommand.set_shutter_level(
                         self._full_where, quantized
                     )
-                    self._echo_until = time.monotonic() + ECHO_WINDOW
+                    self._echo_until = time.monotonic() + self._echo_window
 
                 def _is_send_buffer_shutdown() -> bool:
                     send_buffer = self._gateway_handler.send_buffer
@@ -2311,7 +2331,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             elif target_position <= 0:
                 await self.async_close_cover()
             else:
-                self._echo_until = now + ECHO_WINDOW
+                self._echo_until = now + self._echo_window
                 await self._gateway_handler.send(
                     OWNAutomationCommand.set_shutter_level(
                         self._full_where, target_position
@@ -2651,7 +2671,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_wait_pulse_end(self) -> None:
         """Wait until the running slat pulse has stopped and its stop is on the bus."""
         if (task := self._stop_task) is not None and not task.done():
-            await asyncio.wait({task}, timeout=WRITE_TIMEOUT + MAX_SLAT_TIME + ECHO_WINDOW)
+            await asyncio.wait({task}, timeout=WRITE_TIMEOUT + MAX_SLAT_TIME + self._echo_window)
         await self._async_wait_pulse_stop_written()
 
     def _end_pulse_for_takeover(self) -> None:
@@ -2886,13 +2906,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ):
             return False
         raw_where = getattr(message, "where", None)
-        if not isinstance(raw_where, (str, int)) or isinstance(raw_where, bool):
+        eff_where = effective_message_where(message) or (
+            str(raw_where)
+            if isinstance(raw_where, (str, int)) and not isinstance(raw_where, bool) and str(raw_where)
+            else None
+        )
+        if eff_where is None:
             return False
         own_where = str(self._where)
         if own_where.startswith(f"{self._who}-"):
             own_where = own_where[len(f"{self._who}-") :]
         return (
-            str(raw_where) == own_where
+            eff_where == own_where
             and _normalize_bus_interface(getattr(message, "interface", None))
             == _normalize_bus_interface(self._interface)
         )
@@ -2934,8 +2959,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._end_echo_window()
             return False
         # Pending stop command:
+        raw_where = getattr(message, "where", None)
         msg_where, is_general = self._format_where_and_scope(
-            getattr(message, "where", None), message
+            effective_message_where(message) or raw_where,
+            message,
         )
         is_translation = getattr(message, "is_translation", None) is True
         ctx = self._pending_stop_context
@@ -3305,7 +3332,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if stop_ctx is not None:
                     self._pending_stop_context = stop_ctx
                     self._pending_cmd = "stop"
-                    self._echo_until = now + ECHO_WINDOW
+                    self._echo_until = now + self._echo_window
                     self._stop_translation_seen = True
                     self._motor_started.set()
             else:
@@ -3832,6 +3859,7 @@ __all__ = [
     "MyHOMEImpulseCover",
     "MyHOMEScopeCover",
     "WRITE_TIMEOUT",
+    "ZIGBEE_ECHO_WINDOW",
     "_actuator_cutoff",
     "_calibration_lock",
     "_gateway_key",

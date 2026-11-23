@@ -13,6 +13,7 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from OWNd.message import OWNMessage
 
 from .const import BUS_ROUTING, DOMAIN, PACED_FANOUT_DELAY, area_of_where
+from .where_grammar import ZIGBEE_BROADCAST_WHERE_RE
 
 if TYPE_CHECKING:
     from .cover import MyHOMECover
@@ -40,7 +41,7 @@ class CoverScope:
     def of(cls, where: str, interface: str | None = None, members: Iterable[str] = ()) -> CoverScope | None:
         """The scope a WHERE addresses, or ``None`` for a point-to-point address."""
         where = str(where)
-        if where == "0":
+        if where == "0" or ZIGBEE_BROADCAST_WHERE_RE.fullmatch(where) is not None:
             return cls("general", where, interface)
         if where in _AREA_WHERES:
             return cls("area", where, interface)

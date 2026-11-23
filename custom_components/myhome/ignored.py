@@ -9,11 +9,23 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 from .const import CONF_IGNORED_ADDRESSES, CONF_WHERE, CONF_WHO
+from .where_grammar import is_zigbee_where, parse_zigbee_where
 
+_WHERE_PATTERN = re.compile(r"#?[0-9A-Za-z]+(?:#\d+)*(?:#4#[0-9A-Za-z]+)?")
 _PAIR_PATTERN = re.compile(
-    r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?(#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?)$",
+    r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?(#?[0-9A-Za-z]+(?:#\d+)*(?:#4#[0-9A-Za-z]+)?)$",
     re.IGNORECASE,
 )
+
+
+def _canonical_ignored_where(who: int, raw_where: str) -> str | None:
+    """Validate and normalize the WHERE part of an ignored address entry."""
+    where = raw_where.strip()
+    if not where or not _WHERE_PATTERN.fullmatch(where):
+        return None
+    if who in (1, 2, 13) and is_zigbee_where(where, address_family="zigbee"):
+        return where
+    return where.removeprefix("#")
 
 
 def parse_ignored_address(value: Any) -> tuple[int, str] | None:
@@ -34,8 +46,8 @@ def parse_ignored_address(value: Any) -> tuple[int, str] | None:
         match = _PAIR_PATTERN.match(val)
         if match:
             who = int(match.group(1))
-            where = match.group(2).strip().removeprefix("#")
-            if where:
+            where = _canonical_ignored_where(who, match.group(2))
+            if where is not None:
                 return who, where
         return None
 
@@ -51,9 +63,9 @@ def parse_ignored_address(value: Any) -> tuple[int, str] | None:
         if who_val is not None and where_val is not None:
             try:
                 who = int(who_val)
-                where = str(where_val).strip()
-                if where and re.fullmatch(r"#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?", where):
-                    return who, where.removeprefix("#")
+                where = _canonical_ignored_where(who, str(where_val))
+                if where is not None:
+                    return who, where
             except (ValueError, TypeError):
                 return None
         return None
@@ -61,9 +73,9 @@ def parse_ignored_address(value: Any) -> tuple[int, str] | None:
     if isinstance(value, (list, tuple)) and len(value) == 2:
         try:
             who = int(value[0])
-            where = str(value[1]).strip()
-            if where and re.fullmatch(r"#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?", where):
-                return who, where.removeprefix("#")
+            where = _canonical_ignored_where(who, str(value[1]))
+            if where is not None:
+                return who, where
         except (ValueError, TypeError):
             return None
 
@@ -153,7 +165,13 @@ class IgnoredAddresses:
 
     @staticmethod
     def _norm_where(where: str) -> str:
-        """Normalize WHERE: strip leading zeros from device number if numeric."""
+        """Normalize WHERE: strip leading zeros from numeric SCS or ZigBee node addresses."""
+        if is_zigbee_where(where, address_family="zigbee"):
+            parsed_zb = parse_zigbee_where(where, address_family="zigbee")
+            if parsed_zb is not None:
+                addr, unit = parsed_zb
+                return f"{addr.lstrip('0') or '0'}{unit}#9"
+            return where
         base, sep, iface = where.partition("#4#")
         clean_base = base.lstrip("0") or "0" if base.isdigit() else base
         clean_iface = iface.zfill(2) if iface.isdigit() else iface

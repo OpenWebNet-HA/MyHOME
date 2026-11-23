@@ -104,7 +104,7 @@ def test_hardware_compatibility_table_matches_the_sweep(hass):
 
     from custom_components.myhome.gateway import DISCOVERY_REQUESTS
 
-    assert len(ugp.GATEWAY_DISCOVERY_METADATA) == 11
+    assert len(ugp.GATEWAY_DISCOVERY_METADATA) == 12
     for row in ugp.calibrate_discovery_with_ownd():
         frames = _handler(hass, str(row["profile_name"]))._discovery_frames()
         omitted = [frame for who, frame in DISCOVERY_REQUESTS if who in row["queried_whos"] and frame not in frames]

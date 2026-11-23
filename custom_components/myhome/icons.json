@@ -37,6 +37,16 @@
       "invert_state": {
         "default": "mdi:swap-horizontal"
       }
+    },
+    "light": {
+      "zigbee_unit": {
+        "default": "mdi:lightbulb"
+      }
+    },
+    "cover": {
+      "zigbee_unit": {
+        "default": "mdi:window-shutter"
+      }
     }
   },
   "services": {

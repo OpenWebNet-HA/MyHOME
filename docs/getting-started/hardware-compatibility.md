@@ -1,6 +1,6 @@
 # Hardware Compatibility Matrix
 
-The MyHOME integration supports official BTicino and Legrand OpenWebNet gateways communicating via TCP/IP sockets.
+The MyHOME integration supports official BTicino and Legrand OpenWebNet gateways communicating via TCP/IP sockets or USB/Serial (`Legrand 3578` / `BTicino 3578` / `Legrand 088328` OpenZigBee coordinator).
 
 ---
 
@@ -20,6 +20,7 @@ The MyHOME integration supports official BTicino and Legrand OpenWebNet gateways
 | **H4890 / AM4890** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | 3.5" Touch screen display IP gateway (Axolute / Livinglight) |
 | **F452 / F453 / F453AV** | OpenWebNet | 1 worker | 150 ms | ✅ Port 49153 | Audio/video & web server gateway |
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
+| **Legrand 3578 / BTicino 3578** | Serial (USB) | 1 worker | 50 ms | ❌ Serial (USB) | OpenZigBee USB coordinator (`19200 8N1`, `WHO 1, 2, 13`; `Legrand 088328`) |
 <!-- GATEWAY_PROFILES_END -->
 
 > [!NOTE]
@@ -70,5 +71,6 @@ During startup initial discovery, status queries are gated by the gateway profil
 | **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) | Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `020102` firmware drops `*#4*0##` (own-firmware-oracle), so its climate zones ask `*#4*<WHERE>*0##` themselves. Alarm and energy queries omitted. |
 | **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 | Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted. |
 | **H4684 / H/L4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) | Lighting, cover, climate, sound, and energy meter 51 queries (`bt_multi` WHO 22 also enabled on firmware >= `6.0.0`). Both `020054` (own-firmware-oracle) and live `6.0.11` (`tests/fixtures/traces/issue_466`) drop `*#4*0##`, so each climate zone asks `*#4*<WHERE>*0##` itself; the SSDP spellings `H/L4684` and `HL4684` resolve to `H4684Profile`. Alarm query omitted. |
+| **Legrand 3578 / BTicino 3578** | WHO 1, 2 | WHO 1, 2 | OpenZigBee USB coordinator (`WHO 1, 2, 13`): boots from cached `.storage` inventory (`0` RF frames) and runs yield-aware `*13*65*##` / `*#13**66*<p>##` mesh scans with unicast `WHO 1 / 2` polling. |
 <!-- GATEWAY_DISCOVERY_END -->
 

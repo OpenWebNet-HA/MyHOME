@@ -61,12 +61,15 @@ def _cancel_written(task: dict[str, Any]) -> None:
 
 
 def _session_is_open(session: Any) -> bool:
-    """Whether an OWNd session has an open socket.
+    """Whether an OWNd session has an open socket or serial adapter.
 
     Not ``is_connected``: OWNd's ``close()`` only drops the streams and leaves
     that flag as ``connect()`` last set it, so after the idle close it still
     reads ``True``. The streams are what ``send()`` would reopen.
     """
+    is_open = getattr(session, "is_session_open", None)
+    if isinstance(is_open, bool):
+        return is_open
     return getattr(session, "_stream_reader", None) is not None and getattr(session, "_stream_writer", None) is not None
 
 
@@ -180,12 +183,21 @@ class EventSessionRunner:
         inactivity_timeout = getattr(
             gw_module, "EVENT_INACTIVITY_TIMEOUT", EVENT_INACTIVITY_TIMEOUT
         )
-        _event_session = event_session_cls(
-            gateway=self.gateway,
-            logger=LOGGER,
-            inactivity_timeout=inactivity_timeout,
-            on_state_change=self.handler._on_event_connection_state_change,
-        )
+        serial_runtime = getattr(self.handler, "serial_runtime", None)
+        if (
+            getattr(self.handler, "is_serial_transport", False) is True
+            and serial_runtime is not None
+        ):
+            _event_session: Any = serial_runtime.create_event_session(
+                on_state_change=self.handler._on_event_connection_state_change,
+            )
+        else:
+            _event_session = event_session_cls(
+                gateway=self.gateway,
+                logger=LOGGER,
+                inactivity_timeout=inactivity_timeout,
+                on_state_change=self.handler._on_event_connection_state_change,
+            )
         watchdog = asyncio.timeout(None)
         current_stall_timeout = float(getattr(gw_module, "EVENT_STALL_TIMEOUT", self.stall_timeout))
         try:
@@ -211,7 +223,7 @@ class EventSessionRunner:
                 await asyncio.shield(_event_session.close())
         return not self._terminate_listener
 
-    async def _read_event_session(self, _event_session: OWNEventSession) -> None:
+    async def _read_event_session(self, _event_session: Any) -> None:
         """Connect ``_event_session`` and dispatch its frames.
 
         Returns when the listener terminates or the gateway refuses the session;
@@ -228,7 +240,8 @@ class EventSessionRunner:
             and getattr(_event_session, "is_connected", True)
         ):
             self.handler._on_event_connection_state_change(True)
-            self.handler._request_gateway_identity()
+            if getattr(self.handler, "is_zigbee_address_family", False) is not True:
+                self.handler._request_gateway_identity()
             LOGGER.debug(
                 "%s Event session ready, command sessions can now start.",
                 self.log_id,
@@ -271,11 +284,12 @@ class EventSessionRunner:
                     )
                 was_reachable = reachable
                 continue
-            self.bus_monitor.record_frame(
-                direction="rx",
-                raw=str(message),
-                parsed=message if isinstance(message, OWNMessage) else None,
-            )
+            if getattr(self.handler, "is_serial_transport", False) is not True:
+                self.bus_monitor.record_frame(
+                    direction="rx",
+                    raw=str(message),
+                    parsed=message if isinstance(message, OWNMessage) else None,
+                )
             LOGGER.debug("%s Message received: `%s`", self.log_id, message)
             try:
                 await self.handler._process_message(message)
@@ -406,6 +420,8 @@ def _classify_tier(item: Any) -> int:
     }
     """
     if isinstance(item, dict):
+        if item.get("tier_override") == _TIER_OTHERS:
+            return _TIER_OTHERS
         if item.get("is_status_request", False):
             return _TIER_STATUS
         if item.get("is_fade_step", False):
@@ -508,12 +524,12 @@ def _is_cancel_item(item: Any) -> bool:
     return msg is not None and _is_cover_stop(msg)
 
 
-def _parsed_item_message(item: Any) -> OWNMessage | None:
+def _parsed_item_message(item: Any, gateway: Any = None) -> OWNMessage | None:
     """Return parsed OWNMessage for an envelope dict, or None."""
     msg = item.get("message") if isinstance(item, dict) else None
     if isinstance(msg, OWNMessage):
         return msg
-    return OWNMessage.parse(str(msg)) if msg is not None else None
+    return OWNMessage.parse(str(msg), gateway=gateway) if msg is not None else None
 
 
 def _is_status_report_item(item: Any) -> bool:
@@ -994,6 +1010,10 @@ class FrameScheduler:
         """Return the number of queued user commands."""
         return len(self._queue._commands)
 
+    def has_tier0_commands(self) -> bool:
+        """Return True when Tier 0 user commands are queued."""
+        return bool(self._queue._commands)
+
     @property
     def fade_qsize(self) -> int:
         """Return the number of queued software fade steps."""
@@ -1258,6 +1278,21 @@ class FrameScheduler:
 CommandPriorityQueue = FrameScheduler
 
 
+async def _send_on_command_session(
+    session: Any,
+    message: Any,
+    *,
+    is_status_request: bool,
+    timeout: float,
+) -> Any:
+    """Dispatch a command over a serial adapter that supports per-frame timeout."""
+    return await session.send(
+        message=message,
+        is_status_request=is_status_request,
+        timeout=timeout,
+    )
+
+
 class CommandWorkerPool:
     """Manages the pool of command workers, send queue, and session pacing."""
 
@@ -1300,9 +1335,16 @@ class CommandWorkerPool:
         When exactly one target ``WHERE`` has an in-flight request for ``(who, dimension)``,
         consume it so the reply can be routed once and any second/ambiguous frame is dropped.
         """
+        if getattr(self.handler, "is_zigbee_address_family", False) is True:
+            return None
+        profile = getattr(getattr(self.handler, "gateway", None), "profile", None)
         matched: list[tuple[Any, str]] = []
         for msg in list(self._in_flight_messages):
-            parsed = msg if isinstance(msg, OWNMessage) else OWNMessage.parse(str(msg))
+            parsed = (
+                msg
+                if isinstance(msg, OWNMessage)
+                else OWNMessage.parse(str(msg), gateway=profile)
+            )
             if (
                 parsed is None
                 or not getattr(parsed, "is_dimension_request", False)
@@ -1358,9 +1400,10 @@ class CommandWorkerPool:
         return self._sender_stop
 
     @property
-    def command_session_idle_timeout(self) -> float:
-        """Idle timeout before releasing the command session socket."""
-        return float(self.handler.command_session_idle_timeout)
+    def command_session_idle_timeout(self) -> float | None:
+        """Idle timeout before releasing the command session socket (``None`` disables idle close)."""
+        val = self.handler.command_session_idle_timeout
+        return float(val) if val is not None else None
 
     async def send(self, message: OWNCommand, *, is_cancel: bool = False) -> asyncio.Future[float]:
         """Queue a command; the returned future resolves to the monotonic write time."""
@@ -1417,7 +1460,8 @@ class CommandWorkerPool:
     def _is_exposed_target(self, task: dict[str, Any]) -> bool:
         """Return True if task targets a configured expose binding on this bus."""
         entry = getattr(self.handler, "config_entry", None)
-        parsed = _parsed_item_message(task)
+        profile = getattr(getattr(self.handler, "gateway", None), "profile", None)
+        parsed = _parsed_item_message(task, gateway=profile)
         if entry is None or parsed is None:
             return False
         who = getattr(parsed, "who", None)
@@ -1425,6 +1469,28 @@ class CommandWorkerPool:
         if isinstance(who, int) and where:
             return is_exposed_on_bus(self.hass, entry, who, where)
         return False
+
+    def _dispatch_collected_message(self, resp: OWNMessage, dispatcher_send: Any) -> None:
+        """Dispatch a collected response message to diagnostics, HA entities, and primary."""
+        if (
+            getattr(self.handler, "is_zigbee_address_family", False) is True
+            and getattr(resp, "is_zigbee", False) is True
+            and not getattr(resp, "is_zigbee_product_unreachable", False)
+        ):
+            inv = getattr(self.handler, "zigbee_inventory", None)
+            zb_addr = getattr(resp, "zigbee_device_id", None)
+            if inv is not None and isinstance(zb_addr, str) and zb_addr:
+                inv.mark_reachable(zb_addr)
+        if isinstance(resp, OWNGatewayEvent):
+            self.handler._handle_gateway_diagnostics(resp)
+        elif (
+            getattr(resp, "who", None) == 1013
+            and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
+        ):
+            self.handler._handle_gateway_identity_diagnostics(resp)
+        dispatcher_send(self.hass, f"myhome_message_{self.mac}", resp)
+        # A reply to a request sent for an offline primary
+        self.handler._bridge_to_primary(resp)
 
     async def sending_loop(self, worker_id: int) -> None:
         """Run a single sending worker consuming from send_buffer."""
@@ -1460,7 +1526,14 @@ class CommandWorkerPool:
             worker_id,
         )
 
-        _command_session = command_session_cls(gateway=self.gateway, logger=LOGGER)
+        serial_runtime = getattr(self.handler, "serial_runtime", None)
+        if (
+            getattr(self.handler, "is_serial_transport", False) is True
+            and serial_runtime is not None
+        ):
+            _command_session: Any = serial_runtime.create_command_session()
+        else:
+            _command_session = command_session_cls(gateway=self.gateway, logger=LOGGER)
         self._active_worker_loops += 1
         try:
             try:
@@ -1486,20 +1559,23 @@ class CommandWorkerPool:
                     if isinstance(self.send_buffer, FrameScheduler)
                     else self.send_buffer.get()
                 )
-                try:
-                    task = await asyncio.wait_for(
-                        acquire_coro,
-                        timeout=idle_timeout,
-                    )
-                except TimeoutError:
-                    if session_is_open(_command_session):
-                        LOGGER.debug(
-                            "%s Command session idle for %ss; closing socket to release gateway resource.",
-                            self.log_id,
-                            idle_timeout,
+                if idle_timeout is None:
+                    task = await acquire_coro
+                else:
+                    try:
+                        task = await asyncio.wait_for(
+                            acquire_coro,
+                            timeout=idle_timeout,
                         )
-                        await _command_session.close()
-                    continue
+                    except TimeoutError:
+                        if session_is_open(_command_session):
+                            LOGGER.debug(
+                                "%s Command session idle for %ss; closing socket to release gateway resource.",
+                                self.log_id,
+                                idle_timeout,
+                            )
+                            await _command_session.close()
+                        continue
 
                 try:
                     if task is None:
@@ -1553,31 +1629,53 @@ class CommandWorkerPool:
                                 task["message"],
                             )
                             continue
+                    is_serial = getattr(self.handler, "is_serial_transport", False) is True
+                    is_zigbee = getattr(self.handler, "is_zigbee_address_family", False) is True
                     task_start = time.time()
-                    self.bus_monitor.record_frame(
-                        direction="tx",
-                        raw=str(task["message"]),
-                        parsed=(
-                            task["message"]
-                            if isinstance(task["message"], OWNMessage)
-                            else None
-                        ),
-                    )
+                    if not is_serial:
+                        self.bus_monitor.record_frame(
+                            direction="tx",
+                            raw=str(task["message"]),
+                            parsed=(
+                                task["message"]
+                                if isinstance(task["message"], OWNMessage)
+                                else None
+                            ),
+                        )
                     written_at = time.monotonic()
+                    zb_inv = (
+                        getattr(self.handler, "zigbee_inventory", None)
+                        if is_zigbee and not task["is_status_request"]
+                        else None
+                    )
+                    zb_rx_seq = (
+                        zb_inv.snapshot_rx_seq(task["message"])
+                        if zb_inv is not None
+                        else None
+                    )
                     is_exposed = self._is_exposed_target(task)
                     self._in_flight_messages.append(task["message"])
                     try:
-                        collected = await _command_session.send(
-                            message=task["message"],
-                            is_status_request=task["is_status_request"] or is_exposed,
-                        )
+                        send_timeout = task.get("timeout")
+                        if is_serial and send_timeout is not None:
+                            collected = await _send_on_command_session(
+                                _command_session,
+                                task["message"],
+                                is_status_request=task["is_status_request"] or is_exposed,
+                                timeout=float(send_timeout),
+                            )
+                        else:
+                            collected = await _command_session.send(
+                                message=task["message"],
+                                is_status_request=task["is_status_request"] or is_exposed,
+                            )
                     finally:
                         with contextlib.suppress(ValueError):
                             self._in_flight_messages.remove(task["message"])
                     last_error = getattr(_command_session, "last_error", None)
                     bleed_zones = (
                         _mismatched_who4_reply_zones(task["message"], collected)
-                        if task["is_status_request"]
+                        if task["is_status_request"] and not is_zigbee
                         else None
                     )
                     if bleed_zones is not None:
@@ -1601,7 +1699,7 @@ class CommandWorkerPool:
                             self._pause_status_after_desync()
                         elif (
                             task["is_status_request"]
-                            and getattr(last_error, "reason", None) == "nack"
+                            and getattr(last_error, "reason", None) in ("nack", "busy_nack")
                             and isinstance(written, asyncio.Future)
                             and not written.done()
                         ):
@@ -1610,10 +1708,16 @@ class CommandWorkerPool:
                             # other cancellation here is a frame that was not written or whose
                             # socket was lost: a probe's fallback read tells the two apart.
                             setattr(written, "_gateway_nack", True)
+                            if getattr(last_error, "busy", False) is True:
+                                setattr(written, "_gateway_busy", True)
+                            err_responses = getattr(last_error, "responses", None)
+                            if isinstance(err_responses, list) and err_responses:
+                                setattr(written, "_collected_responses", list(err_responses))
                         _cancel_written(task)
                     else:
                         if (
-                            task["is_status_request"]
+                            not is_zigbee
+                            and task["is_status_request"]
                             and collected is True
                             and isinstance(written, asyncio.Future)
                             and not written.done()
@@ -1621,8 +1725,14 @@ class CommandWorkerPool:
                             # OWNd returns True for an ACK that closed the request with no frame
                             # on the command session. The silent-zone poll reads this mark.
                             setattr(written, "_empty_reply", True)
+                        if isinstance(written, asyncio.Future) and not written.done():
+                            setattr(written, "_collected_responses", collected)
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])
+                        if zb_inv is not None:
+                            zb_inv.note_unicast_command_sent(
+                                task["message"], written_at, rx_seq_before=zb_rx_seq
+                            )
                     responses_to_dispatch: Any = collected
                     if responses_to_dispatch is None and task["is_status_request"]:
                         # A standalone zone status request (*#4*Z##) that answers only some of
@@ -1635,6 +1745,10 @@ class CommandWorkerPool:
                         )
                     if responses_to_dispatch and isinstance(responses_to_dispatch, list):
                         for resp in responses_to_dispatch:
+                            if is_serial:
+                                if isinstance(resp, OWNMessage):
+                                    self._dispatch_collected_message(resp, dispatcher_send)
+                                continue
                             raw_resp = str(resp)
                             if self.bus_monitor.has_frame_since(
                                 task_start, direction="rx", raw=raw_resp
@@ -1646,18 +1760,7 @@ class CommandWorkerPool:
                                 parsed=resp if isinstance(resp, OWNMessage) else None,
                             )
                             if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
-                                if isinstance(resp, OWNGatewayEvent):
-                                    self.handler._handle_gateway_diagnostics(resp)
-                                elif (
-                                    getattr(resp, "who", None) == 1013
-                                    and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
-                                ):
-                                    self.handler._handle_gateway_identity_diagnostics(resp)
-                                dispatcher_send(
-                                    self.hass, f"myhome_message_{self.mac}", resp
-                                )
-                                # A reply to a request sent for an offline primary
-                                self.handler._bridge_to_primary(resp)
+                                self._dispatch_collected_message(resp, dispatcher_send)
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise
@@ -1694,6 +1797,8 @@ class CommandWorkerPool:
 
     def _pause_status_after_desync(self) -> None:
         """Hold back queued status reads briefly after a gateway command_timeout or FIFO bleed."""
+        if getattr(self.handler, "is_zigbee_address_family", False) is True:
+            return
         if self._terminate_sender or not isinstance(self.send_buffer, FrameScheduler):
             return
         from . import gateway as gw_module

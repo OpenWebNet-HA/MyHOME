@@ -195,8 +195,12 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
     setattr(OWNSoundEvent, "volume_step_delta", property(_sound_step_delta))
 
 __all__ = [
+    "ZIGBEE_BROADCAST_WHERE_RE",
+    "ZIGBEE_GROUP_WHERE_RE",
+    "ZIGBEE_UNICAST_WHERE_RE",
     "area_of_where",
     "canonical_thermo_zone",
+    "effective_message_where",
     "expose_message_where",
     "is_actuator_where",
     "is_apl_address",
@@ -206,9 +210,12 @@ __all__ = [
     "is_pump",
     "is_valid_hs_tuple",
     "is_valid_rgb_tuple",
+    "is_zigbee_where",
     "normalize_expose_where",
     "normalize_where",
     "parse_thermo_actuator_where",
+    "parse_zigbee_group_where",
+    "parse_zigbee_where",
     "thermo_dim20_is_active",
     "thermo_event_actuator",
     "thermo_event_interface",
@@ -217,6 +224,79 @@ __all__ = [
     "where_param",
     "zone_number",
 ]
+
+
+ZIGBEE_UNICAST_WHERE_RE = re.compile(r"^(\d+)(\d{2})#9$", re.ASCII)
+ZIGBEE_GROUP_WHERE_RE = re.compile(r"^#([1-9]\d*)#9$", re.ASCII)
+ZIGBEE_BROADCAST_WHERE_RE = re.compile(r"^0(?:#(\d{2}))?#9$", re.ASCII)
+
+
+def parse_zigbee_where(
+    where: str | None,
+    address_family: str | None = None,
+) -> tuple[str, str] | None:
+    """Split ZigBee unicast ``<ADDR><UNIT>#9`` into ``('<ADDR>', '<UNIT>')`` under ``address_family='zigbee'``.
+
+    Contextless strings (``address_family=None``) and wired SCS strings
+    (``address_family='scs'``) return ``None`` so wired ``Z#N`` actuator
+    strings like ``012#9`` never misclassify as ZigBee.
+    """
+    if address_family != "zigbee" or not isinstance(where, str) or "#4#" in where:
+        return None
+    match = ZIGBEE_UNICAST_WHERE_RE.fullmatch(where.strip())
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
+
+
+def parse_zigbee_group_where(
+    where: str | None,
+    address_family: str | None = None,
+) -> int | None:
+    """Parse ZigBee group ``#<G>#9`` (``1..65535``) into ``int G`` under ``address_family='zigbee'``."""
+    if address_family != "zigbee" or not isinstance(where, str):
+        return None
+    match = ZIGBEE_GROUP_WHERE_RE.fullmatch(where.strip())
+    if match is None:
+        return None
+    grp = int(match.group(1))
+    return grp if 1 <= grp <= 65535 else None
+
+
+def is_zigbee_where(
+    where: str | None,
+    address_family: str | None = None,
+) -> bool:
+    """Return True if ``where`` carries an OpenZigBee ``#9`` suffix under ``address_family='zigbee'``.
+
+    Contextless strings (``address_family=None``) and wired SCS strings
+    (``address_family='scs'``) return ``False``. Excludes wired SCS group 9
+    (``#9``) and F422 interface routing (``...#4#09`` / ``...#4#9``).
+    """
+    if address_family != "zigbee" or not isinstance(where, str):
+        return False
+    candidate = where.strip()
+    if not candidate.endswith("#9") or "#4#" in candidate:
+        return False
+    return (
+        ZIGBEE_UNICAST_WHERE_RE.fullmatch(candidate) is not None
+        or parse_zigbee_group_where(candidate, address_family=address_family) is not None
+        or ZIGBEE_BROADCAST_WHERE_RE.fullmatch(candidate) is not None
+    )
+
+
+def effective_message_where(message: Any) -> str | None:
+    """Context-gated WHERE of a message: ``zigbee_where`` when ``is_zigbee``, else ``message.where``."""
+    if getattr(message, "is_zigbee", False) is True:
+        zb_where = getattr(message, "zigbee_where", None)
+        if isinstance(zb_where, str) and zb_where:
+            return zb_where
+    raw = getattr(message, "where", None)
+    return (
+        str(raw)
+        if isinstance(raw, (str, int)) and not isinstance(raw, bool) and str(raw)
+        else None
+    )
 
 
 def is_actuator_where(where: str) -> bool:
@@ -336,7 +416,11 @@ def canonical_point_address(address: str) -> str:
     return f"{canonical_point_spelling(base)}{sep}{rest}"
 
 
-def normalize_expose_where(who: int, where: str | int | None) -> str:
+def normalize_expose_where(
+    who: int,
+    where: str | int | None,
+    address_family: str | None = None,
+) -> str:
     """Return canonical WHERE string for an expose binding on ``who``."""
     raw = str(where if where is not None else "").strip()
     if who == 13 or not raw:
@@ -348,6 +432,8 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
             return bare
         return clean
     if who in (1, 2):
+        if is_zigbee_where(raw, address_family=address_family):
+            return raw
         # OWNd keeps `0004` as typed (OWNd#123); the gateways only accept and
         # report an area-0 point in two digits, so the MyHOME boundary spells
         # it `04` (#147). Silent: the yaml / UI value is validated elsewhere.
@@ -364,7 +450,12 @@ def expose_message_where(message: Any) -> str:
     raw_str = str(raw_where).strip()
     tail = where_param(message)
     full_str = f"{raw_str}#{'#'.join(str(p) for p in tail)}" if tail else raw_str
-    return normalize_expose_where(who, full_str) if isinstance(who, int) else full_str
+    address_family = "zigbee" if getattr(message, "is_zigbee", False) is True else None
+    return (
+        normalize_expose_where(who, full_str, address_family=address_family)
+        if isinstance(who, int)
+        else full_str
+    )
 
 
 _THERMO_ACTUATOR_WHERE_RE = re.compile(

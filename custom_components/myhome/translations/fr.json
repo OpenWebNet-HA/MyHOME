@@ -7,7 +7,8 @@
         "title": "Choisisez votre serveur \"MyHome\"",
         "description": "MyHOME garde ouverte une connexion permanente pour les événements, plus une connexion par worker de commande (1 par défaut). Une passerelle n'accepte qu'un petit nombre de connexions OpenWebNet simultanées (5 sur une F455, moins sur une MH200N), partagées avec tout ce qui s'y connecte : l'application Legrand/BTicino Home+Project, d'autres instances Home Assistant, d'autres intégrations. Si les connexions sont épuisées, MyHOME ou l'autre client est refusé ou déconnecté. Fermez les clients inutiles et gardez un nombre de workers de commande faible.",
         "data": {
-          "host": "Adresse IP"
+          "host": "Adresse IP",
+          "serial": "Passerelle"
         }
       },
       "port": {
@@ -66,6 +67,21 @@
           "gateway_role": "Proposé d'après les capacités des deux passerelles : secondaire si cette passerelle prend en charge des sous-systèmes absents de la principale, sinon secours.",
           "delegated_whos": "Sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale."
         }
+      },
+      "serial": {
+        "title": "Passerelle USB / Série OpenZigBee",
+        "description": "Sélectionnez le port série USB BTicino 3578 / Legrand 088328 (ou saisissez une URL série telle que socket://hote:port). Un seul superviseur OpenWebNet peut fonctionner à la fois sur un réseau ZigBee ; arrêtez tout autre pont OpenWebNet avant de continuer.",
+        "data": {
+          "serial_port": "Port série ou URL",
+          "name": "Modèle de passerelle"
+        }
+      },
+      "reconfigure_serial": {
+        "title": "Reconfigurer la passerelle USB / Série {name}",
+        "description": "Mettez à jour le port série ou l'URL de votre passerelle OpenZigBee {name}.",
+        "data": {
+          "serial_port": "Port série ou URL"
+        }
       }
     },
     "error": {
@@ -76,7 +92,11 @@
       "password_retry": "Le serveur refuse la négociation, attendez 60s avant de réessayer.",
       "password_error": "Mot de passe invalide",
       "primary_gateway_required": "Une passerelle principale doit être sélectionnée pour les rôles secondaire ou de secours sur un bus partagé.",
-      "primary_gateway_not_found": "La passerelle principale sélectionnée est introuvable."
+      "primary_gateway_not_found": "La passerelle principale sélectionnée est introuvable.",
+      "cannot_connect": "Impossible de se connecter à la passerelle ou au port série.",
+      "port_busy": "Le port série est déjà utilisé par un autre processus ou une autre intégration.",
+      "no_zigbee_interface": "Le périphérique série n'a pas répondu comme coordinateur OpenZigBee (*13*60*## / *#13**12##).",
+      "different_device": "Le périphérique série sur ce port possède une adresse IEEE EUI-64 différente de cette entrée."
     },
     "abort": {
       "discovery_timeout": "Impossible de découvrir des serveurs MyHome",
@@ -715,6 +735,16 @@
     "switch": {
       "invert_state": {
         "name": "Inverser l'état"
+      }
+    },
+    "light": {
+      "zigbee_unit": {
+        "name": "Unité {unit}"
+      }
+    },
+    "cover": {
+      "zigbee_unit": {
+        "name": "Unité {unit}"
       }
     }
   },

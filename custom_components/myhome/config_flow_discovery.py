@@ -9,6 +9,7 @@ import re
 import typing
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -19,20 +20,24 @@ from homeassistant.const import (
     CONF_PORT,
 )
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import selector
 from OWNd.connection import OWNCommandSession
 from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
 from voluptuous import All, Coerce, Range, Required
 
 from .const import (
+    CONF_BAUDRATE,
     CONF_DEVICE_TYPE,
     CONF_FIRMWARE,
     CONF_MANUFACTURER,
     CONF_MANUFACTURER_URL,
     CONF_OWN_PASSWORD,
+    CONF_SERIAL_PORT,
     CONF_SSDP_LOCATION,
     CONF_SSDP_ST,
     CONF_UDN,
     CONF_WORKER_COUNT,
+    DEFAULT_BAUDRATE,
     DOMAIN,
     LOGGER,
 )
@@ -297,22 +302,31 @@ class ConfigFlowDiscoveryMixin:
             },
         )
 
-    async def async_step_reconfigure(self, user_input=None):  # type: ignore
-        """Handle reconfiguration of the gateway connection."""
-        errors = {}
+    def _resolve_reconfigure_entry(self) -> ConfigEntry | None:
+        """Return the config entry targeted by the active reconfigure flow."""
         try:
-            entry = (
+            raw: typing.Any = (
                 self._get_reconfigure_entry()
                 if hasattr(self, "_get_reconfigure_entry")
                 else self.hass.config_entries.async_get_entry(
                     self.context.get("entry_id")  # type: ignore[attr-defined]
                 )
             )
+            entry: ConfigEntry | None = raw
+            return entry
         except Exception:
-            entry = None
+            return None
+
+    async def async_step_reconfigure(self, user_input=None):  # type: ignore
+        """Handle reconfiguration of the gateway connection."""
+        errors = {}
+        entry = self._resolve_reconfigure_entry()
 
         if entry is None:
             return self.async_abort(reason="unknown")  # type: ignore[attr-defined]
+
+        if CONF_SERIAL_PORT in entry.data:
+            return await self.async_step_reconfigure_serial(user_input)
 
         if user_input is not None:
             address = str(user_input.get(CONF_HOST, "")).strip()
@@ -358,6 +372,87 @@ class ConfigFlowDiscoveryMixin:
 
         return self.async_show_form(  # type: ignore[attr-defined]
             step_id="reconfigure",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                CONF_NAME: entry.data.get(CONF_NAME, "Gateway"),
+            },
+        )
+
+    async def async_step_reconfigure_serial(  # type: ignore
+        self,
+        user_input: dict[str, typing.Any] | None = None,
+    ):
+        """Handle reconfiguration of a USB / Serial OpenZigBee gateway."""
+        from . import config_flow as _cf
+
+        entry = self._resolve_reconfigure_entry()
+        if entry is None:
+            return self.async_abort(reason="unknown")  # type: ignore[attr-defined]
+
+        errors: dict[str, str] = {}
+        current_port = str(entry.data.get(CONF_SERIAL_PORT, "")).strip()
+
+        if user_input is not None:
+            raw_port = str(user_input.get(CONF_SERIAL_PORT, "")).strip()
+            if not raw_port:
+                errors[CONF_SERIAL_PORT] = "cannot_connect"
+            else:
+                new_port = await _cf._async_resolve_serial_by_id(self.hass, raw_port)
+                same_port = await _cf._async_ports_match(
+                    self.hass, current_port, new_port
+                )
+                if same_port and entry.state is ConfigEntryState.LOADED:
+                    return self.async_update_reload_and_abort(  # type: ignore[attr-defined]
+                        entry,
+                        data={**entry.data, CONF_SERIAL_PORT: new_port},
+                        reason="reconfigure_successful",
+                    )
+
+                baudrate = int(entry.data.get(CONF_BAUDRATE, DEFAULT_BAUDRATE))
+                eui64, firmware, err_key = await _cf._async_probe_zigbee_serial(
+                    self.hass, new_port, baudrate
+                )
+                if err_key is not None or eui64 is None:
+                    errors[CONF_SERIAL_PORT] = err_key or "cannot_connect"
+                elif entry.unique_id and eui64 != str(entry.unique_id).lower():
+                    errors[CONF_SERIAL_PORT] = "different_device"
+                else:
+                    new_data = {**entry.data, CONF_SERIAL_PORT: new_port}
+                    if firmware:
+                        new_data[CONF_FIRMWARE] = firmware
+                    return self.async_update_reload_and_abort(  # type: ignore[attr-defined]
+                        entry,
+                        data=new_data,
+                        reason="reconfigure_successful",
+                    )
+
+        port_options = await _cf._async_list_serial_options(self.hass)
+        if current_port and not any(opt["value"] == current_port for opt in port_options):
+            port_options.insert(
+                0, selector.SelectOptionDict(value=current_port, label=current_port)
+            )
+        suggested_port = (
+            str(user_input.get(CONF_SERIAL_PORT, "")).strip()
+            if user_input is not None
+            else current_port
+        )
+        schema = flow_schema(
+            {
+                Required(
+                    CONF_SERIAL_PORT,
+                    description={"suggested_value": suggested_port},
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=port_options,
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(  # type: ignore[attr-defined]
+            step_id="reconfigure_serial",
             data_schema=schema,
             errors=errors,
             description_placeholders={

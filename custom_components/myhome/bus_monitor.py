@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import collections
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
@@ -16,6 +17,17 @@ from OWNd.message import OWNMessage, OWNSignaling
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_RING_BUFFER_SIZE = 500
+_WHO13_DIM10_RE = re.compile(r"^\*#13\*\*10(?:\*\d{1,3}){4}##$")
+_WHO13_DIM12_RE = re.compile(r"^\*#13\*\*12(?:\*\d{1,3}){6}(?:(?:\*\d{1,3}){2})?##$")
+
+
+def _redact_raw_bus_frame(raw: str) -> str:
+    """Redact gateway IPv4 (DIM 10) and MAC/EUI-64 (DIM 12) octets in BusMonitor."""
+    if raw.startswith("*#13**10*") and _WHO13_DIM10_RE.match(raw):
+        return "*#13**10*REDACTED##"
+    if raw.startswith("*#13**12*") and _WHO13_DIM12_RE.match(raw):
+        return "*#13**12*REDACTED##"
+    return raw
 
 
 class BusFrame:
@@ -46,22 +58,31 @@ class BusFrame:
         self.timestamp = timestamp if timestamp is not None else now.timestamp()
         self.iso_time = now.isoformat()
         self.direction = direction.lower()
-        self.raw = str(raw).strip()
+        self.raw = _redact_raw_bus_frame(str(raw).strip())
         self.is_duplicate = False
 
         # Extract semantics if parsed message is available
         self.who = getattr(parsed, "who", getattr(parsed, "_who", None)) if parsed else None
-        self.where = getattr(parsed, "where", getattr(parsed, "_where", None)) if parsed else None
+        raw_where = getattr(parsed, "where", getattr(parsed, "_where", None)) if parsed else None
+        zb_where = (
+            getattr(parsed, "zigbee_where", None)
+            if parsed is not None and getattr(parsed, "is_zigbee", False) is True
+            else None
+        )
+        self.where = zb_where or raw_where
         self.what = getattr(parsed, "what", getattr(parsed, "_what", None)) if parsed else None
         self.dimension = getattr(parsed, "dimension", getattr(parsed, "_dimension", None)) if parsed else None
 
         if isinstance(parsed, OWNSignaling):
             self.is_ack = parsed.is_ack()
-            self.is_nack = parsed.is_nack()
+            is_busy_nack = getattr(parsed, "is_busy_nack", None)
+            self.is_nack = parsed.is_nack() or (
+                callable(is_busy_nack) and is_busy_nack() is True
+            )
         elif self.raw in ("*#*1##", "*#*1"):
             self.is_ack = True
             self.is_nack = False
-        elif self.raw in ("*#*0##", "*#*0"):
+        elif self.raw in ("*#*0##", "*#*0", "*#*6##", "*#*6"):
             self.is_ack = False
             self.is_nack = True
         else:
@@ -112,7 +133,7 @@ class BusMonitor:
     def has_frame_since(self, since: float, direction: str, raw: str) -> bool:
         """Check if an identical frame was already recorded since a given timestamp."""
         dir_lower = direction.lower()
-        raw_str = str(raw).strip()
+        raw_str = _redact_raw_bus_frame(str(raw).strip())
         for frame in reversed(self._frames):
             if frame.timestamp < since - 0.1:
                 break

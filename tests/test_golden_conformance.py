@@ -28,6 +28,7 @@ from OWNd.message import (
     _ensure_all_subsystems_registered,
 )
 from OWNd.message.base import _COMMAND_DISPATCH, _EVENT_DISPATCH
+from OWNd.profiles import Legrand3578Profile
 
 _ensure_all_subsystems_registered()
 
@@ -169,7 +170,8 @@ def test_protocol_conformance_matrix_examples_in_corpus() -> None:
 def test_golden_frame_parsing(fixture: dict[str, Any]) -> None:
     """Verify that OWNd parses the golden frame and extracts complete semantic attributes."""
     frame_str = fixture["frame"]
-    parsed = OWNMessage.parse(frame_str)
+    gateway = Legrand3578Profile() if fixture.get("context") == "zigbee" else None
+    parsed = OWNMessage.parse(frame_str, gateway=gateway)
 
     assert parsed is not None, f"Failed to parse frame {frame_str}"
 
@@ -196,7 +198,7 @@ def test_golden_frame_parsing(fixture: dict[str, Any]) -> None:
             f"Frame {frame_str} (WHO={parsed.who}) fell back to generic OWNCommand"
         )
     if expected_direction == "command" and parsed.who in _COMMAND_DISPATCH:
-        cmd_parsed = OWNCommand.parse(frame_str)
+        cmd_parsed = OWNCommand.parse(frame_str, gateway=gateway)
         assert cmd_parsed is not None, f"OWNCommand.parse failed on command frame {frame_str}"
         assert type(cmd_parsed) is not OWNCommand, (
             f"Command frame {frame_str} (WHO={parsed.who}) was not specialized by OWNCommand.parse"
@@ -307,7 +309,8 @@ def test_golden_frame_parsing(fixture: dict[str, Any]) -> None:
 def test_golden_frame_roundtrip(fixture: dict[str, Any]) -> None:
     """Verify that string serialization of the parsed frame reproduces the raw wire frame."""
     frame_str = fixture["frame"]
-    parsed = OWNMessage.parse(frame_str)
+    gateway = Legrand3578Profile() if fixture.get("context") == "zigbee" else None
+    parsed = OWNMessage.parse(frame_str, gateway=gateway)
     assert str(parsed) == frame_str, (
         f"Roundtrip serialization failed: {str(parsed)} != {frame_str}"
     )

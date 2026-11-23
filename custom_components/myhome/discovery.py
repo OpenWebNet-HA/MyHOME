@@ -46,7 +46,7 @@ from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_Z
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData
 from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
-from .myhome_device import MyHOMEEntity
+from .myhome_device import MyHOMEEntity, gateway_address_family
 from .topology import entry_for_mac, peer_unique_id
 
 
@@ -73,6 +73,9 @@ class Address:
     @classmethod
     def from_message(cls, message: Any) -> Address | None:
         """Address of an OWNd event, or ``None`` when it carries no WHERE."""
+        if getattr(message, "is_zigbee", False) is True:
+            zb_where = getattr(message, "zigbee_where", None)
+            return cls(str(zb_where), None) if zb_where else None
         where = getattr(message, "where", None)
         if not where:
             return None
@@ -529,7 +532,12 @@ class PlatformDiscovery:
         self.mac: str = str(config_entry.data.get(CONF_MAC) or self.runtime.mac)
         self.known = KnownDevices()
         self.router = self.runtime.router
-        self.configured: dict[str, Any] = self.runtime.platforms.get(platform, {})
+        is_zb_gw = gateway_address_family(getattr(self.runtime, "gateway", None)) == "zigbee"
+        self.configured: dict[str, Any] = (
+            self.runtime.platforms.setdefault(platform, {})
+            if is_zb_gw
+            else self.runtime.platforms.get(platform, {})
+        )
         self.ignored_addresses = IgnoredAddresses.from_config_entry(config_entry)
 
     def _is_ignored(self, address: Address) -> bool:
@@ -815,9 +823,11 @@ class PlatformDiscovery:
             self.async_add_entities(entities)
         if listen:
             self.listen()
+        raw_log_id = getattr(getattr(self.runtime, "gateway", None), "log_id", None)
+        log_id = raw_log_id if isinstance(raw_log_id, str) and raw_log_id else "MyHOME"
         LOGGER.debug(
             "%s: %s restored/configured %d entities (%d addresses known)",
-            self.mac, self.platform, len(entities), len(self.known),
+            log_id, self.platform, len(entities), len(self.known),
         )
         return entities
 

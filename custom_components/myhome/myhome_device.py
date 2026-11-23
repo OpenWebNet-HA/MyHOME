@@ -20,8 +20,52 @@ from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
 from .migrate import preserve_legacy_compat_name
 from .typing_compat import UNDEFINED
+from .where_grammar import parse_zigbee_where
 
-__all__ = ["Entity", "MyHOMEEntity"]
+__all__ = [
+    "Entity",
+    "MyHOMEEntity",
+    "extra_where_attributes",
+    "gateway_address_family",
+]
+
+
+def gateway_address_family(gateway: Any) -> str | None:
+    """Return ``'zigbee'`` when ``gateway`` explicitly selects OpenZigBee addressing."""
+    if gateway is None:
+        return None
+    if getattr(gateway, "is_zigbee_address_family", False) is True:
+        return "zigbee"
+    profile = getattr(gateway, "profile", None)
+    if getattr(profile, "address_family", None) == "zigbee":
+        return "zigbee"
+    inner_gw = getattr(gateway, "gateway", None)
+    inner_profile = getattr(inner_gw, "profile", None)
+    if getattr(inner_profile, "address_family", None) == "zigbee":
+        return "zigbee"
+    return None
+
+
+def extra_where_attributes(
+    where: str,
+    interface: str | None,
+    gateway: Any,
+) -> dict[str, Any]:
+    """Return ZigBee node/unit or SCS A/PL extra state attributes for an entity."""
+    zb_parts = parse_zigbee_where(where, address_family=gateway_address_family(gateway))
+    if zb_parts is not None:
+        attrs: dict[str, Any] = {
+            "zigbee_device_id": zb_parts[0],
+            "zigbee_unit": zb_parts[1],
+        }
+    else:
+        attrs = {
+            "A": where[: len(where) // 2],
+            "PL": where[len(where) // 2 :],
+        }
+    if interface is not None:
+        attrs["Int"] = interface
+    return attrs
 
 
 class MyHOMEEntity(RestoreEntity):
@@ -76,9 +120,39 @@ class MyHOMEEntity(RestoreEntity):
         self._model = model
         self._gateway_handler = gateway
         self._availability_listener_registered = False
-        self._device_name = name
+
+        zb_parts = parse_zigbee_where(
+            self._where,
+            address_family=gateway_address_family(gateway),
+        )
+        self._zb_parts: tuple[str, str] | None = zb_parts
+        self._is_zigbee: bool = zb_parts is not None
+        self._zb_addr: str | None = zb_parts[0] if zb_parts is not None else None
+        if zb_parts is not None:
+            zb_addr, zb_unit = zb_parts
+            device_name = f"ZigBee {zb_addr}"
+            identifiers = {(DOMAIN, f"{gateway.mac}-zigbee-{zb_addr}")}
+            inventory = getattr(gateway, "zigbee_inventory", None)
+            if inventory is not None:
+                self._poll_on_add = False
+            get_node_model = (
+                getattr(inventory, "get_node_model", None)
+                if inventory is not None
+                else None
+            )
+            inv_model = get_node_model(zb_addr) if callable(get_node_model) else None
+            if isinstance(inv_model, str) and inv_model:
+                self._model = inv_model
+        else:
+            device_name = name
+            identifiers = {(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")}
+
+        self._device_name = device_name
         if translation_key:
             self._attr_translation_key = translation_key
+        elif zb_parts is not None and not entity_name:
+            self._attr_translation_key = "zigbee_unit"
+            self._attr_translation_placeholders = {"unit": str(int(zb_parts[1]))}
         elif not self._name_from_device_class:
             # The entity is the device: light, switch, cover, climate, audio zone, alarm
             # panel. entity_name has never named these and is ignored.
@@ -96,11 +170,10 @@ class MyHOMEEntity(RestoreEntity):
         self._attr_should_poll = False
 
         # Link to the gateway device (via_device_id; via_device is gone since core 2026.8).
-        identifiers = {(DOMAIN, f"{gateway.mac}-{self._who}-{clean_dev_id}")}
         if gateway.device_registry_id:
             self._attr_device_info = DeviceInfo(
                 identifiers=identifiers,
-                name=name,
+                name=device_name,
                 manufacturer=self._manufacturer,
                 model=self._model,
                 via_device_id=gateway.device_registry_id,
@@ -108,7 +181,7 @@ class MyHOMEEntity(RestoreEntity):
         else:
             self._attr_device_info = DeviceInfo(
                 identifiers=identifiers,
-                name=name,
+                name=device_name,
                 manufacturer=self._manufacturer,
                 model=self._model,
             )
@@ -218,7 +291,16 @@ class MyHOMEEntity(RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._gateway_handler.is_who_available(self._who)
+        if not self._gateway_handler.is_who_available(self._who):
+            return False
+        if self._zb_addr is not None:
+            inv = getattr(self._gateway_handler, "zigbee_inventory", None)
+            products = getattr(inv, "products", None)
+            if isinstance(products, dict) and self._zb_addr in products:
+                rec = products[self._zb_addr]
+                if isinstance(rec, dict) and not rec.get("reachable", True):
+                    return False
+        return True
 
     @callback
     def handle_event(self, msg: Any) -> None:

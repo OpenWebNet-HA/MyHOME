@@ -146,8 +146,11 @@ from .const import (
     TYPE_IMPULSE_RELAY,
 )
 from .where_grammar import (
+    ZIGBEE_BROADCAST_WHERE_RE,
     canonical_point_spelling,
     parse_thermo_actuator_where,
+    parse_zigbee_group_where,
+    parse_zigbee_where,
     validate_thermo_trigger_command,
 )
 
@@ -158,14 +161,16 @@ def format_mac(address: object) -> str:
         for sep in (":", "-", "."):
             if sep in mac:
                 parts = mac.split(sep)
-                if len(parts) == 6 and all(1 <= len(p) <= 2 for p in parts):
+                if len(parts) in (6, 8) and all(1 <= len(p) <= 2 for p in parts):
                     mac = "".join(p.zfill(2) for p in parts)
                 break
         mac = re.sub("[.:-]", "", mac).upper()
     else:
         mac = ""
-    if len(mac) != 12 or not mac.isalnum() or re.search("[G-Z]", mac) is not None:
+    if len(mac) not in (12, 16) or not mac.isalnum() or re.search("[G-Z]", mac) is not None:
         return None  # type: ignore
+    if len(mac) == 16:
+        return ":".join(mac[i : i + 2].lower() for i in range(0, 16, 2))
     return ha_format_mac(mac)
 
 
@@ -188,10 +193,11 @@ class General(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v == "0":
+        if isinstance(v, str) and (
+            v == "0" or ZIGBEE_BROADCAST_WHERE_RE.fullmatch(v) is not None
+        ):
             return v
-        else:
-            raise Invalid(f"Invalid General WHERE {v}, it must be 0.")
+        raise Invalid(f"Invalid General WHERE {v}, it must be 0.")
 
     def __repr__(self):  # type: ignore
         return "Where(%s, msg=%r)" % ("String", self.msg)
@@ -216,10 +222,12 @@ class Group(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
-            return f"#{int(v[1:])}"
-        else:
-            raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
+        if isinstance(v, str):
+            if (zb_grp := parse_zigbee_group_where(v, address_family="zigbee")) is not None:
+                return f"#{zb_grp}#9"
+            if v.startswith("#") and v[1:].isdigit() and 1 <= int(v[1:]) <= 255:
+                return f"#{int(v[1:])}"
+        raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
 
     def __repr__(self):  # type: ignore
         return "Where(%s, msg=%r)" % ("String", self.msg)
@@ -258,19 +266,19 @@ class PointToPoint:
         self.canonical = canonical
 
     def __call__(self, v: typing.Any) -> typing.Any:
-        if isinstance(v, str) and v.isdigit():
-            _length = len(v)
-            if _length == 2 or _length == 4:
-                _a = v[0 : _length // 2]
-                _pl = v[_length // 2 :]
-                if int(_a) >= 0 and int(_a) <= 10 and int(_pl) >= 0 and int(_pl) <= 15:
-                    return canonical_point_where(f"{_a}{_pl}") if self.canonical else f"{_a}{_pl}"
-                else:
+        if isinstance(v, str):
+            if (zb := parse_zigbee_where(v, address_family="zigbee")) is not None:
+                return f"{zb[0]}{zb[1]}#9"
+            if v.isdigit():
+                _length = len(v)
+                if _length == 2 or _length == 4:
+                    _a = v[0 : _length // 2]
+                    _pl = v[_length // 2 :]
+                    if int(_a) >= 0 and int(_a) <= 10 and int(_pl) >= 0 and int(_pl) <= 15:
+                        return canonical_point_where(f"{_a}{_pl}") if self.canonical else f"{_a}{_pl}"
                     raise Invalid(f"Invalid WHERE {v}, A must be [0-10] and PL must be [0-15].")
-            else:
                 raise Invalid(f"Invalid WHERE {v} length, it must be a string of 2 or 4 digits.")
-        else:
-            raise Invalid(f"Invalid WHERE {v}, it must be a string of 2 or 4 digits.")
+        raise Invalid(f"Invalid WHERE {v}, it must be a string of 2 or 4 digits.")
 
     def __repr__(self):  # type: ignore
         return "Where(%s, msg=%r)" % ("String", self.msg)
