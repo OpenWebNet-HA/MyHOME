@@ -202,6 +202,7 @@ __all__ = [
     "central_report_zone",
     "central_unit_season",
     "central_unit_where",
+    "contact_where_aliases",
     "diagnose_apl_where",
     "encode_apl_where",
     "expose_message_where",
@@ -219,6 +220,7 @@ __all__ = [
     "is_valid_rgb_tuple",
     "normalize_expose_where",
     "normalize_where",
+    "padded_contact_where",
     "parse_apl_where",
     "parse_thermo_actuator_where",
     "thermo_dim19_status",
@@ -692,7 +694,8 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
 # an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
 # ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
 # that one padding zero in front of a single digit was captured, so only that is rewritten.
-_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#[0-9]{2})?)$")
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#[0-9]{1,2})?)$")
+_SHORT_CONTACT_RE = re.compile(r"^3([1-9])((?:#4#[0-9]{1,2})?)$")
 
 
 def canonical_contact_where(where: str) -> str:
@@ -707,6 +710,18 @@ def canonical_contact_where(where: str) -> str:
     """
     match = _PADDED_CONTACT_RE.match(str(where))
     return f"3{match[1]}{match[2]}" if match else str(where)
+
+
+def padded_contact_where(where: str) -> str:
+    """``31`` -> ``301`` (F455 padded WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given."""
+    match = _SHORT_CONTACT_RE.match(str(where))
+    return f"30{match[1]}{match[2]}" if match else str(where)
+
+
+def contact_where_aliases(where: str) -> list[str]:
+    """Return both short and F455-padded spellings for a WHO 25 contact 1..9, else ``[where]``."""
+    text = str(where)
+    return list(dict.fromkeys((text, canonical_contact_where(text), padded_contact_where(text))))
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:

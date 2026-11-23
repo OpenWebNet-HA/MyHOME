@@ -153,7 +153,7 @@ class IgnoredAddresses:
             self._normalized.add((who, self._norm_where(where)))
             if who == 25:
                 # A dry contact typed as an F455 spells it (301) is the 31 of the other gateways
-                self._normalized.add((who, self._norm_where(canonical_contact_where(where))))
+                self._normalized.add((who, canonical_contact_where(self._norm_where(where))))
 
     @staticmethod
     def _norm_where(where: str) -> str:
@@ -198,7 +198,7 @@ class IgnoredAddresses:
             if c.startswith("#"):
                 candidates.add(c.removeprefix("#"))
         if who_int == 25:
-            candidates.update([canonical_contact_where(c) for c in candidates])
+            candidates.update([canonical_contact_where(self._norm_where(c)) for c in candidates])
 
         for c in candidates:
             if (who_int, c) in self._entries:
