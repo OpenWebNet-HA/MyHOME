@@ -228,6 +228,8 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     # --- F461 2.0.11, central_restore_3100_live_2026-11-12 (3550 central unit #0, conditioning)
     "*4*2101*#0##": "F461 2026-11-12: ACK in 117 ms (weekly program 1, conditioning)",
     "*4*3100*#0##": "F461 2026-11-12: ACK in 97 / 111 ms, the 3550 answers *4*2101*#0## 131 to 154 ms after the send",
+    # --- F454 2.0.51 with a 4-zone central unit, issue_994 (the gateway's ACK / NACK is not in the capture)
+    "*4*1103*#0#1##": "F454 2026-11-22: the central unit reports *4*1103*#0#1## 3.3 s after the send, its zones go to heating",
 }
 
 

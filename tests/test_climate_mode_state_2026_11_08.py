@@ -482,7 +482,7 @@ async def test_auto_fallback_survives_the_f455_trailing_311() -> None:
         ("*4*210*#4##", True),  # zone manual conditioning by central unit, live 3550
         ("*4*203*#4##", True),  # zone off conditioning by central unit, live 3550
         ("*4*102*#0##", True),  # the central unit itself (WHO 4 p. 64)
-        ("*4*303*#0#1##", True),  # 4-zone central unit
+        ("*4*303*#0#1##", False),  # a 4-zone central unit: its zones are written directly (#994)
         ("*#4*#4*14*0205*2##", True),  # a dimension of a zone of the central
         ("*#4*2*0*0238##", False),  # a standalone thermostat's temperature
         ("*#4*101*0*0205##", False),  # a probe (WHO 4 p. 6)
