@@ -52,6 +52,7 @@ from .where_grammar import (
     four_zone_central_where,
     is_central_thermo_where,
     is_central_unit_actuator_status,
+    is_central_unit_report,
     is_probe,
     is_pump,
     is_split_unit,
@@ -103,12 +104,28 @@ def _zone_config(configured: dict[str, Any], address: Address, key: str) -> dict
     zone = zone_number(where) if "#" not in clean.removeprefix("#") else clean
     if address.interface:
         routing = f"{BUS_ROUTING}{address.interface}"
-        return config_for(configured, address, key, f"4-{zone}{routing}", f"4-{key}", f"#{zone}{routing}")
-    return config_for(
-        configured, address, key, zone,
-        f"4-{zone}", f"4-{where}", f"4-{key}", f"4-#{zone}", f"4-#{where}",
-        f"#{zone}", f"#{where}", f"zone_{zone}", f"zone_{where}",
+        return _own_entry(
+            address, config_for(configured, address, key, f"4-{zone}{routing}", f"4-{key}", f"#{zone}{routing}")
+        )
+    return _own_entry(
+        address,
+        config_for(
+            configured, address, key, zone,
+            f"4-{zone}", f"4-{where}", f"4-{key}", f"4-#{zone}", f"4-#{where}",
+            f"#{zone}", f"#{where}", f"zone_{zone}", f"zone_{where}",
+        ),
     )
+
+
+def _own_entry(address: Address, cfg: dict[str, Any]) -> dict[str, Any]:
+    """``cfg`` unless it is the entry of a 4-zone central unit and ``address`` is a plain zone.
+
+    ``zone: "1"`` with ``central: true`` is filed under the keys of zone 1 as well, and zone 1
+    found on the bus is a zone of its own (#994).
+    """
+    if str(cfg.get("zone", "")).startswith("#0#") and not address.clean_where.startswith("#0#"):
+        return {}
+    return cfg
 
 
 def _bus_zone(message: Any) -> int | None:
@@ -191,10 +208,16 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
 
 
 def _zone_address(message: Any) -> Address | None:
-    """The zone a frame discovers; ``None`` for broadcasts and probes."""
+    """The zone a frame discovers; ``None`` for broadcasts and probes.
+
+    A report of a 4-zone central unit (``#0#N``) discovers the central unit, not zone N (#994).
+    """
     zones, interface = _calling_zones(message)
     if not zones:
         return None
+    central = four_zone_central_where(message) if is_central_unit_report(message) else None
+    if central is not None:
+        return Address(central, interface)
     return Address(zones[0], interface)
 
 
@@ -397,7 +420,9 @@ class ZoneDiscovery:
 
     def build(self, ctx: DeviceContext) -> MyHOMEEntity:
         """The zone's entity, with the frames that were held for it."""
-        entity = self._build_zone(ctx, _zone_config(self._configured, ctx.address, ctx.key) or ctx.cfg)
+        entity = self._build_zone(
+            ctx, _zone_config(self._configured, ctx.address, ctx.key) or _own_entry(ctx.address, ctx.cfg or {})
+        )
         pair = _zone_pair(ctx.address)
         if pair is not None:
             self._candidates.pop(pair, None)
@@ -526,7 +551,7 @@ class ZoneDiscovery:
                 return False
         if (
             ctx.source != "bus"
-            or ctx.cfg
+            or _own_entry(ctx.address, ctx.cfg or {})
             or _zone_config(self._configured, ctx.address, ctx.key)
             or (pair := _zone_pair(ctx.address)) is None
         ):

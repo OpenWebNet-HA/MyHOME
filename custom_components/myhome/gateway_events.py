@@ -51,6 +51,7 @@ from .topology import peer_handles_who
 from .where_grammar import (
     central_report_zone,
     central_unit_season,
+    four_zone_central_where,
     is_central_unit_report,
     is_probe,
     thermo_event_interface,
@@ -77,11 +78,15 @@ def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
     another bus's central unit and says nothing about this one: the zones of the gateway's own bus stay what they are (a
     plant with no central unit of its own keeps its standalone thermostats), nothing is asked
     and nobody is told. ``has_central_unit`` is the gateway's own bus only.
+
+    A report of a 4-zone central unit (WHERE ``#0#N``) says nothing either: the zones of such a
+    plant are written directly (#994), and only a report that names a zone in the central form
+    puts them under a central unit.
     Called for the event session and for the replies of the command session
     (``GatewayEventDispatcher.note_central_unit``), and by the entity for a frame handed to
     it directly (``climate._handle_event``).
     """
-    if thermo_event_interface(message) is not None:
+    if thermo_event_interface(message) is not None or four_zone_central_where(message) is not None:
         return False, False
     news = getattr(handler, "has_central_unit", False) is not True
     found_by_zone = news and central_report_zone(message) is not None

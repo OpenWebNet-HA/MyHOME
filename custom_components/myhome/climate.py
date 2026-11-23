@@ -467,7 +467,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._actuators_assumed_off: set[str] = set()
         self._setpoint_check_by_central = False
         self._setpoint_check_central_reports = 0
-        if self._central:
+        # A 4-zone central unit does not put the plant's zones under a central unit: they are
+        # written directly (#994).
+        if self._central and self._where.removeprefix("4-") not in _FOUR_ZONE_CENTRAL:
             gateway.has_central_unit = True
 
         self._attr_native_temperature_unit = UnitOfTemperature.CELSIUS

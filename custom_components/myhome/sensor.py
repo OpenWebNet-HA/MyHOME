@@ -116,6 +116,7 @@ from .typing_compat import as_any
 from .where_grammar import (
     bus_interface_from_message,
     canonical_thermo_zone,
+    four_zone_central_where,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_report,
@@ -2423,7 +2424,7 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
     @callback
     def handle_event(self, message: OWNHeatingEvent) -> None:
         """Update output percentage from WHO=4 Dimension 20 events and zone resets."""
-        if is_central_unit_report(message):
+        if is_central_unit_report(message) and four_zone_central_where(message) is None:
             self._gateway_handler.has_central_unit = True
         if thermo_event_interface(message) != self._interface:
             return
