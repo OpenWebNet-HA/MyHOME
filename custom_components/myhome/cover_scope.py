@@ -259,11 +259,18 @@ class MyHOMEScopeCover(MyHOMECover):
         if not pre_stopped and self._stops_before_move(False):
             await self._async_stop_before_move()
         direction = "open" if opening else "close"
-        if self._is_tilting:
-            self._apply_tilt_stop()
+        # The scope's frame takes every member's motor over from a slat pulse: the scope's
+        # own (its followers with it), and a member's own, whose auto-stop would stop the run.
+        self._end_pulse_for_takeover()
         followers = [m for m in self._members() if m._settles_full_run(opening)]
-        for member in followers:
-            member._begin_run(direction)
+        for member in self._members():
+            if member in followers:
+                member._begin_run(direction)
+                continue
+            if member._is_tilting:
+                member._cancel_stop_task()
+            member._end_pulse_for_takeover()
+            member._publish_state()
         try:
             written = await self._async_move(direction, pre_stopped=True)
         except Exception:
@@ -411,15 +418,19 @@ class MyHOMEScopeCover(MyHOMECover):
             if member._tilt_follows is self and member._is_tilting:
                 member._tilt_start_time = self._tilt_start_time
 
-    def _apply_tilt_stop(self, at: float | None = None) -> None:
+    def _apply_tilt_stop(self, at: float | None = None, *, record_end: bool = True) -> None:
         start = self._tilt_start_time
-        super()._apply_tilt_stop(at)
+        # The members' levels come on their own addresses: what ends this pulse without a
+        # level of its own (a failed direction frame, an undelivered stop, a takeover)
+        # ends theirs the same way.
+        record_end = record_end and not self._pulse_direction_failed()
+        super()._apply_tilt_stop(at, record_end=record_end)
         followers, self._pulse_followers = self._pulse_followers, []
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 if member._tilt_start_time is None:
                     member._tilt_start_time = start
-                member._apply_tilt_stop(at)
+                member._apply_tilt_stop(at, record_end=record_end)
                 member._publish_state()
 
     def _abort_tilt(self) -> None:

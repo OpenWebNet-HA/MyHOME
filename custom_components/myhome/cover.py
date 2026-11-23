@@ -2562,26 +2562,36 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
 
         if self._advanced:
-            # The level command takes the motor over: a running slat pulse must
-            # not stop it with its own auto-stop, and any pending promotion
-            # hand-off is superseded.
-            self._cancel_stop_task()
-            self._end_pulse_for_takeover()
-            self._run_generation += 1
+            was_tilting = self._is_tilting
             now = time.monotonic()
             current = self._attr_current_cover_position
-            moving = bool(self._attr_is_opening or self._attr_is_closing)
+            # A slat pulse is not a curtain run: the level is still the one it started from.
+            moving = bool(self._attr_is_opening or self._attr_is_closing) and not was_tilting
             if current is not None and not moving and 0 < target_position < 100:
+                if was_tilting and round(target_position) == current:
+                    # The level the blind is at: no level frame to write, but the
+                    # pulse's motor runs. Stop it here instead of leaving it without a stop.
+                    await self.async_stop_cover()
+                    return
                 # A 1% level change is a run too short to move the motor while
                 # the actuator still books it (#466, see MIN_POSITION_DELTA).
                 # Not while it runs: it then reports the level it started from,
                 # so the widening and the early return would compare against
                 # a stale level and drop a retarget (40 -> 80, then 40). Also
                 # skip the early return briefly after our own level write,
-                # before the actuator's first moving status arrives.
+                # before the actuator's first moving status arrives (a pulse's
+                # echo window is not that write's).
                 target_position = self._strategy.quantize_target(current, target_position)
-                if target_position == current and not self._in_echo_window(now):
+                if target_position == current and (was_tilting or not self._in_echo_window(now)):
+                    # Nothing is written: a running pulse keeps its auto-stop, a
+                    # finished one its claim on the stopped level.
                     return
+            # The level command takes the motor over: a running slat pulse must
+            # not stop it with its own auto-stop, and any pending promotion
+            # hand-off is superseded.
+            self._cancel_stop_task()
+            self._end_pulse_for_takeover()
+            self._run_generation += 1
             # 0% and 100% are full runs: they end on the motor's limit switch
             # and so put the actuator's own level back in step with the curtain,
             # also when it already reports that end. The MH201 rejects the
@@ -2803,7 +2813,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if fut is not None and self._pulse_stop_written is fut:
                 self._pulse_stop_written = None
             if generation != self._run_generation or not self._is_tilting:
-                return  # a newer command, or a stop status, already ended the pulse
+                # A newer command, or a stop status, already ended the pulse. A write that
+                # failed after that is read here, so it is not logged as never retrieved.
+                if fut is not None and not fut.cancelled():
+                    fut.exception()
+                return
             stopped_at: float | None = None
             if fut is not None and not fut.cancelled() and fut.exception() is None:
                 result = fut.result()
@@ -2816,11 +2830,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # The stop cannot leave before it was queued (nor the auto-stop before it was due).
             stopped_at = max(stopped_at if stopped_at is not None else time.monotonic(), not_before)
             delivered = fut is None or (not fut.cancelled() and fut.exception() is None)
-            self._apply_tilt_stop(stopped_at)
-            if not delivered:
-                # A stop that never reached the bus is no end of the pulse: no level is its own.
-                # (Reset after the call: MyHOMEScopeCover overrides _apply_tilt_stop(at).)
-                self._pulse_ended_at = None
+            # A stop that never reached the bus is no end of the pulse: no level is its own.
+            self._apply_tilt_stop(stopped_at, record_end=delivered)
             self._publish_state()
 
         if isinstance(written, asyncio.Future) and not written.done():
@@ -2891,20 +2902,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self.hass is not None:
             self.async_write_ha_state()
 
-    def _apply_tilt_stop(self, at: float | None = None) -> None:
-        """Interpolate and finalize tilt position when tilting stops.
-
-        The pulse's end is recorded (for its own level report) only when a pulse was
-        open and its direction frame was not cancelled or failed; a caller whose stop
-        was not delivered clears it again.
-        """
+    def _pulse_direction_failed(self) -> bool:
+        """Whether the running pulse's direction frame was cancelled or failed on its way to the bus."""
         written = self._pulse_written
-        direction_failed = (
+        return (
             isinstance(written, asyncio.Future)
             and written.done()
             and (written.cancelled() or written.exception() is not None)
         )
-        if not direction_failed and self._tilt_direction is not None:
+
+    def _apply_tilt_stop(self, at: float | None = None, *, record_end: bool = True) -> None:
+        """Interpolate and finalize tilt position when tilting stops.
+
+        The pulse's end is recorded (for its own level report) only when a pulse was
+        open and its direction frame was not cancelled or failed. ``record_end=False``
+        is for an end that leaves no level of its own: a stop that was not delivered,
+        or a motor that another command took over.
+        """
+        if record_end and not self._pulse_direction_failed() and self._tilt_direction is not None:
             self._pulse_ended_at = at if at is not None else time.monotonic()
             self._pulse_ended_direction = self._tilt_direction
         else:
@@ -2931,12 +2946,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         2.0.51 + F401 the stopped level followed each of the ten pulse stops; it went
         0 -> 1 after four opening pulses and 1 -> 0 after four closing ones, and stayed
         0 after one opening and one closing pulse (steps 3 and 4;
-        tests/fixtures/traces/discussion_770_f454_f401/README.md:57-68, trace 2). The
-        MyHomeServer1 75 -> 76 step is what the reporter of #868 described for a 0.86 s
-        pulse; it is not a frame of the attached trace. The slats are where the pulse
-        left them, not a full rotation further. Inside the echo window of the pulse's
-        stop, a level that moved the way the pulse turned is taken as its own; any
-        other change is still an external move (#868).
+        tests/fixtures/traces/discussion_770_f454_f401/README.md:57-68, trace 2). On a
+        MyHomeServer1 2.87.13 + K4672M2S it followed each of three pulse stops by
+        0.10-0.12 s: 0 -> 1, 1 -> 2 and 2 -> 1 (frames 18, 29 and 40 of
+        tests/fixtures/traces/pr_991_myhomeserver1_k4672m2s; the 75 -> 76 step of #868
+        was a description only). The slats are where the pulse left them, not a full
+        rotation further. Inside the echo window of the pulse's stop, a level that
+        moved the way the pulse turned is taken as its own; any other change is still
+        an external move (#868), and turns the slats all the way only when no motion
+        frame came with it: a keypad pulse that reports its moving level turns them in
+        proportion to its motor time (frames 56-58 of the same capture). The claim is
+        for one stopped level (handle_event clears it).
         """
         ended, direction = self._pulse_ended_at, self._pulse_ended_direction
         if ended is None or direction is None or now - ended > ECHO_WINDOW:
@@ -2957,9 +2977,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._cancel_stop_task()
         # A pulse that follows a completed pulse keeps that pulse's claim on its stopped
         # level, as the blind's own next pulse does (_begin_run): the level may still come.
-        earlier_pulse_end = None if self._is_tilting else self._pulse_ended_at
-        self._end_pulse_for_takeover()
-        self._pulse_ended_at = earlier_pulse_end
+        # A running pulse ends here and keeps its claim too, as a reversed pulse does
+        # (_async_start_tilt): a gateway that stops the actuator ahead of the leader's
+        # direction frame makes it report that pulse's stopped level under this one.
+        if self._is_tilting:
+            self._run_generation += 1  # the pulse's queued stop must not settle anything now
+            self._apply_tilt_stop(time.monotonic())
         # None: this blind's angle is unknown; the leader's pulse anchors it only at a slat stop.
         self._tilt_initial_position = self.current_cover_tilt_position
         self._tilt_target_position = 100 if direction == "open" else 0
@@ -3001,8 +3024,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """A curtain or level command takes the motor over from a running slat pulse."""
         if self._is_tilting:
             self._run_generation += 1  # the pulse's queued stop must not settle anything now
-            self._apply_tilt_stop(time.monotonic())
-        # A curtain or level command of our own ends any claim of an earlier pulse.
+            self._apply_tilt_stop(time.monotonic(), record_end=False)
+        # A curtain or level command ends any claim of an earlier pulse.
         self._pulse_ended_at = None
 
     def _end_curtain_for_takeover(self, now: float) -> None:
@@ -3045,7 +3068,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     async def _async_start_tilt(self, target_tilt: int) -> None:
         """Start, retarget or end the slat pulse that brings the slats to ``target_tilt``."""
         was_tilting = self._is_tilting
-        if not was_tilting and (self._attr_is_opening or self._attr_is_closing):
+        if not was_tilting and (self.is_opening or self.is_closing):
             # The slats already turned with the curtain run, and a pulse would
             # leave the curtain's travel estimate behind: stop the run first.
             raise HomeAssistantError(
@@ -3103,6 +3126,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self.async_write_ha_state()
             return
 
+        if was_tilting:
+            # A new pulse while one runs (reversed, or this blind's own under a scope's):
+            # the running one ends here, at the angle it reached. Its stopped level comes
+            # when the gateway stops the actuator ahead of the new direction frame, while
+            # the new pulse is open: it stays that pulse's own and must not end this one.
+            self._apply_tilt_stop(time.monotonic())
         self._tilt_initial_position = start_tilt  # None: known again at the slat stop
         self._tilt_target_position = target_tilt
         self._tilt_duration = run_duration
@@ -3185,8 +3214,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self.async_write_ha_state()
             except HomeAssistantError as err:
                 LOGGER.error("%s Auto-stop tilt aborted for %s: %s", self._gateway_handler.log_id, self._full_where, err)
-                self._apply_tilt_stop()
-                self._pulse_ended_at = None  # the stop was not delivered: no end of the pulse
+                self._apply_tilt_stop(record_end=False)  # the stop was not delivered: no end of the pulse
             except asyncio.CancelledError:
                 pass
 
@@ -3375,6 +3403,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # The motor needs time to get there and a keypad can stop it midway,
             # so the frame never changes state: the position comes from the
             # actuator's own DIM 10 / status reports.
+            if self._is_own_point_message(message) and (self._is_tilting or self._pulse_ended_at is not None):
+                # A level command takes the motor over from a slat pulse, as our own does
+                # (async_set_cover_position): the pulse's auto-stop must not stop that run,
+                # and the level that follows is the run's, not the pulse's.
+                self._cancel_stop_task()
+                self._end_pulse_for_takeover()
+                self._publish_state()
             return
 
         # Ignore status queries/requests (e.g. *#2*...##) - they are polls, not state transitions
@@ -3459,10 +3494,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             previous_position = self._attr_current_cover_position
             if self._is_tilting:
                 level_changed = previous_position is not None and position != previous_position
+                # A blind that follows a scope cover's pulse is stopped by the scope's stop frame.
+                stop_written = (
+                    self._tilt_follows._pulse_stop_written if self._tilt_follows is not None else self._pulse_stop_written
+                )
                 if (
                     level_changed
                     and previous_position is not None  # (narrowing for the type checker)
-                    and self._pulse_stop_written is not None
+                    and stop_written is not None
                     and (position > previous_position) == (self._tilt_direction == "open")
                 ):
                     # The actuator's report of our pulse's stop, before the gateway
@@ -3482,6 +3521,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     # An unchanged level, or the previous pulse's own stopped level, late.
                     # Routine status/poll reply during a slat pulse: update position
                     # but preserve active pulse state and auto-stop task.
+                    if level_changed:
+                        self._pulse_ended_at = None  # that pulse's level has come: the next one is not its own
                     self._attr_current_cover_position = position
                     if not self._advanced:
                         self._start_position = position
@@ -3520,8 +3561,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._turn_slats_for_run(now, None, False, True)
                     else:
                         self._turn_slats_for_run(now, None, True, False)
-                elif position != previous_position and position in (0, 100):
+                elif (
+                    position != previous_position
+                    and position in (0, 100)
+                    and (self._pulse_ended_at is None or now - self._pulse_ended_at > ECHO_WINDOW)
+                ):
+                    # The first level known is an end: the slats are at that end too. Not right
+                    # after our own slat pulse, which left them at its angle.
                     self._attr_current_cover_tilt_position = position
+            if own_point and not self._is_tilting:
+                # A pulse's claim is for one stopped level: a later jump is an external move.
+                self._pulse_ended_at = None
             if was_opening or was_closing:
                 self._last_stop_at = now
                 self._stopped_event.set()
@@ -3547,8 +3597,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if self._is_tilting:
                     self._cancel_stop_task()
                     self._run_generation += 1
-                    self._apply_tilt_stop(now)
-                    self._pulse_ended_at = None  # taken over: the next level is not this pulse's
+                    self._apply_tilt_stop(now, record_end=False)  # taken over: the next level is not this pulse's
                 if self._calibrating and not self._attr_is_opening:
                     self._interrupt_calibration("an external open command arrived")
                 was_closing = bool(self._attr_is_closing)
@@ -3592,8 +3641,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if self._is_tilting:
                     self._cancel_stop_task()
                     self._run_generation += 1
-                    self._apply_tilt_stop(now)
-                    self._pulse_ended_at = None  # taken over: the next level is not this pulse's
+                    self._apply_tilt_stop(now, record_end=False)  # taken over: the next level is not this pulse's
                 if self._calibrating and not self._attr_is_closing:
                     self._interrupt_calibration("an external close command arrived")
                 was_opening = bool(self._attr_is_opening)
