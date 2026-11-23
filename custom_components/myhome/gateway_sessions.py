@@ -50,8 +50,9 @@ EVENT_INACTIVITY_TIMEOUT: float | None = None
 # connect() results that mean the gateway refused the stored password (OWNd
 # `_AUTH_NEGOTIATION_ERRORS`). Presenting it again cannot succeed, and an HMAC
 # gateway disables its authentication service after repeated failures
-# (OpenWebNet HMAC Specification 1.1, "Simple Authentication Mode (SAM)"), so
-# both sessions stop and Home Assistant asks for the password again (reauth).
+# (OpenWebNet Encyclopedia `protocol/authentication.md`, HMAC Simple
+# Authentication Mode), so both sessions stop and Home Assistant asks for the
+# password again (reauth).
 AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
 
 

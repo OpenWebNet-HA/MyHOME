@@ -538,6 +538,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     _central_season: str | None = None
     central_season_changed_at: float | None = None
     central_season_learned_at: float | None = None
+    _auth_refused: bool = False
+    _auth_refused_session: str | None = None
+    _cancel_listener_handle: asyncio.Handle | None = None
 
     def __init__(
         self,
@@ -1299,7 +1302,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         password is never presented again, by either session, until the user has
         entered a new one and the entry reloads. An HMAC gateway disables its
         authentication service after 3 failed handshakes in 60 s
-        (OpenWebNet HMAC Specification 1.1, "Simple Authentication Mode (SAM)").
+        (OpenWebNet Encyclopedia ``protocol/authentication.md``, HMAC Simple
+        Authentication Mode).
         """
         if self._auth_refused or self._terminate_listener:
             return
@@ -1335,11 +1339,20 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self.config_entry.async_start_reauth(self.hass)
 
     @callback
+    def _clear_cancel_listener_handle(self, _task: Any = None) -> None:
+        """Cancel any pending listener-cancel repeat timer."""
+        if self._cancel_listener_handle is not None:
+            self._cancel_listener_handle.cancel()
+            self._cancel_listener_handle = None
+
+    @callback
     def _cancel_listener(self, listener: asyncio.Task[None], attempt: int = 0) -> None:
         """Cancel the stopped event listener until it has ended or entered session cleanup (bounded)."""
         if listener.done() or self._event_runner._closing_session or attempt >= 60:
-            self._cancel_listener_handle = None
+            self._clear_cancel_listener_handle()
             return
+        if attempt == 0:
+            listener.add_done_callback(self._clear_cancel_listener_handle)
         listener.cancel()
         if attempt < 10:
             self._cancel_listener_handle = self.hass.loop.call_soon(
@@ -1443,9 +1456,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if not self._auth_refused:
             return False
         task = asyncio.current_task()
-        if task is not None:
-            while task.cancelling():
-                task.uncancel()
+        if task is None or (task is not self.listening_worker and task not in self.sending_workers):
+            return False
+        while task.cancelling():
+            task.uncancel()
         return True
 
     @property
@@ -1735,9 +1749,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         LOGGER.info("%s Closing event listener", self.log_id)
         if self._unavailable_timer is not None:
             self._unavailable_timer()
-        if self._cancel_listener_handle is not None:
-            self._cancel_listener_handle.cancel()
-            self._cancel_listener_handle = None
+        self._clear_cancel_listener_handle()
         self._resync_manager.cancel_all()
         self._echo_watchdog.cancel_all()
         if self._zone_request_task is not None:

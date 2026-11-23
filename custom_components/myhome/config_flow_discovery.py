@@ -491,6 +491,18 @@ class ConfigFlowDiscoveryMixin:
         gateway = self.gateway_handler
         assert gateway is not None
 
+        if self._existing_entry:
+            # SSDP may have updated CONF_HOST with reload_on_update=False while the
+            # reauth prompt was open; test against the latest address, not the snapshot.
+            current_entry = (
+                self.hass.config_entries.async_get_entry(self._existing_entry.entry_id)
+                or self._existing_entry
+            )
+            self._existing_entry = current_entry
+            latest_host = current_entry.data.get(CONF_HOST)
+            if latest_host and latest_host != gateway.address:
+                gateway.address = latest_host
+
         self._update_flow_context(gateway)
 
         async def _run_test_connection() -> dict[str, typing.Any]:
