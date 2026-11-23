@@ -21,6 +21,7 @@ from .const import (
     CONF_GENERATE_EVENTS,
     CONF_IGNORED_ADDRESSES,
     CONF_OWN_PASSWORD,
+    CONF_STANDALONE_ZONES,
     CONF_TRANSITION_MODE,
     CONF_TUNER_PICTURES,
     CONF_WORKER_COUNT,
@@ -32,6 +33,7 @@ from .const import (
 from .gateway import command_session_default, command_session_limit
 from .ignored import validate_ignored_addresses
 from .typing_compat import flow_schema
+from .where_grammar import validate_standalone_zones
 
 
 class MyhomeOptionsFlowHandler(
@@ -54,25 +56,52 @@ class MyhomeOptionsFlowHandler(
             return self.hass.config_entries.async_get_entry(self.handler)
         return None
 
-    async def async_step_init(self, user_input: typing.Any = None) -> typing.Any:  # pylint: disable=unused-argument  # type: ignore
-        """Manage the MyHome options."""
-        self.options = dict(self.config_entry.options)
+    async def async_step_init(self, user_input: dict[str, typing.Any] | None = None) -> typing.Any:  # pylint: disable=unused-argument
+        """Keep panel access separate from gateway connection settings."""
+        return self.async_show_menu(step_id="init", menu_options=["panel", "user"])
+
+    async def async_step_panel(self, user_input: dict[str, typing.Any] | None = None) -> typing.Any:
+        """Link to this gateway's panel and manage its shared sidebar shortcut."""
+        from urllib.parse import urlencode
+
+        from .panel import (
+            CONF_SHOW_SIDEBAR,
+            PANEL_URL,
+            async_get_panel_sidebar,
+            async_set_panel_sidebar,
+        )
+
+        errors = {}
+        if user_input is not None:
+            try:
+                await async_set_panel_sidebar(self.hass, user_input[CONF_SHOW_SIDEBAR])
+            except OSError:
+                errors["base"] = "panel_save_failed"
+            else:
+                return self.async_create_entry(title="", data=dict(self.config_entry.options))
+        visible = await async_get_panel_sidebar(self.hass)
+        return self.async_show_form(
+            step_id="panel",
+            data_schema=flow_schema({Required(CONF_SHOW_SIDEBAR, default=visible): bool}),
+            description_placeholders={
+                "panel_url": f"/{PANEL_URL}?{urlencode({'entry_id': self.config_entry.entry_id})}",
+            },
+            errors=errors,
+        )
+
+    def _initialize_options(self) -> None:
+        """Prepare gateway settings only when entering their existing form."""
+        options = dict(self.config_entry.options)
+        options.setdefault(
+            CONF_WORKER_COUNT, command_session_default(self.config_entry.data.get(CONF_NAME))
+        )
+        options.setdefault(CONF_GENERATE_EVENTS, False)
+        options.setdefault(CONF_BROADCAST_RESYNC, True)
+        options.setdefault(CONF_TRANSITION_MODE, DEFAULT_TRANSITION_MODE)
+        options.setdefault(CONF_AUTO_JOIN_STREAMING, DEFAULT_AUTO_JOIN_STREAMING)
+        options.setdefault(CONF_IGNORED_ADDRESSES, [])
+        self.options = options
         self.data = dict(self.config_entry.data)
-        if CONF_WORKER_COUNT not in self.options:
-            self.options[CONF_WORKER_COUNT] = command_session_default(
-                self.data.get(CONF_NAME)
-            )
-        if CONF_GENERATE_EVENTS not in self.options:
-            self.options[CONF_GENERATE_EVENTS] = False
-        if CONF_BROADCAST_RESYNC not in self.options:
-            self.options[CONF_BROADCAST_RESYNC] = True
-        if CONF_TRANSITION_MODE not in self.options:
-            self.options[CONF_TRANSITION_MODE] = DEFAULT_TRANSITION_MODE
-        if CONF_AUTO_JOIN_STREAMING not in self.options:
-            self.options[CONF_AUTO_JOIN_STREAMING] = DEFAULT_AUTO_JOIN_STREAMING
-        if CONF_IGNORED_ADDRESSES not in self.options:
-            self.options[CONF_IGNORED_ADDRESSES] = []
-        return await self.async_step_user()  # type: ignore
 
     async def async_step_user(self, user_input=None, errors=None):  # type: ignore
         """Manage general settings and decoder mapping."""
@@ -80,11 +109,8 @@ class MyhomeOptionsFlowHandler(
         limit_model: str | None = None
 
         if self.options is None:
-            self.options = (
-                dict(self.config_entry.options) if self.config_entry else {}
-            )
-        if self.data is None:
-            self.data = dict(self.config_entry.data) if self.config_entry else {}
+            self._initialize_options()
+        assert self.options is not None and self.data is not None
 
         if user_input is not None:
             self._validate_audio_decoders(user_input, errors)
@@ -106,6 +132,15 @@ class MyhomeOptionsFlowHandler(
                 errors[CONF_IGNORED_ADDRESSES] = "invalid_ignored_address"
             else:
                 self.options[CONF_IGNORED_ADDRESSES] = parsed_ignored
+
+            # As for the ignored addresses: a cleared field is left out of user_input.
+            standalone_zones, zones_valid = validate_standalone_zones(
+                user_input.get(CONF_STANDALONE_ZONES, "")
+            )
+            if not zones_valid:
+                errors[CONF_STANDALONE_ZONES] = "invalid_standalone_zone"
+            else:
+                self.options[CONF_STANDALONE_ZONES] = standalone_zones
 
             if not errors:
                 self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})
@@ -261,6 +296,14 @@ class MyhomeOptionsFlowHandler(
             ): vol.Maybe(
                 selector.TextSelector(selector.TextSelectorConfig(multiline=True))
             ),
+            vol.Optional(
+                CONF_STANDALONE_ZONES,
+                description={
+                    "suggested_value": ", ".join(
+                        str(zone) for zone in self.options.get(CONF_STANDALONE_ZONES) or []
+                    )
+                },
+            ): vol.Maybe(selector.TextSelector()),
             vol.Optional(
                 CONF_TUNER_PICTURES,
                 description={

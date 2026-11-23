@@ -192,7 +192,8 @@ def test_f455_gateway_identification_and_clock_frames() -> None:
     assert isinstance(dev_type, OWNGatewayEvent)
     assert dev_type.who == 13
     assert dev_type.dimension == 15
-    assert "F454" in (dev_type._device_type or "")  # code 200 maps to modern gateway family
+    # Code 200 is shared by modern gateways; OWNd's display label may change.
+    assert getattr(dev_type, "dimension_value", getattr(dev_type, "_dimension_value", None)) == ["200"]
 
     # Firmware 1.0.86
     fw = OWNMessage.parse("*#13**16*1*0*86##")

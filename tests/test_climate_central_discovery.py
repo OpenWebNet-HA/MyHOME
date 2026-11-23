@@ -22,13 +22,11 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dis
 from OWNd.message import OWNEvent, OWNHeatingCommand, OWNHeatingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
+from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry, async_unload_entry
+from custom_components.myhome.climate_discovery import (
     _calling_zones,
     _zone_address,
     _zone_route_keys,
-    async_setup_entry,
-    async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.device_health import DeviceHealth, FaultKind, fault_issue_id

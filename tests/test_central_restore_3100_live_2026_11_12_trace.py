@@ -16,6 +16,10 @@ unit switched OFF:
 
 This is the capture behind OpenWebNet-HA/OWNd#169 (``set_central_mode('#0', 'auto')`` builds the
 3100). Archives and README: tests/fixtures/traces/central_restore_3100_live_2026-11-12/.
+
+Zone 2 of this plant is a standalone zone, not a zone of the 3550. It was configured in the 3550
+on the day of the run only, so these archives show it as a zone of the central unit; zones 3 and 4
+are the zones that depend on it (README, "Zone 2").
 """
 
 import json
@@ -157,6 +161,25 @@ def test_every_monitor_frame_is_a_who4_event(model: str) -> None:
         assert "unknown" not in str(message.human_readable_log).lower(), raw
 
 
+@pytest.mark.parametrize(("model", "generic"), [("F461", 0), ("F455", 4)])
+def test_zone_2_is_recorded_as_a_zone_of_the_3550_on_that_day_only(model: str, generic: int) -> None:
+    """What the README says of zone 2: a zone of the 3550 on 2026-11-12, a standalone zone since.
+
+    The frames are kept as captured. They are not evidence for today's zone 2 of this plant.
+    """
+    monitor = _monitor(model)
+    assert monitor.count("*4*211*#2##") == 3
+    assert monitor.count("*4*211*#3##") == monitor.count("*4*211*#4##") == 2
+    assert monitor.count("*4*311*#2##") == generic  # only the F455 monitor shows the *4*311*#Z## frames
+    assert monitor.count("*#4*2*#14*0200*2##") == 4
+    # It went off with the central unit, 0.5 s after the 3550's first report of the run.
+    off, zone_off = monitor.index("*4*203*#0##"), monitor.index("*4*303*2##")
+    stamps = [row["t"] for row in _rows(model) if row["dir"] == "rx"]
+    assert 0.5 <= stamps[zone_off] - stamps[off] <= 0.6
+    readme = (TRACES / "README.md").read_text(encoding="utf-8")
+    assert "Zone 2 of this plant is a standalone zone (heating and cooling). It is not a zone of the 3550." in readme
+
+
 # What the 3550 did.
 
 
@@ -220,7 +243,7 @@ def test_the_central_unit_frames_of_the_run() -> None:
 
 @pytest.mark.parametrize("model", GATEWAYS)
 def test_central_entity_agrees_with_every_read_back(model: str) -> None:
-    from custom_components.myhome.climate import _zone_route_keys
+    from custom_components.myhome.climate_discovery import _zone_route_keys
 
     shown = {"*4*203*#0##": HVACMode.OFF, "*4*2101*#0##": HVACMode.COOL}
     central = _central_entity()
@@ -250,7 +273,7 @@ def test_central_entity_agrees_with_every_read_back(model: str) -> None:
 
 @pytest.mark.parametrize("model", GATEWAYS)
 def test_central_entity_shows_the_restored_program_before_any_read_back(model: str) -> None:
-    from custom_components.myhome.climate import _zone_route_keys
+    from custom_components.myhome.climate_discovery import _zone_route_keys
 
     central = _central_entity()
     router = FrameRouter()

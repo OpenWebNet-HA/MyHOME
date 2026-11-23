@@ -83,7 +83,9 @@ from .typing_compat import device_info_to_dict
 from .where_grammar import (
     parse_thermo_actuator_where,
     thermo_dim19_status,
+    thermo_dim20_actuator_target,
     thermo_dim20_is_active,
+    thermo_dim20_level,
     thermo_event_actuator,
     thermo_event_interface,
     thermo_event_zone,
@@ -671,6 +673,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
 class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
     """Switch entity for a probe-less WHO=4 thermo actuator / towel-warmer relay."""
 
+    _unrecorded_attributes = frozenset({"output_level", "actuator_levels"})
+
     def __init__(
         self,
         hass: HomeAssistant | None,
@@ -715,6 +719,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
         self._turn_on_command = turn_on_command
         self._turn_off_command = turn_off_command
         self._actuator_states: dict[str, bool] = {}
+        self._actuator_levels: dict[str, int] = {}
         self._zone_active = False
         self._active_source = "actuators"
         self._pending_direct_write: tuple[bool, float, bool] | None = None
@@ -739,15 +744,22 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return WHO=4 thermo actuator addressing attributes."""
+        """Return WHO=4 thermo actuator addressing and proportional output attributes."""
         attrs: dict[str, Any] = {"zone": int(self._zone)}
         if self._actuator is not None:
             attrs["actuator"] = int(self._actuator)
+            if self._actuator in self._actuator_levels:
+                attrs["output_level"] = self._actuator_levels[self._actuator]
         elif self._actuator_states:
             attrs["actuators"] = {
                 act: "on" if active else "off"
                 for act, active in sorted(self._actuator_states.items())
             }
+            if self._actuator_levels:
+                attrs["actuator_levels"] = {
+                    act: level
+                    for act, level in sorted(self._actuator_levels.items())
+                }
         if self._interface is not None:
             attrs["Int"] = self._interface
         return attrs
@@ -871,6 +883,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
 
         dim20_active = thermo_dim20_is_active(message)
         if dim20_active is not None:
+            dim20_level = thermo_dim20_level(message)
             act_id = thermo_event_actuator(message)
             if act_id == "0":
                 if self._actuator is not None:
@@ -885,7 +898,17 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             else:
                 if self._actuator is not None and act_id != self._actuator:
                     return
+                if not (act_id.isascii() and act_id.isdigit() and 1 <= int(act_id) <= 9):
+                    return
                 self._actuator_states[act_id] = dim20_active
+                if thermo_dim20_actuator_target(message) is not None:
+                    if dim20_level is not None:
+                        self._actuator_levels[act_id] = dim20_level
+                    elif act_id in self._actuator_levels:
+                        if dim20_active:
+                            self._actuator_levels.pop(act_id, None)
+                        else:
+                            self._actuator_levels[act_id] = 0
                 new_state = (
                     dim20_active
                     if self._actuator is not None
@@ -903,6 +926,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             self._active_source = "zone"
             if not is_active:
                 self._actuator_states = dict.fromkeys(self._actuator_states, False)
+                self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
             new_state = self._zone_active
             self._bus_state_complete = True
         else:

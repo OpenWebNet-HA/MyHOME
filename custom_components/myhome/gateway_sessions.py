@@ -22,6 +22,8 @@ from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
+from .gateway_confirm import echo_watchdog_of
+from .gateway_events import GatewayEventDispatcher
 from .where_grammar import expose_message_where, normalize_where, where_param
 
 if TYPE_CHECKING:
@@ -1521,143 +1523,171 @@ class CommandWorkerPool:
                         task["message"],
                         worker_id,
                     )
-                    # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
-                    # or a prior failed send) calls `connect()` directly, preserving
-                    # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
-                    # single-slot gateways like MH201 momentarily close TCP during
-                    # negotiation (OpenWebNet-HA/OWNd#132). Only a mid-flight socket
-                    # drop inside `send()` uses OWNd's single-attempt fast reconnect;
-                    # if `send()` returns None, `_cancel_written(task)` aborts without
-                    # re-queuing so non-idempotent commands whose ACK was lost are
-                    # never replayed.
-                    if not session_is_open(_command_session):
-                        res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
+                    async with task.get("command_lock", asyncio.Lock()):
+                        guard = task.get("guard")
+                        if guard is not None and not guard():
                             _cancel_written(task)
-                            return
+                            continue
+                        # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
+                        # or a prior failed send) calls `connect()` directly, preserving
+                        # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when
+                        # single-slot gateways like MH201 momentarily close TCP during
+                        # negotiation (OpenWebNet-HA/OWNd#132). Only a mid-flight socket
+                        # drop inside `send()` uses OWNd's single-attempt fast reconnect;
+                        # if `send()` returns None, `_cancel_written(task)` aborts without
+                        # re-queuing so non-idempotent commands whose ACK was lost are
+                        # never replayed.
                         if not session_is_open(_command_session):
-                            LOGGER.warning(
-                                "%s Command session unavailable; message `%s` not sent.",
-                                self.log_id,
-                                task["message"],
-                            )
+                            res = await _command_session.connect()
+                            if self._connect_refused(res, worker_id):
+                                _cancel_written(task)
+                                return
+                            if not session_is_open(_command_session):
+                                LOGGER.warning(
+                                    "%s Command session unavailable; message `%s` not sent.",
+                                    self.log_id,
+                                    task["message"],
+                                )
+                                _cancel_written(task)
+                                continue
+                        if guard is not None and not guard():
                             _cancel_written(task)
                             continue
                         if isinstance(written, asyncio.Future) and written.cancelled():
-                            # Re-check after `connect()`: OWNd's 5-attempt retry loop
-                            # (~13.3 s + handshake latency) can outlast LOCK_WRITE_TIMEOUT,
-                            # and zero bytes of this frame have been written yet.
+                            # The lock/connect await may outlast the caller's timeout.
                             LOGGER.debug(
                                 "%s Message `%s` was withdrawn while opening command session; not sending.",
                                 self.log_id,
                                 task["message"],
                             )
                             continue
-                    task_start = time.time()
-                    self.bus_monitor.record_frame(
-                        direction="tx",
-                        raw=str(task["message"]),
-                        parsed=(
-                            task["message"]
-                            if isinstance(task["message"], OWNMessage)
-                            else None
-                        ),
-                    )
-                    written_at = time.monotonic()
-                    is_exposed = self._is_exposed_target(task)
-                    self._in_flight_messages.append(task["message"])
-                    try:
-                        collected = await _command_session.send(
-                            message=task["message"],
-                            is_status_request=task["is_status_request"] or is_exposed,
+                        task_start = time.time()
+                        self.bus_monitor.record_frame(
+                            direction="tx",
+                            raw=str(task["message"]),
+                            parsed=(
+                                task["message"]
+                                if isinstance(task["message"], OWNMessage)
+                                else None
+                            ),
                         )
-                    finally:
-                        with contextlib.suppress(ValueError):
-                            self._in_flight_messages.remove(task["message"])
-                    last_error = getattr(_command_session, "last_error", None)
-                    bleed_zones = (
-                        _mismatched_who4_reply_zones(task["message"], collected)
-                        if task["is_status_request"]
-                        else None
-                    )
-                    if bleed_zones is not None:
-                        LOGGER.warning(
-                            "%s Gateway FIFO desync on `%s`: command session returned delayed replies for zone(s) %s instead of target zone; backing off status queue.",
-                            self.log_id,
-                            task["message"],
-                            ", ".join(sorted(bleed_zones, key=int)),
-                        )
-                        if isinstance(written, asyncio.Future) and not written.done():
-                            setattr(written, "_gateway_desync", True)
-                        _cancel_written(task)
-                        self._pause_status_after_desync()
-                    elif collected is None and not (is_exposed and session_is_open(_command_session)):
-                        if (
-                            task["is_status_request"]
-                            and getattr(last_error, "reason", None) == "command_timeout"
-                        ):
-                            if isinstance(written, asyncio.Future) and not written.done():
-                                setattr(written, "_command_timeout", True)
-                            self._pause_status_after_desync()
-                        elif (
-                            task["is_status_request"]
-                            and getattr(last_error, "reason", None) == "nack"
-                            and isinstance(written, asyncio.Future)
-                            and not written.done()
-                        ):
-                            # The gateway answered the read with a NACK (OWNd's `OWNNackError` of
-                            # a written frame; a refused negotiation has another reason). Every
-                            # other cancellation here is a frame that was not written or whose
-                            # socket was lost: a probe's fallback read tells the two apart.
-                            setattr(written, "_gateway_nack", True)
-                        _cancel_written(task)
-                    else:
-                        if (
-                            task["is_status_request"]
-                            and collected is True
-                            and isinstance(written, asyncio.Future)
-                            and not written.done()
-                        ):
-                            # OWNd returns True for an ACK that closed the request with no frame
-                            # on the command session. The silent-zone poll reads this mark.
-                            setattr(written, "_empty_reply", True)
-                        _resolve_written(task, written_at)
-                        self.handler._record_tx(written_at, task["message"])
-                    responses_to_dispatch: Any = collected
-                    if responses_to_dispatch is None and task["is_status_request"]:
-                        # A standalone zone status request (*#4*Z##) that answers only some of
-                        # bt_H4690's four bus queries ends with *#*0## on the command session;
-                        # OWNd preserves the partial frames in OWNNackError.responses.
-                        responses_to_dispatch = getattr(
-                            getattr(_command_session, "last_error", None),
-                            "responses",
-                            None,
-                        )
-                    if responses_to_dispatch and isinstance(responses_to_dispatch, list):
-                        for resp in responses_to_dispatch:
-                            raw_resp = str(resp)
-                            if self.bus_monitor.has_frame_since(
-                                task_start, direction="rx", raw=raw_resp
-                            ):
-                                continue
-                            frame = self.bus_monitor.record_frame(
-                                direction="rx",
-                                raw=raw_resp,
-                                parsed=resp if isinstance(resp, OWNMessage) else None,
+                        written_at = time.monotonic()
+                        is_exposed = self._is_exposed_target(task)
+                        self._in_flight_messages.append(task["message"])
+                        try:
+                            collected = await _command_session.send(
+                                message=task["message"],
+                                is_status_request=task["is_status_request"] or is_exposed,
                             )
-                            if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
-                                if isinstance(resp, OWNGatewayEvent):
-                                    self.handler._handle_gateway_diagnostics(resp)
-                                elif (
-                                    getattr(resp, "who", None) == 1013
-                                    and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
+                        finally:
+                            with contextlib.suppress(ValueError):
+                                self._in_flight_messages.remove(task["message"])
+                        last_error = getattr(_command_session, "last_error", None)
+                        bleed_zones = (
+                            _mismatched_who4_reply_zones(task["message"], collected)
+                            if task["is_status_request"]
+                            else None
+                        )
+                        if bleed_zones is not None:
+                            LOGGER.warning(
+                                "%s Gateway FIFO desync on `%s`: command session returned delayed replies for zone(s) %s instead of target zone; backing off status queue.",
+                                self.log_id,
+                                task["message"],
+                                ", ".join(sorted(bleed_zones, key=int)),
+                            )
+                            if isinstance(written, asyncio.Future) and not written.done():
+                                setattr(written, "_gateway_desync", True)
+                            _cancel_written(task)
+                            self._pause_status_after_desync()
+                        elif collected is None and not (is_exposed and session_is_open(_command_session)):
+                            if (
+                                task["is_status_request"]
+                                and getattr(last_error, "reason", None) == "command_timeout"
+                            ):
+                                if isinstance(written, asyncio.Future) and not written.done():
+                                    setattr(written, "_command_timeout", True)
+                                self._pause_status_after_desync()
+                            elif (
+                                getattr(last_error, "reason", None) == "nack"
+                                and isinstance(written, asyncio.Future)
+                                and not written.done()
+                            ):
+                                # The gateway answered the frame, a read or a command, with a NACK
+                                # (OWNd's `OWNNackError` of a written frame; a refused negotiation
+                                # has another reason). Every other cancellation here is a frame that
+                                # was not written or whose socket was lost: a probe's fallback read
+                                # and a setpoint write tell the two apart.
+                                setattr(written, "_gateway_nack", True)
+                            _cancel_written(task)
+                        else:
+                            if (
+                                task["is_status_request"]
+                                and collected is True
+                                and isinstance(written, asyncio.Future)
+                                and not written.done()
+                            ):
+                                # OWNd returns True for an ACK that closed the request with no frame
+                                # on the command session. The silent-zone poll reads this mark.
+                                setattr(written, "_empty_reply", True)
+                            _resolve_written(task, written_at)
+                            self.handler._record_tx(written_at, task["message"])
+                            echo_watchdog = echo_watchdog_of(self.handler)
+                            if echo_watchdog is not None and not task["is_status_request"] and not is_exposed:
+                                # An acknowledged light command whose status never arrives is
+                                # read back, on every gateway model (measured on an F455, which
+                                # leaves statuses out of a burst).
+                                echo_watchdog.command_acknowledged(task["message"], written_at)
+                        responses_to_dispatch: Any = collected
+                        if responses_to_dispatch is None and task["is_status_request"]:
+                            # A standalone zone status request (*#4*Z##) that answers only some of
+                            # bt_H4690's four bus queries ends with *#*0## on the command session;
+                            # OWNd preserves the partial frames in OWNNackError.responses.
+                            responses_to_dispatch = getattr(
+                                getattr(_command_session, "last_error", None),
+                                "responses",
+                                None,
+                            )
+                        if responses_to_dispatch and isinstance(responses_to_dispatch, list):
+                            for resp in responses_to_dispatch:
+                                raw_resp = str(resp)
+                                if self.bus_monitor.has_frame_since(
+                                    task_start, direction="rx", raw=raw_resp
                                 ):
-                                    self.handler._handle_gateway_identity_diagnostics(resp)
-                                dispatcher_send(
-                                    self.hass, f"myhome_message_{self.mac}", resp
+                                    continue
+                                frame = self.bus_monitor.record_frame(
+                                    direction="rx",
+                                    raw=raw_resp,
+                                    parsed=resp if isinstance(resp, OWNMessage) else None,
                                 )
-                                # A reply to a request sent for an offline primary
-                                self.handler._bridge_to_primary(resp)
+                                if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                    if task["is_status_request"]:
+                                        # A read reply is not a new movement/stop event.
+                                        setattr(resp, "myhome_status_reply", True)
+                                    if isinstance(resp, OWNGatewayEvent):
+                                        self.handler._handle_gateway_diagnostics(resp)
+                                    elif (
+                                        getattr(resp, "who", None) == 1013
+                                        and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
+                                    ):
+                                        self.handler._handle_gateway_identity_diagnostics(resp)
+                                    # A central unit's report among the replies is noted before
+                                    # the entities see it, as on the event session.
+                                    events = getattr(self.handler, "_event_dispatcher", None)
+                                    central = (
+                                        events.note_central_unit(resp)
+                                        if isinstance(events, GatewayEventDispatcher)
+                                        else (False, False)
+                                    )
+                                    dispatcher_send(
+                                        self.hass, f"myhome_message_{self.mac}", resp
+                                    )
+                                    if isinstance(events, GatewayEventDispatcher):
+                                        events.tell_central_unit(resp, *central)
+                                    echo_watchdog = echo_watchdog_of(self.handler)
+                                    if echo_watchdog is not None:
+                                        echo_watchdog.status_seen(resp)
+                                    # A reply to a request sent for an offline primary
+                                    self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise
@@ -1688,6 +1718,11 @@ class CommandWorkerPool:
                 and (self._active_worker_loops == 0 or self._terminate_sender)
             ):
                 self.send_buffer.clear_status_pause()
+            if self._active_worker_loops == 0 or self._terminate_sender:
+                # No worker is left to write a status read-back: drop the pending ones.
+                echo_watchdog = echo_watchdog_of(self.handler)
+                if echo_watchdog is not None:
+                    echo_watchdog.cancel_all()
             with contextlib.suppress(Exception):
                 await asyncio.shield(_command_session.close())
             LOGGER.debug("%s Destroying sending worker %s", self.log_id, worker_id)

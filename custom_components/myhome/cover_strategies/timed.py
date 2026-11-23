@@ -110,6 +110,34 @@ class TimedCurtainStrategy(BaseCoverStrategy):
         )
         return lead + curtain_duration
 
+    def _linear_remaining_travel(
+        self,
+        start: int,
+        opening: bool,
+        *,
+        entity: Any = None,
+    ) -> float | None:
+        """Return linear curtain + lead seconds remaining from ``start`` to 0 % / 100 %."""
+        travel_time = self.curtain_travel_for(opening)
+        if travel_time <= 0:
+            return None
+        clamped_start = max(0, min(100, int(round(start))))
+        remaining_pct = (100 - clamped_start) if opening else clamped_start
+        lead = self.lead_time_for(opening, entity=entity)
+        return lead + (remaining_pct / 100.0) * travel_time
+
+    def remaining_travel_for(
+        self,
+        start: int,
+        opening: bool,
+        *,
+        entity: Any = None,
+    ) -> float | None:
+        """Return linear remaining travel for built-in timed covers; subclasses opt in explicitly."""
+        if type(self) is not TimedCurtainStrategy:
+            return None
+        return self._linear_remaining_travel(start, opening, entity=entity)
+
     def _reanchor_slats_on_stop_echo(
         self,
         entity: Any,
@@ -161,6 +189,15 @@ class TimedCurtainStrategy(BaseCoverStrategy):
                 entity._attr_current_cover_position = reanchored
                 entity._start_position = reanchored
                 entity._attr_is_closed = reanchored == 0
+        if (
+            travel_time > 0
+            and (is_opening or is_closing)
+            and raw_elapsed >= self.travel_for_direction(is_opening)
+            and reanchored is not None
+            and not getattr(entity, "_calibrating", False)
+            and getattr(entity, "_calibration", None) is None
+        ):
+            entity._position_drift_bound = 0.0
         if end_stop_from_unknown and reanchored is not None:
             self.on_position_confirmed(entity, reanchored, "end_stop")
         self._reanchor_slats_on_stop_echo(entity, ctx, elapsed, is_opening, is_closing)

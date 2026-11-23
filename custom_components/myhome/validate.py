@@ -123,6 +123,7 @@ from .const import (
     CONF_STATE_SENSOR,
     CONF_STEP_DOWN_ACTION,
     CONF_STEP_UP_ACTION,
+    CONF_STOP_BEFORE_MOVE,
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_TURN_OFF_ACTION,
@@ -656,6 +657,7 @@ cover_schema = MyHomeDeviceSchema(
                 Coerce(float), Range(min=CALIBRATION_MIN_MOTOR_PULSE, max=CALIBRATION_MAX_MOTOR_PULSE)
             ),
             Optional(CONF_MIN_POSITION_DELTA): All(Coerce(int), Range(min=1, max=MAX_MIN_POSITION_DELTA)),
+            Optional(CONF_STOP_BEFORE_MOVE): Boolean(),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
             Optional(CONF_MEMBERS): [All(Coerce(str), PointToPoint())],
@@ -692,6 +694,10 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             raise Invalid("slat_time can only be defined on a cover with slat_tilt enabled")
         if CONF_MIN_POSITION_DELTA in cfg and not cfg.get(CONF_ADVANCED_SHUTTER) and not advanced:
             raise Invalid("min_position_delta only applies to an advanced cover (use min_motor_pulse on a timed cover)")
+        if CONF_STOP_BEFORE_MOVE in cfg and (cfg.get(CONF_ADVANCED_SHUTTER) or advanced):
+            raise Invalid(
+                "stop_before_move only applies to a timed cover (an advanced cover runs its own level write)"
+            )
         cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
     return data
 
@@ -706,6 +712,8 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
         if is_impulse and cover_type in ("shutter", "standard"):
             raise Invalid(f"{device}: who: 1 is an impulse relay; type: {cover_type} only applies to who: 2")
         if is_impulse:
+            if CONF_STOP_BEFORE_MOVE in cfg:
+                raise Invalid(f"{device}: stop_before_move only applies to WHO 2 covers (not impulse covers on who: 1)")
             try:
                 PointToPoint()(str(cfg[CONF_WHERE]))
             except Invalid as err:

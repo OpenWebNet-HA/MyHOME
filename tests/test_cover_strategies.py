@@ -10,6 +10,7 @@ import pytest
 from homeassistant.components.cover import CoverEntityFeature
 from OWNd.message import OWNEvent
 from probatio import Invalid
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.const import (
     CONF_SLAT_TILT,
@@ -725,6 +726,8 @@ def _make_cover(hass, **kwargs: Any) -> MyHOMECover:
     gw.mac = "00:03:50:00:12:34"
     gw.log_id = "[TestGW]"
     gw.send = AsyncMock()
+    gw.config_entry = MockConfigEntry(domain="myhome", data={"mac": gw.mac})
+    gw.config_entry.add_to_hass(hass)
     args: dict[str, Any] = {
         "hass": hass,
         "name": "Cover 21",

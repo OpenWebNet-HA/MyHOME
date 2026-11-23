@@ -446,7 +446,9 @@ class TestCoverEntity:
 
         mock_er.entities = {"test1": entry_with_int, "test2": entry_plain}
 
-        with patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er), \
+        with patch("custom_components.myhome.cover_profiles.ProfileStorage.async_load", new=AsyncMock(return_value={
+                 "revision": 0, "profiles": {}, "assignments": {}, "covers": {}, "native_fallbacks": {}})), \
+             patch("homeassistant.helpers.entity_registry.async_get", return_value=mock_er), \
              patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[entry_with_int, entry_plain]):
             async_add_entities = MagicMock()
             attach_runtime(mock_hass, config_entry)
@@ -461,7 +463,8 @@ class TestCoverEntity:
 
             # 2. Test message listener handling
             assert config_entry.async_on_unload.called
-            assert len(listeners) == 1
+            # The WHO 2 discovery's listener, the translation relay's listener and its close.
+            assert len(listeners) == 3
 
         # Test async_unload_entry
         attach_runtime(mock_hass, config_entry)
@@ -493,7 +496,9 @@ class TestCoverEntity:
 
         with patch("homeassistant.helpers.entity_registry.async_get", return_value=MagicMock()), \
              patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
-             patch("custom_components.myhome.discovery.async_dispatcher_connect", side_effect=fake_dispatcher_connect):
+             patch("custom_components.myhome.discovery.async_dispatcher_connect", side_effect=fake_dispatcher_connect), \
+             patch("custom_components.myhome.cover_profiles.ProfileStorage.async_load", new=AsyncMock(return_value={
+                 "revision": 0, "profiles": {}, "assignments": {}, "covers": {}, "native_fallbacks": {}})):
             async_add_entities = MagicMock()
             attach_runtime(mock_hass, config_entry)
             await async_setup_entry(mock_hass, config_entry, async_add_entities)
@@ -536,9 +541,9 @@ class TestCoverEntity:
             msg_handler(valid_msg)
 
     @pytest.mark.asyncio
-    async def test_cover_async_added_to_hass(self, cover, mock_hass):
-        cover.hass = mock_hass
-        cover.entity_id = cover.entity_id or "test.cover"
+    async def test_cover_async_added_to_hass(self, cover, hass):
+        # Startup now resolves profiles through the real HA entity registry.
+        cover.hass = hass
         cover.async_on_remove = MagicMock()
         await cover.async_added_to_hass()
         assert cover.async_on_remove.call_count == 1  # availability; frames come via the router

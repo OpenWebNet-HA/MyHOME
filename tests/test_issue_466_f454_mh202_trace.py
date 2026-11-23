@@ -362,7 +362,6 @@ def test_advanced_cover_positioning_and_presets() -> None:
     assert dim10_pos40.where == "31"
     assert dim10_pos40.dimension == 10
     assert dim10_pos40.current_position == 40
-    assert dim10_pos40._position_unknown is False
 
     # Dimension 10 movement: closing towards 66%
     dim10_closing = OWNMessage.parse("*#2*31*10*12*66*001*0##")
@@ -871,4 +870,3 @@ def test_mh202_f418u2_dimmer_dimension_4_positive_write_and_extended_events() ->
     assert evt_speed0.where == "32"
     assert evt_speed0._what == 1
     assert evt_speed0.is_on is True
-

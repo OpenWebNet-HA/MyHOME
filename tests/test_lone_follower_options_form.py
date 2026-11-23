@@ -31,6 +31,7 @@ from custom_components.myhome.const import (
     TOPOLOGY_SHARED,
     TOPOLOGY_STANDALONE,
 )
+from tests.test_config_flow import _open_gateway_options
 from tests.test_multi_gateway_regressions import PRI, SB, _issue, _set_up, _setup_patches
 
 TOPOLOGY_FIELDS = {CONF_BUS_TOPOLOGY, CONF_GATEWAY_ROLE, CONF_PRIMARY_GATEWAY, CONF_DELEGATED_WHOS}
@@ -64,7 +65,7 @@ async def test_the_last_entry_that_is_a_follower_gets_the_bus_topology_field(has
     p1, p2, p3 = _setup_patches()
     with p1, p2, p3:
         follower = await _set_up(hass, SB, "192.168.0.36", dict(stored))
-        form = await hass.config_entries.options.async_init(follower.entry_id)
+        form = await _open_gateway_options(hass, follower.entry_id)
         assert form["type"] == FlowResultType.FORM
         assert _topology_fields(form) == {CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED}  # the stored value, nothing else
         assert dict(follower.options) == stored  # opening the form changes nothing
@@ -80,7 +81,7 @@ async def test_a_last_entry_that_is_no_follower_gets_no_topology_field(hass: Hom
     p1, p2, p3 = _setup_patches()
     with p1, p2, p3:
         entry = await _set_up(hass, SB, "192.168.0.36", dict(stored))
-        form = await hass.config_entries.options.async_init(entry.entry_id)
+        form = await _open_gateway_options(hass, entry.entry_id)
         assert _topology_fields(form) == {}
 
 
@@ -90,7 +91,7 @@ async def test_with_another_gateway_the_form_has_all_four_fields(hass: HomeAssis
     with p1, p2, p3:
         await _set_up(hass, PRI, "192.168.0.35", {CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY})
         follower = await _set_up(hass, SB, "192.168.0.36", dict(STANDBY))
-        form = await hass.config_entries.options.async_init(follower.entry_id)
+        form = await _open_gateway_options(hass, follower.entry_id)
         assert set(_topology_fields(form)) == TOPOLOGY_FIELDS
 
 
@@ -111,7 +112,7 @@ async def test_saving_standalone_makes_the_last_entry_its_own_primary_and_clears
         assert _issue(hass, issue_id) is not None
         assert dict(follower.options) == stored  # flagged, not changed (#453)
 
-        form = await hass.config_entries.options.async_init(follower.entry_id)
+        form = await _open_gateway_options(hass, follower.entry_id)
         result = await hass.config_entries.options.async_configure(
             form["flow_id"], {**OTHER_SETTINGS, CONF_BUS_TOPOLOGY: TOPOLOGY_STANDALONE}
         )
@@ -124,7 +125,7 @@ async def test_saving_standalone_makes_the_last_entry_its_own_primary_and_clears
         gateway = follower.runtime_data.gateway
         assert gateway.is_primary is True and gateway.is_follower is False
 
-        again = await hass.config_entries.options.async_init(follower.entry_id)
+        again = await _open_gateway_options(hass, follower.entry_id)
         assert _topology_fields(again) == {}  # a standalone gateway alone: nothing to choose
 
 
@@ -138,7 +139,7 @@ async def test_saving_shared_is_refused_on_the_field_the_form_has(hass: HomeAssi
     p1, p2, p3 = _setup_patches()
     with p1, p2, p3:
         follower = await _set_up(hass, SB, "192.168.0.36", dict(STANDBY))
-        form = await hass.config_entries.options.async_init(follower.entry_id)
+        form = await _open_gateway_options(hass, follower.entry_id)
         with patch.object(hass.config_entries, "async_reload", return_value=True) as reload:
             result = await hass.config_entries.options.async_configure(form["flow_id"], {**OTHER_SETTINGS, **chosen})
             await hass.async_block_till_done()
@@ -154,7 +155,7 @@ async def test_with_another_gateway_the_error_stays_on_the_primary_gateway_field
     with p1, p2, p3:
         await _set_up(hass, PRI, "192.168.0.35", {})  # a standalone gateway: not a shared primary
         follower = await _set_up(hass, SB, "192.168.0.36", {})
-        form = await hass.config_entries.options.async_init(follower.entry_id)
+        form = await _open_gateway_options(hass, follower.entry_id)
         result = await hass.config_entries.options.async_configure(
             form["flow_id"],
             {

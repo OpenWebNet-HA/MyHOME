@@ -185,10 +185,15 @@ GATEWAY_METADATA: list[dict[str, object]] = [
 # tests/test_startup_requests_per_firmware.py checks these lists against the sweep itself, and
 # verify_profiles_against_oracle checks them against ``pinned_whos``); a request of a WHO the row
 # does not advertise is not an omission (nothing is sent for that WHO at all) and is left out of
-# the generated row. ``notes`` describes the row; where a profile may list or drop WHO 16 between
+# the generated row. ``sweep_replaces`` lists what the sweep sends in place of an omitted general
+# request (``_heating_startup_requests`` in gateway.py; tests/test_review_955_third_pass_2026_11_18.py
+# checks the lists against the sweep itself), so the column does not read as "no WHO 4 request".
+# ``notes`` describes the row; where a profile may list or drop WHO 16 between
 # OWNd releases, ``notes_without_who16`` is used instead when the row does not carry WHO 16.
 GENERAL_ZONE_STATUS = "*#4*0##"
 SOUND_STATUS = "*#16*0*5##"
+CENTRAL_UNIT_STATUS = "*#4*#0##"
+ALL_ACTUATORS_STATUS = "*#4*0#0*20##"
 GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH202**",
@@ -209,7 +214,8 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "F454",
         "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep leaves it out; zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted.",
+        "sweep_replaces": [ALL_ACTUATORS_STATUS],
+        "notes": "Full lighting, cover, sound (`bt_difson` firmware-verified), and energy meter 51 queries. The `020051` firmware drops `*#4*0##` (own-firmware-oracle), so the sweep asks every actuator in its place (`*#4*0#0*20##`); zones are polled with `*#4*<WHERE>##` (#629, #866). Alarm query omitted.",
     },
     {
         "model": "**F452 / F453 / F453AV**",
@@ -223,23 +229,26 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "F461",
         "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
-        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "sweep_replaces": [CENTRAL_UNIT_STATUS, ALL_ACTUATORS_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `020011`, confirmed live on 2.0.11). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**F455**",
         "profile_name": "F455",
         "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Not in own-firmware-oracle; a physical F455 1.0.76 ACKed `*#4*0##` after 9.1 s with no zone frame although its zones answer single reads (`tests/fixtures/traces/issue_466`), so the sweep leaves it out; a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
+        "sweep_replaces": [ALL_ACTUATORS_STATUS],
+        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Not in own-firmware-oracle; a physical F455 1.0.76 ACKed `*#4*0##` after 9.1 s with no zone frame although its zones answer single reads (`tests/fixtures/traces/issue_466`), so the sweep asks every actuator in its place (`*#4*0#0*20##`); a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",
         "profile_name": "MyHomeServer1",
         "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
-        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep leaves it out; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "sweep_replaces": [CENTRAL_UNIT_STATUS, ALL_ACTUATORS_STATUS],
+        "notes": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
+        "notes_without_who16": "Lighting, cover, and energy meter 51 queries. Sound is WHO 22 only (no `bt_difson`; every WHO 16 frame refused, own-firmware-oracle `028206`, confirmed live on 3.87.13). The firmware also drops `*#4*0##`, so the sweep asks the central unit's status (`*#4*#0##`) and every actuator (`*#4*0#0*20##`) in its place; zones are polled with `*#4*<WHERE>##`. Alarm query omitted.",
     },
     {
         "model": "**MH201**",
@@ -522,6 +531,15 @@ GATEWAY_OPTIONS_SPECS: list[dict[str, object]] = [
         "default": "`[]`",
         "limits": "All gateways",
         "description": "Newline- or comma-separated `WHO/WHERE` addresses (e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and fault tracking.",
+    },
+    {
+        "keys": ("standalone_zones",),
+        "option": "**Standalone Thermostats**",
+        "key_cell": "`standalone_zones`",
+        "selector": "Text",
+        "default": "`[]`",
+        "limits": "Zones `1`..`99` (local bus)",
+        "description": "Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`. The emulated firmware of F453, F453AV, H4684, MH200 and MH200N refuses that direct form (own-firmware-oracle `trace-corpus.tsv:55`; not yet seen on a real gateway): a refused write fails the service call.",
     },
     {
         "keys": ("bus_topology",),
@@ -965,7 +983,11 @@ def generate_gateway_discovery_table(*, use_pinned: bool = False) -> str:
         sent = "WHO " + ", ".join(str(w) for w in sweep_whos(row)) if whos else "none"
         omitted = cast_list(row.get("sweep_omits"))
         if omitted:
-            sent += " (firmware drops " + ", ".join(f"`{frame}`" for frame in omitted) + ")"
+            sent += " (firmware drops " + ", ".join(f"`{frame}`" for frame in omitted)
+            replaced = cast_list(row.get("sweep_replaces"))
+            if replaced:
+                sent += "; " + ", ".join(f"`{frame}`" for frame in replaced) + f" sent in place of `{GENERAL_ZONE_STATUS}`"
+            sent += ")"
         notes = row["notes"]
         lines.append(f"| {model} | {who_str} | {sent} | {notes} |")
     return "\n".join(lines)

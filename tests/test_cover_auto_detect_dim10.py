@@ -1825,7 +1825,7 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
 
             # 0110 completed and saved travel times; 0111 NEVER swept its motor and NEVER wrote travel times.
             assert [w for w, _ in swept_covers] == ["0110", "0110", "0110"]
-            assert set(entry.options.get(CONF_COVER_TRAVEL_TIMES, {}).keys()) == {"0110"}
+            assert set(cover_0110._profile_store.data["native_fallbacks"]) == {"0110"}
             assert cover_0110.calibration_hub.queued_covers == set()
             assert any(
                 e.get("entity_id") == "cover.cover_0111" and e.get("phase") == "failed"

@@ -23,6 +23,7 @@ Async-native Home Assistant integration for **BTicino / Legrand MyHOME** SCS bus
 
 ## Highlights
 
+- **MyHOME Sidepanel (preview)**: An administrator panel available through **Configure → MyHOME panel**, with an optional sidebar shortcut, gateway status, searchable device/entity lists, native Home Assistant name/area editing, reusable profiles with automatic synchronization between tabs, guided opening/closing measurement and deletion of unused profiles for standard covers in WHO 2, and a native bus monitor scoped to the selected gateway. Existing bus cards use a temporary compatibility adapter over the same monitor view. See the [sidepanel guide](docs/sidepanel.md) for scope, installation, and testing.
 - **UI-First Setup & Dynamic Auto-Discovery**: SSDP/UPnP gateway discovery, native Config, Options, and Subentry flows, and automatic on-wire SCS entity discovery — with optional `myhome.yaml` declarations for physical `#G` lighting groups, `WHO=6` door-entry locks, and DALI feature locks.
 - **Declarative Hardware Gateway Profiles**: Model-aware session concurrency and adaptive per-target frame scheduling (`FrameScheduler`) across 11 BTicino and Legrand IP gateway families, prioritizing user commands and immediate cover `STOP` actions ahead of background sweeps.
 - **Lighting, Motorized Covers & Climate**: Smooth dimmer fades, hardware-offloaded DIN actuator countdown timers (`WHO=1`), DALI HSV & DT8 Tunable White (`2000K–6535K`), calibrated shutter and Venetian slat-tilt kinematics with ~1 s live position interpolation (`WHO=2`), and Central Unit `3550` / `4695` whole-home climate coordination (`WHO=4`).
@@ -128,10 +129,10 @@ Upgrading from the previous stable release? Follow the [upgrade guide](https://o
 | **`switch`** | WHO=1 / 4 / 9 / 25 | Relays & socket actuators (`WHO=1`, switch/outlet device classes), thermoregulation zone/actuator power switches (`WHO=4`), auxiliary & CEN+ contact invert switches (`WHO=9 / 25`), Hardware-offloaded bus timers (`myhome.turn_on_timed` via `duration` / `hours` / `minutes` / `seconds`) |
 | **`cover`** | WHO=1 / WHO=2 | Motorized shutters, blinds, roll-ups with state tracking, position-reporting actuators & virtual travel-time positioning; impulse gates & garage doors (`WHO=1`) with sensor feedback and an optional multi-factor approval workflow |
 | **`lock`** | WHO=6 | Native video door entry strikes (`WHO=6`, configured in `myhome.yaml`) with constant-time PIN authentication and auto-relock |
-| **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
+| **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, 0–10 V proportional actuator output levels (`0..100 %`), offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
 | **`alarm_control_panel`** | WHO=5 | Central units (3485/3486), read-only state (disarmed / armed away / triggered), zone 0 broadcast sync; arm/disarm via AUX frames ([docs](docs/configuration/alarm.md)) |
 | **`binary_sensor`** | WHO=1 / 9 / 25 | Magnetic contacts, door/window sensors, PIR motion, AUX channels (1–9), dry contacts (F482/3477), inverted contacts |
-| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), illuminance / lux sensors |
+| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), 0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), illuminance / lux sensors |
 | **`button`** | WHO=14 / 2 / 16 / 22 | Hardware actuator lock/unlock for lights, switches & covers (WHO=14), cover travel time calibration buttons (per cover & gateway-wide, WHO=2), F500/F500N FM tuner Seek up / Seek down buttons (WHO=16 / 22) |
 | **`number`** | WHO=16 / 22 | Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) for declared F500/F500N tuner sources (WHO=16 / 22) |
 | **`media_player`** | WHO=16 / 22 | F441/F441M audio zones, F500/F500N FM radio tuners (presets, RDS, Media Browser, manual frequency & preset storage on WHO=16 & WHO=22), volume normalization, software mute, streaming dynamic proxy (Music Assistant / Spotify Connect) |
@@ -207,7 +208,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### Code Coverage
 
-The integration maintains 6,554 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+The integration maintains 7038 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
 
 <details>
 <summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>
@@ -223,6 +224,7 @@ The integration maintains 6,554 automated unit tests (100% line coverage across 
 | [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra gateway sockets) |
 | [`button.py`](custom_components/myhome/button.py) | **100%** | WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek |
 | [`climate.py`](custom_components/myhome/climate.py) | **100%** | WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync |
+| [`climate_discovery.py`](custom_components/myhome/climate_discovery.py) | **100%** | WHO=4 zone discovery: registry, myhome.yaml and bus frames, held actuator-only frames (#785), and the thermostat reads at start |
 | [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Gateway onboarding, manual/SSDP setup, and subentry flow registration |
 | [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options |
 | [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | SSDP discovery, connection probing, reauthentication, and reconfiguration steps |
@@ -251,6 +253,7 @@ The integration maintains 6,554 automated unit tests (100% line coverage across 
 | [`discovery.py`](custom_components/myhome/discovery.py) | **100%** | Shared entity restore, YAML overlay merge, dynamic bus discovery, and dispatcher |
 | [`expose.py`](custom_components/myhome/expose.py) | **100%** | Virtual OpenWebNet responder projecting HA entities and system clock onto SCS |
 | [`gateway.py`](custom_components/myhome/gateway.py) | **100%** | Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle |
+| [`gateway_confirm.py`](custom_components/myhome/gateway_confirm.py) | **100%** | Point-to-point WHO=1 status read-back when a light's status does not follow an acknowledged command |
 | [`gateway_events.py`](custom_components/myhome/gateway_events.py) | **100%** | Inbound OpenWebNet frame classification, event bus emission, and doorbell routing |
 | [`gateway_resync.py`](custom_components/myhome/gateway_resync.py) | **100%** | Debounced lighting status resync sweeps after group, area, and general broadcasts |
 | [`gateway_sessions.py`](custom_components/myhome/gateway_sessions.py) | **100%** | Persistent event session watchdog, priority command queue, and paced worker pool |

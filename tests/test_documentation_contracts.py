@@ -1161,7 +1161,10 @@ def test_gate5_bus_monitor_and_ws_docs_catches_drift(
     orig_js = (
         REPO_ROOT / "custom_components" / "myhome" / "frontend" / "myhome-bus-card.js"
     ).read_text(encoding="utf-8")
-    extracted_btns = sync_doc._extract_bus_card_toolbar_buttons(orig_js)
+    extracted_btns = sync_doc._extract_bus_card_toolbar_buttons(
+        sync_doc.BUS_VIEW_JS.read_text(encoding="utf-8"),
+        sync_doc.BUS_TRANSLATIONS_JS.read_text(encoding="utf-8"),
+    )
     assert extracted_btns == [
         "🔴 Start Trace",
         "🧹 Sweep Bus",
@@ -1199,6 +1202,24 @@ def test_gate5_bus_monitor_and_ws_docs_catches_drift(
     )
     monkeypatch.setattr(sync_doc, "BUS_CARD_JS", fake_js)
     assert sync_doc.check_bus_monitor_and_ws_docs()[0] is False
+
+
+def test_monitor_docs_follow_shared_view_and_translated_labels(tmp_path, monkeypatch):
+    """A drift in the panel's actual labels/catalog cannot hide behind the adapter."""
+    translations = tmp_path / "panel-bus-translations.js"
+    translations.write_text(sync_doc.BUS_TRANSLATIONS_JS.read_text(encoding="utf-8").replace(
+        '"stopTrace": "⏹ Stop Trace"', '"stopTrace": "Finish capture"'), encoding="utf-8")
+    with monkeypatch.context() as patch:
+        patch.setattr(sync_doc, "BUS_TRANSLATIONS_JS", translations)
+        ok, messages = sync_doc.check_bus_monitor_and_ws_docs()
+        assert not ok
+        assert any("Finish capture" in item for item in messages)
+
+    view = tmp_path / "panel-bus-monitor-view.js"
+    view.write_text(sync_doc.BUS_VIEW_JS.read_text(encoding="utf-8").replace(
+        'name: "Auxiliary", short: "Auxiliary"', 'name: "Power", short: "Power"'), encoding="utf-8")
+    monkeypatch.setattr(sync_doc, "BUS_VIEW_JS", view)
+    assert sync_doc.check_who_labels_parity()[0] is False
 
 
 def test_gate6_blueprints_and_stable_version_branch_transition(
@@ -1258,7 +1279,7 @@ def test_gate6_blueprints_and_stable_version_branch_transition(
         re.sub(r'"version":\s*"[^"]+"', '"version": "2.0.0b18"', orig_manifest),
         encoding="utf-8",
     )
-    if '"version": "2.0.0"' in orig_manifest:
+    if not re.search(r'"version":\s*"[^"]*(?:a|b|rc)', orig_manifest):
         assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is False
     assert sync_doc.sync_blueprints_and_branch_urls(update=True)[0] is True
     assert sync_doc.sync_blueprints_and_branch_urls(update=False)[0] is True

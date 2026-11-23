@@ -14,6 +14,7 @@ synthetic.
 | Gateways | BTicino F461, firmware 2.0.11, and Legrand F455, firmware 1.0.76, on the same SCS bus |
 | Central unit | BTicino 3550 (99-zone central unit, WHERE `#0`), conditioning season, weekly program 1 before the run (`*#4*#0##` answers `*4*2101*#0##`) |
 | Zones seen in the capture | 2, 3 and 4 (dimensions 0, 12, 13, 14, `#14`; fan coil actuators `2#1` and `4#2`, dimension 20) |
+| Zones of the 3550 | 3 and 4. Zone 2 was configured in the 3550 on the day of the run only; it is a standalone zone (heating and cooling) since. See "Zone 2" below |
 | Home Assistant | one MyHOME gateway entry per gateway; the harness steps name the entry they call (`F461 set_hvac_mode ...` uses `climate.climate_zone_0`, `F455 set_hvac_mode ...` uses `climate.central_unit`) |
 
 ## Files
@@ -48,6 +49,31 @@ Left out of the source logs: the five harness lines stamped before 16:08:24.760 
 harness's previous part: a step marker and two WHO 1 light read-backs with their results), the
 run's banner line, and the decode text the monitor printed after each frame. The lines of this
 run carry no IP address, MAC or password, so nothing had to be rewritten.
+
+## Zone 2
+
+**Zone 2 of this plant is a standalone zone (heating and cooling). It is not a zone of the 3550.**
+Zones 3 and 4 are the zones that depend on the central unit.
+
+On the day of the run, 2026-11-12, zone 2 was configured in the 3550, and the archives record it
+as such. They are kept as captured:
+
+- it follows the central unit like zones 3 and 4: `*4*303*2##` is on both monitors 0.5 s after
+  the 3550's `*4*203*#0##` (c1: 0.53 s on the F455 monitor, 0.58 s on the F461 monitor), and
+  `*4*0*2##` after each restore of the weekly program (steps 4 and 5 of the run);
+- the set point write `*#4*2*#14*0200*2##` is on both monitors (4 times each) after those
+  restores, like `*#4*3*#14*0200*2##` and `*#4*4*#14*0250*2##`;
+- it is reported in the central unit form: `*4*211*#2##` 3 times on each monitor (`*4*211*#3##`
+  and `*4*211*#4##`: twice each), and `*4*311*#2##` 4 times on the F455 monitor.
+
+Zone 2 has been taken out of the 3550 since. On 2026-11-18 (a live check on the same plant, not
+part of this corpus) the F461 answers `*#4*#2##` with a NACK after 2.1 s, while it answers
+`*#4*#3##` with `*4*110*#3##` and `*#4*#4##` with `*4*110*#4##`.
+
+So the zone 2 frames of these archives show what a zone run by a 3550 looked like on that day.
+They are not evidence that zone 2 of this plant is a zone of the central unit: do not derive a
+plant layout, a default or a test expectation for today's zone 2 from them. Which zones a central
+unit runs can change, and no frame lists them.
 
 ## The run
 
@@ -87,7 +113,8 @@ which the F455 monitor shows on the bus in that window.
   call neither shows a central unit frame other than the 3550's `*4*203*#0##` report.
 
 Not established by this capture: the behaviour of a 4-zone central unit (`#0#C`), and of any
-gateway other than these two.
+gateway other than these two. Nor that zone 2 is a zone of the central unit on this plant: it was
+on the day of the run and is not any more (see "Zone 2").
 
 Pinned by `tests/test_central_restore_3100_live_2026_11_12_trace.py`, which also replays both
 monitors through a central unit climate entity and checks its state against every read-back.

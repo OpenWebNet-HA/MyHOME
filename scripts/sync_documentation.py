@@ -41,6 +41,8 @@ WEBSOCKET_PY = CUSTOM_COMPONENTS_DIR / "websocket.py"
 DEVICE_TRIGGER_PY = CUSTOM_COMPONENTS_DIR / "device_trigger.py"
 GATEWAY_PY = CUSTOM_COMPONENTS_DIR / "gateway.py"
 BUS_CARD_JS = CUSTOM_COMPONENTS_DIR / "frontend" / "myhome-bus-card.js"
+BUS_VIEW_JS = CUSTOM_COMPONENTS_DIR / "frontend" / "panel" / "panel-bus-monitor-view.js"
+BUS_TRANSLATIONS_JS = CUSTOM_COMPONENTS_DIR / "frontend" / "panel" / "panel-bus-translations.js"
 UPDATE_TRACE_MATRIX_PY = REPO_ROOT / "scripts" / "update_trace_matrix.py"
 BLUEPRINTS_DIR = REPO_ROOT / "blueprints" / "automation" / "myhome"
 MKDOCS_YML = REPO_ROOT / "mkdocs.yml"
@@ -1417,7 +1419,7 @@ def _extract_who_labels_ast(trace_script: Path) -> dict[int, str]:
 
 
 def _extract_bus_card_who_catalog(bus_card_js: Path) -> dict[int, tuple[str, str]]:
-    """Extract {who_int: (name, short)} from WHO_CATALOG in myhome-bus-card.js."""
+    """Extract {who_int: (name, short)} from the monitor implementation."""
     text = bus_card_js.read_text(encoding="utf-8")
     match = re.search(r"const\s+WHO_CATALOG\s*=\s*\{(.*?)\n\};", text, re.DOTALL)
     if not match:
@@ -1455,15 +1457,15 @@ def _who_labels_semantically_aligned(short_label: str, catalog_name: str, catalo
 
 
 def check_who_labels_parity() -> tuple[bool, list[str]]:
-    """Verify WHO_LABELS in update_trace_matrix.py aligns with myhome-bus-card.js WHO_CATALOG."""
+    """Verify WHO_LABELS in update_trace_matrix.py aligns with panel-bus-monitor-view.js WHO_CATALOG."""
     messages: list[str] = []
     if not UPDATE_TRACE_MATRIX_PY.exists():
         return False, [f"Trace matrix script missing: {rel_path(UPDATE_TRACE_MATRIX_PY)}"]
-    if not BUS_CARD_JS.exists():
-        return False, [f"Bus monitor card JS missing: {rel_path(BUS_CARD_JS)}"]
+    if not BUS_VIEW_JS.exists():
+        return False, [f"Bus monitor view JS missing: {rel_path(BUS_VIEW_JS)}"]
 
     who_labels = _extract_who_labels_ast(UPDATE_TRACE_MATRIX_PY)
-    who_catalog = _extract_bus_card_who_catalog(BUS_CARD_JS)
+    who_catalog = _extract_bus_card_who_catalog(BUS_VIEW_JS)
     if not who_labels or not who_catalog:
         return False, ["Could not parse WHO_LABELS or WHO_CATALOG for parity check"]
 
@@ -1495,14 +1497,14 @@ def check_who_labels_parity() -> tuple[bool, list[str]]:
             if not _who_labels_semantically_aligned(label, cat_name, cat_short):
                 messages.append(
                     f"WHO {who_code} label drift: update_trace_matrix.py has {label!r} vs "
-                    f"myhome-bus-card.js WHO_CATALOG {cat_name!r} ({cat_short!r})"
+                    f"panel-bus-monitor-view.js WHO_CATALOG {cat_name!r} ({cat_short!r})"
                 )
                 all_ok = False
 
     if all_ok:
         messages.append(
             f"Canonical WHO labels verified across update_trace_matrix.py ({len(who_labels)}) "
-            f"and myhome-bus-card.js WHO_CATALOG ({len(who_catalog)})."
+            f"and panel-bus-monitor-view.js WHO_CATALOG ({len(who_catalog)})."
         )
     return all_ok, messages
 
@@ -2076,8 +2078,10 @@ def _extract_websocket_contract(ws_py: Path) -> tuple[set[str], int | None]:
     return ws_types, history_max
 
 
-def _extract_bus_card_toolbar_buttons(js_text: str) -> list[str]:
-    """Extract toolbar action button labels (including dynamic Stop Trace toggle) from myhome-bus-card.js."""
+def _extract_bus_card_toolbar_buttons(js_text: str, translations_text: str = "") -> list[str]:
+    """Extract toolbar labels from the shared view and its English translations."""
+    english = re.search(r'"en"\s*:\s*(\{.*?\n  \})', translations_text, re.DOTALL)
+    translations = json.loads(english.group(1)) if english else {}
     labels: list[str] = []
     toolbar_match = re.search(
         r'<div class="toolbar\b[^>]*>(.*?)</div>\s*</div>\s*<div id="help-panel"',
@@ -2085,12 +2089,13 @@ def _extract_bus_card_toolbar_buttons(js_text: str) -> list[str]:
         re.DOTALL,
     )
     toolbar_html = toolbar_match.group(1) if toolbar_match else js_text
-    for btn_body in re.findall(
-        r'<button\s+id="btn-(?!help\b)[a-z0-9_-]+"[^>]*>(.*?)</button>',
+    for attrs, btn_body in re.findall(
+        r'<button\b([^>]*\bid="btn-(?!help\b)[a-z0-9_-]+"[^>]*)>(.*?)</button>',
         toolbar_html,
         re.DOTALL,
     ):
-        cleaned = " ".join(btn_body.split())
+        key = re.search(r'data-bus-text="([^"]+)"', attrs)
+        cleaned = translations.get(key.group(1), " ".join(btn_body.split())) if key else " ".join(btn_body.split())
         if cleaned and cleaned not in labels:
             labels.append(cleaned)
 
@@ -2100,6 +2105,7 @@ def _extract_bus_card_toolbar_buttons(js_text: str) -> list[str]:
     )
     if trace_toggle:
         for lbl in (trace_toggle.group(1).strip(), trace_toggle.group(2).strip()):
+            lbl = translations.get(lbl, lbl)
             if lbl and lbl not in labels:
                 labels.append(lbl)
     return labels
@@ -2108,14 +2114,16 @@ def _extract_bus_card_toolbar_buttons(js_text: str) -> list[str]:
 def check_bus_monitor_and_ws_docs() -> tuple[bool, list[str]]:
     """Verify Bus Monitor Lovelace card & WebSocket API contracts across docs."""
     messages: list[str] = []
-    if not WEBSOCKET_PY.exists() or not BUS_CARD_JS.exists():
-        return False, ["Missing websocket.py or myhome-bus-card.js for Bus Monitor check"]
+    if not all(path.exists() for path in (WEBSOCKET_PY, BUS_CARD_JS, BUS_VIEW_JS, BUS_TRANSLATIONS_JS)):
+        return False, ["Missing WebSocket, card, shared monitor view or translations for Bus Monitor check"]
 
     all_ok = True
     ws_types, ws_history_max = _extract_websocket_contract(WEBSOCKET_PY)
     js_text = BUS_CARD_JS.read_text(encoding="utf-8")
-    who_catalog = _extract_bus_card_who_catalog(BUS_CARD_JS)
-    toolbar_buttons = _extract_bus_card_toolbar_buttons(js_text)
+    who_catalog = _extract_bus_card_who_catalog(BUS_VIEW_JS)
+    toolbar_buttons = _extract_bus_card_toolbar_buttons(
+        BUS_VIEW_JS.read_text(encoding="utf-8"), BUS_TRANSLATIONS_JS.read_text(encoding="utf-8")
+    )
     card_tags = set(re.findall(r'\.define\(\s*"([^"]+)"', js_text))
     max_frames_match = re.search(
         r'name:\s*"max_frames".*?max:\s*(\d+)', js_text, re.DOTALL
@@ -2123,7 +2131,7 @@ def check_bus_monitor_and_ws_docs() -> tuple[bool, list[str]]:
     card_max_frames = int(max_frames_match.group(1)) if max_frames_match else None
 
     if not toolbar_buttons:
-        messages.append("Could not extract toolbar button labels from myhome-bus-card.js")
+        messages.append("Could not extract toolbar button labels from the shared monitor view")
         all_ok = False
 
     if ws_history_max is None or card_max_frames is None:
@@ -2160,7 +2168,7 @@ def check_bus_monitor_and_ws_docs() -> tuple[bool, list[str]]:
         missing_buttons = [btn for btn in toolbar_buttons if btn not in bus_text]
         if missing_buttons:
             messages.append(
-                f"{rel_path(bus_doc)} is missing toolbar button label(s) from myhome-bus-card.js: {missing_buttons}"
+                f"{rel_path(bus_doc)} is missing toolbar button label(s) from the shared monitor view: {missing_buttons}"
             )
             all_ok = False
 

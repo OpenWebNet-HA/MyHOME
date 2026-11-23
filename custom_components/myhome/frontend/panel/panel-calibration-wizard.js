@@ -1,0 +1,2249 @@
+/**
+ * The calibration wizard of the Calibration tab: a full screen on a phone, a dialog over the list from 720 px. It draws what `panel-calibration-screens.js` decides and talks to a
+ * `CalibrationGateway` (live session or local preview); it never builds a WebSocket message itself.
+ */
+const asset = (name) => { const url = new URL(name, import.meta.url); url.search = new URL(import.meta.url).search; return url.href; };
+const [{ escapeHtml: esc }, text, screens, gateways, illustration, { morph }, { layout, fitBars, fitRows, focusOnOpen, headStepsMarkup, sheetFoldMarkup, segmentsMarkup, stepsExpanded, hiddenByStyle, shown, dragToClose, focusAfterClose, slideBlock, untickOnSecondTap, closeOnOutsidePress, revealOpened }, assignList] = await Promise.all([
+  import(asset("panel-dom.js")), import(asset("panel-calibration-text.js")), import(asset("panel-calibration-screens.js")),
+  import(asset("panel-calibration-gateway.js")), import(asset("panel-calibration-illustration.js")), import(asset("panel-calibration-morph.js")), import(asset("panel-calibration-layout.js")),
+  import(asset("panel-profile-assign.js")),
+]);
+const { rich, inline, names } = text;
+const { buildScreen, slug, stopVerdict } = screens;
+const { LiveCalibrationGateway, PreviewCalibrationGateway } = gateways;
+const { illustrationMarkup, ILLUSTRATIONS } = illustration;
+
+/** A cover's room, gateway and bus address: one string, and its units for the header. */
+const subline = (lead, bus) => {
+  const units = lead.filter(Boolean);
+  return { address: [...units, bus].filter(Boolean).join(" · "), units: { lead: units, bus } };
+};
+
+
+/** A tape reading with a comma or a point; anything else, empty included, is not a number. */
+export function parseReading(value) {
+  const textValue = String(value ?? "").trim().replace(",", ".");
+  return /^-?(\d+\.?\d*|\.\d+)$/.test(textValue) ? Number(textValue) : NaN;
+}
+
+const STAGE_ICON = { done: "mdi:check-circle", current: "mdi:circle-half-full", future: "mdi:circle-outline" };
+const STAGES_BEFORE_SESSION = ["choose", "path", "profile", "current", "case", "before"];
+/**
+ * After every change of screen (or of its buttons) the confirming buttons stay disabled this long, so that a slow
+ * double tap never confirms an end stop the cover has not reached, nor skips the second tap of "Take control".
+ * Stop is never held back.
+ */
+export const CONFIRM_GUARD_MS = 700;
+/**
+ * A reading is judged once it is still, never while the number is being typed: on leaving the field, on
+ * Enter (which also confirms), or after this long without a key. The red refusal and the yellow warning alike.
+ */
+export const SETTLE_MS = 800;
+/** What counts as the user touching the page, and how long this tab's own press may wait for its answer. */
+const TOUCHES = ["pointerdown", "touchstart", "mousedown", "click", "keydown"];
+const OWN_PRESS_MS = 10000;
+/** A new session on the cover within this time of ours ending, this tab still on that screen, is a restart. */
+const RESTART_WINDOW_MS = 600000;
+/** The choices made on the owner's own screens that its readers need to show the same step. */
+const SHARED_FLAGS = ["ackLift", "ackAscent", "ackDescent", "ackReadings", "invalidRun", "discarded", "misbehaved", "travelTyped",
+  // Every other choice a session screen depends on (the check skipped, the gap's origin, the travel kept).
+  "checkSkipped", "lastGap", "liftOrigin", "keptTravel",
+  // Fine-tuning entered as «Perfeziona» (the process the header names), the slats the basic calibration runs.
+  "refineEntry", "sessionSlats", "keepTimes", "noChoice", "refineEntry"];
+/** How long a sheet takes to slide in or out (the CSS animations use the same). */
+const SHEET_MS = 220;
+/** Home Assistant keeps a session open this long for its owner at rest (IDLE_LEASE_SECONDS) when the view does not say. */
+const IDLE_LEASE_SECONDS = 1800;
+/** The positioning of a cover with no known closing time waits this long at most (seconds). */
+const HOME_FALLBACK_S = 120;
+/** A stop frame between these times is an actuator's timer (about 60 s), never the real end of the run. */
+export const TIMER_STOP_SECONDS = screens.TIMER_STOP_SECONDS;
+// Phases a press goes through before the cover stops again: the press that started them still counts.
+const TRANSIT = ["starting_open", "starting_close", "opening", "closing", "geometry_wait_stop"];
+
+export class CalibrationWizard {
+  /** `previews`: the preview paths, off unless switched on for development (`previewPathsEnabled`). */
+  constructor({ stageMs, guardMs = CONFIRM_GUARD_MS, settleMs = SETTLE_MS, previews = screens.previewPathsEnabled() } = {}) {
+    this._stageMs = stageMs; this._guardMs = guardMs; this._settleMs = settleMs; this._previews = !!previews; this._generation = 0;
+  }
+
+  /** Its own sessions, geometry and guided («solo tempi», marked `origin: "wizard"`); the rest is the maintainer's. */
+  handles(session) { return !!session && !session.batch && (session.mode === "geometry" || (session.mode === "guided" && session.origin === "wizard" && !session.direction)); }
+
+  updateHass(hass) { if (this._context) { this._context.hass = hass; this._theme(); if (this._local?.homing) this._homeTick(); } }
+
+  /** The drawings follow Home Assistant's dark mode; without theme data, the system's preference. */
+  _theme() {
+    if (!this._root) return;
+    const mode = this._context?.hass?.themes?.darkMode;
+    const dark = typeof mode === "boolean" ? mode : !!globalThis.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+    this._root.dataset.theme = dark ? "dark" : "light";
+  }
+
+  close() {
+    clearTimeout(this._stopNoteTimer); this._stopNoteTimer = null;
+    clearTimeout(this._settleTimer); this._settleTimer = null;
+    clearInterval(this._leaseTimer); this._leaseTimer = null;
+    clearInterval(this._homeTimer); this._homeTimer = null;
+    clearInterval(this._tickTimer); this._tickTimer = null;
+    if (this._onVisible) document.removeEventListener("visibilitychange", this._onVisible);
+    this._onVisible = null;
+    if (this._onTouch) for (const type of TOUCHES) document.removeEventListener(type, this._onTouch, true);
+    this._onTouch = null;
+    this._moreObserver?.disconnect();
+    this._moreObserver = null;
+    this._moreUpdate = null;
+    this._navResolve?.(true);
+    this._navResolve = null;
+    this._unloadGuard(false);
+    this._generation++;
+    this._staying = null;
+    clearTimeout(this._guardTimer);
+    this._gateway?.close();
+    this._gateway = null;
+    this._closeMenu();
+    this._undrag?.();
+    this._undrag = null;
+    this._untick?.();
+    this._untick = null;
+    this._root?.remove();
+    this._root = null;
+    this._frame = null;
+    this._engine = null;
+    this._context = null;
+  }
+
+  open({ host, hass, t, covers, data, picker = null, start = "choose", item = null, session = null, onOpenCover, onRefresh, onDiscarded, onClose, onCancelFirst }) {
+    this.close();
+    this._context = { host, hass, t, covers, data, picker, onOpenCover, onRefresh, onDiscarded, onClose, onCancelFirst };
+    // Opened on a given cover, the choice is made; from the tab's generic button it starts empty.
+    // `startStatus`, the cover's state when it was chosen, names the process (Calibra or Ricalibra) to the end.
+    this._local = { stage: "choose", path: "A", scope: null, coverKey: item ? key(item) : "", coverPicked: !!item, startStatus: item?.status };
+    host.innerHTML = "";
+    this._root = document.createElement("section");
+    this._root.className = "wiz";
+    this._root.setAttribute("aria-labelledby", "wiz-cover");
+    // The drawn screen is replaced at every step; the session engine keeps its own element.
+    this._frame = document.createElement("div");
+    this._frame.className = "wiz-frame";
+    this._engine = document.createElement("div");
+    this._engine.className = "wiz-engine";
+    this._engine.hidden = true;
+    this._root.append(this._frame, this._engine);
+    host.append(this._root);
+    this._theme();
+    this._root.addEventListener("click", (event) => this._click(event));
+    // The steps sheet's handle row also closes it by a drag upwards.
+    this._undrag = dragToClose(this._root);
+    // Shared with the Assign sheets: a tap on the cover already chosen in A-01 un-chooses it.
+    this._untick = untickOnSecondTap(this._root, '.wiz-picker input[name="cover"]', () => {
+      Object.assign(this._local, { coverKey: "", coverPicked: false });
+      this._render();
+    });
+    // When the user last touched the page (the wizard opens from a tap too): the hold after a change of the bar
+    // only follows a recent touch, or this tab's own press.
+    this._touchedAt = performance.now();
+    this._ownPress = null;
+    // When the press now ending began (pointer, touch, mouse or key down; a click alone is not a start).
+    this._onTouch = (event) => { this._touchedAt = performance.now(); if (event.type !== "click") this._pressStart = this._touchedAt; };
+    for (const type of TOUCHES) document.addEventListener(type, this._onTouch, true);
+    this._root.addEventListener("keydown", (event) => this._keydown(event));
+    this._root.addEventListener("input", (event) => this._input(event));
+    this._root.addEventListener("change", (event) => this._change(event));
+    // A-35's «Altre tapparelle» keeps its state through the list's redraws.
+    this._root.addEventListener("toggle", (event) => { if (event.target.matches?.(".cal-assign-more") && this._local.assign) this._local.assign.moreOpen = event.target.open; }, true);
+    this._root.addEventListener("submit", (event) => { event.preventDefault(); this._reading(); });
+    // Leaving the reading's field judges the value it holds.
+    this._root.addEventListener("focusout", (event) => { if (event.target.name === "reading_cm") this._settle(); });
+    // Back on the page (Safari suspends a tab in the background): reconnect at once, without asking.
+    this._onVisible = () => {
+      const gateway = this._gateway, status = gateway?.status || {};
+      if (document.hidden || !gateway || gateway.preview || status.expired || !gateway.view?.recoverable) return;
+      // Lost: resume the same session. Otherwise ask at once: a subscription that died in the background shows now.
+      if (status.lost) gateway.reconnect(); else gateway.ping?.();
+    };
+    document.addEventListener("visibilitychange", this._onVisible);
+    this._signature = null;
+    // A cover's Calibra / Ricalibra goes straight to the first step (no choice of
+    // the path, no «Scelta del percorso» in the steps); Perfeziona straight to the fine-tuning on the saved times.
+    if (start === "path" && item) Object.assign(this._local, { stage: "before", path: "base", noChoice: true });
+    // Where the way back ends: A-01 from the tab's generic button, A-02 from a cover's own Measure.
+    this._local.entry = this._local.stage;
+    this._render();
+    // A cover's «Perfeziona» opens fine-tuning with the tape (path A, whole) on its «Prima di iniziare»,
+    // named «Perfeziona» in the header; C-01 and C-02 are no longer entered.
+    if (start === "refine" && item) { Object.assign(this._local, { stage: "before", path: "A", scope: null, entry: "before", refineEntry: true, keepTimes: true, noChoice: true }); this._render(); }
+    else if (start === "resume" && session) this._resume(session, item);
+    this._render();
+  }
+
+  // ---------- context for the screens ----------
+
+  /** The tab's covers as they are now (a function from the tab, read again after a save), or a fixed list. */
+  _covers() { const { covers } = this._context; return (typeof covers === "function" ? covers() : covers) || []; }
+
+  _item() { return this._covers().find((item) => key(item) === this._local.coverKey) || null; }
+
+  _gatewayData(item = this._item()) { return item ? this._context.data?.(item.entry.entry_id) : null; }
+
+  _cover() {
+    const item = this._item();
+    if (!item) return null;
+    const data = this._gatewayData(item), { hass } = this._context;
+    const nameOf = (id) => this._covers().find((entry) => entry.cover.entity_id === id)?.name || hass.states?.[id]?.attributes?.friendly_name || id;
+    const followers = item.profile ? item.profile.assigned_to.filter((id) => id && id !== item.cover.entity_id).map(nameOf) : [];
+    // The other cover the profile was measured on is among them but follows nothing: said apart.
+    const origin = item.profile?.provenance?.opening?.origin_entity_id;
+    const sourceAmong = !!origin && origin !== item.cover.entity_id && item.profile.assigned_to.includes(origin);
+    const followed = this._local.path === "B" ? data?.profiles.find((profile) => profile.id === this._local.profileId) : null;
+    const address = item.entity?.address;
+    return { name: item.name, entity_id: item.cover.entity_id, effective: item.cover.effective || {}, travel_cm: item.cover.travel_cm ?? null,
+      status: item.status, detail: item.detail, last: item.last,
+      // Home Assistant's derived class (none, basic, refined, verified): a fine-tuned cover measures the times only.
+      precision: item.cover.precision ?? item.precision ?? null,
+      // What is known of its slats (the questions are preselected from it).
+      slats_state: item.cover.slats_state ?? null,
+      profile: item.profile, followers, sourceAmong, followProfile: followed?.name ?? null,
+      // Its role towards its profile (the panel's rule) and its check: A-02's line and its advice.
+      role: text.coverRole(item.status, item.profile, item.cover.entity_id), check: item.check ?? null,
+      // As the list rows: room first (and the gateway when there are several), then the bus address; no WHO.
+      // The units apart too: the header wraps between them, never inside the address.
+      ...subline([item.area, new Set(this._covers().map((entry) => entry.entry.entry_id)).size > 1 ? item.entry.title : ""],
+        address ? [`${this._context.t("address")}: ${address.raw ?? this._context.t("addressUnknown")}`,
+          ...(address.a != null && address.pl != null ? [`A: ${address.a}`, `PL: ${address.pl}`] : [])].join(" · ") : "") };
+  }
+
+  /** A drop-down entry: "Name · Room · Address: 86 · A: 8 · PL: 6", and the gateway when there are several. */
+  _coverLabel(item) {
+    const { t } = this._context, covers = this._covers(), address = item.entity?.address;
+    const bus = address?.raw ? [`${t("address")}: ${address.raw}`, ...(address.a != null && address.pl != null ? [`A: ${address.a}`, `PL: ${address.pl}`] : [])].join(" · ") : "";
+    const gateway = new Set(covers.map((entry) => entry.entry.entry_id)).size > 1 ? item.entry.title : "";
+    return [item.name, item.area, bus, gateway].filter(Boolean).join(" · ");
+  }
+
+  _profiles() {
+    const data = this._gatewayData();
+    return (data?.profiles || []).map((profile) => ({ id: profile.id, name: profile.name, followers: profile.assigned_to.length,
+      measuredOn: this._originName(profile.provenance?.opening), slat: profile.geometry ? profile.geometry.slat_time_s ?? null : null,
+      // «Seguito da» never names the cover the profile was measured on.
+      followerNames: profile.assigned_to.filter((id) => id && id !== profile.provenance?.opening?.origin_entity_id).map((id) => this._covers().find((item) => item.cover.entity_id === id)?.name
+        || this._context.hass.states?.[id]?.attributes?.friendly_name || id),
+      referenceTravel: profile.reference_travel_cm ?? null }));
+  }
+
+  /** Where a profile was measured, by the cover's name in the list (the provenance's name may be its entity id). */
+  _originName(origin) {
+    const id = origin?.origin_entity_id, { hass } = this._context;
+    return (id && (this._covers().find((item) => item.cover.entity_id === id)?.name || hass.states?.[id]?.attributes?.friendly_name))
+      || origin?.origin_name || id || null;
+  }
+
+  _screen() {
+    const { t, hass } = this._context, gateway = this._gateway;
+    // A reader shows the step the owner shows: the owner's path and the choices made on its screens (published
+    // with `show`) over this tab's own.
+    const shown = gateway?.view?.read_only && !gateway.view.preview ? gateway.view.screen : null;
+    const local = shown ? Object.assign(Object.create(this._local), shown.local || {}, shown.path ? { path: shown.path, scope: shown.scope ?? null } : {}) : this._local;
+    const cover = this._cover(), language = hass.language || "en";
+    const followed = local.path === "B" ? this._gatewayData()?.profiles.find((profile) => profile.id === local.profileId) : null;
+    const screen = buildScreen({ t, language, path: local.path, scope: local.scope, stage: local.stage, local, cover,
+      covers: this._covers().map((item) => ({ key: key(item), label: this._coverLabel(item), status: item.status, detail: item.detail, last: item.last })),
+      profiles: this._profiles(), followed, followerNames: cover ? names(cover.followers, language) : "",
+      // A cover named as the list shows it (never its entity id), null when Home Assistant has none.
+      coverName: (id) => this._covers().find((entry) => entry.cover.entity_id === id)?.name || hass.states?.[id]?.attributes?.friendly_name || null,
+      view: gateway?.view || null, status: gateway?.status || {}, elapsed: gateway?.elapsed() ?? null, runPosition: local.run?.position ?? null, now: Date.now(),
+      preview: !!gateway?.preview, previews: this._previews, supports: (target) => gateway ? gateway.supports(target) : false,
+      // A-35: the covers that can be given the profile just written, and whether Home Assistant assigns several.
+      assign: local.stage === "assign" ? this._assignInfo() : null, assignable: this._gatewayData()?.capabilities?.profile_assignment !== false });
+    // «Salva nel profilo «X»» only with its impact in view (`_sharedState`): off, the same words, until the preview of
+    // this view is back; refused, «Riprova» in its place (it asks the preview again, never saves; off while it comes).
+    const shared = screen.actions.some((action) => action.id === "save" && action.target === "profile_update") ? this._sharedState() : null;
+    if (shared && shared !== "ready") {
+      const retry = { id: "shared-retry", label: t("wiz_T247"), kind: "primary" };
+      screen.actions = screen.actions.map((action) => action.id !== "save" ? action : shared === "refused" ? retry
+        : { ...(shared === "retrying" ? retry : action), disabled: true, settling: true });
+    }
+    // From the press of Save until Home Assistant has written the store (its disk can take seconds) the
+    // button says so, off with the passing look; a reader sees the owner's «saving» the same way.
+    if (local.stage === "session" && (gateway?.view?.phase === "saving" || this._local.saving)) {
+      screen.actions = screen.actions.map((action) => action.id === "save" ? { ...action, label: t("saving"), disabled: true, settling: true } : action);
+    }
+    // The step reached by a live session, so that its end shows where it stopped.
+    if (local.stage === "session" && gateway?.view && !screen.interrupted && !/^(S-|loading|paused|unknown)/.test(screen.code)) local.reachedPhase = screen.phase;
+    // The first leg of a two-leg wait keeps the time it was planned with once it is over.
+    if (!shown && screen.legOne != null) local.legOne = { seconds: screen.legOne };
+    // No header has a ←; the introductory steps that go back a choice (A-02 → A-01, C-02 →
+    // C-01, the paths' first screens → A-02, …) offer «Indietro» as a secondary of the bar (the footer), on every
+    // layout. A-01's way back is the ✕, which always leads to the list.
+    // A flow's first screen (A-01, or the step it opened on), before anything moved: «Annulla»
+    // as the secondary of the bar.
+    if (screen.back && !shown && this._backTarget() == null && this._local.stage === this._local.entry && !this._gateway) {
+      screen.actions.push({ id: "cancel-flow", label: t("wiz_T025"), kind: "secondary" });
+    }
+    if (screen.back && !shown && this._backTarget() != null) {
+      const at = screen.actions.findIndex((action) => !RED_KINDS.includes(action.kind));
+      screen.actions.splice(at < 0 ? 0 : at + 1, 0, { id: "back", label: t("wiz_T403"), kind: "secondary" });
+    }
+    return screen;
+  }
+
+  // ---------- drawing ----------
+
+  _render() {
+    if (!this._root) return;
+    // While "Close without saving?" is open the screen behind it is not rebuilt: a tap meant for the
+    // dialog never lands on a button that appeared under it. It is redrawn when the dialog closes.
+    if (this._frame.querySelector(".wiz-dialog:not([hidden])")) { this._patch(this._screen()); return; }
+    const screen = this._screen();
+    this._current = screen;
+    this._publish(screen);
+    const { t } = this._context;
+    // On every screen that has one the
+    // title comes first, then the drawing, the text, the field, its message and its help (A-08's a little smaller).
+    const drawing = () => screen.illustration ? illustrationMarkup(screen.illustration.id, t("wizIllustration"), esc, { small: screen.illustration.size === "small" }) : "";
+    // A notice that comments a result sits right under the result box (or the stopwatch), before text and drawing.
+    const resultNotices = '<div class="wiz-result-notices" aria-live="polite"></div>';
+    // The header (cover name and address) is patched, not part of the frame: choosing a cover on A-01 keeps the list
+    // and its scroll.
+    const signature = JSON.stringify([screen.code, screen.title, screen.body, screen.choice && { ...screen.choice, value: undefined },
+      screen.field && { ...screen.field, disabled: undefined, error: undefined }, screen.box, screen.table, screen.technical, screen.precision,
+      screen.profileBlock && { ...screen.profileBlock, name: screen.profileBlock.name && { label: screen.profileBlock.name.label, hint: screen.profileBlock.name.hint } },
+      screen.saveInfo, screen.status, screen.preview, screen.illustration, screen.wait && [screen.wait.lead, screen.wait.text], screen.resultsTitle, !!screen.provisional, screen.discard, !!screen.readOnly, screen.back, !!screen.picker, !!screen.assign, screen.results, screen.note, screen.help]);
+    // The step the bar belongs to (one bar per step, whatever its screens).
+    const barView = this._gateway?.view;
+    const barStep = barView ? JSON.stringify([barView.session_id ?? null, barView.mode ?? null, barView.step ?? null, !!barView.read_only]) : null;
+    if (signature !== this._signature) {
+      // A screen is new when its step changes, not when only its variant does: the summary is A-21, A-21c or
+      // A-21d by the profile switch under it (`family`), and toggling the switch is the same screen.
+      const family = screen.family || screen.code;
+      const codeChanged = this._renderedFamily !== family;
+      // "What happens when I save?" opens with the summary; a reader's choice is kept while it stays on screen.
+      const info = this._frame.querySelector(".wiz-save-info");
+      // It is the profile card's tail, closed until the reader opens it.
+      this._local.saveInfoOpen = info ? info.open : false;
+      // The slats explanation starts closed on every screen and keeps the reader's choice while it stays.
+      const help = this._frame.querySelector(".wiz-help");
+      this._local.helpOpen = !codeChanged && !!help?.open;
+      // A choice that redraws the screen (a note under the chosen option) keeps the keyboard on that choice.
+      const active = this._root.getRootNode().activeElement;
+      const radio = !codeChanged && active?.type === "radio" && this._frame.contains(active) ? active.name : null;
+      // The same screen drawn again (a switch, a choice, a view of Home Assistant that changes a part of it) keeps
+      // where it was scrolled, in the wizard's own content (phone) and in the page around it, and the field in use;
+      // only a new screen starts from the top.
+      const kept = codeChanged ? null : {
+        main: this._frame.querySelector(".wiz-main")?.scrollTop ?? 0,
+        around: scrollParents(this._root).map((element) => [element, element.scrollTop]),
+        focus: active && this._frame.contains(active) && active.type !== "radio"
+          ? (active.name ? `[name="${active.name}"]` : active.dataset?.wiz ? `[data-wiz="${active.dataset.wiz}"]` : null) : null,
+      };
+      this._signature = signature;
+      // Each drawing counted: the next frame's restore belongs to the last one only (a later one kept its own place).
+      const drawn = this._drawn = (this._drawn ?? 0) + 1;
+      this._renderedCode = screen.code;
+      this._renderedFamily = family;
+      this._root.dataset.code = screen.code;
+      this._root.toggleAttribute("data-preview", screen.preview);
+      // A reader's ✕ only stops following, and says so.
+      const xLabel = !screen.discard ? t("wiz_T158") : screen.readOnly ? t("wiz_T573") : t("wizDiscard");
+      const oldBar = this._frame.querySelector(".wiz-actions");
+      const keptBar = oldBar && barStep === this._barStep && this._actionsSignature === barParts(screen, this._medium()).signature ? oldBar : null;
+      this._frame.innerHTML = `
+        <header class="wiz-head">
+          <button type="button" class="icon-button wiz-x" data-wiz="${screen.discard ? "exit" : "close"}" aria-label="${esc(xLabel)}" title="${esc(xLabel)}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button>
+          <div class="wiz-head-text"><h3 id="wiz-cover" class="wiz-cover">${esc(screen.header.title)}</h3><p class="muted wiz-head-sub" hidden></p><p class="wiz-head-phase"></p></div>
+          ${headStepsMarkup(t("wiz_T274"), 'data-wiz="steps"')}
+          <div class="wiz-segments" aria-hidden="true"></div>
+        </header>
+        <div class="wiz-compact"><span class="wiz-dot" aria-hidden="true"></span><span class="wiz-compact-line"></span>
+          <button type="button" class="wiz-steps-button" data-wiz="steps" aria-haspopup="dialog">${esc(t("wiz_T274"))}</button></div>
+        <div class="wiz-columns">
+          <nav class="wiz-steps" aria-label="${esc(t("wiz_T274"))}"></nav>
+          <div class="wiz-main">
+            ${screen.readOnly ? `<div class="wiz-readonly"><p class="cal-note is-warning wiz-readonly-note">${esc(screen.readOnly.text)}</p><p class="muted wiz-readonly-consequence" hidden></p></div>` : ""}
+            ${screen.preview ? `<p class="wiz-preview" role="note"><ha-icon icon="mdi:eye-outline" aria-hidden="true"></ha-icon><span>${esc(t("wizPreview"))}</span></p>` : ""}
+            <h4 class="wiz-title" tabindex="-1">${esc(screen.title)}</h4>${screen.subline ? `<p class="cal-note wiz-subline">${esc(screen.subline)}</p>` : ""}
+            <div class="wiz-stopwatch" hidden${ILLUSTRATIONS[screen.illustration?.id] ? ` style="--wiz-stopwatch-width: ${ILLUSTRATIONS[screen.illustration.id].width}px"` : ""}><span class="wiz-stopwatch-label"></span><span class="wiz-stopwatch-value"></span></div>
+            ${screen.results?.length ? "" : resultNotices}
+            ${drawing()}
+            ${screen.wait ? this._waitMarkup(screen.wait) : ""}
+            ${screen.results?.length ? `${this._resultsMarkup(screen)}${resultNotices}` : ""}
+            ${screen.body ? `<div class="wiz-body">${rich(screen.body)}</div>` : ""}
+            ${screen.help && !screen.choice ? this._helpMarkup(screen.help) : ""}
+            ${screen.note ? `<p class="cal-note${screen.note.tone === "warning" ? " is-warning" : ""} wiz-note">${esc(screen.note.text)}</p>` : ""}
+            ${screen.status.length ? `<div class="wiz-status">${screen.status.map((line) => `<p>${esc(line)}</p>`).join("")}</div>` : ""}
+            ${screen.box ? `<section class="cal-section wiz-current"><h5 class="cal-section-title">${esc(screen.box.label)}</h5><div class="cal-card"><dl class="cal-pairs">${screen.box.rows
+              .map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${text.units(esc(value))}</dd></div>`).join("")}</dl></div></section>` : ""}
+            ${screen.choice ? this._choiceMarkup(screen.choice) : ""}
+            ${screen.picker ? '<div class="wiz-picker"></div>' : ""}
+            ${screen.assign ? `<div class="wiz-assign cal-assign">${assignList.searchMarkup(t, this._local.assign?.query ?? "")}<div class="cal-assign-live"></div></div>` : ""}
+            ${screen.field ? this._fieldMarkup(screen.field) : ""}
+            ${screen.precision ? `<p class="wiz-precision">${inline(screen.precision)}</p>` : ""}
+            ${screen.table ? `<div class="cal-card wiz-table-card">${this._tableMarkup(screen.table)}${screen.technical ? this._technicalMarkup(screen.technical) : ""}</div>`
+              : screen.technical ? `<div class="cal-card">${this._technicalMarkup(screen.technical)}</div>` : ""}
+            ${screen.profileBlock ? this._profileMarkup(screen.profileBlock, screen.saveInfo) : screen.saveInfo ? `<div class="cal-card">${this._saveInfoMarkup(screen.saveInfo)}</div>` : ""}
+            <div class="wiz-notices" aria-live="polite"></div>
+          </div>
+          <div class="wiz-actions"></div>
+        </div>
+        <div class="wiz-sheet" role="dialog" aria-modal="true" aria-label="${esc(t("wiz_T274"))}" hidden><div class="wiz-sheet-card" tabindex="-1">
+          <div class="wiz-sheet-head"><h4 class="wiz-sheet-title">${esc(t("wiz_T274"))}</h4><button type="button" class="icon-button wiz-sheet-close" data-wiz="steps-close" aria-label="${esc(t("close"))}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button></div>
+          <div class="wiz-sheet-steps"></div>${sheetFoldMarkup(t("wiz_T594"), 'data-wiz="steps-close"')}</div></div>
+        <div class="wiz-dialog" role="alertdialog" aria-modal="true" aria-labelledby="wiz-dialog-title" aria-describedby="wiz-dialog-body" hidden><div class="wiz-dialog-card" tabindex="-1">
+          <div class="wiz-dialog-head"><h4 id="wiz-dialog-title">${esc(t("wiz_T267"))}</h4><button type="button" class="icon-button wiz-dialog-x" data-wiz="dialog-x" hidden aria-label="${esc(t("close"))}" title="${esc(t("close"))}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button></div><p id="wiz-dialog-body"></p>
+          <div class="actions"><button type="button" class="wiz-leave" data-wiz="leave">${esc(t("wiz_T270"))}</button>
+            <button type="button" class="primary" data-wiz="stay">${esc(t("wiz_T269"))}</button></div></div></div>
+        <div class="wiz-dialog wiz-nav-dialog" role="alertdialog" aria-modal="true" aria-labelledby="wiz-nav-title" aria-describedby="wiz-nav-body" hidden><div class="wiz-dialog-card" tabindex="-1">
+          <div class="wiz-dialog-head"><h4 id="wiz-nav-title">${esc(t("wiz_T408"))}</h4><button type="button" class="icon-button wiz-dialog-x" data-wiz="dialog-x" hidden aria-label="${esc(t("close"))}" title="${esc(t("close"))}"><ha-icon icon="mdi:close" aria-hidden="true"></ha-icon></button></div><p id="wiz-nav-body"></p>
+          <div class="actions"><button type="button" class="wiz-leave" data-wiz="nav-discard">${esc(t("wiz_T411"))}</button>
+            <button type="button" data-wiz="nav-later">${esc(t("wiz_T410"))}</button>
+            <button type="button" class="primary" data-wiz="nav-stay">${esc(t("wiz_T269"))}</button></div></div></div>`;
+      // Within one step the bar is the same nodes from screen to screen (A-04 → A-05, A-09 → A-10, …): the
+      // frame is new, the bar is moved into it as it was.
+      if (keptBar) this._frame.querySelector(".wiz-actions").replaceWith(keptBar);
+      else { this._actionsSignature = null; this._actionIds = null; this._enabledIds = null; }
+      this._pickerHtml = null;
+      this._watchMore();
+      if (radio) this._frame.querySelector(`.wiz-radios input[name="${radio}"]:checked`)?.focus({ preventScroll: true });
+      if (kept) {
+        if (kept.focus) this._frame.querySelector(kept.focus)?.focus({ preventScroll: true });
+        const restore = () => {
+          const main = this._frame?.querySelector(".wiz-main");
+          if (main && main.scrollTop !== kept.main) main.scrollTop = kept.main;
+          for (const [element, top] of kept.around) if (element.scrollTop !== top) element.scrollTop = top;
+        };
+        // At once (before the frame is painted), and once more on the next frame in case a layout pass moved it.
+        restore();
+        const frame = this._frame;
+        (globalThis.requestAnimationFrame || ((callback) => setTimeout(callback, 16)))(() => { if (this._frame === frame && this._renderedFamily === family && this._drawn === drawn) restore(); });
+      }
+      // A new screen starts from its top (a new content box) and the focus goes to its title (the dialog's first
+      // focus too); nothing scrolls the page.
+      if (codeChanged) queueMicrotask(() => this._frame?.querySelector(".wiz-title")?.focus({ preventScroll: true }));
+    }
+    this._barStep = barStep;
+    this._patch(screen);
+    this._askShared();
+  }
+
+  /** The view whose preview of the profile's update is asked (`session:sequence`), null where none is asked. */
+  _sharedKey() {
+    const gateway = this._gateway, view = gateway?.view;
+    if (!gateway?.previewShared || gateway.preview || !view || view.read_only || view.phase !== "review" || this._local.stage !== "session") return null;
+    return `${view.session_id}:${view.sequence}`;
+  }
+
+  /**
+   * Where the preview of the profile's update stands for this view, which «Salva nel profilo «X»» waits for: "ready"
+   * (back and valid: one press saves with its confirmation), "asking" (not back yet, or stale and asked again),
+   * "refused" (back without one: «Riprova»), "retrying" («Riprova» pressed, not back yet). Null when there is none to
+   * wait for (a gateway without previews saves at once).
+   */
+  _sharedState() {
+    const key = this._sharedKey(), asked = this._local.sharedAsk;
+    if (!key) return null;
+    if (asked?.key !== key) return "asking";
+    if (asked.pending) return asked.retry ? "retrying" : "asking";
+    return this._local.sharedPreview ? "ready" : "refused";
+  }
+
+  /**
+   * «Aggiorna il profilo «X»» on the summary: its preview (Home Assistant's `preview_save`, who and what changes for
+   * the covers that follow the profile, and the confirmation Save carries) asked once on arrival, not at the press, so
+   * the impact is in view before Save. Asked again once stale: another choice, or a new view of the session (a check
+   * repeated, new values). `again`: a preview refused is asked once more (the press of «Riprova»). The promise of the
+   * preview (null when refused), or null when there is none to ask.
+   */
+  _askShared(again = false) {
+    const gateway = this._gateway, local = this._local, key = this._sharedKey();
+    if (!key) return null;
+    // Whichever is chosen: the note under «Aggiorna il profilo «X»» says the same in grey under «Nuovo profilo».
+    if (!this._current?.profileBlock?.choice?.options?.some((option) => option.value === "update")) return null;
+    const asked = local.sharedAsk;
+    if (asked?.key === key && (asked.pending || !again || local.sharedPreview)) return asked.promise;
+    // A command still waiting for its answer: asked at the next view.
+    if (gateway.status.busy) return null;
+    // Asked again after a refusal of this view: «Riprova» stays in place (off) until it is back.
+    const ask = { key, pending: true, retry: again && asked?.key === key };
+    Object.assign(local, { sharedAsk: ask, sharedPreview: null });
+    ask.promise = Promise.resolve(gateway.previewShared()).catch(() => null).then((preview) => {
+      ask.pending = false;
+      if (this._gateway !== gateway || this._local !== local || local.sharedAsk !== ask) return null;
+      local.sharedPreview = preview ?? null;
+      if (this._root && local.stage === "session") this._render();
+      return local.sharedPreview;
+    });
+    return ask.promise;
+  }
+
+  /** The countdowns on screen, each its time only (an element of its own). */
+  _tick() {
+    for (const notice of this._frame?.querySelectorAll(".wiz-notice[data-expires]") || []) {
+      const time = notice.querySelector(".wiz-countdown-time"), value = screens.clock(Number(notice.dataset.expires) - Date.now());
+      if (time && time.textContent !== value) time.textContent = value;
+    }
+  }
+
+  _engineHost() { return this._engine; }
+
+  /** A confirmation hides at once while centred; as a sheet (window under 720 × 500 px) it slides down first. */
+  _hideDialog(dialog, done) {
+    if (layout.sheets()) { this._slideAway(dialog, done); return; }
+    dialog.hidden = true;
+    done?.();
+  }
+
+  _slideAway(element, done) {
+    const finish = () => { element.classList.remove("is-leaving"); element.hidden = true; done?.(); };
+    const motion = typeof matchMedia === "function" && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!motion || element.hidden) { finish(); return; }
+    element.classList.add("is-leaving");
+    setTimeout(finish, SHEET_MS);
+  }
+
+  /**
+   * On the phone the content scrolls above a fixed action bar: a fade over the bar says there is more below, only
+   * while there really is (it goes at the end of the scroll; on the wide layout nothing scrolls, so it never shows).
+   */
+  _watchMore() {
+    const main = this._frame?.querySelector(".wiz-main"), actions = this._frame?.querySelector(".wiz-actions");
+    if (!main || !actions) return;
+    // The fade under the bar too, once the content is scrolled under it.
+    const head = this._frame.querySelector(".wiz-head");
+    // The content itself fades at its edges (a mask on the scrolling box: `has-above`, `has-more` on it).
+    const update = () => {
+      const above = main.scrollTop > 1, below = main.scrollHeight - main.scrollTop - main.clientHeight > 1;
+      actions.classList.toggle("has-more", below); head?.classList.toggle("has-above", above);
+      main.classList.toggle("has-above", above); main.classList.toggle("has-more", below);
+    };
+    main.addEventListener("scroll", update, { passive: true });
+    this._moreObserver?.disconnect();
+    if (typeof ResizeObserver === "function") {
+      this._moreObserver = new ResizeObserver(update);
+      this._moreObserver.observe(main);
+      for (const child of main.children) this._moreObserver.observe(child);
+    }
+    this._moreUpdate = update;
+    queueMicrotask(update);
+  }
+
+  /** Whatever changes within one screen: stepper, stopwatch, progress, notices, buttons, read-only, A-01's list. */
+  _patch(screen) {
+    const root = this._frame, { t } = this._context;
+    queueMicrotask(() => this._moreUpdate?.());
+    // Whether closing costs nothing, for the tendina's handle and its drag.
+    this._root.toggleAttribute("data-closable", this._closable());
+    const picker = root.querySelector(".wiz-picker");
+    if (picker && screen.picker) {
+      const html = this._context.picker?.markup(screen.picker) ?? "";
+      if (html !== this._pickerHtml) {
+        // The list is redrawn in place: the control that had the focus (a radio, a chip, a header) gets it back.
+        const active = root.getRootNode().activeElement;
+        const focus = active && picker.contains(active) ? (active.dataset.wiz ? ["wiz", active.dataset.wiz] : active.name === "cover" ? ["cover", active.value]
+          : active.dataset.pickSort ? ["pickSort", active.dataset.pickSort] : active.matches("[data-pick-filter]") ? ["pickFilter", ""] : null) : null;
+        this._pickerHtml = html;
+        // Patched in place: the rows, the scroll and the focus stay.
+        morph(picker, html);
+        fitBars(picker);
+        fitRows(picker);
+        // A new choice only shows as selected (its notes open under it): nothing scrolls, the row stays where the
+        // finger left it.
+        if (focus) {
+          const [kind, value] = focus;
+          [...picker.querySelectorAll("button, input, select")].find((element) => (kind === "cover" ? element.name === "cover" && element.value : element.dataset[kind]) === value)
+            ?.focus({ preventScroll: true });
+        }
+      }
+    } else this._pickerHtml = null;
+    // A-35: the count, the rows and the refusal follow the choices and the data, patched in place (the search
+    // field, drawn once, keeps its focus and what is typed).
+    const live = root.querySelector(".cal-assign-live");
+    if (live && screen.assign) {
+      const state = this._local.assign || {};
+      morph(live, assignList.liveMarkup({ t, candidates: screen.assign.candidates, selected: state.selected, query: state.query, error: state.error,
+        loading: !screen.assign.profile, readOnly: !!screen.readOnly, profile: screen.assign.profile, moreOpen: !!state.moreOpen, confirm: state.confirm || "" }));
+    }
+    const head = root.querySelector(".wiz-cover"), sub = root.querySelector(".wiz-head-sub");
+    if (head && head.textContent !== screen.header.title) head.textContent = screen.header.title;
+    if (sub) {
+      // A cover's line as units (room, gateway, the address that never breaks); any other subtitle as plain text.
+      const units = screen.header.units;
+      const html = units ? [...units.lead.map((unit) => ["cal-row-unit", esc(unit)]), ...(units.bus ? [["cal-row-address", esc(units.bus)]] : [])]
+        .map(([kind, part], index, all) => `<span class="${kind}">${part}${index < all.length - 1 ? " ·" : ""}</span>`).join(" ") : esc(screen.header.subtitle || "");
+      if (sub._html !== html) { sub.innerHTML = html; sub._html = html; }
+      sub.hidden = !screen.header.subtitle;
+      sub.classList.toggle("wiz-head-placeholder", !!screen.header.placeholder);
+    }
+    // The medium dialog's column has its title «Passi»; the sheet has its own head.
+    // The phone's «Passi» sheet is headed as the medium dialog's column: the process, its variant under it.
+    // The sheet's head also carries the cover's whole name while the bar cuts it (measured as the sheet opens).
+    const titled = this._stepperMarkup(screen, { title: true }), sheetTitled = this._stepperMarkup(screen, { title: true, cover: this._sheetCover });
+    for (const [target, markup] of [[root.querySelector(".wiz-steps"), titled], [root.querySelector(".wiz-sheet-steps"), sheetTitled]]) if (target.innerHTML !== markup) target.innerHTML = markup;
+    this._stepperScreen = screen;
+    root.querySelector(".wiz-compact-line").textContent = screen.stepper.line;
+    const phase = root.querySelector(".wiz-head-phase");
+    const barLine = screen.stepper.barLine ?? screen.stepper.line;
+    // The process first («Perfeziona · Preparazione · 2 di 5»), on the phone and the desktop alike; a line
+    // too long for the bar loses the end of the step (its ellipsis), never the process.
+    const headLine = barLine && screen.stepper.process ? `${screen.stepper.process} · ${barLine}` : barLine;
+    if (phase && phase.textContent !== headLine) phase.textContent = headLine;
+    const segments = root.querySelector(".wiz-segments"), bar = segmentsMarkup(screen.stepper.segments);
+    if (segments && segments.innerHTML !== bar) segments.innerHTML = bar;
+    // The preamble has no stepper: no «Passi», no segments (a hairline under the bar instead), no step line.
+    const plain = !!screen.stepper.hidden;
+    root.querySelector(".wiz-head")?.classList.toggle("is-plain", plain);
+    for (const button of root.querySelectorAll(".wiz-head-steps")) button.hidden = plain;
+    if (phase) phase.hidden = !barLine;
+    // An ended session keeps the step it reached, greyed.
+    for (const target of [root.querySelector(".wiz-steps"), root.querySelector(".wiz-sheet-steps"), root.querySelector(".wiz-compact"), root.querySelector(".wiz-segments")]) target?.toggleAttribute("data-interrupted", !!screen.stepper.interrupted);
+    const watch = root.querySelector(".wiz-stopwatch");
+    watch.hidden = !screen.stopwatch;
+    if (screen.stopwatch) {
+      root.querySelector(".wiz-stopwatch-label").textContent = screen.stopwatch.label;
+      root.querySelector(".wiz-stopwatch-value").textContent = screen.stopwatch.value;
+    }
+    const wait = root.querySelector(".wiz-wait");
+    if (wait && screen.wait) {
+      // Stages done carry ✓, the current one ◐, the next ones an empty circle.
+      // The bar and the time left sit under the stage in progress (after the text when there are no stages).
+      const current = screen.wait.stages.findIndex((stage) => stage.state === "current");
+      // A leg's label stays on one line beside its circle: its «— circa N s» is a part of its own, dropped in a
+      // narrow box (the time left is under the active bar anyway); the label ellipsizes only as a last resort.
+      const label = (value) => { const at = value.indexOf(" — "); return at < 0 ? `<span class="wiz-stage-label">${esc(value)}</span>`
+        : `<span class="wiz-stage-label">${esc(value.slice(0, at))}<span class="wiz-stage-time"> — ${esc(value.slice(at + 3))}</span></span>`; };
+      // The half circles belong to the runs split in two (1/2 full on the left, 2/2 mirrored, full on the
+      // right). A single run (A-17 and the like) has no mark at all; its line, bar and time left start at
+      // the box's edge (`is-single`).
+      const single = screen.wait.stages.length === 1;
+      const mark = (stage) => single ? "" : `<ha-icon icon="${STAGE_ICON[stage.state]}" aria-hidden="true"></ha-icon>`;
+      const stages = screen.wait.stages.map((stage, index) => `<li data-step-state="${stage.state}">${mark(stage)}${label(stage.text)}${index === current ? '<div class="wiz-wait-slot"></div>' : ""}</li>`).join("");
+      const list = wait.querySelector(".wiz-wait-stages"), meter = wait.querySelector(".wiz-wait-meter");
+      if (list.dataset.stages !== stages) {
+        wait.append(meter);
+        list.innerHTML = stages;
+        list.dataset.stages = stages;
+        list.querySelector(".wiz-wait-slot")?.replaceWith(meter);
+      }
+      list.hidden = !screen.wait.stages.length;
+      list.classList.toggle("is-single", single);
+      // The bar is there for every run: the share already run, or moving back and forth while the duration is unknown;
+      // not where nothing runs (`progress: false`, path B's preview).
+      meter.hidden = screen.wait.progress === false;
+      const bar = wait.querySelector(".wiz-progress"), share = screen.wait.progress?.value ?? null;
+      bar.classList.toggle("is-indeterminate", share == null);
+      if (share == null) bar.removeAttribute("aria-valuenow");
+      else bar.setAttribute("aria-valuenow", String(Math.round(share * 100)));
+      bar.querySelector("span").style.width = share == null ? "" : `${Math.round(share * 100)}%`;
+      const remaining = wait.querySelector(".wiz-wait-remaining");
+      remaining.textContent = screen.wait.remaining || "";
+      remaining.hidden = !screen.wait.remaining;
+    }
+    // A countdown keeps its own text node, updated every second by `_tick` (the rest is not redrawn).
+    // The time is an element of its own (bold, a step larger, on the text's baseline, tabular figures).
+    const countdown = (notice) => {
+      const [before, after = ""] = notice.countdown.template.split("{time}");
+      return `${esc(before)}<strong class="wiz-countdown-time">${esc(screens.clock(notice.countdown.expires - Date.now()))}</strong>${esc(after)}`;
+    };
+    const markup = (list) => list.map((notice) => notice.countdown
+      ? `<p class="notice wiz-notice" data-tone="${notice.tone}" data-expires="${notice.countdown.expires}" data-template="${esc(notice.countdown.template)}">${countdown(notice)}</p>`
+      : `<p class="notice wiz-notice" data-tone="${notice.tone}" ${notice.tone === "error" ? 'role="alert"' : ""}>${text.units(esc(notice.text))}${notice.action
+        ? ` <button type="button" class="wiz-notice-action" data-wiz="${esc(notice.action.id)}">${esc(notice.action.label)}</button>` : ""}</p>`).join("");
+    const top = root.querySelector(".wiz-result-notices");
+    // What an action's note says (a preview saves nothing, …) is in the content, under the notices: the
+    // footer holds only buttons. The button keeps naming it (aria-describedby).
+    const actionNotes = screen.readOnly ? "" : screen.actions.filter((action) => action.note).map((action) =>
+      `<p class="cal-note wiz-action-note" id="wiz-note-${esc(action.id.replace(/\W/g, "-"))}">${esc(action.note)}</p>`).join("");
+    const notices = markup(screen.notices.filter((notice) => !(top && notice.result))) + actionNotes;
+    const box = root.querySelector(".wiz-notices");
+    if (box.innerHTML !== notices) box.innerHTML = notices;
+    if (top) { const first = markup(screen.notices.filter((notice) => notice.result)); if (top.innerHTML !== first) top.innerHTML = first; }
+    const field = root.querySelector(".wiz-field input");
+    if (field) field.disabled = !!screen.field?.disabled;
+    // Following another device, the content's fields and choices are read only in every way: off, out of the
+    // keyboard's Tab, with no hover, focus or text cursor (the stylesheet), as the footer's buttons that are off.
+    const following = !!screen.readOnly;
+    this._root.toggleAttribute("data-following", following);
+    if (following) for (const control of root.querySelectorAll(".wiz-main :is(input, select, textarea)")) { control.disabled = true; control.tabIndex = -1; }
+    // A refused value says why, under the field; never a silent red.
+    const fieldError = root.querySelector("#wiz-field-error");
+    if (fieldError) {
+      const message = screen.field?.error || "";
+      if (fieldError.textContent !== message) fieldError.textContent = message;
+      fieldError.hidden = !message;
+      // A field whose refusal is gone (a new step, a new value) is no longer marked invalid.
+      if (message) field?.setAttribute("aria-invalid", "true"); else field?.removeAttribute("aria-invalid");
+    }
+    // A reading the field accepts but far from the model: a yellow warning under it, never a refusal.
+    // Only for the value the field holds still (`fieldSettled`), in the same slot as the refusal.
+    const warning = root.querySelector("#wiz-field-warning");
+    if (warning) {
+      const band = screen.field?.band, input = root.querySelector('[name="reading_cm"]'), value = input ? parseReading(input.value) : NaN;
+      const still = !!input && this._local.fieldSettled === input.value;
+      const far = still && !!band && Number.isFinite(value) && accepted(input) && (value < band.min || value > band.max) && !fieldError?.textContent;
+      const message = far ? band.warning : "";
+      if (warning.textContent !== message) warning.textContent = message;
+      warning.hidden = !far;
+    }
+    const block = screen.profileBlock?.name;
+    const line = root.querySelector(".wiz-name-line");
+    if (line && block && line.textContent !== block.line) line.textContent = block.line;
+    root.querySelector(".wiz-name-input")?.setAttribute("aria-invalid", String(block ? !block.valid : false));
+    // Why the name cannot be saved, under the field (Save stays disabled meanwhile).
+    const nameError = root.querySelector(".wiz-name-error");
+    if (nameError) { nameError.textContent = block?.error || ""; nameError.hidden = !block?.error; }
+    // The countdown of an armed «Conferma presa di controllo» only rewrites the button's label below: redrawing
+    // the bar every second would hold the button back (the guard) and could swallow a tap.
+    // In the medium dialog (1024 px and more) the bar is a footer row; in the phone's layout (the
+    // tendina, the 480 px dialog) the stacked bar.
+    const dialog = this._medium();
+    const { readOnlyKey, slotAction, barActions, signature: actions } = barParts(screen, dialog);
+    const column = root.querySelector(".wiz-actions");
+    const one = (action) => action.kind === "status" || action.kind === "state"
+      ? `<p class="wiz-action status${action.kind === "state" ? " is-still" : ""}" data-wiz="${esc(action.id)}" role="status">${action.kind === "status" ? '<span class="wiz-spinner" aria-hidden="true"></span>' : ""}${esc(action.label)}</p>`
+      : `<button type="button" class="wiz-action ${action.kind}" data-wiz="${esc(action.id)}"${action.note ? ` aria-describedby="wiz-note-${esc(action.id.replace(/\W/g, "-"))}"` : ""}>${action.icon ? text.iconMarkup(action.icon) : ""}${esc(action.label)}</button>`;
+    if (actions !== this._actionsSignature) {
+      // The hold protects a tap from landing on a button that just appeared or changed. A button that only goes away
+      // (Stop when the motor stops by itself) holds nothing back: the end stop never flickers disabled.
+      // Save's label follows the name being typed: the same button, nothing to hold back.
+      const ids = screen.actions.map((action) => `${action.id}|${action.id === "save" ? "" : action.label}|${action.kind}`);
+      const readOnly = JSON.stringify(readOnlyKey);
+      if (!this._actionIds || readOnly !== this._readOnlySignature || ids.some((id) => !this._actionIds.includes(id))) this._guardIfTouched();
+      this._actionIds = ids;
+      this._readOnlySignature = readOnly;
+      const focused = column.contains(root.getRootNode().activeElement) ? root.getRootNode().activeElement.dataset.wiz : null;
+      this._actionsSignature = actions;
+      // A reader's bar: «Prendi il controllo» (its primary, armed or not); the note saying who
+      // guides the calibration is in the content, at its top, never in the footer.
+      this._closeMenu();
+      column.classList.toggle("is-footer", dialog);
+      const take = screen.readOnly?.take ? `<button type="button" class="wiz-take primary" data-wiz="take">${esc(takeLabel(screen.readOnly))}</button>` : "";
+      column.innerHTML = `${dialog ? this._footerMarkup(barActions, slotAction, one, take) : (() => {
+          // The slot stays out of the count of «Altre opzioni»: Stop or its finished line, the same bar.
+          // One rule for the phone and the dialog: the primary and one secondary in view, the rest folded.
+          const { shown, more, red } = footer(barActions);
+          // The emergency Stop is the last of the actions, after a gap and a hairline (CSS), never next to ②;
+          // leaving a process (outlined) follows it.
+          return `${take}${shown.map(one).join("")}${more.length ? `<div class="wiz-more"><button type="button" class="wiz-more-toggle" data-wiz="more" aria-expanded="false" aria-controls="wiz-more-list">${esc(t("wiz_T529"))}<ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></button>
+            <div class="wiz-more-list" id="wiz-more-list">${more.map(one).join("")}</div></div>` : ""}${slotAction ? '<div class="wiz-stop-slot"></div>' : ""}${red.map(one).join("")}`;
+        })()}`;
+      if (focused) column.querySelector(`[data-wiz="${focused}"]`)?.focus({ preventScroll: true });
+    }
+    // The slot's content follows the step (Stop ↔ «La corsa è finita»); the slot itself is never redrawn.
+    const slot = column.querySelector(".wiz-stop-slot");
+    if (slot && slotAction) {
+      const shownSlot = slot.firstElementChild;
+      if (shownSlot?.dataset.wiz !== slotAction.id || shownSlot.textContent !== slotAction.label) {
+        const focusedStop = shownSlot && root.getRootNode().activeElement === shownSlot;
+        slot.classList.toggle("is-finished", slotAction.id === "stopped");
+        // Once the run is over the slot keeps the red button «Ferma la tapparella», off (no empty box where
+        // Stop was, no line saying the run has ended).
+        slot.innerHTML = slotAction.kind === "state"
+          ? `<button type="button" class="wiz-action stop is-finished" data-wiz="${esc(slotAction.id)}" disabled aria-disabled="true">${esc(slotAction.label)}</button>`
+          : one(slotAction);
+        if (focusedStop) slot.firstElementChild.focus?.({ preventScroll: true });
+      }
+    }
+    // The other ways on stack under the actions; in the phone's bar they wait behind «Altre opzioni».
+    const more = column.querySelector(".wiz-more");
+    if (more) {
+      const open = !!this._local.moreOpen, list = more.querySelector(".wiz-more-list");
+      more.querySelector(".wiz-more-toggle").setAttribute("aria-expanded", String(open));
+      // «Altre opzioni» slides open and closed (a bar drawn anew takes its state at once).
+      if (!more._drawn || open === more.classList.contains("is-open")) more.classList.toggle("is-open", open);
+      // Once open, the other ways are brought into view as far as they need.
+      else if (open) { more.classList.add("is-open"); slideBlock(list, true, () => revealOpened(list)); }
+      else { more.classList.add("is-closing"); more.classList.remove("is-open"); slideBlock(list, false, () => more.classList.remove("is-closing")); }
+      more._drawn = true;
+    }
+    // Within a step the bar keeps its buttons, so one that turns on (② once the motor runs, the end stop once
+    // the cover arrives) is what may now sit under a finger: it is held as a new one was.
+    const enabledIds = screen.actions.filter((action) => !action.disabled && action.kind !== "state" && action.id !== "stop").map((action) => action.id);
+    if (this._enabledIds && enabledIds.some((id) => !this._enabledIds.includes(id))) this._guardIfTouched();
+    this._enabledIds = enabledIds;
+    // A press whose change came before its answer is spent once the answer is back, unless a start
+    // still waits for its motor: a bar the session brings later by itself (① once the cover is closed back after
+    // «Ripeti») is a change by data alone, enabled at once, never a hold that drops the first tap.
+    if (this._ownAnswered && !this._gateway?.status.busy && !/^starting_/.test(this._gateway?.view?.phase || "")) { this._ownPress = null; this._ownAnswered = false; }
+    // From the click until Home Assistant answers the buttons are held too (one press, one message), with the
+    // passing look; Stop never waits.
+    const inFlight = !!this._gateway?.status.busy;
+    // A tap within the hold after this tab's last tap is dropped as a double tap (`_heldTap`):
+    // the bar that tap brought (the descent's ① after «Avanti») is drawn off with the passing look until the hold ends
+    // (`_guard` redraws it then), never a button that looks ready and does nothing.
+    const held = this._guarded() && performance.now() - (this._lastTap ?? -Infinity) < this._guardMs;
+    for (const action of screen.actions) {
+      const button = column.querySelector(`[data-wiz="${action.id}"]`);
+      if (!button || action.kind === "status" || action.kind === "state") continue;
+      // A reading's «Fatto, avanti» waits for a value in the field: off until the user types one. After a
+      // refused value it stays off until the value typed is one the field accepts.
+      const input = action.id === "reading" ? root.querySelector('[name="reading_cm"]') : null;
+      const empty = !!input && (!input.value.trim() || (this._local.fieldError != null && !accepted(input)));
+      // The hold after a change (CONFIRM_GUARD_MS) no longer draws the buttons off (they flashed half
+      // transparent): `_click` drops the taps meant for the old bar instead. A request in flight still holds them.
+      // «Non ha fatto quello che doveva» is a Stop too: it never waits for an answer (it stays in the hold).
+      button.disabled = !!action.disabled || empty || ((inFlight && !["stop", "misbehaved"].includes(action.id)) || (held && action.id !== "stop"));
+      if (following && button.disabled) button.tabIndex = -1; else button.removeAttribute("tabindex");
+      // Off only for a moment, enabling by itself (a request or the motor settling) keeps the light
+      // primary look; off until the user acts is the neutral grey.
+      button.classList.toggle("is-settling", button.disabled && !empty && (!action.disabled || !!action.settling));
+      // Disabled by the step itself (not by the short hold after a change): said to assistive technology too.
+      if (action.disabled) button.setAttribute("aria-disabled", "true"); else button.removeAttribute("aria-disabled");
+    }
+    // What taking control does, said once armed: in the content with the reader's note.
+    const consequence = root.querySelector(".wiz-readonly-consequence");
+    if (consequence) {
+      const value = screen.readOnly?.consequence || "";
+      if (consequence.textContent !== value) consequence.textContent = value;
+      consequence.hidden = !value;
+    }
+    const take = column.querySelector('[data-wiz="take"]');
+    if (take) {
+      take.disabled = !!this._gateway?.status.busy; take.classList.toggle("is-settling", take.disabled);
+      const label = takeLabel(screen.readOnly);
+      if (take.textContent !== label) take.textContent = label;
+    }
+  }
+
+  /**
+   * The hold protects only a tap meant for the old bar: it follows a touch of the page in the last
+   * CONFIRM_GUARD_MS, or this tab's own press (until the change that answers it, within OWN_PRESS_MS). A bar changed by
+   * data alone (the owner's bar moved on by Home Assistant, a reader following, a step entered by a timer) is enabled
+   * at once. The hold while a request is in flight (click → answer) is separate and unchanged.
+   */
+  _guardIfTouched() {
+    const now = performance.now(), own = this._ownPress != null && now - this._ownPress < OWN_PRESS_MS;
+    // A start is answered before the motor runs (`starting_*`): the press still holds the bar that comes
+    // with the running motor (②), still within OWN_PRESS_MS.
+    const starting = /^starting_/.test(this._gateway?.view?.phase || "");
+    if (own && !this._gateway?.status.busy && !starting) this._ownPress = null;
+    else if (own) this._ownAnswered = true;
+    if (own || now - (this._touchedAt ?? -Infinity) < this._guardMs) this._guard();
+  }
+
+  /**
+   * Hold the confirming buttons for CONFIRM_GUARD_MS from this change of the bar. Nothing is drawn off; a tap
+   * whose press began before the change (meant for the old bar), or that follows the last accepted tap within the
+   * window (a double tap), is dropped by `_click`. Stop is never held.
+   */
+  _guard() {
+    if (!this._guardMs) return;
+    this._guardFrom = performance.now();
+    this._guardUntil = this._guardFrom + this._guardMs;
+    clearTimeout(this._guardTimer);
+    const generation = this._generation;
+    this._guardTimer = setTimeout(() => { if (generation === this._generation && this._frame) this._patch(this._screen()); }, this._guardMs + 10);
+  }
+
+  _guarded() { return !!this._guardMs && performance.now() < (this._guardUntil || 0); }
+
+  /** A tap the hold drops: on a held button, its press begun before the change, or a double tap within the window. */
+  _heldTap(button) {
+    if (!this._guarded() || STOP_SLOT.includes(button.dataset.wiz) || !button.closest(".wiz-actions")) return false;
+    const fresh = this._pressStart != null && this._pressStart >= this._guardFrom;
+    const double = performance.now() - (this._lastTap ?? -Infinity) < this._guardMs;
+    return !fresh || double;
+  }
+
+  /**
+   * The medium dialog's footer, in the phone bar's order
+   * (the primary first, Stop's slot and the red ways out last: the same reading and Tab order); the row's layout is the
+   * stylesheet's: on the left «Ferma la tapparella» in its slot (kept while off, no divider after it) and the red ways out;
+   * on the right the primary and one secondary (`.wiz-footer-main`: the secondary before the primary, and when their
+   * labels do not fit the primary goes on the line ABOVE it, never under); the actions beyond them in the ⋮ menu at the
+   * far right. A reader's «Prendi il controllo» is its primary.
+   */
+  _footerMarkup(barActions, slotAction, one, take = "") {
+    const { t } = this._context, { shown, more, red } = footer(barActions);
+    const menu = more.length ? `<div class="wiz-overflow"><button type="button" class="icon-button wiz-overflow-toggle" data-wiz="overflow" aria-haspopup="menu" aria-expanded="false" aria-controls="wiz-overflow-menu" aria-label="${esc(t("wiz_T529"))}" title="${esc(t("wiz_T529"))}"><ha-icon icon="mdi:dots-vertical" aria-hidden="true"></ha-icon></button>
+      <div class="wiz-overflow-menu" id="wiz-overflow-menu" role="menu" tabindex="-1" aria-label="${esc(t("wiz_T529"))}" hidden>${more.map((action) => `<button type="button" role="menuitem" class="wiz-menu-item" data-wiz="${esc(action.id)}">${esc(action.label)}</button>`).join("")}</div></div>` : "";
+    const main = take || shown.length ? `<div class="wiz-footer-main">${take}${shown.map(one).join("")}</div>` : "";
+    return `${main}${menu}${slotAction ? '<div class="wiz-stop-slot"></div>' : ""}${red.map(one).join("")}`;
+  }
+
+  /** The footer's ⋮ menu opens (focus on its first item after a key) or closes (focus back on ⋮ after a key). */
+  _toggleMenu(open = !this._menuOpen()) {
+    const wrap = this._frame?.querySelector(".wiz-overflow");
+    if (!wrap) return;
+    const menu = wrap.querySelector(".wiz-overflow-menu"), toggle = wrap.querySelector(".wiz-overflow-toggle");
+    if (!open) { this._closeMenu(); focusAfterClose(toggle); return; }
+    menu.hidden = false;
+    toggle.setAttribute("aria-expanded", "true");
+    // Closed by a press anywhere outside it (the dialog's scrim included); that press does nothing else.
+    this._offOutside = closeOnOutsidePress(wrap, () => this._closeMenu());
+    focusOnOpen(menu, menu.querySelector(".wiz-menu-item:not(:disabled)"));
+  }
+
+  _menuOpen() { const menu = this._frame?.querySelector(".wiz-overflow-menu"); return !!menu && !menu.hidden; }
+
+  _closeMenu() {
+    this._offOutside?.();
+    this._offOutside = null;
+    const wrap = this._frame?.querySelector(".wiz-overflow");
+    if (!wrap) return;
+    wrap.querySelector(".wiz-overflow-menu").hidden = true;
+    wrap.querySelector(".wiz-overflow-toggle").setAttribute("aria-expanded", "false");
+  }
+
+  /** The medium dialog's layout (from 1024 px): the footer in one row with ⋮; the phone's elsewhere. */
+  _medium() { return layout.medium(); }
+
+  /**
+   * Closing costs nothing now (the ✕ asks nothing): no session open, a session already ended or saved, or a
+   * reader's. The tendina shows its handle and closes by a drag only then.
+   */
+  _closable() {
+    const view = this._gateway?.view, screen = this._current;
+    // A-35: covers chosen are what closing would lose: no scrim, handle or drag while there are some.
+    if (this._local?.stage === "assign" && this._local.assign?.selected?.length) return false;
+    if (screen && !screen.discard) return true;
+    if (view?.read_only && !this._gateway.preview) return true;
+    if (this._gateway && !this._gateway.preview && view?.phase === "interrupted" && view.recoverable) return false;
+    return STAGES_BEFORE_SESSION.includes(this._local.stage) || !this._sessionOpen();
+  }
+
+  /** The cover a real save was made on (its key in the tab's list), or null. */
+  savedKey() { return this._local?.saved && !this._local.saved.preview && !this._local.saved.reader ? this._local.coverKey || null : null; }
+
+  /** The window crossed a band: the bar takes the new layout's shape. */
+  relayout() { if (this._root) this._patch(this._screen()); }
+
+  /** The dialog's Escape and the browser's Back are the ✕ (with its confirmation when a session is open). */
+  requestExit() {
+    const x = this._frame?.querySelector(".wiz-head .wiz-x");
+    if (!x) return;
+    if (x.dataset.wiz === "close") this._finish(); else this._exit();
+  }
+
+  /**
+   * The bar keeps a long cover name on one line, cut («…»); the steps sheet then opens with the whole name over
+   * the process, on as many lines as it takes. Measured at each opening (after a rotation, a wider window); a name
+   * read whole in the bar adds nothing. The medium dialog's column never carries it.
+   */
+  _sheetName(sheet) {
+    const cover = this._frame?.querySelector(".wiz-head .wiz-cover");
+    const name = cover && cover.scrollWidth > cover.clientWidth ? cover.textContent : null;
+    if (name === this._sheetCover) return;
+    this._sheetCover = name;
+    if (this._stepperScreen) sheet.querySelector(".wiz-sheet-steps").innerHTML = this._stepperMarkup(this._stepperScreen, { title: true, cover: name });
+  }
+
+  _stepperMarkup(screen, { title = false, cover = null } = {}) {
+    // The medium dialog's column is headed by the process («Perfeziona») and the variant chosen under it
+    // («Solo i tempi»), in place of the generic «Passi» (which still names the column and the phone's sheet). The
+    // two as one head (the process 14/600 in the text colour, the variant 12/400 grey, 4 px apart, 16 px over
+    // the first step), the phone's «Passi» sheet headed the same way, the cover's name over it when the bar cuts it.
+    const { process, variant } = screen.stepper;
+    return `${title ? `<div class="wiz-steps-head">${cover ? `<p class="wiz-steps-cover">${esc(cover)}</p>` : ""}<h5 class="wiz-steps-title">${esc(process || this._context.t("wiz_T274"))}</h5>${variant ? `<p class="wiz-steps-variant">${esc(variant)}</p>` : ""}</div>` : ""}<p class="wiz-steps-line">${esc(screen.stepper.line)}</p>
+      <ol>${screen.stepper.phases.map((phase) => {
+        // The variant under the title is not said again under «Scelta del percorso».
+        const substeps = title && variant && phase.key === "intro" ? phase.substeps.filter((item) => item.label || item.value !== variant) : phase.substeps;
+        return `<li data-step-state="${phase.state}"${phase.state === "current" ? ' aria-current="step"' : ""}><span class="wiz-step-mark" aria-hidden="true"></span><span class="wiz-step-label">${esc(phase.label)}</span>
+        ${substeps.length ? `<ul>${substeps.map((item) => `<li>${item.label ? `${esc(item.label)}: <strong>${esc(item.value)}</strong>` : esc(item.value)}</li>`).join("")}</ul>` : ""}</li>`; }).join("")}</ol>`;
+  }
+
+  _waitMarkup(wait) {
+    return `<div class="wiz-wait cal-card" role="status">${wait.lead ? `<p class="wiz-wait-lead">${text.units(esc(wait.lead))}</p>` : ""}${wait.text ? `<p${wait.lead ? ' class="wiz-wait-note"' : ""}>${text.units(esc(wait.text))}</p>` : ""}<ol class="wiz-wait-stages"></ol>
+      <div class="wiz-wait-meter"><div class="wiz-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="${esc(this._context.t("wiz_T027"))}"><span></span></div>
+      <p class="wiz-wait-remaining muted" aria-live="off" hidden></p></div></div>`;
+  }
+
+  /** A closed-by-default explanation: a native <details>, so it opens from the keyboard and reads as a toggle. */
+  _helpMarkup(help) {
+    // The panel's one disclosure (`cal-disclosure`): a blue text link with a chevron, over a short paragraph.
+    return `<details class="cal-disclosure wiz-help"${this._local.helpOpen ? " open" : ""}><summary><span class="cal-disclosure-label">${esc(help.summary)}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>${rich(help.text)}</details>`;
+  }
+
+  _choiceMarkup(choice) {
+    // A label written as «**title**\nexplanation» (C-02) is a title and its explanation, not one flex line with a
+    // break in it (the break took a whole row: 24 px between them).
+    const parts = (option) => {
+      if (option.plain) return [esc(option.label), ""];
+      const [first, ...rest] = option.label.split("\n");
+      // The bold run closes on the next line in the sheet («**title\n**explanation»): close it on the title.
+      const head = /^\*\*/.test(first) && !/^\*\*.*\*\*/.test(first) ? `${first.trim()}**` : first;
+      const tail = rest.join(" ").trim().replace(/^\*\*\s*/, "");
+      return tail ? [inline(head), `<span class="wiz-radio-explain">${inline(tail)}</span>`] : [inline(option.label), ""];
+    };
+    return `<fieldset class="wiz-choice wiz-radios"><legend${choice.legendHidden ? ' class="visually-hidden"' : ""}>${esc(choice.label)}</legend>${choice.help ? this._helpMarkup(choice.help) : ""}${choice.options.map((option) =>
+      `<label class="wiz-radio${option.disabled ? " is-disabled" : ""}"><input type="radio" name="${esc(choice.name)}" value="${esc(option.value)}" ${option.value === choice.value ? "checked" : ""} ${option.disabled ? "disabled" : ""}><span class="wiz-radio-text"><span class="wiz-radio-label">${option.icon ? `<ha-icon class="wiz-radio-icon" icon="${esc(option.icon)}" aria-hidden="true"></ha-icon>` : ""}${parts(option)[0]}${option.badge
+        ? ` <span class="badge wiz-recommended">${esc(option.badge)}</span>` : ""}</span>${option.notice
+        // Why an option cannot be chosen yet, a note right under its title, before what it does. Blue for a
+        // feature not shipped yet (`noticeTone: "info"`), yellow only for a measurement's warning; a condition the user
+        // can meet is the option's plain grey caption.
+        ? `<span class="cal-note${option.noticeTone === "info" ? "" : " is-warning"} wiz-radio-notice">${text.units(esc(option.notice))}</span>` : ""}${option.caption
+        ? `<small class="muted wiz-radio-caption">${text.units(esc(option.caption))}</small>` : ""}${parts(option)[1]}${[].concat(option.note || []).map((line) => `<small class="muted">${text.units(esc(line))}</small>`).join("")}${option.warning
+        ? `<span class="cal-note is-warning wiz-radio-warning">${text.units(esc(option.warning))}</span>` : ""}</span></label>${option.more
+        // What an option lists only on demand, under the panel's one disclosure, beside the label (a disclosure
+        // is never inside a label: a tap on it would choose the option too).
+        ? `<details class="cal-disclosure wiz-option-more"><summary><span class="cal-disclosure-label">${esc(option.more.label)}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>
+          <ul class="wiz-option-list">${option.more.items.map((item) => `<li><strong class="wiz-option-name">${esc(item.name)}</strong>${item.similar
+            ? ` <span class="badge wiz-recommended wiz-option-similar">${esc(option.more.similarLabel)}</span>` : ""} · ${text.units(esc(item.details))}</li>`).join("")}</ul></details>` : ""}`).join("")}</fieldset>`;
+  }
+
+  /**
+   * The field, then ONE slot right under it for what is said about its value, the red refusal (it holds
+   * Fatto back) or the yellow warning (it does not), the same shape (a note) in its own colour; then the help and its note.
+   */
+  _fieldMarkup(field) {
+    const value = field.value == null ? "" : `${field.value}`;
+    return `<form class="wiz-field" novalidate autocomplete="off"><label>${esc(field.label)}<span class="input-suffix"><input name="reading_cm" type="text" inputmode="decimal" autocomplete="off" value="${esc(value)}" aria-describedby="wiz-field-error wiz-field-warning wiz-field-hint" data-kind="${esc(field.kind)}" data-min="${field.min}" data-max="${field.max}"><span>cm</span></span></label>
+      <div class="wiz-field-slot"><p id="wiz-field-error" class="cal-note is-error wiz-field-message wiz-field-error" role="alert" hidden></p><p id="wiz-field-warning" class="cal-note is-warning wiz-field-message wiz-field-warning" role="status" hidden></p></div>
+      <p id="wiz-field-hint" class="muted">${text.units(esc(field.hint))}</p>${field.note ? `<p class="muted wiz-field-note">${text.units(esc(field.note))}</p>` : ""}</form>`;
+  }
+
+  /** The before/after table (`.cal-table`: grey head, 44 px rows, columns 1fr · 84 · 84). */
+  _tableMarkup(table) {
+    return `<table class="wiz-table cal-table"><colgroup><col><col class="cal-table-value"><col class="cal-table-value"></colgroup><thead><tr>${table.headers.map((header) => `<th scope="col">${esc(header)}</th>`).join("")}</tr></thead>
+      <tbody>${table.rows.map((row) => `<tr><th scope="row">${esc(row.label)}</th><td class="is-before${table.mutedBefore ? " muted" : ""}">${row.changed ? `<s>${esc(row.before)}</s>` : esc(row.before)}</td><td>${esc(row.after)}</td></tr>`).join("")}</tbody></table>`;
+  }
+
+  /** «Dettagli tecnici»: the table card's tail, opening the rolls and the code under it. */
+  _technicalMarkup(technical) {
+    return `<details class="wiz-accordion wiz-technical cal-card-tail"><summary><span>${esc(technical.title)}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary>
+      <div><p class="muted">${esc(technical.caption)}</p>${technical.rows.length ? this._tableMarkup({ headers: [this._context.t("wizTableValue"), this._context.t("wizTableBefore"), this._context.t("wizTableAfter")], rows: technical.rows }) : ""}
+      ${technical.code ? `<pre class="wiz-code">${esc(technical.code)}</pre>` : ""}</div></details>`;
+  }
+
+  /** «Cosa succede quando salvo?»: a card's tail (the profile card's when there is one). */
+  _saveInfoMarkup(info) {
+    return `<details class="wiz-accordion wiz-save-info cal-card-tail"${this._local.saveInfoOpen ? " open" : ""}><summary><span>${esc(info.title)}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary><div>${rich(info.body)}</div></details>`;
+  }
+
+  /**
+   * What a step has just measured. The «Misure» in columns in one card, under the
+   * section title the step gives («Stacco misurato», …) and with the fixed tail «Dati provvisori: …» while nothing is
+   * saved; a result with its own tone (the check's precision) as a card of that tone whose tail opens its explanation.
+   */
+  _resultsMarkup(screen) {
+    const { t } = this._context;
+    const measure = (tile) => `<div class="wiz-result cal-measure${tile.invalid ? " is-invalid" : ""}"><span class="wiz-result-label cal-measure-label">${esc(tile.label)}</span>
+      <span class="wiz-result-value cal-measure-value"><span class="wiz-result-number cal-measure-number">${esc(tile.value)}</span>${tile.unit ? ` <span class="cal-measure-unit">${esc(tile.unit)}</span>` : ""}${tile.extra ? `<span class="wiz-result-extra cal-measure-unit">· ${esc(tile.extra)}</span>` : ""}</span>${tile.caption ? `<span class="wiz-result-caption cal-measure-label">${esc(tile.caption)}</span>` : ""}</div>`;
+    const plain = screen.results.filter((tile) => !tile.tail), toned = screen.results.filter((tile) => tile.tail);
+    const block = plain.length ? `<section class="cal-section wiz-results-block">${screen.resultsTitle ? `<h5 class="cal-section-title">${esc(screen.resultsTitle)}</h5>` : ""}
+      <div class="cal-card"><div class="cal-measures">${plain.map(measure).join("")}</div>${screen.provisional ? `<p class="cal-card-tail wiz-provisional">${esc(t("wiz_T598"))}</p>` : ""}</div></section>` : "";
+    const cards = toned.map((tile) => `<section class="cal-card is-${tile.tone} wiz-result-card" aria-label="${esc(tile.label)}"><div class="cal-measures">${measure(tile)}</div>
+      <details class="cal-card-tail wiz-result-more"><summary><span>${text.units(esc(tile.tail.summary))}</span><ha-icon icon="mdi:chevron-down" aria-hidden="true"></ha-icon></summary><p>${text.units(esc(tile.tail.text))}</p></details></section>`).join("");
+    return `<div class="wiz-results">${cards}${block}</div>`;
+  }
+
+  /** The profile block as a card under its title, «Cosa succede quando salvo?» as its tail. */
+  _profileMarkup(block, saveInfo = null) {
+    return `<section class="cal-section wiz-profile-section"><h5 class="cal-section-title">${esc(this._context.t("calTabColProfile"))}</h5><div class="cal-card"><div class="wiz-profile-block">
+      ${block.fixed ? "" : `<label class="wiz-switch"><input type="checkbox" role="switch" name="save_profile" ${block.on ? "checked" : ""}><span>${esc(block.switchLabel)}</span></label>`}
+      <p class="muted">${esc(block.explanation)}</p>
+      ${block.choice ? `<fieldset class="wiz-radios">${block.choice.options.map((option) => `<label class="wiz-radio${option.disabled ? " is-disabled" : ""}"><input type="radio" name="save_choice" value="${esc(option.value)}" ${option.value === block.choice.value ? "checked" : ""} ${option.disabled ? "disabled" : ""}>
+        <span class="wiz-radio-text"><span class="wiz-radio-label">${esc(option.label)}</span>${option.note ? `<span class="cal-note is-${option.note.tone} wiz-radio-notice wiz-option-note">${esc(option.note.text)}</span>` : ""}${option.description ? `<small class="muted">${esc(option.description)}</small>` : ""}</span></label>`).join("")}</fieldset>` : ""}
+      ${block.name ? `<label>${esc(block.name.label)}<input class="wiz-name-input" name="profile_name" maxlength="64" autocomplete="off" value="${esc(block.name.value)}" aria-describedby="wiz-name-error wiz-name-hint"></label>
+        <p id="wiz-name-error" class="wiz-name-error" role="alert" hidden></p>
+        <p id="wiz-name-hint" class="muted">${esc(block.name.hint)}</p>${block.name.line ? `<p class="wiz-name-line">${esc(block.name.line)}</p>` : ""}` : ""}</div>
+      ${saveInfo ? this._saveInfoMarkup(saveInfo) : ""}</div></section>`;
+  }
+
+  // ---------- events ----------
+
+  _keydown(event) {
+    if (this._menuOpen()) {
+      // The ⋮ menu: Escape closes it (back on ⋮), the arrows move among its items, Tab leaves it closed.
+      const items = [...this._frame.querySelectorAll(".wiz-overflow-menu .wiz-menu-item:not(:disabled)")];
+      const index = items.indexOf(this._root.getRootNode().activeElement);
+      // An Escape answered here is not also the flow's ✕ (the tab's own keydown, further up).
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); this._closeMenu(); this._frame.querySelector(".wiz-overflow-toggle")?.focus(); return; }
+      if (["ArrowDown", "ArrowUp"].includes(event.key) && items.length) {
+        event.preventDefault();
+        items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+        return;
+      }
+      if (event.key === "Tab") this._closeMenu();
+    }
+    const dialog = this._frame.querySelector(".wiz-dialog:not([hidden])"), sheet = this._frame.querySelector(".wiz-sheet");
+    const open = dialog || (!sheet.hidden ? sheet : null);
+    if (!open) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (open === dialog && dialog.classList.contains("wiz-nav-dialog")) this._navAnswer(false);
+      else if (open === dialog) this._closeDialog();
+      else this._closeSteps();
+    } else if (event.key === "Tab") {
+      // A modal keeps the keyboard inside it, as the native dialog would.
+      const focusable = [...open.querySelectorAll("button:not([hidden]):not(:disabled)")].filter((button) => !hiddenByStyle(button));
+      const active = this._root.getRootNode().activeElement, first = focusable[0], last = focusable.at(-1);
+      if (!focusable.includes(active)) { event.preventDefault(); first?.focus(); }
+      else if (event.shiftKey && active === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus(); }
+    }
+  }
+
+  _input(event) {
+    if (event.target.name === "assign_filter" && this._local.assign) { this._local.assign.query = event.target.value; this._patch(this._screen()); return; }
+    if (event.target.name === "profile_name") { this._local.profileName = event.target.value.trim(); this._patch(this._screen()); }
+    if (event.target.name === "reading_cm") {
+      // Nothing is judged while the number is being typed (no refusal at the first key):
+      // the value is judged once still (`_settle`). A refusal shown goes as soon as what is typed is accepted, and the
+      // button comes on; the warning, which belongs to the value judged, waits for the next still value.
+      if (this._local.fieldError != null && accepted(event.target)) { this._local.fieldError = null; event.target.removeAttribute("aria-invalid"); }
+      this._local.fieldSettled = null;
+      clearTimeout(this._settleTimer);
+      const generation = this._generation;
+      this._settleTimer = setTimeout(() => { if (generation === this._generation) this._settle(); }, this._settleMs);
+      // The button follows the field (typing never redraws the field itself).
+      this._patch(this._screen());
+    }
+  }
+
+  _change(event) {
+    const { name, value, checked } = event.target;
+    if (name === "assign_cover" && this._local.assign) {
+      // A-35: a cover ticked or unticked; the count, the button and the refusal follow (nothing is redrawn).
+      const state = this._local.assign;
+      state.selected = checked ? [...new Set([...state.selected, value])] : state.selected.filter((id) => id !== value);
+      Object.assign(state, { error: "", confirm: "", confirmed: false });
+      this._patch(this._screen());
+      return;
+    }
+    // Another choice of where to save drops a preview of the profile's update (asked again when it is chosen again).
+    if (name === "save_profile") { this._local.saveProfile = checked; Object.assign(this._local, { sharedPreview: null, sharedAsk: null }); this._render(); }
+    else if (name === "save_choice") { this._local.saveChoice = value; this._render(); }
+    // On the basic calibration the answer adds or drops the step «Lamelle» (the header's «2 di 6» / «2 di 5»).
+    else if (name === "slats") { this._local.slats = value !== "no"; if (this._local.path === "base") this._patch(this._screen()); }
+    else if (name === "case") { this._local.scope = value; this._render(); }
+    else if (name === "cover") { this._local.coverKey = value; this._local.coverPicked = true; this._render(); }
+    else if (event.target.matches?.("select[data-pick-filter]")) { this._local.pickFilter = value; this._render(); }
+    else if (event.target.dataset?.pickSort) {
+      // The phone's "Sort by" bar of A-01: the list's shared order, as in the tab.
+      const [key, dir] = value.split(":");
+      this._context.picker?.sort(key, dir === "desc" ? "desc" : "asc");
+      this._render();
+    }
+    else if (name === "profile") { this._local.profileId = value; this._render(); }
+    else if (name === "path") { this._local.pathChoice = value; this._render(); }
+  }
+
+  _click(event) {
+    // A click on a confirmation's backdrop (outside its card) is "Continue the calibration".
+    if (event.target.classList?.contains("wiz-dialog")) {
+      if (event.target.classList.contains("wiz-nav-dialog")) this._navAnswer(false); else this._closeDialog();
+      return;
+    }
+    // As for every sheet, a tap on the Steps sheet's backdrop closes it, as its ✕ does.
+    if (event.target.classList?.contains("wiz-sheet")) { this._act("steps-close"); return; }
+    const button = event.target.closest("button[data-wiz]");
+    if (!button || button.disabled) return;
+    event.preventDefault();
+    if (this._heldTap(button)) return;
+    if (button.closest(".wiz-actions")) this._lastTap = performance.now();
+    this._ownPress = performance.now(); this._ownAnswered = false;
+    // The footer's ⋮ menu; a choice in it closes it first.
+    if (button.dataset.wiz === "overflow") { this._toggleMenu(); return; }
+    if (button.closest(".wiz-overflow-menu")) this._closeMenu();
+    this._act(button.dataset.wiz);
+  }
+
+  _value(name) { return this._frame.querySelector(`[name="${name}"]:checked, select[name="${name}"]`)?.value; }
+
+  async _act(id) {
+    const local = this._local, gateway = this._gateway;
+    if (id === "steps") {
+      // The phone bar's «Passi» toggles the sheet that drops from under it.
+      const sheet = this._frame.querySelector(".wiz-sheet");
+      if (!sheet.hidden && !sheet.classList.contains("is-leaving")) { this._act("steps-close"); return; }
+      this._sheetName(sheet);
+      sheet.hidden = false;
+      stepsExpanded(this._frame, true);
+      focusOnOpen(sheet.querySelector(".wiz-sheet-card"), shown(sheet.querySelectorAll("button")));
+      // The step in progress in view inside the sheet (nothing moves when it already is).
+      revealOpened(sheet.querySelector('.wiz-sheet-steps [aria-current="step"]'));
+      return;
+    }
+    if (id === "more") { local.moreOpen = !local.moreOpen; return this._render(); }
+    // The optional check at the end of the base calibration: descending from the top to half the travel.
+    if (id === "skip-check") { local.checkSkipped = true; gateway?.clearError?.(); this._render(); return; }
+    if (id === "check-start") {
+      // The target comes from the session's own view at the moment of sending: half its travel, descending from
+      // the top. Without a travel there (never a NaN on the wire) the backend plans its own default check.
+      const travel = gateway?.view?.travel_cm;
+      return this._send("check", Number.isFinite(travel) && travel > 0 ? { direction: "closing", target_cm: travel / 2 } : {});
+    }
+    if (id === "steps-close") { this._closeSteps(); return; }
+    if (id === "exit") { this._exit(); return; }
+    if (id === "back") { this._back(); return; }
+    if (id.startsWith("pick-filter:")) { local.pickFilter = id.slice(12); return this._render(); }
+    // The ✕ of a confirmation shown as a sheet keeps the calibration, as «Continua la calibrazione».
+    if (id === "dialog-x") { this._act(this._frame.querySelector(".wiz-nav-dialog")?.hidden === false ? "nav-stay" : "stay"); return; }
+    if (id === "stay") { this._closeDialog(); return; }
+    if (id === "nav-stay") { this._navAnswer(false); return; }
+    if (id === "nav-later") { this._navAnswer(true); return; }
+    if (id === "nav-discard") { this._navDiscard(); return; }
+    if (id === "leave") { this._leave(); return; }
+    if (id === "close") { this._finish(); return; }
+    // «Annulla» on a flow's first screen, before anything moved: back where it was opened (the details or the list).
+    if (id === "cancel-flow") { this._context.onCancelFirst?.(); this._finish(); return; }
+    if (id === "choose") {
+      if (!local.coverPicked) return;
+      local.pathChoice = null; local.startStatus = this._item()?.status;
+      // A cover never calibrated has nothing to choose: Preparazione at once.
+      if (local.startStatus === "to_measure") Object.assign(local, { stage: "before", path: "base", keepTimes: false, refineEntry: false, noChoice: true });
+      else Object.assign(local, { stage: "path", noChoice: false });
+      return this._render();
+    }
+    if (id === "path" || id.startsWith("path:")) {
+      const path = id === "path" ? this._value("path") || local.pathChoice : id.slice(5);
+      // Path A whole (the timed runs and the tape readings) is no longer offered; its code stays, and the
+      // tests still enter it by its id. Path B the same, with the previews on.
+      if (!["base", "A", "R", "B"].includes(path) || (path === "B" && !this._previews)) return;
+      // «Perfezionamento con il metro» is the geometry session on the times already saved (`R`).
+      local.path = path === "R" ? "A" : path;
+      Object.assign(local, { keepTimes: path === "R", refineEntry: path === "R" });
+      local.pathChoice = path;
+      local.scope = null;
+      // The basic calibration and fine-tuning with the tape (path A) go to their «Prima di iniziare».
+      local.stage = local.path === "B" ? "profile" : "before";
+      // B-01 preselects the profile A-02 named as the closest by travel; none when no profile is close.
+      if (local.path === "B") local.profileId = screens.pathAdvice(this._cover(), this._profiles()).similar[0]?.id ?? null;
+      return this._render();
+    }
+    if (id === "profile") {
+      local.profileId = this._value("profile") || local.profileId;
+      if (!local.profileId) return;
+      local.stage = "before"; return this._render();
+    }
+    if (id === "current") { local.stage = "case"; return this._render(); }
+    if (id === "case") {
+      const scope = this._value("case") || local.scope || (this._previews ? "points_only" : null);
+      if (!scope || (scope === "points_only" && !this._previews)) return;
+      local.scope = scope; local.stage = "before"; return this._render();
+    }
+    if (id === "begin") {
+      if (local.stage === "before") {
+        // The answer on screen, or (not asked) what is known of the cover.
+        const question = screens.slatsQuestion(this._cover(), local.path, local), radio = this._value("slats");
+        local.slats = radio != null ? radio !== "no" : question.ask ? local.slats ?? question.value ?? true : question.value ?? true;
+      }
+      return this._begin();
+    }
+    if (id === "ack:ascent" && local.travelTyped != null) {
+      const travel = local.travelTyped;
+      Object.assign(local, { ackAscent: true, travelTyped: null });
+      return this._send("reading", { reading_cm: travel });
+    }
+    if (id.startsWith("ack:")) {
+      local[{ lift: "ackLift", ascent: "ackAscent", descent: "ackDescent", readings: "ackReadings" }[id.slice(4)]] = true;
+      if (id === "ack:readings") return this._send("next");
+      return this._render();
+    }
+    if (id === "reading") return this._reading();
+    // The guided protocol's own movements ("open", "close") are named apart from closing the wizard.
+    if (id.startsWith("run:")) return this._send(id.slice(4));
+    if (id === "endpoint" && local.fullRun) {
+      // ② exists only while the motor runs. A click that races the stop's view is not a confirmation: the run is
+      // not valid, as if ② had never been there; otherwise the press decides the run, even across a stop in flight.
+      if (gateway?.view?.motor_stopped === true && !local.fullRun.pressed) { this._closeFullRun(gateway.view); return this._render(); }
+      const run = local.fullRun;
+      run.pressed = true;
+      // A refused ② confirmed nothing: the run is judged again as if it had not been pressed.
+      return Promise.resolve(this._send("endpoint")).then(() => {
+        if (local.fullRun !== run || !this._gateway?.status.error) return;
+        Object.assign(run, { pressed: false, decided: false });
+        this._closeFullRun(this._gateway.view);
+        this._render();
+      });
+    }
+    const open = gateway?.view;
+    if (id === "repeat" && local.invalidRun && open && !open.preview && open.mode === "geometry" && ["opening", "closing"].includes(open.step)
+      && ["opening", "closing", "geometry_wait_stop"].includes(open.phase)) {
+      // The backend is still in the stopped run or confirming its end: the end is confirmed first (nothing moves),
+      // the repeat follows on the result it reaches.
+      local.repeatQueued = true;
+      if (local.fullRun) this._closeFullRun(open);
+      return this._render();
+    }
+    // The time of a run judged not valid stays out of the stepper until a new run replaces it.
+    if (id === "repeat" && local.invalidRun) {
+      const key = local.invalidRun.step === "opening" ? "opening_time" : "closing_time";
+      local.discarded = { step: local.invalidRun.step, value: gateway?.view?.values?.[key] ?? null };
+    }
+    if (id === "repeat") { local.invalidRun = null; local.travelTyped = null; }
+    // The descent's «Ripeti»: its result acknowledged again after the new run.
+    if (id === "repeat:closing") { local.ackDescent = false; local.invalidRun = null; return this._send("repeat", { direction: "closing" }); }
+    // The ascent's own «Ripeti»: the cover goes back down by itself, then the ascent from the rest.
+    if (id === "repeat:opening") { Object.assign(local, { ackAscent: false, invalidRun: null, travelTyped: null, rehomeRepeat: true }); return this._send("repeat", { direction: "opening" }); }
+    if (["next", "lift", "endpoint", "repeat", "repeat_step", "accept", "repeat_check", "redo_readings", "continue_anyway", "continue", "skip"].includes(id)) return this._send(id);
+    // "It did not do what it should" (A-05): today the run is stopped and S-01 offers to start over (a later backend will repeat the step).
+    // Stop during the positioning before a times-only measurement: Home Assistant stops the cover, nothing started.
+    if ((id === "stop" || id === "misbehaved") && local.homing) {
+      const entity = local.homing.entity;
+      clearInterval(this._homeTimer); this._homeTimer = null; local.homing = null; local.stage = "before";
+      Promise.resolve(this._context.hass.callService?.("cover", "stop_cover", { entity_id: entity })).catch(() => {});
+      return this._render();
+    }
+    if (id === "stop" || id === "misbehaved") { local.misbehaved = id === "misbehaved"; local.stopSent = true; this._closeDialog(false); return gateway?.stop(); }
+    // Ownership gained by a claim or a reconnection moves nothing until this tab presses something.
+    if (id === "take") { local.arm = null; return gateway?.claim(); }
+    if (id === "reconnect") { local.arm = null; return gateway?.reconnect(); }
+    if (id === "save") return this._save();
+    // «Riprova» after a refused preview of the profile's update: asked again, nothing saved (Save then wants a new press).
+    if (id === "shared-retry") { if (this._sharedState() === "refused") { this._askShared(true); this._render(); } return; }
+    if (id === "refine") return this._previews ? this._fineTune() : undefined;
+    // A-34's «Perfeziona col metro» after a basic calibration: fine-tuning with the tape takes the same frame.
+    if (id === "refine-tape") return this._refineTape();
+    if (id === "assign-profile") {
+      // A-35: the step in this frame (never a dialog over the flow), on the profile just written: by its id when
+      // it was updated, by its name when it was created (the id comes with the overview Home Assistant publishes after
+      // the save).
+      const item = this._item(), saved = local.saved || {};
+      if (!item || local.stage !== "saved" || saved.reader || saved.preview) return;
+      local.assign = { profileId: saved.target === "profile_update" ? item.profile?.id ?? null : null, name: saved.name ?? item.profile?.name ?? null,
+        selected: [], query: "", error: "", busy: false };
+      local.moreOpen = false;
+      local.stage = "assign";
+      return this._render();
+    }
+    if (id === "assign-skip") { local.assign = null; local.stage = "saved"; return this._render(); }
+    if (id === "assign-submit") return this._assignSubmit();
+    // The question about slats before the assignment.
+    if (id === "assign-confirm-cancel") { Object.assign(local.assign || {}, { confirm: "", confirmed: false }); return this._render(); }
+    if (id === "assign-confirm") { Object.assign(local.assign || {}, { confirm: "", confirmed: true }); return this._assignSubmit(); }
+    // The new session another device started on this cover: followed here as a reader.
+    if (id === "follow-new") {
+      const item = this._item(), restarted = local.restarted;
+      if (!restarted || !item) return;
+      // Read again right before following: a session already gone shows its end (cancelled or expired).
+      let session = null;
+      try {
+        session = (await this._context.hass.callWS({ type: "myhome/cover_profiles/read", entry_id: item.entry.entry_id, entity_id: item.cover.entity_id }))?.calibration;
+      } catch { /* As gone. */ }
+      if (local.stage !== "restarted" || local.restarted !== restarted) return;
+      local.restarted = null;
+      const live = session && session.session_id === restarted.session_id && !["saved", "cancelled", "expired"].includes(session.phase);
+      if (!live) {
+        local.stage = session?.reason === "expired" || session?.phase === "expired" ? "restart-expired" : "cancelled";
+        return this._render();
+      }
+      this._resume(session, item);
+      return this._render();
+    }
+    if (id === "restart") {
+      // The guided session has no repeat verb: this attempt is cancelled (nothing was saved) and the times start
+      // again from the briefing, with the cover to be closed.
+      // Only a cancel Home Assistant confirmed lets the gateway go; refused (its error shows) or not sent, the
+      // session stays here, still reserving the cover for this tab, instead of being detached and left to its lease.
+      const gateway = this._gateway;
+      Promise.resolve(gateway?.act("cancel")).catch(() => {}).finally(() => {
+        if (this._gateway !== gateway) return;
+        if (gateway && (gateway.lastView || gateway.view)?.phase !== "cancelled") { this._render(); return; }
+        this._dropGateway(); Object.assign(local, freshFlags(), { stage: "before" }); this._render();
+      });
+      return;
+    }
+    // Restarting or cancelling is the owner's; a reader claims first (its bar has neither).
+    if ((id === "abort" || id === "start-over") && gateway?.view?.read_only && !gateway.preview) return;
+    if (id === "abort") { this._abortDead(); return; }
+    if (id === "start-over" && !(await this._abortDead({ stay: true }))) return;
+    if (id === "start-over") {
+      // Fine-tuning starts again from the values just saved; everything else from "Before you begin".
+      if (local.refining && local.base) { this._startRefine(local.base); return this._render(); }
+      this._dropGateway(); Object.assign(local, freshFlags(), { stage: "before" }); return this._render();
+    }
+    if (id === "another") { this._dropGateway(); Object.assign(local, freshFlags(), { stage: "choose", entry: "choose", path: "A", scope: null, saved: null, refining: false, refineEntry: false, sessionSlats: false, base: null, baseSaved: false, coverKey: "", coverPicked: false, startStatus: undefined }); return this._render(); }
+    // The tab is told first, so the details take the flow's place in the same frame when it closes.
+    if (id === "open-cover") { const entityId = this._item()?.cover.entity_id; const { onOpenCover } = this._context; onOpenCover?.(entityId); this._finish(); return; }
+    // After a failed check of path B: this cover from scratch (path A), keeping the travel typed; or another profile.
+    if (id === "restart-a") {
+      const travel = gateway?.view?.travel_cm ?? null;
+      this._dropGateway();
+      Object.assign(local, freshFlags(), { path: "A", scope: null, stage: "before", keptTravel: travel });
+      return this._render();
+    }
+    if (id === "other-profile") {
+      this._dropGateway();
+      Object.assign(local, freshFlags(), { path: "B", stage: "profile" });
+      return this._render();
+    }
+    if (id === "correct") {
+      // B → C: the cover is measured on its own; nothing of the preview was written.
+      this._dropGateway();
+      Object.assign(local, freshFlags(), { path: "C", scope: "times_and_rolls", stage: "current" });
+      return this._render();
+    }
+  }
+
+  /**
+   * A-35: the profile just written (found in the gateway's data once Home Assistant published it: until then
+   * the list waits, and the tab is asked to read it again once) and the covers that can be given it, as the list shows them.
+   */
+  _assignInfo() {
+    const state = this._local.assign, item = this._item(), data = this._gatewayData(item);
+    if (!state || !item) return { profile: null, candidates: [], scaling: "", max: assignList.ASSIGN_MAX };
+    const profile = data?.profiles.find((entry) => (state.profileId ? entry.id === state.profileId : entry.name === state.name)) || null;
+    if (profile) state.profileId = profile.id;
+    else if (!state.asked) { state.asked = true; queueMicrotask(() => this._context?.onRefresh?.()); }
+    const items = this._covers();
+    const candidates = assignList.assignCandidates({ profile, data, describe: (cover) => {
+      const entry = items.find((other) => other.entry.entry_id === item.entry.entry_id && other.cover.entity_id === cover.entity_id);
+      return entry ? { name: entry.name, area: entry.area, address: entry.entity?.address || null } : { name: cover.name };
+    }, sources: true });
+    // A cover no longer free (busy, gone) leaves the selection.
+    if (profile) state.selected = assignList.keptSelection(state.selected, candidates);
+    return { profile, candidates, scaling: profile ? assignList.scalingText(this._context.t, profile) : "", max: assignList.ASSIGN_MAX };
+  }
+
+  /** The tab read the gateways again: an open A-35 shows the new data (the profile just published, a cover now busy). */
+  dataChanged() { if (this._root && this._local?.stage === "assign") this._render(); }
+
+  /**
+   * A-35: «Assegna a N tapparelle»: Home Assistant's own write of several covers at once (the exact proposal,
+   * then the assignment with its confirmation, on the revision the list was drawn from). Done: back to A-34, which says
+   * to how many covers; refused: the reason under the list, the selection kept, the data read again.
+   */
+  async _assignSubmit() {
+    const local = this._local, state = local.assign, item = this._item();
+    if (!state || state.busy || !item) return;
+    const info = this._assignInfo(), data = this._gatewayData(item), entityIds = [...state.selected], generation = this._generation;
+    if (!info.profile || !data || !entityIds.length || entityIds.length > assignList.ASSIGN_MAX) return;
+    const conflict = state.confirmed ? "" : assignList.selectionConflict(this._context.t, info.candidates, entityIds, info.profile);
+    if (conflict) {
+      state.confirm = conflict;
+      this._render();
+      this._frame?.querySelector(".cal-assign-confirm")?.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
+    state.busy = true; state.error = ""; state.confirmed = false;
+    this._render();
+    try {
+      await assignList.assignCovers(this._context.hass, { entryId: item.entry.entry_id, profileId: info.profile.id, revision: data.revision, entityIds });
+      if (generation !== this._generation || local.assign !== state) return;
+      Object.assign(local, { assign: null, assigned: entityIds.length, stage: "saved" });
+      this._context.onRefresh?.();
+      this._render();
+    } catch (error) {
+      if (generation !== this._generation || local.assign !== state) return;
+      state.busy = false;
+      state.error = assignList.errorText(this._context.t, error);
+      this._context.onRefresh?.();
+      this._render();
+      // The refusal is the first thing under the list: brought into view there (the content scrolls, never the page).
+      this._frame?.querySelector(".cal-assign-error:not([hidden])")?.scrollIntoView?.({ block: "nearest" });
+    }
+  }
+
+  /** Where «Indietro» leads before any session: a stage, `null` for none (the first screen: its ✕ leads to the list), `undefined` for none. */
+  _backTarget() {
+    const local = this._local;
+    return { choose: null, path: local.entry === "path" ? null : "choose", profile: "path", current: local.entry === "current" ? null : "path", case: "current",
+      // Fine-tuning entered from a cover's «Perfeziona» (or from A-34) starts on its «Prima di iniziare»: no way back.
+      before: local.entry === "before" ? null : local.noChoice ? "choose" : ["A", "base"].includes(local.path) ? "path" : local.path === "B" ? "profile" : "case" }[local.stage];
+  }
+
+  /** The Steps sheet goes (it slides away) and the focus returns to the «Passi» button that is on screen. */
+  _closeSteps() {
+    this._slideAway(this._frame.querySelector(".wiz-sheet"));
+    stepsExpanded(this._frame, false);
+    // After a tap no focus stays on «Passi» (it looked pressed); after a key it goes back there.
+    focusAfterClose(shown(this._frame.querySelectorAll('[data-wiz="steps"]')));
+  }
+
+  /** One choice back, before any session: what was chosen stays chosen; from the first screen, back to the list. */
+  _back() {
+    const local = this._local, to = this._backTarget();
+    if (to === undefined) return;
+    if (to === null) { this._finish(); return; }
+    if (to === "path") local.pathChoice = local.keepTimes ? "R" : local.path;
+    local.stage = to;
+    local.startError = null;
+    this._render();
+  }
+
+  _send(action, extra = {}) {
+    if (!this._gateway) return;
+    this._arm(this._gateway.view);
+    // A repeated run is confirmed again on its own screen (A-12, A-15) once measured.
+    if (action === "repeat" && this._current?.code.endsWith("-12")) this._local.ackAscent = false;
+    if (action === "repeat" && this._current?.code.endsWith("-15")) this._local.ackDescent = false;
+    return this._gateway.act(action, extra);
+  }
+
+  /**
+   * The reading's value judged once still (the field left, or SETTLE_MS without a key): a value the field
+   * cannot take is refused in red (Fatto off until it can), one far from the model warned in yellow (Fatto stays on), in
+   * the one slot under the field; an empty field says nothing.
+   */
+  _settle() {
+    clearTimeout(this._settleTimer); this._settleTimer = null;
+    const input = this._frame?.querySelector('[name="reading_cm"]');
+    if (!input || input.disabled || this._current?.readOnly) return;
+    const raw = input.value, before = this._local.fieldError;
+    if (!raw.trim()) this._local.fieldError = null;
+    else if (!accepted(input)) { const value = parseReading(raw); this._local.fieldError = Number.isFinite(value) ? value : "nan"; }
+    else this._local.fieldError = null;
+    this._local.fieldSettled = raw;
+    this._patch(this._screen());
+    // A refusal that appears is brought into view with its field (never under the fold or a fade).
+    if (before == null && this._local.fieldError != null) this._frame.querySelector("#wiz-field-error:not([hidden])")?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  _reading() {
+    const input = this._frame.querySelector('[name="reading_cm"]');
+    if (!input) return;
+    clearTimeout(this._settleTimer); this._settleTimer = null;
+    this._local.fieldSettled = input.value;
+    const value = parseReading(input.value), min = Number(input.dataset.min), max = Number(input.dataset.max);
+    if (!Number.isFinite(value) || value < min || value > max) {
+      // Outside the accepted range of an intermediate reading the screen names the range; nothing is sent.
+      this._local.fieldError = Number.isFinite(value) ? value : "nan";
+      this._patch(this._screen());
+      const field = this._frame.querySelector('[name="reading_cm"]');
+      field.setAttribute("aria-invalid", "true");
+      field.focus();
+      // The reason under the field stays in view above the phone's action bar.
+      this._frame.querySelector("#wiz-field-error:not([hidden])")?.scrollIntoView?.({ block: "nearest" });
+      return;
+    }
+    this._local.fieldError = null;
+    // The lift-off gap as typed: a value under the backend's 1 cm counts as still resting, and the screen of the
+    // repeated run names it. The backend uses the number as sent, without rounding (0.5 is under 1).
+    if (input.dataset.kind === "gap") { this._local.lastGap = value; this._local.liftOrigin = "typed"; }
+    // The travel is typed first and kept here: the ascent's result (with it) comes next, and «OK, continue»
+    // sends it; «Repeat the run» forgets it and nothing was sent.
+    const view = this._gateway?.view;
+    if (input.dataset.kind === "travel" && view && !view.preview && view.mode === "geometry" && view.step === "opening" && !view.keep_times) { this._local.travelTyped = value; return this._render(); }
+    return this._send("reading", { reading_cm: value });
+  }
+
+  /**
+   * What this tab shows, published to the readers of the session it owns: the screen's code, the path
+   * and scope (a reopened session continues on them instead of guessing from the cover), the choices made on screens
+   * Home Assistant does not know (the result acknowledgements, a run judged not valid) and, once Save is pressed,
+   * what is being saved (the readers' A-34).
+   */
+  _publish(screen) {
+    const gateway = this._gateway, view = gateway?.view, local = this._local;
+    if (!gateway?.show || gateway.preview || !view || view.read_only || !view.owner || local.stage !== "session") return;
+    const flags = Object.fromEntries(SHARED_FLAGS.map((name) => [name, local[name] ?? null]));
+    gateway.show({ code: screen.code, path: local.path, scope: local.scope ?? null, slats: local.slats !== false, local: flags,
+      ...(local.pendingSave ? { saved: { target: local.pendingSave.target, name: local.pendingSave.name ?? null, orphan: local.pendingSave.orphan ?? null } } : {}) });
+  }
+
+  async _save() {
+    // The screen as it is now (a name typed only patches the page: the drawn screen would save the old one).
+    const screen = this._current = this._screen(), local = this._local;
+    const action = screen.actions.find((item) => item.id === "save");
+    if (!action || action.disabled || !this._gateway) return;
+    // «Salva nel profilo» saves at one press, only with its impact in view: the preview of this view (asked on
+    // arrival) back and valid, and the confirmation sent the one it carries. Never queued: a press without it (still
+    // coming, refused, stale) saves nothing (Save is off then, or «Riprova»). A gateway without previews saves at once.
+    if (action.target === "profile_update" && this._sharedState() !== null
+      && (this._sharedState() !== "ready" || this._gateway.savePreview !== local.sharedPreview)) return;
+    const name = screen.profileBlock?.name?.value;
+    // Path B saves no measured value: the cover follows the chosen profile.
+    local.pendingSave = local.path === "B" ? { target: "follow_profile", name: null } : { target: action.target || "profile_new", name };
+    // A new profile for a cover that followed another, which no other cover follows: that profile will be left alone.
+    const previous = this._item()?.profile;
+    if (local.pendingSave.target === "profile_new" && previous && !previous.assigned_to.some((id) => id && id !== this._item().cover.entity_id)) {
+      local.pendingSave.orphan = previous.name;
+    }
+    this._arm(this._gateway.view);
+    // The readers learn what is saved before Home Assistant closes the session.
+    this._publish(screen);
+    // «Salvataggio…» on the button until the answer.
+    const gateway = this._gateway;
+    local.saving = true;
+    this._patch(this._screen());
+    try { return await gateway.save(local.pendingSave); } finally {
+      local.saving = false;
+      if (gateway === this._gateway && this._root && local.stage === "session") this._patch(this._screen());
+    }
+  }
+
+  // ---------- sessions ----------
+
+  _newGateway(kind, plan, values) {
+    const generation = this._generation;
+    const onChange = (change) => {
+      if (generation !== this._generation || !this._root) return;
+      // A tick may end a positioning (A-04 → A-05): a new screen is drawn whole, the same one only patched.
+      if (change === "tick") {
+        this._closeFullRun(this._gateway?.view);
+        const screen = this._screen(); if (screen.code !== this._renderedCode) this._render(); else this._patch(screen); return;
+      }
+      if (change === "error" && this._startRefused()) return;
+      this._viewChanged();
+      // A refusal is never silent: its notice is brought into view (a long summary is read at its foot).
+      if (change === "error") this._frame?.querySelector('.wiz-notice[data-tone="error"]')?.scrollIntoView?.({ block: "nearest" });
+    };
+    this._gateway = kind === "live" ? new LiveCalibrationGateway({ onChange })
+      : new PreviewCalibrationGateway({ onChange, plan, values, ...(this._stageMs != null ? { stageMs: this._stageMs } : {}) });
+    if (kind === "live") this._watchLease();
+    return this._gateway;
+  }
+
+  /**
+   * A start Home Assistant refused because the cover is moving (`calibration_moving`): no session, nothing to wait
+   * for. Back to «Prima di iniziare», where its notice stands above the buttons and «Ho capito, inizia» tries again.
+   */
+  _startRefused() {
+    const gateway = this._gateway, local = this._local, code = gateway?.status.error?.code;
+    if (!gateway || gateway.preview || gateway.view || local.stage !== "session" || code !== "calibration_moving") return false;
+    this._dropGateway();
+    Object.assign(local, { stage: "before", startError: { code } });
+    this._render();
+    this._frame?.querySelector('.wiz-notice[data-tone="error"]')?.scrollIntoView?.({ block: "nearest" });
+    return true;
+  }
+
+  _dropGateway() { clearInterval(this._leaseTimer); this._leaseTimer = null; clearInterval(this._tickTimer); this._tickTimer = null; this._gateway?.close(); this._gateway = null; this._staying = null; }
+
+  /** The idle expiry warning counts down without any message from Home Assistant: redraw it every 15 s. */
+  _watchLease() {
+    // And its minutes and seconds every second, its text node only.
+    clearInterval(this._tickTimer);
+    this._tickTimer = setInterval(() => this._tick(), 1000);
+    clearInterval(this._leaseTimer);
+    this._leaseTimer = setInterval(() => {
+      if (!this._root || !this._gateway?.view?.idle_expires_at) return;
+      const screen = this._screen(); if (screen.code !== this._renderedCode) this._render(); else this._patch(screen);
+    }, 15000);
+  }
+
+  _liveContext() {
+    // Called once the gateway it serves is in place (`this._newGateway("live").start({ ...this._liveContext() })`).
+    const item = this._item(), { hass, t } = this._context, generation = this._generation, gateway = this._gateway;
+    return { host: this._engineHost(), hass, t, entity: { entry_id: item.entry.entry_id, entity_id: item.cover.entity_id }, revision: item.revision,
+      onSaved: () => { if (generation === this._generation) this._saved(); },
+      // A cancel asked to start over closes the session, not the wizard (one-shot, set by `_abortDead`). The
+      // flag names the gateway it was set for, so it never swallows the cancel of a later session.
+      onCancel: () => {
+        if (generation !== this._generation) return;
+        if (this._staying === gateway) { this._staying = null; return; }
+        this._finish();
+      } };
+  }
+
+  _begin() {
+    const local = this._local, item = this._item();
+    if (!item) return;
+    this._dropGateway();
+    Object.assign(local, freshFlags(), { stage: "session" });
+    this._arm(null, true);
+    if (local.path === "B" || (local.path === "C" && local.scope === "points_only")) {
+      // Path B skips the travel measurement when the cover's travel is already saved (only the check remains).
+      this._newGateway("preview", local.path === "B" ? "profile" : "rolls", { ...this._baseValues(item), skip_travel: local.path === "B" && item.cover.travel_cm > 0 }).start();
+    } else {
+      const guided = local.path === "base" || (local.path === "C" && local.scope === "times_only");
+      // The basic calibration is the guided session with `slats` (the tap at the lift-off); on a cover fine-tuned
+      // with the tape it measures the times only (no tap, the slat time and the rolls stay).
+      local.sessionSlats = local.path === "base" && local.slats !== false;
+      // The times-only session (Home Assistant's guided protocol) starts from a closed cover with no positioning
+      // of its own: the panel closes the cover first, as path A does, then starts it. The basic
+      // calibration's session closes it itself (`home`), never trusting a «closed» Home Assistant may have kept.
+      const base = local.path === "base";
+      if (guided && !base && this._home(item)) return this._render();
+      this._newGateway("live").start({ ...this._liveContext(), mode: guided ? "guided" : "geometry", slats: guided ? local.sessionSlats : local.slats !== false,
+        keepTimes: !guided && !!local.keepTimes, home: base });
+    }
+    this._render();
+  }
+
+  /**
+   * The positioning before a times-only measurement: Home Assistant closes the cover (its own close), the step
+   * waits for it to be closed and still (or for its full closing time with a margin), then the session starts on its
+   * confirmation screen («Check that it is fully closed»). Returns false when the cover is already closed and still.
+   */
+  _home(item) {
+    const { hass } = this._context, entity = item.cover.entity_id, state = hass.states?.[entity];
+    // Only a cover Home Assistant reports closed at a known 0 skips it: an unknown position (after a restart Home
+    // Assistant discards a modelled cover's position) is positioned first, whatever its state says.
+    if (state?.state === "closed" && state.attributes?.current_position === 0) return false;
+    // For the one Stop the panel writes by itself (the returns and the positionings of the sessions are confirmed by
+    // the user, the previews move nothing): when Home Assistant knows the position and it
+    // agrees with the state (`knownPosition`: never 0 on an open cover nor 100 on a closed one, never an unknown one after
+    // a restart) the close is planned from it, the share of the closing time still ahead; otherwise on the FULL run of
+    // its direction. Either way plus its margin (`homeStopAt`), unless the stop status comes first; the user confirms the
+    // cover fully closed on the next screen (C-11) before anything is measured.
+    const closing = item.cover.effective?.closing?.value, position = knownPosition(state);
+    const seconds = closing > 0 ? (position != null ? closing * position / 100 : closing) : null;
+    this._local.homing = { entity, started: Date.now(), seconds, moved: state?.state !== "closed" };
+    Promise.resolve(hass.callService?.("cover", "close_cover", { entity_id: entity })).catch(() => {});
+    clearInterval(this._homeTimer);
+    this._homeTimer = setInterval(() => this._homeTick(), 500);
+    return true;
+  }
+
+  _homeTick() {
+    const local = this._local, homing = local.homing;
+    if (!homing || !this._root) { clearInterval(this._homeTimer); this._homeTimer = null; return; }
+    const state = this._context.hass.states?.[homing.entity], elapsed = (Date.now() - homing.started) / 1000;
+    const still = state && !["closing", "opening"].includes(state.state);
+    // A cover already shown «closed» (at an unknown position) is still «closed» before its run starts:
+    // that «closed» counts only once Home Assistant has reported the close under way; otherwise the run's time decides.
+    if (state && ["closing", "opening"].includes(state.state)) homing.moved = true;
+    // The close is over at the earliest of its stop status and its estimated closing time (a MyHOMEServer1
+    // reports the stop of a run to the end stop only at the actuator's timer, about 60 s). Home Assistant still shows
+    // the cover closing until that status, and a session does not start on a moving cover: the panel then writes the
+    // Stop, as path A's confirmed end stop does, and the session starts once the cover is still, on C-11 («check that
+    // it is fully closed and still»), where nothing moves before the user's press. An action on the motor, so
+    // the estimate keeps a margin (`homeStopAt`: max(4 s, 25 %)).
+    // No closing time to wait for (none known): two minutes, then the session starts on «check that it is fully
+    // closed», where the user confirms it, rather than a positioning that never ends for a cover that never moves.
+    const estimated = homing.seconds > 0 && elapsed >= screens.homeStopAt(homing.seconds);
+    if (estimated && state && !still && !homing.stopSent) {
+      homing.stopSent = true;
+      Promise.resolve(this._context.hass.callService?.("cover", "stop_cover", { entity_id: homing.entity })).catch(() => {});
+    }
+    const done = (still && state.state === "closed" && homing.moved) || (estimated && still) || (homing.seconds == null && elapsed >= HOME_FALLBACK_S && still);
+    if (!done) { this._patch(this._screen()); return; }
+    clearInterval(this._homeTimer); this._homeTimer = null;
+    local.homing = null;
+    this._newGateway("live").start({ ...this._liveContext(), mode: "guided", slats: !!local.sessionSlats });
+    this._render();
+  }
+
+  _resume(session, item) {
+    const local = this._local;
+    if (item) { local.coverKey = key(item); local.startStatus = item.status; }
+    // The view has no path: a slat and roll measurement of a cover that already follows a profile is the
+    // correction "remeasure everything" (C), of any other cover the first of its type (A).
+    // The path and the choices made come from the session (published by the tab that guided it): a path A on a
+    // cover that already follows a profile stays a path A, with its A-34 and its offer of fine-tuning. Only a session
+    // that never published them falls back on a guess from the cover.
+    const shown = session.screen?.path ? session.screen : null;
+    // A guided session the wizard started is a basic calibration, a geometry session fine-tuning (path A).
+    const timesOnly = session.mode === "guided";
+    Object.assign(local, freshFlags(), { stage: "session", path: shown ? shown.path : timesOnly ? "base" : "A",
+      scope: shown ? shown.scope ?? null : null, slats: session.slats !== false, sessionSlats: timesOnly && session.slats === true,
+      keepTimes: !!session.keep_times, refineEntry: !!session.keep_times || !!shown?.local?.refineEntry, noChoice: !!shown?.local?.noChoice },
+      shown ? Object.fromEntries(SHARED_FLAGS.filter((name) => shown.local?.[name] != null).map((name) => [name, shown.local[name]])) : {});
+    this._newGateway("live").resume({ ...this._liveContext(), session });
+  }
+
+  /**
+   * A session of this tab's gateway changed. A tab left on «annullata da un altro dispositivo»
+   * reads its cover: a new session on it, not the one that ended, means the other device started again: the tab says
+   * so and offers to follow it, instead of a dead end. A plain cancel (no new session) keeps its screen.
+   */
+  async gatewaySession(entryId) {
+    const local = this._local, item = this._item(), context = this._context;
+    if (!this._root || local.stage !== "cancelled" || !item || item.entry.entry_id !== entryId) return;
+    // Only a session started soon after ours ended, while this tab stayed on that screen, is a restart; a
+    // calibration started later (another device, hours after) is not this one going on.
+    if (Date.now() - (local.endedAt ?? 0) > RESTART_WINDOW_MS) return;
+    const generation = this._generation;
+    let session = null;
+    try {
+      session = (await context.hass.callWS({ type: "myhome/cover_profiles/read", entry_id: entryId, entity_id: item.cover.entity_id }))?.calibration;
+    } catch { return; }
+    if (generation !== this._generation || this._local.stage !== "cancelled" || !session) return;
+    if (["saved", "cancelled"].includes(session.phase) || session.session_id === local.endedSession || session.entity_id !== item.cover.entity_id) return;
+    local.stage = "restarted";
+    local.restarted = session;
+    this._render();
+  }
+
+  _baseValues(item) {
+    const effective = item.cover.effective || {};
+    return { opening_time: effective.opening?.value, closing_time: effective.closing?.value, slat_time_s: effective.slat_time_s?.value ?? 0,
+      opening_roll: effective.opening_roll?.value ?? null, closing_roll: effective.closing_roll?.value ?? null, travel_cm: item.cover.travel_cm ?? null };
+  }
+
+  _baseFromCover(item) {
+    const values = this._baseValues(item);
+    return { opening: values.opening_time, closing: values.closing_time, slat: values.slat_time_s, travel: values.travel_cm,
+      opening_roll: values.opening_roll, closing_roll: values.closing_roll };
+  }
+
+  /**
+   * "Continue with fine-tuning" on A-34: the base calibration is saved, so fine-tuning (A-22…A-34, quarter readings and
+   * the check) starts at once on the values just saved, in the same wizard, the stepper at Fine-tuning. Its end says
+   * that the calibration before it was saved (T322).
+   */
+  _fineTune() {
+    const local = this._local, base = local.base;
+    if (!base || !this._item()) return;
+    local.saved = null;
+    local.baseSaved = true;
+    this._startRefine(base);
+    this._render();
+  }
+
+  /**
+   * «Perfeziona col metro» on A-34 after a basic calibration: what was saved stays saved; fine-tuning with
+   * the tape (path A, whole: its live geometry session) starts on its «Prima di iniziare» in the same frame, «Perfeziona»
+   * in the header, with no way back to the calibration just closed. The slats answer is kept for its question.
+   */
+  _refineTape() {
+    const local = this._local;
+    if (local.stage !== "saved" || local.path !== "base" || !this._item()) return;
+    this._dropGateway();
+    // What the base calibration just saved says of the slats, known before the list reads it again.
+    const known = local.sessionSlats;
+    Object.assign(local, freshFlags(), { stage: "before", path: "A", scope: null, entry: "before", refineEntry: true, keepTimes: true, noChoice: true, saved: null, assigned: 0, base: null, sessionSlats: false, slatsKnown: known });
+    return this._render();
+  }
+
+  /** Fine-tuning A-22…A-34 on `base`: simulated until the backend offers it. */
+  _startRefine(base) {
+    const local = this._local;
+    this._dropGateway();
+    // The readings of the calibration it refines stay for the stepper.
+    Object.assign(local, freshFlags(), { stage: "session", refining: true, base, baseReadings: local.baseReadings });
+    this._newGateway("preview", "refine", { opening_time: base.opening, closing_time: base.closing, slat_time_s: base.slat ?? 0,
+      opening_roll: base.opening_roll, closing_roll: base.closing_roll, travel_cm: base.travel }).start();
+  }
+
+  _viewChanged() {
+    const view = this._gateway?.view, local = this._local;
+    // A reader that takes control continues on the step its former owner showed (published with `show`),
+    // not on the last transition of Home Assistant: the owner's path and choices become this tab's own. Home Assistant
+    // drops the old owner's screen on a claim (the new owner's view has none), so a reader keeps the last screen it
+    // was shown and adopts it whole (a choice the owner had not made is not made here either). A reader never shown one
+    // (an owner that published nothing) keeps what it judged from Home Assistant's views while it followed.
+    if (view && !view.preview) {
+      if (view.read_only) {
+        // Control went to another device: a question asked as owner («Esci senza salvare?», «Calibrazione in
+        // corso») no longer applies; it closes, and the panel stays where it was.
+        if (this._navResolve) this._navAnswer(false);
+        if (this._frame?.querySelector(".wiz-dialog:not(.wiz-nav-dialog):not([hidden])")) this._closeDialog(false);
+        local.following = true;
+        if (view.screen) this._followed = { gateway: this._gateway, screen: view.screen };
+      } else if (local.following && view.owner) {
+        local.following = false;
+        const shown = view.screen || (this._followed?.gateway === this._gateway ? this._followed.screen : null);
+        this._followed = null;
+        if (shown) {
+          const fresh = freshFlags();
+          Object.assign(local, shown.path ? { path: shown.path, scope: shown.scope ?? null } : {},
+            Object.fromEntries(SHARED_FLAGS.map((name) => [name, shown.local?.[name] ?? fresh[name]])));
+        }
+      }
+    }
+    // The session was cancelled by the tab or device that guided it: for a reader it is over, said as such, once.
+    // The gateway is closed (no more heartbeats against a session that is gone, so no «expired» and no flicker).
+    if (view && !view.preview && view.read_only && view.phase === "cancelled") {
+      this._dropGateway();
+      local.stage = "cancelled";
+      // The session that ended, to tell a restart (a new session on this cover) from a plain cancel.
+      local.endedSession = view.session_id ?? null;
+      local.endedAt = Date.now();
+      this._render();
+      return;
+    }
+    // The preview of the profile's update belongs to the view it was asked on (a check repeated, new values: asked again).
+    if (local.sharedAsk && local.sharedAsk.key !== `${view?.session_id}:${view?.sequence}`) Object.assign(local, { sharedAsk: null, sharedPreview: null });
+    // A refused value belongs to the step it was typed for; a refusal from Home Assistant to the phase it came in.
+    if (view?.sequence !== local.fieldSequence) { local.fieldError = null; local.fieldSettled = null; local.fieldSequence = view?.sequence; }
+    if (view && view.phase !== local.errorPhase) { if (local.errorPhase !== undefined) this._gateway.clearError?.(); local.errorPhase = view.phase; }
+    if (view?.phase === "review" && !view.preview) {
+      local.review = { opening: view.values?.opening_time, closing: view.values?.closing_time, slat: view.geometry?.slat_time_s ?? null,
+        travel: view.mode === "geometry" ? view.travel_cm : null, opening_roll: view.geometry?.opening_roll ?? null, closing_roll: view.geometry?.closing_roll ?? null,
+        lift: view.samples?.lift ?? null, gap: view.readings?.gap ?? null, check: view.check ?? null };
+      local.baseReadings = { ...view.readings };
+    }
+    if (view?.preview && view.phase === "saved") { this._saved(view.saved); return; }
+    if (view?.preview && view.phase === "cancelled") { this._finish(); return; }
+    // The lift-off run as measured, kept for the return to the bottom (a repeat drops it from the view).
+    if (view && !view.preview && view.samples?.lift > 0) local.liftRun = view.samples.lift;
+    // When the wait for the actuator's stop began; «Arresto in corso…» only once it lasts.
+    this._watchStopWait(view);
+    this._trackRun(view);
+    this._trackFullRun(view);
+    // The returns before the tape readings no longer confirm their end stop by themselves: the user confirms
+    // it, and the next run starts from that press.
+    this._closeFullRun(view);
+    this._queuedRepeat(view);
+    // Same step, same bar: how the step's run starts (by itself after a press, or from its own button) is
+    // decided once per step and keeps its bar for the whole step; a view read from another device decides it anew.
+    if ((view?.step ?? null) !== local.barStep || view?.read_only) Object.assign(local, { barStep: view?.step ?? null, autoStart: null });
+    this._autoNext(view);
+    this._unloadGuard(this._liveOpen());
+    this._render();
+  }
+
+  /** The start of a wait for the actuator's stop, and one redraw once it has lasted STOP_NOTE_MS. */
+  _watchStopWait(view) {
+    const local = this._local, waiting = !!view && !view.preview && view.phase === "geometry_wait_stop";
+    if (!waiting) { local.waitStopAt = null; clearTimeout(this._stopNoteTimer); return; }
+    if (local.waitStopAt != null) return;
+    local.waitStopAt = Date.now();
+    clearTimeout(this._stopNoteTimer);
+    const generation = this._generation;
+    this._stopNoteTimer = setTimeout(() => { if (generation === this._generation && this._root && this._gateway?.view?.phase === "geometry_wait_stop") this._render(); },
+      screens.STOP_NOTE_MS + 20);
+  }
+
+  /**
+   * A positioning run to an end stop (`home`, `reset`, `top`) lasts the share of the travel still ahead: the cover's
+   * estimated position (Home Assistant's `current_position`) is read once, when the run starts.
+   */
+  _trackRun(view) {
+    const local = this._local;
+    const run = !!view && !view.preview && ["home", "reset", "top"].includes(view.step)
+      && ["starting_close", "starting_open", "closing", "opening"].includes(view.phase);
+    if (!run) { local.run = null; return; }
+    if (local.run?.step === view.step) return;
+    // The position counts only when Home Assistant knows it and it agrees with the state; otherwise (unknown,
+    // or 0 on an open cover, 100 on a closed one) the run lasts its full time.
+    const position = knownPosition(this._context.hass.states?.[this._item()?.cover.entity_id]);
+    // Who owned the run when it started, and on which subscription: an automatic end stop needs both unchanged.
+    local.run = { step: view.step, position, attachment: view.attachment ?? null,
+      owned: !!view.owner && !view.read_only, sent: false };
+  }
+
+  /** The full ascent and descent (A-11, A-14 and their C clones): who owned the run when it started, on which subscription. */
+  _trackFullRun(view) {
+    const local = this._local;
+    // The guided times-only runs are full runs too: their direction is their step.
+    const step = view?.mode === "guided" ? (["starting_open", "opening"].includes(view.phase) ? "opening" : ["starting_close", "closing"].includes(view.phase) ? "closing" : null)
+      : view?.step;
+    // On the saved times (`keep_times`) the runs up and down time nothing: positionings, never judged
+    // as a full run (no «non valida», no time of theirs); Home Assistant ends them at the actuator's stop.
+    const full = !!view && !view.preview && ["geometry", "guided"].includes(view.mode) && !view.keep_times
+      && ((step === "opening" && ["starting_open", "opening"].includes(view.phase)) || (step === "closing" && ["starting_close", "closing"].includes(view.phase)));
+    if (!full) { local.fullRun = null; return; }
+    if (local.fullRun?.step === step) return;
+    // `pressed`: ② was pressed in this tab while the motor ran; `sent`: the end of a run not valid was confirmed.
+    local.fullRun = { step, pressed: false, decided: false, sent: false };
+    local.invalidRun = null;
+  }
+
+  /**
+   * How a full run ended by the bus is judged: ② exists only while the motor runs. A press before the stop
+   * reached this tab gives the run's time (the backend takes the frame's time for a press that crossed it); a stop
+   * before any press (a wall switch, any stop) or at an actuator's timer (59-65 s) makes the result not valid at once.
+   * Only the view decides, so a tab that opened, resumed or claimed the session after the stop judges it the same way.
+   */
+  _judgeFullRun(view) {
+    const run = this._local.fullRun;
+    if (!run || run.decided || view?.motor_stopped !== true || view.stopped_elapsed == null) return null;
+    const verdict = stopVerdict(view.stopped_elapsed);
+    return verdict === "timer" ? "timer" : run.pressed ? "valid" : verdict;
+  }
+
+  /**
+   * A run judged not valid is shown as such by every tab, a reader's too. Its end stop is then confirmed by whichever
+   * tab owns the session now (Home Assistant records the frame's time; nothing moves, the motor has already stopped),
+   * so the result screen can offer only «Ripeti la corsa». Never after a lost connection, an error or with a request
+   * pending; once per run.
+   */
+  _closeFullRun(view) {
+    const local = this._local, run = local.fullRun, status = this._gateway?.status || {};
+    if (!run) return;
+    const verdict = this._judgeFullRun(view);
+    if (verdict) { run.decided = true; local.invalidRun = verdict === "valid" ? null : { step: run.step, reason: verdict }; }
+    if (!local.invalidRun || run.pressed || run.sent || view?.motor_stopped !== true) return;
+    if (!view.owner || view.read_only || status.lost || status.error || status.busy) return;
+    run.sent = true;
+    queueMicrotask(() => {
+      if (this._gateway?.view === view && !this._gateway.status.busy) this._send("endpoint"); else run.sent = false;
+    });
+  }
+
+  /** «Ripeti la corsa» pressed while the stopped run was still open: sent on the result its confirmed end reaches. */
+  _queuedRepeat(view) {
+    const local = this._local, status = this._gateway?.status || {};
+    if (!local.repeatQueued || !view) return;
+    const result = view.mode === "geometry" && ((view.step === "opening" && view.phase === "reading") || (view.step === "half_open" && view.phase === "briefing"));
+    const guided = view.mode === "guided" && ["confirm_open", "confirm_lift", "review"].includes(view.phase);
+    if (!result && !guided) {
+      if (!["opening", "closing", "geometry_wait_stop"].includes(view.phase)) local.repeatQueued = false;
+      return;
+    }
+    local.repeatQueued = false;
+    if (!view.owner || view.read_only || status.lost || status.error) return;
+    queueMicrotask(() => { if (this._gateway?.view === view && !this._gateway.status.busy) this._act(guided ? "restart" : "repeat"); });
+  }
+
+  /** A press of this tab arms one automatic `next`: it remembers the view it was made on and its subscription. */
+  _arm(view, start = false) {
+    this._local.arm = { sequence: view?.sequence ?? -1, attachment: view?.attachment ?? null, start };
+  }
+
+  /**
+   * Movements the mockups show as automatic after a press: the return to a known end stop and the runs of the tape
+   * readings. THE RULE: an automatic verb is sent only on the view that immediately follows a press of the user in
+   * this tab (through the movement and the stop that press started, never past a stop that waits for the user),
+   * once per `sequence`, and never after a replayed subscription (a new `attachment`: Home Assistant reconnected),
+   * a reconnection, a claim, a lost connection, a refused verb, or a view this tab does not own.
+   */
+  _autoNext(view) {
+    const local = this._local, arm = local.arm, status = this._gateway?.status || {};
+    if (!arm || !view || view.preview) return;
+    // A start has no view yet: the first one it receives names its subscription.
+    if (arm.start && arm.attachment === null && view.attachment) arm.attachment = view.attachment;
+    const stale = view.mode !== "geometry" || !view.owner || view.read_only || status.lost || status.error
+      || (arm.attachment !== null && view.attachment !== arm.attachment);
+    if (stale) { local.arm = null; return; }
+    if (view.sequence <= arm.sequence) return;
+    if (view.phase !== "briefing") {
+      // Still moving or stopping because of that press; anything else is a stop that waits for the user.
+      if (!TRANSIT.includes(view.phase)) local.arm = null;
+      return;
+    }
+    // The check's run to its target starts on the confirmation of its end stop, as the half readings' runs do.
+    // On the saved times the runs to the top and to the bottom between the readings time nothing: they
+    // start by themselves, as the returns do (not after a wide gap: that screen asks first).
+    const due = (view.step === "home" && arm.start) || (view.step === "reset" && !view.gap_warning) || view.step === "top"
+      || (view.keep_times && ["opening", "closing"].includes(view.step) && !view.gap_warning)
+      || (["half_open", "half_close"].includes(view.step) && local.ackReadings) || (view.step === "check" && !!view.check);
+    // A run about to start by itself shows its own bar (off) from this briefing on, not the start button.
+    if (due) local.autoStart = view.step;
+    // The answer to the press arrives while it is still pending: decide once it has settled.
+    if (status.busy) return;
+    // A run started here by itself carries the press on: when Home Assistant ends it at the actuator's
+    // own stop (no «È arrivata» pressed) the next run due starts by itself, as after that press. A stop
+    // that waits for the user (a reading, a result, an interruption) still ends the chain.
+    local.arm = due ? { ...arm, sequence: view.sequence, start: false } : null;
+    if (!due) return;
+    queueMicrotask(() => { if (this._gateway?.view === view) this._gateway.act("next"); });
+  }
+
+  _saved(previewSaved) {
+    const local = this._local, view = this._gateway?.view ?? this._gateway?.lastView;
+    // A reader's A-34 is the owner's: what was saved comes from the session (published before Save), and the
+    // owner's path; only «Chiudi» is offered there.
+    const reader = !!view?.read_only && !view.preview;
+    if (reader && view.screen?.path) Object.assign(local, { path: view.screen.path, scope: view.screen.scope ?? null });
+    if (reader) local.pendingSave = view.screen?.saved ? { ...view.screen.saved } : null;
+    const target = previewSaved?.target ?? local.pendingSave?.target;
+    // The saved screen still shows what the steps measured, and whether the last part was a preview.
+    // Path B's stepper keeps the travel typed in B-04 too.
+    if (this._gateway?.preview) local.fineReadings = { ...(this._gateway.view?.readings || {}), check: this._gateway.view?.check ?? null, travel: this._gateway.view?.travel_cm ?? null };
+    local.saved = { target, name: previewSaved?.name ?? local.pendingSave?.name ?? null, travel_cm: this._gateway?.view?.travel_cm ?? local.review?.travel ?? null,
+      preview: !!this._gateway?.preview, orphan: this._gateway?.preview ? null : local.pendingSave?.orphan ?? null, reader,
+      // The check's result stays on A-34 as a tile. The saved view no longer carries it (the session
+      // is over): the one the summary showed.
+      check: !this._gateway?.preview && (view?.check ?? local.review?.check) ? { ...(view?.check ?? local.review.check) } : null, threshold: view?.check_threshold_cm ?? null };
+    if (local.path === "B") local.saved.target = "follow_profile";
+    local.stage = "saved";
+    if (!local.refining && local.review) local.base = { ...local.review };
+    this._dropGateway();
+    this._render();
+  }
+
+  // ---------- leaving ----------
+
+  /** A live session this tab owns and that is still open: leaving the tab leaves it open in Home Assistant. */
+  _liveOpen() {
+    return !!this._gateway && !this._gateway.preview && this._sessionOpen() && !!this._gateway.view?.owner;
+  }
+
+  /**
+   * The panel asks before it moves away from the tab (another tab, gateway, category, filter): with a live session
+   * open, "Calibration in progress" offers to stay, to leave it open and resume it later, or to cancel it. Returns
+   * null when there is nothing to ask, otherwise a promise of whether the panel may leave.
+   */
+  beforeLeave() {
+    if (!this._root || !this._liveOpen()) return null;
+    if (this._navResolve) return this._navPromise;
+    const dialog = this._frame.querySelector(".wiz-nav-dialog"), { t } = this._context;
+    // How long Home Assistant keeps it open for its owner (30 minutes at rest, 10 after a movement).
+    const seconds = this._gateway.view?.recovery_seconds;
+    const minutes = Math.max(1, Math.round((Number.isFinite(seconds) ? seconds : IDLE_LEASE_SECONDS) / 60));
+    dialog.querySelector("#wiz-nav-body").textContent = text.fill(t("wiz_T409"), { minutes, tab: t("calTabTab") });
+    this._closeDialog(false);
+    dialog.querySelector(".wiz-dialog-x").hidden = !layout.sheets();
+    dialog.hidden = false;
+    this._root.classList.add("has-dialog");
+    focusOnOpen(dialog.querySelector(".wiz-dialog-card"), dialog.querySelector('[data-wiz="nav-stay"]'));
+    this._navPromise = new Promise((resolve) => { this._navResolve = resolve; });
+    return this._navPromise;
+  }
+
+  _navAnswer(leave) {
+    const resolve = this._navResolve;
+    this._navResolve = null;
+    const dialog = this._frame?.querySelector(".wiz-nav-dialog");
+    if (dialog && !dialog.hidden) {
+      this._root.classList.remove("has-dialog");
+      if (leave) dialog.hidden = true;
+      else this._hideDialog(dialog, () => { this._render(); this._frame?.querySelector(".wiz-actions .wiz-action.primary:not(:disabled)")?.focus(); });
+    }
+    resolve?.(leave);
+  }
+
+  /** "Leave without saving": Cancel must reach Home Assistant before the panel moves on. */
+  async _navDiscard() {
+    const gateway = this._gateway;
+    if (!gateway) { this._navAnswer(true); return; }
+    const discarded = this._discarded(gateway);
+    await gateway.cancel();
+    if (this._gateway === gateway && gateway.status.cancelPending) { this._navAnswer(false); this._render(); return; }
+    discarded();
+    this._navAnswer(true);
+  }
+
+  /** The browser's own warning before the page closes or reloads while this tab owns an open session. */
+  _unloadGuard(on) {
+    if (on && !this._unload) {
+      this._unload = (event) => { event.preventDefault(); event.returnValue = ""; };
+      window.addEventListener("beforeunload", this._unload);
+    } else if (!on && this._unload) {
+      window.removeEventListener("beforeunload", this._unload);
+      this._unload = null;
+    }
+  }
+
+  _sessionOpen() {
+    const view = this._gateway?.view;
+    // A live start still waiting for its first view may already have created the session: leaving it asks too.
+    if (this._gateway && !this._gateway.preview && !view && this._local.stage === "session" && !this._gateway.status.error) return true;
+    return !!view && !["interrupted", "cancelled", "saved"].includes(view.phase) && !(view.read_only && !view.preview);
+  }
+
+  _exit() {
+    // An interrupted session still open in Home Assistant is cancelled on the way out, not left holding the cover.
+    const view = this._gateway?.view;
+    // A reader's exit only stops following (it never cancels another device's session).
+    if (view?.read_only && !this._gateway.preview) { this._finish(); return; }
+    if (this._gateway && !this._gateway.preview && view?.phase === "interrupted" && view.recoverable) { this._abortDead(); return; }
+    if (STAGES_BEFORE_SESSION.includes(this._local.stage) || !this._sessionOpen()) { this._finish(); return; }
+    const dialog = this._frame.querySelector(".wiz-dialog"), { t } = this._context;
+    dialog.querySelector("#wiz-dialog-body").textContent = t(this._gateway.preview ? "wiz_T497" : "wizExitBodyLive");
+    // A sheet (window under 720 × 500 px) has its ✕ in the title row.
+    dialog.querySelector(".wiz-dialog-x").hidden = !layout.sheets();
+    dialog.hidden = false;
+    this._root.classList.add("has-dialog");
+    focusOnOpen(dialog.querySelector(".wiz-dialog-card"), dialog.querySelector('[data-wiz="stay"]'));
+  }
+
+  _closeDialog(focus = true) {
+    const dialog = this._frame?.querySelector(".wiz-dialog:not([hidden])");
+    if (!dialog || dialog.classList.contains("is-leaving")) return;
+    this._root.classList.remove("has-dialog");
+    this._hideDialog(dialog, () => {
+      if (!this._frame) return;
+      this._render();
+      // Back to something visible on every width: the screen's first enabled confirming button, or its title.
+      if (focus) (this._frame.querySelector(".wiz-actions .wiz-action.primary:not(:disabled)") || this._frame.querySelector(".wiz-title"))?.focus();
+    });
+  }
+
+  /** "Exit without saving": Cancel must reach Home Assistant; the view closes only once it has. */
+  async _leave() {
+    this._closeDialog(false);
+    const gateway = this._gateway;
+    if (!gateway) { this._finish(); return; }
+    if (gateway.preview) { this._finish(); return; }
+    // A tab that lost control while «Esci senza salvare?» was open only stops following: it never
+    // takes control back to cancel the session another device now guides.
+    if (gateway.view?.read_only) { this._finish(); return; }
+    const discarded = this._discarded(gateway);
+    // An owner's interrupted session too (`abort` takes control first only where it must).
+    await gateway.abort();
+    // Home Assistant refused the cancel too: the wizard closes all the same, as a normal exit; the cancel
+    // stays queued and goes again when the connection returns (`cancelWhenBack`); the session expires by itself anyway.
+    if (gateway.status.cancelPending && this._gateway === gateway) {
+      gateways.cancelWhenBack(this._context.hass, gateway.view);
+      this._finish();
+      return;
+    }
+    if (gateway.status.cancelPending || gateway.status.error) { if (this._gateway === gateway) this._render(); return; }
+    discarded();
+  }
+
+  /**
+   * An interrupted session still open in Home Assistant (it holds the cover) is cancelled, taking control when
+   * this tab only reads it. `stay`: the wizard stays open (Start over); otherwise it closes once cancelled. Returns
+   * whether the session is gone.
+   */
+  async _abortDead({ stay = false } = {}) {
+    const gateway = this._gateway, view = gateway?.view;
+    if (!gateway || gateway.preview || view?.phase !== "interrupted" || !view.recoverable) return true;
+    const discarded = this._discarded(gateway);
+    // Staying: the view's own close after Cancel must not close the wizard. A one-shot flag, not a new generation,
+    // so a refused cancel leaves every callback of this gateway alive.
+    if (stay) this._staying = gateway;
+    await gateway.abort();
+    if (gateway.status.cancelPending || gateway.status.error) { if (this._staying === gateway) this._staying = null; if (this._gateway === gateway) this._render(); return false; }
+    discarded();
+    return true;
+  }
+
+  /** Once the cancel is confirmed the list shows the gateway free at once (taken before the view closes). */
+  _discarded(gateway) {
+    const entryId = this._item()?.entry.entry_id, { onDiscarded } = this._context || {};
+    return () => { if (entryId && !gateway.preview) onDiscarded?.(entryId); };
+  }
+
+  _finish() {
+    const { onClose } = this._context || {};
+    this.close();
+    onClose?.();
+  }
+}
+
+/** «Conferma presa di controllo · 8 s» while armed, the plain label otherwise. */
+function takeLabel(readOnly) { return readOnly.left ? `${readOnly.take} · ${readOnly.left} s` : readOnly.take; }
+
+function key(item) { return JSON.stringify([item.entry.entry_id, item.cover.entity_id]); }
+
+/** Every element that may scroll the wizard (its ancestors through shadow roots, and the page itself). */
+function scrollParents(element) {
+  const found = [];
+  for (let node = element?.parentElement || element?.getRootNode?.().host; node; node = node.parentElement || node.getRootNode?.().host) found.push(node);
+  const page = element?.ownerDocument?.scrollingElement;
+  if (page && !found.includes(page)) found.push(page);
+  return found;
+}
+
+/** The red actions: the emergency (Stop, filled) and abandoning a process (Cancel the measurement, Exit without saving: outlined). */
+const RED_KINDS = ["danger", "danger-outline", "stop"];
+/**
+ * The bar of a screen: its actions, Stop's slot apart, and what decides that it must be drawn again. Stop and
+ * the finished line that replaces it share one slot (`.wiz-stop-slot`, the action's height, the gap and the hairline
+ * above it): the swap changes the slot's content only, never the bar's layout. An armed «Conferma presa di
+ * controllo» counts down without redrawing the bar.
+ */
+function barParts(screen, dialog = false) {
+  const readOnlyKey = screen.readOnly && { ...screen.readOnly, left: undefined };
+  const slotAction = screen.actions.find((action) => STOP_SLOT.includes(action.id));
+  const barActions = screen.actions.filter((action) => !STOP_SLOT.includes(action.id));
+  return { readOnlyKey, slotAction, barActions,
+    signature: JSON.stringify([barActions.map((action) => [action.id, action.label, action.kind, action.note, !!action.visible]), !!slotAction, readOnlyKey, dialog]) };
+}
+/**
+ * The cover's position from Home Assistant, only when it is a number from 0 to 100 that agrees with the state;
+ * null otherwise (unknown after a restart, or 0 on an open cover and 100 on a closed one): never taken as 0.
+ */
+export function knownPosition(state) {
+  const position = state?.attributes?.current_position;
+  if (typeof position !== "number" || !Number.isFinite(position) || position < 0 || position > 100) return null;
+  if ((position === 0 && state.state === "open") || (position === 100 && state.state === "closed")) return null;
+  return position;
+}
+/** The ids drawn in the bar's one Stop slot. */
+const STOP_SLOT = ["stop", "stopped"];
+/**
+ * ONE rule for every bar, the phone's column and the medium dialog's
+ * footer alike: up to three actions all in view; from four, two in view (the primary and the one a screen marks
+ * `visible`, otherwise the first secondary) and the others folded, under «Altre opzioni» on the phone, in the ⋮
+ * menu in the dialog: never a fold of one. The red ones apart (always in view, never folded); Stop in its own slot.
+ */
+export function footer(actions) {
+  const red = actions.filter((action) => RED_KINDS.includes(action.kind)), others = actions.filter((action) => !RED_KINDS.includes(action.kind));
+  if (others.length <= 3) return { shown: others, more: [], red };
+  const shown = [others[0], others.slice(1).find((action) => action.visible) || others[1]];
+  return { shown, more: others.filter((action) => !shown.includes(action)), red };
+}
+
+/** A value the reading field accepts (a number within its own limits). */
+function accepted(input) {
+  const value = parseReading(input.value), min = Number(input.dataset.min), max = Number(input.dataset.max);
+  return Number.isFinite(value) && value >= min && value <= max;
+}
+
+/**
+ * Everything a measurement leaves behind, cleared for a new session or «Start over»: acknowledgements, runs, the
+ * lift-off value sent, readings kept for the stepper, fine-tuning readings, the review and the step reached.
+ * Fine-tuning keeps its base on purpose (`_startRefine` passes it again).
+ */
+function freshFlags() {
+  return { slatsKnown: null, rehomeRepeat: false, saving: false, sharedPreview: null, sharedAsk: null, ackLift: false, ackAscent: false, ackDescent: false, ackReadings: false, arm: null, run: null, fullRun: null, invalidRun: null, repeatQueued: false, moreOpen: false, travelTyped: null, discarded: null, misbehaved: false, stopSent: false, barStep: null, autoStart: null,
+    review: null, pendingSave: null, fieldError: null, fieldSettled: null, fieldSequence: undefined, errorPhase: undefined, saveProfile: undefined, saveChoice: undefined,
+    profileName: undefined, refining: false, lastGap: null, liftOrigin: null, baseReadings: null, fineReadings: null, pathChoice: null, reachedPhase: null,
+    // The lift-off run measured, the first leg's planned time, the start of a stop's wait.
+    liftRun: null, legOne: null, waitStopAt: null,
+    // A-35 (its choices) and to how many covers it gave the profile (A-35 is not a step).
+    assign: null, assigned: 0,
+    // A start refused because the cover moved (`calibration_moving`), said on «Prima di iniziare».
+    startError: null };
+}
+
+export { slug };

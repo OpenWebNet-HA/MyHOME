@@ -23,7 +23,7 @@ ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 ATTR_WHERE = "where"
 ATTR_ACTION = "action"
-INTEGRATION_VERSION = "2.0.0"
+INTEGRATION_VERSION = "2.0.1"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -128,6 +128,9 @@ CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
 CONF_HUMIDITY_SUPPORT = "humidity"
 CONF_STANDALONE = "standalone"
+# Entry option (UI): the thermostat zones (1-99, local bus) that are standalone although the
+# plant has a central unit. Same meaning as ``standalone: true`` of a ``myhome.yaml`` zone.
+CONF_STANDALONE_ZONES = "standalone_zones"
 CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
 CONF_SHORT_PRESS = "pushbutton_short_press"
@@ -181,6 +184,7 @@ CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_i
 CONF_ADVANCED_COVERS = "advanced_covers"          # config entry option: {device_id: True}
 CONF_EXPLICIT_KINEMATICS = "_explicit_kinematics"
 CONF_EXPLICIT_TRAVEL_TIME = "_explicit_travel_time"
+CONF_STOP_BEFORE_MOVE = "stop_before_move"
 EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
     CONF_ADVANCED_SHUTTER,
     "advanced_shutter",
@@ -190,6 +194,7 @@ EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
     CONF_SLAT_TIME,
     CONF_MIN_MOTOR_PULSE,
     CONF_MIN_POSITION_DELTA,
+    CONF_STOP_BEFORE_MOVE,
 )
 SERVICE_CALIBRATE_COVER = "calibrate_cover"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"

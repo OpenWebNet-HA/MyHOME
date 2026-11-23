@@ -1,0 +1,82 @@
+15:30:49.170 BEFORE climate.climate_zone_0: heat hvac_modes=['off', 'auto', 'heat', 'cool'] temperature=None season=heating central_operation=antifreeze
+15:30:49.171 BEFORE climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=20.0 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:30:49.172 BEFORE climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 hvac_action=heating season=heating
+15:30:49.172 BEFORE climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 fan_mode=auto hvac_action=heating season=heating
+15:30:49.352 READ via F461 *#4*#0## -> ('ack', ['*4*102*#0##', '*4*21*#0##', '*4*31*#0##', '*4*24*#0##'])
+15:30:50.559 READ via F461 *#4*2*14## -> ('ack', ['*#4*2*14*0200*3##'])
+15:30:51.736 READ via F461 *#4*3*14## -> ('ack', ['*#4*3*14*0265*3##'])
+15:30:52.886 READ via F461 *#4*4*14## -> ('ack', ['*#4*4*14*0265*3##'])
+15:30:53.889 CALL climate.set_temperature climate.climate_zone_2 {'temperature': 21.5}
+15:31:03.908   -> climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=21.5 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:31:04.072 READ via F461 *#4*2*14## -> ('ack', ['*#4*2*14*0215*3##'])
+15:31:05.074 CALL climate.set_hvac_mode climate.climate_zone_2 {'hvac_mode': 'off'}
+15:31:17.083   -> climate.climate_zone_2: off hvac_modes=['off', 'heat', 'cool'] temperature=21.5 standalone_detected=True fan_mode=auto hvac_action=off season=conditioning
+15:31:17.272 READ via F461 *#4*2*12## -> ('ack', ['*#4*2*12*0215*3##', '*4*303*2##'])
+15:31:18.280 CALL climate.set_hvac_mode climate.climate_zone_2 {'hvac_mode': 'cool'}
+15:31:30.298   -> climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=21.5 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:31:30.473 READ via F461 *#4*2*12## -> ('ack', ['*#4*2*12*0215*3##', '*4*0*2##'])
+15:31:31.483 CALL climate.set_hvac_mode climate.climate_zone_2 {'hvac_mode': 'heat'}
+15:31:43.498   -> climate.climate_zone_2: heat hvac_modes=['off', 'heat', 'cool'] temperature=21.5 standalone_detected=True fan_mode=auto hvac_action=idle season=heating
+15:31:43.714 READ via F461 *#4*2*12## -> ('ack', ['*#4*2*12*0215*3##', '*4*1*2##'])
+15:31:44.715 CALL climate.set_hvac_mode climate.climate_zone_2 {'hvac_mode': 'cool'}
+15:31:56.726   -> climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=21.5 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:31:56.726 CALL climate.set_temperature climate.climate_zone_2 {'temperature': 20.0}
+15:32:06.742   -> climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=20.0 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:32:08.168 READ via F461 *#4*2## -> ('ack', ['*#4*2*0*0240##', '*#4*2*12*0200*3##', '*4*0*2##', '*#4*2*14*0200*3##', '*#4*2*13*00##'])
+15:32:10.172 CALL climate.set_temperature climate.climate_zone_3 {'temperature': 24.0}
+15:32:20.797   -> climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=24.0 hvac_action=idle season=heating
+15:32:20.984 READ via F461 *#4*3*14## -> ('ack', ['*#4*3*14*0240*3##'])
+15:32:21.989 CALL climate.set_hvac_mode climate.climate_zone_3 {'hvac_mode': 'off'}
+15:32:34.006   -> climate.climate_zone_3: off hvac_modes=['off', 'auto', 'heat'] temperature=24.0 hvac_action=off season=heating
+15:32:34.209 READ via F461 *#4*#3## -> ('ack', ['*4*103*#3##'])
+15:32:35.218 CALL climate.set_hvac_mode climate.climate_zone_3 {'hvac_mode': 'heat'}
+15:32:47.235   -> climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=24.0 hvac_action=idle season=heating
+15:32:47.235 CALL climate.set_temperature climate.climate_zone_3 {'temperature': 26.5}
+15:32:57.879   -> climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 hvac_action=heating season=heating
+15:32:58.084 READ via F461 *#4*#3## -> ('ack', ['*4*110*#3##', '*#4*#3*14*0265*1##'])
+15:32:59.092 CALL climate.set_temperature climate.climate_zone_4 {'temperature': 24.5}
+15:33:09.301   -> climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=24.5 fan_mode=auto hvac_action=idle season=heating
+15:33:09.482 READ via F461 *#4*4*14## -> ('ack', ['*#4*4*14*0245*3##'])
+15:33:10.488 CALL climate.set_hvac_mode climate.climate_zone_4 {'hvac_mode': 'off'}
+15:33:22.504   -> climate.climate_zone_4: off hvac_modes=['off', 'auto', 'heat'] temperature=24.5 fan_mode=auto hvac_action=off season=heating
+15:33:22.705 READ via F461 *#4*#4## -> ('ack', ['*4*103*#4##'])
+15:33:23.715 CALL climate.set_hvac_mode climate.climate_zone_4 {'hvac_mode': 'heat'}
+15:33:35.729   -> climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=24.5 fan_mode=auto hvac_action=idle season=heating
+15:33:35.729 CALL climate.set_temperature climate.climate_zone_4 {'temperature': 26.5}
+15:33:45.930   -> climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 fan_mode=auto hvac_action=heating season=heating
+15:33:46.122 READ via F461 *#4*#4## -> ('ack', ['*4*110*#4##', '*#4*#4*14*0265*1##'])
+15:33:47.130 CALL climate.set_hvac_mode climate.climate_zone_0 {'hvac_mode': 'off'}
+15:34:02.141   -> climate.climate_zone_0: off hvac_modes=['off', 'auto', 'heat', 'cool'] temperature=None hvac_action=off season=heating
+15:34:02.142 STATE climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=20.0 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:34:02.143 STATE climate.climate_zone_3: off hvac_modes=['off', 'auto', 'heat'] temperature=26.5 hvac_action=off season=heating
+15:34:02.143 STATE climate.climate_zone_4: off hvac_modes=['off', 'auto', 'heat'] temperature=26.5 fan_mode=auto hvac_action=off season=heating
+15:34:02.322 READ via F461 *#4*#0## -> ('ack', ['*4*103*#0##', '*4*21*#0##', '*4*31*#0##'])
+15:34:03.333 CALL climate.set_hvac_mode climate.climate_zone_0 {'hvac_mode': 'heat'}
+15:34:18.348   -> climate.climate_zone_0: off hvac_modes=['off', 'auto', 'heat', 'cool'] temperature=None hvac_action=off season=heating
+15:34:18.348 CALL climate.set_temperature climate.climate_zone_0 {'temperature': 21.0}
+15:34:33.371   -> climate.climate_zone_0: heat hvac_modes=['off', 'auto', 'heat', 'cool'] temperature=21.0 hvac_action=idle season=heating
+15:34:33.372 STATE climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=20.0 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:34:33.372 STATE climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=21.0 hvac_action=idle season=heating
+15:34:33.373 STATE climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=21.0 fan_mode=auto hvac_action=idle season=heating
+15:34:33.524 READ via F461 *#4*#0## -> ('ack', ['*4*110#0210*#0##', '*4*21*#0##', '*4*31*#0##'])
+15:34:34.686 RAW via F461 *4*102*#0## -> ('ack', [])
+15:34:46.697 CALL climate.set_hvac_mode climate.climate_zone_3 {'hvac_mode': 'heat'}
+15:34:54.712   -> climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=21.0 hvac_action=idle season=heating
+15:34:54.712 CALL climate.set_temperature climate.climate_zone_3 {'temperature': 26.5}
+15:35:05.450   -> climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 hvac_action=heating season=heating
+15:35:05.450 CALL climate.set_hvac_mode climate.climate_zone_4 {'hvac_mode': 'heat'}
+15:35:13.465   -> climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=21.0 fan_mode=auto hvac_action=idle season=heating
+15:35:13.465 CALL climate.set_temperature climate.climate_zone_4 {'temperature': 26.5}
+15:35:23.562   -> climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 fan_mode=auto hvac_action=heating season=heating
+15:35:23.563 STATE climate.climate_zone_0: heat hvac_modes=['off', 'auto', 'heat', 'cool'] temperature=21.0 hvac_action=idle season=heating central_operation=antifreeze
+15:35:23.564 STATE climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=20.0 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:35:23.565 STATE climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 hvac_action=heating season=heating
+15:35:23.566 STATE climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 fan_mode=auto hvac_action=heating season=heating
+15:35:23.765 READ via F461 *#4*#0## -> ('ack', ['*4*102*#0##', '*4*21*#0##', '*4*31*#0##', '*4*24*#0##'])
+15:35:24.971 READ via F461 *#4*#3## -> ('ack', ['*4*110*#3##', '*#4*#3*14*0265*1##'])
+15:35:26.140 READ via F461 *#4*#4## -> ('ack', ['*4*110*#4##', '*#4*#4*14*0265*1##'])
+15:35:28.546 READ via F461 *#4*2## -> ('ack', ['*#4*2*0*0240##', '*#4*2*12*0200*3##', '*4*0*2##', '*#4*2*14*0200*3##', '*#4*2*13*00##'])
+15:35:29.559 AFTER climate.climate_zone_0: heat hvac_modes=['off', 'auto', 'heat', 'cool'] temperature=21.0 hvac_action=idle season=heating central_operation=antifreeze
+15:35:29.561 AFTER climate.climate_zone_2: cool hvac_modes=['off', 'heat', 'cool'] temperature=20.0 standalone_detected=True fan_mode=auto hvac_action=cooling season=conditioning
+15:35:29.562 AFTER climate.climate_zone_3: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 hvac_action=heating season=heating
+15:35:29.563 AFTER climate.climate_zone_4: heat hvac_modes=['off', 'auto', 'heat'] temperature=26.5 fan_mode=auto hvac_action=heating season=heating

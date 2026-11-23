@@ -113,7 +113,10 @@ def test_hardware_compatibility_table_matches_the_sweep(hass):
 
 
 def test_f461_sweep_in_full(hass):
-    assert _handler(hass, "F461")._discovery_frames() == ["*#1*0##", "*#2*0##", "*#18*51*51##", "*#18*51*113##"]
+    """In the place of the dropped ``*#4*0##``: the central unit's status and the all-actuator request."""
+    assert _handler(hass, "F461")._discovery_frames() == [
+        "*#1*0##", "*#2*0##", "*#4*#0##", "*#4*0#0*20##", "*#18*51*51##", "*#18*51*113##",
+    ]
 
 
 @pytest.mark.parametrize(

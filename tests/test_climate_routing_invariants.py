@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 from OWNd.message import OWNMessage
 
-from custom_components.myhome.climate import (
+from custom_components.myhome.climate_discovery import (
     _calling_zones,
     _zone_address,
     _zone_route_keys,
