@@ -151,6 +151,7 @@ CONF_MIN_MOTOR_PULSE = "min_motor_pulse"
 DEFAULT_MIN_MOTOR_PULSE = 0.4
 # Smallest level change (%) sent to an advanced cover; default MIN_POSITION_DELTA in cover_motion.py.
 CONF_MIN_POSITION_DELTA = "min_position_delta"
+MIN_MIN_POSITION_DELTA = 1
 MAX_MIN_POSITION_DELTA = 5
 
 # Impulse cover / access controls (gates, garage doors, impulse relays)
@@ -182,6 +183,8 @@ SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
 CONF_ADVANCED_COVERS = "advanced_covers"          # config entry option: {device_id: True}
+CONF_COVER_MIN_POSITION_DELTAS = "cover_min_position_deltas"  # config entry option: {device_id: int}
+SIGNAL_COVER_MIN_POSITION_DELTA = "myhome_cover_min_position_delta_{}"
 CONF_EXPLICIT_KINEMATICS = "_explicit_kinematics"
 CONF_EXPLICIT_TRAVEL_TIME = "_explicit_travel_time"
 CONF_STOP_BEFORE_MOVE = "stop_before_move"

@@ -118,7 +118,8 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
     "number": {
         "label": "**`number`**",
         "capabilities": (
-            "Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) "
+            "Native cover minimum position step (`1–5 %`, `EntityCategory.CONFIG`, WHO=2), "
+            "direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) "
             "for declared F500/F500N tuner sources (WHO=16 / 22)"
         ),
     },
