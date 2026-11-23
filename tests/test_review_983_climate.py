@@ -16,13 +16,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from OWNd.message import OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
-from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.const import DOMAIN, central_mode_signal
 from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
 from custom_components.myhome.validate import climate_schema
 from tests.conftest import attach_runtime
@@ -401,3 +402,190 @@ async def test_the_knob_of_a_zone_that_said_it_is_off_adds_no_offset_at_the_rest
     assert zone.hvac_mode == HVACMode.OFF
     assert zone.target_temperature == 23.5  # what was saved: no frame said 25.5
     assert (attributes["nominal_temperature"], attributes["local_offset"], attributes["knob_pos"]) == (21.0, 2, "+2")
+
+
+# ── what the audit of the review fixes left open ──
+
+
+async def _zone_2_restored(hass: HomeAssistant, *, without: str | None = None) -> MyHOMEClimate:
+    """Zone 2 saved while heating (23.5 in force, 21.0 commanded, knob 0), restored."""
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY)
+    saved = _saved(live)
+    if without is not None:
+        saved = State(saved.entity_id, saved.state, {key: value for key, value in saved.attributes.items() if key != without})
+    zone = _zone(hass)
+    await zone.async_restore_last_state(saved)
+    return zone
+
+
+async def test_an_unchanged_knob_between_the_two_protection_frames_keeps_the_commanded_setpoint(hass: HomeAssistant) -> None:
+    zone = await _zone_2_restored(hass)
+    _feed(zone, "*#4*2*12*0070*3##", "*#4*2*13*00##", "*4*102*2##")  # the knob report of the same status burst
+    assert zone.hvac_mode == HVACMode.OFF and zone.target_temperature == 7.0
+    assert zone.extra_state_attributes["nominal_temperature"] == 21.0
+
+
+async def test_a_knob_that_did_change_between_the_two_frames_is_a_new_setpoint(hass: HomeAssistant) -> None:
+    zone = await _zone_2_restored(hass)
+    _feed(zone, "*#4*2*12*0070*3##", "*#4*2*13*02##", "*4*102*2##")
+    assert zone.hvac_mode == HVACMode.OFF
+    assert zone.extra_state_attributes["local_offset"] == 2
+
+
+@pytest.mark.parametrize("restore_first", [True, False])
+async def test_a_commanded_setpoint_report_beside_the_restore_keeps_the_saved_knob(hass: HomeAssistant, restore_first: bool) -> None:
+    live = _zone(hass)
+    _feed(live, "*4*1*2##", "*#4*2*14*0210*3##", "*#4*2*13*01##")
+    saved = _saved(live)  # heat, 21.0 commanded, knob +1
+    zone = _zone(hass)
+    if restore_first:
+        await zone.async_restore_last_state(saved)
+    _feed(zone, "*4*1*2##", "*#4*2*14*0210*3##")  # the mode and the commanded setpoint, not the knob
+    if not restore_first:
+        await zone.async_restore_last_state(saved)
+    attributes = zone.extra_state_attributes
+    assert (zone.target_temperature, attributes["knob_pos"], attributes["local_offset"]) == (22.0, "+1", 1)
+    assert attributes["nominal_temperature"] == 21.0
+
+
+async def test_a_state_saved_without_its_commanded_setpoint_is_still_asked_for_it(hass: HomeAssistant) -> None:
+    zone = await _zone_2_restored(hass, without="nominal_temperature")  # as an earlier version saved it
+    _feed(zone, "*4*102*2##", "*#4*2*12*0070*3##")
+    assert zone.target_temperature == 7.0
+    assert "*#4*2*14##" in zone._silent_zone_reads()
+
+
+async def test_a_setpoint_written_to_a_zone_restored_off_is_its_commanded_setpoint(hass: HomeAssistant) -> None:
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY, "*4*102*2##", "*#4*2*12*0070*3##")
+    zone = _zone(hass)
+    await zone.async_restore_last_state(_saved(live))  # off, 7.0 shown, 21.0 commanded
+    await zone.async_set_temperature(temperature=22.0)
+    assert _sent(zone) == ["*#4*2*#14*0220*3##"]
+    _feed(zone, "*#4*2*12*0220*3##", "*4*1*2##")  # the zone takes it: in force, then running
+    assert zone.hvac_mode == HVACMode.HEAT
+    assert (zone.target_temperature, zone.extra_state_attributes["nominal_temperature"]) == (22.0, 22.0)
+
+
+async def test_a_protection_setpoint_after_a_write_to_a_zone_restored_off_is_not_its_echo(hass: HomeAssistant) -> None:
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY, "*4*102*2##", "*#4*2*12*0070*3##")
+    zone = _zone(hass)
+    await zone.async_restore_last_state(_saved(live))
+    for entity in (live, zone):  # the zone that did not restart shows the same
+        await entity.async_set_temperature(temperature=22.0)
+        _feed(entity, "*#4*2*12*0070*3##")  # 15.0 below what was written: no knob gives that
+        assert entity.hvac_mode == HVACMode.OFF and entity.target_temperature == 7.0
+        assert entity.extra_state_attributes["nominal_temperature"] == 21.0  # the write was not confirmed
+
+
+async def test_a_mode_frame_during_the_silent_poll_does_not_drop_the_read_of_the_commanded_setpoint(hass: HomeAssistant) -> None:
+    zone = await _zone_2_restored(hass)
+    _feed(zone, "*#4*2*0*0239##", "*#4*2*12*0070*3##")  # the first frames of the zone's reply
+    gateway = zone._gateway_handler
+    gateway.silent_zone_poll_needed = True
+    gateway.wait_for_zone_requests = AsyncMock()
+    gateway.pace_startup_status_write = AsyncMock()
+
+    async def reply(_request: object) -> asyncio.Future[bool]:
+        if gateway.send_status_request.await_count == 1:
+            _feed(zone, "*4*102*2##")  # the mode frame arrives while the first read is out
+        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        future.set_result(True)
+        return future
+
+    gateway.send_status_request = AsyncMock(side_effect=reply)
+    await zone._poll_if_silent(grace=0)
+    assert zone.extra_state_attributes["nominal_temperature"] == 21.0
+    assert "*#4*2*14##" in [str(call.args[0]) for call in gateway.send_status_request.await_args_list]
+
+
+@pytest.mark.parametrize("state", ["unknown", "unavailable"])
+async def test_a_setpoint_saved_before_the_mode_was_known_is_not_a_commanded_setpoint(hass: HomeAssistant, state: str) -> None:
+    live = _zone(hass)
+    _feed(live, "*#4*2*12*0070*3##")  # what is in force, before the zone said its mode
+    assert live.hvac_mode is None and "nominal_temperature" not in live.extra_state_attributes
+    saved = State(live.entity_id, state, {"temperature": live.target_temperature, **live.extra_state_attributes})
+    zone = _zone(hass)
+    await zone.async_restore_last_state(saved)
+    _feed(zone, "*4*102*2##")
+    with pytest.raises(ServiceValidationError):
+        await zone.async_set_hvac_mode(HVACMode.HEAT)  # no 7.0 written as the setpoint to heat to
+    assert _sent(zone) == []
+
+
+async def test_the_central_unit_behind_an_interface_does_not_set_the_mode_of_the_local_zones(hass: HomeAssistant) -> None:
+    gateway = MagicMock(mac=MAC, is_connected=True, send=AsyncMock(), send_status_request=AsyncMock())
+    (central,) = await _central_configured_as_zone_0(hass, gateway, interface="01", cool=True)
+    local = _zone(hass, gateway=gateway, standalone=False)
+    routed = _zone(hass, gateway=gateway, standalone=False, interface="01")
+    _feed(local, "*4*1*2##")
+    routed.handle_event(OWNHeatingEvent("*4*1*2#4#01##"))  # built from *4*1*2## and the interface suffix
+    assert central_mode_signal(MAC, None) == f"myhome_central_mode_{MAC}"
+    unsubscribe = [
+        async_dispatcher_connect(hass, central_mode_signal(MAC, zone._interface), zone._handle_central_mode_update)
+        for zone in (local, routed)
+    ]
+    try:
+        # Built from *4*202*#0## and the interface suffix (tests/test_standalone_zone_season_2026_11_18.py:319): no capture.
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*202*#0#4#01##"))
+        assert central.hvac_mode == HVACMode.COOL
+        assert (local.hvac_mode, routed.hvac_mode) == (HVACMode.HEAT, HVACMode.COOL)
+    finally:
+        for stop in unsubscribe:
+            stop()
+
+
+def _knob_view(zone: MyHOMEClimate) -> tuple:
+    attributes = zone.extra_state_attributes
+    return (zone.hvac_mode, zone.target_temperature, attributes.get("nominal_temperature"), attributes.get("knob_pos"), attributes.get("local_offset"))
+
+
+@pytest.mark.parametrize(
+    ("frames", "view"),
+    [
+        # in force 22.0, read as the commanded setpoint until the saved knob says it is 21.0 + 1
+        (("*4*1*2##", "*#4*2*12*0220*3##"), (HVACMode.HEAT, 22.0, 21.0, "+1", 1)),
+        # off: the saved knob is kept, and no offset is shown
+        (("*4*102*2##", "*#4*2*14*0210*3##"), (HVACMode.OFF, 21.0, 21.0, "+1", 1)),
+        # the knob the zone reported itself stands
+        (("*4*1*2##", "*#4*2*14*0210*3##", "*#4*2*13*02##"), (HVACMode.HEAT, 23.0, 21.0, "+2", 2)),
+    ],
+)
+async def test_the_saved_knob_beside_a_setpoint_reported_before_the_restore(hass: HomeAssistant, frames: tuple[str, ...], view: tuple) -> None:
+    live = _zone(hass)
+    _feed(live, "*4*1*2##", "*#4*2*14*0210*3##", "*#4*2*13*01##")
+    saved = _saved(live)  # heat, 21.0 commanded, knob +1
+    before, after = _zone(hass), _zone(hass)
+    _feed(before, *frames)
+    await before.async_restore_last_state(saved)
+    await after.async_restore_last_state(saved)
+    _feed(after, *frames)
+    assert _knob_view(before) == view
+    if view[0] == HVACMode.OFF:
+        # A zone that is off shows the saved setpoint in force (22.0) until its dimension 12, when
+        # the saved state came first: the knob, the commanded setpoint and the mode are the same.
+        assert (_knob_view(after)[0], *_knob_view(after)[2:]) == (view[0], *view[2:])
+    else:
+        assert _knob_view(after) == view  # the same state in both orders
+
+
+async def test_a_saved_knob_that_is_not_a_number_is_no_knob_beside_a_reported_setpoint(hass: HomeAssistant) -> None:
+    zone = _zone(hass)
+    _feed(zone, "*4*1*2##", "*#4*2*14*0210*3##")
+    await zone.async_restore_last_state(State(zone.entity_id, "heat", {"temperature": 22.0, "nominal_temperature": 21.0, "local_offset": "x"}))
+    assert (zone.target_temperature, zone.extra_state_attributes["local_offset"]) == (21.0, 0)
+
+
+async def test_a_setpoint_in_force_long_after_the_write_is_not_its_echo(hass: HomeAssistant) -> None:
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY, "*4*102*2##", "*#4*2*12*0070*3##")
+    zone = _zone(hass)
+    await zone.async_restore_last_state(_saved(live))
+    await zone.async_set_temperature(temperature=22.0)
+    written, at = zone._written_target_temperature
+    zone._written_target_temperature = (written, at - 60)  # a minute ago
+    _feed(zone, "*#4*2*12*0220*3##")
+    assert zone.hvac_mode == HVACMode.OFF
+    assert zone.extra_state_attributes["nominal_temperature"] == 21.0  # the saved one, until the zone runs or reports it

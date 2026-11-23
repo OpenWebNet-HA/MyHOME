@@ -47,6 +47,7 @@ from .discovery import (
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 from .where_grammar import (
+    canonical_central_zone,
     canonical_thermo_zone,
     four_zone_central_where,
     is_central_thermo_where,
@@ -74,7 +75,9 @@ CANDIDATE_MAX_AGE = 3600.0
 # The states of a climate entity that only a thermostat's own frames produce.
 # The unique id 2.0.0 gave a central unit configured as ``zone: "0"`` with ``central: true``:
 # ``<mac>-4-#0#0``, behind an interface ``<mac>-4-#0#0#4#II``.
-_SAVED_CENTRAL_ZERO = re.compile(r"(.+-4-#0)#0((?:#4#\d{1,2})?)")
+# The device part of a central unit as 2.0.0 saved it: ``#0#`` in front of an address typed as
+# ``0`` or with the prefix already (``#0#0`` -> ``#0##0#0``, ``#0#1`` -> ``#0##0#1``).
+_SAVED_CENTRAL_DOUBLED = re.compile(r"(.+-4-)(#0#(?:0|#0#\d{1,2}))((?:#4#\d{1,2})?)")
 
 _REAL_HVAC_STATES = frozenset(
     {
@@ -521,20 +524,39 @@ class ZoneDiscovery:
             return
         configured = {Address.from_config(key, cfg).key for key, cfg in self._configured.items() if isinstance(cfg, dict)}
         for entry in entries:
-            match = _SAVED_CENTRAL_ZERO.fullmatch(str(entry.unique_id))
-            if entry.domain != Platform.CLIMATE or match is None or f"#0#0{match[2]}" in configured:
+            match = _SAVED_CENTRAL_DOUBLED.fullmatch(str(entry.unique_id))
+            if entry.domain != Platform.CLIMATE or match is None or f"{match[2]}{match[3]}" in configured:
                 continue
-            corrected = f"{match[1]}{match[2]}"
-            if registry.async_get_entity_id(entry.domain, entry.platform, corrected):
+            corrected = f"{match[1]}{canonical_central_zone(match[2])}{match[3]}"
+            if kept := registry.async_get_entity_id(entry.domain, entry.platform, corrected):
+                self._hand_over_device_settings(entry.device_id, getattr(registry.async_get(kept), "device_id", None))
                 registry.async_remove(entry.entity_id)
                 LOGGER.info(
-                    "climate: %s was saved as central unit #0#0 next to the central unit #0; removed",
-                    entry.entity_id,
+                    "climate: %s was saved as central unit %s next to the central unit %s; removed",
+                    entry.entity_id, match[2], canonical_central_zone(match[2]),
                 )
             else:
                 registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
                 self._move_device_identifier(entry.device_id, str(entry.unique_id), corrected)
-                LOGGER.info("climate: %s was saved as central unit #0#0; it is the central unit #0", entry.entity_id)
+                LOGGER.info(
+                    "climate: %s was saved as central unit %s; it is the central unit %s",
+                    entry.entity_id, match[2], canonical_central_zone(match[2]),
+                )
+
+    def _hand_over_device_settings(self, removed_id: str | None, kept_id: str | None) -> None:
+        """The name and the area the user gave a removed central unit go to the one that stays.
+
+        Only where the device that stays has none of its own: what the user set there is kept.
+        """
+        devices = dr.async_get(self._hass)
+        removed = devices.async_get(removed_id) if removed_id else None
+        kept = devices.async_get(kept_id) if kept_id else None
+        if removed is None or kept is None or removed.id == kept.id:
+            return
+        if removed.name_by_user and not kept.name_by_user:
+            devices.async_update_device(kept.id, name_by_user=removed.name_by_user)
+        if removed.area_id and not kept.area_id:
+            devices.async_update_device(kept.id, area_id=removed.area_id)
 
     def _move_device_identifier(self, device_id: str | None, old: str, new: str) -> None:
         """The device of a renamed entity follows it: its name, area and settings stay with the entity.
@@ -575,9 +597,17 @@ class ZoneDiscovery:
         was seen first no local zone was ever created.
         """
         keys = [*default_known_keys(ctx), ctx.config_id or ""]
-        if ctx.address.interface and ctx.address.clean_where == "0":
-            # The same central unit behind an interface: its frames come under ``#0#4#II``.
-            keys.append(f"#0{BUS_ROUTING}{ctx.address.interface}")
+        routing = f"{BUS_ROUTING}{ctx.address.interface}" if ctx.address.interface else ""
+        if ctx.address.interface and ctx.address.clean_where in ("0", "#0"):
+            # The same central unit behind an interface, whichever of the two was there first:
+            # its frames come under ``#0#4#II``, ``myhome.yaml`` may call it ``0``.
+            keys += [f"#0{routing}", f"0{routing}"]
+        if "#" not in ctx.address.clean_where.removeprefix("#") and (
+            number := canonical_thermo_zone(ctx.address.clean_where)
+        ):
+            # ``1``, ``#1`` and ``01`` are one zone: the entity saved under one spelling is the
+            # zone ``myhome.yaml`` writes in another, on the local bus and behind an interface.
+            keys += [f"{spelling}{routing}" for spelling in (number, f"#{number}", number.zfill(2), f"#{number.zfill(2)}")]
         if not ctx.address.interface:
             keys += [ctx.address.where, ctx.address.clean_where]
             if ctx.address.clean_where == "0":

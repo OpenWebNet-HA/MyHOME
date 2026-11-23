@@ -277,6 +277,29 @@ def canonical_thermo_zone(where: str) -> str | None:
     return str(zone_int)
 
 
+def canonical_central_zone(zone: str) -> str:
+    """The WHERE of a ``central: true`` entry of ``myhome.yaml``, from its ``zone`` as typed or as stored.
+
+    ``0``, ``#0`` and ``#0#0`` are the 99-zone central unit ``#0``; ``N`` and ``#0#N`` are zone
+    ``N`` of a 4-zone central unit, ``#0#N`` (WHO 4 WHERE table: ``#0`` Central Unit, ``#0#1`` to
+    ``#0#4``). An interface written inside the zone (``0#4#01``) is kept behind the address.
+    2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored for an address
+    typed with the prefix (``#0##0#1``, ``#0#0``) is read back to the same address.
+    """
+    base, routing, interface = str(zone).rpartition("#4#")
+    if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
+        suffix = f"#4#{interface}"
+    else:
+        base, suffix = str(zone), ""
+    while base.startswith("#0##0"):
+        base = base[len("#0#") :]
+    if base in ("0", "#0", "#0#0"):
+        base = "#0"
+    elif not base.startswith("#0#"):
+        base = f"#0#{base}"
+    return f"{base}{suffix}"
+
+
 def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
     """Parse the "standalone thermostats" entry option: zone numbers 1..99 of the local bus.
 
@@ -848,6 +871,24 @@ def thermo_dim20_actuator_target(
     if not (1 <= act_int <= 9):
         return None
     return (zone, str(act_int), f"{int(iface):02d}" if iface is not None else None)
+
+
+def thermo_dim20_whole_zone_target(message: Any) -> bool:
+    """Whether a WHO=4 Dimension 20 frame addresses a whole zone.
+
+    The all-actuators selector ``Z#0``, or the bare zone ``Z`` (what the whole-zone thermo switch
+    writes; OWNd reports actuator 1 for it), each also behind an F422 interface (``#4#00``..
+    ``#4#15``). Every other WHERE that :func:`thermo_dim20_actuator_target` rejects (a 3-token
+    address such as ``3#1#2``, an interface out of range) is neither a zone nor one actuator.
+    """
+    if is_central_thermo_where(message) or thermo_event_zone(message) is None:
+        return False
+    tail = [str(p) for p in where_param(message)]
+    if len(tail) >= 2 and tail[-2] == "4":
+        if not _is_ascii_uint(tail[-1]) or int(tail[-1]) > 15:
+            return False
+        tail = tail[:-2]
+    return tail in ([], ["0"])
 
 
 def thermo_dim19_status(

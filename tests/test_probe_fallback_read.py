@@ -65,6 +65,7 @@ def gateway():
     gw.log_id = "[F455 gateway]"
     gw.device_registry_id = None
     gw.is_connected = True
+    gw.event_connections = 1  # the count of its event sessions, as the handler keeps it
     gw._who4_target = MagicMock(return_value=gw)  # no secondary and no standby: it serves WHO 4 itself
     return gw
 
@@ -227,7 +228,8 @@ async def test_a_probe_is_asked_once_more_after_the_gateway_came_back_from_an_ou
     await probe.async_update()
     assert _sent(gateway) == [READ]
 
-    gateway.is_connected = True  # available again
+    gateway.is_connected = True  # available again, on a new event session (the handler counts each one)
+    gateway.event_connections += 1
     probe._handle_availability_update()
     assert probe._fallback_read_refused is False
     assert "the gateway is available again; probe 303 is asked once more" in caplog.text

@@ -147,6 +147,7 @@ from .const import (
     TYPE_IMPULSE_RELAY,
 )
 from .where_grammar import (
+    canonical_central_zone,
     canonical_point_spelling,
     canonical_thermo_zone,
     parse_thermo_actuator_where,
@@ -381,8 +382,9 @@ class MyHomeDeviceSchema(Schema):
                 _new_key = f"{data[device][CONF_WHO]}-{data[device][CONF_ZONE]}{routing}"
                 zone = str(data[device][CONF_ZONE])
                 if data[device][CONF_CENTRAL]:
-                    # 0, #0 and #0#0 are the 99-zone central unit (#0); #0#N is the 4-zone one already.
-                    zone = "#0" if zone in ("0", "#0", "#0#0") else zone if zone.startswith("#0#") else f"#0#{zone}"
+                    # 0, #0 and #0#0 are the 99-zone central unit (#0); #0#N is the 4-zone one
+                    # already; an interface written inside the zone (0#4#01) stays behind it.
+                    zone = canonical_central_zone(zone)
                 data[device][CONF_ZONE] = zone
                 data[device][CONF_NAME] = (
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"

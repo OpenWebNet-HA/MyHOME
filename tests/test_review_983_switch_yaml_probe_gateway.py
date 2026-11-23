@@ -17,13 +17,15 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from OWNd.exceptions import OWNNackError
 from OWNd.message import OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -42,13 +44,25 @@ from custom_components.myhome.legacy_yaml import (
 from custom_components.myhome.switch import MyHOMEThermoSwitch
 from custom_components.myhome.typing_compat import device_info_to_dict
 from custom_components.myhome.validate import climate_schema
+from custom_components.myhome.where_grammar import (
+    thermo_dim20_whole_zone_target,
+    thermo_event_interface,
+)
 from tests import test_crew_central_season_restore
 from tests.conftest import attach_runtime
 from tests.test_crew_central_season_restore import HEAT as CENTRAL_HEAT
 from tests.test_crew_central_season_restore import _climate as _central_climate
 from tests.test_f455_zone_polling import _handler as _f455_handler
 from tests.test_issue_785_thermo_actuator_switch import _mock_gateway
-from tests.test_probe_fallback_read import READ, _refused, _sensor, _sent, _settle
+from tests.test_probe_fallback_read import (
+    READ,
+    _answers,
+    _command_session,
+    _refused,
+    _sensor,
+    _sent,
+    _settle,
+)
 
 DISCOVERY_MAC = "00:03:50:00:09:83"
 _entity_base_init = test_crew_central_season_restore._entity_base_init
@@ -634,3 +648,196 @@ async def test_an_address_00_the_configuration_still_names_keeps_its_saved_entit
     entities = await _climate_entities(hass, ["#0#0"], {"plant": {"zone": "#0#0", "central": False}})
     assert [entity._where for entity in entities] == ["#0#0"]
     assert er.async_get(hass).async_get("climate.saved_0").unique_id == f"{DISCOVERY_MAC}-4-#0#0"
+
+
+# ── what the audit of the review fixes left open ──
+
+
+async def test_a_central_unit_found_behind_an_interface_is_the_one_myhome_yaml_writes_as_zone_0(hass: HomeAssistant) -> None:
+    entities = await _climate_entities(hass, ["#0#4#01"], {"plant": {"zone": "0", "name": "Plant", "interface": "01"}})
+    assert [(entity._where, entity._interface) for entity in entities] == [("#0", "01")]
+    assert device_info_to_dict(entities[0].device_info)["name"] == "Plant"
+
+
+@pytest.mark.parametrize("spelling", ["#1", "01"])
+async def test_a_saved_zone_is_the_zone_myhome_yaml_writes_in_another_spelling(hass: HomeAssistant, spelling: str) -> None:
+    entities = await _climate_entities(hass, ["1", "#0#1"], {"centrale": dict(CENTRAL), "zona1": {"zone": spelling, **ZONE}})
+    assert sorted(entity._display_name for entity in entities) == ["Centrale 4695", "Zona 1"]
+
+
+@pytest.mark.parametrize(
+    ("zone", "where"),
+    [("0#4#01", "#0"), ("#0#4#01", "#0"), ("#0#0#4#01", "#0"), ("1#4#01", "#0#1"), ("#0#1#4#01", "#0#1")],
+)
+def test_central_true_with_the_interface_written_in_the_zone_gives_a_central_units_address(zone: str, where: str) -> None:
+    validated = climate_schema({"c": {"zone": zone, "central": True}})
+    address = Address.from_config("c", validated["c"])
+    assert (address.clean_where, address.interface) == (where, "01")
+
+
+async def test_the_entity_saved_as_central_unit_00_with_the_interface_in_its_zone_becomes_the_central_unit(hass: HomeAssistant) -> None:
+    # 2.0.0 made ``#0#0#4#01`` of ``zone: "0#4#01"``, ``central: true``.
+    entities = await _climate_entities(hass, ["#0#0#4#01"], {"plant": {"zone": "0#4#01", "central": True, "name": "Plant"}})
+    assert [(entity._where, entity._interface) for entity in entities] == [("#0", "01")]
+    assert er.async_get(hass).async_get("climate.saved_0").unique_id == f"{DISCOVERY_MAC}-4-#0#4#01"
+
+
+@pytest.mark.parametrize(("saved", "interface"), [("#0##0#1", None), ("#0##0#1#4#01", "01")])
+async def test_the_entity_saved_under_the_doubled_address_of_a_four_zone_central_unit_becomes_it(
+    hass: HomeAssistant, saved: str, interface: str | None
+) -> None:
+    # 2.0.0 made ``#0##0#1`` of ``zone: "#0#1"``, ``central: true``.
+    config = {"zone": "#0#1", "central": True} | ({"interface": interface} if interface else {})
+    entities = await _climate_entities(hass, [saved], {"plant": config})
+    assert [(entity._where, entity._interface) for entity in entities] == [("#0#1", interface)]
+    routing = f"#4#{interface}" if interface else ""
+    assert er.async_get(hass).async_get("climate.saved_0").unique_id == f"{DISCOVERY_MAC}-4-#0#1{routing}"
+
+
+def test_the_saved_copy_of_a_central_unit_stored_under_a_doubled_address_is_corrected() -> None:
+    saved = {"climate": {key: {"who": "4", "zone": "#0##0#1", "central": True} for key in ("plant", "#0##0#1")}}
+    corrected, lines = canonicalise_imported_platforms(saved)
+    assert lines == ["climate: #0##0#1 -> #0#1"]
+    assert set(corrected["climate"]) == {"plant", "#0#1"}
+    assert {entry["zone"] for entry in corrected["climate"].values()} == {"#0#1"}
+
+
+@pytest.mark.parametrize(
+    ("named_kept", "area_kept", "expected"),
+    [
+        (None, None, ("Boiler room", "cellar")),  # what the user gave the removed one
+        ("Plant room", "attic", ("Plant room", "attic")),  # what the user gave the one that stays
+        ("Plant room", None, ("Plant room", "cellar")),
+    ],
+)
+async def test_the_name_and_area_of_the_removed_central_unit_go_to_the_one_that_stays(
+    hass: HomeAssistant, named_kept: str | None, area_kept: str | None, expected: tuple[str, str]
+) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": DISCOVERY_MAC}, unique_id=DISCOVERY_MAC)
+    entry.add_to_hass(hass)
+    devices, registry = dr.async_get(hass), er.async_get(hass)
+    held = {}
+    for where, name, area in (("#0#0", "Boiler room", "cellar"), ("#0", named_kept, area_kept)):
+        device = devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{DISCOVERY_MAC}-4-{where}")}, name="Plant")
+        devices.async_update_device(device.id, name_by_user=name, area_id=area)
+        registry.async_get_or_create("climate", DOMAIN, f"{DISCOVERY_MAC}-4-{where}", config_entry=entry, device_id=device.id)
+        held[where] = device.id
+    gateway = MagicMock(mac=DISCOVERY_MAC, is_connected=True, send=AsyncMock(), send_status_request=AsyncMock(), device_registry_id=None)
+    attach_runtime(hass, entry, DISCOVERY_MAC, gateway).platforms["climate"] = {}
+    entities: list = []
+    await climate_setup_entry(hass, entry, entities.extend)
+    assert [entity._where for entity in entities] == ["#0"]
+    kept = devices.async_get(held["#0"])
+    assert (kept.name_by_user, kept.area_id) == expected
+
+
+async def test_a_removed_central_unit_without_a_device_hands_nothing_over(hass: HomeAssistant) -> None:
+    entities = await _climate_entities(hass, ["#0#0", "#0"], PLANT)  # neither saved entity has a device
+    assert [entity._where for entity in entities] == ["#0"]
+    assert dr.async_entries_for_config_entry(dr.async_get(hass), entities[0]._gateway_handler.config_entry.entry_id) == []
+
+
+async def test_the_availability_of_a_secondary_of_another_who_does_not_end_a_refusal_of_the_primary(hass: HomeAssistant, gateway: MagicMock) -> None:
+    gateway.availability_signal = "primary_availability"
+    probe = _sensor(hass, gateway)
+    probe.async_write_ha_state = MagicMock()
+    gateway.send_status_request = AsyncMock(return_value=_refused(hass))
+    await probe.async_update()
+    await _settle()
+    assert probe._fallback_refused_by is gateway
+    disconnect = async_dispatcher_connect(hass, gateway.availability_signal, probe._handle_availability_update)
+    try:
+        secondary = MagicMock(hass=hass, is_standby=False, is_secondary=True, delegated_whos={1}, availability_signal="secondary_availability")
+        secondary._get_primary_gateway.return_value = gateway
+        MyHOMEGatewayHandler._notify_availability(secondary)  # lights went to a secondary that reconnected
+        await hass.async_block_till_done()
+        assert probe._fallback_read_refused is True
+        await probe.async_update()
+        assert _sent(gateway) == [READ]
+        gateway.event_connections += 1  # the primary's own new event session does end it
+        MyHOMEGatewayHandler._notify_availability(secondary)
+        await hass.async_block_till_done()
+        assert probe._fallback_read_refused is False
+    finally:
+        disconnect()
+
+
+async def test_a_read_queued_before_the_connection_and_refused_on_it_is_latched(hass: HomeAssistant) -> None:
+    handler = _f455_handler(hass, "F455")
+    probe = _sensor(hass, handler)
+    await probe.async_update()  # queued: no event session yet, no worker has written it
+    handler._on_event_connection_state_change(True)
+    session = _command_session()
+    _answers(session, None, OWNNackError(f"Gateway rejected message `{READ}` with NACK", frame=READ))
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=session):
+        await handler.send_buffer.put(None)
+        await handler.sending_loop(0)
+    await _settle()
+    assert str(session.send.await_args.kwargs["message"]) == READ  # written on the new connection
+    assert probe._fallback_read_refused is True and probe._fallback_refused_by is handler
+    assert probe._fallback_refused_on_connection == handler.event_connections
+
+
+async def test_a_read_written_on_a_connection_that_is_gone_when_it_is_refused_is_not_latched(hass: HomeAssistant) -> None:
+    handler = _f455_handler(hass, "F455")
+    handler._on_event_connection_state_change(True)
+    probe = _sensor(hass, handler)
+    session = _command_session()
+
+    async def _send(message: object, is_status_request: bool = False) -> None:
+        handler._on_event_connection_state_change(False)  # the event session drops while the read is out ...
+        handler._on_event_connection_state_change(True)  # ... and is back before the gateway's NACK is handled
+        session.last_error = OWNNackError(f"Gateway rejected message `{READ}` with NACK", frame=READ)
+
+    session.send = AsyncMock(side_effect=_send)
+    await probe.async_update()
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=session):
+        await handler.send_buffer.put(None)
+        await handler.sending_loop(0)
+    await _settle()
+    assert probe._fallback_read_refused is False
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "*#4*3#1#2*20*150##",  # tests/test_issue_949_fancoil_dim20_output_level.py:278: a 3-token WHERE
+        "*#4*3#1#4#99*20*150##",  # ibid. :279 with zone 3: an interface out of range
+    ],
+)
+async def test_a_where_that_is_neither_the_zone_nor_one_actuator_changes_nothing(hass: HomeAssistant, frame: str) -> None:
+    zone = _zone_switch(hass, _mock_gateway())
+    zone._interface = thermo_event_interface(OWNMessage.parse(frame))  # past the interface filter, to the WHERE itself
+    zone.handle_event(OWNMessage.parse(frame))
+    assert zone.is_on is None and zone.extra_state_attributes.get("actuators") is None
+    assert thermo_dim20_whole_zone_target(OWNMessage.parse(frame)) is False
+
+
+@pytest.mark.parametrize(
+    ("frame", "whole_zone"),
+    [
+        ("*#4*3*20*1##", True),
+        ("*#4*3*#20*1##", True),
+        ("*#4*3#0*20*1##", True),
+        ("*#4*3#4#01*20*1##", True),
+        ("*#4*3#0#4#01*20*1##", True),
+        ("*#4*3#3*20*160##", False),
+        ("*#4*3#1#4#01*20*1##", False),
+        ("*#4*#0#1*20*1##", False),
+        ("*#4*#1*20*1##", False),
+        ("*#4*0#1*20*1##", False),
+    ],
+)
+def test_the_wheres_that_are_a_whole_zone(frame: str, whole_zone: bool) -> None:
+    assert thermo_dim20_whole_zone_target(OWNMessage.parse(frame)) is whole_zone
+
+
+@pytest.mark.parametrize("off", ["*#4*3*#20*0##", "*#4*3#0*20*0##"])
+async def test_a_whole_zone_off_puts_the_known_outputs_of_the_whole_zone_switch_at_0(hass: HomeAssistant, off: str) -> None:
+    zone = _zone_switch(hass, _mock_gateway())
+    zone.handle_event(OWNMessage.parse("*#4*3#3*20*160##"))  # tests/test_issue_949_fancoil_dim20_output_level.py:1303
+    assert zone.is_on is True and zone.extra_state_attributes["actuator_levels"] == {"3": 60}
+    zone.handle_event(OWNMessage.parse("*#4*3*#20*1##"))  # on says nothing about the level
+    assert zone.extra_state_attributes["actuator_levels"] == {"3": 60}
+    zone.handle_event(OWNMessage.parse(off))
+    assert zone.is_on is False and zone.extra_state_attributes["actuator_levels"] == {"3": 0}

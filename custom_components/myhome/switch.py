@@ -88,6 +88,7 @@ from .where_grammar import (
     thermo_dim20_actuator_target,
     thermo_dim20_is_active,
     thermo_dim20_level,
+    thermo_dim20_whole_zone_target,
     thermo_event_actuator,
     thermo_event_interface,
     thermo_event_zone,
@@ -1053,9 +1054,18 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             if is_central_thermo_where(message):
                 # A central unit's WHERE (``#0#N``, ``#Z``) is neither the whole zone nor one of its actuators.
                 return
+            whole_zone = thermo_dim20_whole_zone_target(message)
+            if not whole_zone and not names_actuator:
+                # Neither the zone nor one of its actuators (a 3-token WHERE, an interface out of range).
+                return
             # A WHERE that names no actuator (``Z#0``, or the bare zone, for which OWNd reports
             # actuator 1) is the whole zone: it proves no actuator number.
-            if act_id == "0" or not names_actuator:
+            if whole_zone:
+                if self._actuator is None and not dim20_active:
+                    # The whole zone is off: the whole-zone switch shows its outputs at 0, as after
+                    # the zone's inactive dimension 19 report below. One actuator's switch keeps its
+                    # level until its own ``Z#N`` frame (#949).
+                    self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
                 if self._actuator is not None:
                     self._actuator_states[self._actuator] = dim20_active
                 elif self._actuator_states:

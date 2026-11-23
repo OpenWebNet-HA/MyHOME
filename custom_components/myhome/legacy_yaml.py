@@ -31,7 +31,7 @@ from .const import (
     PLATFORMS,
 )
 from .repairs import async_create_legacy_yaml_imported_issue
-from .where_grammar import canonical_point_address, canonical_thermo_zone
+from .where_grammar import canonical_central_zone, canonical_point_address, canonical_thermo_zone
 
 
 def _read_legacy_yaml(
@@ -177,29 +177,35 @@ def canonicalise_imported_platforms(
         new_devices: dict[str, Any] = {}
         central_moved: list[str] = []
         central_fixed = False
-        # The interfaces on which the copy already holds the central unit as ``#0``: that entry
-        # stays, and one stored as ``#0#0`` for the same central unit goes, under every key.
+        # The central units the copy already holds under their address, per interface: such an
+        # entry stays, and one 2.0.0 stored under another spelling of it goes, under every key.
         held_centrals = {
-            cfg.get(CONF_BUS_INTERFACE)
+            (cfg.get(CONF_ZONE), cfg.get(CONF_BUS_INTERFACE))
             for cfg in devices.values()
-            if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_ZONE) == "#0" and cfg.get(CONF_CENTRAL)
+            if plat == "climate"
+            and isinstance(cfg, dict)
+            and cfg.get(CONF_CENTRAL)
+            and isinstance(cfg.get(CONF_ZONE), str)
+            and canonical_central_zone(cfg[CONF_ZONE]) == cfg[CONF_ZONE]
         }
         for d_id, cfg in devices.items():
             who = str(cfg.get(CONF_WHO, "")) if isinstance(cfg, dict) else ""
-            if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_ZONE) == "#0#0" and cfg.get(CONF_CENTRAL):
-                # 2.0.0 stored ``zone: "0"`` with ``central: true`` as ``#0#0``; the validator
-                # gives ``#0`` today. The entry is stored under several keys: the one that
-                # spells the zone moves, the others keep their key.
-                new_id = f"#0{d_id[len('#0#0'):]}" if d_id.startswith("#0#0") else d_id
-                if cfg.get(CONF_BUS_INTERFACE) in held_centrals or (
+            stored_zone = cfg.get(CONF_ZONE) if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_CENTRAL) else None
+            if isinstance(stored_zone, str) and (fixed_zone := canonical_central_zone(stored_zone)) != stored_zone:
+                # 2.0.0 stored ``zone: "0"`` with ``central: true`` as ``#0#0`` (and ``#0#1`` as
+                # ``#0##0#1``, ``0#4#01`` as ``#0#0#4#01``); the validator gives ``#0``
+                # (``#0#1``, ``#0#4#01``) today. The entry is stored under several keys: the
+                # one that spells the zone moves, the others keep their key.
+                new_id = f"{fixed_zone}{d_id[len(stored_zone):]}" if d_id.startswith(stored_zone) else d_id
+                if (fixed_zone, cfg.get(CONF_BUS_INTERFACE)) in held_centrals or (
                     new_id != d_id and (new_id in devices or new_id in new_devices)
                 ):
                     LOGGER.warning(
                         "Imported copy of myhome.yaml, %s: dropping '%s', the copy already has '%s'",
-                        plat, d_id, new_id if new_id != d_id else "#0",
+                        plat, d_id, new_id if new_id != d_id else fixed_zone,
                     )
                     continue
-                new_devices[new_id] = {**cfg, CONF_ZONE: "#0"}
+                new_devices[new_id] = {**cfg, CONF_ZONE: fixed_zone}
                 central_fixed = True
                 if new_id != d_id:
                     central_moved.append(f"{plat}: {d_id} -> {new_id}")

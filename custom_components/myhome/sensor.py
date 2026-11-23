@@ -87,6 +87,7 @@ from .const import (
     CONF_ZONE,
     DOMAIN,
     LOGGER,
+    central_mode_signal,
     normalize_where,
 )
 from .data import MyHOMEConfigEntry
@@ -1501,8 +1502,11 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         if (
             self._fallback_read_refused
             and getattr(target, "is_connected", False) is True
-            # This signal is about the entity's own gateway: it ends the refusal of that gateway only.
-            and (target is self._gateway_handler or not self._fallback_refusal_stands())
+            # A gateway that comes back does so on a new event session, and a gateway that takes
+            # over is another gateway. This signal is also sent for a secondary of another WHO and
+            # for the standby: it ends nothing while the gateway that refused serves the read on
+            # the session it refused it on.
+            and not self._fallback_refusal_stands()
         ):
             self._fallback_read_refused = False
             LOGGER.debug(
@@ -1565,6 +1569,11 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
         if getattr(gateway, "is_connected", False) is not True:
             return
         connections = getattr(gateway, "event_connections", None)
+        # The session this gateway's sender wrote the read under. A read that carries no such mark
+        # (a double) is judged by the session at the time it was queued.
+        written_by, written_on = getattr(written, "_written_under", None) or (None, None)
+        if written_by is gateway and isinstance(written_on, int):
+            asked_on = written_on
         if isinstance(asked_on, int) and connections != asked_on:
             # The connection that was asked is gone: this says nothing about the new one.
             return
@@ -1796,7 +1805,7 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
             self.async_on_remove(
                 async_dispatcher_connect(
                     target_hass,
-                    f"myhome_central_mode_{self._gateway_handler.mac}",
+                    central_mode_signal(self._gateway_handler.mac, self._interface),
                     self._handle_central_mode_update,
                 )
             )
