@@ -52,6 +52,12 @@ _WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
 _is_dimension_22_crash_form: Callable[[object], bool] | None = getattr(
     _ownd_message, "is_who4_dimension_22_crash_form", None
 )
+try:
+    from OWNd.connection.command_session import (
+        destructive_frame_reason as _ownd_destructive_frame_reason,
+    )
+except ImportError:  # pragma: no cover - older OWNd without centralized classifier
+    _ownd_destructive_frame_reason = None
 
 
 def services_has_dimension_22_detector() -> bool:
@@ -65,6 +71,14 @@ def is_refused_dimension_22(frame: str) -> bool:
     if _is_dimension_22_crash_form is not None:
         return bool(_is_dimension_22_crash_form(frame))
     return _WHO4_DIMENSION_22.match(frame) is not None
+
+
+def _destructive_frame_reason(frame: str) -> str | None:
+    """Return a refusal reason if OWNd classifies ``frame`` as destructive (WHO 18 dim 52, bare WHO 22, etc.)."""
+    if _ownd_destructive_frame_reason is None:
+        return None
+    reason = _ownd_destructive_frame_reason(str(frame).strip())
+    return str(reason) if reason is not None else None
 
 
 SERVICE_SWEEP_BUS = "sweep_bus"
@@ -285,7 +299,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                     await gw_handler.send(cmd_time)
             return
 
-        handler = _require_gateway_handler(hass, dr.format_mac(gateway))
+        handler = _require_gateway_handler(hass, gateway)
         cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
         await handler.send(cmd_datetime)
         await handler.send(cmd_time)
@@ -294,12 +308,10 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         """Handle sending an arbitrary OpenWebNet message."""
         gateway = call.data.get(ATTR_GATEWAY, None)
         message: str = call.data[ATTR_MESSAGE]  # required by SEND_MESSAGE_SCHEMA
-        if gateway is not None:
-            gateway = dr.format_mac(gateway)
 
         _LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
         handler = _require_gateway_handler(hass, gateway)
-        from OWNd.message import OWNCommand
+        from OWNd.message import OWNCommand, OWNMessage, OWNSignaling
 
         if is_refused_dimension_22(message):
             _LOGGER.error(
@@ -323,6 +335,20 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="send_message_refused_frame",
                 translation_placeholders={"message": message},
             )
+        destructive_reason = _destructive_frame_reason(message)
+        if destructive_reason is not None:
+            _LOGGER.error(
+                "%s Refusing to send destructive frame `%s`: %s",
+                handler.log_id,
+                message,
+                destructive_reason,
+            )
+            raise ServiceValidationError(
+                f'Refusing to send "{message}": {destructive_reason}; nothing was sent',
+                translation_domain=DOMAIN,
+                translation_key="send_message_refused_frame",
+                translation_placeholders={"message": message},
+            )
 
         def _invalid_frame() -> ServiceValidationError:
             _LOGGER.error("Could not parse message `%s`, not sending it.", message)
@@ -339,7 +365,11 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         if re.fullmatch(r"\*[0-9*#]*##", message, re.ASCII) is None:
             raise _invalid_frame()
         try:
+            if isinstance(OWNMessage.parse(message), OWNSignaling):
+                raise _invalid_frame()
             own_message = OWNCommand.parse(message)
+        except ServiceValidationError:
+            raise
         except Exception as err:
             raise _invalid_frame() from err
         if own_message is None or not own_message.is_valid:

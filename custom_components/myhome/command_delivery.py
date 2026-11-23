@@ -34,14 +34,14 @@ def gateway_label(gateway: Any) -> str:
     return "MyHOME gateway"
 
 
-def _not_confirmed(placeholders: dict[str, str], timeout: str) -> HomeAssistantError:
+def _not_confirmed(placeholders: dict[str, str]) -> HomeAssistantError:
     """The error of a command the gateway did not confirm in time."""
     return HomeAssistantError(
         f"{placeholders['name']}: gateway {placeholders['gateway']} did not confirm the command "
         f"({placeholders['frame']}) in time; it may or may not have been executed",
         translation_domain=DOMAIN,
         translation_key="command_not_confirmed",
-        translation_placeholders={**placeholders, "timeout": timeout},
+        translation_placeholders=placeholders,
     )
 
 
@@ -79,7 +79,7 @@ async def async_confirm_delivery(
         # Withdraw the queued frame: the worker skips a cancelled future it has not started
         # on (a frame already handed to a reconnecting session can still go out).
         written.cancel()
-        raise _not_confirmed(placeholders, f"{timeout:.0f}")
+        raise _not_confirmed(placeholders)
     cause: BaseException | None = None
     if not written.cancelled():
         cause = written.exception()
@@ -95,7 +95,7 @@ async def async_confirm_delivery(
         )
     if getattr(written, "_no_answer", False) is True:
         # The worker marks the future of a written command the gateway did not answer in time.
-        raise _not_confirmed(placeholders, "the gateway's answer time")
+        raise _not_confirmed(placeholders)
     # Cancelled without those marks: the session was lost or could not be opened, or the
     # queue was closed (unload, shutdown).
     raise _not_delivered(placeholders) from cause
@@ -121,13 +121,14 @@ async def async_send_confirmed(
     except asyncio.CancelledError:
         raise
     except TimeoutError as err:
-        raise _not_confirmed(placeholders, f"{timeout:.0f}") from err
+        raise _not_confirmed(placeholders) from err
     except Exception as err:
         raise _not_delivered(placeholders) from err
+    actual_gateway = getattr(command, "_myhome_handed_to", None) or gateway
     await async_confirm_delivery(
         written,
         name=name,
         frame=frame,
-        gateway=gateway,
+        gateway=actual_gateway,
         timeout=max(0.0, deadline - loop.time()),
     )

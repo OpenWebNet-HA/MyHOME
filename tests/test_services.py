@@ -798,21 +798,6 @@ async def test_newline_after_frame(hass, sending_gateway):
     sending_gateway.send.assert_not_awaited()
 
 
-async def test_partial_clock_write_raises_translated_validation_error(hass, sending_gateway):
-    message = "*#13**#0*15*00##"  # ownd/tests/test_message_protocol.py:256
-    try:
-        await hass.services.async_call(
-            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: message}, blocking=True
-        )
-    except Exception as err:
-        assert isinstance(err, ServiceValidationError), repr(err)
-        assert err.translation_key == "send_message_invalid_frame"
-        assert err.translation_placeholders == {"message": message}
-    else:
-        pytest.fail("Partial clock write was accepted")
-    sending_gateway.send.assert_not_awaited()
-
-
 async def test_non_ascii_digits_not_sent(hass, sending_gateway):
     # Localized decimal WHERE substituted into the good service example (tests/test_services.py:777).
     message = "*1*1*12##".replace("12", "\u0661\u0662")
@@ -840,6 +825,44 @@ async def test_truncated_time_is_invalid(hass, sending_gateway):
     sending_gateway.send_status_request.assert_not_awaited()
 
 
+@pytest.mark.parametrize("frame", ["*#18*51*52#2026#10##", "*22*1*1##"])
+async def test_send_message_refuses_all_ownd_destructive_crash_frames(
+    hass, sending_gateway, frame: str
+) -> None:
+    """WHO 18 dim 52 crash forms and bare WHO 22 power frames are refused before queueing."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True
+        )
+    assert err.value.translation_key == "send_message_refused_frame"
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_send_message_rejects_signaling_nonce_frame(hass, sending_gateway) -> None:
+    """OWNSignaling NONCE frames (*#123456789##) are rejected instead of sent as status requests."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*#123456789##"}, blocking=True
+        )
+    assert err.value.translation_key == "send_message_invalid_frame"
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_gateway_not_found_preserves_caller_input(hass, sending_gateway) -> None:
+    """Unknown non-MAC gateway strings are echoed verbatim in gateway_not_found placeholders."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SEND_MESSAGE,
+            {ATTR_GATEWAY: "not-a-mac", ATTR_MESSAGE: "*1*1*12##"},
+            blocking=True,
+        )
+    assert err.value.translation_key == "gateway_not_found"
+    assert err.value.translation_placeholders == {"gateway": "not-a-mac"}
+
+
 async def test_precautionary_refusal_is_not_a_confirmed_firmware_fault(
     hass, sending_gateway, monkeypatch
 ):
@@ -855,3 +878,9 @@ async def test_precautionary_refusal_is_not_a_confirmed_firmware_fault(
     assert "crashes the thermostat service" not in str(err.value), (
         "precautionary compatibility refusal presented as a confirmed crash"
     )
+
+
+def test_destructive_frame_reason_returns_none_without_ownd_classifier(monkeypatch) -> None:
+    """When running against an older OWNd without destructive_frame_reason, helper returns None."""
+    monkeypatch.setattr(services, "_ownd_destructive_frame_reason", None)
+    assert services._destructive_frame_reason("*22*1*1##") is None

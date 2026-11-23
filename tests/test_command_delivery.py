@@ -97,7 +97,6 @@ async def test_unconfirmed_command_is_withdrawn() -> None:
         "name": "Light 05 Unlock",
         "gateway": "F455",
         "frame": "*14*1*05##",
-        "timeout": "0",
     }
     assert stuck.cancelled()
     assert COMMAND_DELIVERY_TIMEOUT == 15.0
@@ -285,3 +284,23 @@ async def test_open_socket_silence_is_not_non_delivery(plant, monkeypatch):
         await lock.async_press()
     assert harness.received_messages.count("*14*0*05##") == 1  # tests/test_command_delivery.py:194
     assert exc.value.translation_key == "command_not_confirmed"
+
+
+async def test_handed_over_command_names_actual_gateway_on_nack() -> None:
+    """When send() delegates or fails over to a peer, NACK errors name the peer gateway."""
+    standby = MagicMock(model="F455", name="Standby", mac="00:03:50:00:00:02")
+    primary = MagicMock(model="F461", name="Primary", mac="00:03:50:00:00:01")
+    cmd = OWNCommand.parse("*14*0*05##")
+
+    async def _send(message: object) -> asyncio.Future[float]:
+        setattr(message, "_myhome_handed_to", standby)
+        fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        setattr(fut, "_gateway_nack", True)
+        fut.cancel()
+        return fut
+
+    primary.send = _send
+    with pytest.raises(HomeAssistantError) as err:
+        await async_send_confirmed(primary, cmd, name="Light 05 Lock")
+    assert err.value.translation_key == "command_rejected"
+    assert err.value.translation_placeholders["gateway"] == "F455"
