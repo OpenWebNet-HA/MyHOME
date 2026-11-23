@@ -3008,7 +3008,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _pulse_direction_failed(self) -> bool:
         """Whether the running pulse's direction frame was cancelled or failed on its way to the bus."""
-        written = self._pulse_written
+        written = (
+            self._tilt_follows._pulse_written
+            if self._tilt_follows is not None
+            else self._pulse_written
+        )
         return (
             isinstance(written, asyncio.Future)
             and written.done()
@@ -3053,8 +3057,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         tests/fixtures/traces/discussion_770_f454_f401/README.md:57-68, trace 2). On a
         MyHomeServer1 2.87.13 + K4672M2S it followed each of three pulse stops by
         0.10-0.12 s: 0 -> 1, 1 -> 2 and 2 -> 1 (frames 18, 29 and 40 of
-        tests/fixtures/traces/pr_991_myhomeserver1_k4672m2s; the 75 -> 76 step of #868
-        was a description only). The slats are where the pulse left them, not a full
+        tests/fixtures/traces/pr_991_myhomeserver1_k4672m2s); on the same gateway +
+        F401 (tests/fixtures/traces/pr_991_myhomeserver1_f401) it followed each of
+        three pulse stops by 0.14-0.15 s: 0 -> 1, unchanged 1, and 1 -> 0 (the
+        75 -> 76 step of #868 was a description only). The slats are where the pulse left them, not a full
         rotation further. Inside the echo window of the pulse's stop, a level that
         moved the way the pulse turned is taken as its own; any other change is still
         an external move (#868), and turns the slats all the way only when no motion
@@ -3247,6 +3253,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         except Exception:
             self._is_tilting = False
             self._tilt_direction = None
+            if was_tilting:
+                self._pulse_ended_at = None
             raise
 
         # _tilt_start_time stays None (no slat travel counted) until the frame is
