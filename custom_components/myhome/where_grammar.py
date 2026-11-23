@@ -296,14 +296,14 @@ def canonical_central_zone(zone: str) -> str:
 
     ``0``, ``00``, ``#0`` and ``#0#0`` are the 99-zone central unit ``#0``; ``N``, ``0N``, ``#N``,
     ``#0#N`` and ``#0#0N`` are a 4-zone central unit at ``#0#N`` (WHO 4 WHERE table: ``#0``
-    Central Unit, ``#0#1`` to ``#0#4``). An interface written inside the zone (``0#4#01``) is kept
-    behind the address. 2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored
+    Central Unit, ``#0#1`` to ``#0#96`` on 4695 hardware / ``#0#1`` to ``#0#99`` in OpenWebNet). An interface written inside the zone (``0#4#01``) is kept
+    behind the address (zero-padded to two digits). 2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored
     for an address typed with the prefix (``#0##0#1``, ``#0##1``, ``#0#01``, ``#0#0``) is read back
     to the same address.
     """
     base, routing, interface = str(zone).rpartition("#4#")
-    if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
-        suffix = f"#4#{interface}"
+    if routing and base and interface.isascii() and interface.isdigit() and 1 <= len(interface) <= 2:
+        suffix = f"#4#{interface.zfill(2)}"
     else:
         base, suffix = str(zone), ""
     while base.startswith("#0##0"):
@@ -497,7 +497,7 @@ def four_zone_central_where(message: Any) -> str | None:
     if str(getattr(message, "where", None)) != "#0":
         return None
     params = _where_params(message)
-    if len(params) == 3 and params[1] == "4":
+    if len(params) == 3 and params[1] == "4" and _is_ascii_uint(params[2]) and 1 <= len(params[2]) <= 2:
         params = params[:1]
     if len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99:
         return f"#0#{int(params[0])}"

@@ -150,7 +150,7 @@ A thermoregulation central unit (99-zone `WHERE = #0` such as a BTicino `3550`, 
 2. Once the battery fault is resolved on the hardware, the central unit omits `*4*31*<where>##` from its next status burst (`*#4*<where>##`), and this repair issue clears automatically, one second after the burst's remote-control frame (`*4*20*<where>##` / `*4*21*<where>##`).
 
 ### If the central unit has no backup battery
-A central unit fitted without a battery repeats `*4*31*#0##` in every status burst. Use **Ignore** on the repair: the issue is left untouched while the flag keeps coming, so the Ignore holds through every burst and every reload until Home Assistant restarts: the first burst after a restart shows the repair again, as a reminder, and it can be ignored again. The repair itself ends only when a burst arrives without the flag.
+A central unit fitted without a battery repeats `*4*31*<where>##` in every status burst. Use **Ignore** on the repair: the issue is left untouched while the flag keeps coming, so the Ignore holds through every burst and every reload until Home Assistant restarts: the first burst after a restart shows the repair again, as a reminder, and it can be ignored again. The repair itself ends only when a burst arrives without the flag.
 
 ---
 

@@ -562,3 +562,139 @@ async def test_four_zone_central_mode_report_mid_send_keeps_reported_state() -> 
     await central.async_set_hvac_mode(HVACMode.HEAT)
     assert central.extra_state_attributes["program"] == 3
     assert central.hvac_mode == HVACMode.HEAT
+
+
+async def test_unified_four_zone_central_ignores_plain_master_season_and_knob_offset(
+    hass: HomeAssistant,
+) -> None:
+    """Bugs 1 & 2: plain master-zone season frames (*4*1*1## / *4*0*1##) never corrupt #0#1 state,
+    and master Zone N knob offset (*#4*1*13*02##) never shifts plant-wide central setpoints.
+    """
+    from homeassistant.core import State
+
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    gw = _gateway(has_central_unit=False)
+    central = _climate(gw, "#0#1", standalone=None, central=True)
+
+    # Bug 1a: OFF central unit stays OFF when plain *4*1*1## arrives.
+    central.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    assert central.hvac_mode == HVACMode.OFF and central.hvac_action == HVACAction.OFF
+    central.handle_event(OWNHeatingEvent("*4*1*1##"))
+    assert central.hvac_mode == HVACMode.OFF and central.hvac_action == HVACAction.OFF
+
+    # Bug 1b: Heating central unit keeps heating season when plain *4*0*1## arrives.
+    central.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    assert central._season == "heating" and central._central_reported_season == "heating"
+    central.handle_event(OWNHeatingEvent("*4*0*1##"))
+    assert central._season == "heating" and central.hvac_mode == HVACMode.HEAT
+
+    # Bug 2: Master zone 1 knob +2 is exposed in attributes, never shifts display or central write.
+    central.handle_event(OWNHeatingEvent("*#4*1*13*02##"))
+    assert central.extra_state_attributes["local_offset"] == 2
+    assert central.extra_state_attributes["knob_pos"] == "+2"
+    assert central.target_temperature == 18.0
+    central._show_nominal()
+    assert central.target_temperature == 18.0
+    await central.async_set_temperature(temperature=20.0)
+    assert _sent(gw)[-1] == "*#4*#0#1*#14*0200*3##"
+    # Even restoring with saved local_offset=2 preserves exact 18.0 nominal target.
+    restored = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored.async_restore_last_state(
+        State(
+            "climate.central_unit_01",
+            "heat",
+            {"temperature": 18.0, "local_offset": 2, "season": "heating"},
+        )
+    )
+    assert restored.target_temperature == 18.0
+    assert restored._target_temperature == 18.0
+
+    # Bug 3: Cross-season HEAT -> COOL right after restart uses restored self._season ("heating").
+    gw.send.reset_mock()
+    assert restored._central_reported_season is None and restored._season == "heating"
+    await restored.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gw) == ["*4*0*#0#1##", "*4*3100*#0#1##"]
+
+
+async def test_live_four_zone_central_discovery_prunes_existing_unconfigured_master_zone(
+    hass: HomeAssistant,
+) -> None:
+    """Bug 4 (2.0.0 -> 2.0.1 upgrade / reverse discovery): when #0#1 arrives on the bus while
+    an unconfigured Climate Zone 1 is already in the entity & device registries, it is pruned
+    immediately instead of waiting for a second restart.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    zone1_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-4-1")}, name="Climate Zone 1"
+    )
+    zone1_ent = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-1", config_entry=entry, device_id=zone1_dev.id
+    )
+    # Unrelated non-climate and other-zone entries must stay untouched.
+    other_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-4-3")}, name="Climate Zone 3"
+    )
+    other_ent = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-3", config_entry=entry, device_id=other_dev.id
+    )
+    ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-1-temperature", config_entry=entry)
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.log_id = "[issue 994]"
+    gateway.has_central_unit = False
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    runtime.platforms["climate"] = {}
+    entities: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, entities.extend)
+    assert any(e._where == "1" for e in entities)
+
+    # First #0#1 report arrives dynamically on the bus -> prunes Climate Zone 1 entity & empty device.
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0160*#0#1##"))
+    await hass.async_block_till_done()
+    assert any(e._where == "#0#1" for e in entities)
+    assert ent_reg.async_get(zone1_ent.entity_id) is None
+    assert dev_reg.async_get(zone1_dev.id) is None
+    assert ent_reg.async_get(other_ent.entity_id) is not None
+
+    # Configured (non-standalone) YAML entry for zone 1 is NOT auto-pruned by _prune_superseded_master_zone.
+    zone2_ent = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-2", config_entry=entry)
+    discovery = ZoneDiscovery(hass, entry, runtime, lambda ctx, cfg: entities[0])
+    discovery._configured = {"2": {"zone": "2", "name": "Manual Zone 2"}}
+    discovery._prune_superseded_master_zone(("2", None))
+    assert ent_reg.async_get(zone2_ent.entity_id) is not None
+
+
+def test_saved_central_doubled_and_where_grammar_edge_cases() -> None:
+    """Bug 5: _SAVED_CENTRAL_DOUBLED catches #0#00/#0##0/#0##00, canonical_central_zone pads
+    single-digit #4#1 -> #4#01, and four_zone_central_where validates interface params.
+    """
+    from custom_components.myhome.climate_discovery import _SAVED_CENTRAL_DOUBLED
+    from custom_components.myhome.where_grammar import (
+        canonical_central_zone,
+        four_zone_central_where,
+    )
+
+    for bad in ("#0#0", "#0#00", "#0##0", "#0##00", "#0#01", "#0##1", "#0##0#1"):
+        m = _SAVED_CENTRAL_DOUBLED.fullmatch(f"{MAC}-4-{bad}")
+        assert m is not None, f"missed {bad}"
+    for good in ("#0", "#0#1", "#0#21", "#0#96"):
+        assert _SAVED_CENTRAL_DOUBLED.fullmatch(f"{MAC}-4-{good}") is None
+
+    assert canonical_central_zone("0#4#1") == "#0#4#01"
+    assert canonical_central_zone("1#4#1") == "#0#1#4#01"
+    assert canonical_central_zone("00#4#1") == "#0#4#01"
+
+    bad_iface = MagicMock(where="#0", where_param=["1", "4", "abc"])
+    assert four_zone_central_where(bad_iface) is None
+    ok_iface = MagicMock(where="#0", where_param=["1", "4", "01"])
+    assert four_zone_central_where(ok_iface) == "#0#1"

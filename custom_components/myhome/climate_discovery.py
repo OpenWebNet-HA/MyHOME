@@ -53,6 +53,7 @@ from .discovery import (
     default_known_keys,
     is_broadcast_where,
     parse_unique_id,
+    prune_entity,
 )
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
@@ -93,7 +94,7 @@ CANDIDATE_MAX_AGE = 3600.0
 # ``0``, zero-padded ``01``..``09``, ``#1``..``#99``, or with the prefix already (``#0#0`` ->
 # ``#0##0#0``, ``#0#1`` -> ``#0##0#1``, ``01`` -> ``#0#01``, ``#1`` -> ``#0##1``).
 _SAVED_CENTRAL_DOUBLED = re.compile(
-    r"(.+-4-)(#0#(?:0|#0#\d{1,2}|0[1-9]|#0?[1-9]\d?))((?:#4#\d{1,2})?)"
+    r"(.+-4-)(#0#(?:#?0+|#0#\d{1,2}|0[1-9]|#0?[1-9]\d?))((?:#4#\d{1,2})?)"
 )
 
 _REAL_HVAC_STATES = frozenset(
@@ -490,12 +491,39 @@ class ZoneDiscovery:
         if pair is None and (master := four_zone_central_zone(ctx.address.clean_where)) is not None:
             if not self._is_explicit_standalone_zone(master, ctx.address.interface):
                 pair = (master, _two_digit_interface(ctx.address.interface))
+                if ctx.source == "bus":
+                    self._prune_superseded_master_zone(pair)
         if pair is not None:
             self._candidates.pop(pair, None)
             self._candidates_unanswered.discard(pair)
             for held in self._held.pop(pair, {}).values():
                 entity.handle_event(held)
         return entity
+
+    def _prune_superseded_master_zone(self, pair: ZonePair) -> None:
+        """Remove an existing unconfigured master zone entity once unified Central Unit 0N arrives."""
+        try:
+            registry = er.async_get(self._hass)
+            entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))
+        except Exception:  # pragma: no cover - registry unavailable in minimal unit doubles
+            return
+        gw_mac = str(self._gateway.mac)
+        for entry in entries:
+            if entry.domain != Platform.CLIMATE or not entry.unique_id:
+                continue
+            _who, device_id = parse_unique_id(entry.unique_id, self._runtime_mac, gw_mac)
+            addr = Address.from_device_id(device_id)
+            if _zone_pair(addr) != pair:
+                continue
+            cfg = _zone_config(self._configured, addr, addr.key)
+            if _own_entry(addr, cfg or {}):
+                continue
+            LOGGER.info(
+                "climate: pruning live master zone %s unified into 4-zone central unit #0#%s (#994)",
+                entry.entity_id,
+                pair[0],
+            )
+            prune_entity(self._hass, registry, entry, self._config_entry.entry_id)
 
     def _drop_candidate_held(self, pair: ZonePair) -> None:
         """Drop held non-actuator candidate frames for ``pair``, keeping valve/virtual-probe slots."""
@@ -660,7 +688,7 @@ class ZoneDiscovery:
 
         ``zone: "0"`` with ``central: true`` was filed under ``#0#0`` (``#0#0#4#II`` behind an
         interface), an address the WHERE table does not have (WHO 4 PDF p. 6: ``#0`` Central
-        Unit; a 4-zone central unit is ``#0#1`` to ``#0#4``). The saved entity keeps its entity
+        Unit; a 4-zone central unit is ``#0#1`` to ``#0#96``). The saved entity keeps its entity
         id and its settings under ``#0``. Where a ``#0`` entity is saved too (the one found on
         the bus), that one stays and the ``#0#0`` one is removed: both would now be the same
         central unit. An address the configuration still names (``zone: "#0#0"`` typed by hand
