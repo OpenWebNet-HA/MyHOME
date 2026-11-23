@@ -48,6 +48,7 @@ from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .topology import entry_for_mac, peer_unique_id
+from .where_grammar import contact_where_aliases
 
 
 @dataclass(frozen=True)
@@ -212,10 +213,11 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
     longer provided") on a device without its actuator.
     """
     registry.async_remove(entry.entity_id)
-    for suffix in COMPANION_SUFFIXES:
-        button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
-        if button is not None:
-            registry.async_remove(button)
+    if not any(registry.async_get_entity_id(d, DOMAIN, entry.unique_id) for d in ACTUATOR_DOMAINS):
+        for suffix in COMPANION_SUFFIXES:
+            button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
+            if button is not None:
+                registry.async_remove(button)
     if entry.domain == "cover":
         delta_number = registry.async_get_entity_id(
             "number", DOMAIN, f"{entry.unique_id}-min_position_delta"
@@ -282,7 +284,14 @@ def binary_sensor_only_on_primary(with_sensor: set[str], device_identifier: str,
     of every device identifier (an entry's stored ``CONF_MAC`` may differ in case).
     """
     peer = peer_unique_id(device_identifier, own_mac, primary_mac)
-    return peer is not None and device_identifier not in with_sensor and peer in with_sensor
+    if peer is None or device_identifier in with_sensor:
+        return False
+    if peer in with_sensor:
+        return True
+    head, sep, where = peer.partition("-25-")
+    if sep:
+        return any(f"{head}-25-{alias}" in with_sensor for alias in contact_where_aliases(where))
+    return False
 
 
 @callback
@@ -603,7 +612,7 @@ class PlatformDiscovery:
             if self.reject_registry_entry and self.reject_registry_entry(entry, ctx):
                 if registry is not None:
                     try:
-                        registry.async_remove(entry.entity_id)
+                        prune_entity(self.hass, registry, entry, self.config_entry.entry_id)
                         LOGGER.info("%s: removed stale registry entry %s", self.platform, entry.entity_id)
                     except Exception as err:  # the entry may already be gone
                         LOGGER.debug("%s: could not remove %s: %s", self.platform, entry.entity_id, err)

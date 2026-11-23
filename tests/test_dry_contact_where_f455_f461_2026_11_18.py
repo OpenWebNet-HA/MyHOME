@@ -32,20 +32,28 @@ from custom_components.myhome.binary_sensor import (
     MyHOMEDryContact,
     _contact_peer_spellings,
     _contact_spellings,
+    resolve_binary_sensor_inverted,
 )
 from custom_components.myhome.const import (
     CONF_BUS_TOPOLOGY,
     CONF_GATEWAY_ROLE,
     CONF_IGNORED_ADDRESSES,
+    CONF_INVERTED_BINARY_SENSORS,
     CONF_PRIMARY_GATEWAY,
     DOMAIN,
     ROLE_PRIMARY,
     ROLE_STANDBY,
     TOPOLOGY_SHARED,
 )
+from custom_components.myhome.discovery import binary_sensor_only_on_primary, prune_entity
 from custom_components.myhome.gateway import AVAILABILITY_GRACE
+from custom_components.myhome.ignored import IgnoredAddresses
 from custom_components.myhome.legacy_yaml import CONF_MIGRATED_YAML_PLATFORMS
-from custom_components.myhome.where_grammar import canonical_contact_where
+from custom_components.myhome.where_grammar import (
+    canonical_contact_where,
+    contact_where_aliases,
+    padded_contact_where,
+)
 from tests.test_multi_gateway_regressions import PRI, SB, _set_up, _setup_patches
 
 FRAMES = json.loads(
@@ -122,12 +130,36 @@ def test_canonical_contact_where(where: str, canonical: str) -> None:
 
 
 def test_contact_spellings_and_peer_unique_ids() -> None:
+    assert padded_contact_where("31") == "301"
+    assert padded_contact_where("31#4#1") == "301#4#1"
+    assert padded_contact_where("344") == "344"
+    assert contact_where_aliases("301") == ["301", "31"]
+    assert contact_where_aliases("31") == ["31", "301"]
+    assert contact_where_aliases("344") == ["344"]
+
     assert _contact_spellings("301") == ["301", "31"]
-    assert _contact_spellings("31") == ["31"]
+    assert _contact_spellings("31") == ["31", "301"]
     assert _contact_spellings("25-301") == ["25-301", "301", "31"]  # a legacy ``25-`` registry id
-    assert _contact_peer_spellings(f"{PRI}-301-opening") == [f"{PRI}-31-opening"]
-    assert _contact_peer_spellings(f"{PRI}-25-301-motion") == [f"{PRI}-25-31-motion"]
-    assert _contact_peer_spellings(f"{PRI}-31-opening") == []
+    assert _contact_spellings("25-31") == ["25-31", "31", "301"]
+    assert _contact_spellings("gate-301") == ["gate-301"]  # named YAML key: not rewritten to 301 or 31
+
+    assert _contact_peer_spellings(f"{PRI}-301-opening") == [
+        f"{PRI}-31-opening",
+        f"{PRI}-25-301-opening",
+        f"{PRI}-25-31-opening",
+    ]
+    assert _contact_peer_spellings(f"{PRI}-31-opening") == [
+        f"{PRI}-301-opening",
+        f"{PRI}-25-31-opening",
+        f"{PRI}-25-301-opening",
+    ]
+    assert _contact_peer_spellings(f"{PRI}-25-301-motion") == [
+        f"{PRI}-25-31-motion",
+        f"{PRI}-301-motion",
+        f"{PRI}-31-motion",
+    ]
+    assert _contact_peer_spellings(f"{PRI}-gate-301-opening") == []
+    assert _contact_peer_spellings(f"{PRI}-gate-25-301-opening") == []
     assert _contact_peer_spellings("301") == []
 
 
@@ -253,17 +285,11 @@ async def test_the_duplicate_an_earlier_failover_left_behind_is_removed_at_the_n
         _connected(entry)
 
         assert _unique_ids(hass, entry) == [f"{PRI}-31-opening"]
+        assert _unique_ids(hass, entry, "switch") == [f"{PRI}-25-31-invert"]
+        assert _contact_devices(hass, entry) == [f"{PRI}-25-31"]
         await _feed(hass, entry, *_rx("failover_read_31_through_f455", "f455"))
         assert _unique_ids(hass, entry) == [f"{PRI}-31-opening"]
         assert _state(hass, f"{PRI}-31-opening") == "on"
-
-        # Its "Invert state" switch and its device follow at this start or at the next one,
-        # depending on whether the switch platform was set up before the binary sensors.
-        assert await hass.config_entries.async_reload(entry.entry_id)
-        await hass.async_block_till_done()
-        assert _unique_ids(hass, entry) == [f"{PRI}-31-opening"]
-        assert _unique_ids(hass, entry, "switch") == [f"{PRI}-25-31-invert"]
-        assert _contact_devices(hass, entry) == [f"{PRI}-25-31"]
 
 
 async def test_a_standby_f455_drops_its_301_once_the_primary_has_the_contact(hass: HomeAssistant) -> None:
@@ -292,10 +318,14 @@ async def test_a_standby_f455_drops_its_301_once_the_primary_has_the_contact(has
                 "binary_sensor", DOMAIN, f"{SB}-{where}-opening", config_entry=standby, device_id=device.id,
                 original_device_class="opening",
             )
+            registry.async_get_or_create(
+                "switch", DOMAIN, f"{SB}-25-{where}-invert", config_entry=standby, device_id=device.id
+            )
         await hass.config_entries.async_setup(standby.entry_id)
         await hass.async_block_till_done()
 
         assert _unique_ids(hass, standby) == [f"{SB}-344-opening"]
+        assert _unique_ids(hass, standby, "switch") == [f"{SB}-25-344-invert"]
         assert _contact_devices(hass, standby) == [f"{SB}-25-344"]
         assert _unique_ids(hass, primary) == [f"{PRI}-31-opening"]
 
@@ -389,7 +419,148 @@ async def test_a_named_device_key_ending_in_301_is_not_contact_1(hass: HomeAssis
         await _feed(hass, entry, "*25*32#1*329##")
         assert _state(hass, unique_id) == "off"
 
-        await _feed(hass, entry, FRAMES["status_read_301_302"][2][2])
+        await _feed(hass, entry, FRAMES["status_read_301_302"][1][2], FRAMES["status_read_301_302"][2][2])
 
         assert _state(hass, unique_id) == "off"
         assert f"{PRI}-31-opening" in _unique_ids(hass, entry)
+
+
+async def test_a_standby_f461_drops_its_31_when_primary_f455_has_301(hass: HomeAssistant) -> None:
+    """Reverse shared bus: F455 primary registered ``301`` (or legacy ``-25-301``), F461 standby drops ``31``."""
+    primary = MockConfigEntry(
+        domain=DOMAIN,
+        data={"host": "192.168.0.35", "port": 20000, "password": "pass", "mac": PRI},
+        options=SHARED_PRIMARY,
+        unique_id=PRI,
+        title="F455 Primary",
+    )
+    primary.add_to_hass(hass)
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    pri_dev = devices.async_get_or_create(
+        config_entry_id=primary.entry_id, identifiers={(DOMAIN, f"{PRI}-25-301")}, name="Dry Contact 301"
+    )
+    registry.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{PRI}-301-opening", config_entry=primary, device_id=pri_dev.id,
+        original_device_class="opening",
+    )
+    pri_legacy_dev = devices.async_get_or_create(
+        config_entry_id=primary.entry_id, identifiers={(DOMAIN, f"{PRI}-25-302")}, name="Dry Contact 302"
+    )
+    registry.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{PRI}-25-302-opening", config_entry=primary, device_id=pri_legacy_dev.id,
+        original_device_class="opening",
+    )
+
+    p1, p2, p3 = _setup_patches()
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(primary.entry_id)
+        await hass.async_block_till_done()
+
+        standby = MockConfigEntry(
+            domain=DOMAIN,
+            data={"host": "192.168.0.36", "port": 20000, "password": "pass", "mac": SB},
+            options=SHARED_STANDBY,
+            unique_id=SB,
+            title="F461 Standby",
+        )
+        standby.add_to_hass(hass)
+        for where in ("31", "32", "344"):
+            dev = devices.async_get_or_create(
+                config_entry_id=standby.entry_id, identifiers={(DOMAIN, f"{SB}-25-{where}")}, name=f"Dry Contact {where}"
+            )
+            registry.async_get_or_create(
+                "binary_sensor", DOMAIN, f"{SB}-{where}-opening", config_entry=standby, device_id=dev.id,
+                original_device_class="opening",
+            )
+            registry.async_get_or_create(
+                "switch", DOMAIN, f"{SB}-25-{where}-invert", config_entry=standby, device_id=dev.id
+            )
+
+        assert await hass.config_entries.async_setup(standby.entry_id)
+        await hass.async_block_till_done()
+
+        assert _unique_ids(hass, standby) == [f"{SB}-344-opening"]
+        assert _unique_ids(hass, standby, "switch") == [f"{SB}-25-344-invert"]
+        assert _contact_devices(hass, standby) == [f"{SB}-25-344"]
+        assert _unique_ids(hass, primary) == [f"{PRI}-25-302-opening", f"{PRI}-301-opening"]
+
+
+def test_binary_sensor_only_on_primary_matches_contact_aliases() -> None:
+    assert binary_sensor_only_on_primary({f"{PRI}-25-31"}, f"{SB}-25-301", SB, PRI) is True
+    assert binary_sensor_only_on_primary({f"{PRI}-25-301"}, f"{SB}-25-31", SB, PRI) is True
+    assert binary_sensor_only_on_primary({f"{PRI}-25-344"}, f"{SB}-25-31", SB, PRI) is False
+    assert binary_sensor_only_on_primary({f"{PRI}-9-1"}, f"{SB}-9-2", SB, PRI) is False
+
+
+@pytest.mark.parametrize(("reg_where", "yaml_where"), [("301", "31"), ("31", "301")])
+async def test_registry_and_yaml_contact_spellings_merge_on_one_device(
+    hass: HomeAssistant, reg_where: str, yaml_where: str
+) -> None:
+    """Registry ``301`` + YAML ``31`` (and reverse) merge onto the existing device and honor legacy ``25-301`` option."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=PRI,
+        data={"host": "127.0.0.1", "mac": PRI, "port": 20000, "password": "pass"},
+        options={
+            CONF_MIGRATED_YAML_PLATFORMS: {
+                "binary_sensor": {
+                    yaml_where: {"who": "25", "where": yaml_where, "name": "Front Gate", "class": "opening"}
+                }
+            },
+            CONF_INVERTED_BINARY_SENSORS: {"25-301": True},
+        },
+    )
+    entry.add_to_hass(hass)
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    dev = devices.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{PRI}-25-{reg_where}")}, name=f"Dry Contact {reg_where}"
+    )
+    sensor_entry = registry.async_get_or_create(
+        "binary_sensor", DOMAIN, f"{PRI}-{reg_where}-opening", config_entry=entry, device_id=dev.id,
+        original_device_class="opening",
+    )
+    p1, p2, p3 = _setup_patches()
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        _connected(entry)
+
+        assert _unique_ids(hass, entry) == [f"{PRI}-{reg_where}-opening"]
+        assert _unique_ids(hass, entry, "switch") == [f"{PRI}-25-{reg_where}-invert"]
+        assert _contact_devices(hass, entry) == [f"{PRI}-25-{reg_where}"]
+        assert resolve_binary_sensor_inverted(entry, "25", "31") is True
+        assert resolve_binary_sensor_inverted(entry, "25", "301") is True
+
+        # Inverted: closed (*25*31#0*31##) reports "off"
+        await _feed(hass, entry, "*25*31#0*31##")
+        assert hass.states.get(sensor_entry.entity_id).state == "off"
+
+
+def test_prune_entity_preserves_companion_buttons_when_another_actuator_shares_unique_id(hass: HomeAssistant) -> None:
+    """Pruning a ghost light whose unique_id matches a live switch keeps the switch's lock/unlock buttons."""
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=PRI, data={"host": "127.0.0.1", "mac": PRI})
+    entry.add_to_hass(hass)
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    dev = devices.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{PRI}-1-11")})
+    ghost_light = registry.async_get_or_create("light", DOMAIN, f"{PRI}-1-11", config_entry=entry, device_id=dev.id)
+    live_switch = registry.async_get_or_create("switch", DOMAIN, f"{PRI}-1-11", config_entry=entry, device_id=dev.id)
+    disable_btn = registry.async_get_or_create("button", DOMAIN, f"{PRI}-1-11-disable", config_entry=entry, device_id=dev.id)
+
+    prune_entity(hass, registry, ghost_light, entry.entry_id)
+
+    assert registry.async_get(ghost_light.entity_id) is None
+    assert registry.async_get(live_switch.entity_id) is not None
+    assert registry.async_get(disable_btn.entity_id) is not None
+
+
+def test_ignored_contact_normalizes_routed_and_leading_zero_spellings() -> None:
+    ignored_padded = IgnoredAddresses(["25/301#4#1"])
+    assert ignored_padded.is_ignored(25, "31", "01") is True
+    assert ignored_padded.is_ignored(25, "31#4#01") is True
+    assert ignored_padded.is_ignored(25, "0301", "1") is True
+
+    ignored_short = IgnoredAddresses(["25/31#4#01"])
+    assert ignored_short.is_ignored(25, "301", "1") is True
+    assert ignored_short.is_ignored(25, "301#4#1") is True
+    assert ignored_short.is_ignored(25, "0301#4#01") is True
+    assert ignored_short.is_ignored(25, "32", "01") is False

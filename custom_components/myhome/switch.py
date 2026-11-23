@@ -82,6 +82,7 @@ from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
 from .typing_compat import device_info_to_dict
 from .where_grammar import (
+    contact_where_aliases,
     is_central_thermo_where,
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -380,10 +381,13 @@ async def async_setup_entry(
         bs_who, candidate = classified
         clean_cand = candidate.split("-")[-1]
         if bs_who == "25":
+            contact_aliases = contact_where_aliases(clean_cand)
             bs_cfg = _bs_first_cfg(
                 f"25-{candidate}",
+                *(f"25-{alias}" for alias in contact_aliases),
                 candidate,
                 clean_cand,
+                *contact_aliases,
                 normalize_where(candidate) or "",
                 normalize_where(clean_cand) or "",
             )

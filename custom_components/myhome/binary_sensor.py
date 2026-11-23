@@ -20,6 +20,7 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -49,6 +50,7 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_WHERE,
     CONF_WHO,
+    DOMAIN,
     LOGGER,
     SIGNAL_BINARY_SENSOR_INVERTED,
     SIGNAL_NEW_BINARY_SENSOR,
@@ -57,7 +59,7 @@ from .const import (
 from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
-from .where_grammar import canonical_contact_where
+from .where_grammar import canonical_contact_where, contact_where_aliases, padded_contact_where
 
 PARALLEL_UPDATES = 0
 
@@ -158,13 +160,28 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         elif ctx.source == "registry":
             candidate = ctx.address.where
             clean_candidate = candidate.split("-")[-1]
+            contact_aliases = contact_where_aliases(clean_candidate)
             cfg = _first_config(
-                configured, f"25-{candidate}", candidate, clean_candidate,
-                normalize_where(candidate), normalize_where(clean_candidate),
+                configured,
+                f"25-{candidate}",
+                *(f"25-{alias}" for alias in contact_aliases),
+                candidate,
+                clean_candidate,
+                *contact_aliases,
+                normalize_where(candidate),
+                normalize_where(clean_candidate),
             )
             where = str(cfg.get(CONF_WHERE, candidate))
             norm_where, clean_norm = normalize_where(where), normalize_where(where.split("-")[-1])
             device_id = candidate if candidate in configured else (norm_where or clean_norm or where.split("-")[-1])
+            reg_dev_id = getattr(ctx.registry_entry, "device_id", None)
+            if isinstance(reg_dev_id, str) and reg_dev_id:
+                existing_dev = dr.async_get(hass).async_get(reg_dev_id)
+                if existing_dev is not None:
+                    for dom, ident in existing_dev.identifiers:
+                        if dom == DOMAIN and "-25-" in ident:
+                            device_id = ident.split("-25-", 1)[1]
+                            break
             device_class = cfg.get(CONF_DEVICE_CLASS, getattr(ctx.registry_entry, "original_device_class", None) or BinarySensorDeviceClass.OPENING)
             name, model = cfg.get(CONF_NAME, f"Dry Contact {clean_norm or where.split('-')[-1]}"), "Dry Contact Interface"
         else:
@@ -331,20 +348,39 @@ def _spellings(where: str) -> list[str]:
 
 
 def _contact_spellings(where: str) -> list[str]:
-    """:func:`_spellings` of a WHO 25 contact, plus ``31`` for an F455's ``301`` (a WHERE or a legacy ``25-`` id only)."""
-    keys = _spellings(where)
+    """:func:`_spellings` of a WHO 25 contact, plus both ``31`` and ``301`` forms (a WHERE or legacy ``25-`` id only)."""
     head, sep, _tail = where.rpartition("-")
     if sep and head != "25":
-        return keys
-    return list(dict.fromkeys([*keys, *(canonical_contact_where(key) for key in keys)]))
+        return [where]
+    keys = _spellings(where)
+    return list(dict.fromkeys([*keys, *(alias for key in keys for alias in contact_where_aliases(key))]))
 
 
 def _contact_peer_spellings(unique_id: str) -> list[str]:
-    """``{mac}-301-opening`` (an F455's spelling) is ``{mac}-31-opening`` on any other gateway."""
+    """Symmetric peer spellings for WHO 25 dry contacts (``301`` <-> ``31``, with or without ``-25-``)."""
     stem = _strip_class_suffix(unique_id)
-    head, _, where = stem.rpartition("-")
-    canonical = canonical_contact_where(where)
-    return [f"{head}-{canonical}{unique_id[len(stem):]}"] if head and canonical != where else []
+    head, sep, where = stem.rpartition("-")
+    if not sep or not head:
+        return []
+    # Only rewrite gateway-MAC or gateway-MAC + "-25" stems; never touch named YAML keys like "{mac}-gate-301-opening".
+    if head.endswith("-25"):
+        mac_part = head[:-3]
+        if not mac_part or "-" in mac_part:
+            return []
+        alt_heads = (head, mac_part)
+    elif "-" not in head:
+        alt_heads = (head, f"{head}-25")
+    else:
+        return []
+    aliases = contact_where_aliases(where)
+    suffix = unique_id[len(stem) :]
+    peers = [
+        f"{h}-{alias}{suffix}"
+        for h in alt_heads
+        for alias in aliases
+        if f"{h}-{alias}{suffix}" != unique_id
+    ]
+    return list(dict.fromkeys(peers))
 
 
 def _spellings_for(who: str) -> typing.Callable[[str], list[str]]:
@@ -367,7 +403,8 @@ def binary_sensor_canonical_where(who: str, where: str) -> str:
         return raw
     base, sep, iface = raw.partition(BUS_ROUTING)
     norm_base = normalize_where(base) or base
-    return f"{norm_base}{BUS_ROUTING}{iface}" if sep else norm_base
+    combined = f"{norm_base}{BUS_ROUTING}{iface}" if sep else norm_base
+    return canonical_contact_where(combined) if str(who) == "25" else combined
 
 
 def binary_sensor_option_key(who: str, where: str) -> str:
@@ -389,6 +426,11 @@ def resolve_binary_sensor_inverted(
             opt_key = binary_sensor_option_key(who, where)
             if opt_key in stored:
                 return bool(stored[opt_key])
+            if str(who) == "25":
+                padded = padded_contact_where(binary_sensor_canonical_where(who, where))
+                legacy_key = f"25-{padded}"
+                if legacy_key in stored:
+                    return bool(stored[legacy_key])
     return bool(cfg.get(CONF_INVERTED, False)) if cfg else False
 
 
