@@ -27,6 +27,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNEvent, OWNHeatingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -127,6 +128,41 @@ async def test_the_central_unit_found_on_the_bus_is_written_at_its_own_address(h
     gateway.send.reset_mock()
     await central.async_set_hvac_mode(HVACMode.OFF)
     assert _sent(gateway)[0] == "*4*303*#0#1##"  # frame 38
+
+
+@pytest.mark.parametrize(("mode", "frame"), [(HVACMode.HEAT, "*#4*#0#1*#14*0175*1##"), (HVACMode.COOL, "*#4*#0#1*#14*0175*2##")])
+async def test_heat_and_cool_on_the_central_unit_write_its_setpoint_in_that_season(hass: HomeAssistant, mode: HVACMode, frame: str) -> None:
+    """As 0.9.3 wrote them. The heating frame is frame 19 itself; the conditioning one is in no capture."""
+    gateway, found = await _plant(hass, None, FIRST, SECOND)
+    central = found["#0#1"]
+    assert central.target_temperature == 17.5  # `*4*110#0175*#0#1##`, frame 20
+    await central.async_set_hvac_mode(HVACMode.OFF)
+    gateway.send.reset_mock()
+    await central.async_set_hvac_mode(mode)
+    assert _sent(gateway) == [frame]  # no season frame (`*4*1*#0#1##`): no capture holds one
+    assert central.hvac_mode == mode
+    assert central.target_temperature == 17.5
+
+
+async def test_heat_on_a_central_unit_that_reported_no_setpoint_writes_nothing(hass: HomeAssistant, tmp_path: Path) -> None:
+    only_off = tmp_path / "off.json"
+    only_off.write_text(json.dumps({"frames": [{"direction": "rx", "raw": "*4*103*#0#1##"}]}), encoding="utf-8")  # frame 39
+    gateway, found = await _plant(hass, None, only_off)
+    central = found["#0#1"]
+    assert central.target_temperature is None
+    with pytest.raises(ServiceValidationError) as refused:
+        await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert refused.value.translation_key == "zone_no_setpoint_known"
+    assert _sent(gateway) == []
+    assert central.hvac_mode == HVACMode.OFF
+
+
+async def test_off_and_the_program_of_the_central_unit_are_written_as_before(hass: HomeAssistant) -> None:
+    gateway, found = await _plant(hass, None, FIRST, SECOND)
+    central = found["#0#1"]
+    await central.async_set_hvac_mode(HVACMode.OFF)
+    await central.async_set_hvac_mode(HVACMode.AUTO)
+    assert _sent(gateway) == ["*4*303*#0#1##", "*4*3100*#0#1##"]
 
 
 # ── not a 99-zone central unit ──

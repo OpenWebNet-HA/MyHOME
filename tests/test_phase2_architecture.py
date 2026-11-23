@@ -275,10 +275,11 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
     assert cu4._central is True
     assert cu4._standalone is False
 
-    # Set master heat mode on 4-zone CU -> *4*1*#0#1##
+    # Heat on a 4-zone CU is its setpoint written in heating (#994) -> *#4*#0#1*#14*0175*1##
+    cu4._target_temperature = 17.5
     await cu4.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*1*#0#1##"
+    assert str(sent_cmd) == "*#4*#0#1*#14*0175*1##"
 
     # Status update is a no-op for central units (no *#4*#0#1*14## status poll, #582)
     await cu4.async_update()

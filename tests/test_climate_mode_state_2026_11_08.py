@@ -527,15 +527,17 @@ async def test_failed_send_disarms_the_echo() -> None:
 
 
 # PR #880 review: a 4-zone central unit (#0#1..#0#4) is not polled, it keeps HEAT / COOL.
+# Since #994 the frame is its setpoint written in that season, as 0.9.3 wrote it, not the season frame.
 
 
 @pytest.mark.parametrize("hvac_mode", [HVACMode.HEAT, HVACMode.COOL])
 async def test_four_zone_central_keeps_the_mode_it_is_set_to(hvac_mode: HVACMode) -> None:
     gateway = _gateway()
     central = _climate(gateway, "#0#1", standalone=None, central=True)
+    _replay(central, ["*4*110#0175*#0#1##"])  # its setpoint (tests/fixtures/traces/issue_994, second file, frame 20)
     await central.async_set_hvac_mode(hvac_mode)
     assert central.hvac_mode == hvac_mode
-    assert _sent(gateway) == [f"*4*{1 if hvac_mode == HVACMode.HEAT else 0}*#0#1##"]
+    assert _sent(gateway) == [f"*#4*#0#1*#14*0175*{1 if hvac_mode == HVACMode.HEAT else 2}##"]
 
 
 # PR #880 review: an AUTO the zone itself reports is not cancelled by its season frame.
