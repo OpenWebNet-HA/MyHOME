@@ -8,12 +8,8 @@ on:
       - "v2-*"
       - "feat/*"
   pull_request:
-    branches:
-      - main
-      - master
-      - "v2-*"
   schedule:
-    - cron: "0 4 * * 1"  # Weekly run every Monday at 04:00 UTC
+    - cron: "0 4 * * *"  # Daily run at 04:00 UTC to catch upstream HA beta and dev container images
   workflow_dispatch:
 
 permissions:
