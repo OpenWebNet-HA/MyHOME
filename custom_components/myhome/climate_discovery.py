@@ -533,14 +533,14 @@ class ZoneDiscovery:
                 registry.async_remove(entry.entity_id)
                 LOGGER.info(
                     "climate: %s was saved as central unit %s next to the central unit %s; removed",
-                    entry.entity_id, match[2], canonical_central_zone(match[2]),
+                    entry.entity_id, f"{match[2]}{match[3]}", f"{canonical_central_zone(match[2])}{match[3]}",
                 )
             else:
                 registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
                 self._move_device_identifier(entry.device_id, str(entry.unique_id), corrected)
                 LOGGER.info(
                     "climate: %s was saved as central unit %s; it is the central unit %s",
-                    entry.entity_id, match[2], canonical_central_zone(match[2]),
+                    entry.entity_id, f"{match[2]}{match[3]}", f"{canonical_central_zone(match[2])}{match[3]}",
                 )
 
     def _hand_over_device_settings(self, removed_id: str | None, kept_id: str | None) -> None:

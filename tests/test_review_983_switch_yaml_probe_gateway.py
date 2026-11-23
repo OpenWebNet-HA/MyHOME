@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -675,11 +676,15 @@ def test_central_true_with_the_interface_written_in_the_zone_gives_a_central_uni
     assert (address.clean_where, address.interface) == (where, "01")
 
 
-async def test_the_entity_saved_as_central_unit_00_with_the_interface_in_its_zone_becomes_the_central_unit(hass: HomeAssistant) -> None:
+async def test_the_entity_saved_as_central_unit_00_with_the_interface_in_its_zone_becomes_the_central_unit(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
     # 2.0.0 made ``#0#0#4#01`` of ``zone: "0#4#01"``, ``central: true``.
+    caplog.set_level(logging.INFO, logger="custom_components.myhome")
     entities = await _climate_entities(hass, ["#0#0#4#01"], {"plant": {"zone": "0#4#01", "central": True, "name": "Plant"}})
     assert [(entity._where, entity._interface) for entity in entities] == [("#0", "01")]
     assert er.async_get(hass).async_get("climate.saved_0").unique_id == f"{DISCOVERY_MAC}-4-#0#4#01"
+    assert "climate.saved_0 was saved as central unit #0#0#4#01; it is the central unit #0#4#01" in caplog.text
 
 
 @pytest.mark.parametrize(("saved", "interface"), [("#0##0#1", None), ("#0##0#1#4#01", "01")])
