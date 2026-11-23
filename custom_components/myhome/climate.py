@@ -96,6 +96,7 @@ from .where_grammar import (
     is_central_thermo_where,
     is_central_unit_actuator_status,
     is_central_unit_report,
+    is_four_zone_central_where,
     is_probe,
     thermo_dim19_status,
     thermo_dim20_actuator_target,
@@ -138,7 +139,6 @@ PACED_READ_TIMEOUT = 60.0
 # (two starts, tests/fixtures/traces/issue_932/README.md).
 EMPTY_REPLY_SETTLE = 1.0
 
-_FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
 # BTicino 3550 central unit (#0) diagnostic WHAT codes (WHO 4 PDF, "1.1 WHAT table", p. 5):
 # 20 = remote control disabled, 21 = remote control enabled, 22 = at least one probe OFF,
 # 23 = at least one probe in antifreeze/protection, 24 = at least one probe in manual,
@@ -290,7 +290,7 @@ async def async_setup_entry(
             cfg = {}
         zone = zone_number(where)
         suffix = f"{zone}I{interface}" if interface else zone
-        is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL) or (
+        is_central = clean_where in ("0", "#0") or is_four_zone_central_where(clean_where) or (
             ctx.source != "bus" and bool(cfg.get(CONF_CENTRAL, False))
         )
         # One default name whatever the source: a central unit found on the bus was "Climate
@@ -303,7 +303,7 @@ async def async_setup_entry(
             "Central Unit (3550)"
             if clean_where == "#0"
             else "Central Unit (4695)"
-            if clean_where in _FOUR_ZONE_CENTRAL
+            if is_four_zone_central_where(clean_where)
             else "Heating Zone"
         )
         entity = MyHOMEClimate(
@@ -430,7 +430,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         )
         self._interface_poll_skip_logged = False
 
-        self._central = True if self._where.removeprefix("4-") in ("0", "#0", *_FOUR_ZONE_CENTRAL) else central
+        self._central = (
+            True
+            if self._where.removeprefix("4-") in ("0", "#0") or is_four_zone_central_where(self._where)
+            else central
+        )
         # None: not configured. A zone then follows the plant, see the standalone property.
         self._standalone_config = False if self._central else standalone
         # A zone nobody configured, on a plant with a central unit: how it is written comes from
@@ -474,7 +478,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if (
             self._central
             and self._interface is None
-            and self._where.removeprefix("4-") not in _FOUR_ZONE_CENTRAL
+            and not is_four_zone_central_where(self._where)
         ):
             gateway.has_central_unit = True
 
@@ -1548,7 +1552,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _request_zone_dimension(self, dimension: int, *, again: bool = False) -> bool:
         """Queue ``*#4*Z*DIM##`` through the gateway's paced sender; False on an older handler."""
-        if self._interface_poll_refused or is_actuator_where(self._where):
+        if self._central or self._interface_poll_refused or is_actuator_where(self._where):
             return False
         request = getattr(self._gateway_handler, "request_zone_dimension", None)
         if not callable(request):
@@ -2239,9 +2243,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if isinstance(reported, (int, float)) and abs(float(reported) - expected) < 0.05:
             check[2].set()
 
+    def _is_own_four_zone_central_report(self, message: OWNHeatingEvent) -> bool:
+        """Whether ``message`` is a 4-zone central unit report for this unconfigured master zone."""
+        return (
+            not self._central
+            and self._standalone_config is None
+            and four_zone_central_where(message) == f"#0#{canonical_thermo_zone(self._where)}"
+        )
+
     def _note_own_state(self, message: OWNHeatingEvent) -> None:
         """Keep whether the zone's own frame says it is off (``*4*303*2##``) or running (``*4*0*2##``)."""
-        if self._central or is_central_thermo_where(message):
+        if self._central or (is_central_thermo_where(message) and not self._is_own_four_zone_central_report(message)):
             return
         if _two_digit_interface(thermo_event_interface(message)) != self._interface:
             return  # the same zone number on another bus
@@ -2635,7 +2647,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _note_own_season(self, message: OWNHeatingEvent) -> None:
         """Keep the season the zone reports in its own, plain ``Z`` form (``*4*0*2##``, ``*4*202*4##``)."""
         season = getattr(message, "season", None)
-        if self._central or not isinstance(season, str) or is_central_thermo_where(message):
+        if (
+            self._central
+            or not isinstance(season, str)
+            or (is_central_thermo_where(message) and not self._is_own_four_zone_central_report(message))
+        ):
             return
         if _two_digit_interface(thermo_event_interface(message)) != self._interface:
             return  # the same zone number on another bus
@@ -3162,15 +3178,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 HVACMode.AUTO: "auto",
             }
             cmd_mode = mode_map.get(hvac_mode)
-            if cmd_mode and self._where.removeprefix("4-") in ("#0", "0"):
+            if cmd_mode:
                 # The season frame and its restore are one operation: a later command of this
-                # entity is written after both.
+                # entity is written after both, on both 99-zone (#0) and 4-zone (#0#N) units.
                 async with self._central_command_lock:
-                    await self._set_central_unit_mode(hvac_mode, cmd_mode)
-            elif cmd_mode in ("heat", "cool"):
-                await self._write_four_zone_central_season(hvac_mode, cmd_mode)
-            elif cmd_mode:
-                await self._set_central_unit_mode(hvac_mode, cmd_mode)
+                    if self._where.removeprefix("4-") not in ("#0", "0") and cmd_mode in ("heat", "cool"):
+                        await self._write_four_zone_central_season(hvac_mode, cmd_mode)
+                    else:
+                        await self._set_central_unit_mode(hvac_mode, cmd_mode)
             return
 
         if hvac_mode == HVACMode.OFF:
@@ -3324,49 +3339,55 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
 
     async def _write_four_zone_central_season(self, hvac_mode: HVACMode, cmd_mode: str) -> None:
-        """Write `heat` / `cool` of a 4-zone central unit (``#0#N``) as its setpoint in that season.
+        """Write `heat` / `cool` of a 4-zone central unit (``#0#N``).
 
-        ``*#4*#0#N*#14*T*M##`` with M 1 (heating) or 2 (conditioning, WHO 4 p. 23); it is what
-        version 0.9.3 wrote, and the F454 2.0.51 plant of #994 answered ``*#4*#0#1*#14*0175*1##``
-        with ``*4*110#0175*#0#1##``; the season frame (``*4*1*#0#N##``) is in no capture of such
-        a plant. Without a setpoint of the central unit there is nothing to write, as for a zone;
-        the mode is shown once the write was not refused, like off and auto of the central unit.
+        Per BTicino 4695 firmware disassembly (``LH4695_AM5875_010103.fwz``) and oracle plant
+        emulation (``plant-cu4695.tsv``):
+        - Cross-season (reported season differs from ``hvac_mode``): send the season frame
+          (``*4*0*#0#N##`` / ``*4*1*#0#N##``, flips season into protection ``202``/``102``)
+          followed by ``*4*3100*#0#N##`` to resume the active weekly program in the new season,
+          matching the 99-zone central unit.
+        - Same-season or season unknown: never send ``*4*1/0*#0#N##`` (no-op ``TX=[]`` -> NACK
+          on Gen D). Write generic manual setpoint ``*#4*#0#N*#14*TTTT*3##`` (``M=3``, ``C1 02``)
+          when a nominal setpoint is known, or ``*4*3100*#0#N##`` (``C1 01 FF``) to wake from
+          OFF/protection/program when no setpoint has been reported yet.
         """
+        season = self._central_reported_season
+        if isinstance(season, str) and (season == SEASON_HEATING) != (hvac_mode == HVACMode.HEAT):
+            season_cmd = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode=cmd_mode)
+            await self._send_central_command(season_cmd, "_central_echo", written_required=True)
+            restore = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode="auto")
+            await self._send_central_command(restore, "_central_restore_echo", written_required=True)
+            return
+        reports_before = self._central_report_count
         nominal = self._effective_nominal_temperature()
-        if nominal is None:
-            raise ServiceValidationError(
-                f"{self._display_name} has not reported a setpoint yet: set a temperature first",
-                translation_domain=DOMAIN,
-                translation_key="zone_no_setpoint_known",
-                translation_placeholders={"name": self._display_name},
-            )
-        await self._write_central_setpoint(nominal, cmd_mode)
+        if nominal is not None:
+            await self._write_central_setpoint(nominal)
+        else:
+            restore = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode="auto")
+            await self._send_central_command(restore, "_central_echo", refusal_raises=True)
+        if self._central_report_count != reports_before:
+            return
         self._central_operation = None
+        if self._attr_hvac_action == HVACAction.OFF:
+            self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
         if self.hass is not None:
             self.async_write_ha_state()
 
-    async def _write_central_setpoint(self, target_temperature: float, mode: str | None = None) -> None:
+    async def _write_central_setpoint(self, target_temperature: float) -> None:
         """Write the central unit's manual setpoint; a refusal by the gateway is raised.
 
-        ``mode`` is the season to write it in (``heat`` / ``cool``); without it the season
-        follows what the central unit shows.
+        Uses generic mode ``M = 3`` (``mode="auto"``, SCS ``C1 02``), which keeps the current
+        season on both 99-zone (``#0``, live 3550 behind F461 2026-11-23) and 4-zone (``#0#N``,
+        4695 ROM ``0x0EA3AB``, ``plant-cu4695.tsv:30, 33``, ``#994`` frame 5) central units;
+        seasonal ``M = 1`` / ``M = 2`` (``C1 12`` / ``C1 22``) are dropped by the 4695 when
+        they do not match its active season.
         """
-        # *#4*#0*#14*T*M## puts the central unit in manual with setpoint T; M is the season
-        # of that manual mode (WHO 4 p. 23: 1 heating, 2 conditioning; the monitor frame is
-        # *4*110#T*#0## "Manual mode - Heating" / *4*210#T*#0## "Manual mode - Conditioning").
-        # A real F454 plant answered *#4*#0*#14*0165*1## with *4*110#0165*#0## (#697). So
-        # the digit follows the season the plant is in, not only the mode shown: a central
-        # unit that is OFF (*4*203*#0##) or on its program in the conditioning season was
-        # written M = 1, manual heating.
-        if mode is None and self._attr_hvac_mode in (HVACMode.COOL, HVACMode.HEAT):
-            mode = "cool" if self._attr_hvac_mode == HVACMode.COOL else "heat"
-        elif mode is None:
-            mode = "cool" if self._season in _CONDITIONING_SEASONS else "heat"
         setpoint = OWNHeatingCommand.set_central_temperature(
             where=self._bus_where,
             temperature=target_temperature,
-            mode=mode,
+            mode=SETPOINT_WRITE_MODE,
         )
         written: Any = await self._gateway_handler.send(setpoint)
         if not isinstance(written, asyncio.Future):
@@ -3392,12 +3413,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             1,
         )
         if self._central:
-            if self._where.removeprefix("4-") in ("#0", "0"):
-                # Not between a season frame and its restore (``async_set_hvac_mode``): the mode
-                # is resolved once the lock is taken.
-                async with self._central_command_lock:
-                    await self._write_central_setpoint(target_temperature)
-            else:
+            # Serialized with mode/season commands so a setpoint write never lands between a
+            # season frame and its ``*4*3100*...##`` restore.
+            async with self._central_command_lock:
                 await self._write_central_setpoint(target_temperature)
             # State follows the central unit's own bus report (``*4*110#TTTT*#0##`` /
             # ``*4*110#TTTT*#0#N##``), not an optimistic write: when Remote Control
@@ -3620,6 +3638,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._central_operation = None
         if hvac_mode == HVACMode.OFF:
             self._attr_hvac_action = HVACAction.OFF
+        elif self._attr_hvac_action == HVACAction.OFF:
+            self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
         if self.hass is not None:
             self.async_write_ha_state()
@@ -3879,7 +3899,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             MESSAGE_TYPE_TARGET_TEMPERATURE,
         ):
             return False
-        if self._standalone_config is None and four_zone_central_where(message) == f"#0#{canonical_thermo_zone(self._where)}":
+        if self._is_own_four_zone_central_report(message):
             return False
         return is_central_thermo_where(message)
 
@@ -4261,7 +4281,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and self._attr_hvac_mode != season_mode
             )
             if (
-                self._central
+                (
+                    self._central
+                    and (not is_four_zone_central_where(self._where) or four_zone_central_where(message) is not None)
+                )
                 or standalone_mode
                 or self._attr_hvac_mode in (None, HVACMode.OFF)
                 or restored_off_season
@@ -4302,6 +4325,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
+            if (
+                self._central
+                and is_four_zone_central_where(self._where)
+                and four_zone_central_where(message) is None
+                and self._central_report_count > 0
+            ):
+                # On a unified 4-zone central unit (#0#N), plain master-zone mode frames
+                # (e.g. *4*303*1##) accompany the central unit's richer #0#N reports: keep
+                # #0#N authoritative once it has reported.
+                return
             if not self._central and is_central_thermo_where(message):
                 self._unpaired_dim12_at = None
             self._hvac_mode_restored = False  # the zone itself says what it runs in

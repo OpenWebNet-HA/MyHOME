@@ -211,12 +211,14 @@ __all__ = [
     "encode_apl_where",
     "expose_message_where",
     "four_zone_central_where",
+    "four_zone_central_zone",
     "is_actuator_where",
     "is_actuator_status",
     "is_apl_address",
     "is_central_thermo_where",
     "is_central_unit_actuator_status",
     "is_central_unit_report",
+    "is_four_zone_central_where",
     "is_probe",
     "is_pump",
     "is_split_unit",
@@ -249,7 +251,7 @@ def is_actuator_where(where: str) -> bool:
     """Whether ``where`` addresses a WHO 4 actuator or split unit rather than a zone or central unit.
 
     Covers ``Z#N`` / ``Z#0`` / ``0#N`` / ``0#0`` and 3-token ``3#Z#N`` / ``A#B#C`` addresses
-    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#4`` is a 4-zone
+    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#99`` is a 4-zone
     central unit, not an actuator, and ``Z#4#II`` is a routed zone (note that a 1-digit
     shorthand ``3#4#1``..``3#4#9`` is normalized as zone 3 behind interface ``01``..``09``;
     wire frames always write two-digit ``#4#01``..``#4#15``). Dimensionless ``*#4*Z#N##``
@@ -262,7 +264,7 @@ def is_actuator_where(where: str) -> bool:
     base, routing, iface = clean.rpartition("#4#")
     if routing and iface.isdigit() and 1 <= len(iface) <= 2:
         clean = base
-    if clean in ("#0#1", "#0#2", "#0#3", "#0#4"):
+    if is_four_zone_central_where(clean):
         return False
     parts = clean.removeprefix("#").split("#")
     if len(parts) in (2, 3):
@@ -460,8 +462,32 @@ def _where_params(message: Any) -> list[str]:
     return [str(param) for param in params] if isinstance(params, (list, tuple)) else []
 
 
+def four_zone_central_zone(where: str) -> str | None:
+    """Return master zone ``"1"``..``"99"`` for a 4-zone central unit WHERE (``#0#N`` / ``#0#N#4#II``), else ``None``.
+
+    A BTicino 4695 4-zone central unit is configured with base zone ``N`` (``1``..``96`` on
+    physical hardware; OpenWebNet gateways accept ``1``..``99``), reporting at ``#0#N``.
+    ``#0`` and ``#0#4#II`` (99-zone central unit behind interface ``II``) return ``None``.
+    """
+    clean = (where or "").strip().removeprefix("4-")
+    base, routing, iface = clean.rpartition("#4#")
+    if routing and _is_ascii_uint(iface) and 1 <= len(iface) <= 2:
+        clean = base
+    if not clean.startswith("#0#"):
+        return None
+    tail = clean[3:]
+    if _is_ascii_uint(tail) and 1 <= int(tail) <= 99:
+        return str(int(tail))
+    return None
+
+
+def is_four_zone_central_where(where: str) -> bool:
+    """Whether ``where`` addresses a 4-zone central unit (``#0#1``..``#0#99``, optionally ``#4#II``)."""
+    return four_zone_central_zone(where) is not None
+
+
 def four_zone_central_where(message: Any) -> str | None:
-    """``#0#N`` when a frame is addressed to a 4-zone central unit (``N`` 1-4), else ``None``.
+    """``#0#N`` when a frame is addressed to a 4-zone central unit (``N`` 1-99), else ``None``.
 
     OWNd reports ``*4*303*#0#1##`` as WHERE ``#0`` with the parameter ``1`` (and zone 1), so
     the frame's own WHERE read ``#0``: the 99-zone central unit's. ``#0#N#4#II`` is the same
@@ -473,8 +499,8 @@ def four_zone_central_where(message: Any) -> str | None:
     params = _where_params(message)
     if len(params) == 3 and params[1] == "4":
         params = params[:1]
-    if len(params) == 1 and params[0] in ("1", "2", "3", "4"):
-        return f"#0#{params[0]}"
+    if len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99:
+        return f"#0#{int(params[0])}"
     return None
 
 

@@ -1229,7 +1229,7 @@ def test_is_actuator_where_distinguishes_actuators_from_central_and_routed():
     assert is_actuator_where("0#0") is True
     assert is_actuator_where("0#1") is True
     assert is_actuator_where("#0#0") is True
-    assert is_actuator_where("#0#9") is True
+    assert is_actuator_where("#0#9") is False  # 4-zone central unit #0#1..#0#99
     assert is_actuator_where("2#1#4#01") is True
     assert is_actuator_where("2#4#4#01") is True
     assert is_actuator_where("2#4#4#1") is True
@@ -1488,7 +1488,7 @@ async def test_four_zone_central_configured_channels_use_4695_model_and_skip_pol
         "central_2": {CONF_WHERE: "#0#2"},
         "central_3": {CONF_WHERE: "#0#3"},
         "central_4": {CONF_WHERE: "#0#4"},
-        "local_02": {CONF_WHERE: "02"},
+        "local_02": {CONF_WHERE: "02", "standalone": True},
     }
 
     added: list[MyHOMEClimate] = []

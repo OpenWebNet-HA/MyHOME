@@ -28,7 +28,7 @@ async def test_a_zone_of_a_four_zone_central_unit_writes_its_own_setpoint() -> N
 
     # The frame is whatever OWNd's builder gives for this WHERE (no capture of a 4-zone
     # central unit's setpoint write exists); the test fixes who is addressed and how often.
-    expected = str(OWNHeatingCommand.set_central_temperature(where="#0#1", temperature=22.0, mode="heat"))
+    expected = str(OWNHeatingCommand.set_central_temperature(where="#0#1", temperature=22.0, mode="auto"))
     assert _sent(gateway) == [expected]
     assert "#0#1" in expected
     assert zone.target_temperature == 21.0  # waits for the central unit's bus report, no optimistic write

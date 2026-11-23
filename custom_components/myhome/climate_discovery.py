@@ -36,13 +36,23 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import DATA_RESTORE_STATE
 from OWNd.message import MESSAGE_TYPE_ACTION, OWNHeatingEvent
 
-from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, DOMAIN, LOGGER
+from .const import (
+    BUS_ROUTING,
+    CONF_BUS_INTERFACE,
+    CONF_STANDALONE,
+    CONF_STANDALONE_ZONES,
+    CONF_WHERE,
+    CONF_WHO,
+    DOMAIN,
+    LOGGER,
+)
 from .discovery import (
     Address,
     DeviceContext,
     config_for,
     default_known_keys,
     is_broadcast_where,
+    parse_unique_id,
 )
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
@@ -50,9 +60,11 @@ from .where_grammar import (
     canonical_central_zone,
     canonical_thermo_zone,
     four_zone_central_where,
+    four_zone_central_zone,
     is_central_thermo_where,
     is_central_unit_actuator_status,
     is_central_unit_report,
+    is_four_zone_central_where,
     is_probe,
     is_pump,
     is_split_unit,
@@ -61,6 +73,7 @@ from .where_grammar import (
     thermo_dim20_status,
     thermo_event_actuator,
     thermo_event_interface,
+    validate_standalone_zones,
     zone_number,
 )
 
@@ -77,10 +90,10 @@ CANDIDATE_MAX_AGE = 3600.0
 # The unique id 2.0.0 gave a central unit configured as ``zone: "0"`` with ``central: true``:
 # ``<mac>-4-#0#0``, behind an interface ``<mac>-4-#0#0#4#II``.
 # The device part of a central unit as 2.0.0 saved it: ``#0#`` in front of an address typed as
-# ``0``, zero-padded ``01``..``04``, ``#1``..``#4``, or with the prefix already (``#0#0`` ->
+# ``0``, zero-padded ``01``..``09``, ``#1``..``#99``, or with the prefix already (``#0#0`` ->
 # ``#0##0#0``, ``#0#1`` -> ``#0##0#1``, ``01`` -> ``#0#01``, ``#1`` -> ``#0##1``).
 _SAVED_CENTRAL_DOUBLED = re.compile(
-    r"(.+-4-)(#0#(?:0|#0#\d{1,2}|0[1-4]|#0?[1-4]))((?:#4#\d{1,2})?)"
+    r"(.+-4-)(#0#(?:0|#0#\d{1,2}|0[1-9]|#0?[1-9]\d?))((?:#4#\d{1,2})?)"
 )
 
 _REAL_HVAC_STATES = frozenset(
@@ -129,7 +142,7 @@ def _own_entry(address: Address, cfg: dict[str, Any]) -> dict[str, Any]:
     the zone (``#0#4#01``) is not taken for a 4-zone one.
     """
     central = Address.from_config("", cfg).clean_where
-    if central in ("#0#1", "#0#2", "#0#3", "#0#4") and address.clean_where != central:
+    if is_four_zone_central_where(central) and address.clean_where != central:
         return {}
     return cfg
 
@@ -393,7 +406,11 @@ class ZoneDiscovery:
         self._hass = hass
         self._config_entry = config_entry
         self._gateway = runtime.gateway
+        self._runtime_mac = str(getattr(runtime, "mac", self._gateway.mac))
         self._configured: dict[str, Any] = runtime.platforms.get(Platform.CLIMATE, {})
+        self._standalone_zones = frozenset(
+            validate_standalone_zones((getattr(config_entry, "options", None) or {}).get(CONF_STANDALONE_ZONES))[0]
+        )
         self._build_zone = build_zone
         self._switch_zones, self._switch_actuator_zones = _thermo_switch_zones(runtime.platforms, self._configured)
         # Frames of a zone that is not created yet, by slot (``dim0``, ``dim19``, ``dim19_off``,
@@ -424,12 +441,55 @@ class ZoneDiscovery:
             if not isinstance(task, asyncio.Future):
                 run.close()  # a config entry double that schedules nothing
 
+    def _is_explicit_standalone_zone(self, zone: str, interface: str | None) -> bool:
+        """Whether zone ``zone`` (on ``interface``) is explicitly configured ``standalone: true``."""
+        norm_if = _two_digit_interface(interface)
+        if norm_if is None and zone in self._standalone_zones:
+            return True
+        for dev_id, cfg in self._configured.items():
+            if not isinstance(cfg, dict) or cfg.get(CONF_STANDALONE) is not True:
+                continue
+            addr = Address.from_config(dev_id, cfg)
+            if (
+                canonical_thermo_zone(addr.clean_where) == zone
+                and _two_digit_interface(addr.interface) == norm_if
+            ):
+                return True
+        return False
+
+    def _four_zone_central_pairs(self) -> set[ZonePair]:
+        """``(N, interface)`` pairs for every 4-zone central unit in ``myhome.yaml`` or the registry."""
+        pairs: set[ZonePair] = set()
+        for dev_id, cfg in self._configured.items():
+            if not isinstance(cfg, dict):
+                continue
+            addr = Address.from_config(dev_id, cfg)
+            if (zone := four_zone_central_zone(addr.clean_where)) is not None:
+                pairs.add((zone, _two_digit_interface(addr.interface)))
+        try:
+            registry = er.async_get(self._hass)
+            entries = er.async_entries_for_config_entry(registry, self._config_entry.entry_id)
+        except Exception:
+            return pairs
+        gw_mac = str(self._gateway.mac)
+        for entry in entries:
+            if entry.domain != Platform.CLIMATE or not entry.unique_id:
+                continue
+            _who, device_id = parse_unique_id(entry.unique_id, self._runtime_mac, gw_mac)
+            addr = Address.from_device_id(device_id)
+            if (zone := four_zone_central_zone(addr.clean_where)) is not None:
+                pairs.add((zone, _two_digit_interface(addr.interface)))
+        return pairs
+
     def build(self, ctx: DeviceContext) -> MyHOMEEntity:
         """The zone's entity, with the frames that were held for it."""
         entity = self._build_zone(
             ctx, _zone_config(self._configured, ctx.address, ctx.key) or _own_entry(ctx.address, ctx.cfg or {})
         )
         pair = _zone_pair(ctx.address)
+        if pair is None and (master := four_zone_central_zone(ctx.address.clean_where)) is not None:
+            if not self._is_explicit_standalone_zone(master, ctx.address.interface):
+                pair = (master, _two_digit_interface(ctx.address.interface))
         if pair is not None:
             self._candidates.pop(pair, None)
             self._candidates_unanswered.discard(pair)
@@ -673,17 +733,34 @@ class ZoneDiscovery:
                 entry.entity_id,
             )
             return True
+        if (
+            pair is not None
+            and not _own_entry(ctx.address, ctx.cfg or {})
+            and not self._is_explicit_standalone_zone(pair[0], pair[1])
+            and pair in self._four_zone_central_pairs()
+        ):
+            LOGGER.info(
+                "climate: pruning master zone %s unified into 4-zone central unit #0#%s (#994)",
+                entry.entity_id,
+                pair[0],
+            )
+            return True
         if ctx.cfg:
             return False
         return is_broadcast_where(ctx.address.clean_where)
 
-    @staticmethod
-    def known_keys(ctx: DeviceContext) -> list[str]:
+    def known_keys(self, ctx: DeviceContext) -> list[str]:
         """Every key a zone may be stored under in the registry and in ``myhome.yaml``.
 
         A zone behind an interface is known under its interface-qualified keys only: under the
         bare zone number it took the frames of the local zone with that number, and where it
         was seen first no local zone was ever created.
+
+        A 4-zone central unit (``#0#N``, BTicino 4695) owns its built-in master zone ``N``
+        (which rejects direct zone writes in firmware) unless zone ``N`` is explicitly
+        configured ``standalone: true``: claiming zone ``N``'s keys routes master telemetry
+        (ambient temperature, knob, actuators) onto ``Central Unit 0N`` without creating a
+        separate dead ``Climate Zone N`` entity (#994).
         """
         keys = [*default_known_keys(ctx), ctx.config_id or ""]
         routing = f"{BUS_ROUTING}{ctx.address.interface}" if ctx.address.interface else ""
@@ -691,6 +768,13 @@ class ZoneDiscovery:
             # The same central unit behind an interface, whichever of the two was there first:
             # its frames come under ``#0#4#II``, ``myhome.yaml`` may call it ``0``.
             keys += [f"#0{routing}", f"0{routing}"]
+        if (master := four_zone_central_zone(ctx.address.clean_where)) is not None and (
+            not self._is_explicit_standalone_zone(master, ctx.address.interface)
+        ):
+            keys += [
+                f"{spelling}{routing}"
+                for spelling in (master, f"#{master}", master.zfill(2), f"#{master.zfill(2)}")
+            ]
         if "#" not in ctx.address.clean_where.removeprefix("#") and (
             number := canonical_thermo_zone(ctx.address.clean_where)
         ):

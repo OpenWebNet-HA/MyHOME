@@ -618,7 +618,7 @@ async def test_central_unit_async_set_temperature(hass: HomeAssistant, mock_gate
     mock_gateway.send.reset_mock()
     await central.async_set_temperature(temperature=21.5)
     mock_gateway.send.assert_awaited_once()
-    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0215*1##"
+    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0215*3##"
     assert central.target_temperature is None
     central.handle_event(OWNEvent.parse("*4*110#0215*#0##"))
     assert central.target_temperature == 21.5
@@ -628,7 +628,7 @@ async def test_central_unit_async_set_temperature(hass: HomeAssistant, mock_gate
     mock_gateway.send.reset_mock()
     await central.async_set_temperature(temperature=24.0)
     mock_gateway.send.assert_awaited_once()
-    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0240*2##"
+    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0240*3##"
     assert central.target_temperature == 21.5
     central.handle_event(OWNEvent.parse("*4*210#0240*#0##"))
     assert central.target_temperature == 24.0

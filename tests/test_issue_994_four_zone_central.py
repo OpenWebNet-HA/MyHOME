@@ -25,20 +25,26 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.components.climate import HVACMode
+from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNEvent, OWNHeatingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
-from custom_components.myhome.climate_discovery import _zone_config
-from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.climate_discovery import ZoneDiscovery, _zone_config
+from custom_components.myhome.const import CONF_STANDALONE_ZONES, DOMAIN
 from custom_components.myhome.discovery import Address
 from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
 from custom_components.myhome.sensor import MyHOMEActuatorOutputSensor
 from custom_components.myhome.validate import climate_schema
+from custom_components.myhome.where_grammar import (
+    four_zone_central_where,
+    four_zone_central_zone,
+    is_actuator_where,
+    is_four_zone_central_where,
+)
 from tests.conftest import attach_runtime
 from tests.test_climate_mode_state_2026_11_08 import _dispatcher, _gateway
 
@@ -59,9 +65,14 @@ def _received(*files: Path) -> list[str]:
     return [frame["raw"] for file in files for frame in json.loads(file.read_text(encoding="utf-8"))["frames"] if frame["direction"] == "rx"]
 
 
-async def _plant(hass: HomeAssistant, yaml_cfg: dict | None, *files: Path) -> tuple[MagicMock, dict[str, MyHOMEClimate]]:
+async def _plant(
+    hass: HomeAssistant,
+    yaml_cfg: dict | None,
+    *files: Path,
+    options: dict | None = None,
+) -> tuple[MagicMock, dict[str, MyHOMEClimate]]:
     """The climate platform of a gateway that received the frames of ``files``, in order."""
-    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, options=options or {}, unique_id=MAC)
     entry.add_to_hass(hass)
     gateway = MagicMock()
     gateway.mac = MAC
@@ -103,13 +114,19 @@ def _sent(gateway: MagicMock) -> list[str]:
 
 async def test_the_central_unit_and_its_zones_are_found_on_the_bus(hass: HomeAssistant) -> None:
     gateway, found = await _plant(hass, None, FIRST, SECOND)
-    assert set(found) == {"#0#1", "1", "3", "4"}
-    assert found["#0#1"]._central is True
-    assert [found[zone]._central for zone in ("1", "3", "4")] == [False, False, False]
+    # Option A: #0#1 unifies built-in master zone 1 (no separate dead Climate Zone 1).
+    assert set(found) == {"#0#1", "3", "4"}
+    central = found["#0#1"]
+    assert central._central is True
+    assert central.current_temperature == 19.4  # *#4*1*0*0194## routed onto Central Unit 01
+    assert central.extra_state_attributes["knob_pos"] == "0"  # *#4*1*13*00##
+    assert central.target_temperature == 14.0  # *#4*1*12*0140*3## active schedule setpoint of program 3
+    assert central.extra_state_attributes["program"] == 3
+    assert [found[zone]._central for zone in ("3", "4")] == [False, False]
     assert gateway.has_central_unit is False  # no 99-zone central unit on this plant
 
 
-@pytest.mark.parametrize("zone", ["1", "3", "4"])
+@pytest.mark.parametrize("zone", ["3", "4"])
 async def test_a_zone_found_on_the_bus_is_written_directly(hass: HomeAssistant, zone: str) -> None:
     gateway, found = await _plant(hass, None, FIRST, SECOND)
     await found[zone].async_set_temperature(temperature=18.0)
@@ -124,45 +141,65 @@ async def test_the_central_unit_found_on_the_bus_is_written_at_its_own_address(h
     central = found["#0#1"]
     assert central.hvac_mode == HVACMode.HEAT  # `*4*1103*#0#1##`, the last report of the second file
     await central.async_set_temperature(temperature=18.0)
-    assert _sent(gateway)[0] == "*#4*#0#1*#14*0180*1##"  # the form of frame 19
+    assert _sent(gateway)[0] == "*#4*#0#1*#14*0180*3##"  # generic manual M=3 (frame 5; works in heat & cool)
     gateway.send.reset_mock()
     await central.async_set_hvac_mode(HVACMode.OFF)
     assert _sent(gateway)[0] == "*4*303*#0#1##"  # frame 38
 
 
-@pytest.mark.parametrize(("mode", "frame"), [(HVACMode.HEAT, "*#4*#0#1*#14*0175*1##"), (HVACMode.COOL, "*#4*#0#1*#14*0175*2##")])
-async def test_heat_and_cool_on_the_central_unit_write_its_setpoint_in_that_season(hass: HomeAssistant, mode: HVACMode, frame: str) -> None:
-    """As 0.9.3 wrote them. The heating frame is frame 19 itself; the conditioning one is in no capture."""
+async def test_heat_and_cool_on_the_four_zone_central_unit_same_and_cross_season(hass: HomeAssistant) -> None:
+    """Same-season writes generic manual M=3 (and clears HVACAction.OFF); cross-season sends season + 3100."""
     gateway, found = await _plant(hass, None, FIRST, SECOND)
     central = found["#0#1"]
-    assert central.target_temperature == 17.5  # `*4*110#0175*#0#1##`, frame 20
+    assert central.target_temperature == 14.0  # `*#4*1*12*0140*3##` during program 3
     await central.async_set_hvac_mode(HVACMode.OFF)
+    assert central.hvac_action == HVACAction.OFF
     gateway.send.reset_mock()
-    await central.async_set_hvac_mode(mode)
-    assert _sent(gateway) == [frame]  # no season frame (`*4*1*#0#1##`): no capture holds one
-    assert central.hvac_mode == mode
-    assert central.target_temperature == 17.5
+
+    # Same-season wake (reported heating): writes M=3 setpoint, no season frame, resets action OFF -> IDLE.
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*#4*#0#1*#14*0140*3##"]
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.hvac_action == HVACAction.IDLE
+    assert central.target_temperature == 14.0
+
+    # Cross-season switch (heating -> cool): sends season frame + 3100 restore, waits for bus report.
+    gateway.send.reset_mock()
+    await central.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gateway) == ["*4*0*#0#1##", "*4*3100*#0#1##"]
+    central.handle_event(OWNHeatingEvent("*4*2101*#0#1##"))
+    assert central.hvac_mode == HVACMode.COOL
+
+    # Cross-season switch back (cooling -> heat): sends *4*1*#0#1## + *4*3100*#0#1##.
+    gateway.send.reset_mock()
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*4*1*#0#1##", "*4*3100*#0#1##"]
 
 
-async def test_heat_on_a_central_unit_that_reported_no_setpoint_writes_nothing(hass: HomeAssistant, tmp_path: Path) -> None:
+async def test_heat_on_a_four_zone_central_unit_without_setpoint_wakes_with_3100(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """OFF/protection/program with no reported setpoint wakes via ``*4*3100*#0#1##`` instead of failing."""
     only_off = tmp_path / "off.json"
-    only_off.write_text(json.dumps({"frames": [{"direction": "rx", "raw": "*4*103*#0#1##"}]}), encoding="utf-8")  # frame 39
+    only_off.write_text(json.dumps({"frames": [{"direction": "rx", "raw": "*4*103*#0#1##"}]}), encoding="utf-8")
     gateway, found = await _plant(hass, None, only_off)
     central = found["#0#1"]
     assert central.target_temperature is None
-    with pytest.raises(ServiceValidationError) as refused:
-        await central.async_set_hvac_mode(HVACMode.HEAT)
-    assert refused.value.translation_key == "zone_no_setpoint_known"
-    assert _sent(gateway) == []
-    assert central.hvac_mode == HVACMode.OFF
+    assert central.hvac_action == HVACAction.OFF
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*4*3100*#0#1##"]
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.hvac_action == HVACAction.IDLE
 
 
 async def test_off_and_the_program_of_the_central_unit_are_written_as_before(hass: HomeAssistant) -> None:
     gateway, found = await _plant(hass, None, FIRST, SECOND)
     central = found["#0#1"]
     await central.async_set_hvac_mode(HVACMode.OFF)
+    assert central.hvac_action == HVACAction.OFF
     await central.async_set_hvac_mode(HVACMode.AUTO)
     assert _sent(gateway) == ["*4*303*#0#1##", "*4*3100*#0#1##"]
+    assert central.hvac_action == HVACAction.IDLE  # P2-3: OFF -> AUTO resets action to IDLE
 
 
 # ── not a 99-zone central unit ──
@@ -208,17 +245,19 @@ def test_the_entity_of_a_four_zone_central_unit_does_not_set_the_flag_either(has
 
 async def test_the_file_that_worked_on_0_9_3_writes_the_same_addresses(hass: HomeAssistant) -> None:
     gateway, found = await _plant(hass, REPORTERS_FILE, FIRST, SECOND)
-    assert set(found) == {"#0#1", "1", "3", "4"}
+    # Master zone 1 is unified into Centrale (#0#1) unless explicitly configured standalone: true.
+    assert set(found) == {"#0#1", "3", "4"}
     assert (found["#0#1"]._device_name, found["3"]._device_name, found["4"]._device_name) == ("Centrale", "Zona 3", "Zona 4")
     await found["#0#1"].async_set_temperature(temperature=18.0)
     await found["3"].async_set_temperature(temperature=18.0)
     await found["4"].async_set_temperature(temperature=18.0)
-    assert _sent(gateway) == ["*#4*#0#1*#14*0180*1##", "*#4*3*#14*0180*3##", "*#4*4*#14*0180*3##"]
+    assert _sent(gateway) == ["*#4*#0#1*#14*0180*3##", "*#4*3*#14*0180*3##", "*#4*4*#14*0180*3##"]
 
 
-async def test_zone_1_beside_the_configured_central_unit_is_not_the_central_units_entry(hass: HomeAssistant) -> None:
-    """``zone: "1"`` with ``central: true`` is the central unit ``#0#1``; zone 1 itself is found on the bus."""
-    gateway, found = await _plant(hass, REPORTERS_FILE, FIRST, SECOND)
+async def test_zone_1_marked_standalone_in_options_remains_separate_entity(hass: HomeAssistant) -> None:
+    """Listing zone 1 in gateway ``standalone_zones`` opts out of Option A unification."""
+    gateway, found = await _plant(hass, REPORTERS_FILE, FIRST, SECOND, options={CONF_STANDALONE_ZONES: ["1"]})
+    assert set(found) == {"#0#1", "1", "3", "4"}
     zone = found["1"]
     assert zone._central is False
     assert zone._device_name != "Centrale"
@@ -245,24 +284,57 @@ def test_a_central_unit_keeps_its_own_entry(zone: str, extra: dict, address: Add
     assert _zone_config(configured["climate"], address, address.key).get("name") == "Plant"
 
 
-# ── the master panel is zone 1 ──
+# ── the master panel is unified with zone 1 ──
 
 
-async def test_the_zone_of_the_master_panel_takes_the_central_units_own_report(hass: HomeAssistant) -> None:
-    """After a setpoint written to the central unit, zone 1 reports no mode and no setpoint of its own
-    (second file, frames 5-18: only `*#4*1*13*00##` and `*#4*1*0*0194##`): `*4*110#0170*#0#1##` is all that
-    says what the master panel runs. Zones 3 and 4 report theirs (`*#4*3*12*0170*3##`, `*4*1*3##`)."""
+async def test_unified_four_zone_central_ingests_master_zone_telemetry_and_actuators(hass: HomeAssistant) -> None:
+    """Option A: ``Central Unit 01`` owns master zone 1's probe, knob, actuators and setpoint."""
     gateway, found = await _plant(hass, None, FIRST)
-    zone = found["1"]
-    assert gateway.has_central_unit is False and zone._standalone is True
-    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*102*1##"))  # as tests/test_review_983_climate.py
+    assert set(found) == {"#0#1", "3", "4"}
+    central = found["#0#1"]
+    assert central.current_temperature == 20.1
+    assert central.target_temperature == 16.0
+    assert central.hvac_mode == HVACMode.HEAT
+    assert found["3"].target_temperature == 16.0
+
+    # Master zone 1 actuator reports update hvac_action without polling *#4*#0#1*20##.
+    gateway.request_zone_dimension = MagicMock()
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1#1*20*1##"))
     await hass.async_block_till_done()
-    assert zone.extra_state_attributes["zone_operation"] == "antifreeze"
-    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0170*#0#1##"))  # second file, frame 6
+    assert central.hvac_action == HVACAction.HEATING
+    assert central.extra_state_attributes["actuators"] == {"1": "on"}
+
+    # Going OFF and waking back up must never queue a zone dimension query for #0#1.
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*103*#0#1##"))
     await hass.async_block_till_done()
-    assert zone.extra_state_attributes["zone_operation"] == "manual"
+    assert central.hvac_action == HVACAction.OFF
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0170*#0#1##"))
+    await hass.async_block_till_done()
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.target_temperature == 17.0
+    gateway.request_zone_dimension.assert_not_called()
+
+    # Plain master-zone season frame does not clobber AUTO mode on #0#1, and plain zone mode is ignored.
+    await central.async_set_hvac_mode(HVACMode.AUTO)
+    assert central.hvac_mode == HVACMode.AUTO
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1*1##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*303*1##"))
+    await hass.async_block_till_done()
+    assert central.hvac_mode == HVACMode.AUTO
+
+
+async def test_unconfigured_master_zone_updates_own_off_and_season_on_four_zone_central_report() -> None:
+    """P2-4: if an unconfigured non-central master zone sees ``#0#1`` reports, ``_own_off`` & ``_own_season`` track them."""
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    gw = _gateway(has_central_unit=False)
+    zone = _climate(gw, "1", standalone=None, central=False)
+    zone.handle_event(OWNHeatingEvent("*4*303*1##"))
+    assert zone._own_off is True
+    zone.handle_event(OWNHeatingEvent("*4*110#0170*#0#1##"))
+    assert zone._own_off is False
+    assert zone._own_season == "heating"
     assert (zone.hvac_mode, zone.target_temperature) == (HVACMode.HEAT, 17.0)
-    assert found["3"].target_temperature == 16.0  # `*#4*3*12*0160*3##`, first file: not the central unit's frame
 
 
 async def test_a_zone_configured_standalone_keeps_ignoring_reports_through_a_central_unit(hass: HomeAssistant) -> None:
@@ -284,9 +356,9 @@ async def test_central_unit_set_temperature_waits_for_bus_report(hass: HomeAssis
     """Setting temperature on `#0#1` or `#0` must not write state optimistically; it follows the bus report."""
     gateway, found = await _plant(hass, None, FIRST, SECOND)
     central4 = found["#0#1"]
-    assert central4.target_temperature == 17.5
+    assert central4.target_temperature == 14.0
     await central4.async_set_temperature(temperature=19.0)
-    assert central4.target_temperature == 17.5
+    assert central4.target_temperature == 14.0
     central4.handle_event(OWNHeatingEvent("*4*110#0190*#0#1##"))
     assert central4.target_temperature == 19.0
 
@@ -300,6 +372,12 @@ async def test_central_unit_set_temperature_waits_for_bus_report(hass: HomeAssis
     assert central99.target_temperature == 24.0
     central99.handle_event(OWNHeatingEvent("*4*110#0245*#0##"))
     assert central99.target_temperature == 24.5
+
+    # P2-3: #0 OFF -> AUTO resets hvac_action from OFF to IDLE.
+    await central99.async_set_hvac_mode(HVACMode.OFF)
+    assert central99.hvac_action == HVACAction.OFF
+    await central99.async_set_hvac_mode(HVACMode.AUTO)
+    assert central99.hvac_action == HVACAction.IDLE
 
 
 async def test_zero_padded_and_hashed_central_zone_in_yaml_normalize_to_four_zone_central(
@@ -318,7 +396,7 @@ async def test_zero_padded_and_hashed_central_zone_in_yaml_normalize_to_four_zon
 
     padded = {**REPORTERS_FILE, "centrale": {**REPORTERS_FILE["centrale"], "zone": "01"}}
     gateway, found = await _plant(hass, padded, FIRST, SECOND)
-    assert set(found) == {"#0#1", "1", "3", "4"}
+    assert set(found) == {"#0#1", "3", "4"}
     assert gateway.has_central_unit is False
 
 
@@ -385,3 +463,102 @@ def test_inline_interface_central_unit_does_not_alias_local_zone_number() -> Non
     assert "01" not in configured["climate"] and "zone_01" not in configured["climate"]
     assert _zone_config(configured["climate"], Address("#0", "01"), "#0#4#01").get("name") == "Remote CU"
     assert _zone_config(configured["climate"], Address("3", "01"), "3#4#01").get("name") == "Remote Zone 3"
+
+
+async def test_four_zone_central_supports_base_zones_beyond_four_up_to_99(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """P1-4: 4695 base zone N can be any zone 1..96 (gateway grammar 1..99), e.g. #0#5, #0#21, #0#96."""
+    assert four_zone_central_zone("#0#5") == "5"
+    assert four_zone_central_zone("#0#21") == "21"
+    assert four_zone_central_zone("#0#96#4#01") == "96"
+    assert four_zone_central_zone("#0") is None
+    assert four_zone_central_zone("#0#0") is None
+    assert four_zone_central_zone("#0#4#01") is None
+    assert four_zone_central_zone("#0#100") is None
+    assert is_four_zone_central_where("#0#21") is True
+    assert is_actuator_where("#0#5") is False
+    assert is_actuator_where("#0#21") is False
+    assert four_zone_central_where(OWNEvent.parse("*4*110#0200*#0#21##")) == "#0#21"
+    assert four_zone_central_where(OWNEvent.parse("*4*110#0200*#0#96##")) == "#0#96"
+    assert four_zone_central_where(OWNEvent.parse("*4*110#0200*#0#4#01##")) is None
+
+    high_base = tmp_path / "base21.json"
+    high_base.write_text(
+        json.dumps(
+            {
+                "frames": [
+                    {"direction": "rx", "raw": "*#4*21*0*0213##"},  # held master zone 21 frame before #0#21
+                    {"direction": "rx", "raw": "*4*110#0200*#0#21##"},
+                    {"direction": "rx", "raw": "*#4*22*0*0198##"},
+                    {"direction": "rx", "raw": "*#4*22*12*0200*3##"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    gateway, found = await _plant(hass, None, high_base)
+    assert set(found) == {"#0#21", "22"}
+    central = found["#0#21"]
+    assert central._central is True
+    assert central.current_temperature == 21.3  # held master-zone frame replayed onto #0#21
+    assert central.target_temperature == 20.0
+    assert gateway.has_central_unit is False
+    await central.async_set_temperature(temperature=21.5)
+    assert _sent(gateway) == ["*#4*#0#21*#14*0215*3##"]
+
+
+async def test_stale_master_zone_registry_entry_is_pruned_when_four_zone_central_present(
+    hass: HomeAssistant,
+) -> None:
+    """Option A upgrade: an unconfigured registry entry for zone 1 is pruned beside ``#0#1``."""
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    zone1_reg = registry.async_get_or_create("climate", DOMAIN, f"{MAC}-4-1", config_entry=entry)
+    cu_reg = registry.async_get_or_create("climate", DOMAIN, f"{MAC}-4-#0#1", config_entry=entry)
+    registry.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-1-temperature", config_entry=entry)
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.log_id = "[issue 994]"
+    gateway.has_central_unit = False
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    runtime.platforms["climate"] = {}
+    entities: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, entities.extend)
+
+    assert [e._where for e in entities] == ["#0#1"]
+    assert registry.async_get(zone1_reg.entity_id) is None
+    assert registry.async_get(cu_reg.entity_id) is not None
+
+    # Exercise registry-unavailable fallback in _four_zone_central_pairs and zero-padded standalone yaml check.
+    discovery = ZoneDiscovery(hass, entry, runtime, lambda ctx, cfg: entities[0])
+    discovery._configured = {
+        "non_dict": "ignored",
+        "01": {"zone": "01", "standalone": True},
+        "cu5": {"zone": "#0#5"},
+    }
+    assert discovery._is_explicit_standalone_zone("1", None) is True
+    discovery._hass = None  # type: ignore[assignment]
+    assert discovery._four_zone_central_pairs() == {("5", None)}
+
+
+async def test_four_zone_central_mode_report_mid_send_keeps_reported_state() -> None:
+    """If a central report arrives while same-season wake awaits delivery, optimistic write is skipped."""
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    gw = _gateway(has_central_unit=False)
+    central = _climate(gw, "#0#1", standalone=None, central=True)
+    central.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+
+    async def send_and_report(cmd: object) -> None:
+        central.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+
+    gw.send.side_effect = send_and_report
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert central.extra_state_attributes["program"] == 3
+    assert central.hvac_mode == HVACMode.HEAT

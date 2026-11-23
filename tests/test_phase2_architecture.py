@@ -233,12 +233,12 @@ async def test_p4_central_unit_3550_initialization_and_commands(hass: HomeAssist
     assert str(sent_cmd) == "*4*303*#0##"
     assert cu99._attr_hvac_mode == HVACMode.OFF
 
-    # Set master temperature setpoint -> *#4*#0*#14*0215*1##
+    # Set master temperature setpoint -> *#4*#0*#14*0215*3## (generic manual M=3)
     gateway.send.reset_mock()
     cu99._attr_hvac_mode = HVACMode.HEAT
     await cu99.async_set_temperature(temperature=21.5)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*#4*#0*#14*0215*1##"
+    assert str(sent_cmd) == "*#4*#0*#14*0215*3##"
 
     # Status update queries plain status for 99-zone central units (*#4*#0##, #629)
     await cu99.async_update()
@@ -275,11 +275,11 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
     assert cu4._central is True
     assert cu4._standalone is False
 
-    # Heat on a 4-zone CU is its setpoint written in heating (#994) -> *#4*#0#1*#14*0175*1##
+    # Same-season / unknown-season heat on a 4-zone CU writes generic manual M=3 (#994) -> *#4*#0#1*#14*0175*3##
     cu4._target_temperature = 17.5
     await cu4.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*#4*#0#1*#14*0175*1##"
+    assert str(sent_cmd) == "*#4*#0#1*#14*0175*3##"
 
     # Status update is a no-op for central units (no *#4*#0#1*14## status poll, #582)
     await cu4.async_update()

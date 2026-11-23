@@ -889,30 +889,35 @@ async def test_device_health_heating_edge_cases(hass):
 
 
 async def test_a_four_zone_central_units_frame_is_not_the_99_zone_central_units(hass):
-    """CA5-8: ``#0#N`` is zone N of a 4-zone central unit; OWNd reports its WHERE as ``#0``.
-
-    The flags are published for ``#0`` only (WHO 4 p. 23-24). Read as ``#0``, a ``#0#1`` frame
-    opened the reply cycle that clears the 3550's battery issue and its WHAT 31 raised one.
-    No ``#0#N`` frame is in the trace corpus: these are built for the test.
-    """
+    """``#0#N`` (BTicino 4695) flags are tracked under ``#0#N`` and never touch ``#0`` (#994)."""
     health = _health(hass)
-    battery = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0")
-    remote = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0")
+    battery_99 = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0")
+    remote_99 = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0")
+    battery_4z = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0#1")
+    remote_4z = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0#4")
+    battery_routed_4z = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_BATTERY_FAULT, 4, "#0#4#4#01")
+    remote_routed_4z = fault_issue_id(ENTRY_ID, FaultKind.CENTRAL_REMOTE_CONTROL_DISABLED, 4, "#0#1#4#01")
 
     for raw in ("*4*31*#0#1##", "*4*20*#0#4##", "*4*31*#0#4#4#01##", "*4*20*#0#1#4#01##"):
         health.observe(_frame(raw))
-    assert health.faults == [] and not health._central_cycles
-    assert _issue(hass, battery) is None and _issue(hass, remote) is None
+    assert _issue(hass, battery_99) is None and _issue(hass, remote_99) is None
+    assert _issue(hass, battery_4z) is not None
+    assert _issue(hass, remote_4z) is not None
+    assert _issue(hass, battery_routed_4z) is not None
+    assert _issue(hass, remote_routed_4z) is not None
+    assert {fault["where"] for fault in health.faults} == {"#0#1", "#0#4", "#0#4#4#01", "#0#1#4#01"}
 
-    # The 3550's own fault stays through a 4-zone unit's "remote control enabled".
+    # The 3550's own fault stays through a 4-zone unit's "remote control enabled", while #0#1's clears.
     for raw in ("*4*102*#0##", "*4*21*#0##", "*4*31*#0##"):  # live F461 / F455 reply, 2026-11-09
         health.observe(_frame(raw))
     await _settle_burst(hass)
-    assert _issue(hass, battery) is not None
+    assert _issue(hass, battery_99) is not None
     health.observe(_frame("*4*21*#0#1##"))
     await _settle_burst(hass)
-    assert _issue(hass, battery) is not None
-    assert [fault["where"] for fault in health.faults] == ["#0"]
+    assert _issue(hass, battery_99) is not None
+    assert _issue(hass, battery_4z) is None
+    assert "#0" in {fault["where"] for fault in health.faults}
+    assert "#0#1" not in {fault["where"] for fault in health.faults}
 
 
 async def test_ignore_on_the_battery_repair_sticks_through_replies_and_a_reload(hass):
