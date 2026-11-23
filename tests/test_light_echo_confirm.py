@@ -316,6 +316,8 @@ async def test_remembered_statuses_are_pruned(hass, watchdog, monkeypatch) -> No
         ("*#1*32*#4*100*0##", False),
         ("*#1*62*#12*120*50*80##", True),  # BUILT by OWNd's set_hsv_color: V 80
         ("*#1*62*#12*120*50*0##", False),  # BUILT: V 0
+        ("*#1*25*#14*300##", True),  # BUILT by OWNd's set_color_temperature: 300 mireds
+        ("*#1*25*14##", None),  # Dimension 14 read says nothing
         ("*#1*0010*1##", None),  # a read says nothing
         ("*1*30*0010##", None),  # a dim step
     ],
@@ -354,11 +356,11 @@ async def test_a_level_write_is_not_answered_by_the_off_before_it(hass, watchdog
     await _expire(hass)
     assert _requests(watchdog) == []
 
-    # The same when the dimmer's status never comes: it is asked.
+    # The same when the dimmer's status never comes: both status and Dimension 1 are asked.
     clock[0] += 5  # a later write: the status above is older than it
     watchdog.command_acknowledged(OWNCommand.parse("*#1*32*#1*130*0##"), clock[0])
     await _expire(hass)
-    assert _requests(watchdog) == ["*#1*32##"]
+    assert _requests(watchdog) == ["*#1*32##", "*#1*32*1##"]
 
 
 async def test_an_echoed_write_and_frames_without_on_or_off_are_no_status(hass, watchdog) -> None:

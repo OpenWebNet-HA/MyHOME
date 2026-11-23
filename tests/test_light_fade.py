@@ -18,7 +18,13 @@ from custom_components.myhome.light_fade import SoftwareFadeEngine
 def create_engine():
     """Fixture to easily create a SoftwareFadeEngine with mocks."""
 
-    def _create(transition_mode=TRANSITION_MODE_SOFTWARE, worker_count=1, is_on=True):
+    def _create(
+        transition_mode=TRANSITION_MODE_SOFTWARE,
+        worker_count=1,
+        is_on=True,
+        auto_echo=True,
+        first_echo_timeout=1.5,
+    ):
         send_instant_cb = AsyncMock()
         apply_state_cb = MagicMock()
         update_ha_state_cb = MagicMock()
@@ -35,7 +41,10 @@ def create_engine():
             get_worker_count_cb=lambda: worker_count,
             get_transition_mode_cb=lambda: transition_mode,
             is_on_cb=lambda: is_on,
+            first_echo_timeout=first_echo_timeout,
         )
+        if auto_echo:
+            send_instant_cb.side_effect = lambda _pct: engine.notify_bus_echo()
         return engine, send_instant_cb, apply_state_cb, update_ha_state_cb
 
     return _create
@@ -69,14 +78,15 @@ async def test_software_fade_instant_when_small_delta(create_engine):
 
 
 async def test_software_fade_instant_when_already_at_target(create_engine):
-    """Test fade skips bus send if already at target and on."""
+    """Test fade skips bus send and pre-echo mutation if already at target and on."""
     engine, send_instant, apply_state, update_ha = create_engine(is_on=True)
 
     task = engine.start_fade(start_pct=50, target_pct=50, duration=1.0)
     await task
 
     send_instant.assert_not_called()
-    apply_state.assert_called_once_with(50, None)
+    apply_state.assert_not_called()
+    update_ha.assert_not_called()
 
 
 async def test_software_fade_cancellation(create_engine):
@@ -143,15 +153,15 @@ def test_get_transition_mode_exception_fallback():
 
 
 async def test_software_fade_duration_instant_path(create_engine):
-    """Test instant brightness path when duration < 0.05s."""
+    """Test instant brightness path when duration < 0.05s sends command without pre-echo mutation."""
     engine, send_instant, apply_state, update_ha = create_engine()
 
     task = engine.start_fade(start_pct=10, target_pct=80, duration=0.02)
     await task
 
     send_instant.assert_called_once_with(80)
-    apply_state.assert_called_once_with(80, None)
-    update_ha.assert_called_once()
+    apply_state.assert_not_called()
+    update_ha.assert_not_called()
     assert engine.fade_task is None
 
 
@@ -246,20 +256,40 @@ async def test_software_fade_worker_count_exception_handled(create_engine):
 
 
 async def test_maybe_instant_brightness_when_not_is_on_at_same_pct(create_engine):
-    """Test maybe_instant_brightness sends command when light is currently off."""
+    """Test maybe_instant_brightness sends command without pre-echo mutation when light is off."""
     engine, send_instant, apply_state, update_ha = create_engine(is_on=False)
 
     result = await engine.maybe_instant_brightness(50, 50, is_on=True)
     assert result is True
     send_instant.assert_called_once_with(50)
-    apply_state.assert_called_once_with(50, True)
-    update_ha.assert_called_once()
+    apply_state.assert_not_called()
+    update_ha.assert_not_called()
 
     # Delta > 1 returns False
     send_instant.reset_mock()
     result_large = await engine.maybe_instant_brightness(10, 50)
     assert result_large is False
     send_instant.assert_not_called()
+
+
+async def test_software_fade_aborts_without_bounce_when_step1_has_no_echo(create_engine, caplog):
+    """Test multi-step fade aborts cleanly with zero state mutation when step 1 does not echo."""
+    engine, send_instant, apply_state, update_ha = create_engine(
+        auto_echo=False, first_echo_timeout=0.02
+    )
+    # Idle notify_bus_echo is a safe no-op
+    engine.notify_bus_echo()
+
+    with caplog.at_level("DEBUG"):
+        task = engine.start_fade(start_pct=20, target_pct=80, duration=1.0)
+        await task
+
+    assert send_instant.call_count == 1
+    apply_state.assert_not_called()
+    update_ha.assert_not_called()
+    assert engine.fade_task is None
+    assert engine.pending_first_step_pct is None
+    assert "no bus echo" in caplog.text
 
 
 async def test_myhome_light_fade_shims(hass):

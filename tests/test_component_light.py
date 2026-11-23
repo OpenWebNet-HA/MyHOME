@@ -309,9 +309,8 @@ def test_transition_mode_helper_branches(hass):
 
 
 async def test_software_stepped_turn_on_fade(hass):
-    """Test executing a full software stepped fade ramp on turn_on."""
+    """Test executing a full software stepped fade ramp on turn_on once step 1 echoes."""
     gateway = MagicMock()
-    gateway.send = AsyncMock()
     cfg = MagicMock()
     cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE, CONF_WORKER_COUNT: 1}
     gateway.config_entry = cfg
@@ -325,6 +324,13 @@ async def test_software_stepped_turn_on_fade(hass):
     light.async_schedule_update_ha_state = MagicMock()
     light._attr_is_on = True
     light._attr_brightness_pct = 20
+
+    def _echo_cmd(cmd):
+        level = getattr(cmd, "brightness", None)
+        if isinstance(level, int) and level > 0:
+            light.handle_event(OWNEvent.parse(f"*#1*21*1*{100 + level}*0##"))
+
+    gateway.send = AsyncMock(side_effect=_echo_cmd)
 
     # Patch asyncio.sleep to execute instantly
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
@@ -342,9 +348,8 @@ async def test_software_stepped_turn_on_fade(hass):
 
 
 async def test_software_stepped_turn_off_fade(hass):
-    """Test executing a software stepped fade to 0 on turn_off."""
+    """Test executing a software stepped fade to 0 on turn_off once step 1 echoes."""
     gateway = MagicMock()
-    gateway.send = AsyncMock()
     cfg = MagicMock()
     cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
     gateway.config_entry = cfg
@@ -359,6 +364,13 @@ async def test_software_stepped_turn_off_fade(hass):
     light._attr_is_on = True
     light._attr_brightness_pct = 70
 
+    def _echo_cmd(cmd):
+        level = getattr(cmd, "brightness", None)
+        if isinstance(level, int) and level > 0:
+            light.handle_event(OWNEvent.parse(f"*#1*22*1*{100 + level}*0##"))
+
+    gateway.send = AsyncMock(side_effect=_echo_cmd)
+
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await light.async_turn_off(**{ATTR_TRANSITION: 1.0})
         assert light._fade_task is not None
@@ -371,7 +383,6 @@ async def test_software_stepped_turn_off_fade(hass):
 async def test_software_stepped_transition_only_turn_on(hass):
     """Test turn_on with transition but without explicit brightness kwarg."""
     gateway = MagicMock()
-    gateway.send = AsyncMock()
     cfg = MagicMock()
     cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
     gateway.config_entry = cfg
@@ -386,6 +397,13 @@ async def test_software_stepped_transition_only_turn_on(hass):
     light._attr_is_on = False
     light._last_brightness_pct = 60
 
+    def _echo_cmd(cmd):
+        level = getattr(cmd, "brightness", None)
+        if isinstance(level, int) and level > 0:
+            light.handle_event(OWNEvent.parse(f"*#1*23*1*{100 + level}*0##"))
+
+    gateway.send = AsyncMock(side_effect=_echo_cmd)
+
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await light.async_turn_on(**{ATTR_TRANSITION: 1.0})
         assert light._fade_task is not None
@@ -396,7 +414,7 @@ async def test_software_stepped_transition_only_turn_on(hass):
 
 
 async def test_software_stepped_short_duration_instant_path(hass):
-    """Test duration < 0.05s sends an instant brightness command without stepping."""
+    """Test duration < 0.05s sends an instant brightness command without pre-echo mutation."""
     gateway = MagicMock()
     gateway.send = AsyncMock()
     cfg = MagicMock()
@@ -415,13 +433,14 @@ async def test_software_stepped_short_duration_instant_path(hass):
     if light._fade_task:
         await light._fade_task
     gateway.send.assert_called_once()
+    assert light._attr_brightness_pct is None
+    light.handle_event(OWNEvent.parse("*#1*24*1*190*0##"))
     assert light._attr_brightness_pct == 90
 
 
 async def test_software_stepped_small_delta_deduplication(hass):
     """Test small brightness delta over long transition clamps steps and deduplicates bus frames."""
     gateway = MagicMock()
-    gateway.send = AsyncMock()
     cfg = MagicMock()
     cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
     gateway.config_entry = cfg
@@ -435,6 +454,13 @@ async def test_software_stepped_small_delta_deduplication(hass):
     light.async_schedule_update_ha_state = MagicMock()
     light._attr_is_on = True
     light._attr_brightness_pct = 50
+
+    def _echo_cmd(cmd):
+        level = getattr(cmd, "brightness", None)
+        if isinstance(level, int) and level > 0:
+            light.handle_event(OWNEvent.parse(f"*#1*24*1*{100 + level}*0##"))
+
+    gateway.send = AsyncMock(side_effect=_echo_cmd)
 
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         # 50% -> 52% over 45s (typical Adaptive Lighting adjustment)
@@ -466,10 +492,12 @@ async def test_software_stepped_delta_zero_or_one_instant_path(hass):
     light._attr_is_on = True
     light._attr_brightness_pct = 50
 
-    # 50% -> 51% (1% delta): instant dispatch, no fade task, exactly 1 send
+    # 50% -> 51% (1% delta): instant dispatch, no fade task, exactly 1 send, waits for echo
     await light.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 51, ATTR_TRANSITION: 45.0})
     assert light._fade_task is None
     gateway.send.assert_called_once()
+    assert light._attr_brightness_pct == 50
+    light.handle_event(OWNEvent.parse("*#1*24*1*151*0##"))
     assert light._attr_brightness_pct == 51
 
 
@@ -491,12 +519,12 @@ async def test_turn_on_same_brightness_when_already_on_skips_bus_send(hass):
     light._attr_is_on = True
     light._attr_brightness_pct = 50
 
-    # 50% -> 50% while already on: no-op for bus, optimistic state preserved
+    # 50% -> 50% while already on: no-op for bus, confirmed state preserved
     await light.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 50, ATTR_TRANSITION: 45.0})
     assert light._fade_task is None
     gateway.send.assert_not_called()
     assert light._attr_brightness_pct == 50
-    light.async_schedule_update_ha_state.assert_called_once()
+    light.async_schedule_update_ha_state.assert_not_called()
 
 
 async def test_software_stepped_transition_only_delta_one_instant_path(hass):
@@ -518,10 +546,12 @@ async def test_software_stepped_transition_only_delta_one_instant_path(hass):
     light._attr_brightness_pct = 50
     light._last_brightness_pct = 51
 
-    # 50% -> 51% (1% delta): instant dispatch, no fade task, exactly 1 send
+    # 50% -> 51% (1% delta): instant dispatch, no fade task, exactly 1 send, waits for echo
     await light.async_turn_on(**{ATTR_TRANSITION: 45.0})
     assert light._fade_task is None
     gateway.send.assert_called_once()
+    assert light._attr_brightness_pct == 50
+    light.handle_event(OWNEvent.parse("*#1*24*1*151*0##"))
     assert light._attr_brightness_pct == 51
 
 
@@ -544,12 +574,12 @@ async def test_software_stepped_transition_only_same_brightness_skips_bus_send(h
     light._attr_brightness_pct = 50
     light._last_brightness_pct = 50
 
-    # 50% -> 50% while already on: no-op for bus, optimistic state preserved
+    # 50% -> 50% while already on: no-op for bus, confirmed state preserved
     await light.async_turn_on(**{ATTR_TRANSITION: 45.0})
     assert light._fade_task is None
     gateway.send.assert_not_called()
     assert light._attr_brightness_pct == 50
-    light.async_schedule_update_ha_state.assert_called_once()
+    light.async_schedule_update_ha_state.assert_not_called()
 
 
 async def test_software_stepped_turn_off_delta_zero_or_one_instant_path(hass):
@@ -570,10 +600,12 @@ async def test_software_stepped_turn_off_delta_zero_or_one_instant_path(hass):
     light._attr_is_on = True
     light._attr_brightness_pct = 1
 
-    # 1% -> 0% (1% delta): instant turn off, no fade task spawned, exactly 1 send
+    # 1% -> 0% (1% delta): instant turn off, no fade task spawned, exactly 1 send, waits for echo
     await light.async_turn_off(**{ATTR_TRANSITION: 45.0})
     assert light._fade_task is None
     gateway.send.assert_called_once()
+    assert light.is_on is True
+    light.handle_event(OWNEvent.parse("*#1*24*4*100*0##"))
     assert light.is_on is False
     assert light._attr_brightness_pct == 0
 
@@ -596,13 +628,14 @@ async def test_software_stepped_fade_to_instant_path_direct(hass):
     await light._async_fade_to(start_pct=50, target_pct=51, duration=2.0, fade_id=42)
     assert light._fade_task is None
     gateway.send.assert_called_once()
+    assert light._attr_brightness_pct == 50
+    light.handle_event(OWNEvent.parse("*#1*24*1*151*0##"))
     assert light._attr_brightness_pct == 51
 
 
 async def test_software_stepped_fade_with_color_temp(hass):
     """Test combined color_temp_kelvin and brightness with transition dispatches CT then fades."""
     gateway = MagicMock()
-    gateway.send = AsyncMock()
     cfg = MagicMock()
     cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE}
     gateway.config_entry = cfg
@@ -618,6 +651,17 @@ async def test_software_stepped_fade_with_color_temp(hass):
     light._attr_is_on = True
     light._attr_brightness_pct = 50
 
+    def _echo_cmd(cmd):
+        raw = str(cmd)
+        if "*#14*" in raw:
+            light.handle_event(OWNEvent.parse("*#1*24*14*333##"))
+        else:
+            level = getattr(cmd, "brightness", None)
+            if isinstance(level, int) and level > 0:
+                light.handle_event(OWNEvent.parse(f"*#1*24*1*{100 + level}*0##"))
+
+    gateway.send = AsyncMock(side_effect=_echo_cmd)
+
     with patch("asyncio.sleep", new_callable=AsyncMock):
         await light.async_turn_on(**{
             ATTR_COLOR_TEMP_KELVIN: 3000,
@@ -632,12 +676,13 @@ async def test_software_stepped_fade_with_color_temp(hass):
         assert light._fade_task is not None
         await light._fade_task
 
-        assert light._attr_color_temp_kelvin == 3000
+        assert light._attr_color_temp == 333
+        assert light._attr_color_temp_kelvin == 3003
         assert light._attr_brightness_pct == 52
 
 
 async def test_native_transition_optimistic_state_update(hass):
-    """Test native transition turn_on immediately updates optimistic state attributes."""
+    """Test native transition turn_on waits for bus echo before mutating state attributes."""
     gateway = MagicMock()
     gateway.send = AsyncMock()
     cfg = MagicMock()
@@ -650,11 +695,18 @@ async def test_native_transition_optimistic_state_update(hass):
         manufacturer="B", model="M", gateway=gateway
     )
     light.hass = hass
+    light.entity_id = "light.l_24d"
+    light.platform = MagicMock()
     light.async_schedule_update_ha_state = MagicMock()
     light._attr_is_on = False
 
     await light.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 75, ATTR_TRANSITION: 3.0})
     gateway.send.assert_called_once()
+    assert light._attr_brightness_pct is None
+    assert light.is_on is False
+    light.async_schedule_update_ha_state.assert_not_called()
+
+    light.handle_event(OWNEvent.parse("*#1*24*1*175*3##"))
     assert light._attr_brightness_pct == 75
     assert light.is_on is True
     light.async_schedule_update_ha_state.assert_called_once()
@@ -663,7 +715,6 @@ async def test_native_transition_optimistic_state_update(hass):
 async def test_software_stepped_multi_worker_warning(hass, caplog):
     """Test warning logged when command_worker_count > 1 with software stepped transitions."""
     gateway = MagicMock()
-    gateway.send = AsyncMock()
     cfg = MagicMock()
     cfg.options = {CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE, CONF_WORKER_COUNT: 2}
     gateway.config_entry = cfg
@@ -675,6 +726,9 @@ async def test_software_stepped_multi_worker_warning(hass, caplog):
     )
     light.hass = hass
     light.async_schedule_update_ha_state = MagicMock()
+    gateway.send = AsyncMock(
+        side_effect=lambda _cmd: light._fade_engine.notify_bus_echo()
+    )
 
     with patch("asyncio.sleep", new_callable=AsyncMock):
         with caplog.at_level(logging.WARNING):
@@ -1416,14 +1470,18 @@ async def test_dali_tunable_white_turn_on_commands(hass):
     mock_gateway.send.assert_called_once()
     sent_cmd = mock_gateway.send.call_args[0][0]
     assert sent_cmd._raw == "*#1*25#4#02*#14*370##"
+    assert light.color_temp is None
+    light.handle_event(OWNEvent.parse("*#1*25#4#02*14*370##"))
     assert light.color_temp == 370
-    assert light.color_temp_kelvin == 2700
+    assert light.color_temp_kelvin == 2702
 
     # Turn on with color_temp = 250 mireds (4000 K)
     mock_gateway.send.reset_mock()
     await light.async_turn_on(color_temp=250)
     sent_cmd = mock_gateway.send.call_args[0][0]
     assert sent_cmd._raw == "*#1*25#4#02*#14*250##"
+    assert light.color_temp == 370
+    light.handle_event(OWNEvent.parse("*#1*25#4#02*14*250##"))
     assert light.color_temp == 250
     assert light.color_temp_kelvin == 4000
 
@@ -1560,11 +1618,14 @@ async def test_dali_rgb_turn_on_commands(hass):
 
     assert light.color_mode == ColorMode.HS
 
-    # Turn on with HS color
+    # Turn on with HS color (waits for bus echo before mutating state)
     await light.async_turn_on(hs_color=(255.0, 100.0))
     mock_gateway.send.assert_called_once()
     sent_cmd = mock_gateway.send.call_args[0][0]
     assert sent_cmd._raw == "*#1*25#4#02*#12*255*100*100##"
+    assert light.hs_color is None
+    assert light.is_on is None
+    light.handle_event(OWNEvent.parse("*#1*25#4#02*12*255*100*100##"))
     assert light.hs_color == (255.0, 100.0)
     assert light.is_on is True
 
@@ -1574,14 +1635,18 @@ async def test_dali_rgb_turn_on_commands(hass):
     mock_gateway.send.assert_called_once()
     sent_cmd = mock_gateway.send.call_args[0][0]
     assert sent_cmd._raw == "*#1*25#4#02*#12*255*100*50##"
-    assert light.brightness == 128
+    # Pre-echo: state stays at previous confirmed brightness (255), while short-lived
+    # _pending_cmd_brightness_pct carries 50% into rapid follow-up RGB commands!
+    assert light.brightness == 255
 
-    # Turn on with RGB color (backward compatibility, preserves current brightness 50%)
+    # Turn on with RGB color before first echo arrives (carries pending 50% brightness!)
     mock_gateway.send.reset_mock()
     await light.async_turn_on(rgb_color=(255, 0, 0))
     mock_gateway.send.assert_called_once()
     sent_cmd = mock_gateway.send.call_args[0][0]
     assert sent_cmd._raw == "*#1*25#4#02*#12*0*100*50##"
+    light.handle_event(OWNEvent.parse("*#1*25#4#02*12*0*100*50##"))
+    assert light.brightness == 128
 
     # Turn on with RGB color and new brightness 100%
     mock_gateway.send.reset_mock()
@@ -1600,6 +1665,7 @@ async def test_dali_rgb_turn_on_commands(hass):
     # Turn on when neither brightness nor last_brightness exists (defaults to 100)
     light._attr_brightness_pct = None
     light._last_brightness_pct = None
+    light._pending_cmd_brightness_pct = None
     mock_gateway.send.reset_mock()
     await light.async_turn_on(hs_color=(100.0, 40.0))
     mock_gateway.send.assert_called_once()
@@ -2146,6 +2212,7 @@ async def test_unknown_state_keeps_a_state_set_from_home_assistant(hass):
     light._gateway_handler.send = AsyncMock()
     await light.async_restore_last_state(State("light.light_74", "off"))
     await light.async_turn_on_timed(duration=60)
+    light.handle_event(OWNEvent.parse("*1*1*74##"))
     light.handle_event(_fault_event())
     assert light.is_on is True
 
@@ -2192,14 +2259,14 @@ async def test_what_19_does_not_get_stuck_on(hass):
 
 
 async def test_what_19_async_turn_on_reverts_off(hass):
-    """Calling async_turn_on followed by WHAT 19 from bus turns light back to off."""
+    """Calling async_turn_on followed by WHAT 19 from bus ensures light is off with no_load."""
     light = _unknown_state_light(hass, dimmable=True)
     light.entity_id = "light.light_74"
     light.async_write_ha_state = MagicMock()
     light._gateway_handler.send = AsyncMock()
 
     await light.async_turn_on(brightness=128)
-    assert light.is_on is True
+    assert light.is_on is None
 
     light.handle_event(OWNEvent.parse("*1*19*74##"))
     assert light.is_on is False

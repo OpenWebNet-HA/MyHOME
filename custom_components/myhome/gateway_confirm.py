@@ -43,8 +43,9 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import OWNLightingCommand, OWNLightingEvent, OWNMessage
 
+from .actuator_lock import actuator_locks_of
 from .const import LOGGER
-from .where_grammar import expose_message_where
+from .where_grammar import expose_message_where, is_valid_hs_tuple
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -69,6 +70,7 @@ class _Watch:
 
     frame: str
     expected_on: bool | None
+    dimension: int | None
     cancel: CALLBACK_TYPE
 
 
@@ -114,6 +116,20 @@ def _commanded_on(message: Any) -> bool | None:
         values = getattr(message, "dimension_value", None)
         if isinstance(values, (list, tuple)) and len(values) > 2 and str(values[2]).isdigit():
             return int(values[2]) > 0
+    elif dimension == 14:  # ``*#1*<where>*#14*<mireds>##`` (> 1 mireds; 1 is DALI sentinel)
+        values = getattr(message, "dimension_value", None)
+        if isinstance(values, (list, tuple)) and values and str(values[0]).isdigit():
+            return int(values[0]) > 1
+    return None
+
+
+def _commanded_dimension(message: Any) -> int | None:
+    """Return the written read-back dimension (1, 12, or 14) of a WHO 1 write, else None."""
+    dimension = getattr(message, "dimension", None)
+    if dimension in (1, 4):
+        return 1
+    if dimension in (12, 14):
+        return int(dimension)
     return None
 
 
@@ -157,10 +173,13 @@ class LightEchoWatchdog:
             return  # nothing is armed for a send that finished after the gateway was closed
         if getattr(message, "is_status_request", False) or getattr(message, "is_dimension_request", False):
             return
-        expected_on = _commanded_on(message)
         previous = self._watches.pop(where, None)
         if previous is not None:
             previous.cancel()
+        if (mgr := actuator_locks_of(self.handler)) is not None and mgr.is_locked(where) is True:
+            return
+        expected_on = _commanded_on(message)
+        cmd_dim = _commanded_dimension(message)
         seen = self._recent_status.get(where)
         if seen is not None and seen[0] >= written_at and _matches(expected_on, seen[1]):
             return  # the status overtook the ACK
@@ -176,6 +195,7 @@ class LightEchoWatchdog:
         self._watches[where] = _Watch(
             frame=str(message),
             expected_on=expected_on,
+            dimension=cmd_dim,
             cancel=call_later(self.hass, ECHO_CONFIRM_DELAY_S, _expired),
         )
 
@@ -183,19 +203,42 @@ class LightEchoWatchdog:
     def status_seen(self, message: Any) -> None:
         """Note a frame received from the gateway (event session or command-session reply).
 
-        Only a status that says on or off counts. Not a request or a write echoed on the event
-        session (an MH202 relays ``*#1*32*#1*130*0##`` 30 ms before the dimmer's status,
-        tests/fixtures/traces/issue_466), not a frame with no on / off meaning (colour,
-        ``*#1*32*13*...##``, toggle 32, motion 34 / 39, anomaly 19), not a command translation,
-        and not a dim step (``*1*30*<where>##`` / ``*1*31*<where>##``), which OWNd reads as "on"
-        and the light entity ignores. Any of these would otherwise end a watch, or replace the
-        status remembered for a command whose ACK is still to come.
+        Only a status that says on or off (or a matching Dimension 12 / 14 reply) counts. Not a
+        request or a write echoed on the event session (an MH202 relays ``*#1*32*#1*130*0##``
+        30 ms before the dimmer's status, tests/fixtures/traces/issue_466), not a frame with no
+        on / off meaning (``*#1*32*13*...##``, toggle 32, motion 34 / 39, anomaly 19, DALI
+        sentinels), not a command translation, and not a dim step (``*1*30*<where>##`` /
+        ``*1*31*<where>##``), which OWNd reads as "on" and the light entity ignores. Any of
+        these would otherwise end a watch, or replace the status remembered for a command whose
+        ACK is still to come.
         """
         if not isinstance(message, OWNLightingEvent):
             return
         where = _light_where(message)
         if where is None or getattr(message, "is_translation", None) is True:
             return
+        dim = getattr(message, "dimension", None)
+        watch = self._watches.get(where)
+        if watch is not None:
+            if (
+                watch.dimension == 14
+                and dim == 14
+                and isinstance(getattr(message, "color_temp", None), int)
+            ):
+                del self._watches[where]
+                watch.cancel()
+                return
+            if (
+                watch.dimension == 12
+                and dim == 12
+                and isinstance((dim12_val := getattr(message, "value", None)), int)
+                and not isinstance(dim12_val, bool)
+                and is_valid_hs_tuple(getattr(message, "hs", None), dim12_val)
+                and _matches(watch.expected_on, dim12_val > 0)
+            ):
+                del self._watches[where]
+                watch.cancel()
+                return
         reported_on = getattr(message, "is_on", None)
         if not isinstance(reported_on, bool) or getattr(message, "what", None) in (30, 31):
             return
@@ -205,7 +248,6 @@ class LightEchoWatchdog:
             self._recent_status = {
                 w: seen for w, seen in self._recent_status.items() if now - seen[0] <= _RECENT_STATUS_TTL_S
             }
-        watch = self._watches.get(where)
         if watch is not None and _matches(watch.expected_on, reported_on):
             del self._watches[where]
             watch.cancel()
@@ -216,6 +258,8 @@ class LightEchoWatchdog:
         watch = self._watches.pop(where, None)
         if watch is None or self._closing():
             return
+        if (mgr := actuator_locks_of(self.handler)) is not None and mgr.is_locked(where) is True:
+            return
         LOGGER.debug(
             "%s No status of light %s %.1f s after `%s`; requesting it.",
             self.handler.log_id,
@@ -223,8 +267,21 @@ class LightEchoWatchdog:
             ECHO_CONFIRM_DELAY_S,
             watch.frame,
         )
+        extra_cmd: Any = None
+        if watch.dimension == 1 and "#9" not in where:
+            extra_cmd = OWNLightingCommand.get_brightness(where)
+        elif watch.dimension == 12:
+            extra_cmd = OWNLightingCommand.get_hsv_color(where)
+        elif watch.dimension == 14:
+            extra_cmd = OWNLightingCommand.get_color_temperature(where)
+
+        async def _poll() -> None:
+            await self.handler.send_status_request(OWNLightingCommand.status(where))
+            if extra_cmd is not None:
+                await self.handler.send_status_request(extra_cmd)
+
         self.hass.async_create_task(
-            self.handler.send_status_request(OWNLightingCommand.status(where)),
+            _poll(),
             name=f"myhome_light_{where}_echo_confirm",
         )
 

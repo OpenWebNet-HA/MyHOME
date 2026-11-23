@@ -14,6 +14,7 @@ from .const import (
     SOFTWARE_TRANSITION_STEP_INTERVAL,
     TRANSITION_MODE_NATIVE,
 )
+from .gateway_confirm import ECHO_CONFIRM_DELAY_S
 
 
 class SoftwareFadeEngine:
@@ -30,6 +31,7 @@ class SoftwareFadeEngine:
         get_worker_count_cb: Callable[[], int],
         get_transition_mode_cb: Callable[[], str],
         is_on_cb: Callable[[], bool],
+        first_echo_timeout: float = ECHO_CONFIRM_DELAY_S,
     ) -> None:
         """Initialize the software fade engine."""
         self.where = where
@@ -40,16 +42,27 @@ class SoftwareFadeEngine:
         self.get_worker_count_cb = get_worker_count_cb
         self.get_transition_mode_cb = get_transition_mode_cb
         self.is_on_cb = is_on_cb
+        self.first_echo_timeout: float = first_echo_timeout
 
         self.fade_task: asyncio.Task[None] | None = None
         self.fade_id: int = 0
         self.warned_multi_worker: bool = False
         self.cmd_lock: asyncio.Lock = asyncio.Lock()
+        self._step1_echo_event: asyncio.Event | None = None
+        self.pending_first_step_pct: int | None = None
+
+    def notify_bus_echo(self) -> None:
+        """Signal that a non-translation bus status or brightness echo arrived."""
+        if self._step1_echo_event is not None:
+            self._step1_echo_event.set()
 
     @property
     def is_fading(self) -> bool:
         """Return whether a software fade task is currently active."""
-        return bool(self.fade_task and not self.fade_task.done())
+        return bool(
+            (self.fade_task and not self.fade_task.done())
+            or self._step1_echo_event is not None
+        )
 
     def get_transition_mode(self) -> str:
         """Return the effective transition mode for the light."""
@@ -75,12 +88,11 @@ class SoftwareFadeEngine:
         self, start_pct: int, target_pct: int, is_on: bool | None = None
     ) -> bool:
         """Execute instant brightness if delta <= 1%, skipping bus if already at target."""
+        _ = is_on
         delta_pct = abs(target_pct - start_pct)
         if delta_pct <= 1:
             if not (self.is_on_cb() and target_pct == start_pct):
                 await self.set_brightness_instant(target_pct)
-            self.apply_state_cb(target_pct, is_on)
-            self.update_ha_state_cb()
             return True
         return False
 
@@ -91,12 +103,16 @@ class SoftwareFadeEngine:
 
     def cancel_fade_if_active(self) -> None:
         """Simple cancel for @callback contexts (e.g. handle_event)."""
+        self._step1_echo_event = None
+        self.pending_first_step_pct = None
         if self.fade_task and not self.fade_task.done():
             self.fade_task.cancel()
             self.fade_task = None
 
     async def cancel_fade_robustly(self) -> None:
         """Robust cancel + drain for async contexts."""
+        self._step1_echo_event = None
+        self.pending_first_step_pct = None
         if self.fade_task and not self.fade_task.done():
             self.fade_task.cancel()
             try:
@@ -149,8 +165,6 @@ class SoftwareFadeEngine:
 
         if duration < 0.05:
             await self.set_brightness_instant(target_pct)
-            self.apply_state_cb(target_pct, None)
-            self.update_ha_state_cb()
             if fade_id == self.fade_id:
                 self.fade_task = None
             return
@@ -169,6 +183,7 @@ class SoftwareFadeEngine:
         delta = (target_pct - start_pct) / num_steps
 
         last_sent = start_pct
+        step1_confirmed = False
         try:
             for i in range(1, num_steps + 1):
                 if fade_id != self.fade_id:
@@ -178,7 +193,33 @@ class SoftwareFadeEngine:
                 current = max(0, min(100, current))
 
                 if current != last_sent:
-                    await self.set_brightness_instant(current)
+                    if not step1_confirmed:
+                        echo_event = asyncio.Event()
+                        self._step1_echo_event = echo_event
+                        self.pending_first_step_pct = current
+                        await self.set_brightness_instant(current)
+                        if fade_id != self.fade_id:
+                            LOGGER.debug("%s Aborting stale fade step", self.where)
+                            return
+                        try:
+                            await asyncio.wait_for(
+                                echo_event.wait(), timeout=self.first_echo_timeout
+                            )
+                        except TimeoutError:
+                            LOGGER.debug(
+                                "%s Aborting software fade (id=%s): no bus echo within %.2fs",
+                                self.where,
+                                fade_id,
+                                self.first_echo_timeout,
+                            )
+                            return
+                        finally:
+                            if self._step1_echo_event is echo_event:
+                                self._step1_echo_event = None
+                            self.pending_first_step_pct = None
+                        step1_confirmed = True
+                    else:
+                        await self.set_brightness_instant(current)
                     self.apply_state_cb(current, None)
                     self.update_ha_state_cb()
                     last_sent = current
@@ -197,5 +238,7 @@ class SoftwareFadeEngine:
         except Exception as err:  # prevent "Task exception was never retrieved"
             LOGGER.warning("%s Fade task error (id=%s): %s", self.where, fade_id, err)
         finally:
+            self._step1_echo_event = None
+            self.pending_first_step_pct = None
             if fade_id == self.fade_id:
                 self.fade_task = None
