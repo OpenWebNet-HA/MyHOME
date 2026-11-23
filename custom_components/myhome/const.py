@@ -552,6 +552,15 @@ IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 
 IDENTIFICATION_UNKNOWN = "unknown"
 
 
+def central_mode_signal(mac: str, interface: str | None) -> str:
+    """The dispatcher signal on which a 99-zone central unit passes its mode to its zones.
+
+    One per bus: the central unit behind an F422 interface runs the zones behind that
+    interface, not the zones of the local bus (zone numbers repeat on every bus, #408).
+    """
+    return f"myhome_central_mode_{mac}_{interface}" if interface else f"myhome_central_mode_{mac}"
+
+
 def gateway_model_family(model: str | None) -> str:
     """Reduce a model name to its family for identity comparisons.
 

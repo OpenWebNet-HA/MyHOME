@@ -306,7 +306,10 @@ def test_the_central_itself_still_takes_its_generic_frame() -> None:
 
 async def _set_central_mode(central: Any, future: Any, hvac_mode: HVACMode = HVACMode.OFF) -> None:
     central._gateway_handler.send = AsyncMock(return_value=future)
-    await central.async_set_hvac_mode(hvac_mode)
+    # `off` and the program wait for the gateway's answer (at most SETPOINT_DELIVERY_TIMEOUT); these
+    # tests look at a write that is still queued when the call is over.
+    with patch("custom_components.myhome.climate.SETPOINT_DELIVERY_TIMEOUT", 0):
+        await central.async_set_hvac_mode(hvac_mode)
 
 
 async def test_echo_while_the_command_is_still_queued_is_swallowed() -> None:

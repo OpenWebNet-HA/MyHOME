@@ -120,7 +120,7 @@ def _make_temp_sensor(hass, gateway, where):
 
 
 async def test_probe_sensor_starts_receive_only(hass, mock_gateway):
-    """A ZPP >= 100 probe sends no *#4*ZPP*15## on add; a zone sensor still polls (#308)."""
+    """A ZPP >= 100 probe sends no read on add; a zone sensor still polls (#308)."""
     hass.data[DOMAIN] = {mock_gateway.mac: {"platforms": {"sensor": {}}}}
 
     probe = _make_temp_sensor(hass, mock_gateway, "101")
@@ -148,7 +148,8 @@ async def test_probe_sensor_polls_only_when_push_stream_is_silent(hass, mock_gat
     # Nothing received yet -> the periodic update polls the probe
     await probe.async_update()
     mock_gateway.send_status_request.assert_awaited_once()
-    assert str(mock_gateway.send_status_request.call_args.args[0]) == "*#4*101*15##"
+    # Slave probe 1 of zone 01: the dimension 0 read of the WHO 4 PDF (1.5.1), not *#4*101*15##.
+    assert str(mock_gateway.send_status_request.call_args.args[0]) == "*#4*101*0##"
 
     # Unsolicited frame from the F454 / L4577 (dimension 0, secondary sensor)
     probe.handle_event(OWNHeatingEvent("*#4*101*0*0215*3##"))

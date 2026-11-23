@@ -290,3 +290,48 @@ def test_central_entity_shows_the_restored_program_before_any_read_back(model: s
         elif row["dir"] in SENDS and row["frame"] == RESTORE:
             assert central.hvac_mode == HVACMode.OFF  # what the 311 and the season command left
     assert restored == 2
+
+
+@pytest.mark.parametrize("model", GATEWAYS)
+async def test_setpoint_of_a_central_unit_off_in_conditioning_is_written_as_conditioning(model: str) -> None:
+    """``*#4*#0*#14*T*M##``: M is the season of the manual mode it starts (WHO 4 p. 23).
+
+    The 3550 of this capture is OFF in the conditioning season (``*4*203*#0##``). The setpoint
+    was written with M = 1, "heating mode" (a real F454 plant answered ``*#4*#0*#14*0165*1##``
+    with ``*4*110#0165*#0##``, manual heating, tests/fixtures/traces/issue_697). The same holds
+    after ``set_hvac_mode auto``, which the entity shows at once.
+    """
+    central = _central_entity()
+    for raw in _monitor(model):
+        central.handle_event(OWNEvent.parse(raw))
+        if raw == "*4*203*#0##":
+            break
+    assert central.hvac_mode == HVACMode.OFF
+    assert central.extra_state_attributes["season"] == "conditioning"
+
+    await central.async_set_temperature(temperature=25.0)
+    assert str(central._gateway_handler.send.await_args.args[0]) == "*#4*#0*#14*0250*2##"
+
+    central._attr_hvac_mode = HVACMode.AUTO  # as async_set_hvac_mode(AUTO) leaves it
+    await central.async_set_temperature(temperature=25.0)
+    assert str(central._gateway_handler.send.await_args.args[0]) == "*#4*#0*#14*0250*2##"
+
+
+@pytest.mark.parametrize(
+    ("report", "shown", "written"),
+    [
+        ("*4*103*#0##", HVACMode.OFF, "*#4*#0*#14*0250*1##"),  # OFF in the heating season: unchanged
+        ("*4*102*#0##", HVACMode.HEAT, "*#4*#0*#14*0250*1##"),
+        ("*4*202*#0##", HVACMode.COOL, "*#4*#0*#14*0250*2##"),
+        (None, None, "*#4*#0*#14*0250*1##"),  # nothing reported yet: as before
+    ],
+)
+async def test_setpoint_of_a_central_unit_keeps_its_digit_elsewhere(
+    report: str | None, shown: HVACMode | None, written: str
+) -> None:
+    central = _central_entity()
+    if report is not None:
+        central.handle_event(OWNEvent.parse(report))
+    assert central.hvac_mode == shown
+    await central.async_set_temperature(temperature=25.0)
+    assert str(central._gateway_handler.send.await_args.args[0]) == written

@@ -961,10 +961,11 @@ def _parse_text_or_log_fixture(
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        # Skip outbound TX lines in diagnostic bundles or timelines
-        if re.search(r"(?:\[TX\]|\bTX\b)", stripped):
+        # Skip outbound TX lines in diagnostic bundles or timelines. A client log marks a frame it
+        # sent with `>>` and a frame it received with `<<` (tests/fixtures/traces/issue_932/README.md).
+        if re.search(r"(?:\[TX\]|\bTX\b|(?:^|\s)>>\s)", stripped):
             continue
-        if re.search(r"(?:\[RX\]|\bRX\b|\bOWN\s+\*)", stripped):
+        if re.search(r"(?:\[RX\]|\bRX\b|\bOWN\s+\*|(?:^|\s)<<\s)", stripped):
             for m_tok in _OWN_FRAME_TOKEN_RE.finditer(stripped):
                 _record_rx_frame(
                     summary,

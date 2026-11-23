@@ -1567,6 +1567,14 @@ class CommandWorkerPool:
                     )
                     written_at = time.monotonic()
                     is_exposed = self._is_exposed_target(task)
+                    if isinstance(written, asyncio.Future) and not written.done():
+                        # The gateway and the event session this frame is written under. A probe's
+                        # refused read is latched against them, however long it waited in the queue.
+                        setattr(
+                            written,
+                            "_written_under",
+                            (self.handler, getattr(self.handler, "event_connections", None)),
+                        )
                     self._in_flight_messages.append(task["message"])
                     try:
                         collected = await _command_session.send(

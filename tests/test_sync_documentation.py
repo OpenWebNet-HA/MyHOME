@@ -1174,3 +1174,19 @@ def test_roadmap_tables_deduplicates_identical_capture_sequences(tmp_path):
 
 
 
+
+
+def test_a_client_log_counts_the_frames_it_received_and_not_the_ones_it_sent(tmp_path: Path) -> None:
+    """``>>`` marks a frame the client sent and ``<<`` one it received (issue_932 README)."""
+    import shutil
+
+    urt = _load_update_roadmap_tables()
+    trace_dir = tmp_path / "fixtures" / "traces" / "direct_read"
+    trace_dir.mkdir(parents=True)
+    log = "F455_direct_read_probe_303_2026-11-18.log"
+    shutil.copy(REPO_ROOT / "tests" / "fixtures" / "traces" / "issue_932" / log, trace_dir / log)
+
+    summary = urt.scan_fixture_corpus(fixtures_dir=tmp_path / "fixtures")
+
+    # The two reads it sent and the ACK / NACK (no WHO) are not counted; the answer is.
+    assert [(frame.gateway, frame.raw) for frame in summary.rx_frames] == [("F455", "*#4*303*0*0233##")]

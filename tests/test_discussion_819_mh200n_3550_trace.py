@@ -29,7 +29,7 @@ Pins four hardware and integration facts from the verbatim 148-frame `<myhome-bu
    - `*4*311*#1##` -> `*4*111*#1##`.
 4. End-to-end Home Assistant config-entry replay across the 148-frame capture: dynamic discovery of
    `39` lights, `5` audio media players (`11, 12, 21, 31, 41`), `3` sound source entities
-   (`101, 102, 103`), central unit `climate.climate_zone_0` (`#0`), and `5` heating zones
+   (`101, 102, 103`), central unit `climate.central_unit_0` (`#0`), and `5` heating zones
    (`climate.climate_zone_1..5`), with `handler.has_central_unit` latched `True` on `#0` and Zone `1`
    hydrated to `current_temperature = 19.9`, `temperature = 17.0`, `local_offset = 1`, `knob_pos = "+1"`,
    and `season = "heating"`.
@@ -448,7 +448,7 @@ async def test_mh200n_3550_live_integration_replay(hass: HomeAssistant) -> None:
         ]
         assert len(climates) == 6
 
-        central_state = hass.states.get("climate.climate_zone_0")
+        central_state = hass.states.get("climate.central_unit_0")
         assert central_state is not None
         assert central_state.state == HVACMode.HEAT
         assert central_state.attributes["season"] == "heating"
@@ -457,7 +457,10 @@ async def test_mh200n_3550_live_integration_replay(hass: HomeAssistant) -> None:
         for zone_num in range(1, 6):
             zone_state = hass.states.get(f"climate.climate_zone_{zone_num}")
             assert zone_state is not None
-            assert zone_state.state in (HVACMode.HEAT, HVACMode.AUTO)
+            # Decision of 2026-11-18 on the open question of #884: a zone on the weekly program (`*4*111*#Z##`) shows the
+            # season it is running in, never `auto`; the program is in `zone_operation`.
+            assert zone_state.state == HVACMode.HEAT
+            assert zone_state.attributes["zone_operation"] == "automatic"
 
         # ── Phase 3: Zone 1 status expansion & rejected override (`frames[128..148]`)
         await _feed_rx_slice(128, 148)

@@ -192,7 +192,7 @@ async def test_central_unit_cu99_polls_plain_status(hass):
 
 
 async def test_central_unit_cu99_unanswered_polls_never_raise_a_repair(hass):
-    """Only an F454 is captured; a gateway that NACKs or ignores *#4*#0## must not flag the unit (#629)."""
+    """The answer is captured on an F454, an F455 and an F461 only; a gateway that NACKs or ignores *#4*#0## must not flag the unit (#629)."""
     central, gateway = _zone(hass, where="#0", central=True, name="Centrale termoregolazione")
     for _ in range(SKIP_AFTER_FAILED_POLLS + 1):
         await _poll(hass, central, gateway, "nack")

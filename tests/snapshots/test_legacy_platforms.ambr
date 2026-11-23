@@ -46,6 +46,7 @@
       'local_target_temperature': 22.0,
       'max_temp': 40,
       'min_temp': 5,
+      'nominal_temperature': 22.0,
       'supported_features': <ClimateEntityFeature: 1>,
       'target_temp_step': 0.5,
       'temperature': 22.0,
