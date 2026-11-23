@@ -759,6 +759,24 @@
     "lock_command_rejected": {
       "message": "{name}: gateway {gateway} heeft het WHO=6 ontgrendelcommando geweigerd of genegeerd ({frame})"
     },
+    "impulse_pulse_not_sent": {
+      "message": "{name}: de puls is niet verzonden (binnen de blokkeertijd van {deadband} s, of er wordt een andere puls geschreven)"
+    },
+    "impulse_pulse_send_failed": {
+      "message": "{name}: de puls is niet verzonden ({error})"
+    },
+    "impulse_pulse_unconfirmed": {
+      "message": "{name}: de puls is niet bevestigd door de gateway ({error}); het relais kan wel of niet geschakeld hebben: controleer de deur voordat u het opnieuw probeert"
+    },
+    "impulse_relay_not_released": {
+      "message": "{name}: de puls is niet verzonden: het relais van de vorige puls kon niet worden losgelaten"
+    },
+    "impulse_stop_not_sent": {
+      "message": "{name}: de stoppuls is niet verzonden"
+    },
+    "impulse_stop_unconfirmed": {
+      "message": "{name}: de stoppuls is niet bevestigd door de gateway; de deur beweegt mogelijk nog: controleer deze"
+    },
     "lock_command_timeout": {
       "message": "{name}: ontgrendelcommando voor deurintercom is niet binnen {timeout} s bevestigd; het is ingetrokken als het nog niet verzonden was"
     },

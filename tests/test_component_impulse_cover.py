@@ -35,6 +35,7 @@ from custom_components.myhome.access_policy import (
     AccessDenied,
     Effect,
     Intent,
+    PulseOutcome,
     RemoteClose,
 )
 from custom_components.myhome.const import (
@@ -195,7 +196,7 @@ def impulse_gate(hass: HomeAssistant, mock_gateway):
 async def test_impulse_cover_open_and_close_cycle(hass: HomeAssistant, impulse_gate, mock_gateway):
     """Test full open and close cycle with 500ms auto-reset pulse and travel time."""
     # 1. Pulse open
-    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
+    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is PulseOutcome.CONFIRMED
 
     # Hardware-timed WHAT 18 command sent immediately (actuator shuts off after 0.5s);
     # OWNd releases without the builder send a plain ON and switch it off in software.
@@ -217,7 +218,7 @@ async def test_impulse_cover_open_and_close_cycle(hass: HomeAssistant, impulse_g
     # 3. Pulse close
     mock_gateway.send.reset_mock()
     impulse_gate._last_pulse_time = -9999.0
-    assert await impulse_gate._async_pulse(Intent.CLOSE, Effect.MAY_CLOSE) is True
+    assert await impulse_gate._async_pulse(Intent.CLOSE, Effect.MAY_CLOSE) is PulseOutcome.CONFIRMED
 
     assert mock_gateway.send.call_count == 1
     on_cmd = mock_gateway.send.call_args[0][0]
@@ -275,11 +276,11 @@ async def test_impulse_cover_access_control_flow(hass: HomeAssistant, impulse_ga
 async def test_impulse_cover_deadband_lockout(hass: HomeAssistant, impulse_gate, mock_gateway):
     """Test that commands sent within min_cycle_time are dropped."""
     # First pulse succeeds
-    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
+    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is PulseOutcome.CONFIRMED
     assert mock_gateway.send.call_count == 1
 
     # Second pulse 0.5s later (within 2.0s deadband) is dropped
-    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is False
+    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is PulseOutcome.NOT_SENT
     assert mock_gateway.send.call_count == 1
 
 
@@ -334,7 +335,7 @@ async def test_impulse_cover_state_sensor_binding(hass: HomeAssistant, mock_gate
             assert cover.is_closed is True
 
             # Pulsing open
-            assert await cover._async_pulse(Intent.OPEN, Effect.OPEN) is True
+            assert await cover._async_pulse(Intent.OPEN, Effect.OPEN) is PulseOutcome.CONFIRMED
             assert mock_gateway.send.call_count == 1
             assert cover.is_opening is True
             assert cover.is_closed is False
@@ -402,20 +403,16 @@ def test_impulse_cover_bus_event_handling(hass: HomeAssistant, impulse_gate):
 
 
 async def test_impulse_cover_deadband_rejections_and_cleanup(hass: HomeAssistant, impulse_gate, mock_gateway):
-    """Test deadband drops for close and stop, and cleanup on removal."""
+    """Test the deadband drop of a close, and cleanup on removal (a stop is not refused: tests/test_pr_986_impulse_review.py)."""
     # Custom duration (1.0s) uses software off timer and removal fail-safe
     impulse_gate._pulse_duration = 1.0
 
     # Send open pulse
-    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
+    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is PulseOutcome.CONFIRMED
     assert impulse_gate.is_opening is True
 
     # Closing immediately rejected by deadband
-    assert await impulse_gate._async_pulse(Intent.CLOSE, Effect.MAY_CLOSE) is False
-    assert impulse_gate.is_opening is True
-
-    # Stopping immediately rejected by deadband
-    assert await impulse_gate._async_pulse(Intent.STOP, Effect.MAY_CLOSE) is False
+    assert await impulse_gate._async_pulse(Intent.CLOSE, Effect.MAY_CLOSE) is PulseOutcome.NOT_SENT
     assert impulse_gate.is_opening is True
 
     # Call async_will_remove_from_hass with pending timers
@@ -460,9 +457,9 @@ async def test_impulse_cover_additional_branches(hass: HomeAssistant, mock_gatew
     # 3. Duplicate impulse cancels pending pulse-off timer (cover.py:1417-1418)
     impulse_gate._pulse_duration = 1.0
     impulse_gate._min_cycle_time = 0.0
-    await impulse_gate._async_send_impulse()
+    await impulse_gate._async_send_impulse(Intent.OPEN)
     assert impulse_gate._pulse_off_cancel is not None
-    await impulse_gate._async_send_impulse()
+    await impulse_gate._async_send_impulse(Intent.OPEN)
     assert impulse_gate._pulse_off_cancel is not None
 
     # 4. Bus event outside echo window while access has pending request cancels access (cover.py:1501)
@@ -551,7 +548,7 @@ async def test_impulse_cover_build_invalid_device_class(hass: HomeAssistant, moc
 async def test_impulse_cover_gateway_write_failure(hass: HomeAssistant, impulse_gate, mock_gateway):
     """Test that a gateway write failure returns False and does not crash or claim executed."""
     mock_gateway.send.side_effect = RuntimeError("Socket disconnected")
-    assert await impulse_gate._async_send_impulse() is False
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.NOT_SENT
 
 
 async def test_impulse_cover_custom_pulse_duration_cycle(hass: HomeAssistant, impulse_gate, mock_gateway):
@@ -559,7 +556,7 @@ async def test_impulse_cover_custom_pulse_duration_cycle(hass: HomeAssistant, im
     impulse_gate._pulse_duration = 1.5
     mock_gateway.send.reset_mock()
 
-    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is True
+    assert await impulse_gate._async_pulse(Intent.OPEN, Effect.OPEN) is PulseOutcome.CONFIRMED
     assert mock_gateway.send.call_count == 1
     assert str(mock_gateway.send.call_args[0][0]) == "*1*1*22##"
 
@@ -584,7 +581,7 @@ async def test_impulse_cover_confirmed_write_future_and_off_failure(hass: HomeAs
     mock_gateway.send.return_value = fut
     impulse_gate._pulse_duration = 0.5
     impulse_gate._last_pulse_time = 0.0
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
     assert fut.done()
 
     # 2. Custom duration with awaitable write_fut and OFF failure handling
@@ -594,7 +591,7 @@ async def test_impulse_cover_confirmed_write_future_and_off_failure(hass: HomeAs
     mock_gateway.send.return_value = fut_on
     impulse_gate._pulse_duration = 1.0
     impulse_gate._last_pulse_time = 0.0
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
 
     # When OFF is scheduled, test success with awaitable future
     fut_off_timed = asyncio.Future()
@@ -608,7 +605,7 @@ async def test_impulse_cover_confirmed_write_future_and_off_failure(hass: HomeAs
     # Test error handling in _send_off
     impulse_gate._last_pulse_time = 0.0
     mock_gateway.send.return_value = fut_on
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
     mock_gateway.send.side_effect = RuntimeError("OFF send error")
     async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.2))
     await hass.async_block_till_done()
@@ -637,7 +634,7 @@ async def test_impulse_cover_pulse_falls_back_without_timed_on(hass: HomeAssista
     """Released OWNd 2.0.0b10 has no OWNLightingCommand.switch_on_timed: ON, then OFF after the pulse."""
     monkeypatch.delattr(OWNLightingCommand, "switch_on_timed", raising=False)
 
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
     assert [str(call.args[0]) for call in mock_gateway.send.call_args_list] == ["*1*1*22##"]
 
     async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=0.6))
@@ -648,15 +645,15 @@ async def test_impulse_cover_pulse_falls_back_without_timed_on(hass: HomeAssista
 async def test_impulse_cover_failed_send_does_not_start_deadband(hass: HomeAssistant, impulse_gate, mock_gateway):
     """A pulse that never reached the bus must not lock the user out for min_cycle_time."""
     mock_gateway.send.side_effect = RuntimeError("Socket disconnected")
-    assert await impulse_gate._async_send_impulse() is False
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.NOT_SENT
     assert impulse_gate._last_pulse_time == -1e9
 
     mock_gateway.send.side_effect = None
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
     assert impulse_gate._last_pulse_time > 0
 
     # The confirmed pulse does start it
-    assert await impulse_gate._async_send_impulse() is False
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.NOT_SENT
 
 
 async def test_impulse_cover_failed_awaited_write_does_not_start_deadband(hass: HomeAssistant, impulse_gate, mock_gateway):
@@ -664,7 +661,7 @@ async def test_impulse_cover_failed_awaited_write_does_not_start_deadband(hass: 
     fut = asyncio.get_running_loop().create_future()
     fut.set_exception(TimeoutError("no ACK"))
     mock_gateway.send.return_value = fut
-    assert await impulse_gate._async_send_impulse() is False
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.UNCONFIRMED
     assert impulse_gate._last_pulse_time == -1e9
 
 
@@ -676,18 +673,18 @@ async def test_impulse_cover_in_flight_pulse_blocks_second_request_and_echo(hass
         await release.wait()
 
     mock_gateway.send.side_effect = slow_send
-    first = asyncio.create_task(impulse_gate._async_send_impulse())
+    first = asyncio.create_task(impulse_gate._async_send_impulse(Intent.OPEN))
     await asyncio.sleep(0)
     assert impulse_gate._pulse_in_flight is True
 
-    assert await impulse_gate._async_send_impulse() is False
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.NOT_SENT
 
     impulse_gate._attr_is_closed = True
     impulse_gate.handle_event(OWNEvent.parse("*1*1*22##"))
     assert impulse_gate.is_opening is False
 
     release.set()
-    assert await first is True
+    assert await first is PulseOutcome.CONFIRMED
     assert impulse_gate._pulse_in_flight is False
 
 
@@ -723,7 +720,7 @@ def direct_gate(hass: HomeAssistant, mock_gateway):
                 device_class=CoverDeviceClass.GARAGE,
                 travel_time=10.0,
                 pulse_duration=0.5,
-                min_cycle_time=0.0,
+                min_cycle_time=1.0,  # the smallest value `validate.cover_schema` accepts
                 pin_code=None,
                 state_sensor=state_sensor,
                 manufacturer="BTicino",
@@ -757,6 +754,7 @@ async def test_direct_cover_needs_no_approval_and_no_user(hass: HomeAssistant, d
     assert _pulses(mock_gateway) == 2
     assert cover.is_opening is False
 
+    cover._last_pulse_time -= 2.0  # past the deadband
     await cover.async_close_cover()
     assert _pulses(mock_gateway) == 3
     assert cover.is_closing is True
@@ -779,6 +777,7 @@ async def test_direct_cover_with_sensor_skips_a_pulse_that_would_undo_the_reques
     assert _pulses(mock_gateway) == 1
     await cover.async_stop_cover()
     assert _pulses(mock_gateway) == 2
+    cover._last_pulse_time -= 2.0  # past the deadband
     await cover.async_close_cover()
     assert _pulses(mock_gateway) == 3
 
@@ -789,7 +788,7 @@ async def test_direct_cover_reports_a_dropped_pulse(hass: HomeAssistant, direct_
     cover._min_cycle_time = 5.0
     await cover.async_open_cover()
     with pytest.raises(HomeAssistantError, match="pulse was not sent"):
-        await cover.async_stop_cover()
+        await cover.async_open_cover()
 
 
 async def test_direct_cover_has_no_policy_services(hass: HomeAssistant, direct_gate):
@@ -838,7 +837,7 @@ async def test_lost_off_is_retried_and_blocks_the_next_pulse(hass: HomeAssistant
     """A software OFF that never reaches the bus is retried, and the relay is released before the next pulse."""
     monkeypatch.delattr(OWNLightingCommand, "switch_on_timed", raising=False)
     impulse_gate._min_cycle_time = 0.0
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
     assert impulse_gate._off_pending is True
 
     mock_gateway.send.reset_mock()
@@ -849,13 +848,13 @@ async def test_lost_off_is_retried_and_blocks_the_next_pulse(hass: HomeAssistant
 
     # The next command first tries to release the relay and does not stack another ON on it.
     mock_gateway.send.reset_mock()
-    assert await impulse_gate._async_send_impulse() is False
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.NOT_SENT
     assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*0*22##"] * 3
 
     # Once the bus is back the OFF goes out first, then the new pulse.
     mock_gateway.send.reset_mock()
     mock_gateway.send.side_effect = None
-    assert await impulse_gate._async_send_impulse() is True
+    assert await impulse_gate._async_send_impulse(Intent.OPEN) is PulseOutcome.CONFIRMED
     assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*0*22##", "*1*1*22##"]
     impulse_gate._pulse_off_cancel()
 
@@ -923,6 +922,7 @@ async def test_direct_cover_opposite_direction_stops_and_wall_button_stops_closi
     assert cover.is_closing is False
 
     # Now start closing, then call open_cover while closing -> converts to STOP
+    cover._last_pulse_time -= 2.0  # past the deadband
     await cover.async_close_cover()
     assert cover.is_closing is True
     await cover.async_open_cover()
@@ -1444,37 +1444,15 @@ async def test_unconfirmed_software_on_still_owes_the_off(hass: HomeAssistant, d
 
     with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
         await cover.async_open_cover()
-    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*1*24##"]
-    assert cover._off_pending is True
-    assert cover._pulse_off_cancel is not None
-    assert cover._last_pulse_time == -1e9
-
-    mock_gateway.send.return_value = None
-    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
-    await hass.async_block_till_done()
+    # The ON may be on the bus since the wait began: the OFF goes out at once, not a
+    # `pulse_duration` later (this first attempt is rejected like the ON).
     assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*1*24##", "*1*0*24##"]
-    assert cover._off_pending is False
-
-
-async def test_software_on_that_could_not_be_queued_still_owes_the_off(
-    hass: HomeAssistant, direct_gate, mock_gateway
-):
-    """An ON the gateway handler raised on is unconfirmed like any other: the OFF timer is armed."""
-    cover = direct_gate()
-    cover._pulse_duration = 1.0
-    mock_gateway.send.side_effect = RuntimeError("command queue is closed")
-
-    with pytest.raises(HomeAssistantError, match="pulse was not confirmed .*command queue is closed"):
-        await cover.async_open_cover()
     assert cover._off_pending is True
-    assert cover._pulse_off_cancel is not None
     assert cover._last_pulse_time == -1e9
 
-    mock_gateway.send.side_effect = None
     mock_gateway.send.return_value = None
-    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
     await hass.async_block_till_done()
-    assert str(mock_gateway.send.call_args_list[-1][0][0]) == "*1*0*24##"
+    assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*1*24##", "*1*0*24##", "*1*0*24##"]
     assert cover._off_pending is False
 
 
@@ -1490,7 +1468,7 @@ async def test_rejected_off_is_retried_and_stays_owed(hass: HomeAssistant, direc
 
     # The next pulse releases the relay first and is refused while that fails.
     mock_gateway.send.reset_mock()
-    with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
+    with pytest.raises(HomeAssistantError, match="relay of the previous pulse could not be released"):
         await cover.async_open_cover()
     assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == ["*1*0*24##"] * 3
 
@@ -1547,7 +1525,11 @@ async def test_cancelled_request_withdraws_the_pulse_and_keeps_the_off(hass: Hom
         await task
     assert queued_on.cancelled()
     assert cover._off_pending is True
-    assert cover._pulse_off_cancel is not None
+    # The withdrawn ON may already have been written: its OFF is sent at once.
+    mock_gateway.send.return_value = None
+    await hass.async_block_till_done()
+    assert str(mock_gateway.send.call_args_list[-1][0][0]) == "*1*0*24##"
+    assert cover._off_pending is False
 
 
 async def test_delivery_awaitable_that_is_not_a_future(hass: HomeAssistant, direct_gate, mock_gateway):
@@ -1584,7 +1566,8 @@ async def test_rejected_pulse_after_approval_does_not_wedge_the_access_policy(ha
 
     assert [str(c[0][0]) for c in mock_gateway.send.call_args_list] == [PULSE_FRAME]
     assert impulse_gate.extra_state_attributes["access_phase"] == "idle"
-    assert any("Not executed" in str(c.data.get("message", "")) for c in calls)
+    assert any("did not confirm" in str(c.data.get("message", "")) for c in calls)
+    assert not any("Not executed" in str(c.data.get("message", "")) for c in calls)
 
     # The next request is taken, and STOP still drops it.
     await impulse_gate.async_open_cover()
@@ -1641,6 +1624,7 @@ async def test_open_on_a_door_stopped_part_way_sends_nothing_but_close_does(hass
 
     await cover.async_open_cover()
     assert _pulses(mock_gateway) == 2
+    cover._last_pulse_time -= 2.0  # past the deadband
     await cover.async_close_cover()
     assert _pulses(mock_gateway) == 3
 
@@ -1654,21 +1638,20 @@ async def test_direct_stop_in_write(hass, direct_gate, mock_gateway):
     await asyncio.sleep(0)
     assert (
         str(mock_gateway.send.call_args.args[0]) == "*1*18*24##"
-    )  # tests/test_component_impulse_cover.py:1042
+    )
     stop = asyncio.create_task(gate.async_stop_cover())
     await asyncio.sleep(0)
     ack.set_result(0.0)
     _, stopped = await asyncio.gather(opening, stop, return_exceptions=True)
-    assert isinstance(stopped, HomeAssistantError) or not gate.is_opening, (
-        "successful STOP followed by motion"
-    )
+    assert stopped is None, "the stop waits for the open write, then goes out"
+    assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == ["*1*18*24##"] * 2
+    assert not gate.is_opening
 
 
 async def test_stop_after_external_start_before_contact_lifts(direct_gate, mock_gateway):
     cover = direct_gate(state_sensor="binary_sensor.garage_contact")
     cover._handle_sensor_update("off")
-    # External switch, not an echo: HA has never sent a pulse. Frame as in
-    # tests/test_component_impulse_cover.py:929; front contact has not lifted yet.
+    # External switch, not an echo: HA has never sent a pulse; the front contact has not lifted yet.
     cover.handle_event(OWNEvent.parse("*1*1*24##"))
     await cover.async_stop_cover()
     assert [str(c.args[0]) for c in mock_gateway.send.call_args_list] == ["*1*18*24##"]
@@ -1769,25 +1752,6 @@ async def test_stop_joining_confirmed_stop_does_not_request_another_pulse(
         await gate._access.async_shutdown()
 
 
-async def test_release_before_ack(hass, direct_gate, mock_gateway):
-    gate = direct_gate()
-    gate._pulse_duration = 1.0
-    ack = hass.loop.create_future()
-    mock_gateway.send.side_effect = lambda cmd: (
-        ack if str(cmd) == "*1*1*24##" else None
-    )  # tests/test_component_impulse_cover.py:1069
-    opening = asyncio.create_task(gate.async_open_cover())
-    await asyncio.sleep(0)
-    # First write occurred, but its confirmation has not come back. Let the software hold time expire.
-    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=2))
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    before_ack = [str(c.args[0]) for c in mock_gateway.send.call_args_list]
-    ack.set_result(0.0)
-    await opening
-    assert before_ack == ["*1*1*24##", "*1*0*24##"]  # tests/test_component_impulse_cover.py:1069
-
-
 async def test_unconfirmed_direct_error(hass, direct_gate, mock_gateway):
     gate = direct_gate("binary_sensor.garage_contact")
     gate._handle_sensor_update("off")
@@ -1797,7 +1761,7 @@ async def test_unconfirmed_direct_error(hass, direct_gate, mock_gateway):
     await asyncio.sleep(0)
     assert (
         str(mock_gateway.send.call_args.args[0]) == "*1*18*24##"
-    )  # tests/test_component_impulse_cover.py:1042
+    )
     gate._handle_sensor_update("on")
     ack.cancel()  # unmarked: socket loss after handoff is indistinguishable from an unsent frame
     (error,) = await asyncio.gather(service, return_exceptions=True)

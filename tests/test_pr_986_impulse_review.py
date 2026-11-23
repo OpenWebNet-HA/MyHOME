@@ -1,0 +1,634 @@
+"""Impulse cover and access controller: the cases of the PR 986 review.
+
+Every cover here is built with values ``validate.cover_schema`` accepts (``min_cycle_time``
+1 - 120 s, default 5 s; ``pulse_duration`` 0.2 - 2 s), and the gateway double hands back one
+delivery future per frame, resolved with the monotonic write time like the command worker's
+(``gateway_sessions._resolve_written``) or cancelled like a frame it gave up on
+(``gateway_sessions._cancel_written``).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from datetime import timedelta
+from pathlib import Path
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from homeassistant.components.cover import CoverDeviceClass
+from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.core import Context, HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util import dt as dt_util
+from OWNd.message import OWNMessage
+from pytest_homeassistant_custom_component.common import (
+    async_fire_time_changed_exact,
+    async_mock_service,
+)
+from voluptuous import Invalid
+
+from custom_components.myhome import cover as cover_module
+from custom_components.myhome.access_policy import AccessController, Intent, Phase, PulseOutcome
+from custom_components.myhome.cover import OFF_SETTLE_DELAY, MyHOMEImpulseCover
+from custom_components.myhome.validate import cover_schema
+from tests.test_access_policy import SENSOR, _approve_action, _config, _press, _user, _wait_phase
+
+TIMED = "*1*18*24##"  # hardware-timed pulse, pulse_duration 0.5 s
+ON = "*1*1*24##"
+OFF = "*1*0*24##"
+
+
+class _Bus:
+    """A gateway handler double: one delivery future per frame, held or confirmed at once."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self.frames: list[str] = []
+        self.futures: list[asyncio.Future[float]] = []
+        self.queued_at: list[float] = []
+        self.hold = False
+        self.gateway = MagicMock()
+        self.gateway.mac = "00:03:50:00:88:88"
+        self.gateway.unique_id = "00:03:50:00:88:88"
+        self.gateway.log_id = "[Test Gateway]"
+        self.gateway.device_registry_id = "mock_gw_dev_id"
+        self.gateway.available = True
+        self.gateway.availability_signal = "myhome_gateway_availability_000350008888"
+        self.gateway.send = AsyncMock(side_effect=self._send)
+
+    async def _send(self, message: Any) -> asyncio.Future[float]:
+        fut: asyncio.Future[float] = self.hass.loop.create_future()
+        self.frames.append(str(message))
+        self.futures.append(fut)
+        self.queued_at.append(time.monotonic())
+        if not self.hold:
+            fut.set_result(time.monotonic())
+        return fut
+
+    def confirm(self, index: int = -1) -> None:
+        self.futures[index].set_result(time.monotonic())
+
+    def reject(self, index: int = -1) -> None:
+        """What the worker does with a NACKed, timed-out or unwritten frame."""
+        self.futures[index].cancel()
+
+    async def until(self, count: int) -> None:
+        for _ in range(400):
+            if len(self.frames) >= count:
+                return
+            await asyncio.sleep(0.005)
+        raise AssertionError(f"{len(self.frames)} frame(s) queued, expected {count}: {self.frames}")
+
+
+@pytest.fixture
+def bus(hass: HomeAssistant) -> _Bus:
+    return _Bus(hass)
+
+
+@pytest.fixture
+def make_gate(hass: HomeAssistant, bus: _Bus):
+    built: list[MyHOMEImpulseCover] = []
+
+    def build(
+        *,
+        state_sensor: str | None = None,
+        pulse_duration: float = 0.5,
+        min_cycle_time: float = 5.0,
+        access: bool = False,
+    ) -> MyHOMEImpulseCover:
+        with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+            gate = MyHOMEImpulseCover(
+                hass=hass,
+                name="Garage",
+                entity_name=None,
+                device_id="24",
+                who="1",
+                where="24",
+                interface=None,
+                device_class=CoverDeviceClass.GARAGE,
+                travel_time=10.0,
+                pulse_duration=pulse_duration,
+                min_cycle_time=min_cycle_time,
+                pin_code=None,
+                state_sensor=state_sensor,
+                manufacturer="BTicino",
+                model="Impulse Cover",
+                gateway=bus.gateway,
+                access_config={} if access else None,
+            )
+        gate.hass = hass
+        gate.entity_id = "cover.garage"
+        gate.async_write_ha_state = MagicMock()
+        built.append(gate)
+        return gate
+
+    yield build
+    for gate in built:
+        gate._cancel_travel_timer()
+        if gate._pulse_off_cancel is not None:
+            gate._pulse_off_cancel()
+
+
+async def _supervised(hass: HomeAssistant, make_gate, *, contact: str = STATE_OFF, **kwargs):
+    """A gate with `access:` and a contact sensor, its user and the notify calls."""
+    gate = make_gate(access=True, state_sensor=SENSOR, **kwargs)
+    user = await _user(hass, "Parent")
+    gate._context = Context(user_id=user.id)
+    gate._access.config = _config(user.id)
+    hass.states.async_set(SENSOR, contact)
+    gate._handle_sensor_update(contact)
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    return gate, user, calls
+
+
+def _relay_on(gate: MyHOMEImpulseCover) -> None:
+    gate.handle_event(OWNMessage.parse(ON))
+
+
+# ── 1. A stop that waited for the approved write stops the door ──────────
+
+
+async def test_stop_that_waited_for_the_approved_write_stops_the_door(hass: HomeAssistant, bus: _Bus, make_gate):
+    """With `access:` and the default 5 s deadband the waiting stop pulses once the relay is released."""
+    gate, user, calls = await _supervised(hass, make_gate)
+    bus.hold = True
+    await gate.async_open_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id, wait=False)
+    await bus.until(1)
+
+    stop = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.hold = False
+    confirmed_at = time.monotonic()
+    bus.confirm(0)
+    await stop
+
+    assert bus.frames == [TIMED, TIMED]
+    assert bus.queued_at[1] - confirmed_at >= 0.5 + OFF_SETTLE_DELAY - 0.02, "the relay had not been released yet"
+    assert gate._access.phase is Phase.IDLE
+    assert gate.is_opening is False
+    await gate._access.async_shutdown()
+
+
+async def test_two_stops_of_a_supervised_door_send_one_pulse(hass: HomeAssistant, bus: _Bus, make_gate):
+    """A second stop while the first is being written is the same stop: no error, no second pulse."""
+    gate, user, calls = await _supervised(hass, make_gate, contact=STATE_ON)
+    await gate.async_close_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id)
+    await _wait_phase(gate._access, Phase.MONITORING)
+    assert bus.frames == [TIMED]
+
+    bus.hold = True
+    first = asyncio.create_task(gate.async_stop_cover())
+    await bus.until(2)
+    second = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.confirm(1)
+    await asyncio.gather(first, second)
+
+    assert bus.frames == [TIMED, TIMED]
+    assert gate._access.phase is Phase.IDLE
+    assert sum("Garage: stopped" in str(c.data.get("message", "")) for c in calls) == 1
+    await gate._access.async_shutdown()
+
+
+# ── 2. A write the gateway did not confirm ───────────────────────────────
+
+
+async def test_unconfirmed_open_does_not_withhold_the_stop(hass: HomeAssistant, bus: _Bus, make_gate):
+    """The relay may have switched: the contact still reads closed, and STOP goes out all the same."""
+    gate = make_gate(state_sensor=SENSOR)
+    gate._handle_sensor_update(STATE_OFF)
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    bus.reject(0)
+    with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
+        await opening
+    assert gate.is_opening is False
+
+    bus.hold = False
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED, TIMED]
+
+
+async def test_unconfirmed_approved_pulse_is_supervised_and_not_called_dropped(hass: HomeAssistant, bus: _Bus, make_gate):
+    """With `access:` the door is watched as if it had started, and the phone is told the truth."""
+    gate, user, calls = await _supervised(hass, make_gate)
+    bus.hold = True
+    await gate.async_open_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id, wait=False)
+    await bus.until(1)
+    bus.reject(0)
+    await _wait_phase(gate._access, Phase.MONITORING)
+    await hass.async_block_till_done()
+
+    messages = [str(c.data.get("message", "")) for c in calls]
+    assert not any("Not executed" in m or "dropped" in m for m in messages)
+    assert any("did not confirm" in m for m in messages)
+
+    # The relay's own status right after the failed write is this pulse, not a wall button.
+    _relay_on(gate)
+    assert gate._access.phase is Phase.MONITORING
+
+    # A stop is immediate under supervision, and goes out: the door may be moving.
+    bus.hold = False
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED, TIMED]
+    assert gate._access.phase is Phase.IDLE
+    await gate._access.async_shutdown()
+
+
+async def test_stop_that_waited_for_an_unconfirmed_write_is_not_a_silent_success(hass: HomeAssistant, bus: _Bus, make_gate):
+    """ "It was not sent, nothing moves" is only true for a pulse that never left Home Assistant."""
+    gate, user, calls = await _supervised(hass, make_gate)
+    bus.hold = True
+    await gate.async_open_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id, wait=False)
+    await bus.until(1)
+    stop = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.hold = False
+    bus.reject(0)
+    await stop
+
+    assert bus.frames == [TIMED, TIMED]
+    await gate._access.async_shutdown()
+
+
+async def test_unconfirmed_close_that_does_not_close_latches_no_fault(hass: HomeAssistant, bus: _Bus, make_gate):
+    """A fault means an obstacle; a pulse nobody confirmed that moved nothing is reported, not latched."""
+    gate, user, calls = await _supervised(hass, make_gate, contact=STATE_ON)
+    bus.hold = True
+    await gate.async_close_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id, wait=False)
+    await bus.until(1)
+    bus.reject(0)
+    await _wait_phase(gate._access, Phase.MONITORING)
+
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=10.0 + 5.0 + 1.0))
+    await hass.async_block_till_done()
+    assert gate._access.phase is Phase.IDLE
+    assert gate._access.fault_reason is None
+    assert any("did not close" in str(c.data.get("message", "")) for c in calls)
+    await gate._access.async_shutdown()
+
+
+# ── 3. stop_cover of a direct cover under a schema-valid deadband ────────
+
+
+async def test_direct_stop_right_after_open_goes_out_inside_the_deadband(hass: HomeAssistant, bus: _Bus, make_gate):
+    """The deadband is for a double tap; a stop of the door Home Assistant just started is not one."""
+    gate = make_gate()
+    await gate.async_open_cover()
+    started = time.monotonic()
+    assert gate.is_opening is True
+
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED, TIMED]
+    assert bus.queued_at[1] - started >= 0.5 + OFF_SETTLE_DELAY - 0.02
+    assert gate.is_opening is False
+
+    # A second stop inside the deadband is the stop that was just sent: a third pulse would start the door again.
+    await gate.async_stop_cover()
+    assert bus.frames == [TIMED, TIMED]
+    # Open and close keep the deadband.
+    with pytest.raises(HomeAssistantError, match="pulse was not sent") as err:
+        await gate.async_open_cover()
+    assert err.value.translation_key == "impulse_pulse_not_sent"
+    assert bus.frames == [TIMED, TIMED]
+
+
+async def test_direct_stop_during_the_open_write_waits_and_stops(hass: HomeAssistant, bus: _Bus, make_gate):
+    """A stop that arrives while the open pulse is with the gateway is neither refused nor lost."""
+    gate = make_gate(state_sensor=SENSOR)
+    gate._handle_sensor_update(STATE_OFF)
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    stop = asyncio.create_task(gate.async_stop_cover())
+    again = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.hold = False
+    bus.confirm(0)
+    await asyncio.gather(opening, stop, again)
+
+    assert bus.frames == [TIMED, TIMED]
+    assert gate.is_opening is False
+
+
+async def test_direct_stop_that_waited_for_a_pulse_that_was_not_sent_sends_nothing(
+    hass: HomeAssistant, bus: _Bus, make_gate, monkeypatch
+):
+    """The open never left Home Assistant: the door is closed and at rest, a stop pulse would open it."""
+    monkeypatch.setattr(cover_module, "OFF_ATTEMPTS", 1)
+    gate = make_gate(state_sensor=SENSOR, pulse_duration=1.0)
+    gate._handle_sensor_update(STATE_OFF)
+    gate._off_pending = True  # the OFF of an earlier pulse is still owed
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    assert bus.frames == [OFF]
+    stop = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.reject(0)
+    with pytest.raises(HomeAssistantError, match="could not be released") as err:
+        await opening
+    assert err.value.translation_key == "impulse_relay_not_released"
+    assert "not confirmed by the gateway" not in str(err.value)
+    await stop
+    assert bus.frames == [OFF]
+
+
+async def test_direct_stop_that_joined_an_unconfirmed_stop_shares_its_error(hass: HomeAssistant, bus: _Bus, make_gate):
+    """The first stop may have stopped the door: a second pulse for the same stop could start it again."""
+    gate = make_gate()
+    bus.hold = True
+    first = asyncio.create_task(gate.async_stop_cover())
+    await bus.until(1)
+    second = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.reject(0)
+    results = await asyncio.gather(first, second, return_exceptions=True)
+
+    assert bus.frames == [TIMED]
+    assert [getattr(r, "translation_key", None) for r in results] == ["impulse_pulse_unconfirmed"] * 2
+
+
+async def test_unconfirmed_stop_of_a_supervised_door_keeps_the_watchdog(hass: HomeAssistant, bus: _Bus, make_gate):
+    """Nobody knows whether the door stopped: the error says so and the supervision goes on."""
+    gate, user, calls = await _supervised(hass, make_gate, contact=STATE_ON)
+    await gate.async_close_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id)
+    await _wait_phase(gate._access, Phase.MONITORING)
+
+    bus.hold = True
+    stop = asyncio.create_task(gate.async_stop_cover())
+    await bus.until(2)
+    bus.reject(1)
+    with pytest.raises(HomeAssistantError, match="stop pulse was not confirmed") as err:
+        await stop
+    assert err.value.translation_key == "impulse_stop_unconfirmed"
+    assert gate._access.phase is Phase.MONITORING
+    await gate._access.async_shutdown()
+
+
+async def test_stop_that_joined_an_unconfirmed_approved_stop_shares_its_error(hass: HomeAssistant, bus: _Bus, make_gate):
+    """With `access:` the stop that waited for an approved stop gets that stop's fate, and no approval request."""
+    gate, user, calls = await _supervised(hass, make_gate, contact=STATE_ON)
+    bus.hold = True
+    await gate.async_stop_cover()  # a stop of a door not known to move needs an approval
+    await _press(hass, _approve_action(calls)["action"], user.id, wait=False)
+    await bus.until(1)
+    waiting = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0)
+    bus.reject(0)
+    with pytest.raises(HomeAssistantError, match="stop pulse was not confirmed"):
+        await waiting
+    await hass.async_block_till_done()
+
+    assert bus.frames == [TIMED]
+    assert gate._access.phase is Phase.IDLE
+    await gate._access.async_shutdown()
+
+
+# ── 4. Software pulse: the OFF ─────────────────────────────────────────────
+
+
+async def test_software_pulse_is_timed_from_the_write_not_from_the_queue(hass: HomeAssistant, bus: _Bus, make_gate):
+    """An ON that waits in the queue longer than `pulse_duration` is not followed at once by its OFF."""
+    gate = make_gate(pulse_duration=1.0)
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=2))
+    await asyncio.sleep(0.01)
+    assert bus.frames == [ON], "the OFF was queued behind an ON that is not on the bus yet"
+
+    bus.hold = False
+    bus.confirm(0)
+    await opening
+    assert bus.frames == [ON]
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=0.5))
+    await hass.async_block_till_done()
+    assert bus.frames == [ON]
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
+    await hass.async_block_till_done()
+    assert bus.frames == [ON, OFF]
+    assert gate._off_pending is False
+
+
+async def test_running_off_is_awaited_before_the_next_pulse(hass: HomeAssistant, bus: _Bus, make_gate):
+    """One OFF at a time: a later pulse does not start while the OFF of the pulse before is still retried."""
+    gate = make_gate(pulse_duration=1.0, min_cycle_time=1.5)
+    await gate.async_open_cover()
+    bus.hold = True
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
+    await bus.until(2)
+    assert bus.frames == [ON, OFF]
+
+    gate._last_pulse_time -= 2.0  # past the deadband and the relay hold
+    stopping = asyncio.create_task(gate.async_stop_cover())
+    await asyncio.sleep(0.01)
+    assert bus.frames == [ON, OFF], "a second OFF was written next to the one still on its way"
+    bus.hold = False
+    bus.confirm(1)
+    await stopping
+    assert bus.frames == [ON, OFF, ON]
+
+
+async def test_removal_waits_for_the_running_off(hass: HomeAssistant, bus: _Bus, make_gate):
+    """The OFF task is the cover's: removal waits for it instead of writing a second OFF and leaving it behind."""
+    gate = make_gate(pulse_duration=1.0)
+    await gate.async_open_cover()
+    bus.hold = True
+    async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
+    await bus.until(2)
+
+    removal = asyncio.create_task(gate.async_will_remove_from_hass())
+    await asyncio.sleep(0.01)
+    assert not removal.done()
+    assert bus.frames == [ON, OFF]
+    bus.confirm(1)
+    await removal
+    assert bus.frames == [ON, OFF]
+    assert gate._off_pending is False
+
+
+async def test_pulse_cancelled_while_it_releases_the_relay_keeps_the_off_going(hass: HomeAssistant, bus: _Bus, make_gate):
+    """A service call cancelled during the pre-pulse OFF does not leave the relay owed with nobody to send it."""
+    gate = make_gate(pulse_duration=1.0)
+    gate._off_pending = True
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    bus.hold = False
+    opening.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await opening
+    bus.reject(0)
+    await hass.async_block_till_done()
+    assert bus.frames == [OFF, OFF]
+    assert gate._off_pending is False
+
+
+# ── 5. Errors carry translation keys ───────────────────────────────────────
+
+
+async def test_unconfirmed_pulse_error_is_translated(hass: HomeAssistant, bus: _Bus, make_gate):
+    gate = make_gate()
+    bus.hold = True
+    opening = asyncio.create_task(gate.async_open_cover())
+    await bus.until(1)
+    bus.reject(0)
+    with pytest.raises(HomeAssistantError, match="pulse was not confirmed") as err:
+        await opening
+    assert err.value.translation_key == "impulse_pulse_unconfirmed"
+    assert err.value.translation_domain == "myhome"
+
+
+def test_impulse_error_keys_exist_in_every_language():
+    root = Path("custom_components/myhome")
+    keys = {
+        "impulse_pulse_not_sent",
+        "impulse_pulse_send_failed",
+        "impulse_pulse_unconfirmed",
+        "impulse_relay_not_released",
+        "impulse_stop_not_sent",
+        "impulse_stop_unconfirmed",
+    }
+    for name in ("strings.json", "translations/en.json", "translations/fr.json", "translations/it.json", "translations/nl.json"):
+        defined = set(json.loads((root / name).read_text(encoding="utf-8"))["exceptions"])
+        assert not keys - defined, f"{name} lacks {sorted(keys - defined)}"
+
+
+# ── 6. Delivery confirmation ───────────────────────────────────────────────
+
+
+async def test_awaitable_that_is_not_a_future_times_out_with_a_reason(hass: HomeAssistant, bus: _Bus, make_gate, monkeypatch):
+    """A bare awaitable gets the same wait as a future: a message, not `()`."""
+    gate = make_gate()
+    release = asyncio.Event()
+
+    async def never() -> float:
+        await release.wait()
+        return 0.0
+
+    bus.gateway.send = AsyncMock(side_effect=lambda message: never())
+    monkeypatch.setattr(cover_module, "IMPULSE_WRITE_TIMEOUT", 0.05)
+    with pytest.raises(HomeAssistantError, match=r"not confirmed by the gateway within"):
+        await gate.async_open_cover()
+    release.set()
+
+
+async def test_off_awaitable_is_not_cancelled_by_the_timeout(hass: HomeAssistant, bus: _Bus, make_gate, monkeypatch):
+    """An OFF is never withdrawn, whatever kind of awaitable the handler returned."""
+    gate = make_gate(pulse_duration=1.0)
+    gate._off_pending = True
+    release = asyncio.Event()
+    cancelled = False
+
+    async def slow() -> float:
+        nonlocal cancelled
+        try:
+            await release.wait()
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        return 0.0
+
+    bus.gateway.send = AsyncMock(side_effect=lambda message: slow())
+    monkeypatch.setattr(cover_module, "IMPULSE_WRITE_TIMEOUT", 0.05)
+    monkeypatch.setattr(cover_module, "OFF_ATTEMPTS", 1)
+    assert await gate._async_send_off() is False
+    assert cancelled is False
+    release.set()
+    await asyncio.sleep(0.01)
+
+
+async def test_software_on_that_was_never_queued_owes_no_off(hass: HomeAssistant, bus: _Bus, make_gate):
+    """`send()` raised before the frame was queued: nothing reached the relay, no OFF is retried."""
+    gate = make_gate(pulse_duration=1.0)
+    bus.gateway.send = AsyncMock(side_effect=RuntimeError("command queue is closed"))
+    with pytest.raises(HomeAssistantError, match="pulse was not sent .*command queue is closed") as err:
+        await gate.async_open_cover()
+    assert err.value.translation_key == "impulse_pulse_send_failed"
+    assert gate._off_pending is False
+    assert gate._pulse_off_cancel is None
+
+
+# ── 7. Echo window, schema, contact, tasks ─────────────────────────────────
+
+
+async def test_status_read_back_during_a_long_pulse_is_not_a_wall_button(hass: HomeAssistant, bus: _Bus, make_gate):
+    """`pulse_duration` 2.0 s: the relay is still closed 1.6 s after the write (`gateway_confirm` reads back at 1.5 s)."""
+    gate, user, calls = await _supervised(hass, make_gate, contact=STATE_ON, pulse_duration=2.0)
+    await gate.async_close_cover()
+    await _press(hass, _approve_action(calls)["action"], user.id)
+    await _wait_phase(gate._access, Phase.MONITORING)
+
+    gate._last_pulse_time -= 1.6
+    _relay_on(gate)
+    assert gate._access.phase is Phase.MONITORING
+
+    gate._last_pulse_time -= 1.0  # 2.6 s after the write the relay is released: this one is a button
+    _relay_on(gate)
+    assert gate._access.phase is Phase.IDLE
+    await gate.async_will_remove_from_hass()
+
+
+def test_travel_time_0_is_rejected_for_an_impulse_cover():
+    with pytest.raises(Invalid, match="travel_time"):
+        cover_schema({"garage": {"name": "Garage", "who": "1", "where": "24", "travel_time": 0}})
+    assert cover_schema({"garage": {"name": "Garage", "who": "1", "where": "24"}})["1-24"]["travel_time"] == 25
+
+
+async def test_contact_back_to_closed_from_unknown_forgets_the_wall_button(hass: HomeAssistant, bus: _Bus, make_gate):
+    """on -> unavailable -> off: the door came to closed, an earlier relay actuation is over."""
+    gate = make_gate(state_sensor=SENSOR)
+    gate._handle_sensor_update(STATE_ON)
+    _relay_on(gate)  # wall button closes the door
+    gate._handle_sensor_update("unavailable")
+    gate._handle_sensor_update(STATE_OFF)
+
+    await gate.async_stop_cover()
+    assert bus.frames == []
+
+
+async def test_shutdown_cancels_every_task_the_controller_started(hass: HomeAssistant):
+    started = 0
+    cancelled = 0
+
+    async def _long() -> None:
+        nonlocal started, cancelled
+        started += 1
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled += 1
+            raise
+
+    user = await _user(hass, "Parent")
+
+    async def send_pulse(intent: Intent, effect: Any) -> PulseOutcome:
+        return PulseOutcome.CONFIRMED
+
+    ctrl = AccessController(
+        hass,
+        name="Garage 1",
+        config=_config(user.id),
+        state_sensor=SENSOR,
+        travel_time=15.0,
+        send_pulse=send_pulse,
+        publish=lambda: None,
+        entity_id=lambda: "cover.garage_1",
+    )
+    ctrl._spawn(_long())
+    ctrl._spawn(_long())
+    await asyncio.sleep(0)
+    assert started == 2
+    await ctrl.async_shutdown()
+    assert cancelled == 2

@@ -591,8 +591,8 @@ async def test_f461_unpopulated_relay_nack_reaches_the_impulse_cover_as_a_failed
     The F461 answered both frames with `*#*0##` after ~2.06 s (rows of step `unpopulated_71`).
     OWNd writes a NACKed command a second time and then returns ``None``; the worker turns
     that into a *cancelled* delivery future. The impulse cover must report it as a pulse
-    that was not sent (no ``asyncio.CancelledError``, no deadband, no motion shown), and a
-    software pulse must still owe its OFF.
+    that was not confirmed (no ``asyncio.CancelledError``, no deadband, no motion shown), and a
+    software pulse must still owe its OFF and send it at once.
     """
     import asyncio
     from unittest.mock import patch
@@ -709,9 +709,10 @@ async def test_f461_unpopulated_relay_nack_reaches_the_impulse_cover_as_a_failed
                 await software.async_open_cover()
             assert written == ["*1*1*71##", "*1*1*71##"]
             assert software._off_pending is True
-            assert software._pulse_off_cancel is not None
+            assert software._off_task is not None  # the ON may be on the bus: the OFF is on its way
         finally:
-            if software._pulse_off_cancel is not None:
-                software._pulse_off_cancel()
+            if software._off_task is not None:
+                software._off_task.cancel()
+                await asyncio.gather(software._off_task, return_exceptions=True)
             gateway._command_pool.close()
             await asyncio.wait_for(worker, 5)

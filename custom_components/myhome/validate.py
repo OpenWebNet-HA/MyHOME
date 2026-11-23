@@ -765,6 +765,11 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
                 ) from err
             if float(cfg.get(CONF_MIN_CYCLE_TIME, 5.0)) <= float(cfg.get(CONF_PULSE_DURATION, 0.5)):
                 raise Invalid(f"{device}: min_cycle_time must be greater than pulse_duration")
+            if float(cfg.get(CONF_TRAVEL_TIME, 25)) <= 0:
+                raise Invalid(
+                    f"{device}: an impulse cover needs a travel_time (how long the door takes to open or close); "
+                    "0 only applies to WHO 2 covers"
+                )
             if CONF_PIN_CODE in cfg and CONF_ACCESS not in cfg:
                 raise Invalid(f"{device}: pin_code is checked by the access policy; add an access: block or remove it")
         elif CONF_ACCESS in cfg or CONF_PIN_CODE in cfg or CONF_STATE_SENSOR in cfg:

@@ -22,6 +22,7 @@ from custom_components.myhome.access_policy import (
     Intent,
     PendingRequest,
     Phase,
+    PulseOutcome,
     RemoteClose,
     classify,
 )
@@ -61,9 +62,9 @@ class Harness:
         self.published = 0
         self.pulse_ok = pulse_ok
 
-        async def send_pulse(intent: Intent, effect: Effect) -> bool:
+        async def send_pulse(intent: Intent, effect: Effect) -> PulseOutcome:
             self.pulses.append((intent, effect))
-            return self.pulse_ok
+            return PulseOutcome.CONFIRMED if self.pulse_ok else PulseOutcome.NOT_SENT
 
         def publish() -> None:
             self.published += 1
@@ -310,7 +311,7 @@ async def test_dropped_pulse_is_reported(hass: HomeAssistant):
     await _press(hass, _approve_action(calls)["action"], parent.id)
     await hass.async_block_till_done()
     assert h.ctrl.phase is Phase.IDLE
-    assert "dropped" in calls[-1].data["message"]
+    assert "was not sent" in calls[-1].data["message"]
 
 
 async def test_failed_notification_aborts_request(hass: HomeAssistant):
@@ -662,9 +663,11 @@ async def test_async_shutdown_cancels_task_and_event(hass: HomeAssistant):
     async def _long():
         await asyncio.sleep(10)
 
-    h.ctrl._task = hass.async_create_task(_long())
+    h.ctrl._spawn(_long())
+    (task,) = h.ctrl._tasks
     await h.ctrl.async_shutdown()
-    assert h.ctrl._task is None
+    assert task.cancelled()
+    assert not h.ctrl._tasks
     assert h.ctrl._cancel_event.is_set()
 
 
@@ -1014,13 +1017,13 @@ class _HeldPulse:
         self.pulses: list[tuple[Intent, Effect]] = []
         self.writing, self.release = asyncio.Event(), asyncio.Event()
 
-        async def send_pulse(intent: Intent, effect: Effect) -> bool:
+        async def send_pulse(intent: Intent, effect: Effect) -> PulseOutcome:
             self.pulses.append((intent, effect))
             if len(self.pulses) == 1:
                 self.writing.set()
                 await self.release.wait()
-                return first_ok
-            return True
+                return PulseOutcome.CONFIRMED if first_ok else PulseOutcome.NOT_SENT
+            return PulseOutcome.CONFIRMED
 
         self.ctrl = AccessController(
             hass,

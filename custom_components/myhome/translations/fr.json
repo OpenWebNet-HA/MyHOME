@@ -759,6 +759,24 @@
     "lock_command_rejected": {
       "message": "{name} : la passerelle {gateway} a refusé ou ignoré la commande d'ouverture WHO=6 ({frame})"
     },
+    "impulse_pulse_not_sent": {
+      "message": "{name} : l'impulsion n'a pas été envoyée (dans le délai de garde de {deadband} s, ou une autre impulsion est en cours d'écriture)"
+    },
+    "impulse_pulse_send_failed": {
+      "message": "{name} : l'impulsion n'a pas été envoyée ({error})"
+    },
+    "impulse_pulse_unconfirmed": {
+      "message": "{name} : l'impulsion n'a pas été confirmée par la passerelle ({error}) ; le relais a pu commuter ou non : vérifiez la porte avant de réessayer"
+    },
+    "impulse_relay_not_released": {
+      "message": "{name} : l'impulsion n'a pas été envoyée : le relais de l'impulsion précédente n'a pas pu être relâché"
+    },
+    "impulse_stop_not_sent": {
+      "message": "{name} : l'impulsion d'arrêt n'a pas été envoyée"
+    },
+    "impulse_stop_unconfirmed": {
+      "message": "{name} : l'impulsion d'arrêt n'a pas été confirmée par la passerelle ; la porte est peut-être encore en mouvement : vérifiez-la"
+    },
     "lock_command_timeout": {
       "message": "{name} : la commande d'ouverture portier n'a pas été confirmée dans un délai de {timeout} s ; elle a été retirée si elle n'avait pas encore été envoyée"
     },
