@@ -859,10 +859,10 @@ async def test_area_sweep_stays_on_the_bus_of_the_area_frame(
         registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
     assert mgr.known_light_areas() == ["1", "1#4#01", "1#4#02"]
 
-    # 1. Area 1 of interface 01: its two lights are asked, nothing on the local bus.
+    # 1. Area 1 behind interface 01: its two lights are asked, nothing on the gateway's own bus.
     await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
     assert list(handler._resync_timers) == ["1#4#01"]
-    # The local light 11 echoing is not an echo of area 1 behind the interface.
+    # The gateway's own light 11 echoing is not an echo of area 1 behind the interface.
     await handler._process_message(OWNMessage.parse("*1*0*11##"))
     assert "1#4#01" in handler._resync_timers
     await _advance(hass)

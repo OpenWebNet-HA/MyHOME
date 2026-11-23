@@ -77,13 +77,13 @@ def _light(hass, where="06"):
 
 
 def _held_reads(gateway):
-    """Make every status request wait until the test completes it (a reply still being collected)."""
+    """Return an unresolved delivery Future for each status request, matching CommandWorkerPool."""
     reads: list[tuple[str, asyncio.Future]] = []
 
     async def send_status_request(message):
         done = asyncio.get_running_loop().create_future()
         reads.append((str(message), done))
-        await done
+        return done
 
     gateway.send_status_request = send_status_request
     return reads
@@ -270,3 +270,161 @@ async def test_only_one_read_of_a_light_is_out_at_a_time(hass, clock):
     reads[0][1].set_result(None)
     await hass.async_block_till_done()
     assert len(reads) == 1
+
+
+async def test_inflight_preset_change_ignores_first_reads_own_preset_echo(hass, clock):
+    """While read 1 (preset 7) is out and preset 8 arrives, read 1's own `*1*7*` echo does not clobber 60 %."""
+    light, gateway = _light(hass, where="0010")
+    reads = _held_reads(gateway)
+    _feed(light, "*#1*0010*1*153*4##")
+    clock.now += 60.0
+    _feed(light, "*1*7*0010##")
+    await _tick()
+    assert len(reads) == 1
+
+    clock.now += 0.2
+    _feed(light, "*1*8*0010##")  # user stepped to preset 8 while read 1 is still out
+    await _tick()
+    assert light._attr_brightness_pct == 60
+    assert len(reads) == 1
+
+    # Read 1's own 3488/MHS1 echo for preset 7 arrives before read 1 completes: ignored, 60 % kept
+    clock.now += 0.1
+    _feed(light, "*1*7*0010##")
+    await _tick()
+    assert light._attr_brightness_pct == 60
+    assert len(reads) == 1
+
+    reads[0][1].set_result(clock.now)
+    await _tick()
+    assert len(reads) == 2
+    assert light._brightness_refresh_preset == 8
+    _feed(light, "*#1*0010*1*163*4##")
+    reads[1][1].set_result(clock.now)
+    await hass.async_block_till_done()
+    assert light._attr_brightness_pct == 63
+
+
+async def test_different_preset_during_cooldown_asks_immediately(hass, clock):
+    """After read 1 finishes, a new preset inside the 1.0 s cooldown still triggers a Dimension 1 read."""
+    light, gateway = _light(hass, where="0010")
+    reads = _held_reads(gateway)
+    _feed(light, "*#1*0010*1*153*4##")
+    clock.now += 60.0
+    _feed(light, "*1*7*0010##")
+    await _tick()
+    reads[0][1].set_result(clock.now)
+    await _tick()
+    assert len(reads) == 1
+
+    clock.now += 0.3  # inside 1.0 s cooldown window, but preset changed 7 -> 8
+    _feed(light, "*1*8*0010##")
+    await _tick()
+    assert len(reads) == 2
+    assert light._attr_brightness_pct == 60
+    reads[1][1].set_result(clock.now)
+    await hass.async_block_till_done()
+
+
+async def test_unload_cancels_in_flight_refresh_without_spawning_followup(hass, clock):
+    """Removing the entity cancels the in-flight refresh task and does not spawn a follow-up read."""
+    light, gateway = _light(hass, where="0010")
+    reads = _held_reads(gateway)
+    _feed(light, "*#1*0010*1*153*4##")
+    clock.now += 60.0
+    _feed(light, "*1*7*0010##")
+    await _tick()
+    _feed(light, "*1*8*0010##")  # would normally schedule a follow-up read in finally
+    await _tick()
+    assert len(reads) == 1
+
+    await light.async_will_remove_from_hass()
+    await _tick()
+    assert len(reads) == 1
+    assert light._brightness_refresh_out is False
+    assert light._brightness_refresh_task is None
+
+
+async def test_brightness_refresh_timeout_releases_inflight_slot(hass, clock, monkeypatch):
+    """A delivery future that never settles times out cleanly without cancelling the pool's future."""
+    monkeypatch.setattr(light_module, "_BRIGHTNESS_REFRESH_TIMEOUT_S", 0.01)
+    light, gateway = _light(hass, where="0010")
+    reads = _held_reads(gateway)
+    _feed(light, "*#1*0010*1*153*4##")
+    clock.now += 60.0
+    _feed(light, "*1*7*0010##")
+    await asyncio.sleep(0.05)
+    assert len(reads) == 1
+    assert not reads[0][1].cancelled()
+    assert light._brightness_refresh_out is False
+
+
+async def test_level_zero_while_on_and_dimension_4_and_no_load_and_timed_on(hass, clock):
+    """#970 level-0-while-ON keeps its exact level (1 %) across preset 2 echoes; Dim 4 updates exact level;
+    WHAT 19 no-load, _settle_level_zero, and async_turn_on_timed reset the hold.
+    """
+    light, gateway = _light(hass, where="0010")
+    # Confirm ON at exact level 0 (#970)
+    _feed(light, "*#1*0010*1*153*4##")
+    light._level_zero_on = True
+    light._status_on = True
+    light._status_on_at = clock.now
+    def _dim1_reads() -> int:
+        return sum(
+            1
+            for call in gateway.send_status_request.await_args_list
+            if str(call.args[0]) == "*#1*0010*1##"
+        )
+
+    for _ in range(4):
+        clock.now += 3.0
+        _feed(light, "*#1*0010*1*100*10##")  # brightness=0, level_zero_while_on=True -> level=1
+        assert light.is_on is True
+        assert light._exact_level_pct == 1
+        clock.now += 0.3
+        _feed(light, "*1*2*0010##")
+        await hass.async_block_till_done()
+    # 2 Dimension 1 reads, then held (did NOT wipe _exact_level_pct or loop endlessly)
+    assert _dim1_reads() == 2
+
+    # Dimension 4 exact level updates _exact_level_pct and breaks a stale hold
+    clock.now += 3.0
+    _feed(light, "*#1*0010*4*140*2##")
+    assert light._exact_level_pct == 40
+    _feed(light, "*1*2*0010##")
+    await hass.async_block_till_done()
+    assert _dim1_reads() == 3
+
+    # Hold again, then WHAT 19 no-load resets guard
+    for _ in range(3):
+        clock.now += 3.0
+        _feed(light, "*1*2*0010##")
+        await hass.async_block_till_done()
+    before_noload = _dim1_reads()
+    _feed(light, "*1*19*0010##")
+    assert light._exact_level_pct is None
+    assert light._brightness_refresh_repeats == 0
+    clock.now += 3.0
+    _feed(light, "*1*2*0010##")
+    await hass.async_block_till_done()
+    assert _dim1_reads() == before_noload + 1
+
+    # _settle_level_zero settling off resets guard
+    light._exact_level_pct = 1
+    light._brightness_refresh_repeats = 2
+    light._level_zero_pending = True
+    light._level_zero_shown_on = True
+    light._level_zero_on = False
+    light._attr_is_on = True
+    light._settle_level_zero(answered=True)
+    assert light.is_on is False
+    assert light._exact_level_pct is None
+    assert light._brightness_refresh_repeats == 0
+
+    # async_turn_on_timed calls _send_switch_on and resets guard
+    light.async_write_ha_state = MagicMock()
+    light._brightness_refresh_repeats = 2
+    light._brightness_refresh_preset = 7
+    await light.async_turn_on_timed(duration=60)
+    assert light._brightness_refresh_repeats == 0
+    assert light._brightness_refresh_preset is None

@@ -247,37 +247,43 @@ class LightingResyncManager:
         Keyed per bus: `05` belongs to `00`, `09#4#01` to `00#4#01` (`_area_scope`).
         """
         area_map: dict[str, set[str]] = {}
-        # A warm standby carrying the primary's traffic reads the primary's lights:
-        # their registry entries belong to the primary's config entry.
-        owner: Any = self.handler
-        if getattr(owner, "is_standby", False) is True:
-            primary = owner._get_primary_gateway()
-            primary_entry = getattr(primary, "config_entry", None) if primary is not None else None
-            if primary_entry is not None and isinstance(getattr(primary_entry, "entry_id", None), str):
-                owner = primary
-        config_entry = getattr(owner, "config_entry", None)
-        if not config_entry or not hasattr(config_entry, "entry_id") or not isinstance(config_entry.entry_id, str):
-            return area_map
-
-        # Both identities, as the switch platform's setup parses them: the ids carry
-        # the config entry's MAC, which can differ from the live gateway's (else the
-        # MAC is read as the WHO and a WHO 4 switch passes for a light).
-        entry_data = getattr(config_entry, "data", None)
-        raw_entry_mac = entry_data.get(CONF_MAC) if isinstance(entry_data, Mapping) else None
-        entry_mac = raw_entry_mac if isinstance(raw_entry_mac, str) else None
-        registry = er.async_get(self.hass)
-        entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
-        for entry in entries:
-            if entry.domain in ("light", "switch"):
-                who, key = parse_unique_id(entry.unique_id, str(owner.mac), entry_mac)
-                if not key or (who is not None and who.isdigit() and who != "1"):
-                    continue
-                address = Address.from_device_id(key)
-                clean_where = normalize_where(address.clean_where)
-                area = area_of_where(clean_where)
-                if area:
-                    scope = self._area_scope(area, address.interface)
-                    area_map.setdefault(scope, set()).add(self._normalize_ptp_where(clean_where, address.interface))
+        # A warm standby or WHO=1-delegated secondary carrying the primary's traffic
+        # reads the primary's lights too: entities discovered before delegation stay on
+        # the primary's config entry (discovery.py).
+        owners: list[Any] = [self.handler]
+        if getattr(self.handler, "is_follower", False) is True or getattr(self.handler, "is_standby", False) is True:
+            primary = self.handler._get_primary_gateway()
+            if primary is not None and primary is not self.handler:
+                owners.append(primary)
+        registry: er.EntityRegistry | None = None
+        seen_entries: set[str] = set()
+        for owner in owners:
+            config_entry = getattr(owner, "config_entry", None)
+            entry_id = getattr(config_entry, "entry_id", None) if config_entry is not None else None
+            if not isinstance(entry_id, str) or entry_id in seen_entries:
+                continue
+            seen_entries.add(entry_id)
+            if registry is None:
+                registry = er.async_get(self.hass)
+            # Both identities, as the switch platform's setup parses them: the ids carry
+            # the config entry's MAC, which can differ from the live gateway's (else the
+            # MAC is read as the WHO and a WHO 4 switch passes for a light).
+            entry_data = getattr(config_entry, "data", None)
+            raw_entry_mac = entry_data.get(CONF_MAC) if isinstance(entry_data, Mapping) else None
+            entry_mac = raw_entry_mac if isinstance(raw_entry_mac, str) else None
+            for entry in er.async_entries_for_config_entry(registry, entry_id):
+                if entry.domain in ("light", "switch"):
+                    who, key = parse_unique_id(entry.unique_id, str(owner.mac), entry_mac)
+                    if not key or (who is not None and who.isdigit() and who != "1"):
+                        continue
+                    address = Address.from_device_id(key)
+                    clean_where = normalize_where(address.clean_where)
+                    area = area_of_where(clean_where)
+                    if area:
+                        scope = self._area_scope(area, address.interface)
+                        area_map.setdefault(scope, set()).add(
+                            self._normalize_ptp_where(clean_where, address.interface)
+                        )
         return area_map
 
     def known_light_areas(self) -> list[str]:
@@ -326,26 +332,29 @@ class LightingResyncManager:
         """
         if not isinstance(msg_is_on, bool):
             return False
+        from .gateway import PACED_WRITE_TIMEOUT
+
         own = self._own_sweeps.get(where)
         if own is not None:
-            if now - own[0] <= RESYNC_STORM_WINDOW_S:
-                return own[1] == msg_is_on
+            if now - own[0] <= PACED_WRITE_TIMEOUT:
+                return own[1] is None or own[1] == msg_is_on
             # The request's future never closed (worker gone): do not stay deaf.
             self._own_sweeps.pop(where, None)
         guard = self._reply_guard.get(where)
         if guard is not None:
             if now <= guard[0]:
-                return guard[1] == msg_is_on
+                return guard[1] is None or guard[1] == msg_is_on
             self._reply_guard.pop(where, None)
         return False
 
-    def _sweep_answered(self, where: str, started: float) -> None:
+    def _sweep_answered(self, where: str, started: float, *, arm_guard: bool = True) -> None:
         """Close the reply window of the status request queued at `started`."""
         own = self._own_sweeps.get(where)
         if own is None or own[0] != started:
             return
         self._own_sweeps.pop(where, None)
-        self._reply_guard[where] = (float(self._time.monotonic()) + RESYNC_REPLY_GRACE_S, own[1])
+        if arm_guard:
+            self._reply_guard[where] = (float(self._time.monotonic()) + RESYNC_REPLY_GRACE_S, own[1])
 
     def _sweep_delay(self, where: str, expected_on: bool | None, now: float) -> float | None:
         """Return the debounce for a sweep of `where`, or None when it must not be armed.
@@ -495,6 +504,21 @@ class LightingResyncManager:
                 # scope (another commanded state) is left to run.
                 LOGGER.debug("%s scope %s is held after repeated sweeps, not sweeping", self.handler.log_id, where)
                 continue
+            if (
+                delay > RESYNC_DEBOUNCE_S
+                and where in self._resync_timers
+                and self._resync_expected_on.get(where) != expected_on
+            ):
+                # A storming state's trailing sweep must not displace an already-armed
+                # short timer for a different commanded state.
+                LOGGER.debug(
+                    "%s scope %s is held for %s; keeping armed sweep for %s",
+                    self.handler.log_id,
+                    where,
+                    expected_on,
+                    self._resync_expected_on.get(where),
+                )
+                continue
             if where in self._resync_timers:
                 self._resync_timers.pop(where)()
             self._resync_expected_on[where] = expected_on
@@ -528,37 +552,50 @@ class LightingResyncManager:
             # Nothing to read: not a sweep, so it does not count towards a storm.
             return
 
+        def _record_sweep(queued_at: float) -> None:
+            if isinstance(expected_on, bool):
+                key = (where, expected_on)
+                self._sweep_times.setdefault(key, collections.deque(maxlen=RESYNC_STORM_SWEEPS)).append(queued_at)
+                storm = self._sweep_storms.get(key)
+                if storm is not None:
+                    storm.trailing_done = True
+                    storm.last_activity = queued_at
+
         task = asyncio.current_task()
         if task is not None:
             self._sweep_tasks.add(task)
         try:
-            now = float(self._time.monotonic())
-            if isinstance(expected_on, bool):
-                key = (where, expected_on)
-                self._sweep_times.setdefault(key, collections.deque(maxlen=RESYNC_STORM_SWEEPS)).append(now)
-                storm = self._sweep_storms.get(key)
-                if storm is not None:
-                    storm.trailing_done = True
-                    storm.last_activity = now
             if routed:
                 # An area behind an F422 interface is read light by light:
                 # `*#1*<APL>#4#<Int>##` is answered on a physical F461 2.0.11 and F455 1.0.76
                 # (`*#1*09#4#01##` -> `*1*0*09#4#01##`, live 2026-11-17). No capture or
                 # oracle row holds an area request on an interface (`*#1*<A>#4#<Int>##`).
+                recorded = False
                 for member in members:
                     if getattr(self.handler, "_terminate_listener", False):
                         return
                     await self.handler.send_status_request(OWNLightingCommand.status(member))
+                    if not recorded:
+                        _record_sweep(float(self._time.monotonic()))
+                        recorded = True
                 return
             written = await self.handler.send_status_request(OWNLightingCommand.status(where))
+            started = float(self._time.monotonic())
+            _record_sweep(started)
             if isinstance(written, asyncio.Future):
                 # From here until the request is closed, a frame for this scope that states
                 # the command being read back is its answer (`_is_own_sweep_reply`).
-                self._own_sweeps[where] = (now, expected_on)
+                self._own_sweeps[where] = (started, expected_on)
                 self._reply_guard.pop(where, None)
 
-                def _answered(_fut: asyncio.Future[Any], w: str = where, started: float = now) -> None:
-                    self._sweep_answered(w, started)
+                def _answered(fut: asyncio.Future[Any], w: str = where, s: float = started) -> None:
+                    arm_guard = (
+                        not fut.cancelled()
+                        or getattr(fut, "_written_under", None) is not None
+                        or getattr(fut, "_gateway_nack", False) is True
+                        or getattr(fut, "_command_timeout", False) is True
+                    )
+                    self._sweep_answered(w, s, arm_guard=arm_guard)
 
                 written.add_done_callback(_answered)
         finally:

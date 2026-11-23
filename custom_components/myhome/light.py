@@ -98,6 +98,8 @@ _BRIGHTNESS_REFRESH_WINDOW_S = 1.0
 _BRIGHTNESS_REFRESH_REPEATS = 2
 # No preset frame of the light for this long ends the hold.
 _BRIGHTNESS_REFRESH_QUIET_S = 30.0
+# How long a Dimension 1 brightness refresh waits for its request to close.
+_BRIGHTNESS_REFRESH_TIMEOUT_S = 20.0
 # A level 0 is shown on while its status check is out only when the light's "on" status is at
 # most this old: the captured level followed its status by 0.14 to 0.63 s, an MH200 off came
 # 2.6 s after "on" (tests/fixtures/traces/dimmer_on_at_level_0_2026_11_20).
@@ -564,12 +566,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_after: float = 0.0
         self._brightness_refresh_out = False
         self._brightness_refresh_again = False
+        self._brightness_refresh_task: asyncio.Task[None] | None = None
         self._brightness_refresh_preset: int | None = None
+        self._brightness_refresh_next_preset: int | None = None
         self._brightness_refresh_level: int | None = None
         self._brightness_refresh_repeats = 0
         self._exact_level_pct: int | None = None
         self._exact_level_since_refresh = False
-        self._last_preset_echo_at: float = 0.0
+        self._last_preset_echo_at: float | None = None
         # What the light's last on / off status frame (``*1*<what>*<where>##``, not a level
         # report) said, and when: it decides what an exact level 0 means (``_level_zero_while_on``).
         self._status_on: bool | None = None
@@ -865,6 +869,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def async_will_remove_from_hass(self) -> None:
         await self._cancel_fade_robustly()
+        self._brightness_refresh_again = False
+        self._brightness_refresh_next_preset = None
+        if self._brightness_refresh_task is not None:
+            self._brightness_refresh_task.cancel()
         if self._level_zero_check_task is not None:
             self._level_zero_check_task.cancel()
         await super().async_will_remove_from_hass()
@@ -921,6 +929,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     async def _send_switch_on(self, message: Any) -> Any:
         """Send a frame that switches the light on; return its delivery future."""
+        self._reset_brightness_refresh_guard()
         written = await self._gateway_handler.send(message)
         self._supersede_level_zero_check(written)
         return written
@@ -1215,8 +1224,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
     def _reset_brightness_refresh_guard(self) -> None:
         """Forget the preset and level of the last refreshes: the next echo may ask again."""
         self._brightness_refresh_preset = None
+        self._brightness_refresh_next_preset = None
         self._brightness_refresh_level = None
         self._brightness_refresh_repeats = 0
+        self._brightness_refresh_again = False
+        self._last_preset_echo_at = None
 
     def _request_brightness_refresh(self, force: bool = False) -> bool:
         """Ask Dimension 1 after a preset echo on a fine dimmer, at most once a second (#851).
@@ -1234,23 +1246,42 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_after = now + _BRIGHTNESS_REFRESH_WINDOW_S
         self._brightness_refresh_out = True
         self._exact_level_since_refresh = False
-        hass.async_create_task(
+        task = hass.async_create_task(
             self._async_brightness_refresh(),
             name=f"myhome_light_{self._where}_brightness_refresh",
         )
+        if not task.done():
+            self._brightness_refresh_task = task
         return True
 
     async def _async_brightness_refresh(self) -> None:
-        """Send the Dimension 1 read; when it is done, ask once more if the preset moved meanwhile."""
+        """Send the Dimension 1 read and wait until it closes; ask once more if the preset moved meanwhile."""
+        cancelled = False
         try:
-            await self._gateway_handler.send_status_request(
-                OWNLightingCommand.get_brightness(self._full_where)
-            )
+            async with asyncio.timeout(_BRIGHTNESS_REFRESH_TIMEOUT_S):
+                written = await self._gateway_handler.send_status_request(
+                    OWNLightingCommand.get_brightness(self._full_where)
+                )
+                if isinstance(written, asyncio.Future):
+                    await asyncio.wait([written])
+        except TimeoutError:
+            pass
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
         finally:
+            if self._brightness_refresh_task is asyncio.current_task():
+                self._brightness_refresh_task = None
             self._brightness_refresh_out = False
             self._brightness_refresh_after = time.monotonic() + _BRIGHTNESS_REFRESH_WINDOW_S
-            if self._brightness_refresh_again:
+            if not cancelled and self._brightness_refresh_again:
                 self._brightness_refresh_again = False
+                next_preset = self._brightness_refresh_next_preset
+                self._brightness_refresh_next_preset = None
+                if next_preset is not None:
+                    self._brightness_refresh_preset = next_preset
+                    self._brightness_refresh_level = self._exact_level_pct
+                    self._brightness_refresh_repeats = 1
                 self._request_brightness_refresh(force=True)
 
     def _request_status_check(self, background: bool) -> bool:
@@ -1400,6 +1431,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         # Off as for an off status: a software fade must not switch it on again.
         self._cancel_fade_if_active()
         self._attr_is_on = False
+        self._exact_level_pct = None
+        self._reset_brightness_refresh_guard()
         if not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
             # An on / off only light locked against levels keeps no level (#288).
             self._attr_brightness_pct = 0
@@ -1536,6 +1569,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if is_no_load:
             self._attr_is_on = False
             self._is_on_restored = False
+            self._exact_level_pct = None
+            self._reset_brightness_refresh_guard()
             was_no_load = self._attr_extra_state_attributes.get("no_load", False)
             self._attr_extra_state_attributes["no_load"] = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
@@ -1587,7 +1622,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             if not self._attr_is_on:
                 self._exact_level_pct = None
                 self._reset_brightness_refresh_guard()
-                self._brightness_refresh_again = False
             self._attr_extra_state_attributes.pop("unknown_state", None)
             if message.is_on and self._attr_extra_state_attributes.pop("no_load", None):
                 LOGGER.info(
@@ -1747,8 +1781,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_brightness = percent_to_eight_bits(level)
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
-            if getattr(message, "dimension", None) == 1 and message.brightness:
-                self._exact_level_pct = message.brightness
+            if getattr(message, "dimension", None) in (1, 4) and level > 0:
+                self._exact_level_pct = level
                 self._exact_level_since_refresh = True
             self._learn_dimmer_kind(message)
         elif has_level and has_preset and not is_fading:
@@ -1768,23 +1802,26 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._apply_brightness_state(mapped)
             else:
                 now = time.monotonic()
-                quiet = now - self._last_preset_echo_at > _BRIGHTNESS_REFRESH_QUIET_S
+                quiet = (
+                    self._last_preset_echo_at is None
+                    or now - self._last_preset_echo_at > _BRIGHTNESS_REFRESH_QUIET_S
+                )
                 self._last_preset_echo_at = now
                 in_window = self._brightness_refresh_out or now < self._brightness_refresh_after
                 # A MyHomeServer1 / 3488 answers *#1*WHERE*1## with the level and with the
                 # preset frame (capture of 2026-11-21 in tests/test_light_dimension1_refresh_loop.py),
                 # so that frame is the answer to this light's read, not a new echo.
                 if in_window and preset == self._brightness_refresh_preset:
-                    if not (self._exact_level_since_refresh and self._exact_level_pct is not None):
+                    if not self._brightness_refresh_again and not (
+                        self._exact_level_since_refresh and self._exact_level_pct is not None
+                    ):
                         self._apply_brightness_state(mapped)
                         self._bus_state_complete = False
                 elif self._brightness_refresh_out:
                     self._apply_brightness_state(mapped)
                     self._bus_state_complete = False
                     self._brightness_refresh_again = True
-                    self._brightness_refresh_preset = cast(int, preset)
-                    self._brightness_refresh_level = self._exact_level_pct
-                    self._brightness_refresh_repeats = 1
+                    self._brightness_refresh_next_preset = cast(int, preset)
                 else:
                     # The same answer reaches every instance on the bus, so a read that
                     # brings nothing new is repeated at most _BRIGHTNESS_REFRESH_REPEATS
@@ -1806,7 +1843,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         # level, #828) and Dimension 1 is asked for the exact one.
                         self._apply_brightness_state(mapped)
                         self._bus_state_complete = False
-                        if self._request_brightness_refresh():
+                        changed_preset = (
+                            self._brightness_refresh_preset is not None
+                            and preset != self._brightness_refresh_preset
+                        )
+                        if self._request_brightness_refresh(force=changed_preset):
                             self._brightness_refresh_repeats = (
                                 self._brightness_refresh_repeats + 1 if (same and not quiet) else 1
                             )

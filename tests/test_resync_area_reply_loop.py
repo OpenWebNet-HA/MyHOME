@@ -254,17 +254,20 @@ async def test_group_status_reply_does_not_restart_the_group_sweep(hass: HomeAss
 
 @pytest.mark.asyncio
 async def test_request_that_never_closes_does_not_leave_the_scope_deaf(hass: HomeAssistant) -> None:
-    """A status request whose future is never resolved stops hiding scope frames after the storm window."""
+    """A status request whose future is never resolved stops hiding scope frames after PACED_WRITE_TIMEOUT."""
+    from custom_components.myhome.gateway import PACED_WRITE_TIMEOUT
+
     handler = _make_handler(hass, "00:03:50:00:00:01", ("04",))
     bus = _Bus(hass, [handler], replies={})
     bus.ack_delay = 10_000.0
     bus.frame(0.0, "*1*0*00##")
     bus.frame(5.0, "*1*0*00##")
-    bus.frame(RESYNC_STORM_WINDOW_S + 1.0, "*1*0*00##")
+    bus.frame(RESYNC_STORM_WINDOW_S + 1.0, "*1*0*00##")  # still hidden while queued within 60 s
+    bus.frame(PACED_WRITE_TIMEOUT + 1.0, "*1*0*00##")
 
-    await bus.run(60.0)
+    await bus.run(PACED_WRITE_TIMEOUT + 10.0)
 
-    assert bus.polls(0) == [RESYNC_DEBOUNCE_S, RESYNC_STORM_WINDOW_S + 1.0 + RESYNC_DEBOUNCE_S]
+    assert bus.polls(0) == [RESYNC_DEBOUNCE_S, PACED_WRITE_TIMEOUT + 1.0 + RESYNC_DEBOUNCE_S]
 
 
 @pytest.mark.asyncio
@@ -367,3 +370,90 @@ async def test_empty_sweeps_do_not_hold_first_real_read(hass):
     bus.frame(3, "*1*0*1#4#01##")
     await bus.run(4)
     assert bus.polls(0, "*#1*11#4#01##") == [3.5]
+
+
+@pytest.mark.asyncio
+async def test_dim_step_own_sweep_reply_suppresses_echo(hass: HomeAssistant) -> None:
+    """A dim-step sweep (WHAT 30/31, expected_on=None) recognizes ON/OFF replies as its own answer."""
+    handler = _make_handler(hass, "00:03:50:00:00:01", (*PLANT_LIGHTS, "08"))
+    bus = _Bus(hass, [handler], replies={"*#1*00##": AREA_00_REPLY})
+    bus.frame(0.0, "*1*30*00##")
+
+    await bus.run(10.0)
+
+    assert bus.polls(0) == [RESYNC_DEBOUNCE_S]
+
+
+@pytest.mark.asyncio
+async def test_unwritten_cancelled_sweep_does_not_arm_reply_guard(hass: HomeAssistant) -> None:
+    """A queued status request withdrawn before being written must not hide real scope frames."""
+    handler = _make_handler(hass, "00:03:50:00:00:01", ("04",))
+    futs: list[asyncio.Future[float]] = []
+
+    async def _send(_cmd: Any) -> asyncio.Future[float]:
+        fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        futs.append(fut)
+        return fut
+
+    handler.send_status_request = AsyncMock(side_effect=_send)
+    await handler._resync_broadcast("00")
+    assert len(futs) == 1
+    assert "00" in handler._resync_manager._own_sweeps
+
+    futs[0].cancel()
+    await asyncio.sleep(0)
+
+    assert "00" not in handler._resync_manager._own_sweeps
+    assert "00" not in handler._resync_manager._reply_guard
+
+
+@pytest.mark.asyncio
+async def test_storm_frame_does_not_displace_opposite_state_short_timer(hass: HomeAssistant) -> None:
+    """A storming OFF frame must not overwrite an already-armed 0.5 s ON sweep with a 30 s timer."""
+    handler = _make_handler(hass, "00:03:50:00:00:01", ("04",))
+    bus = _Bus(hass, [handler], replies={})
+    # Drive OFF into storm (3 sweeps)
+    for when in (0.0, 5.0, 10.0):
+        bus.frame(when, "*1*0*00##")
+    # Real ON arrives at 15.0 (arms 0.5 s timer -> 15.5); storming OFF arrives at 15.2 (delay 30 s)
+    bus.frame(15.0, "*1*1*00##")
+    bus.frame(15.2, "*1*0*00##")
+
+    await bus.run(20.0)
+
+    assert 15.0 + RESYNC_DEBOUNCE_S in bus.polls(0)
+
+
+@pytest.mark.asyncio
+async def test_delegated_secondary_reads_primary_and_own_lights(hass: HomeAssistant) -> None:
+    """A WHO=1-delegated secondary gateway sees both its own lights and lights on the primary entry."""
+    from custom_components.myhome.const import (
+        CONF_BUS_TOPOLOGY,
+        CONF_GATEWAY_ROLE,
+        CONF_PRIMARY_GATEWAY,
+        ROLE_SECONDARY,
+        TOPOLOGY_SHARED,
+    )
+
+    primary = _make_handler(hass, "00:03:50:00:00:01", ("05", "09#4#01"))
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_HOST: "192.168.1.6", CONF_PORT: 20000, CONF_PASSWORD: "open", CONF_MAC: "00:03:50:00:00:02"},
+        options={
+            CONF_BROADCAST_RESYNC: True,
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: primary.mac,
+        },
+    )
+    entry.add_to_hass(hass)
+    with patch("custom_components.myhome.gateway.OWNGateway"):
+        secondary = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=True)
+    secondary.gateway.serial = "00:03:50:00:00:02"
+    er.async_get(hass).async_get_or_create("light", DOMAIN, f"{secondary.mac}-1-07", config_entry=entry)
+    secondary._get_primary_gateway = lambda: primary  # type: ignore[method-assign]
+
+    assert secondary.is_follower is True
+    area_map = secondary._resync_manager._known_area_map()
+    assert area_map["00"] == {"05", "07"}
+    assert area_map["00#4#01"] == {"09#4#01"}
