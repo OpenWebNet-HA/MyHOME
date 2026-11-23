@@ -585,6 +585,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # When the last slat pulse ended (monotonic) and which way it turned: the level
         # an advanced actuator reports right after it is that pulse's own (#870).
         self._pulse_ended_at: float | None = None
+        self._tilt_abort_clears_end: bool = False
         self._pulse_ended_direction: str | None = None
         # Direction-aware travel times. `_travel_time` stays the closing (down) time
         # for compatibility; a stored calibration overrides yaml / default values.
@@ -2899,6 +2900,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._pulse_written = None
         self._attr_is_opening = False
         self._attr_is_closing = False
+        if self._tilt_abort_clears_end:
+            self._pulse_ended_at = None
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -2955,13 +2958,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         0.10-0.12 s: 0 -> 1, 1 -> 2 and 2 -> 1 (frames 18, 29 and 40 of
         tests/fixtures/traces/pr_991_myhomeserver1_k4672m2s); on the same gateway +
         F401 (tests/fixtures/traces/pr_991_myhomeserver1_f401) it followed each of
-        three pulse stops by 0.14-0.15 s: 0 -> 1, unchanged 1, and 1 -> 0 (the
+        three pulse stops by 0.07-0.12 s: 0 -> 1, unchanged 1, and 1 -> 0 (the
         75 -> 76 step of #868 was a description only). The slats are where the pulse left them, not a full
         rotation further. Inside the echo window of the pulse's stop, a level that
         moved the way the pulse turned is taken as its own; any other change is still
         an external move (#868), and turns the slats all the way only when no motion
         frame came with it: a keypad pulse that reports its moving level turns them in
-        proportion to its motor time (frames 56-58 of the same capture). The claim is
+        proportion to its motor time (frames 56-58 of the K4672M2S capture; frames
+        75-78 of the F401 capture). The claim is
         for one stopped level (handle_event clears it).
         """
         ended, direction = self._pulse_ended_at, self._pulse_ended_direction
@@ -3144,13 +3148,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._tilt_direction = direction
         self._tilt_start_time = None
 
+        self._tilt_abort_clears_end = was_tilting
         try:
             written = await self._async_move(direction, is_tilting=True)
         except Exception:
             self._abort_tilt()
-            if was_tilting:
-                self._pulse_ended_at = None
             raise
+        finally:
+            self._tilt_abort_clears_end = False
 
         # _tilt_start_time stays None (no slat travel counted) until the frame is
         # written: on a busy queue the motor is still idle for a while.
