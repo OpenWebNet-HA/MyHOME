@@ -197,6 +197,9 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "automation_dim10_info",
+    "canonical_point_address",
+    "canonical_point_spelling",
     "canonical_thermo_zone",
     "central_report_zone",
     "central_unit_season",
@@ -696,7 +699,7 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
         if is_probe(bare):
             return bare
         return clean
-    if who in (1, 2):
+    if who in (1, 2, 14):
         # OWNd keeps `0004` as typed (OWNd#123); the gateways only accept and
         # report an area-0 point in two digits, so the MyHOME boundary spells
         # it `04` (#147). Silent: the yaml / UI value is validated elsewhere.
@@ -920,6 +923,34 @@ def thermo_event_actuator(message: Any) -> str:
     if act is not None and str(act).isdigit():
         return str(int(str(act)))
     return "1"
+
+
+def automation_dim10_info(message: Any) -> int | None:
+    """Return the 4th parameter (``SHUTTER_INFO``) of a WHO=2 Dimension 10 reply, or ``None``.
+
+    Format: ``*#2*WHERE*10*STATUS*LEVEL*PRIO*INFO##`` (e.g. ``0`` / ``15`` normal/unlocked,
+    ``12`` / ``13`` disabled/locked, ``14`` command not executed).
+    """
+    who = getattr(message, "who", None)
+    if isinstance(who, bool) or str(who) != "2":
+        return None
+    if (
+        getattr(message, "is_translation", False) is True
+        or isinstance(message, OWNCommand)
+        or getattr(message, "dimension", None) != 10
+    ):
+        return None
+    vals = getattr(message, "dimension_value", None)
+    if not isinstance(vals, (list, tuple)) or len(vals) < 4:
+        return None
+    raw_info = vals[3]
+    if raw_info is None or isinstance(raw_info, bool):
+        return None
+    info_str = str(raw_info).strip()
+    if not _is_ascii_uint(info_str):
+        return None
+    return int(info_str)
+
 
 
 def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:

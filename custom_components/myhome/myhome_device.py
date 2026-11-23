@@ -15,6 +15,11 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .actuator_lock import (
+    actuator_locks_of,
+    apply_actuator_lock_state,
+    is_lockable_entity,
+)
 from .const import CONF_ENTITIES, DOMAIN, LOGGER
 from .data import get_runtime_data
 from .device_health import DeviceHealth, Fault, FaultKind
@@ -45,6 +50,8 @@ class MyHOMEEntity(RestoreEntity):
     # Sensors / binary sensors: let Home Assistant name the entity after its device class.
     _name_from_device_class: bool = False
     _legacy_compat_name: str | None = None
+    _actuator_locked: bool | None = None
+    _actuator_lock_registered: bool = False
 
     _attr_has_entity_name = True
 
@@ -225,6 +232,62 @@ class MyHOMEEntity(RestoreEntity):
         """Handle a message routed from the gateway bus."""
         raise NotImplementedError  # pragma: no cover
 
+    @property
+    def actuator_locked(self) -> bool | None:
+        """Return WHO=14 / Dimension 10 actuator lock state, or ``None`` if unseen."""
+        return self._actuator_locked
+
+    @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Apply an observed WHO=14 / Dimension 10 actuator lock state idempotently."""
+        lock_state = bool(locked)
+        if self._actuator_locked is lock_state:
+            return
+        apply_actuator_lock_state(self, lock_state)
+        self._publish_state()
+
+    @callback
+    def _clear_actuator_lock(self) -> None:
+        """Clear a known actuator lock after genuine physical actuation is observed."""
+        if self._actuator_locked is not True:
+            return
+        apply_actuator_lock_state(self, False)
+        mgr = actuator_locks_of(self._gateway_handler)
+        if mgr is not None:
+            mgr.clear_lock_from_actuation(self._where, getattr(self, "_interface", None))
+
+    @callback
+    def _register_actuator_lock(self) -> None:
+        """Register WHO=1/2 point actuator entities with the gateway lock manager once."""
+        if self._actuator_lock_registered:
+            return
+        target_hass = self.hass or self._hass
+        mgr = actuator_locks_of(self._gateway_handler)
+        if (target_hass is None and mgr is None) or not is_lockable_entity(self):
+            return
+        if mgr is not None:
+            self.async_on_remove(mgr.register(self))
+        self._actuator_lock_registered = True
+
+    @callback
+    def _restore_actuator_lock(self, last_state: State) -> None:
+        """Soft-restore ``actuator_locked`` from ``last_state`` when unseen live."""
+        if not self._actuator_lock_registered or self._actuator_locked is not None:
+            return
+        restored_lock = last_state.attributes.get("actuator_locked")
+        if not isinstance(restored_lock, bool):
+            return
+        mgr = actuator_locks_of(self._gateway_handler)
+        if mgr is not None:
+            mgr.set_point_lock(
+                self._where,
+                getattr(self, "_interface", None),
+                restored_lock,
+                observed=False,
+            )
+        if self._actuator_locked is None:
+            apply_actuator_lock_state(self, restored_lock)
+
     @callback
     def _handle_availability_update(self) -> None:
         """Write state when the gateway availability changes."""
@@ -233,6 +296,7 @@ class MyHOMEEntity(RestoreEntity):
     @callback
     def _register_availability_listener(self) -> None:
         """Register the gateway availability listener once."""
+        self._register_actuator_lock()
         if self._availability_listener_registered:
             return
         target_hass = self.hass or self._hass
@@ -272,6 +336,7 @@ class MyHOMEEntity(RestoreEntity):
         except Exception:
             last_state = None
         if last_state is not None:
+            self._restore_actuator_lock(last_state)
             await self.async_restore_last_state(last_state)
         await self._async_poll_if_needed()
 
@@ -318,6 +383,7 @@ class MyHOMEEntity(RestoreEntity):
 
     async def async_restore_last_state(self, last_state: State) -> None:
         """Hook for entities to restore specific attributes and modes."""
+        self._restore_actuator_lock(last_state)
         if hasattr(self, "_attr_is_on") and getattr(self, "_attr_is_on") is None:
             if last_state.state == "on":
                 setattr(self, "_attr_is_on", True)

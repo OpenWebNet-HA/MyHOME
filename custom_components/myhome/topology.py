@@ -36,6 +36,7 @@ from .const import (
 if TYPE_CHECKING:
     from OWNd.message import OWNCommand
 
+    from .actuator_lock import ActuatorLockManager
     from .device_health import DeviceHealth
     from .gateway import MyHOMEGatewayHandler
 
@@ -552,6 +553,7 @@ class GatewayTopologyMixin:
     _failover_active: bool
     _setup_at: float
     device_health: DeviceHealth
+    _actuator_locks: ActuatorLockManager
 
     if TYPE_CHECKING:
         @property
@@ -706,6 +708,19 @@ class GatewayTopologyMixin:
                 return None
             return primary_gw.device_health
         return self.device_health
+
+    def actuator_lock_owner(self) -> ActuatorLockManager | None:
+        """The tracker that owns WHO=14 actuator lock state for this gateway's bus."""
+        if self.is_standby:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
+                return None
+            return getattr(primary_gw, "_actuator_locks", None)
+        if self.is_secondary:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is not None:
+                return getattr(primary_gw, "_actuator_locks", None)
+        return getattr(self, "_actuator_locks", None)
 
     @property
     def ignored_addresses(self) -> Any:

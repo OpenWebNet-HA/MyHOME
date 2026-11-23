@@ -20,6 +20,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
 from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
+from .actuator_lock import actuator_locks_of
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
 from .gateway_confirm import echo_watchdog_of
@@ -1639,6 +1640,10 @@ class CommandWorkerPool:
                             # read back, on every gateway model (measured on an F455, which
                             # leaves statuses out of a burst).
                             echo_watchdog.command_acknowledged(task["message"], written_at)
+                        if not task["is_status_request"] and not is_exposed:
+                            actuator_locks = actuator_locks_of(self.handler)
+                            if actuator_locks is not None:
+                                actuator_locks.observe(task["message"])
                     responses_to_dispatch: Any = collected
                     if responses_to_dispatch is None and task["is_status_request"]:
                         # A standalone zone status request (*#4*Z##) that answers only some of
