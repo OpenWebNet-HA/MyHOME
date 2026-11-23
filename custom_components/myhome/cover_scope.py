@@ -125,6 +125,7 @@ class MyHOMEScopeCover(MyHOMECover):
         self._attr_extra_state_attributes["scope"] = scope.kind
         self._unsub_members: CALLBACK_TYPE | None = None
         self._pulse_followers: list[MyHOMECover] = []
+        self._pulse_followers_interrupted: set[MyHOMECover] = set()
         # A member can join before this cover is in Home Assistant (no hass yet).
         self._added = False
 
@@ -406,6 +407,7 @@ class MyHOMEScopeCover(MyHOMECover):
             # On the local bus one scope frame turns every member's slats: they
             # follow this pulse instead of reading its frames as a curtain run.
             self._pulse_followers = [m for m in self._members() if m._slat_tilt]
+            self._pulse_followers_interrupted = {m for m in self._pulse_followers if m._is_tilting}
             for member in self._pulse_followers:
                 member._follow_pulse(self, direction)
         written = await super()._async_move(direction, is_tilting=is_tilting, pre_stopped=pre_stopped)
@@ -426,6 +428,7 @@ class MyHOMEScopeCover(MyHOMECover):
         record_end = record_end and not self._pulse_direction_failed()
         super()._apply_tilt_stop(at, record_end=record_end)
         followers, self._pulse_followers = self._pulse_followers, []
+        self._pulse_followers_interrupted.clear()
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 if member._tilt_start_time is None:
@@ -434,11 +437,15 @@ class MyHOMEScopeCover(MyHOMECover):
                 member._publish_state()
 
     def _abort_tilt(self) -> None:
+        clear_end = self._tilt_abort_clears_end
         super()._abort_tilt()
         followers, self._pulse_followers = self._pulse_followers, []
+        interrupted, self._pulse_followers_interrupted = self._pulse_followers_interrupted, set()
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 member._abort_tilt()
+                if clear_end or member in interrupted:
+                    member._pulse_ended_at = None
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         if members := self._fan_out():

@@ -445,3 +445,27 @@ async def test_follower_checks_leaders_pulse_written_failure(blind: Blind) -> No
     assert cover._pulse_direction_failed() is True
     cover._apply_tilt_stop(clock.now)
     assert cover._pulse_ended_at is None
+
+
+@pytest.mark.asyncio
+async def test_scope_failed_reversal_clears_follower_pulse_end(
+    blind: Blind,
+) -> None:
+    """When a scope tilt reversal fails to send, neither leader nor follower keeps a pulse-end claim."""
+    cover, clock, gateway, release = blind
+    area = _area_3(blind)
+    cover._attr_current_cover_position = 2
+    cover._attr_current_cover_tilt_position = 0
+    await area.async_set_cover_tilt_position(tilt_position=100)
+    assert area._is_tilting and cover._is_tilting and cover._tilt_follows is area
+    area._tilt_start_time = clock.now
+    area._pulse_started()
+    clock.now += 0.36
+    gateway.send = AsyncMock(side_effect=RuntimeError("gateway unavailable"))
+    with pytest.raises(RuntimeError, match="gateway unavailable"):
+        await area.async_set_cover_tilt_position(tilt_position=0)
+    assert not area._is_tilting and not cover._is_tilting
+    assert area._pulse_ended_at is None
+    assert cover._pulse_ended_at is None
+    release.set()
+    await _settle()
