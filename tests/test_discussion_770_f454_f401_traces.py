@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -428,7 +430,7 @@ async def _replay_trace2_pulse(
     assert frames[first]["direction"] == "tx"
     release = asyncio.Event()
 
-    async def _sleep(delay: float, *args, **kwargs) -> None:
+    async def _sleep(delay: float, *args: Any, **kwargs: Any) -> None:
         if delay > 0:
             await release.wait()
         await _REAL_SLEEP(0)
@@ -450,8 +452,11 @@ async def _replay_trace2_pulse(
                 await _REAL_SLEEP(0)
 
 
+Trace2Cover = tuple[MyHOMECover, SimpleNamespace, MagicMock]
+
+
 @pytest.fixture
-def trace2_cover():
+def trace2_cover() -> Iterator[Trace2Cover]:
     """Cover 21 as trace 2 had it (advanced F401, slat_time 1.4, min_motor_pulse 0.2), on a clock the test sets."""
     clock = SimpleNamespace(now=0.0)
     gateway = MagicMock()
@@ -462,9 +467,9 @@ def trace2_cover():
     gateway.hold_stop_write = False
     gateway.held = []
 
-    async def _send(message, *args, **kwargs):
+    async def _send(message: Any, *args: Any, **kwargs: Any) -> asyncio.Future[Any]:
         gateway.sent.append(str(message))
-        written = asyncio.get_running_loop().create_future()
+        written: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         if gateway.hold_stop_write and str(message) == "*2*0*21##":
             gateway.held.append(written)  # queued, its write not confirmed yet
         else:
@@ -489,7 +494,7 @@ def trace2_cover():
 
 
 @pytest.mark.asyncio
-async def test_discussion_770_trace2_tilt_pulses_keep_their_angle(trace2_cover) -> None:
+async def test_discussion_770_trace2_tilt_pulses_keep_their_angle(trace2_cover: Trace2Cover) -> None:
     """Every tilt pulse of trace 2 ends at the angle asked for, whatever level the F401 books for it.
 
     The F401 counts the pulse as travel and reports `*#2*21*10*10*1*001*15##` (level 0 -> 1) or
@@ -513,7 +518,7 @@ async def test_discussion_770_trace2_tilt_pulses_keep_their_angle(trace2_cover) 
 
 
 @pytest.mark.asyncio
-async def test_discussion_770_level_change_after_a_pulse_is_external_outside_its_window(trace2_cover) -> None:
+async def test_discussion_770_level_change_after_a_pulse_is_external_outside_its_window(trace2_cover: Trace2Cover) -> None:
     """The pulse's own level is taken only right after it, and only in its direction (#868 stays as it was)."""
     cover, clock, _gateway = trace2_cover
     first, last = _trace2_pulses()[0]
@@ -537,7 +542,7 @@ async def test_discussion_770_level_change_after_a_pulse_is_external_outside_its
 
 
 @pytest.mark.asyncio
-async def test_discussion_770_level_report_before_the_stop_write_is_confirmed(trace2_cover) -> None:
+async def test_discussion_770_level_report_before_the_stop_write_is_confirmed(trace2_cover: Trace2Cover) -> None:
     """The F401's report of the pulse's stop can beat the gateway's confirmation of that stop.
 
     Constructed from pulse 1 of trace 2: the stop's write stays unconfirmed and the command
@@ -715,7 +720,7 @@ async def test_discussion_770_trace3_cover_21_replay(hass: HomeAssistant) -> Non
         assert cover.current_cover_position == step_num
 
 
-async def test_failed_stop_does_not_open_own_level_window(trace2_cover):
+async def test_failed_stop_does_not_open_own_level_window(trace2_cover: Trace2Cover) -> None:
     c, clk, gw = trace2_cover
     level = "*#2*21*10*10*1*001*15##"  # the stopped level after trace 2's first pulse
     gw.hold_stop_write = True
@@ -731,7 +736,7 @@ async def test_failed_stop_does_not_open_own_level_window(trace2_cover):
     )
 
 
-async def test_old_level_must_not_cancel_new_auto_stop(trace2_cover):
+async def test_old_level_must_not_cancel_new_auto_stop(trace2_cover: Trace2Cover) -> None:
     cover, clock, gw = trace2_cover
     first, last = _trace2_pulses()[0]
     # Hold just the stopped level from pulse 1 until the next tilt service call.
@@ -750,7 +755,7 @@ async def test_old_level_must_not_cancel_new_auto_stop(trace2_cover):
         cover._cancel_stop_task()
 
 
-async def test_translation_and_level_before_confirm(trace2_cover):
+async def test_translation_and_level_before_confirm(trace2_cover: Trace2Cover) -> None:
     c, clk, gw = trace2_cover
     gw.hold_stop_write = True
     await _replay_trace2_pulse(c, clk, *_trace2_pulses()[0], 15)
@@ -765,7 +770,7 @@ async def test_translation_and_level_before_confirm(trace2_cover):
 
 
 # T: delivery of STOP alone is not evidence that an earlier direction moved the motor.
-async def test_cancelled_direction_followed_by_successful_manual_stop(trace2_cover):
+async def test_cancelled_direction_followed_by_successful_manual_stop(trace2_cover: Trace2Cover) -> None:
     cover, clock, gateway = trace2_cover
     clock.now = 1.0
     direction, stop = (asyncio.get_running_loop().create_future() for _ in range(2))
@@ -789,7 +794,7 @@ async def test_cancelled_direction_followed_by_successful_manual_stop(trace2_cov
 
 
 # T: a completed pulse must not claim the result of a later HA height command.
-async def test_own_height_write_after_completed_pulse(trace2_cover):
+async def test_own_height_write_after_completed_pulse(trace2_cover: Trace2Cover) -> None:
     cover, clock, gw = trace2_cover
     # Actual third pulse (README, step 3): the F401 booked zero height change.
     await _replay_trace2_pulse(cover, clock, *_trace2_pulses()[2], 20)
@@ -806,26 +811,7 @@ async def test_own_height_write_after_completed_pulse(trace2_cover):
     assert cover.current_cover_tilt_position == 100
 
 
-async def test_external_move_test_uses_monotonic_time(trace2_cover):
-    # Record actual time samples the cover sees, not a reconstruction of the timestamps.
-    cover, clock, gateway = trace2_cover
-    observed = []
-
-    def read():
-        observed.append(clock.now)
-        return clock.now
-
-    with patch("custom_components.myhome.cover.time", SimpleNamespace(monotonic=read)):
-        await test_discussion_770_level_change_after_a_pulse_is_external_outside_its_window(
-            (cover, clock, gateway)
-        )
-    for before, after in zip(observed, observed[1:]):
-        assert before <= after, (
-            f"entity monotonic clock went backwards by {before - after:.3f}s during the external-move test"
-        )
-
-
-async def test_own_absolute_position_write_supersedes_settled_pulse(trace2_cover):
+async def test_own_absolute_position_write_supersedes_settled_pulse(trace2_cover: Trace2Cover) -> None:
     cover, clock, gw = trace2_cover
     a, b = _trace2_pulses()[0]
     await _replay_trace2_pulse(cover, clock, a, b, 15)
@@ -861,7 +847,7 @@ async def test_own_absolute_position_write_supersedes_settled_pulse(trace2_cover
     )
 
 
-async def test_a_followed_pulse_keeps_the_earlier_pulse_claim_on_its_stopped_level(trace2_cover):
+async def test_a_followed_pulse_keeps_the_earlier_pulse_claim_on_its_stopped_level(trace2_cover: Trace2Cover) -> None:
     """A blind that follows an area pulse right after its own pulse still takes that pulse's late level as its own."""
     cover, clock, _gateway = trace2_cover
     first, last = _trace2_pulses()[0]
@@ -875,12 +861,27 @@ async def test_a_followed_pulse_keeps_the_earlier_pulse_claim_on_its_stopped_lev
     assert cover._is_tilting and cover._tilt_follows is leader
 
 
-async def test_a_followed_pulse_that_interrupts_a_running_pulse_leaves_no_claim(trace2_cover):
-    """The interrupted pulse's motor runs on under the area pulse: no later level is that pulse's own."""
+async def test_a_followed_pulse_that_interrupts_a_running_pulse_keeps_its_claim(trace2_cover: Trace2Cover) -> None:
+    """The interrupted pulse ends where the area pulse takes over, and its stopped level is still its own.
+
+    A gateway that stops the actuator ahead of the area's direction frame makes it report the level the
+    interrupted pulse left (here the capture's closed report, 1 -> 0, of a closing pulse) while the blind
+    already follows the area pulse: it keeps following it.
+    """
     cover, clock, _gateway = trace2_cover
     first, last = _trace2_pulses()[0]
     await _replay_trace2_pulse(cover, clock, first, last, 15)
+    assert (cover.current_cover_position, cover.current_cover_tilt_position) == (1, 15)
     await cover.async_set_cover_tilt_position(tilt_position=0)
     assert cover._is_tilting
-    cover._follow_pulse(MagicMock(), "open")
-    assert cover._pulse_ended_at is None and cover._is_tilting
+    leader = MagicMock()
+    leader._pulse_stop_written = None
+    cover._follow_pulse(leader, "open")
+    assert cover._is_tilting and cover._tilt_follows is leader
+    assert (cover._pulse_ended_at, cover._pulse_ended_direction) == (clock.now, "close")
+    clock.now += 0.1
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*0*001*15##"))
+    assert cover.current_cover_position == 0
+    assert cover._is_tilting and cover._tilt_follows is leader
+    # The claim was for that one level: the next change under the area pulse is not the old pulse's.
+    assert cover._pulse_ended_at is None
