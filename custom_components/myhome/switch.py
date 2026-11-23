@@ -41,6 +41,7 @@ from OWNd.message import (
 from .binary_sensor import (
     binary_sensor_canonical_where,
     classify_binary_sensor_registry_entry,
+    dry_contact_config_keys,
     resolve_binary_sensor_inverted,
 )
 from .const import (
@@ -82,7 +83,6 @@ from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
 from .typing_compat import device_info_to_dict
 from .where_grammar import (
-    contact_where_aliases,
     is_central_thermo_where,
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -381,17 +381,8 @@ async def async_setup_entry(
         bs_who, candidate = classified
         clean_cand = candidate.split("-")[-1]
         if bs_who == "25":
-            contact_aliases = contact_where_aliases(clean_cand)
-            bs_cfg = _bs_first_cfg(
-                f"25-{candidate}",
-                *(f"25-{alias}" for alias in contact_aliases),
-                candidate,
-                clean_cand,
-                *contact_aliases,
-                normalize_where(candidate) or "",
-                normalize_where(clean_cand) or "",
-            )
-            bs_where = str(bs_cfg.get(CONF_WHERE, candidate))
+            bs_cfg = _bs_first_cfg(*dry_contact_config_keys(candidate))
+            bs_where = Address.from_config(candidate, bs_cfg).key if bs_cfg else candidate
             norm_w = normalize_where(bs_where) or normalize_where(bs_where.split("-")[-1])
             bs_dev_id = (
                 candidate

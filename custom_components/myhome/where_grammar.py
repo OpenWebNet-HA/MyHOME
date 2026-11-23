@@ -581,9 +581,24 @@ def padded_contact_where(where: str) -> str:
 
 
 def contact_where_aliases(where: str) -> list[str]:
-    """Return both short and F455-padded spellings for a WHO 25 contact 1..9, else ``[where]``."""
+    """Return both short and F455-padded spellings for a WHO 25 contact, normalizing leading zeros and ``#4#I``."""
     text = str(where)
-    return list(dict.fromkeys((text, canonical_contact_where(text), padded_contact_where(text))))
+    base, sep, iface = text.partition("#4#")
+    clean_base = base.lstrip("0") or "0" if base.isascii() and base.isdigit() else base
+    clean_iface = iface.zfill(2) if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 else iface
+    normalized = f"{clean_base}#4#{clean_iface}" if sep else clean_base
+    return list(
+        dict.fromkeys(
+            (
+                text,
+                normalized,
+                canonical_contact_where(text),
+                padded_contact_where(text),
+                canonical_contact_where(normalized),
+                padded_contact_where(normalized),
+            )
+        )
+    )
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:
