@@ -452,11 +452,6 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntr
     return True
 
 
-def _nearest_coarse_preset(pct: int) -> int:
-    """Return the closest WHO=1 coarse WHAT preset (2..10) for a 1..100% brightness."""
-    return min(COARSE_PRESET_TO_PERCENT, key=lambda w: abs(COARSE_PRESET_TO_PERCENT[w] - pct))
-
-
 class MyHOMELight(MyHOMEEntity, LightEntity):
     _pending_cmd_brightness_pct: tuple[int, float] | None = None
 
@@ -1578,6 +1573,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_brightness_pct = self._attr_brightness_pct
         prev_color_temp = self._attr_color_temp
         prev_hs_color = self._attr_hs_color
+        was_restored = self._is_on_restored
         was_fine = self._is_fine_dimmer(message)
         unknown_state = getattr(message, "unknown_state", None)
         is_no_load = unknown_state == 19
@@ -1822,15 +1818,35 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 preset_pct = COARSE_PRESET_TO_PERCENT.get(
                     cast(int, preset), cast(int, preset) * 10
                 )
-            self._apply_brightness_state(max(0, min(100, preset_pct)))
-            if self._is_fine_dimmer(message):
-                # On a fine dimmer WHAT 2..10 is a quantised view of the level: an F461
-                # answers *#1*WHERE## with *1*7*WHERE## for anything between about 44 and
-                # 57 %, and the F418's own ladder is 1, 8, 16, 24, 34, 47, 63, 79, 100 %
-                # (#851). The mapped value is shown at once (a wall press did change the
-                # level, #828) and Dimension 1 is asked for the exact one.
+            clamped_preset_pct = max(0, min(100, preset_pct))
+            has_dimmer_capability = bool(
+                set(self._attr_supported_color_modes or ())
+                - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+            )
+            if (
+                self._actuator_locked is True
+                and prev_is_on is True
+                and prev_brightness_pct is not None
+                and not self._coarse_speed_seen
+                and getattr(message, "is_coarse_dimmer", None) is not True
+                and (was_fine or (was_restored and has_dimmer_capability))
+                and abs(clamped_preset_pct - prev_brightness_pct) <= 15
+            ):
+                # Locked fine or restored dimmer answered a status poll with its quantized
+                # coarse preset: hold exact brightness (zero UI/follower bounce) and ask
+                # Dimension 1 to verify whether physical brightness actually changed (#851, #976).
                 self._bus_state_complete = False
                 self._request_brightness_refresh()
+            else:
+                self._apply_brightness_state(clamped_preset_pct)
+                if self._is_fine_dimmer(message):
+                    # On a fine dimmer WHAT 2..10 is a quantised view of the level: an F461
+                    # answers *#1*WHERE## with *1*7*WHERE## for anything between about 44 and
+                    # 57 %, and the F418's own ladder is 1, 8, 16, 24, 34, 47, 63, 79, 100 %
+                    # (#851). The mapped value is shown at once (a wall press did change the
+                    # level, #828) and Dimension 1 is asked for the exact one.
+                    self._bus_state_complete = False
+                    self._request_brightness_refresh()
 
         if self._fade_engine.is_fading and (update_bus_state_complete or has_level):
             self._fade_engine.notify_bus_echo()
@@ -1847,17 +1863,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 and self._attr_is_on is not None
                 and self._attr_is_on != prev_is_on
             )
-            brightness_changed = False
-            if (
+            brightness_changed = (
                 prev_brightness_pct is not None
                 and self._attr_brightness_pct is not None
                 and self._attr_is_on is True
                 and self._attr_brightness_pct != prev_brightness_pct
-            ):
-                if was_fine and has_preset and isinstance(preset, int):
-                    brightness_changed = preset != _nearest_coarse_preset(prev_brightness_pct)
-                else:
-                    brightness_changed = True
+            )
             ct_changed = (
                 prev_color_temp is not None
                 and self._attr_color_temp is not None

@@ -591,11 +591,13 @@ async def test_software_fade_locked_bypass_mid_fade_lock_and_fine_preset_bucket(
     handler._actuator_locks.observe(OWNMessage.parse("*14*0*42##"))
     assert light.actuator_locked is True
 
-    # Coarse preset *1*4*42## (20% bucket == _nearest_coarse_preset(22)) must NOT falsely unlock!
+    # Coarse preset *1*4*42## (20% bucket, |20 - 22| <= 15) holds 22% (0 bounce!) and
+    # subsequent exact *#1*42*1*122*5## reply keeps 22% and preserves actuator_locked=True!
     light.handle_event(OWNEvent.parse("*1*4*42##"))
+    assert light._attr_brightness_pct == 22
     assert light.actuator_locked is True
-    # Reset back to 22% via Dim 1 reply (still locked)
-    light.handle_event(OWNEvent.parse("*#1*42*1*120*5##"))
+    light.handle_event(OWNEvent.parse("*#1*42*1*122*5##"))
+    assert light._attr_brightness_pct == 22
     assert light.actuator_locked is True
 
     # Software-stepped commands while known locked send 1 single frame (0 multi-step spam, 0 state mutation)
@@ -606,11 +608,11 @@ async def test_software_fade_locked_bypass_mid_fade_lock_and_fine_preset_bucket(
     assert light._fade_task is None
     assert [str(c.args[0]) for c in handler.send.await_args_list] == [
         "*#1*42*#1*180*0##",
-        "*#1*42*#1*120*0##",
+        "*#1*42*#1*122*0##",
         "*1*0*42##",
     ]
     assert light.is_on is True
-    assert light._attr_brightness_pct == 20
+    assert light._attr_brightness_pct == 22
 
     # Different coarse preset bucket (*1*8*42## -> 60% != preset 4) self-heals actuator_locked=False!
     light.handle_event(OWNEvent.parse("*1*8*42##"))
@@ -854,3 +856,151 @@ async def test_who14_switch_lock_what30_ignore_and_self_healing(
     await probe_light.async_added_to_hass()
     for remove_cb in list(probe_light._on_remove or ()):
         remove_cb()
+
+
+async def test_locked_fine_and_restored_dimmer_coarse_preset_quantization_no_bounce(
+    hass: HomeAssistant,
+) -> None:
+    """Verify all 4 coarse-preset quantization & RestoreEntity lock-preservation cases (#976)."""
+    _entry, handler = _make_gateway(hass, model="F461")
+
+    # --- Case (a): 22% -> *1*4*42## -> *#1*42*1*122*5## (stays 22%, 0 bounce, actuator_locked=True) ---
+    light_42 = MyHOMELight(
+        hass=hass,
+        name="Dimmer 42",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="42",
+        who="1",
+        where="42",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    ev_42 = _attach_live_entity(hass, light_42, "light.dimmer_42")
+    light_42.handle_event(OWNEvent.parse("*#1*42*1*122*5##"))
+    handler._actuator_locks.observe(OWNMessage.parse("*14*0*42##"))
+    await hass.async_block_till_done()
+    assert light_42.actuator_locked is True
+    assert light_42._attr_brightness_pct == 22
+
+    ev_42.clear()
+    handler.send_status_request.reset_mock()
+    light_42._brightness_refresh_after = 0.0
+    light_42.handle_event(OWNEvent.parse("*1*4*42##"))
+    await hass.async_block_till_done()
+    assert light_42._attr_brightness_pct == 22
+    assert light_42.actuator_locked is True
+    assert ev_42 == []
+    assert [str(c.args[0]) for c in handler.send_status_request.await_args_list] == [
+        "*#1*42*1##"
+    ]
+
+    light_42.handle_event(OWNEvent.parse("*#1*42*1*122*5##"))
+    await hass.async_block_till_done()
+    assert light_42._attr_brightness_pct == 22
+    assert light_42.actuator_locked is True
+    assert ev_42 == []
+
+    # --- Case (b): 22% -> *1*4*42## -> *#1*42*1*120*5## (offline unlock to 20% self-heals!) ---
+    light_42._brightness_refresh_after = 0.0
+    light_42.handle_event(OWNEvent.parse("*1*4*42##"))
+    assert light_42._attr_brightness_pct == 22
+    assert light_42.actuator_locked is True
+    light_42.handle_event(OWNEvent.parse("*#1*42*1*120*5##"))
+    await hass.async_block_till_done()
+    assert light_42._attr_brightness_pct == 20
+    assert light_42.actuator_locked is False
+
+    # --- Case (c): F461/F418 boundary 44% -> *1*7*44## (50% preset) -> *#1*44*1*144*5## ---
+    light_44 = MyHOMELight(
+        hass=hass,
+        name="Dimmer 44",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="44",
+        who="1",
+        where="44",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    ev_44 = _attach_live_entity(hass, light_44, "light.dimmer_44")
+    light_44.handle_event(OWNEvent.parse("*#1*44*1*144*5##"))
+    handler._actuator_locks.observe(OWNMessage.parse("*14*0*44##"))
+    await hass.async_block_till_done()
+    ev_44.clear()
+
+    light_44._brightness_refresh_after = 0.0
+    light_44.handle_event(OWNEvent.parse("*1*7*44##"))
+    await hass.async_block_till_done()
+    assert light_44._attr_brightness_pct == 44
+    assert light_44.actuator_locked is True
+    assert ev_44 == []
+
+    light_44.handle_event(OWNEvent.parse("*#1*44*1*144*5##"))
+    await hass.async_block_till_done()
+    assert light_44._attr_brightness_pct == 44
+    assert light_44.actuator_locked is True
+    assert ev_44 == []
+
+    # --- Case (d): RestoreEntity ("brightness": 204 = 80%, "actuator_locked": True) + startup *1*9*55## ---
+    handler._actuator_locks.clear()
+    restored_55 = MyHOMELight(
+        hass=hass,
+        name="Restored Dimmer 55",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="55",
+        who="1",
+        where="55",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    ev_55 = _attach_live_entity(hass, restored_55, "light.restored_55")
+    await restored_55.async_restore_last_state(
+        State(
+            "light.restored_55",
+            "on",
+            {
+                "supported_color_modes": ["brightness"],
+                "brightness": 204,
+                "actuator_locked": True,
+            },
+        )
+    )
+    restored_55.async_write_ha_state()
+    await hass.async_block_till_done()
+    assert restored_55.actuator_locked is True
+    assert restored_55._is_on_restored is True
+    assert restored_55._exact_level_seen is False
+    assert restored_55._attr_brightness_pct == 80
+
+    ev_55.clear()
+    handler.send_status_request.reset_mock()
+    restored_55._brightness_refresh_after = 0.0
+    restored_55.handle_event(OWNEvent.parse("*1*9*55##"))
+    await hass.async_block_till_done()
+    assert restored_55._attr_brightness_pct == 80
+    assert restored_55.actuator_locked is True
+    assert ev_55 == []
+    assert [str(c.args[0]) for c in handler.send_status_request.await_args_list] == [
+        "*#1*55*1##"
+    ]
+
+    restored_55.handle_event(OWNEvent.parse("*#1*55*1*180*5##"))
+    await hass.async_block_till_done()
+    assert restored_55._attr_brightness_pct == 80
+    assert restored_55.actuator_locked is True
+    assert restored_55._exact_level_seen is True
+    assert ev_55 == []
