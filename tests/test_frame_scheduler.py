@@ -870,3 +870,48 @@ async def test_new_direction_cancels_stale_motion_for_alias():
         {"message": OWNAutomationCommand.stop_shutter("0009#4#01"), "is_cancel": True}
     )
     assert written.cancelled(), [str(i["message"]) for i in scheduler._queue]
+
+
+async def test_discarding_withdrawn_frame_does_not_release_another_workers_target_lock() -> None:
+    """Worker 1 discarding a withdrawn frame for the same cover must not unlock Worker 0's in-flight write."""
+    scheduler = FrameScheduler()
+    scheduler.put_nowait(_cmd("*2*1*11##"))
+    worker0_item = scheduler.acquire_nowait()
+    assert (2, "11") in scheduler.in_flight_targets
+
+    withdrawn_fut = asyncio.get_running_loop().create_future()
+    scheduler.put_nowait(dict(_cmd("*2*2*11##"), written=withdrawn_fut))
+    scheduler.put_nowait(_cmd("*2*0*11##"))
+    withdrawn_fut.cancel()
+
+    # Worker 1 pops and completes the withdrawn frame; Worker 0's lock on (2, "11") MUST remain held.
+    discarded = scheduler.acquire_nowait()
+    assert discarded["written"].cancelled()
+    scheduler.complete_task(discarded)
+    assert (2, "11") in scheduler.in_flight_targets
+
+    # The live stop for cover 11 must still wait for Worker 0 to finish.
+    with pytest.raises(asyncio.QueueEmpty):
+        scheduler.acquire_nowait()
+
+    scheduler.complete_task(worker0_item)
+    live_stop = scheduler.acquire_nowait()
+    assert str(live_stop["message"]) == "*2*0*11##"
+    scheduler.complete_task(live_stop)
+
+
+async def test_stop_overtakes_withdrawn_motion_for_same_cover() -> None:
+    """A withdrawn motion frame in the command tier does not hold back a stop for the same cover."""
+    scheduler = FrameScheduler()
+    written = asyncio.get_running_loop().create_future()
+    scheduler.put_nowait(dict(_cmd("*2*1*11##"), written=written))
+    written.cancel()
+    scheduler.put_nowait(_cmd("*2*0*11##"))
+
+    # The stop was inserted at index 0 ahead of the withdrawn motion frame.
+    first = scheduler.acquire_nowait()
+    assert str(first["message"]) == "*2*0*11##"
+    scheduler.complete_task(first)
+    second = scheduler.acquire_nowait()
+    assert second["written"].cancelled()
+    scheduler.complete_task(second)

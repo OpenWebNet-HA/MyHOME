@@ -414,6 +414,14 @@ _FRAME_TARGET_RE = re.compile(
 )
 
 
+def _is_withdrawn(item: Any) -> bool:
+    """Return True when a queued envelope's delivery future has already been cancelled."""
+    if not isinstance(item, dict):
+        return False
+    written = item.get("written")
+    return isinstance(written, asyncio.Future) and written.cancelled()
+
+
 def _classify_tier(item: Any) -> int:
     """Classify item into priority tier: 0 (commands), 1 (fade steps), 2 (status), 3 (others/sentinels).
 
@@ -750,6 +758,8 @@ class _PriorityQueueStorage:
             head_run_end += 1
         overlap_pos = 0
         for index, queued in enumerate(self._commands):
+            if _is_withdrawn(queued):
+                continue
             msg = queued.get("message") if isinstance(queued, dict) else None
             queued_where = _cover_where(msg)
             if queued_where is not None and _wheres_overlap(stop_where, queued_where):
@@ -822,10 +832,8 @@ class _PriorityQueueStorage:
             for idx, item in enumerate(q):
                 if not in_flight_targets:
                     return q, idx
-                if isinstance(item, dict):
-                    written = item.get("written")
-                    if isinstance(written, asyncio.Future) and written.cancelled():
-                        return q, idx
+                if _is_withdrawn(item):
+                    return q, idx
                 target = _extract_target_key(item)
                 if target is None:
                     return q, idx
@@ -1024,6 +1032,7 @@ class FrameScheduler:
         self._finished.set()
         self._is_shutdown = False
         self._in_flight_targets: set[tuple[int, str]] = set()
+        self._unlocked_items: set[int] = set()
         self._in_flight_status = 0
         self._status_resume_at = 0.0
         self._status_resume_handle: asyncio.TimerHandle | None = None
@@ -1230,11 +1239,16 @@ class FrameScheduler:
         if not self._queue.has_eligible(self._in_flight_targets, allow_status=allow_status):
             raise asyncio.QueueEmpty
         item = self._queue.pop_eligible(self._in_flight_targets, allow_status=allow_status)
-        target = _extract_target_key(item)
-        if target is not None:
-            self._in_flight_targets.add(target)
-        if _classify_tier(item) == _TIER_STATUS:
-            self._in_flight_status += 1
+        if _is_withdrawn(item):
+            # A withdrawn frame is handed out only to be discarded; it must neither
+            # take a target/status lock nor release another worker's active lock.
+            self._unlocked_items.add(id(item))
+        else:
+            target = _extract_target_key(item)
+            if target is not None:
+                self._in_flight_targets.add(target)
+            if _classify_tier(item) == _TIER_STATUS:
+                self._in_flight_status += 1
         self._wakeup_next(self._putters)
         return item
 
@@ -1276,6 +1290,10 @@ class FrameScheduler:
 
     def complete_task(self, task: Any) -> None:
         """Release a task's target/status lock and mark the queue task done."""
+        if id(task) in self._unlocked_items:
+            self._unlocked_items.discard(id(task))
+            self.task_done()
+            return
         was_status = _classify_tier(task) == _TIER_STATUS
         if was_status and self._in_flight_status > 0:
             self._in_flight_status -= 1
