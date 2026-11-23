@@ -419,6 +419,7 @@ async def test_failed_mid_pulse_reversal_clears_pulse_end_claim(blind: Blind) ->
     """If reversing a running tilt pulse fails to send, the old pulse is not claimed as ended."""
     cover, clock, gateway, _release = blind
     await _pulse_running(blind, 0, 0, 50)
+    clock.now += 0.36  # slats moved past min_motor_pulse so tilt=0 triggers a close reversal
     assert cover._is_tilting and cover._tilt_direction == "open"
     gateway.send = AsyncMock(side_effect=RuntimeError("gateway unavailable"))
     with pytest.raises(RuntimeError, match="gateway unavailable"):

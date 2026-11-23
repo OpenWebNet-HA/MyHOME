@@ -3251,8 +3251,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         try:
             written = await self._async_move(direction, is_tilting=True)
         except Exception:
-            self._is_tilting = False
-            self._tilt_direction = None
+            self._abort_tilt()
             if was_tilting:
                 self._pulse_ended_at = None
             raise
