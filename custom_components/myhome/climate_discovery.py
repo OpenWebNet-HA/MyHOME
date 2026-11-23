@@ -121,9 +121,12 @@ def _own_entry(address: Address, cfg: dict[str, Any]) -> dict[str, Any]:
     """``cfg`` unless it is the entry of a 4-zone central unit and ``address`` is a plain zone.
 
     ``zone: "1"`` with ``central: true`` is filed under the keys of zone 1 as well, and zone 1
-    found on the bus is a zone of its own (#994).
+    found on the bus is a zone of its own (#994). The entry's address is read as
+    ``Address.from_config`` reads it, so a 99-zone central unit behind an interface written in
+    the zone (``#0#4#01``) is not taken for a 4-zone one.
     """
-    if str(cfg.get("zone", "")).startswith("#0#") and not address.clean_where.startswith("#0#"):
+    central = Address.from_config("", cfg).clean_where
+    if central in ("#0#1", "#0#2", "#0#3", "#0#4") and address.clean_where != central:
         return {}
     return cfg
 

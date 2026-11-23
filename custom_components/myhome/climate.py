@@ -91,6 +91,7 @@ from .where_grammar import (
     canonical_thermo_zone,
     central_report_zone,
     central_unit_where,
+    four_zone_central_where,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_actuator_status,
@@ -3809,10 +3810,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         thermostat answers in the plain ``Z`` form. An F455 emits ``*4*311*#2##`` after every
         status report of the standalone zone 2 (live, 2026-11-08: 8 of 8, none on the F461
         monitoring the same bus), which OWNd decodes as zone 2 in automatic.
+
+        The own report of a 4-zone central unit (``#0#N``) is the state of zone N, the zone of
+        the master panel, which reports no mode of its own after a setpoint written to the
+        central unit (#994): a zone nobody configured takes it, a zone configured
+        ``standalone: true`` does not.
         """
         if self._central or not self._standalone:
             return False
         if message.message_type not in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+            return False
+        if self._standalone_config is None and four_zone_central_where(message) == f"#0#{canonical_thermo_zone(self._where)}":
             return False
         return is_central_thermo_where(message)
 

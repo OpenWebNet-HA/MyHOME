@@ -79,9 +79,10 @@ def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
     plant with no central unit of its own keeps its standalone thermostats), nothing is asked
     and nobody is told. ``has_central_unit`` is the gateway's own bus only.
 
-    A report of a 4-zone central unit (WHERE ``#0#N``) says nothing either: the zones of such a
-    plant are written directly (#994), and only a report that names a zone in the central form
-    puts them under a central unit.
+    A report of a 4-zone central unit (WHERE ``#0#N``) is not enough by itself: the zones of
+    such a plant are written directly (#994). A report of a 99-zone central unit (``#0``) or a
+    report that names a zone in the central form still puts the zones under a central unit.
+
     Called for the event session and for the replies of the command session
     (``GatewayEventDispatcher.note_central_unit``), and by the entity for a frame handed to
     it directly (``climate._handle_event``).
