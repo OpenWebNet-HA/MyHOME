@@ -32,7 +32,9 @@ from OWNd.message import OWNEvent, OWNHeatingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
+from custom_components.myhome.climate_discovery import _zone_config
 from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.discovery import Address
 from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
 from custom_components.myhome.sensor import MyHOMEActuatorOutputSensor
 from custom_components.myhome.validate import climate_schema
@@ -187,3 +189,53 @@ async def test_zone_1_beside_the_configured_central_unit_is_not_the_central_unit
     assert zone._standalone is True  # not the central unit's `standalone: false`
     await zone.async_set_temperature(temperature=18.0)
     assert _sent(gateway) == ["*#4*1*#14*0180*3##"]
+
+
+@pytest.mark.parametrize(
+    ("zone", "extra", "address"),
+    [
+        ("1", {}, Address("#0#1")),
+        ("4", {"interface": "01"}, Address("#0#4", "01")),  # a 4-zone central unit behind an interface
+        ("4#4#01", {}, Address("#0#4", "01")),  # the same, the interface written in the zone
+        ("0", {"interface": "01"}, Address("#0", "01")),  # a 99-zone central unit behind an interface
+        ("0#4#01", {}, Address("#0", "01")),  # the same, written in the zone: stored as `#0#4#01`
+    ],
+)
+def test_a_central_unit_keeps_its_own_entry(zone: str, extra: dict, address: Address) -> None:
+    """Only a plain zone loses the entry of a 4-zone central unit; `#0#4#01` is no 4-zone central unit."""
+    validated = climate_schema({"plant": {"zone": zone, "central": True, "name": "Plant", "cool": False, **extra}})
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+    assert _zone_config(configured["climate"], address, address.key).get("name") == "Plant"
+
+
+# ── the master panel is zone 1 ──
+
+
+async def test_the_zone_of_the_master_panel_takes_the_central_units_own_report(hass: HomeAssistant) -> None:
+    """After a setpoint written to the central unit, zone 1 reports no mode and no setpoint of its own
+    (second file, frames 5-18: only `*#4*1*13*00##` and `*#4*1*0*0194##`): `*4*110#0170*#0#1##` is all that
+    says what the master panel runs. Zones 3 and 4 report theirs (`*#4*3*12*0170*3##`, `*4*1*3##`)."""
+    gateway, found = await _plant(hass, None, FIRST)
+    zone = found["1"]
+    assert gateway.has_central_unit is False and zone._standalone is True
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*102*1##"))  # as tests/test_review_983_climate.py
+    await hass.async_block_till_done()
+    assert zone.extra_state_attributes["zone_operation"] == "antifreeze"
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0170*#0#1##"))  # second file, frame 6
+    await hass.async_block_till_done()
+    assert zone.extra_state_attributes["zone_operation"] == "manual"
+    assert (zone.hvac_mode, zone.target_temperature) == (HVACMode.HEAT, 17.0)
+    assert found["3"].target_temperature == 16.0  # `*#4*3*12*0160*3##`, first file: not the central unit's frame
+
+
+async def test_a_zone_configured_standalone_keeps_ignoring_reports_through_a_central_unit(hass: HomeAssistant) -> None:
+    """`standalone: true` in `myhome.yaml` is the owner's word: nothing addressed `#0#N` or `#Z` is its state."""
+    file = {**REPORTERS_FILE, "zona1": {"zone": "1", "name": "Zona 1", "heat": True, "cool": False, "standalone": True}}
+    _gateway_, found = await _plant(hass, file, FIRST)
+    zone = found["1"]
+    assert zone._device_name == "Zona 1"
+    before = (zone.hvac_mode, zone.target_temperature)
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0170*#0#1##"))
+    await hass.async_block_till_done()
+    assert (zone.hvac_mode, zone.target_temperature) == before

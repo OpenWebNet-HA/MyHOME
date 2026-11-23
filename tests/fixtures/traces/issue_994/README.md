@@ -8,8 +8,8 @@ Contributed by **@paolozamberletti-maker** on [#994](https://github.com/OpenWebN
 
 | File | Content |
 |---|---|
-| `myhome_trace_F454_all_2026-11-22T18-38-46.json` | 14 frames: a setpoint change made on the central unit, then a setpoint written from Home Assistant by auto-discovery (frame 13, `tx`) |
-| `myhome_trace_F454_all_2026-11-22T21-40-54.json` | 75 frames, 7 sent by hand from the Bus Monitor: status read, setpoint writes, off, a weekly program |
+| `myhome_trace_F454_all_2026-11-22T18-38-46.json` | 14 frames: a status burst of the central unit and its zones, then a setpoint written from Home Assistant on the auto-discovered zone 1 (frame 13, `tx`); the capture ends 0.08 s after it |
+| `myhome_trace_F454_all_2026-11-22T21-40-54.json` | 75 frames, 7 sent by hand: status read, setpoint writes, off, a weekly program |
 
 ## What it shows
 
@@ -26,8 +26,10 @@ Frame numbers are positions in the second file (1-based).
 | 55 `*4*1103*#0#1##` | zones `*4*1*1##`, `*#4*1*12*0140*3##`, `*4*1*3##`, `*#4*3*12*0140*3##`, `*4*1*4##`, `*#4*4*12*0140*3##`; then 66-69 `*4*1103*#0#1##`, `*4*21*#0#1##`, `*4*31*#0#1##`, `*4*22*#0#1##` |
 
 - A write to the central unit `#0#1` sets every zone: zones 3 and 4 follow to the same setpoint.
-- One zone is written directly (`*#4*3*#14*T*3##`). The form through a central unit gets no answer: `#3#1` here
-  (frame 37), and `*#4*#1*#14*0150*3##` in the first file (frame 13), the form a plant with a 99-zone central unit
-  requires (`../issue_697/README.md`).
+- One zone is written directly (`*#4*3*#14*T*3##`). `*#4*#3#1*#14*0175*3##` (frame 37) gets no answer.
+- The form a plant with a 99-zone central unit requires (`../issue_697/README.md`) is `*#4*#Z*#14*T*3##`. The first
+  file holds one such write, `*#4*#1*#14*0150*3##` (frame 13), and ends 0.08 s after it, so the capture does not
+  show whether anything followed. That the plant does not act on that form is the reporter's account in the issue.
 - The central unit answers the status read `*#4*#0#1##`.
-- Not in these captures: a direct write to zone 1, `*4*1*#0#1##`, `*4*311*...`, any dimension 14 frame.
+- Not in these captures: a direct write to zone 1, `*4*1*#0#1##`, `*4*311*...`, any received dimension 14 frame
+  (the dimension 14 frames above are the writes that were sent), the gateway's ACK or NACK of any sent frame.
