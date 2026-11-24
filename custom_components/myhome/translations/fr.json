@@ -764,6 +764,27 @@
     },
     "lock_command_failed": {
       "message": "{name} : échec de la commande d'ouverture portier : {error}"
+    },
+    "command_rejected": {
+      "message": "{name} : la passerelle {gateway} a rejeté la commande ({frame}) avec NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name} : la commande ({frame}) n'a pas pu être envoyée à la passerelle {gateway}, ou la connexion a été perdue avant sa réponse ; elle a peut-être été exécutée"
+    },
+    "command_not_confirmed": {
+      "message": "{name} : la passerelle {gateway} n'a pas confirmé la commande ({frame}) à temps ; elle a peut-être été exécutée"
+    },
+    "gateway_not_found": {
+      "message": "Passerelle « {gateway} » introuvable"
+    },
+    "no_gateway_loaded": {
+      "message": "Aucune passerelle MyHOME n'est configurée"
+    },
+    "send_message_invalid_frame": {
+      "message": "« {message} » n'est pas une trame OpenWebNet valide ; rien n'a été envoyé"
+    },
+    "send_message_refused_frame": {
+      "message": "Refus d'envoyer « {message} » : cette trame est bloquée par mesure de sécurité ; rien n'a été envoyé"
     }
   },
   "entity": {

@@ -27,7 +27,7 @@ keys used for unique ids, de-duplication and default names.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -43,7 +43,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dis
 from homeassistant.helpers.entity import Entity
 
 from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, DOMAIN, LOGGER
-from .data import MyHOMEConfigEntry, MyHOMERuntimeData
+from .data import MyHOMEConfigEntry, MyHOMERuntimeData, get_runtime_data
 from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
@@ -244,6 +244,64 @@ COMPANION_SUFFIXES = ("-disable", "-enable", "-calibrate")
 CLIMATE_COMPANION_SENSOR_SUFFIXES = ("-temperature", "-humidity")
 #: Platforms whose entities get those buttons.
 ACTUATOR_DOMAINS = ("light", "switch", "cover")
+ACTUATOR_DEFAULT_WHOS = {"light": "1", "switch": "1", "cover": "2"}
+
+
+@callback
+def _kept_by_sibling_actuator(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    entry: er.RegistryEntry,
+    config_entry_id: str,
+) -> tuple[bool, set[str]]:
+    """Whether another registered or configured actuator shares ``entry``'s bus address."""
+    uids: set[str] = {entry.unique_id} if entry.unique_id else set()
+    cfg_entry = hass.config_entries.async_get_entry(config_entry_id)
+    runtime = get_runtime_data(cfg_entry) if cfg_entry is not None else None
+    who: str | None = None
+    target: Address | None = None
+    if runtime is not None and cfg_entry is not None and entry.unique_id:
+        gw_mac = str(getattr(runtime.gateway, "mac", runtime.mac))
+        entry_mac = str(cfg_entry.data.get(CONF_MAC, runtime.mac))
+        parsed_who, dev_id = parse_unique_id(entry.unique_id, gw_mac, entry_mac)
+        if parsed_who in ("1", "2") and dev_id:
+            cand = Address.from_device_id(dev_id)
+            if cand.where.isascii() and cand.where.isdigit():
+                who, target = parsed_who, cand
+                uids.update(
+                    f"{m}-{who}-{target.clean_key}"
+                    for m in {gw_mac, str(runtime.mac), entry_mac}
+                    if m
+                )
+    if any(registry.async_get_entity_id(d, DOMAIN, uid) for d in ACTUATOR_DOMAINS for uid in uids):
+        return True, uids
+    if runtime is None or cfg_entry is None or who is None or target is None:
+        return False, uids
+    who_int = int(who)
+    full_where = f"{target.where}{BUS_ROUTING}{target.interface}" if target.interface else target.where
+    if (
+        IgnoredAddresses.from_config_entry(cfg_entry).is_ignored(who_int, target.where, target.interface)
+        or is_exposed_on_bus(hass, cfg_entry, who_int, full_where)
+        or (
+            runtime.is_follower
+            and bool(runtime.primary_gateway_mac)
+            and any(
+                actuator_only_on_primary(registry, uid, str(runtime.mac), str(runtime.primary_gateway_mac))
+                for uid in uids
+            )
+        )
+    ):
+        return False, uids
+    for dom in ACTUATOR_DOMAINS:
+        if dom == entry.domain:
+            continue
+        for cfg_key, cfg in runtime.platforms.get(dom, {}).items():
+            if not isinstance(cfg, Mapping) or str(cfg.get(CONF_WHO, ACTUATOR_DEFAULT_WHOS[dom])) != who:
+                continue
+            addr = Address.from_config(str(cfg_key), dict(cfg))
+            if addr.clean_key == target.clean_key or addr.key == target.key:
+                return True, uids
+    return False, uids
 
 
 @callback
@@ -254,17 +312,22 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
     longer provided") on a device without its actuator.
     """
     registry.async_remove(entry.entity_id)
-    if not any(registry.async_get_entity_id(d, DOMAIN, entry.unique_id) for d in ACTUATOR_DOMAINS):
-        for suffix in COMPANION_SUFFIXES:
-            button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
-            if button is not None:
-                registry.async_remove(button)
+    if not isinstance(getattr(registry, "entities", None), Mapping):
+        return
+    kept_by_sibling, candidate_uids = _kept_by_sibling_actuator(hass, registry, entry, config_entry_id)
+    if not kept_by_sibling:
+        for uid in candidate_uids:
+            for suffix in COMPANION_SUFFIXES:
+                button = registry.async_get_entity_id("button", DOMAIN, f"{uid}{suffix}")
+                if button is not None:
+                    registry.async_remove(button)
     if entry.domain == "cover":
-        delta_number = registry.async_get_entity_id(
-            "number", DOMAIN, f"{entry.unique_id}-min_position_delta"
-        )
-        if delta_number is not None:
-            registry.async_remove(delta_number)
+        for uid in candidate_uids:
+            delta_number = registry.async_get_entity_id(
+                "number", DOMAIN, f"{uid}-min_position_delta"
+            )
+            if delta_number is not None:
+                registry.async_remove(delta_number)
     if entry.domain == "binary_sensor" and entry.device_id:
         remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
         if not any(e.domain == "binary_sensor" for e in remaining):
@@ -290,8 +353,13 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
                         and (e.unique_id or "").endswith(CLIMATE_COMPANION_SENSOR_SUFFIXES)
                     ):
                         registry.async_remove(e.entity_id)
-    if entry.device_id and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True):
-        dr.async_get(hass).async_remove_device(entry.device_id)
+    if (
+        not kept_by_sibling
+        and entry.device_id
+        and (dev_reg := dr.async_get(hass)).async_get(entry.device_id) is not None
+        and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+    ):
+        dev_reg.async_remove_device(entry.device_id)
 
 
 @callback
