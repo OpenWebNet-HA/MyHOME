@@ -66,8 +66,6 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     CONF_STANDALONE_ZONES,
-    CONF_WHERE,
-    CONF_ZONE,
     DOMAIN,
     LOGGER,
     SIGNAL_CLIMATE_HUMIDITY,
@@ -278,16 +276,6 @@ async def async_setup_entry(
         """The entity of one zone or central unit, from its ``myhome.yaml`` entry where it has one."""
         where, interface = ctx.address.where, ctx.address.interface
         clean_where = where.removeprefix("4-")
-        cfg_where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, ""))).removeprefix("4-")
-        if (
-            bool(cfg.get(CONF_CENTRAL, False))
-            and cfg_where.startswith("#0")
-            and not clean_where.startswith("#0")
-            and clean_where != "0"
-        ):
-            # Bare alias (``1`` / ``4-1`` / ``zone_1``) of a ``#0#N`` 4-zone central unit:
-            # real Thermostat Zone ``N`` (restored or bus-discovered) is not that central unit.
-            cfg = {}
         zone = zone_number(where)
         suffix = f"{zone}I{interface}" if interface else zone
         is_central = clean_where in ("0", "#0") or is_four_zone_central_where(clean_where) or (
