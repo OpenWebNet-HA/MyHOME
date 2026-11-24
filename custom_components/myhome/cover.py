@@ -274,6 +274,15 @@ def _normalize_bus_interface(raw: Any) -> str | None:
     return text.zfill(2) if text.isdigit() else text
 
 
+def _canonical_impulse_where(address: str) -> str:
+    """Canonicalize a point WHO=1 WHERE including zero-padded ``#4#II`` interface suffix."""
+    norm = normalize_expose_where(1, address.removeprefix("1-"))
+    base, sep, suffix = norm.rpartition("#4#")
+    if sep and suffix.isascii() and suffix.isdigit():
+        return f"{base}#4#{int(suffix):02d}"
+    return norm
+
+
 def _message_has_calibrated_dim10(message: Any) -> bool:
     """Return True if ``message`` carries a calibrated point-to-point WHO=2 Dimension 10 level (0..100)."""
     if message is None or getattr(message, "is_translation", False) is True:
@@ -857,11 +866,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def handle_actuator_lock(self, locked: bool) -> None:
         """Apply WHO=14 / Dimension 10 lock state, halting any active timed run or tilt."""
         lock_state = bool(locked)
-        if self._actuator_locked is lock_state:
-            return
-        apply_actuator_lock_state(self, lock_state)
+        was_unconfirmed = self._actuation_unconfirmed
         self._actuation_unconfirmed = False
         self._scope_run_active_until = None
+        if self._actuator_locked is lock_state:
+            if was_unconfirmed:
+                self._publish_state()
+            return
+        apply_actuator_lock_state(self, lock_state)
         if lock_state:
             self._clear_relay_hold()
             if self._calibrating:
@@ -4582,7 +4594,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         msg_where = expose_message_where(message)
         if not msg_where or msg_where == "0" or msg_where.startswith("#"):
             return False
-        return msg_where == normalize_expose_where(1, self._full_where)
+        return _canonical_impulse_where(msg_where) == _canonical_impulse_where(self._full_where)
 
     @callback
     def handle_event(self, message: Any) -> None:

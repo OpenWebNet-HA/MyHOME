@@ -262,10 +262,7 @@ class ActuatorLockManager:
                     if ent not in bucket:
                         bucket.append(ent)
                     if key in self._locks:
-                        if (
-                            key in self._observed_keys
-                            and getattr(ent, "_actuator_locked", None) is not self._locks[key]
-                        ):
+                        if key in self._observed_keys:
                             ent.handle_actuator_lock(self._locks[key])
                         elif getattr(ent, "_actuator_locked", None) is None:
                             apply_actuator_lock_state(ent, self._locks[key])
@@ -496,11 +493,7 @@ class ActuatorLockManager:
                     apply_actuator_lock_state(entity, lock_state)
             return
 
-        self._locks[key] = lock_state
-        self._observed_keys.add(key)
-        for entity in list(self._entities.get(key, ())):
-            if getattr(entity, "_actuator_locked", None) is not lock_state:
-                entity.handle_actuator_lock(lock_state)
+        self._apply_observed_key(key, lock_state)
 
     @callback
     def clear_lock_from_actuation(self, where: Any, interface: Any = None) -> None:

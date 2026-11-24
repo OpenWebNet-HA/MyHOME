@@ -634,6 +634,20 @@ async def test_entity_lock_lifecycle_soft_restore_and_colocated_clear(hass: Home
     ent1._clear_actuator_lock()
     assert ent2.publish_count == 3
 
+    # set_point_lock(..., False, observed=True) still invokes handle_actuator_lock(False) even when
+    # _actuator_locked is already False so cover entities can clear _actuation_unconfirmed!
+    calls_when_already_false: list[bool] = []
+    orig_handle = ent1.handle_actuator_lock
+
+    def _spy_handle(locked: bool) -> None:
+        calls_when_already_false.append(locked)
+        orig_handle(locked)
+
+    ent1.handle_actuator_lock = _spy_handle  # type: ignore[method-assign]
+    mgr.set_point_lock("56", None, False, observed=True)
+    assert calls_when_already_false == [False]
+    assert ent1.publish_count == 2
+
 
 async def test_added_to_hass_restore_without_manager_and_non_bool_attr(hass: HomeAssistant) -> None:
     """Verify MyHOMEEntity.async_added_to_hass soft-restores when gateway has no manager and ignores non-bool."""

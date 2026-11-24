@@ -1662,6 +1662,51 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
             assert cov_short._actuation_unconfirmed is False
             assert "actuation_unconfirmed" not in cov_short.extra_state_attributes
 
+            # When a cover already has _actuator_locked == False (e.g. from a prior Unlock or
+            # RestoreEntity) and is then locked externally by an un-relayed wall scenario on MH201,
+            # an un-echoed P2P move sets _actuation_unconfirmed = True while _actuator_locked stays False;
+            # subsequent explicit WHO=14 Unlock (*14*1*35##) or Dim 10 SHUTTER_INFO=0/15 MUST clear
+            # _actuation_unconfirmed / _scope_run_active_until and publish updated state!
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*1*35##")) is True
+            assert cov_short.actuator_locked is False
+            await cov_short.async_open_cover()
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            assert cov_short.actuator_locked is False
+            assert cov_short._actuation_unconfirmed is True
+            assert cov_short.extra_state_attributes["actuation_unconfirmed"] is True
+            assert cov_short._is_scope_excluded() is True
+            cov_short.handle_event(OWNEvent.parse("*2*1*0##"))
+            assert cov_short._scope_run_active_until is not None
+            cov_short.async_schedule_update_ha_state.reset_mock()
+
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*1*35##")) is True
+            assert cov_short.actuator_locked is False
+            assert cov_short._actuation_unconfirmed is False
+            assert cov_short._scope_run_active_until is None
+            assert "actuation_unconfirmed" not in cov_short.extra_state_attributes
+            assert cov_short._is_scope_excluded() is False
+            assert cov_short.async_schedule_update_ha_state.call_count == 1
+            # Duplicate unlock when already cleared is idempotent (0 extra publishes)
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*1*35##")) is True
+            assert cov_short.async_schedule_update_ha_state.call_count == 1
+
+            # Same recovery via Dim 10 SHUTTER_INFO=0 -> set_point_lock(..., False, observed=True)
+            await cov_short.async_open_cover()
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            assert cov_short.actuator_locked is False
+            assert cov_short._actuation_unconfirmed is True
+            cov_short.async_schedule_update_ha_state.reset_mock()
+            cov_short.handle_event(OWNEvent.parse("*#2*35*10*10*50*001*0##"))
+            assert cov_short.actuator_locked is False
+            assert cov_short._actuation_unconfirmed is False
+            assert "actuation_unconfirmed" not in cov_short.extra_state_attributes
+            assert cov_short._is_scope_excluded() is False
+            assert cov_short.async_schedule_update_ha_state.call_count >= 1
+            cov_short._attr_current_cover_position = 0
+            cov_short._start_position = 0
+
             # Short partial set_cover_position(53) where *2*0*35## arrives AFTER ECHO_WINDOW while
             # awaiting handler.send() neither latches _actuation_unconfirmed nor spawns _auto_stop!
             monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.50)
@@ -1729,6 +1774,79 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
             assert gate_s.is_opening is True
             assert gate_s.is_closed is False
             gate_s._cancel_travel_timer()
+
+            # 5. F422 MyHOMEImpulseCover configured with 1-digit bus_interface ("1") canonicalizes
+            # #4#1 <-> #4#01 (and 0004 <-> 04) so locked P2P *1*1*04#4#01## echo self-heals!
+            gate_f422 = MyHOMEImpulseCover(
+                hass=hass,
+                name="Riser Gate 04",
+                entity_name=None,
+                device_id="0004#4#1",
+                who="1",
+                where="0004",
+                interface="1",
+                device_class=CoverDeviceClass.GATE,
+                travel_time=5.0,
+                pulse_duration=0.5,
+                min_cycle_time=0.0,
+                pin_code=None,
+                state_sensor=None,
+                manufacturer="BTicino",
+                model="Impulse",
+                gateway=handler,
+            )
+            gate_f422.hass = hass
+            gate_f422.entity_id = "cover.riser_gate_04"
+            gate_f422.async_write_ha_state = MagicMock()
+            gate_f422.async_schedule_update_ha_state = MagicMock()
+            await gate_f422.async_added_to_hass()
+
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*04#4#01##")) is True
+            assert gate_f422.actuator_locked is True
+
+            gate_f422._last_pulse_time = -1e9
+            await gate_f422.async_open_cover()
+            assert gate_f422.is_opening is False
+
+            # Wrong interface, main bus, and #4#01 scope broadcasts stay ignored while locked
+            for non_matching in (
+                "*1*1*04#4#02##",
+                "*1*1*04##",
+                "*1*1*0#4#01##",
+                "*1*1*00#4#01##",
+                "*1*1*#1#4#01##",
+            ):
+                gate_f422.handle_event(OWNEvent.parse(non_matching))
+            assert gate_f422.actuator_locked is True
+            assert gate_f422.is_opening is False
+
+            # Own P2P wire echo *1*1*04#4#01## (2-digit #4#01 vs 1-digit interface="1") self-heals!
+            gate_f422.handle_event(OWNEvent.parse("*1*1*04#4#01##"))
+            assert gate_f422.actuator_locked is False
+            assert handler._actuator_locks.is_locked("04", "01") is False
+            assert gate_f422.is_opening is True
+            gate_f422._cancel_travel_timer()
+
+            # Reverse direction: 2-digit interface="01" (with legacy 1- prefix) matches *1*1*04#4#1##
+            gate_f422_rev = MyHOMEImpulseCover(
+                hass=hass,
+                name="Riser Gate Rev",
+                entity_name=None,
+                device_id="1-04#4#01",
+                who="1",
+                where="1-04",
+                interface="01",
+                device_class=CoverDeviceClass.GATE,
+                travel_time=5.0,
+                pulse_duration=0.5,
+                min_cycle_time=0.0,
+                pin_code=None,
+                state_sensor=None,
+                manufacturer="BTicino",
+                model="Impulse",
+                gateway=handler,
+            )
+            assert gate_f422_rev._is_own_impulse_event(OWNEvent.parse("*1*1*04#4#1##")) is True
         finally:
             handler._command_pool.close()
             worker.cancel()
