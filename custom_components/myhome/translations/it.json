@@ -759,6 +759,24 @@
     "lock_command_rejected": {
       "message": "{name}: il gateway {gateway} ha rifiutato o scartato il comando di apertura serratura WHO=6 ({frame})"
     },
+    "impulse_pulse_not_sent": {
+      "message": "{name}: l'impulso non è stato inviato (entro il tempo di blocco di {deadband} s, oppure un altro impulso è in fase di scrittura)"
+    },
+    "impulse_pulse_send_failed": {
+      "message": "{name}: l'impulso non è stato inviato ({error})"
+    },
+    "impulse_pulse_unconfirmed": {
+      "message": "{name}: l'impulso non è stato confermato dal gateway ({error}); il relè potrebbe essere stato commutato oppure no: controllare la porta prima di riprovare"
+    },
+    "impulse_relay_not_released": {
+      "message": "{name}: l'impulso non è stato inviato: non è stato possibile rilasciare il relè dell'impulso precedente"
+    },
+    "impulse_stop_not_sent": {
+      "message": "{name}: l'impulso di arresto non è stato inviato"
+    },
+    "impulse_stop_unconfirmed": {
+      "message": "{name}: l'impulso di arresto non è stato confermato dal gateway; la porta potrebbe essere ancora in movimento: controllarla"
+    },
     "lock_command_timeout": {
       "message": "{name}: il comando di apertura serratura non è stato confermato entro {timeout} s; è stato ritirato se non era ancora stato inviato"
     },

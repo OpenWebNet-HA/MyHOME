@@ -63,6 +63,7 @@ from .access_policy import (
     AccessController,
     Effect,
     Intent,
+    PulseOutcome,
 )
 from .const import (
     BUS_ROUTING,
@@ -192,10 +193,21 @@ PARALLEL_UPDATES = 0
 # progress, so the UI slider animates instead of jumping from start to end value.
 LIVE_POSITION_REFRESH_INTERVAL = timedelta(seconds=1)
 
-# Delivery of the OFF that ends a software pulse (OWNd without the timed WHAT 18 builder).
+# Delivery of the OFF that ends a software pulse (any `pulse_duration` other than 0.5 s).
 OFF_ATTEMPTS = 3
 OFF_RETRY_DELAY = 1.0
 OFF_SETTLE_DELAY = 0.2
+
+# Longest an impulse-cover frame may wait for its write confirmation, the bound a
+# door-entry unlock has (lock.LOCK_WRITE_TIMEOUT, MyHOME#835): a pulse written long after
+# the request would move the gate when nobody is watching any more, so it is withdrawn.
+IMPULSE_WRITE_TIMEOUT = 15.0
+# An ON frame of the cover's own relay is the cover's pulse for as long as that relay can
+# still be closed: the hardware pulse lasts 0.5 s and its status has always been ignored
+# for 1.0 s; a software pulse lasts `pulse_duration` (up to 2.0 s), and the light read-back
+# of `gateway_confirm` asks for the relay's status 1.5 s after the acknowledgement.
+IMPULSE_ECHO_MIN = 1.0
+IMPULSE_ECHO_MARGIN = 0.5
 
 _clamp_slat_time = clamp_slat_time
 
@@ -4056,14 +4068,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         raise ServiceValidationError(f"{self._display_name}: acknowledge_cover_fault is only supported on impulse covers")
 
 
+def _consume_write_exception(fut: asyncio.Future[Any]) -> None:
+    """Retrieve the exception of a delivery future nobody waits for any more."""
+    if not fut.cancelled():
+        fut.exception()
+
+
+class _PulseNotWrittenError(HomeAssistantError):
+    """Delivery future was cancelled or withdrawn before any byte reached the command session."""
+
+
 class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     """An impulse-driven gate or garage door powered by a WHO=1 relay.
 
     By default the cover is a hardware interface: ``open_cover``, ``close_cover``
     and ``stop_cover`` pulse the relay (with deadband and delivery checks), the
     optional ``state_sensor`` decides whether a pulse is still useful, and STOP
-    is never withheld. Who may operate the door, and how, is the installation's
-    policy (automations, dashboards, blueprints).
+    is never withheld from a door that may be moving. Who may operate the door,
+    and how, is the installation's policy (automations, dashboards, blueprints).
 
     An ``access:`` block opts in to the supervised workflow instead: every
     request then needs approval on an allowed person's phone through the cover's
@@ -4122,9 +4144,32 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         self._attr_is_closed: bool | None = None
         self._attr_assumed_state = state_sensor is None
 
+        # Monotonic time and intent of the last pulse the gateway confirmed: the deadband
+        # (`min_cycle_time`) counts from here, and a stop right after a stop is that stop.
         self._last_pulse_time: float = -1e9
+        self._last_pulse_intent: Intent | None = None
+        # Monotonic time the last pulse handed to the gateway ended without a confirmation:
+        # the relay may have switched, so its status is this cover's echo and a stop waits
+        # for the relay like after a confirmed pulse. It does not start the deadband.
+        self._unconfirmed_at: float = -1e9
+        # Monotonic time the relay was last closed, or may have been, without Home
+        # Assistant showing the door as moving: an ON frame that was not this cover's
+        # echo (wall button, radio remote), or a pulse the gateway did not confirm. The
+        # door may be starting while the contact still reads closed.
+        self._relay_seen_at: float = -1e9
         self._pulse_in_flight = False
+        # Set when the pulse being written is over; ``_last_written`` then says which
+        # pulse it was and what became of it. A stop waits on it instead of being refused.
+        self._pulse_written: asyncio.Event | None = None
+        self._last_written: tuple[Intent, PulseOutcome] | None = None
+        # Why the last pulse failed; None when it was refused by the deadband or because
+        # another pulse was being written.
+        self._last_pulse_error: str | None = None
+        self._relay_release_failed = False
         self._pulse_off_cancel: CALLBACK_TYPE | None = None
+        # The task sending the OFF of a software pulse: one at a time, awaited by the
+        # next pulse and by removal (its retries can outlast `min_cycle_time`).
+        self._off_task: asyncio.Task[bool] | None = None
         # True while the software OFF of the last pulse is not confirmed on the bus: the
         # relay may still be energised, so the next command and the removal retry the OFF.
         self._off_pending = False
@@ -4196,6 +4241,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             @callback
             def _sensor_state_changed(event: Any) -> None:
                 new_state = event.data.get("new_state")
+                old_state = event.data.get("old_state")
+                if old_state is not None and new_state is not None and old_state.state == new_state.state:
+                    return  # attribute-only update (battery level ...): the door did not move
                 self._handle_sensor_update(new_state.state if new_state is not None else None)
 
             self.async_on_remove(
@@ -4207,6 +4255,14 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     @callback
     def _handle_sensor_update(self, state_str: str | None) -> None:
         """Mirror the contact sensor: off = closed, on = not closed, anything else = unknown."""
+        if state_str in (STATE_OFF, STATE_ON):
+            # The door physically changed state (e.g. radio remote or completed travel):
+            # a prior HA STOP inside min_cycle_time must not suppress the next STOP.
+            self._last_pulse_intent = None
+        if state_str == STATE_OFF and self._attr_is_closed is not True:
+            # The door has just come to closed (from open, or from a contact that was
+            # not reporting): an earlier wall-button start is over.
+            self._relay_seen_at = -1e9
         if state_str == STATE_OFF:
             self._attr_is_closed = True
         elif state_str == STATE_ON:
@@ -4228,86 +4284,291 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             self._travel_timer_cancel()
             self._travel_timer_cancel = None
 
-    async def _async_send_impulse(self) -> bool:
-        """Send the momentary pulse with confirmed delivery to the bus."""
-        now = time.monotonic()
-        if self._pulse_in_flight or now - self._last_pulse_time < self._min_cycle_time:
-            LOGGER.warning(
-                "%s: Command dropped (within %.1fs deadband lockout)",
-                self._display_name,
-                self._min_cycle_time,
-            )
-            return False
+    @property
+    def _last_handover(self) -> float:
+        """Monotonic time the last pulse handed to the gateway ended, confirmed or not."""
+        return max(self._last_pulse_time, self._unconfirmed_at)
 
-        if self._pulse_off_cancel is not None:
-            self._pulse_off_cancel()
+    @staticmethod
+    def _is_unwritten_pool_future(fut: asyncio.Future[Any]) -> bool:
+        """Return True when ``fut`` is still queued in CommandWorkerPool before ``send()``."""
+        return (
+            not fut.done()
+            and getattr(fut, "_queued_in_pool", False) is True
+            and getattr(fut, "_written_under", None) is None
+        )
+
+    async def _async_confirm_write(self, write_fut: Any, *, withdraw: bool) -> float | None:
+        """Wait until the gateway confirmed a queued frame; raise when it did not.
+
+        The command worker *cancels* the delivery future of a frame the gateway NACKed,
+        whose acknowledgement timed out or that was never written
+        (``gateway_sessions._cancel_written``). That is a failed delivery, not a
+        cancellation of this task, and must not escape as ``asyncio.CancelledError``
+        (a ``BaseException`` no ``except Exception`` sees). When the worker or queue
+        proves zero bytes reached the command session (``_not_written``), or a pool
+        future is withdrawn before ``_written_under`` is stamped, this raises
+        :class:`_PulseNotWrittenError` so the caller classifies the pulse as
+        :attr:`PulseOutcome.NOT_SENT` instead of :attr:`PulseOutcome.UNCONFIRMED`.
+        ``withdraw`` cancels a frame that is still unconfirmed when the wait ends, so
+        the worker never writes it late; a frame that is not withdrawn (an OFF) is left
+        alone, whatever awaitable carries it.
+
+        Returns the monotonic time the worker wrote the frame (what it resolves the
+        future with), or None when the handler gave no such time.
+        """
+        if not inspect.isawaitable(write_fut):
+            return None
+        if not isinstance(write_fut, asyncio.Future):
+            # Same wait, same errors and same `withdraw` rule as for the worker's future.
+            write_fut = asyncio.ensure_future(write_fut)
+        try:
+            done, _ = await asyncio.wait((write_fut,), timeout=IMPULSE_WRITE_TIMEOUT)
+        except asyncio.CancelledError:
+            # This task was cancelled (service call aborted, entity removed): nobody waits
+            # for the frame any more. `asyncio.wait` never raises for the future's own
+            # cancellation, so this is always the caller's.
+            if withdraw:
+                if self._is_unwritten_pool_future(write_fut):
+                    setattr(write_fut, "_not_written", True)
+                write_fut.cancel()
+            else:
+                write_fut.add_done_callback(_consume_write_exception)
+            raise
+        if not done:
+            if withdraw:
+                unwritten = self._is_unwritten_pool_future(write_fut)
+                if unwritten:
+                    setattr(write_fut, "_not_written", True)
+                write_fut.cancel()
+                if unwritten:
+                    raise _PulseNotWrittenError(
+                        f"withdrawn after {IMPULSE_WRITE_TIMEOUT:.0f} s before it could be written to the gateway"
+                    )
+            else:
+                write_fut.add_done_callback(_consume_write_exception)
+            raise HomeAssistantError(
+                f"not confirmed by the gateway within {IMPULSE_WRITE_TIMEOUT:.0f} s"
+                + ("; withdrawn if it had not been written yet" if withdraw else "")
+            )
+        if write_fut.cancelled():
+            if getattr(write_fut, "_not_written", False) is True:
+                raise _PulseNotWrittenError(
+                    "command session unavailable or queue closed before frame was written"
+                )
+            raise HomeAssistantError(
+                "rejected or dropped by the gateway (NACK, acknowledgement timeout or command session lost)"
+            )
+        written_at = write_fut.result()  # re-raises a delivery error
+        return written_at if isinstance(written_at, float) else None
+
+    def _schedule_off(self, delay: float) -> None:
+        """Arm the timer that ends a software pulse with the OFF frame, ``delay`` seconds from now."""
+
+        @callback
+        def _turn_off(_now: Any = None) -> None:
             self._pulse_off_cancel = None
+            self._start_off_task()
+
+        if self.hass is not None:
+            self._pulse_off_cancel = async_call_later(self.hass, delay, _turn_off)
+
+    def _start_off_task(self) -> None:
+        """Send the owed OFF in a task the cover keeps (never two at a time)."""
+        if self.hass is not None and (self._off_task is None or self._off_task.done()):
+            self._off_task = self.hass.async_create_task(self._async_send_off())
+
+    async def _async_wait_off_task(self) -> bool:
+        """Wait for the running OFF task without cancelling it; True when there was one."""
+        task = self._off_task
+        if task is None or task.done():
+            return False
+        await asyncio.wait((task,))
+        return True
+
+    def _mark_unconfirmed(self) -> None:
+        """A frame handed to the gateway was not confirmed: the relay may have switched."""
+        self._unconfirmed_at = self._relay_seen_at = time.monotonic()
+        if self._off_pending and self._pulse_off_cancel is None:
+            # The ON may be on the bus since the start of the wait that just failed.
+            self._start_off_task()
+
+    async def _async_join_stop(self) -> PulseOutcome | None:
+        """Wait until no pulse of this cover is being written.
+
+        Returns the outcome of the pulse waited for when that pulse was itself a stop
+        handed to the gateway: the stop asked for is that one, and shares its fate (a
+        second pulse would start the door again). None when the caller has to decide on
+        the state the write left.
+        """
+        last: tuple[Intent, PulseOutcome] | None = None
+        while self._pulse_in_flight and (written := self._pulse_written) is not None:
+            await written.wait()
+            last = self._last_written
+        if last is not None and last[0] is Intent.STOP and last[1] is not PulseOutcome.NOT_SENT:
+            return last[1]
+        return None
+
+    async def _async_send_impulse(self, intent: Intent) -> PulseOutcome:
+        """Send the momentary pulse and say what became of it (:class:`PulseOutcome`).
+
+        ``min_cycle_time`` keeps a double tap from sending two pulses: an open or close
+        inside it, or while another pulse is being written, is not sent. A stop is not a
+        double tap: it waits for a pulse that is being written and for the relay of the
+        pulse before to be released (``pulse_duration`` + ``OFF_SETTLE_DELAY``; a pulse
+        on a relay that is still closed makes no edge), then goes out. A stop within
+        ``min_cycle_time`` of a confirmed stop is that stop and sends nothing.
+        """
+        is_stop = intent is Intent.STOP
+        if self._pulse_in_flight:
+            if not is_stop:
+                self._last_pulse_error = None
+                self._relay_release_failed = False
+                LOGGER.warning("%s: Command dropped (another pulse is being written)", self._display_name)
+                return PulseOutcome.NOT_SENT
+            shared = await self._async_join_stop()
+            if shared is not None:
+                return shared
+        self._last_pulse_error = None
+        self._relay_release_failed = False
+        if time.monotonic() - self._last_pulse_time < self._min_cycle_time:
+            if not is_stop:
+                LOGGER.warning(
+                    "%s: Command dropped (within %.1fs deadband lockout)",
+                    self._display_name,
+                    self._min_cycle_time,
+                )
+                return PulseOutcome.NOT_SENT
+            if self._last_pulse_intent is Intent.STOP:
+                LOGGER.debug("%s: stop requested right after a stop; that stop is the one asked for", self._display_name)
+                return PulseOutcome.CONFIRMED
 
         # The deadband starts only once the gateway confirmed the write: a failed send
         # must not lock the user out for min_cycle_time with nothing on the bus. The
         # in-flight flag keeps a second request and our own echo out meanwhile.
         self._pulse_in_flight = True
+        written = self._pulse_written = asyncio.Event()
+        outcome = PulseOutcome.NOT_SENT
+        write_fut: Any = None
         try:
-            # The relay of an earlier pulse may still be energised (its OFF never reached the
-            # bus): release it first, and refuse to start another pulse on top of it.
+            if is_stop:
+                hold = self._last_handover + self._pulse_duration + OFF_SETTLE_DELAY - time.monotonic()
+                if hold > 0:
+                    await asyncio.sleep(hold)
+            if self._pulse_off_cancel is not None:
+                self._pulse_off_cancel()
+                self._pulse_off_cancel = None
+
+            # The relay of an earlier pulse may still be energised (its OFF is on its way,
+            # or never reached the bus): release it first, and refuse to start another
+            # pulse on top of it.
+            released = await self._async_wait_off_task()
             if self._off_pending:
                 if not await self._async_send_off():
-                    return False
+                    self._last_pulse_error = "the relay of the previous pulse could not be released"
+                    self._relay_release_failed = True
+                    return outcome
+                released = True
+            if released:
                 await asyncio.sleep(OFF_SETTLE_DELAY)
 
-            if self._pulse_duration == 0.5 and hasattr(OWNLightingCommand, "switch_on_timed"):
-                # Use WHAT 18: Timed ON for 0.5 seconds (official WHO 1 specification).
-                # The physical actuator automatically turns off after 0.5s in hardware,
-                # preventing the relay from ever staying latched if Home Assistant terminates.
-                # (OWNd releases up to 2.0.0b10 lack the builder: they take the ON/OFF path.)
-                cmd = OWNLightingCommand.switch_on_timed(self._full_where, 18)
+            # WHAT 18: Timed ON for 0.5 seconds (official WHO 1 specification). The physical
+            # actuator turns off after 0.5 s in hardware, so the relay never stays latched
+            # if Home Assistant terminates. Any other duration is ON, then an OFF sent
+            # `pulse_duration` after the ON was written.
+            timed = self._pulse_duration == 0.5 and hasattr(OWNLightingCommand, "switch_on_timed")
+            cmd = (
+                OWNLightingCommand.switch_on_timed(self._full_where, 18)
+                if timed
+                else OWNLightingCommand.switch_on(self._full_where)
+            )
+            try:
                 write_fut = await self._gateway_handler.send(cmd)
-                if inspect.isawaitable(write_fut):
-                    await write_fut
-                self._last_pulse_time = time.monotonic()
-                return True
-
-            # Custom duration: send ON, await confirmed write to the bus, then schedule OFF
-            cmd_on = OWNLightingCommand.switch_on(self._full_where)
-            write_fut = await self._gateway_handler.send(cmd_on)
-            if inspect.isawaitable(write_fut):
-                await write_fut
-            self._last_pulse_time = time.monotonic()
-            self._off_pending = True
-
-            @callback
-            def _turn_off(_now: Any = None) -> None:
-                self._pulse_off_cancel = None
-                if self.hass is not None:
-                    self.hass.async_create_task(self._async_send_off())
-
-            if self.hass is not None:
-                self._pulse_off_cancel = async_call_later(
-                    self.hass, self._pulse_duration, _turn_off
+            except Exception as err:
+                # `send()` raises before the frame is in the queue: nothing reached the
+                # gateway, no OFF is owed and the relay did not switch.
+                self._last_pulse_error = str(err)
+                LOGGER.error("%s: Failed to queue impulse command: %s", self._display_name, err)
+                return outcome
+            # From here the relay may be energised, whatever becomes of the confirmation: a
+            # frame whose acknowledgement was lost (timeout, socket reset) has still been
+            # written. A software ON owes its OFF from this moment.
+            outcome = PulseOutcome.UNCONFIRMED
+            self._off_pending = not timed
+            written_at = await self._async_confirm_write(write_fut, withdraw=True)
+            now = time.monotonic()
+            if not timed:
+                # Timed from the write on the wire, not from the hand-over to the queue: an
+                # ON that waited there (command session reopened after 15 s idle, a NACKed
+                # frame retried before it) must not be followed at once by its OFF. If send()
+                # itself took >= pulse_duration (e.g. an OWNd 2 s NACK retry before ACK),
+                # anchor to now so the software pulse never collapses to 0 s.
+                written_ok = (
+                    written_at is not None
+                    and 0.0 <= now - written_at < self._pulse_duration
                 )
-            return True
+                anchor = written_at if written_ok and written_at is not None else now
+                self._schedule_off(max(0.0, anchor + self._pulse_duration - now))
+            self._last_pulse_time = now
+            self._last_pulse_intent = intent
+            outcome = PulseOutcome.CONFIRMED
+            return outcome
+        except _PulseNotWrittenError as err:
+            # Zero bytes reached the command session (connect failed/refused, queue
+            # closed, or withdrawn from the pool before send()): the relay did not
+            # switch and no software OFF is owed.
+            outcome = PulseOutcome.NOT_SENT
+            self._off_pending = False
+            self._last_pulse_error = str(err)
+            LOGGER.error(
+                "%s: Impulse command was not written to gateway: %s",
+                self._display_name,
+                err,
+            )
+            return outcome
+        except asyncio.CancelledError:
+            # The service call was cancelled or the entity removed.
+            if (
+                outcome is PulseOutcome.UNCONFIRMED
+                and getattr(write_fut, "_not_written", False) is True
+            ):
+                outcome = PulseOutcome.NOT_SENT
+                self._off_pending = False
+            if outcome is PulseOutcome.UNCONFIRMED:
+                self._mark_unconfirmed()
+            elif self._off_pending and self._pulse_off_cancel is None:
+                self._start_off_task()  # cancelled while releasing the relay: the OFF stays owed
+            raise
         except Exception as err:
+            self._last_pulse_error = str(err)
             LOGGER.error(
                 "%s: Failed to write impulse command to gateway: %s",
                 self._display_name,
                 err,
             )
-            return False
+            if outcome is PulseOutcome.UNCONFIRMED:
+                self._mark_unconfirmed()
+            elif self._off_pending and self._pulse_off_cancel is None:
+                self._start_off_task()
+            return outcome
         finally:
             self._pulse_in_flight = False
+            self._last_written = (intent, outcome)
+            self._pulse_written = None
+            written.set()
 
     async def _async_send_off(self) -> bool:
         """Deliver the OFF that ends a software pulse, retrying; True once the bus took it.
 
         A lost OFF leaves the relay energised, which the gate controller reads as a
         button held down. ``_off_pending`` stays set until the write is confirmed, so
-        the next command (and removal) try again.
+        the next command (and removal) try again. An OFF is never withdrawn: written
+        late it still releases the relay.
         """
         for attempt in range(1, OFF_ATTEMPTS + 1):
             try:
                 fut = await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-                if inspect.isawaitable(fut):
-                    await fut
+                await self._async_confirm_write(fut, withdraw=False)
             except Exception as err:
                 LOGGER.error(
                     "%s: Failed to send OFF to gateway (attempt %d/%d): %s",
@@ -4327,15 +4588,17 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         )
         return False
 
-    async def _async_pulse(self, intent: Intent, effect: Effect) -> bool:
+    async def _async_pulse(self, intent: Intent, effect: Effect) -> PulseOutcome:
         """Pulse the relay for an approved request and show the expected motion.
 
         The motion shown is an estimate for the dashboard only; the access
-        policy decides on the state sensor, never on this estimate.
+        policy decides on the state sensor, never on this estimate. Nothing is shown
+        for a pulse that was not confirmed: whether the door moves is not known.
         """
         del effect  # the policy already decided; the display follows the request
-        if not await self._async_send_impulse():
-            return False
+        outcome = await self._async_send_impulse(intent)
+        if outcome is not PulseOutcome.CONFIRMED:
+            return outcome
         self._cancel_travel_timer()
         self._attr_is_opening = intent is Intent.OPEN
         self._attr_is_closing = intent is Intent.CLOSE
@@ -4354,32 +4617,96 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 self._publish_state()
 
             self._travel_timer_cancel = async_call_later(self.hass, self._travel_time, _finish)
-        return True
+        return outcome
+
+    def _pulse_failed(self, outcome: PulseOutcome) -> HomeAssistantError:
+        """The error of a pulse that ended ``NOT_SENT`` or ``UNCONFIRMED``."""
+        name = self._display_name
+        if outcome is PulseOutcome.UNCONFIRMED:
+            error = self._last_pulse_error or "no confirmation"
+            return HomeAssistantError(
+                f"{name}: the pulse was not confirmed by the gateway ({error}); "
+                "the relay may or may not have been switched: check the door before trying again",
+                translation_domain=DOMAIN,
+                translation_key="impulse_pulse_unconfirmed",
+                translation_placeholders={"name": name, "error": error},
+            )
+        if self._relay_release_failed:
+            return HomeAssistantError(
+                f"{name}: the pulse was not sent: the relay of the previous pulse could not be released",
+                translation_domain=DOMAIN,
+                translation_key="impulse_relay_not_released",
+                translation_placeholders={"name": name},
+            )
+        if self._last_pulse_error is not None:
+            return HomeAssistantError(
+                f"{name}: the pulse was not sent ({self._last_pulse_error})",
+                translation_domain=DOMAIN,
+                translation_key="impulse_pulse_send_failed",
+                translation_placeholders={"name": name, "error": self._last_pulse_error},
+            )
+        deadband = f"{self._min_cycle_time:.1f}"
+        return HomeAssistantError(
+            f"{name}: the pulse was not sent (within the {deadband} s deadband, or another pulse is being written)",
+            translation_domain=DOMAIN,
+            translation_key="impulse_pulse_not_sent",
+            translation_placeholders={"name": name, "deadband": deadband},
+        )
 
     async def _async_direct(self, intent: Intent) -> None:
-        """Pulse the relay without a policy (no `access:` block); STOP always goes out.
+        """Pulse the relay without a policy (no `access:` block); STOP of a door that may move goes out.
 
         With a state sensor a pulse that would only undo the request is skipped: the
         door is already there or already on its way. Without one the direction is
         unknown and the pulse goes out as asked.
+
+        STOP is withheld in one case only: the sensor reports the door closed and nothing
+        says it may be starting. There is nothing to stop then, and on a step-by-step
+        controller the pulse would open the door (the reason ``access_policy.classify``
+        refuses the same request under ``access:``). In every other state the door may
+        be moving without Home Assistant knowing (wall button, radio remote), so STOP is
+        sent. Three such states come before the contact lifts: Home Assistant's own
+        pulse was confirmed (the door is shown as moving), its pulse was handed to the
+        gateway and not confirmed, or a relay ON that was not this cover's echo was seen
+        (the last two within ``travel_time``).
+
+        A STOP that arrives while a pulse is being written waits for that write and is
+        then decided on what the write left: nothing when the pulse never left Home
+        Assistant, the fate of a stop that was being written, a stop pulse otherwise.
         """
-        if (intent is Intent.OPEN and self._attr_is_closing) or (
+        converted = (intent is Intent.OPEN and self._attr_is_closing) or (
             intent is Intent.CLOSE and self._attr_is_opening
-        ):
+        )
+        if converted:
             intent = Intent.STOP
-        elif self._state_sensor is not None:
+        if intent is Intent.STOP and self._pulse_in_flight:
+            shared = await self._async_join_stop()
+            if shared is PulseOutcome.CONFIRMED:
+                return
+            if shared is not None:
+                raise self._pulse_failed(shared)
+        if not converted and self._state_sensor is not None:
             if intent is Intent.OPEN and (self._attr_is_closed is False or self._attr_is_opening):
-                LOGGER.debug("%s: already open or opening, open request ignored", self._display_name)
+                # `on` only says "not closed": open, or stopped part-way. A pulse could
+                # close the door in either case, so it is not sent for an open request.
+                LOGGER.debug("%s: not closed (open or stopped part-way) or opening, open request ignored", self._display_name)
                 return
             if intent is Intent.CLOSE and (self._attr_is_closed is True or self._attr_is_closing):
                 LOGGER.debug("%s: already closed or closing, close request ignored", self._display_name)
                 return
+            if (
+                intent is Intent.STOP
+                and self._attr_is_closed is True
+                and not (self._attr_is_opening or self._attr_is_closing)
+                and not self._pulse_in_flight
+                and time.monotonic() - self._relay_seen_at >= self._travel_time
+            ):
+                LOGGER.debug("%s: closed and at rest, stop request ignored (a pulse would open it)", self._display_name)
+                return
         effect = Effect.OPEN if intent is Intent.OPEN else Effect.MAY_CLOSE
-        if not await self._async_pulse(intent, effect):
-            raise HomeAssistantError(
-                f"{self._display_name}: the pulse was not sent "
-                f"(within the {self._min_cycle_time:.1f} s deadband, or the write failed)"
-            )
+        outcome = await self._async_pulse(intent, effect)
+        if outcome is not PulseOutcome.CONFIRMED:
+            raise self._pulse_failed(outcome)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Pulse the relay to open, or (with `access:`) request approval first."""
@@ -4396,7 +4723,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             await self._access.async_request(Intent.CLOSE, self._context)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        """Pulse the relay to stop; with `access:` a stop of a moving door is immediate too."""
+        """Pulse the relay to stop (not a door proven closed and at rest); with `access:` a stop of a moving door is immediate too."""
         if self._access is None:
             await self._async_direct(Intent.STOP)
         else:
@@ -4447,10 +4774,16 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         if not is_on:
             return  # Ignore *1*0*... release frames (such as the 5-minute delayed hardware timer)
 
-        # Echo window: ignore frames arriving while our own command is on its way
-        # or within 1.0s after it
-        if self._pulse_in_flight or time.monotonic() - self._last_pulse_time < 1.0:
+        # Echo window: ignore frames arriving while our own command is on its way, or
+        # while the relay that command closed (or may have closed) can still be closed.
+        now = time.monotonic()
+        echo_window = max(IMPULSE_ECHO_MIN, self._pulse_duration + IMPULSE_ECHO_MARGIN)
+        if self._pulse_in_flight or now - self._last_handover < echo_window:
             return
+        self._relay_seen_at = now
+        # An external wall button actuated the relay: a prior HA STOP inside min_cycle_time
+        # must not swallow a subsequent STOP request.
+        self._last_pulse_intent = None
 
         # The button has already closed the relay and started the motor: pressing it
         # never aborts anything. Only Home Assistant's own pending request or
@@ -4509,6 +4842,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         if self._pulse_off_cancel is not None:
             self._pulse_off_cancel()
             self._pulse_off_cancel = None
+        await self._async_wait_off_task()
         if self._off_pending:
             await self._async_send_off()
         self._cancel_travel_timer()

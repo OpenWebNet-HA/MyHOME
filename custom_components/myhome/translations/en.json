@@ -910,6 +910,24 @@
     "lock_command_rejected": {
       "message": "{name}: gateway {gateway} rejected or dropped the WHO=6 door-entry unlock command ({frame})"
     },
+    "impulse_pulse_not_sent": {
+      "message": "{name}: the pulse was not sent (within the {deadband} s deadband, or another pulse is being written)"
+    },
+    "impulse_pulse_send_failed": {
+      "message": "{name}: the pulse was not sent ({error})"
+    },
+    "impulse_pulse_unconfirmed": {
+      "message": "{name}: the pulse was not confirmed by the gateway ({error}); the relay may or may not have been switched: check the door before trying again"
+    },
+    "impulse_relay_not_released": {
+      "message": "{name}: the pulse was not sent: the relay of the previous pulse could not be released"
+    },
+    "impulse_stop_not_sent": {
+      "message": "{name}: the stop pulse was not sent"
+    },
+    "impulse_stop_unconfirmed": {
+      "message": "{name}: the stop pulse was not confirmed by the gateway; the door may still be moving: check it"
+    },
     "lock_command_timeout": {
       "message": "{name}: door-entry unlock command was not confirmed within {timeout} s; it was withdrawn if it had not been sent yet"
     },
