@@ -82,8 +82,10 @@ def blind() -> Iterator[Blind]:
             await release.wait()
         await _REAL_SLEEP(0)
 
+    fake_time = SimpleNamespace(monotonic=lambda: clock.now)
     with (
-        patch("custom_components.myhome.cover.time", SimpleNamespace(monotonic=lambda: clock.now)),
+        patch("custom_components.myhome.cover.time", fake_time),
+        patch("custom_components.myhome.cover_scope.time", fake_time),
         patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_sleep),
     ):
         yield cover, clock, gateway, release
@@ -467,5 +469,146 @@ async def test_scope_failed_reversal_clears_follower_pulse_end(
     assert not area._is_tilting and not cover._is_tilting
     assert area._pulse_ended_at is None
     assert cover._pulse_ended_at is None
+    release.set()
+    await _settle()
+
+
+@pytest.mark.asyncio
+async def test_async_failed_mid_pulse_reversal_clears_pulse_end_claim(
+    blind: Blind,
+) -> None:
+    """When a mid-pulse reversal's queued Future fails asynchronously, the unstopped prior pulse is not claimed."""
+    cover, clock, gateway, _release = blind
+    await _pulse_running(blind, 0, 0, 50)
+    clock.now += 0.36
+    pending: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    gateway.send = AsyncMock(return_value=pending)
+    await cover.async_set_cover_tilt_position(tilt_position=0)
+    assert cover._is_tilting and cover._pulse_ended_unstopped is True
+    pending.set_exception(RuntimeError("nack on queue"))
+    await _settle()
+    assert not cover._is_tilting
+    assert cover._pulse_ended_at is None
+    await _receive(cover, clock, _raw(18, "*#2*31*10*10*1*001*0##"), after=0.1)
+    assert cover.current_cover_tilt_position == 100
+
+
+@pytest.mark.asyncio
+async def test_scope_async_failed_reversal_clears_follower_pulse_end(
+    blind: Blind,
+) -> None:
+    """When a scope tilt reversal's queued Future fails asynchronously, neither leader nor follower keeps a claim."""
+    cover, clock, gateway, release = blind
+    area = _area_3(blind)
+    cover._attr_current_cover_position = 2
+    cover._attr_current_cover_tilt_position = 0
+    await area.async_set_cover_tilt_position(tilt_position=100)
+    area._tilt_start_time = clock.now
+    area._pulse_started()
+    clock.now += 0.36
+    pending: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    gateway.send = AsyncMock(return_value=pending)
+    await area.async_set_cover_tilt_position(tilt_position=0)
+    assert area._is_tilting and cover._is_tilting
+    pending.set_exception(RuntimeError("nack on queue"))
+    await _settle()
+    assert not area._is_tilting and not cover._is_tilting
+    assert area._pulse_ended_at is None
+    assert cover._pulse_ended_at is None
+    await _receive(cover, clock, _raw(29, "*#2*31*10*10*2*001*0##"), after=0.1)
+    await _receive(cover, clock, _raw(40, "*#2*31*10*10*1*001*0##"), after=0.1)
+    assert cover.current_cover_tilt_position == 0
+    release.set()
+    await _settle()
+
+
+@pytest.mark.asyncio
+async def test_scope_async_failed_pulse_clears_interrupted_member_claim_only(
+    blind: Blind,
+) -> None:
+    """An aborted scope pulse clears an interrupted member's claim while preserving a stopped sibling's claim."""
+    cover_31, clock, gateway, _release = blind
+    area = _area_3(blind)
+    assert area._family is not None
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover_32 = MyHOMECover(
+            hass=None, name="Blind 32", entity_name=None, device_id="32", who="2", where="32", interface=None,
+            advanced=True, manufacturer="BTicino", model="K4672M2S", gateway=gateway, travel_time=25,
+            slat_tilt=True, slat_time=0.8, min_motor_pulse=0.2, min_position_delta=1,
+        )
+    cover_32.entity_id = "cover.blind_32"
+    cover_32.async_schedule_update_ha_state = MagicMock()
+    area._family.add(cover_32)
+    cover_32._attr_current_cover_position = 0
+    cover_32._attr_current_cover_tilt_position = 50
+    cover_32._pulse_ended_at = clock.now
+    cover_32._pulse_ended_direction = "open"
+    cover_32._pulse_ended_unstopped = False
+
+    await _pulse_running(blind, 0, 0, 50)
+    clock.now += 0.2
+    pending: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+    gateway.send = AsyncMock(return_value=pending)
+    await area.async_set_cover_tilt_position(tilt_position=100)
+    assert cover_31._pulse_ended_unstopped is True
+    assert cover_32._pulse_ended_unstopped is False
+    pending.set_exception(RuntimeError("nack on queue"))
+    await _settle()
+    assert cover_31._pulse_ended_at is None
+    assert cover_32._pulse_ended_at is not None
+
+
+@pytest.mark.asyncio
+async def test_scope_partial_set_position_takes_motor_from_member_pulse_and_clears_claim(
+    blind: Blind,
+) -> None:
+    """An intermediate `area.set_cover_position(50)` cancels a member's pulse stop and clears settled claims."""
+    cover, clock, gateway, release = blind
+    area = _area_3(blind)
+    await _pulse_running(blind, 2, 100, 50)
+    await area.async_set_cover_position(position=50)
+    assert gateway.sent[-1] == "*2*1*3##"
+    assert not cover._is_tilting
+    area._cancel_stop_task()
+    release.set()
+    await _settle()
+    assert "*2*0*31##" not in gateway.sent, "member pulse auto-stop fired into scope partial position run"
+
+    # Also clears a settled member claim when no pulse is actively running.
+    cover._pulse_ended_at = clock.now
+    cover._pulse_ended_direction = "close"
+    await area.async_set_cover_position(position=60)
+    area._cancel_stop_task()
+    assert cover._pulse_ended_at is None
+
+
+@pytest.mark.asyncio
+async def test_scope_pulse_interrupting_member_pulse_via_service_keeps_claim(
+    blind: Blind,
+) -> None:
+    """`area.async_set_cover_tilt_position` interrupts a member's running slat pulse instead of raising busy."""
+    cover, clock, gateway, release = blind
+    area = _area_3(blind)
+    await _pulse_running(blind, 2, 100, 50)
+    clock.now += 0.16  # 0.20 s elapsed with the 0.04 s after *#2*31*10*12*2*001*0## -> member tilt at 75%
+
+    # Calling area tilt to 75% (run_duration <= 0 while member tilts) stops via scope stop.
+    await area.async_set_cover_tilt_position(tilt_position=75)
+    await _settle()
+    assert gateway.sent[-1] == "*2*0*3##"
+    assert not cover._is_tilting and cover.current_cover_tilt_position == 75
+
+    # Now start another member pulse (closing from 75 -> 0) and interrupt it mid-pulse with an opening scope pulse.
+    release.clear()
+    await _pulse_running(blind, 2, 75, 0)
+    clock.now += 0.16  # 0.16 s elapsed -> member tilt at 55%
+    await area.async_set_cover_tilt_position(tilt_position=100)
+    assert gateway.sent[-1] == "*2*1*3##"
+    assert area._is_tilting and cover._is_tilting and cover._tilt_follows is area
+    # Pre-move stop causes actuator to emit the interrupted closing pulse's stopped level (2 -> 1): member stays attached.
+    await _receive(cover, clock, _raw(40, "*#2*31*10*10*1*001*0##"), after=0.05)
+    assert cover.current_cover_position == 1
+    assert cover._is_tilting and cover._tilt_follows is area
+    await area.async_stop_cover()
     release.set()
     await _settle()

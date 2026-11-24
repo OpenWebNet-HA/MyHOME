@@ -125,7 +125,6 @@ class MyHOMEScopeCover(MyHOMECover):
         self._attr_extra_state_attributes["scope"] = scope.kind
         self._unsub_members: CALLBACK_TYPE | None = None
         self._pulse_followers: list[MyHOMECover] = []
-        self._pulse_followers_interrupted: set[MyHOMECover] = set()
         # A member can join before this cover is in Home Assistant (no hass yet).
         self._added = False
 
@@ -264,14 +263,8 @@ class MyHOMEScopeCover(MyHOMECover):
         # own (its followers with it), and a member's own, whose auto-stop would stop the run.
         self._end_pulse_for_takeover()
         followers = [m for m in self._members() if m._settles_full_run(opening)]
-        for member in self._members():
-            if member in followers:
-                member._begin_run(direction)
-                continue
-            if member._is_tilting:
-                member._cancel_stop_task()
-            member._end_pulse_for_takeover()
-            member._publish_state()
+        for member in followers:
+            member._begin_run(direction)
         try:
             written = await self._async_move(direction, pre_stopped=True)
         except Exception:
@@ -364,13 +357,27 @@ class MyHOMEScopeCover(MyHOMECover):
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 0})
 
+    def _is_curtain_moving(self) -> bool:
+        if members := self._members():
+            return any(m._is_curtain_moving() for m in members)
+        return super()._is_curtain_moving()
+
+    def _any_tilting(self) -> bool:
+        return self._is_tilting or any(m._is_tilting for m in self._members())
+
+    def _live_tilt(self, now: float) -> int | None:
+        if not (members := self._members()):
+            return super()._live_tilt(now)
+        tilts = [t for m in members if m._slat_tilt and (t := m._live_tilt(now)) is not None]
+        return round(sum(tilts) / len(tilts)) if tilts else None
+
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         if members := self._fan_out():
             await self._pulse_members_one_by_one([m for m in members if m._slat_tilt], kwargs)
             return
         if not self._slat_tilt:
             return
-        if any((m._attr_is_opening or m._attr_is_closing) and not m._is_tilting for m in self._members()):
+        if self._is_curtain_moving():
             raise HomeAssistantError(
                 f"{self._display_name} is moving; stop it before tilting the slats",
                 translation_domain=DOMAIN,
@@ -407,7 +414,6 @@ class MyHOMEScopeCover(MyHOMECover):
             # On the local bus one scope frame turns every member's slats: they
             # follow this pulse instead of reading its frames as a curtain run.
             self._pulse_followers = [m for m in self._members() if m._slat_tilt]
-            self._pulse_followers_interrupted = {m for m in self._pulse_followers if m._is_tilting}
             for member in self._pulse_followers:
                 member._follow_pulse(self, direction)
         written = await super()._async_move(direction, is_tilting=is_tilting, pre_stopped=pre_stopped)
@@ -415,37 +421,50 @@ class MyHOMEScopeCover(MyHOMECover):
             self._watch_run()
         return written
 
+    def _end_pulse_for_takeover(self) -> None:
+        """A scope curtain or level frame takes over every member's running slat pulse and claim."""
+        super()._end_pulse_for_takeover()
+        for member in self._members():
+            was_tilting = member._is_tilting
+            if was_tilting:
+                member._cancel_stop_task()
+            if was_tilting or member._pulse_ended_at is not None:
+                member._end_pulse_for_takeover()
+                if was_tilting:
+                    member._publish_state()
+
     def _pulse_started(self) -> None:
         for member in self._pulse_followers:
             if member._tilt_follows is self and member._is_tilting:
                 member._tilt_start_time = self._tilt_start_time
 
-    def _apply_tilt_stop(self, at: float | None = None, *, record_end: bool = True) -> None:
+    def _apply_tilt_stop(
+        self,
+        at: float | None = None,
+        *,
+        record_end: bool = True,
+        unstopped: bool = False,
+    ) -> None:
         start = self._tilt_start_time
         # The members' levels come on their own addresses: what ends this pulse without a
         # level of its own (a failed direction frame, an undelivered stop, a takeover)
         # ends theirs the same way.
         record_end = record_end and not self._pulse_direction_failed()
-        super()._apply_tilt_stop(at, record_end=record_end)
+        super()._apply_tilt_stop(at, record_end=record_end, unstopped=unstopped)
         followers, self._pulse_followers = self._pulse_followers, []
-        self._pulse_followers_interrupted.clear()
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 if member._tilt_start_time is None:
                     member._tilt_start_time = start
-                member._apply_tilt_stop(at, record_end=record_end)
+                member._apply_tilt_stop(at, record_end=record_end, unstopped=unstopped)
                 member._publish_state()
 
     def _abort_tilt(self) -> None:
-        clear_end = self._tilt_abort_clears_end
         super()._abort_tilt()
         followers, self._pulse_followers = self._pulse_followers, []
-        interrupted, self._pulse_followers_interrupted = self._pulse_followers_interrupted, set()
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 member._abort_tilt()
-                if clear_end or member in interrupted:
-                    member._pulse_ended_at = None
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         if members := self._fan_out():
