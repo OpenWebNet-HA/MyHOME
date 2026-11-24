@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -998,9 +1000,307 @@ async def test_locked_fine_and_restored_dimmer_coarse_preset_quantization_no_bou
         "*#1*55*1##"
     ]
 
+    # Item 7: Repeated coarse preset *1*9*55## BEFORE Dim 1 answers still holds restored 80%!
+    restored_55._brightness_refresh_after = 0.0
+    restored_55.handle_event(OWNEvent.parse("*1*9*55##"))
+    await hass.async_block_till_done()
+    assert restored_55._attr_brightness_pct == 80
+    assert restored_55.actuator_locked is True
+    assert ev_55 == []
+
     restored_55.handle_event(OWNEvent.parse("*#1*55*1*180*5##"))
     await hass.async_block_till_done()
     assert restored_55._attr_brightness_pct == 80
     assert restored_55.actuator_locked is True
     assert restored_55._exact_level_seen is True
+    assert restored_55._brightness_restored is False
     assert ev_55 == []
+
+
+async def test_dali_dim14_turn_on_passive_poll_plain_on_lock_guard_and_step1_cold_boot(
+    hass: HomeAssistant,
+) -> None:
+    """Audit #977 items 1, 4a, 4b, 11: DALI Dim 14 OFF->ON, passive poll, plain ON lock, fade step 1."""
+    _entry, handler = _make_gateway(
+        hass,
+        model="F461",
+        options={CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE},
+    )
+    dali = MyHOMELight(
+        hass=hass,
+        name="DALI DT8",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="25#4#02",
+        who="1",
+        where="25",
+        interface="02",
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F429",
+        gateway=handler,
+        color_temp=True,
+        rgb=True,
+    )
+    _attach_live_entity(hass, dali, "light.dali_dt8")
+
+    # 1. Item 1: Passive Dim 14 status report while OFF (and while locked OFF) keeps is_on=False!
+    dali.handle_event(OWNEvent.parse("*1*0*25#4#02##"))
+    dali._last_brightness_pct = 65
+    handler._actuator_locks.observe(OWNMessage.parse("*14*0*25#4#02##"))
+    assert dali.is_on is False
+    assert dali.actuator_locked is True
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*419##"))
+    assert dali.is_on is False
+    assert dali.color_temp == 419
+    assert dali.actuator_locked is True
+
+    # Item 11: Plain async_turn_on() while known locked sends *1*1*W## and skips async_update()!
+    handler.send.reset_mock()
+    handler.send_status_request.reset_mock()
+    await dali.async_turn_on()
+    assert [str(c.args[0]) for c in handler.send.await_args_list] == ["*1*1*25#4#02##"]
+    handler.send_status_request.assert_not_called()
+
+    # Unlock DALI and call turn_on(color_temp=169) from OFF: issue_288_f461_dali_dt8 echoes ONLY Dim 14!
+    handler._actuator_locks.observe(OWNMessage.parse("*14*1*25#4#02##"))
+    dali._attr_brightness_pct = 0
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP: 169})
+    assert dali.is_on is False  # non-optimistic before echo
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*169##"))
+    assert dali.is_on is True
+    assert dali.color_temp == 169
+    assert dali._attr_brightness_pct == 65
+
+    # Cold-boot unknown (is_on=None) turn_on(color_temp=220) + enqueue rollback coverage
+    dali._attr_is_on = None
+    handler.send = AsyncMock(side_effect=RuntimeError("tx err"))
+    with pytest.raises(RuntimeError):
+        await dali.async_turn_on(**{ATTR_COLOR_TEMP: 220})
+    assert dali._pending_cmd_color_temp is None
+    handler.send = AsyncMock()
+
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP: 220})
+    assert dali._pending_cmd_color_temp is not None
+    handler.send = AsyncMock(side_effect=RuntimeError("off err"))
+    with pytest.raises(RuntimeError):
+        await dali.async_turn_off()
+    assert dali._pending_cmd_color_temp is not None
+    handler.send = AsyncMock()
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*220##"))
+    assert dali.is_on is True
+
+    # 2. Item 4b: Cold-boot locked dimmer at 20% with gentle fade (step 1 = 22%, |22 - 20| <= 5):
+    # unchanged *1*1*55##, same-bucket *1*4*55##, and unchanged *#1*55*1*120*5## MUST NOT confirm step 1!
+    dim_55 = MyHOMELight(
+        hass=hass,
+        name="Dimmer 55",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="55",
+        who="1",
+        where="55",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim_55, "light.dim_55_step1")
+    assert dim_55._fade_engine.first_echo_timeout >= 2.5  # Item 4a: > 1.5s LightEchoWatchdog!
+    dim_55._fade_engine.first_echo_timeout = 0.05
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*120*5##"))
+    assert dim_55.actuator_locked is None
+    assert dim_55._attr_brightness_pct == 20
+
+    handler.send_fade_step.reset_mock()
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 24, ATTR_TRANSITION: 0.3})
+    fade_task = dim_55._fade_task
+    assert fade_task is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*1*1*55##"))  # already ON -> ignored for step-1 confirm
+    dim_55.handle_event(OWNEvent.parse("*1*4*55##"))  # 20% bucket -> ignored for step-1 confirm
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*120*5##"))  # unchanged 20% == fade_start -> cancels!
+    await fade_task
+    assert len(handler.send_fade_step.await_args_list) == 1
+    assert dim_55._attr_brightness_pct == 20
+
+    # Genuine coarse preset jump (*1*8*55## = 60%) or OFF->ON *1*1*55## DOES confirm step 1!
+    dim_55._fade_engine.first_echo_timeout = 0.5
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 60, ATTR_TRANSITION: 0.2})
+    ft2 = dim_55._fade_task
+    assert ft2 is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*1*8*55##"))
+    await ft2
+    assert dim_55._attr_brightness_pct == 60
+
+    dim_55.handle_event(OWNEvent.parse("*1*0*55##"))
+    assert dim_55.is_on is False
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 50, ATTR_TRANSITION: 0.2})
+    ft3 = dim_55._fade_task
+    assert ft3 is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*1*1*55##"))
+    await ft3
+    assert dim_55.is_on is True
+
+    # Coarse-only dimmer (_coarse_speed_seen=True): same bucket *1*4*55## (20%) is ignored,
+    # while next bucket *1*5*55## (30% != 20%) confirms step 1!
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*120*240##"))
+    assert dim_55._coarse_speed_seen is True
+    assert dim_55._attr_brightness_pct == 20
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 40, ATTR_TRANSITION: 0.2})
+    ft4 = dim_55._fade_task
+    assert ft4 is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*1*4*55##"))  # frozen 20% bucket -> not confirmed yet
+    dim_55.handle_event(OWNEvent.parse("*1*5*55##"))  # moved to 30% bucket -> confirms!
+    await ft4
+    assert dim_55._attr_brightness_pct == 40
+
+    # Pre-09W29 F418 coarse ladder 24% (speed=240) cold-boot locked: backward quantized *1*4*55## (20% < 24%)
+    # MUST NOT confirm an upward fade 24% -> 80%!
+    dim_55._fade_engine.first_echo_timeout = 0.05
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*124*240##"))
+    assert dim_55._attr_brightness_pct == 24
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 80, ATTR_TRANSITION: 0.3})
+    ft5 = dim_55._fade_task
+    assert ft5 is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*1*4*55##"))  # 20% < 24% -> rejected!
+    await ft5
+    assert dim_55._attr_brightness_pct == 24
+
+    # Fine dimmer at 44% fading UP 44% -> 80%: quantized *1*7*55## (50%, +6 pp <= 15) refreshes Dim 1 without confirming!
+    dim_55._coarse_speed_seen = False
+    dim_55._brightness_refresh_after = 0.0
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*144*5##"))
+    assert dim_55._exact_level_seen is True and dim_55._attr_brightness_pct == 44
+    handler.send_status_request.reset_mock()
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 80, ATTR_TRANSITION: 0.3})
+    ft6 = dim_55._fade_task
+    assert ft6 is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*1*7*55##"))  # +6 pp <= 15 -> polls Dim 1, does not confirm
+    await ft6
+    assert dim_55._attr_brightness_pct == 44
+    assert any(str(c.args[0]) == "*#1*55*1##" for c in handler.send_status_request.await_args_list)
+
+    # Downward fade 80% -> 74% (step 1 = 79%): frozen/upward Dim 1 (80%, 82%) is rejected while downward Dim 1 (75%) confirms!
+    dim_55._fade_engine.first_echo_timeout = 0.5
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*180*5##"))
+    assert dim_55._attr_brightness_pct == 80
+    await dim_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 74, ATTR_TRANSITION: 0.3})
+    ft7 = dim_55._fade_task
+    assert ft7 is not None
+    await asyncio.sleep(0)
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*180*5##"))  # unchanged 80% -> ignored
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*182*5##"))  # wrong direction 82% > 80% -> ignored
+    dim_55.handle_event(OWNEvent.parse("*#1*55*1*175*5##"))  # progressed down 75% < 80% -> confirms!
+    await ft7
+    assert dim_55._attr_brightness_pct == 74
+
+    # DALI Dim 14 written-future anchoring: socket NACK rollback, stale callback ignore, write_ts deadline,
+    # and queued Dim 14 surviving an earlier pre-write *1*0*W## echo!
+    loop = asyncio.get_running_loop()
+    dali.handle_event(OWNEvent.parse("*1*0*25#4#02##"))
+    assert dali.is_on is False
+
+    fut_stale: asyncio.Future[float] = loop.create_future()
+    fut_nack: asyncio.Future[float] = loop.create_future()
+    handler.send = AsyncMock(side_effect=[fut_stale, fut_nack])
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP: 240})
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP: 250})
+    fut_stale.set_exception(RuntimeError("stale nack"))  # superseded token -> ignored
+    await asyncio.sleep(0)
+    assert dali._pending_cmd_color_temp is not None
+    fut_nack.set_exception(RuntimeError("active nack"))  # active token -> clears _pending_cmd_color_temp!
+    await asyncio.sleep(0)
+    assert dali._pending_cmd_color_temp is None
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*250##"))
+    assert dali.is_on is False
+
+    fut_off: asyncio.Future[float] = loop.create_future()
+    fut_ct: asyncio.Future[float] = loop.create_future()
+    dali.handle_event(OWNEvent.parse("*1*1*25#4#02##"))
+    assert dali.is_on is True
+    handler.send = AsyncMock(side_effect=[fut_off, fut_ct])
+    await dali.async_turn_off()
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP: 260})
+    fut_off.set_result(loop.time())
+    await asyncio.sleep(0)
+    dali.handle_event(OWNEvent.parse("*1*0*25#4#02##"))  # pre-write *1*0* does NOT wipe queued Dim 14!
+    assert dali.is_on is False and dali._pending_cmd_color_temp is not None
+    fut_ct.set_result(loop.time() + 10.0)  # anchors deadline on socket write_ts
+    await asyncio.sleep(0)
+    assert dali._pending_cmd_color_temp[1] > loop.time() + 10.0
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*260##"))
+    assert dali.is_on is True and dali.color_temp == 260
+    handler.send = AsyncMock()
+
+
+async def test_issue_976_archived_mh200n_trace_replay_on_ownd_202(
+    hass: HomeAssistant,
+) -> None:
+    """Replay tests/fixtures/traces/issue_976/myhome_trace_MH200N_all_2026-11-20T12-17-07.json on OWNd 2.0.2."""
+    trace_path = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "issue_976"
+        / "myhome_trace_MH200N_all_2026-11-20T12-17-07.json"
+    )
+    payload = json.loads(trace_path.read_text(encoding="utf-8"))
+    assert len(payload["frames"]) == 49
+
+    _entry, handler = _make_gateway(hass, model="MH200N")
+    dimmer_55 = MyHOMELight(
+        hass=hass,
+        name="Dimmer 55",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="55",
+        who="1",
+        where="55",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    ev_55 = _attach_live_entity(hass, dimmer_55, "light.mh200n_dimmer_55")
+    _entry.runtime_data.entities.setdefault("light", {})["55"] = dimmer_55
+
+    locked_phase_changes = 0
+    for idx, entry_frame in enumerate(payload["frames"]):
+        raw = entry_frame["raw"]
+        direction = entry_frame["direction"]
+        if direction == "tx":
+            parsed_cmd = OWNCommand.parse(raw)
+            if getattr(parsed_cmd, "who", None) == 14:
+                handler._actuator_locks.observe(parsed_cmd)
+            elif getattr(parsed_cmd, "who", None) == 1 and getattr(parsed_cmd, "where", None) == "55":
+                if 26 <= idx <= 34:
+                    ev_55.clear()
+                    dim_val = getattr(parsed_cmd, "brightness", None)
+                    if isinstance(dim_val, int):
+                        await dimmer_55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: dim_val})
+                    elif getattr(parsed_cmd, "what", None) == 0:
+                        await dimmer_55.async_turn_off()
+                    await hass.async_block_till_done()
+                    locked_phase_changes += len(ev_55)
+        else:
+            parsed_rx = OWNMessage.parse(raw)
+            await handler._process_message(parsed_rx)
+            if getattr(parsed_rx, "who", None) == 1 and getattr(parsed_rx, "where", None) == "55":
+                dimmer_55.handle_event(parsed_rx)
+            await hass.async_block_till_done()
+
+    assert locked_phase_changes == 0
+    assert dimmer_55.actuator_locked is False
+    assert dimmer_55.is_on is False
+    assert dimmer_55._attr_brightness_pct == 0

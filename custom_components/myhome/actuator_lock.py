@@ -12,7 +12,7 @@ from OWNd.message import (
     normalize_where,
 )
 
-from .const import CONF_BUS_INTERFACE, CONF_MEMBERS, CONF_WHERE
+from .const import CONF_BUS_INTERFACE, CONF_MEMBERS, CONF_WHERE, DOMAIN
 from .data import get_runtime_data
 from .expose import is_exposed_on_bus
 from .where_grammar import canonical_point_spelling, expose_message_where
@@ -160,7 +160,10 @@ def actuator_locks_of(handler: Any) -> ActuatorLockManager | None:
     """Return the active :class:`ActuatorLockManager` of ``handler``, or ``None``."""
     owner_fn = getattr(handler, "actuator_lock_owner", None)
     mgr = owner_fn() if callable(owner_fn) else getattr(handler, "_actuator_locks", None)
-    return mgr if isinstance(mgr, ActuatorLockManager) else None
+    if isinstance(mgr, ActuatorLockManager):
+        mgr._sync_secondary_gateways()
+        return mgr
+    return None
 
 
 class ActuatorLockManager:
@@ -183,6 +186,7 @@ class ActuatorLockManager:
         if not is_lockable_entity(entity):
             return _noop
 
+        self._sync_secondary_gateways()
         key = _entity_key(entity)
         if key in self._locks:
             apply_actuator_lock_state(entity, self._locks[key])
@@ -193,22 +197,107 @@ class ActuatorLockManager:
 
         @callback
         def _unsub() -> None:
-            ents = self._entities.get(key)
-            if ents is not None and entity in ents:
-                ents.remove(entity)
-                if not ents:
-                    self._entities.pop(key, None)
+            self.unregister(entity)
 
         return _unsub
+
+    @callback
+    def unregister(self, entity: MyHOMEEntity) -> None:
+        """Remove ``entity`` from this lock manager if currently registered."""
+        key = _entity_key(entity)
+        ents = self._entities.get(key)
+        if ents is not None and entity in ents:
+            ents.remove(entity)
+            if not ents:
+                self._entities.pop(key, None)
+
+    def _bus_config_entries(self) -> list[Any]:
+        """Return config entries sharing this manager's physical SCS bus (primary + secondaries)."""
+        entries: list[Any] = []
+        seen_entries: set[int] = set()
+        own_entry = getattr(self.handler, "config_entry", None)
+        if own_entry is not None:
+            seen_entries.add(id(own_entry))
+            entries.append(own_entry)
+        hass = getattr(self.handler, "hass", None)
+        my_mac = getattr(self.handler, "mac", None)
+        if hass is not None and my_mac and hasattr(hass, "config_entries"):
+            for entry in hass.config_entries.async_entries(DOMAIN):
+                if id(entry) in seen_entries:
+                    continue
+                rt = get_runtime_data(entry)
+                gw = getattr(rt, "gateway", None) if rt is not None else None
+                if (
+                    gw is not None
+                    and getattr(gw, "is_secondary", False) is True
+                    and getattr(gw, "primary_gateway_mac", None) == my_mac
+                ):
+                    seen_entries.add(id(entry))
+                    entries.append(entry)
+        return entries
+
+    def _sync_secondary_gateways(self) -> None:
+        """Adopt entities and lock states queued on secondary gateways before primary loaded."""
+        if getattr(self.handler, "is_follower", False) is True:
+            return
+        for entry in self._bus_config_entries():
+            rt = get_runtime_data(entry)
+            gw = getattr(rt, "gateway", None) if rt is not None else None
+            if gw is None or gw is self.handler:
+                continue
+            sec_mgr = getattr(gw, "_actuator_locks", None)
+            if not isinstance(sec_mgr, ActuatorLockManager) or (
+                not sec_mgr._entities and not sec_mgr._locks
+            ):
+                continue
+            for key, locked in sec_mgr._locks.items():
+                if key in sec_mgr._observed_keys and key not in self._observed_keys:
+                    self._locks[key] = locked
+                    self._observed_keys.add(key)
+                elif key not in self._locks:
+                    self._locks[key] = locked
+            for key, ents in list(sec_mgr._entities.items()):
+                bucket = self._entities.setdefault(key, [])
+                for ent in ents:
+                    if ent not in bucket:
+                        bucket.append(ent)
+                    if key in self._locks:
+                        if (
+                            key in self._observed_keys
+                            and getattr(ent, "_actuator_locked", None) is not self._locks[key]
+                        ):
+                            ent.handle_actuator_lock(self._locks[key])
+                        elif getattr(ent, "_actuator_locked", None) is None:
+                            apply_actuator_lock_state(ent, self._locks[key])
+            sec_mgr.clear()
+
+    def evacuate_secondary_entities(self) -> None:
+        """Re-home still-loaded secondary entities onto their gateway managers before primary unload."""
+        for key, ents in list(self._entities.items()):
+            for ent in list(ents):
+                ent_gw = getattr(ent, "_gateway_handler", None)
+                if ent_gw is None or ent_gw is self.handler:
+                    continue
+                sec_mgr = getattr(ent_gw, "_actuator_locks", None)
+                if isinstance(sec_mgr, ActuatorLockManager):
+                    if key in self._locks:
+                        sec_mgr._locks[key] = self._locks[key]
+                        if key in self._observed_keys:
+                            sec_mgr._observed_keys.add(key)
+                    sec_bucket = sec_mgr._entities.setdefault(key, [])
+                    if ent not in sec_bucket:
+                        sec_bucket.append(ent)
 
     def _is_key_exposed(self, key: tuple[str, str | None]) -> bool:
         """Return True if ``key`` is an exposed virtual WHO=1 or WHO=2 device on this bus."""
         pt, iface = key
         raw_target = f"{pt}#4#{iface}" if iface is not None else pt
         hass = getattr(self.handler, "hass", None)
-        config_entry = getattr(self.handler, "config_entry", None)
-        return is_exposed_on_bus(hass, config_entry, 1, raw_target) or is_exposed_on_bus(
-            hass, config_entry, 2, raw_target
+        entries = self._bus_config_entries() or [None]
+        return any(
+            is_exposed_on_bus(hass, entry, 1, raw_target)
+            or is_exposed_on_bus(hass, entry, 2, raw_target)
+            for entry in entries
         )
 
     def _apply_observed_key(self, key: tuple[str, str | None], locked: bool) -> None:
@@ -253,9 +342,10 @@ class ActuatorLockManager:
                 for cov in getattr(family, "_covers", ()):
                     _collect_entity(cov)
 
-        config_entry = getattr(self.handler, "config_entry", None)
-        runtime = get_runtime_data(config_entry) if config_entry is not None else None
-        if runtime is not None:
+        for entry in self._bus_config_entries():
+            runtime = get_runtime_data(entry)
+            if runtime is None:
+                continue
             for plat_ents in runtime.entities.values():
                 for ent in plat_ents.values():
                     _collect_entity(ent)
@@ -297,7 +387,7 @@ class ActuatorLockManager:
                     for member_ent in members_fn():
                         _add_key(_entity_key(member_ent))
                 for m_raw in getattr(scope, "members", ()):
-                    _add_key(_split_point_key(m_raw, None))
+                    _add_key(_split_point_key(m_raw, iface))
             elif (
                 hasattr(cand, "_member_entity_ids")
                 and _parse_hash_group(getattr(cand, "_where", None)) == group_where
@@ -313,6 +403,7 @@ class ActuatorLockManager:
         """Observe an inbound event or ACKed outbound WHO=14 command and update lock states."""
         if not isinstance(message, (OWNActuatorLockEvent, OWNActuatorLockCommand)):
             return False
+        self._sync_secondary_gateways()
         if getattr(message, "is_translation", None) is True:
             return False
         what = getattr(message, "what", None)
@@ -380,6 +471,7 @@ class ActuatorLockManager:
         observed: bool = True,
     ) -> None:
         """Set point lock state from live Dimension 10 ``SHUTTER_INFO`` or ``RestoreEntity``."""
+        self._sync_secondary_gateways()
         key = _split_point_key(where, interface)
         if not key[0]:
             return
@@ -402,6 +494,7 @@ class ActuatorLockManager:
     @callback
     def clear_lock_from_actuation(self, where: Any, interface: Any = None) -> None:
         """Mark an actuator unlocked after real physical actuation is observed on the bus."""
+        self._sync_secondary_gateways()
         key = _split_point_key(where, interface)
         if not key[0]:
             return
@@ -414,6 +507,7 @@ class ActuatorLockManager:
 
     def is_locked(self, where: Any, interface: Any = None) -> bool | None:
         """Return the tracked lock state for ``(where, interface)``, or ``None`` if unseen."""
+        self._sync_secondary_gateways()
         key = _split_point_key(where, interface)
         if not key[0]:
             return None

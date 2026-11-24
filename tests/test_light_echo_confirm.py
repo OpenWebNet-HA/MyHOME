@@ -48,6 +48,7 @@ from custom_components.myhome.const import (
     CONF_UDN,
     SUPPORTED_GATEWAY_MODELS,
 )
+from custom_components.myhome.data import MyHOMERuntimeData
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.gateway_confirm import LightEchoWatchdog, echo_watchdog_of
 from tests.mock_gateway_harness import MockGatewayHarness
@@ -561,3 +562,178 @@ async def test_the_read_back_is_the_same_on_every_gateway_model(hass, monkeypatc
         worker.cancel()
         await asyncio.gather(worker, return_exceptions=True)
         await harness.stop()
+
+
+async def test_dimension_watches_ignore_plain_on_cache_fast_dim_and_keep_two_frame_watches(
+    hass, watchdog, monkeypatch
+) -> None:
+    """Audit #977 items 1, 2a, 2b, 2c: Dim 1/12/14 watch isolation, pre-ACK cache, and 2-frame writes."""
+    clock = [2000.0]
+    monkeypatch.setattr(gateway_confirm.time, "monotonic", lambda: clock[0])
+
+    # 2a: Plain *1*1*W## / coarse *1*7*W## does NOT cancel Dim 1, Dim 12, or Dim 14 watches;
+    # at expiry, plain *#1*W## is skipped (already in _recent_status) while the missing dimension IS polled.
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*32*#1*180*0##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*26*#12*120*50*80##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25*#14*300##"), clock[0])
+    clock[0] += 0.05
+    watchdog.status_seen(OWNMessage.parse("*1*1*32##"))
+    watchdog.status_seen(OWNMessage.parse("*1*7*32##"))
+    watchdog.status_seen(OWNMessage.parse("*1*1*26##"))
+    watchdog.status_seen(OWNMessage.parse("*1*1*25##"))
+    assert set(watchdog.pending) == {"32", "26", "25"}
+    await _expire(hass)
+    assert sorted(_requests(watchdog)) == sorted(["*#1*32*1##", "*#1*26*12##", "*#1*25*14##"])
+    watchdog.handler.send_status_request.reset_mock()
+
+    # 2b: Fast-event Dim 12 and Dim 14 echoes overtaking ACK cache in _recent_status -> 0 watches armed!
+    clock[0] += 5.0
+    w_at = clock[0]
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*26*12*120*50*80##"))
+    watchdog.status_seen(OWNMessage.parse("*#1*25*14*300##"))
+    clock[0] += 0.02
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*26*#12*120*50*80##"), w_at)
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25*#14*300##"), w_at)
+    assert watchdog.pending == {}
+    await _expire(hass)
+    assert _requests(watchdog) == []
+
+    # 2c: Two-frame writes (*#1*25*#14*300## + *#1*25*#1*180*0##, and *#1*55*#1*170*0## + *1*11*55##)
+    # preserve both independent (where, cmd_dim) watches and coalesce simultaneous *#1*W## polls!
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25*#14*300##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25*#1*180*0##"), clock[0])
+    assert len([k for k in watchdog._watches if k[0] == "25"]) == 2
+    clock[0] += 0.05
+    watchdog.status_seen(OWNMessage.parse("*#1*25*14*300##"))
+    assert watchdog.pending == {"25": "*#1*25*#1*180*0##"}
+    await _expire(hass)
+    assert _requests(watchdog) == ["*#1*25##", "*#1*25*1##"]
+    watchdog.handler.send_status_request.reset_mock()
+
+    # Both watches expiring together coalesce duplicate *#1*55## via _COALESCE_STATUS_POLL_S
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*55*#1*170*0##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*1*11*55##"), clock[0])
+    await _expire(hass)
+    assert _requests(watchdog) == ["*#1*55##", "*#1*55*1##"]
+    watchdog.handler.send_status_request.reset_mock()
+
+    # Opposite-polarity *1*0*25## cancels all pending ON watches for 25
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25*#14*300##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25*#1*180*0##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*1*0*25##"), clock[0])
+    assert [k for k in watchdog._watches if k[0] == "25"] == [("25", None)]
+    watchdog.cancel_all()
+
+    # Item 1 fallback: raw send_message('*#1*25#4#02*#14*169##') echoed by *#1*25#4#02*14*169##
+    # while registered light entity is still OFF arms a (where, None) status read-back!
+    off_ent = SimpleNamespace(_full_where="25#4#02", _where="25", _attr_is_on=False)
+    on_ent = SimpleNamespace(_full_where="26#4#02", _where="26", _attr_is_on=True)
+    watchdog.handler.config_entry = SimpleNamespace(
+        runtime_data=MyHOMERuntimeData(
+            gateway=watchdog.handler,
+            entities={"light": {"a": off_ent, "b": on_ent}},
+        )
+    )
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25#4#02*#14*169##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*26#4#02*#14*169##"), clock[0])
+    clock[0] += 0.05
+    watchdog.status_seen(OWNMessage.parse("*#1*25#4#02*14*169##"))
+    watchdog.status_seen(OWNMessage.parse("*#1*26#4#02*14*169##"))
+    assert ("25#4#02", None) in watchdog._watches
+    assert ("26#4#02", None) not in watchdog._watches
+    await _expire(hass)
+    assert _requests(watchdog) == ["*#1*25#4#02##"]
+    watchdog.handler.send_status_request.reset_mock()
+
+    # Also cover pre-ACK Dim 14 echo while entity is still OFF
+    clock[0] += 5.0
+    w_raw = clock[0]
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*25#4#02*14*169##"))
+    clock[0] += 0.02
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25#4#02*#14*169##"), w_raw)
+    assert ("25#4#02", None) in watchdog._watches
+    watchdog.cancel_all()
+
+    # Unregistered Dim 14 entity & runtime_data=None guard + pre-ACK plain OFF answering Dim 1 level 0 + Dim 12 cancelling plain ON watch
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*99#4#02*#14*169##"), clock[0])
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*99#4#02*14*169##"))
+    assert ("99#4#02", None) not in watchdog._watches
+
+    watchdog.handler.config_entry = SimpleNamespace(runtime_data=None)
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25#4#02*#14*169##"), clock[0])
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*25#4#02*14*169##"))
+    assert ("25#4#02", None) not in watchdog._watches
+
+    clock[0] += 5.0
+    w_off = clock[0]
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*1*0*32##"))
+    clock[0] += 0.02
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*32*#1*100*0##"), w_off)
+    assert ("32", 1) not in watchdog._watches
+
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*1*1*26##"), clock[0])
+    assert ("26", None) in watchdog._watches
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*26*12*120*50*80##"))
+    assert ("26", None) not in watchdog._watches
+
+    # Warm Standby + secondary bus config_entry + un-padded #4#2 entity resolution in _entity_still_not_on
+    from custom_components.myhome.actuator_lock import ActuatorLockManager
+
+    sec_light = SimpleNamespace(_full_where="27#4#2", _where="27", _attr_is_on=False)
+    sec_entry = SimpleNamespace(
+        runtime_data=MyHOMERuntimeData(
+            gateway=SimpleNamespace(is_secondary=True, primary_gateway_mac="00:11:22:33:44:55"),
+            entities={"light": {"sec_dali": sec_light}},
+        )
+    )
+    pri_light = SimpleNamespace(_full_where="25#4#2", _where="25", _attr_is_on=False)
+    pri_handler = SimpleNamespace(
+        hass=SimpleNamespace(config_entries=SimpleNamespace(async_entries=lambda _d: [sec_entry])),
+        mac="00:11:22:33:44:55",
+        is_follower=False,
+        is_connected=False,
+        config_entry=SimpleNamespace(
+            runtime_data=MyHOMERuntimeData(
+                gateway=None,  # type: ignore[arg-type]
+                entities={"light": {"pri_dali": pri_light}},
+            )
+        ),
+    )
+    pri_mgr = ActuatorLockManager(pri_handler)  # type: ignore[arg-type]
+    pri_handler._actuator_locks = pri_mgr
+
+    watchdog.handler.is_standby = True
+    watchdog.handler._get_primary_gateway = lambda: pri_handler
+    watchdog.handler.actuator_lock_owner = lambda: pri_mgr
+    watchdog.handler.config_entry = SimpleNamespace(runtime_data=None)
+
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25#4#02*#14*169##"), clock[0])
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*27#4#02*#14*169##"), clock[0])
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*25#4#02*14*169##"))
+    watchdog.status_seen(OWNMessage.parse("*#1*27#4#02*14*169##"))
+    assert ("25#4#02", None) in watchdog._watches
+    assert ("27#4#02", None) in watchdog._watches
+    watchdog.cancel_all()
+
+    # Orphan standby (primary_gw is None) returns False cleanly
+    watchdog.handler._get_primary_gateway = lambda: None
+    watchdog.handler.actuator_lock_owner = lambda: None
+    clock[0] += 5.0
+    watchdog.command_acknowledged(OWNCommand.parse("*#1*25#4#02*#14*169##"), clock[0])
+    clock[0] += 0.02
+    watchdog.status_seen(OWNMessage.parse("*#1*25#4#02*14*169##"))
+    assert ("25#4#02", None) not in watchdog._watches

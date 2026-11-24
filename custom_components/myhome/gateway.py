@@ -1645,7 +1645,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             self._unavailable_timer()
         self._resync_manager.cancel_all()
         self._echo_watchdog.cancel_all()
-        self._actuator_locks.clear()
+        if isinstance(self._actuator_locks, ActuatorLockManager):
+            self._actuator_locks.evacuate_secondary_entities()
+            self._actuator_locks.clear()
         if self._zone_request_task is not None:
             self._zone_request_task.cancel()
             self._zone_request_task = None

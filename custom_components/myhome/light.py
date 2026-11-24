@@ -454,6 +454,8 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntr
 
 class MyHOMELight(MyHOMEEntity, LightEntity):
     _pending_cmd_brightness_pct: tuple[int, float] | None = None
+    _pending_cmd_color_temp: tuple[int, float, list[Any]] | None = None
+    _brightness_restored: bool = False
 
     def __init__(
         self,
@@ -563,6 +565,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         self._last_brightness_pct: int = 100
         self._pending_cmd_brightness_pct: tuple[int, float] | None = None
+        self._pending_cmd_color_temp: tuple[int, float, list[Any]] | None = None
+        self._brightness_restored: bool = False
         # A fine dimmer has reported an exact level on Dimension 1 / 4 with a normal
         # speed; a coarse-only one (speed 240, #767) is still a coarse dimmer even if
         # it reports levels (#851).
@@ -686,6 +690,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if isinstance(last_brightness, (int, float)):
             self._attr_brightness = int(last_brightness)
             self._attr_brightness_pct = eight_bits_to_percent(self._attr_brightness)
+            self._brightness_restored = True
             if self._attr_brightness_pct > 0:
                 self._last_brightness_pct = self._attr_brightness_pct
 
@@ -825,17 +830,17 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
     def _should_use_software_stepped(self, transition: float | None) -> bool:
         return self._fade_engine.should_use_software_stepped(transition)
 
-    async def _set_brightness_instant(self, pct: int) -> None:
+    async def _set_brightness_instant(self, pct: int) -> Any:
         """Send set_brightness with transition=0, or switch_off when pct <= 0."""
         if pct <= 0:
-            await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
-        else:
-            cmd = OWNLightingCommand.set_brightness(self._full_where, pct, 0)
-            send_fade = getattr(self._gateway_handler, "send_fade_step", None)
-            if self._fade_engine.is_fading and inspect.iscoroutinefunction(send_fade):
-                self._supersede_level_zero_check(await send_fade(cmd))
-            else:
-                await self._send_switch_on(cmd)
+            return await self._gateway_handler.send(OWNLightingCommand.switch_off(self._full_where))
+        cmd = OWNLightingCommand.set_brightness(self._full_where, pct, 0)
+        send_fade = getattr(self._gateway_handler, "send_fade_step", None)
+        if self._fade_engine.is_fading and inspect.iscoroutinefunction(send_fade):
+            written = await send_fade(cmd)
+            self._supersede_level_zero_check(written)
+            return written
+        return await self._send_switch_on(cmd)
 
     async def _maybe_instant_brightness(
         self, start_pct: int, target_pct: int, is_on: bool | None = None
@@ -851,6 +856,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         else:
             self._attr_is_on = pct > 0
         self._is_on_restored = False
+        self._brightness_restored = False
         if pct > 0:
             self._last_brightness_pct = pct
 
@@ -995,6 +1001,39 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         else:
             supersede()
 
+    def _anchor_pending_color_temp(
+        self, target_mireds: int, token: list[Any], written: Any
+    ) -> None:
+        """Anchor ``_pending_cmd_color_temp`` on socket write and clear it on NACK/cancel."""
+        token[0] = written
+
+        def _on_written(_: Any = None) -> None:
+            failed = isinstance(written, asyncio.Future) and (
+                written.cancelled() or written.exception() is not None
+            )
+            cur = self._pending_cmd_color_temp
+            if cur is None or cur[2] is not token:
+                return
+            if failed:
+                self._pending_cmd_color_temp = None
+                return
+            write_ts = written.result() if isinstance(written, asyncio.Future) else None
+            anchor = (
+                float(write_ts)
+                if isinstance(write_ts, (int, float)) and not isinstance(write_ts, bool)
+                else time.monotonic()
+            )
+            self._pending_cmd_color_temp = (
+                target_mireds,
+                anchor + ECHO_CONFIRM_DELAY_S + 1.0,
+                token,
+            )
+
+        if isinstance(written, asyncio.Future) and not written.done():
+            written.add_done_callback(_on_written)
+        else:
+            _on_written()
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
         await self._async_turn_on(**kwargs)
@@ -1062,9 +1101,27 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             else:
                 target_mireds = int(kwargs[ATTR_COLOR_TEMP])
 
-            await self._send_switch_on(
-                OWNLightingCommand.set_color_temperature(self._full_where, target_mireds)
-            )
+            prev_pending_ct = self._pending_cmd_color_temp
+            token: list[Any] = [None]
+            if target_mireds > 1:
+                self._pending_cmd_color_temp = (
+                    target_mireds,
+                    time.monotonic() + ECHO_CONFIRM_DELAY_S + 1.0,
+                    token,
+                )
+            try:
+                written = await self._send_switch_on(
+                    OWNLightingCommand.set_color_temperature(self._full_where, target_mireds)
+                )
+            except (Exception, asyncio.CancelledError):
+                if (
+                    self._pending_cmd_color_temp is not None
+                    and self._pending_cmd_color_temp[2] is token
+                ):
+                    self._pending_cmd_color_temp = prev_pending_ct
+                raise
+            if target_mireds > 1:
+                self._anchor_pending_color_temp(target_mireds, token, written)
             if ATTR_BRIGHTNESS not in kwargs and ATTR_BRIGHTNESS_PCT not in kwargs:
                 return
 
@@ -1179,7 +1236,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         else:
             # plain on path (preserved)
             await self._send_switch_on(OWNLightingCommand.switch_on(self._full_where))
-            if (
+            if self.actuator_locked is not True and (
                 ColorMode.BRIGHTNESS in self._attr_supported_color_modes
                 or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
                 or ColorMode.HS in self._attr_supported_color_modes
@@ -1193,12 +1250,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._status_on, self._level_zero_on, self._level_zero_pending
         )
         prev_pending_brightness = self._pending_cmd_brightness_pct
+        prev_pending_ct = self._pending_cmd_color_temp
         # An MH200 reports the off that follows as a DIMENSION 1 level 0 only (``*#1*62*1*100*2##``,
         # tests/fixtures/traces/dimmer_on_at_level_0_2026_11_20/review_frames.json:12).
         self._status_on = None
         self._level_zero_on = False
         self._level_zero_pending = False
         self._pending_cmd_brightness_pct = None
+        self._pending_cmd_color_temp = None
 
         try:
             if (
@@ -1249,6 +1308,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._level_zero_pending = pending and self._level_zero_check_task is not None
                 if self._pending_cmd_brightness_pct is None:
                     self._pending_cmd_brightness_pct = prev_pending_brightness
+                if self._pending_cmd_color_temp is None:
+                    self._pending_cmd_color_temp = prev_pending_ct
             raise
 
     @callback
@@ -1266,6 +1327,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._coarse_speed_seen = True
         else:
             self._exact_level_seen = True
+
+    @staticmethod
+    def _coarse_preset_pct(message: Any, preset: int) -> int:
+        """Map a coarse WHAT 2..10 preset message to its clamped 0..100% level."""
+        preset_pct = getattr(message, "brightness_preset_percent", None)
+        if not isinstance(preset_pct, int) or isinstance(preset_pct, bool):
+            preset_pct = COARSE_PRESET_TO_PERCENT.get(preset, preset * 10)
+        return max(0, min(100, preset_pct))
 
     def _is_fine_dimmer(self, message: OWNLightingEvent) -> bool:
         """True when this light has reported exact levels and nothing marks it coarse-only."""
@@ -1438,6 +1507,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         # Off as for an off status: a software fade must not switch it on again.
         self._cancel_fade_if_active()
         self._attr_is_on = False
+        self._brightness_restored = False
         if not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
             # An on / off only light locked against levels keeps no level (#288).
             self._attr_brightness_pct = 0
@@ -1574,6 +1644,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_color_temp = self._attr_color_temp
         prev_hs_color = self._attr_hs_color
         was_restored = self._is_on_restored
+        was_brightness_restored = self._brightness_restored
         was_fine = self._is_fine_dimmer(message)
         unknown_state = getattr(message, "unknown_state", None)
         is_no_load = unknown_state == 19
@@ -1585,8 +1656,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         if is_no_load:
             self._pending_cmd_brightness_pct = None
+            self._pending_cmd_color_temp = None
             self._attr_is_on = False
             self._is_on_restored = False
+            self._brightness_restored = False
             was_no_load = self._attr_extra_state_attributes.get("no_load", False)
             self._attr_extra_state_attributes["no_load"] = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
@@ -1607,6 +1680,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # still reports it as `is_on True`, and a step from 0 % may leave the light off (#367).
             self._attr_is_on = True if level_zero_while_on else message.is_on
             self._is_on_restored = False
+            if not self._attr_is_on:
+                self._brightness_restored = False
             update_bus_state_complete = True
             # A status "on" without a level (``*1*1*0010##``) left the light shown on at 0 %
             # after a level 0: show the confirmed minimum or the last known level instead.
@@ -1675,8 +1750,20 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         raw_ct = getattr(message, "color_temp", None)
         has_color_temp = isinstance(raw_ct, int) and not isinstance(raw_ct, bool) and raw_ct > 1
         has_level = message.brightness is not None or has_preset
+        pending_ct = self._pending_cmd_color_temp
         if update_bus_state_complete or has_level or has_hs or has_rgb:
             self._pending_cmd_brightness_pct = None
+        if has_hs or has_rgb or (
+            update_bus_state_complete
+            and (
+                self._attr_is_on is True
+                or pending_ct is None
+                or not isinstance(pending_ct[2][0], asyncio.Future)
+                or pending_ct[2][0].done()
+            )
+        ):
+            self._pending_cmd_color_temp = None
+            pending_ct = None
 
         # A dimension the light is locked out of carries no truth in any of its
         # fields: the gateway is replaying a value once written to an address
@@ -1724,6 +1811,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_brightness = percent_to_eight_bits(val)
                 self._attr_is_on = val > 0
                 self._is_on_restored = False
+                self._brightness_restored = False
                 if val > 0:
                     self._last_brightness_pct = val
 
@@ -1735,10 +1823,26 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._where,
                 )
             self._promote_color_mode(ColorMode.COLOR_TEMP)
-            self._attr_color_temp = cast(int, message.color_temp)
-            self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(
-                cast(int, message.color_temp)
-            )
+            new_ct = cast(int, message.color_temp)
+            self._attr_color_temp = new_ct
+            self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(new_ct)
+            self._pending_cmd_color_temp = None
+            if (
+                pending_ct is not None
+                and time.monotonic() < pending_ct[1]
+                and not (
+                    prev_color_temp is not None
+                    and new_ct == prev_color_temp
+                    and (
+                        (self._actuator_locked is True and (pending_ct[0] != prev_color_temp or prev_is_on is not True))
+                        or (prev_is_on is not True and abs(pending_ct[0] - prev_color_temp) > 5)
+                    )
+                )
+            ):
+                self._attr_is_on = True
+                self._is_on_restored = False
+                if not self._attr_brightness_pct and self._last_brightness_pct:
+                    self._apply_brightness_state(self._last_brightness_pct, is_on=True)
 
         # Auto-promote to dimmable when brightness data is received (always) or dimmer reports no load
         elif (has_level or is_no_load) and not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
@@ -1803,6 +1907,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             else:
                 self._attr_brightness_pct = level
                 self._attr_brightness = percent_to_eight_bits(level)
+                self._brightness_restored = False
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
             self._learn_dimmer_kind(message)
@@ -1813,12 +1918,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # Ignored while software_stepped fade is active — including under OWNd >= 2.0.0b12
             # where is_coarse_dimmer=True also populates message.brightness on *1*2..10*WHERE##
             # (86% -> WHAT 10 -> 100% has a 14 pp quantization jump that would self-cancel fades).
-            preset_pct = getattr(message, "brightness_preset_percent", None)
-            if not isinstance(preset_pct, int) or isinstance(preset_pct, bool):
-                preset_pct = COARSE_PRESET_TO_PERCENT.get(
-                    cast(int, preset), cast(int, preset) * 10
-                )
-            clamped_preset_pct = max(0, min(100, preset_pct))
+            clamped_preset_pct = self._coarse_preset_pct(message, cast(int, preset))
             has_dimmer_capability = bool(
                 set(self._attr_supported_color_modes or ())
                 - {ColorMode.ONOFF, ColorMode.UNKNOWN}
@@ -1829,7 +1929,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 and prev_brightness_pct is not None
                 and not self._coarse_speed_seen
                 and getattr(message, "is_coarse_dimmer", None) is not True
-                and (was_fine or (was_restored and has_dimmer_capability))
+                and (was_fine or ((was_restored or was_brightness_restored) and has_dimmer_capability))
                 and abs(clamped_preset_pct - prev_brightness_pct) <= 15
             ):
                 # Locked fine or restored dimmer answered a status poll with its quantized
@@ -1848,8 +1948,60 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._bus_state_complete = False
                     self._request_brightness_refresh()
 
-        if self._fade_engine.is_fading and (update_bus_state_complete or has_level):
-            self._fade_engine.notify_bus_echo()
+        if self._fade_engine.is_fading and self._is_own_point_event(message):
+            raw_fade_start = getattr(self._fade_engine, "fade_start_pct", None)
+            fade_start = (
+                raw_fade_start
+                if isinstance(raw_fade_start, int) and not isinstance(raw_fade_start, bool)
+                else None
+            )
+            raw_pending_step = getattr(self._fade_engine, "pending_first_step_pct", None)
+            pending_step = (
+                raw_pending_step
+                if isinstance(raw_pending_step, int) and not isinstance(raw_pending_step, bool)
+                else None
+            )
+            fading_down = (
+                fade_start is not None
+                and pending_step is not None
+                and pending_step < fade_start
+            )
+            step1_confirmed_by_event = False
+            if has_level and message.brightness is not None and not has_preset:
+                reported_lvl = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
+                if prev_is_on is not True or fade_start is None:
+                    step1_confirmed_by_event = reported_lvl > 0
+                elif fading_down:
+                    step1_confirmed_by_event = 0 < reported_lvl < fade_start
+                else:
+                    step1_confirmed_by_event = reported_lvl > fade_start
+            elif has_level and has_preset:
+                clamped_p = self._coarse_preset_pct(message, cast(int, preset))
+                progressed = (
+                    True
+                    if prev_is_on is not True or fade_start is None
+                    else (clamped_p < fade_start if fading_down else clamped_p > fade_start)
+                )
+                if not progressed:
+                    if not (
+                        self._coarse_speed_seen
+                        or getattr(message, "is_coarse_dimmer", None) is True
+                    ):
+                        self._request_brightness_refresh()
+                elif (
+                    prev_is_on is not True
+                    or fade_start is None
+                    or abs(clamped_p - fade_start) > 15
+                    or self._coarse_speed_seen
+                    or getattr(message, "is_coarse_dimmer", None) is True
+                ):
+                    step1_confirmed_by_event = True
+                else:
+                    self._request_brightness_refresh()
+            elif update_bus_state_complete:
+                step1_confirmed_by_event = prev_is_on is False and message.is_on is True
+            if step1_confirmed_by_event:
+                self._fade_engine.notify_bus_echo()
 
         if (
             self._actuator_locked is True

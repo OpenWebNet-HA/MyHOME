@@ -373,3 +373,79 @@ async def test_myhome_light_set_brightness_instant_zero_switches_off(hass):
     assert gateway.send.call_count == 1
     cmd = gateway.send.call_args[0][0]
     assert str(cmd) == "*#1*12*#1*150*0##"
+
+
+async def test_software_fade_step1_timeout_anchors_on_written_future_and_handles_nack(
+    create_engine,
+) -> None:
+    """Audit #977 item 4a: step-1 echo window starts after socket write completion, not enqueue."""
+    loop = asyncio.get_running_loop()
+
+    # 1. Queue wait (0.08s) exceeds first_echo_timeout (0.04s), then echo arrives 0.01s after write -> succeeds!
+    engine, send_instant, apply_state, _ = create_engine(
+        auto_echo=False, first_echo_timeout=0.04
+    )
+    step1_written: asyncio.Future[float] = loop.create_future()
+    call_idx = 0
+
+    async def _queued_send(_pct: int) -> asyncio.Future[float] | None:
+        nonlocal call_idx
+        call_idx += 1
+        return step1_written if call_idx == 1 else None
+
+    send_instant.side_effect = _queued_send
+    task = engine.start_fade(start_pct=10, target_pct=30, duration=0.12)
+    await asyncio.sleep(0.08)  # longer than first_echo_timeout while still queued!
+    assert engine.is_fading is True
+    step1_written.set_result(asyncio.get_running_loop().time())
+    await asyncio.sleep(0.01)
+    engine.notify_bus_echo()
+    await task
+    assert send_instant.call_count >= 2
+    assert apply_state.call_count >= 2
+
+    # 2. Fast-event echo arriving BEFORE written future resolves confirms immediately
+    engine2, send2, apply2, _ = create_engine(auto_echo=False, first_echo_timeout=0.04)
+    fast_written: asyncio.Future[float] = loop.create_future()
+    idx2 = 0
+
+    async def _fast_send(_pct: int) -> asyncio.Future[float] | None:
+        nonlocal idx2
+        idx2 += 1
+        return fast_written if idx2 == 1 else None
+
+    send2.side_effect = _fast_send
+    real_sleep = asyncio.sleep
+    with patch("custom_components.myhome.light_fade.asyncio.sleep", new_callable=AsyncMock):
+        t2 = engine2.start_fade(start_pct=10, target_pct=30, duration=0.5)
+        await real_sleep(0)
+        await real_sleep(0)
+        engine2.notify_bus_echo()
+        await t2
+    assert apply2.call_count >= 2
+
+    # 3. Cancelled / NACKed / timed-out written future aborts step 1 without state mutation
+    for fail_mode in ("cancel", "exc", "stale", "write_timeout"):
+        eng_f, send_f, apply_f, _ = create_engine(auto_echo=False, first_echo_timeout=5.0)
+        fut_f: asyncio.Future[float] = loop.create_future()
+
+        async def _ret_fut(_pct: int, f: asyncio.Future[float] = fut_f) -> asyncio.Future[float]:
+            return f
+
+        send_f.side_effect = _ret_fut
+        if fail_mode == "write_timeout":
+            with patch("custom_components.myhome.light_fade._STEP1_WRITE_TIMEOUT_S", 0.01):
+                tf = eng_f.start_fade(start_pct=10, target_pct=40, duration=1.0)
+                await tf
+        else:
+            tf = eng_f.start_fade(start_pct=10, target_pct=40, duration=1.0)
+            await asyncio.sleep(0)
+            if fail_mode == "cancel":
+                fut_f.cancel()
+            elif fail_mode == "exc":
+                fut_f.set_exception(RuntimeError("gateway nack"))
+            else:
+                eng_f.fade_id += 1
+                fut_f.set_result(loop.time())
+            await tf
+        apply_f.assert_not_called()

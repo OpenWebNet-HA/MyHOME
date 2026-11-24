@@ -16,6 +16,7 @@ from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .actuator_lock import (
+    ActuatorLockManager,
     actuator_locks_of,
     apply_actuator_lock_state,
     is_lockable_entity,
@@ -266,7 +267,18 @@ class MyHOMEEntity(RestoreEntity):
         if (target_hass is None and mgr is None) or not is_lockable_entity(self):
             return
         if mgr is not None:
-            self.async_on_remove(mgr.register(self))
+            mgr.register(self)
+
+            @callback
+            def _unsub_all() -> None:
+                own_mgr = getattr(self._gateway_handler, "_actuator_locks", None)
+                if isinstance(own_mgr, ActuatorLockManager):
+                    own_mgr.unregister(self)
+                cur_mgr = actuator_locks_of(self._gateway_handler)
+                if cur_mgr is not None and cur_mgr is not own_mgr:
+                    cur_mgr.unregister(self)
+
+            self.async_on_remove(_unsub_all)
         self._actuator_lock_registered = True
 
     @callback

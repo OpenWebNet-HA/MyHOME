@@ -14,11 +14,18 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from OWNd.message import OWNMessage
 
 from .const import BUS_ROUTING, DOMAIN, PACED_FANOUT_DELAY, area_of_where
+from .where_grammar import canonical_point_spelling, normalize_where
 
 if TYPE_CHECKING:
     from .cover import MyHOMECover
 
 _AREA_WHERES = frozenset({"00", "100", *"123456789"})
+
+
+def _canonical_point_key(where: str, interface: str | None) -> str:
+    """Return canonical router key for a point cover address (``0004`` -> ``04``)."""
+    canon = canonical_point_spelling(normalize_where(where) or str(where))
+    return f"{canon}{BUS_ROUTING}{interface}" if interface else canon
 
 
 @dataclass(frozen=True)
@@ -46,7 +53,7 @@ class CoverScope:
         if where in _AREA_WHERES:
             return cls("area", where, interface)
         if where.startswith("#"):
-            keys = frozenset(f"{m}{BUS_ROUTING}{interface}" if interface else str(m) for m in members)
+            keys = frozenset(_canonical_point_key(str(m), interface) for m in members)
             return cls("group", where, interface, keys)
         return None
 
@@ -58,9 +65,9 @@ class CoverScope:
             # as relay_general delivers it; behind an interface, that interface's covers
             return self.interface is None or cover._interface == self.interface
         if self.kind == "area":
-            return cover._interface == self.interface and area_of_where(cover._where) == self.where
-        key = f"{cover._where}{BUS_ROUTING}{cover._interface}" if cover._interface else cover._where
-        return key in self.members
+            canon = canonical_point_spelling(normalize_where(cover._where) or cover._where)
+            return cover._interface == self.interface and area_of_where(canon) == self.where
+        return _canonical_point_key(cover._where, cover._interface) in self.members
 
 
 class CoverFamily:
@@ -225,23 +232,29 @@ class MyHOMEScopeCover(MyHOMECover):
             return any(not m._is_scope_excluded() and m._stops_before_move(False) for m in members)
         return super()._stops_before_move(False)
 
+    def _fan_out_aborted(self) -> bool:
+        """Return True if this scope cover's gateway unloaded during a paced fan-out."""
+        return getattr(self._gateway_handler, "_terminate_sender", False) is True
+
     async def async_open_cover(self, **kwargs: Any) -> None:
-        if all_fan_out := self._fan_out():
-            members = [m for m in all_fan_out if not m._is_scope_excluded()]
+        if members := self._fan_out():
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
+                    if self._fan_out_aborted():
+                        return
                 await member.async_open_cover(**kwargs)
             return
         with suppress(_MoveSuperseded):
             await self._async_run_members_to_end(True)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
-        if all_fan_out := self._fan_out():
-            members = [m for m in all_fan_out if not m._is_scope_excluded()]
+        if members := self._fan_out():
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
+                    if self._fan_out_aborted():
+                        return
                 await member.async_close_cover(**kwargs)
             return
         with suppress(_MoveSuperseded):
@@ -275,6 +288,9 @@ class MyHOMEScopeCover(MyHOMECover):
             for member in followers:
                 member._abort_motion()  # the scope frame never reached the bus: nothing moved
             raise
+        now_scope = time.monotonic()
+        for member in self._members():
+            member._note_scope_run_for_unconfirmed(now_scope, opening)
         for member in followers:
             member._follow_scope_run_to_end(opening, written)
         return written
@@ -337,33 +353,43 @@ class MyHOMEScopeCover(MyHOMECover):
         return await self._async_stop_local_scope()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        if all_fan_out := self._fan_out():
-            members = [
-                m
-                for m in all_fan_out
-                if not m._is_scope_excluded()
-                or m._attr_is_opening
-                or m._attr_is_closing
-                or m._is_tilting
-            ]
+        if members := self._fan_out():
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
+                    if self._fan_out_aborted():
+                        return
                 await member.async_stop_cover(**kwargs)
             return
         await self._async_stop_local_scope(**kwargs)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         if all_fan_out := self._fan_out_position_members():
-            members = [m for m in all_fan_out if not m._is_scope_excluded()]
+            members = list(all_fan_out)
             if ATTR_POSITION in kwargs:
+                target_pos = kwargs[ATTR_POSITION]
+                if 0 < target_pos < 100:
+                    runnable = [
+                        m
+                        for m in members
+                        if not (
+                            m._is_scope_excluded()
+                            and not m._advanced
+                            and not m._strategy.assumed_state
+                            and m.current_cover_position is None
+                        )
+                    ]
+                    if runnable:
+                        members = runnable
                 # Refuse before the first member moves: a member with an unknown
                 # position cannot be timed to a partial target.
                 for member in members:
-                    member._check_position_target(kwargs[ATTR_POSITION])
+                    member._check_position_target(target_pos)
             for i, member in enumerate(members):
                 if i > 0 and PACED_FANOUT_DELAY > 0:
                     await asyncio.sleep(PACED_FANOUT_DELAY)
+                    if self._fan_out_aborted():
+                        return
                 await member.async_set_cover_position(**kwargs)
             return
         await super().async_set_cover_position(**kwargs)
@@ -376,8 +402,22 @@ class MyHOMEScopeCover(MyHOMECover):
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         if all_fan_out := self._fan_out():
-            unlocked = [m for m in all_fan_out if m._slat_tilt and not m._is_scope_excluded()]
-            await self._pulse_members_one_by_one(unlocked, kwargs)
+            tiltable = [m for m in all_fan_out if m._slat_tilt]
+            if ATTR_TILT_POSITION in kwargs:
+                target_tilt = max(0, min(100, int(round(float(kwargs[ATTR_TILT_POSITION])))))
+                if 0 < target_tilt < 100:
+                    runnable = [
+                        m
+                        for m in tiltable
+                        if not (
+                            m._is_scope_excluded()
+                            and not m._is_tilting
+                            and m.current_cover_tilt_position is None
+                        )
+                    ]
+                    if runnable:
+                        tiltable = runnable
+            await self._pulse_members_one_by_one(tiltable, kwargs)
             return
         if not self._slat_tilt:
             return
@@ -398,7 +438,9 @@ class MyHOMEScopeCover(MyHOMECover):
         (or its curtain move) until then.
         """
         errors: list[HomeAssistantError] = []
-        for member in members:
+        for i, member in enumerate(members):
+            if i > 0 and self._fan_out_aborted():
+                break
             try:
                 await member.async_set_cover_tilt_position(**kwargs)
                 await member._async_wait_pulse_end()
@@ -413,6 +455,7 @@ class MyHOMEScopeCover(MyHOMECover):
         is_tilting: bool = False,
         *,
         pre_stopped: bool = False,
+        expected_run_duration: float | None = None,
     ) -> asyncio.Future[Any] | None:
         if is_tilting and not self._fan_out():
             # On the local bus one scope frame turns every member's slats: they
@@ -422,7 +465,12 @@ class MyHOMEScopeCover(MyHOMECover):
             ]
             for member in self._pulse_followers:
                 member._follow_pulse(self, direction)
-        written = await super()._async_move(direction, is_tilting=is_tilting, pre_stopped=pre_stopped)
+        written = await super()._async_move(
+            direction,
+            is_tilting=is_tilting,
+            pre_stopped=pre_stopped,
+            expected_run_duration=expected_run_duration,
+        )
         if not is_tilting:
             self._watch_run()
         return written
@@ -456,7 +504,7 @@ class MyHOMEScopeCover(MyHOMECover):
                 *(
                     m.async_stop_cover_tilt(**kwargs)
                     for m in all_fan_out
-                    if m._slat_tilt and (not m._is_scope_excluded() or m._is_tilting)
+                    if m._slat_tilt
                 )
             )
             return

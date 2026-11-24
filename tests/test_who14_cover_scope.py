@@ -1339,6 +1339,8 @@ async def test_f422_scope_fan_out_and_local_venetian_pulse_exclude_locked_member
     grp_if02.async_schedule_update_ha_state = MagicMock()
     family.add(grp_if02)
 
+    monkeypatch.setattr("custom_components.myhome.cover_scope.PACED_FANOUT_DELAY", 0.001)
+    m11._attr_current_cover_tilt_position = 0
     with (
         patch.object(m11, "async_open_cover", AsyncMock()) as m11_open,
         patch.object(m12, "async_open_cover", AsyncMock()) as m12_open,
@@ -1350,41 +1352,105 @@ async def test_f422_scope_fan_out_and_local_venetian_pulse_exclude_locked_member
         patch.object(m12, "async_stop_cover", AsyncMock()) as m12_stop,
         patch.object(m11, "async_set_cover_tilt_position", AsyncMock()) as m11_tilt,
         patch.object(m12, "async_set_cover_tilt_position", AsyncMock()) as m12_tilt,
+        patch.object(m11, "_async_wait_pulse_end", AsyncMock()),
         patch.object(m12, "_async_wait_pulse_end", AsyncMock()),
         patch.object(m11, "async_stop_cover_tilt", AsyncMock()) as m11_stop_tilt,
         patch.object(m12, "async_stop_cover_tilt", AsyncMock()) as m12_stop_tilt,
     ):
+        # Audit #977 item 3a: #4#II fan-outs DO transmit point commands to locked members
+        # so offline-unlocked actuators self-heal (only partial 0<pos<100 skips an unknown-pos
+        # excluded member so unlocked peers are not blocked by ServiceValidationError).
         await grp_if02.async_open_cover()
         await grp_if02.async_close_cover()
-        # Note: m11 has unknown position (None), yet partial set_cover_position(50) succeeds for m12!
         await grp_if02.async_set_cover_position(**{ATTR_POSITION: 50})
         await grp_if02.async_stop_cover()
         await grp_if02.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 50})
         await grp_if02.async_stop_cover_tilt()
 
-        m11_open.assert_not_awaited()
+        m11_open.assert_awaited_once()
         m12_open.assert_awaited_once()
-        m11_close.assert_not_awaited()
+        m11_close.assert_awaited_once()
         m12_close.assert_awaited_once()
-        m11_pos.assert_not_awaited()
+        m11_pos.assert_not_awaited()  # unknown pos on partial 50% skipped so m12 runs!
         m12_pos.assert_awaited_once()
-        m11_stop.assert_not_awaited()
+        m11_stop.assert_awaited_once()
         m12_stop.assert_awaited_once()
-        m11_tilt.assert_not_awaited()
+        m11_tilt.assert_awaited_once()
         m12_tilt.assert_awaited_once()
-        m11_stop_tilt.assert_not_awaited()
+        m11_stop_tilt.assert_awaited_once()
         m12_stop_tilt.assert_awaited_once()
 
-    # Now lock m12 as well: ALL behind-F422 members are locked -> 0 bus sends, NO local-riser fallback!
-    m12.handle_actuator_lock(True)
-    with patch.object(handler, "send", AsyncMock()) as gw_send:
-        await grp_if02.async_open_cover()
-        await grp_if02.async_close_cover()
+        # With known position on m11, partial set_cover_position(50) fans out to BOTH m11 and m12!
+        m11._attr_current_cover_position = 80
+        m11._start_position = 80
         await grp_if02.async_set_cover_position(**{ATTR_POSITION: 50})
-        await grp_if02.async_stop_cover()
+        m11_pos.assert_awaited_once()
+        assert m12_pos.await_count == 2
+
+        # Unknown tilt on excluded m11: partial set_cover_tilt_position(50) skips m11 so m12 tilts,
+        # while full-end 100 fans out to BOTH m11 and m12!
+        m11_tilt.reset_mock()
+        m12_tilt.reset_mock()
+        m11._attr_current_cover_tilt_position = None
         await grp_if02.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 50})
-        await grp_if02.async_stop_cover_tilt()
-        gw_send.assert_not_awaited()
+        m11_tilt.assert_not_awaited()
+        m12_tilt.assert_awaited_once()
+        await grp_if02.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 100})
+        m11_tilt.assert_awaited_once()
+        assert m12_tilt.await_count == 2
+        m11._attr_current_cover_tilt_position = 0
+
+        # Mid-fanout gateway unload (_terminate_sender=True) aborts paced loops after member 0!
+        def _abort_on_first(*_a: Any, **_k: Any) -> None:
+            handler._terminate_sender = True
+
+        for fn_call, first_mock, second_mock in (
+            (grp_if02.async_open_cover, m11_open, m12_open),
+            (grp_if02.async_close_cover, m11_close, m12_close),
+            (grp_if02.async_stop_cover, m11_stop, m12_stop),
+            (lambda: grp_if02.async_set_cover_position(**{ATTR_POSITION: 50}), m11_pos, m12_pos),
+            (lambda: grp_if02.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 50}), m11_tilt, m12_tilt),
+        ):
+            handler._terminate_sender = False
+            first_mock.reset_mock()
+            second_mock.reset_mock()
+            first_mock.side_effect = _abort_on_first
+            await fn_call()
+            first_mock.assert_awaited_once()
+            second_mock.assert_not_awaited()
+            first_mock.side_effect = None
+        handler._terminate_sender = False
+
+    # Lock m12 too: ALL behind-F422 members send point commands (*2*.*11#4#02## / 12#4#02##)
+    # with 0% drift while locked, and NEVER emit a local/scope #1 frame!
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+    m12.handle_actuator_lock(True)
+    sent_raw: list[str] = []
+
+    async def _rec_send(cmd: Any, **_kw: Any) -> asyncio.Future[float]:
+        sent_raw.append(str(cmd))
+        f: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        f.set_result(time.monotonic())
+        return f
+
+    with patch.object(handler, "send", AsyncMock(side_effect=_rec_send)):
+        await grp_if02.async_close_cover()
+        for m in (m11, m12):
+            if m._stop_task is not None:
+                await asyncio.wait_for(m._stop_task, timeout=2.0)
+        assert sent_raw == ["*2*2*11#4#02##", "*2*2*12#4#02##"]
+        assert m11.current_cover_position == 80
+        assert m12.current_cover_position == 100
+
+        # Offline power-cycle unlock on m11: #1#4#02 fan-out self-heals m11 on *2*2*11#4#02## echo!
+        monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+        sent_raw.clear()
+        await grp_if02.async_close_cover()
+        m11.handle_event(OWNEvent.parse("*2*2*11#4#02##"))
+        assert m11.actuator_locked is False
+        assert m11.is_closing is True
+        for m in (m11, m12):
+            m._abort_motion()
 
     # 2. Local Venetian scope pulse (_pulse_followers) skips locked member 21 while tilting unlocked 22
     loc21 = _mk_member("21", None)
@@ -1433,3 +1499,230 @@ async def test_f422_scope_fan_out_and_local_venetian_pulse_exclude_locked_member
             await area_2._stop_task
     assert loc21.current_cover_tilt_position == 0
     assert loc22.current_cover_tilt_position == 50
+
+
+@pytest.mark.asyncio
+async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_and_sensor_impulse(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Audit #977 items 6, 8, 9, 10: 0004/04, advanced restore, short runs & scope end-stop, state_sensor gate."""
+    _entry, handler = _make_real_gateway(hass, mac="00:03:50:97:60:99", model="F461")
+
+    # 1. Item 6: Cover configured as '0004' matches '04' bus frames & CoverScope ('00' and '#1')
+    cov_0004 = MyHOMECover(
+        hass=hass,
+        name="Area0 Shutter",
+        entity_name=None,
+        device_id="0004",
+        who="2",
+        where="0004",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="F411/2",
+        gateway=handler,
+        travel_time=10,
+    )
+    cov_0004.hass = hass
+    cov_0004.entity_id = "cover.area0_04"
+    cov_0004.async_write_ha_state = MagicMock()
+    cov_0004.async_schedule_update_ha_state = MagicMock()
+    assert cov_0004._is_own_point_message(OWNEvent.parse("*2*1*04##")) is True
+    assert cov_0004._is_own_point_message(OWNEvent.parse("*2*1*0##")) is False
+    assert cov_0004._is_own_point_message(OWNEvent.parse("*2*1*#1##")) is False
+    assert cov_0004._is_own_point_message(MagicMock(is_general=False, is_area=False, is_group=False, where="0", interface=None)) is False
+    assert cov_0004._is_own_point_message(MagicMock(is_general=False, is_area=False, is_group=False, where="#1", interface=None)) is False
+    sc_grp = CoverScope.of("#1", None, ("0004",))
+    sc_area = CoverScope.of("00", None)
+    assert sc_grp is not None and sc_grp.contains(cov_0004) is True
+    assert sc_area is not None and sc_area.contains(cov_0004) is True
+
+    # 2. Item 8: advanced=True cover restores actuator_locked without restoring stale position
+    adv_cov = MyHOMECover(
+        hass=hass,
+        name="Advanced 21",
+        entity_name=None,
+        device_id="21",
+        who="2",
+        where="21",
+        interface=None,
+        advanced=True,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+    )
+    adv_cov._poll_on_add = False
+    adv_cov.entity_id = "cover.adv_21"
+    with patch.object(
+        adv_cov,
+        "async_get_last_state",
+        AsyncMock(return_value=State("cover.adv_21", "open", {ATTR_CURRENT_POSITION: 75, "actuator_locked": True})),
+    ):
+        await adv_cov.async_added_to_hass()
+    assert adv_cov.actuator_locked is True
+    assert adv_cov.current_cover_position is None
+    assert handler._actuator_locks.is_locked("21") is True
+
+    # 3. Item 9: Short (<= ECHO_WINDOW) cover runs do NOT latch _actuation_unconfirmed,
+    # actuation_unconfirmed is surfaced in extra_state_attributes, and clears on WHO_2 §3.0.1 scope end-stop!
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.50)
+    cov_short = MyHOMECover(
+        hass=hass,
+        name="Short 35",
+        entity_name=None,
+        device_id="35",
+        who="2",
+        where="35",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="F411/2",
+        gateway=handler,
+        travel_time=10,
+        min_motor_pulse=0.1,
+    )
+    cov_short.hass = hass
+    cov_short.entity_id = "cover.short_35"
+    cov_short.async_write_ha_state = MagicMock()
+    cov_short.async_schedule_update_ha_state = MagicMock()
+    bind_entity(hass, cov_short, gateway=handler)
+    cov_short._register_availability_listener()
+
+    session = _FakeCommandSession(
+        lambda raw, is_req: [OWNMessage.parse("*2*0*35##")] if is_req else True
+    )
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=session):
+        worker = asyncio.create_task(handler.sending_loop(0))
+        try:
+            cov_short._attr_current_cover_position = 50
+            cov_short._start_position = 50
+            await cov_short.async_set_cover_position(**{ATTR_POSITION: 53})
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 2, hass)
+            assert cov_short._actuation_unconfirmed is False
+            assert "actuation_unconfirmed" not in cov_short.extra_state_attributes
+
+            session.sent_frames.clear()
+            cov_short._attr_current_cover_position = 97
+            cov_short._start_position = 97
+            await cov_short.async_open_cover()
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 2, hass)
+            assert cov_short._actuation_unconfirmed is False
+
+            session.sent_frames.clear()
+            cov_short._attr_current_cover_position = None
+            cov_short._start_position = None
+            cov_short._travel_time_up = 0.4
+            await cov_short.async_open_cover()
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            await _wait_for_tx(handler, session, 2, hass)
+            assert cov_short._actuation_unconfirmed is False
+            cov_short._travel_time_up = 10.0
+
+            monkeypatch.setattr(cover_module, "_EMPTY_PROBE_GRACE_S", 0.01)
+            session._responder = lambda _raw, _is_req: True
+            session.sent_frames.clear()
+            cov_short._attr_current_cover_position = 99
+            cov_short._start_position = 99
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.20)
+            await cov_short.async_open_cover()
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            assert cov_short._actuation_unconfirmed is False
+
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+            cov_short._attr_current_cover_position = 0
+            cov_short._start_position = 0
+            await cov_short.async_open_cover()
+            assert cov_short._stop_task is not None
+            await asyncio.wait_for(cov_short._stop_task, timeout=2.0)
+            assert cov_short._actuation_unconfirmed is True
+            assert cov_short.extra_state_attributes["actuation_unconfirmed"] is True
+
+            cov_short._scope_run_active_until = time.monotonic() - 1.0
+            cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
+            assert cov_short._actuation_unconfirmed is True
+
+            cov_short.handle_event(OWNEvent.parse("*2*1*0##"))
+            assert cov_short._scope_run_active_until is not None
+            cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
+            assert cov_short._actuation_unconfirmed is False
+            assert "actuation_unconfirmed" not in cov_short.extra_state_attributes
+
+            # Short partial set_cover_position(53) where *2*0*35## arrives AFTER ECHO_WINDOW while
+            # awaiting handler.send() neither latches _actuation_unconfirmed nor spawns _auto_stop!
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.50)
+            cov_short._attr_current_cover_position = 50
+            cov_short._start_position = 50
+
+            async def _slow_send_with_stop(_cmd: Any) -> asyncio.Future[float]:
+                cov_short._echo_until = time.monotonic() - 1.0
+                cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
+                fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+                fut.set_result(time.monotonic())
+                return fut
+
+            with patch.object(handler, "send", AsyncMock(side_effect=_slow_send_with_stop)):
+                await cov_short.async_set_cover_position(**{ATTR_POSITION: 53})
+            assert cov_short._actuation_unconfirmed is False
+            assert cov_short._stop_task is None
+
+            # 4. Item 10: MyHOMEImpulseCover WITH state_sensor suppresses optimistic motion when locked
+            hass.states.async_set("binary_sensor.gate_closed", "off")
+            gate_s = MyHOMEImpulseCover(
+                hass=hass,
+                name="Sensor Gate 71",
+                entity_name=None,
+                device_id="71",
+                who="1",
+                where="71",
+                interface=None,
+                device_class=CoverDeviceClass.GATE,
+                travel_time=5.0,
+                pulse_duration=0.5,
+                min_cycle_time=0.0,
+                pin_code=None,
+                state_sensor="binary_sensor.gate_closed",
+                manufacturer="BTicino",
+                model="Impulse",
+                gateway=handler,
+            )
+            gate_s.hass = hass
+            gate_s.entity_id = "cover.sensor_gate_71"
+            gate_s.async_write_ha_state = MagicMock()
+            gate_s.async_schedule_update_ha_state = MagicMock()
+            await gate_s.async_added_to_hass()
+            assert gate_s.is_closed is True
+
+            handler._actuator_locks.set_point_lock("71", None, True, observed=True)
+            assert gate_s.actuator_locked is True
+
+            await gate_s.async_open_cover()
+            assert gate_s.is_opening is False
+            assert gate_s.is_closed is True
+            assert gate_s._travel_timer_cancel is None
+
+            gate_s.handle_event(OWNEvent.parse("*1*1*0##"))
+            gate_s.handle_event(OWNEvent.parse("*1*1*#1##"))
+            gate_s.handle_event(MagicMock(is_translation=False, what=1, is_on=True, is_general=False, is_area=False, is_group=False, who=13, where=None))
+            assert gate_s.actuator_locked is True
+            assert gate_s.is_opening is False
+
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            gate_s._last_pulse_time = -1e9
+            await gate_s.async_open_cover()
+            gate_s.handle_event(OWNEvent.parse("*1*18*71##"))
+            assert gate_s.actuator_locked is False
+            assert gate_s.is_opening is True
+            assert gate_s.is_closed is False
+            gate_s._cancel_travel_timer()
+        finally:
+            handler._command_pool.close()
+            worker.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await worker

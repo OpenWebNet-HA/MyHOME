@@ -833,3 +833,149 @@ async def test_warm_standby_and_secondary_delegation_lock_routing(hass: HomeAssi
         },
     )
     assert orphan_stb.actuator_lock_owner() is None
+
+
+async def test_f422_cover_scope_members_and_multi_gateway_lifecycle_failover_and_groups(
+    hass: HomeAssistant,
+) -> None:
+    """Audit #977 items 3b, 5a, 5b, 5c, 5d: #4#II CoverScope.members & multi-gateway WHO=14."""
+    # 1. Item 3b: CoverScope.members on #4#II resolves declared members even before member entities load!
+    entry_f422, gw_f422 = _make_gateway(hass, mac="00:03:50:cc:00:01", model="F461")
+    mgr_f422 = gw_f422._actuator_locks
+    scope_if02 = CoverScope.of("#1", "02", ("11", "0004"))
+    assert scope_if02 is not None
+    entry_f422.runtime_data.entities["cover"] = {
+        "grp1": SimpleNamespace(scope=scope_if02, _members=lambda: [])
+    }
+    assert mgr_f422.observe(OWNActuatorLockCommand.parse("*14*0*#1#4#02##")) is True
+    assert mgr_f422.is_locked("11", "02") is True
+    assert mgr_f422.is_locked("04", "02") is True
+    assert mgr_f422.is_locked("11", None) is None
+
+    # 2. Items 5a, 5b, 5d: Secondary loaded BEFORE Primary, Primary reload evacuation/re-adoption,
+    # and Secondary config_entry group & expose_manager resolution!
+    p_mac = "00:03:50:cc:00:10"
+    s_mac = "00:03:50:cc:00:11"
+    st_mac = "00:03:50:cc:00:12"
+    sec_entry, sec_gw = _make_gateway(
+        hass,
+        mac=s_mac,
+        model="F454",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: p_mac,
+            CONF_DELEGATED_WHOS: [1, 2],
+        },
+    )
+    sec_gw.is_connected = True
+    sec_gw._available = True
+    sec_exp = ExposeManager(hass, sec_entry, sec_gw)
+    sec_exp.bindings = [ExposeBinding(who=1, where="29", entity_id="light.virtual_29")]
+    sec_entry.runtime_data.expose_manager = sec_exp
+    sec_entry.runtime_data.platforms["light"] = {
+        "grp_4": {CONF_WHERE: "#4", CONF_MEMBERS: ["21", "29"]}
+    }
+
+    # Secondary registers entities & observes *14*0*12## + soft-restores 15 BEFORE Primary exists!
+    sec_ent_12 = _DummyPointEntity(hass, sec_gw, who="1", platform="light", where="12")
+    sec_ent_15 = _DummyPointEntity(hass, sec_gw, who="1", platform="light", where="15")
+    sec_ent_21 = _DummyPointEntity(hass, sec_gw, who="1", platform="light", where="21")
+    sec_ent_12._register_availability_listener()
+    sec_ent_21._register_availability_listener()
+    sec_gw._actuator_locks.set_point_lock("15", None, True, observed=False)
+    sec_gw._actuator_locks._entities.setdefault(("15", None), []).append(sec_ent_15)
+    assert sec_ent_15.actuator_locked is None
+    assert sec_gw._actuator_locks.observe(OWNActuatorLockEvent.parse("*14*0*12##")) is True
+    assert sec_ent_12.actuator_locked is True
+
+    # Now Primary loads (and has a conflicting prior lock state on 21) -> adopts sec_ent_12/15/21!
+    pri_entry, pri_gw = _make_gateway(
+        hass,
+        mac=p_mac,
+        model="F461",
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    pri_gw.is_connected = True
+    pri_gw._actuator_locks._locks[("21", None)] = True
+    pri_gw._actuator_locks._observed_keys.add(("21", None))
+    assert actuator_locks_of(sec_gw) is pri_gw._actuator_locks
+    assert pri_gw._actuator_locks.is_locked("12") is True
+    assert pri_gw._actuator_locks.is_locked("15") is True
+    assert sec_ent_15.actuator_locked is True
+    assert sec_ent_21.actuator_locked is True
+    assert sec_gw._actuator_locks._entities == {}
+
+    # _resolve_group_keys handles an entry whose runtime_data is temporarily None
+    orphan_entry = MockConfigEntry(domain=DOMAIN, data={CONF_HOST: "192.0.2.99", CONF_PORT: 20000, CONF_MAC: "00:03:50:cc:00:99", CONF_NAME: "F461"})
+    orphan_entry.runtime_data = None  # type: ignore[assignment]
+    orphan_gw = SimpleNamespace(config_entry=orphan_entry, hass=hass, mac="00:03:50:cc:00:99")
+    orphan_mgr = ActuatorLockManager(orphan_gw)
+    assert orphan_mgr.observe(OWNActuatorLockEvent.parse("*14*0*#4##")) is False
+
+    # 5d: Group #4 and exposed 29 on Secondary's runtime_data are resolved by Primary's manager!
+    assert pri_gw._actuator_locks.observe(OWNActuatorLockEvent.parse("*14*0*29##")) is False
+    assert pri_gw._actuator_locks.observe(OWNActuatorLockEvent.parse("*14*0*#4##")) is True
+    assert sec_ent_21.actuator_locked is True
+    assert pri_gw._actuator_locks.is_locked("29") is None
+
+    # 5b: Primary reloads (close_listener -> new handler) while Secondary stays loaded!
+    await pri_gw.close_listener()
+    # Secondary entities & lock states were evacuated back to sec_gw._actuator_locks!
+    assert sec_gw._actuator_locks.is_locked("12") is True
+    assert ("12", None) in sec_gw._actuator_locks._entities
+
+    pri_gw_2 = MyHOMEGatewayHandler(hass, pri_entry)
+    pri_gw_2.is_connected = True
+    pri_gw_2._event_session_ready.set()
+    pri_entry.runtime_data = MyHOMERuntimeData(gateway=pri_gw_2)
+    # First WHO=14 frame routed via Secondary to reloaded Primary re-adopts Secondary entities and unlocks 12!
+    await sec_gw._process_message(OWNMessage.parse("*14*1*12##"))
+    assert sec_ent_12.actuator_locked is False
+    assert pri_gw_2._actuator_locks.is_locked("12") is False
+
+    # Removing sec_ent_12 unsubscribes cleanly from both managers
+    for cb in list(sec_ent_12._on_remove or ()):
+        cb()
+    assert ("12", None) not in pri_gw_2._actuator_locks._entities
+
+    # 3. Item 5c: Outbound WHO=14 Warm Standby failover & delegated/thermo-primary routing!
+    _, stb_gw = _make_gateway(
+        hass,
+        mac=st_mac,
+        model="MH200N",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_STANDBY,
+            CONF_PRIMARY_GATEWAY: p_mac,
+        },
+    )
+    stb_gw.is_connected = True
+    stb_gw._available = True
+    sec_gw.is_connected = False
+    sec_gw._available = False
+    pri_gw_2.is_connected = False
+    pri_gw_2._available = False
+    # Even though OWNd profiles do NOT list WHO=14 in supported_who, standby supports WHO=1/2!
+    assert pri_gw_2.is_who_available(14) is True
+    lock_cmd = OWNActuatorLockCommand.lock("21")
+    assert pri_gw_2._failover_target(lock_cmd) is stb_gw
+    with patch.object(stb_gw, "send", AsyncMock(return_value="stb_ok")) as stb_send:
+        res = await pri_gw_2.send(lock_cmd)
+        assert res == "stb_ok"
+        stb_send.assert_awaited_once()
+
+    # Primary with WHO={1, 2} delegated away OR thermo-only primary delegates outbound WHO=14 to secondary!
+    sec_gw.is_connected = True
+    sec_gw._available = True
+    pri_gw_2.is_connected = True
+    pri_gw_2._available = True
+    unlock_cmd = OWNActuatorLockCommand.unlock("21")
+    assert pri_gw_2._delegated_target(unlock_cmd) is sec_gw
+    with patch.object(pri_gw_2, "_profile_supports_who", side_effect=lambda w: w == 4):
+        assert pri_gw_2.is_who_available(14) is True
+        assert pri_gw_2._delegated_target(unlock_cmd) is sec_gw
+        with patch.object(sec_gw, "send", AsyncMock(return_value="sec_ok")) as sec_send:
+            res2 = await pri_gw_2.send(unlock_cmd)
+            assert res2 == "sec_ok"
+            sec_send.assert_awaited_once()
