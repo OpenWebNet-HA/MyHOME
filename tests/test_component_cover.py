@@ -3528,14 +3528,23 @@ async def test_cover_slat_tilt_setup_entry_config(hass, mock_gateway):
 
 @pytest.mark.asyncio
 async def test_yaml_cover_restores_a_service_set_slat_time(hass, mock_gateway):
-    """A slat time stored by myhome.set_cover_travel_time wins over myhome.yaml after a restart."""
+    """A slat-only record stored by myhome.set_cover_travel_time keeps YAML travel times across starts."""
     mac = mock_gateway.mac
     hass.data = {
         DOMAIN: {
             mac: {
                 "entity": mock_gateway,
                 CONF_PLATFORMS: {
-                    PLATFORM: {"41": {CONF_WHERE: "41", CONF_NAME: "Blind 41", CONF_SLAT_TILT: True, "slat_time": 2.0}},
+                    PLATFORM: {
+                        "41": {CONF_WHERE: "41", CONF_NAME: "Blind 41", CONF_SLAT_TILT: True, "slat_time": 2.0},
+                        "42": {
+                            CONF_WHERE: "42",
+                            CONF_NAME: "Blind 42",
+                            CONF_SLAT_TILT: True,
+                            "slat_time": 2.0,
+                            "travel_time": 18,
+                        },
+                    },
                 },
             }
         }
@@ -3543,7 +3552,12 @@ async def test_yaml_cover_restores_a_service_set_slat_time(hass, mock_gateway):
     config_entry = MagicMock()
     config_entry.data = {"mac": mac}
     config_entry.entry_id = "test_entry"
-    config_entry.options = {"cover_travel_times": {"41": {"down": 40.0, "up": 40.0, "slat_time": 3.5}}}
+    config_entry.options = {
+        "cover_travel_times": {
+            "41": {"slat_time": 3.5},
+            "42": {"slat_time": 3.2},
+        }
+    }
 
     added = []
     with patch("homeassistant.helpers.entity_registry.async_entries_for_config_entry", return_value=[]), \
@@ -3551,11 +3565,14 @@ async def test_yaml_cover_restores_a_service_set_slat_time(hass, mock_gateway):
         attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, added.extend)
 
-    assert len(added) == 1
-    assert added[0]._slat_time == 3.5
-    # yaml covers keep their configured travel time
-    assert added[0]._travel_time_down == 25.0
-    assert added[0]._calibration_source == "default"
+    assert len(added) == 2
+    by_where = {e._where: e for e in added}
+    assert by_where["41"]._slat_time == 3.5
+    assert by_where["41"]._travel_time_down == 25.0
+    assert by_where["41"]._calibration_source == "default"
+    assert by_where["42"]._slat_time == 3.2
+    assert by_where["42"]._travel_time_down == 18.0
+    assert by_where["42"]._calibration_source == "yaml"
 
 
 class TestLivePositionRefreshTicker:

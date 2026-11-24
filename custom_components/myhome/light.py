@@ -343,7 +343,10 @@ class _ForeignAddresses:
             who, device_id = parse_unique_id(entry.unique_id or "", gateway_mac, entry_mac)
             if entry.domain == "switch" and who in (None, "1"):
                 self.switches.update({device_id, device_id.split("#4#")[0].split("-")[-1]})
-            elif entry.domain in ("cover", "lock") and who == "1":
+            elif entry.domain == "lock" and who == "1":
+                # WHO=1 impulse covers are YAML-only (already added from runtime.platforms["cover"]
+                # above); any WHO=1 cover registry row absent from YAML is stale and pruned
+                # concurrently by cover.py, so it must never block a configured or discovered light.
                 self._add_cover(device_id, Address.from_device_id(device_id))
             elif entry.domain in ("binary_sensor", "sensor"):
                 if who == "1":
