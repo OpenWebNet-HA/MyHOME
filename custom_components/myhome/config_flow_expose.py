@@ -98,7 +98,11 @@ _AREA_OPTIONS: list[selector.SelectOptionDict] = [
 _POINT_OPTIONS: list[selector.SelectOptionDict] = [
     selector.SelectOptionDict(value=str(i), label=str(i)) for i in range(1, 16)
 ]
-_INTERFACE_OPTIONS: list[str] = [_IFACE_NONE, *(f"{i:02d}" for i in range(16))]
+_VALID_BUS_INTERFACES: tuple[str, ...] = (
+    *(f"{i:02d}" for i in range(1, 10)),
+    *(f"{i:02d}" for i in range(11, 16)),
+)
+_INTERFACE_OPTIONS: list[str] = [_IFACE_NONE, *_VALID_BUS_INTERFACES]
 _WHO13_DIM_OPTIONS: list[str] = ["22", "0", "1"]
 _WHO18_DIM_OPTIONS: list[str] = ["113", "51", "52", "53", "54"]
 
@@ -213,7 +217,9 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             if old_who in (1, 2):
                 existing_where = str(subentry_data.get(CONF_WHERE) or "").strip()
                 parsed = parse_apl_where(existing_where)
-                if parsed is not None:
+                if parsed is not None and (
+                    parsed[2] is None or parsed[2] in _VALID_BUS_INTERFACES
+                ):
                     area_val, point_val, iface_val = parsed
                     defaults[CONF_EXPOSE_AREA] = str(area_val)
                     defaults[CONF_EXPOSE_POINT] = str(point_val)
@@ -306,7 +312,10 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 )
             )
             schema_dict[
-                vol.Optional(CONF_BUS_INTERFACE, default=iface_default)
+                vol.Optional(
+                    CONF_BUS_INTERFACE,
+                    description={"suggested_value": iface_default},
+                )
             ] = selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=_INTERFACE_OPTIONS,
@@ -561,7 +570,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 errors[CONF_DIMENSION] = "invalid_dimension"
             else:
                 raw_dim = str(dim_val).strip()
-                if not raw_dim.isdigit() or int(raw_dim) != 0:
+                if not (raw_dim.isascii() and raw_dim.isdigit()) or int(raw_dim) != 0:
                     errors[CONF_DIMENSION] = "invalid_dimension"
                 else:
                     dim = 0
@@ -572,7 +581,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 errors[CONF_DIMENSION] = "invalid_dimension"
             else:
                 raw_dim = str(dim_val).strip()
-                if not raw_dim.isdigit() or int(raw_dim) not in (0, 1, 22):
+                if not (raw_dim.isascii() and raw_dim.isdigit()) or int(raw_dim) not in (0, 1, 22):
                     errors[CONF_DIMENSION] = "invalid_dimension"
                 else:
                     dim = int(raw_dim)
@@ -583,7 +592,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                 errors[CONF_DIMENSION] = "invalid_dimension"
             else:
                 raw_dim = str(dim_val).strip()
-                if not raw_dim.isdigit() or int(raw_dim) not in (51, 52, 53, 54, 113):
+                if not (raw_dim.isascii() and raw_dim.isdigit()) or int(raw_dim) not in (51, 52, 53, 54, 113):
                     errors[CONF_DIMENSION] = "invalid_dimension"
                 else:
                     dim = int(raw_dim)
@@ -638,7 +647,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                     except vol.Invalid:
                         errors[CONF_EXPOSE_POINT] = "invalid_point"
 
-                iface_clean: int | None = None
+                iface_clean: str | None = None
                 if raw_iface not in (None, "", _IFACE_NONE):
                     if isinstance(raw_iface, bool):
                         errors[CONF_BUS_INTERFACE] = "invalid_bus_interface"
@@ -651,11 +660,11 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                         ):
                             errors[CONF_BUS_INTERFACE] = "invalid_bus_interface"
                         else:
-                            iface_cand = int(iface_str)
-                            if not (0 <= iface_cand <= 15):
+                            iface_norm = f"{int(iface_str):02d}"
+                            if iface_norm not in _VALID_BUS_INTERFACES:
                                 errors[CONF_BUS_INTERFACE] = "invalid_bus_interface"
                             else:
-                                iface_clean = iface_cand
+                                iface_clean = iface_norm
 
                 if (
                     area_int is not None
@@ -793,15 +802,17 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             if s_who_raw is None or isinstance(s_who_raw, bool):
                 continue
             try:
-                s_who = int(s_who_raw)
-            except (TypeError, ValueError):
+                s_who = validate._non_bool_int(s_who_raw)
+            except vol.Invalid:
                 continue
             s_where = normalize_expose_where(s_who, sdata.get(CONF_WHERE))
             s_raw_dim = sdata.get(CONF_DIMENSION)
-            if s_raw_dim is not None and not isinstance(s_raw_dim, bool):
+            if s_raw_dim is not None and (
+                isinstance(s_raw_dim, bool) or str(s_raw_dim).strip() != ""
+            ):
                 try:
-                    s_dim: int | None = int(s_raw_dim)
-                except (TypeError, ValueError):
+                    s_dim: int | None = validate._non_bool_int(s_raw_dim)
+                except vol.Invalid:
                     continue
             elif s_who == 4:
                 s_dim = 0

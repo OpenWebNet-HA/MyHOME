@@ -150,8 +150,8 @@
           },
           "data_description": {
             "area": "Zone / Ambiente MyHOME_Suite (A = 0–10). Ignoré si une adresse WHERE brute est renseignée.",
-            "point": "Point lumineux MyHOME_Suite (PL = 1–15 ; PL = 0 n'est pas une adresse point à point valide).",
-            "interface": "Interface de bus local F422 optionnelle (#4#00–#4#15) pour le routage vers un bus local.",
+            "point": "Point lumineux MyHOME_Suite (l'exposition applique la plage de spécification OpenWebNet PL = 1–15).",
+            "interface": "Interface de bus local F422 optionnelle (#4#01–#4#09 ou #4#11–#4#15) pour le routage vers un bus local.",
             "where": "Champ optionnel pour utilisateurs avancés (ex. 88, 08, 0812, 0012, 1008 ou 88#4#01). Lorsqu'il est renseigné, il remplace A, PL et Interface.",
             "entity_id": "Entité source Home Assistant (optionnelle si au moins une action personnalisée est configurée ci-dessous).",
             "attribute": "Attribut optionnel tel que 'brightness' pour refléter les niveaux de variation.",
@@ -181,8 +181,8 @@
           },
           "data_description": {
             "area": "Zone / Ambiente MyHOME_Suite (A = 0–10). Ignoré si une adresse WHERE brute est renseignée.",
-            "point": "Point MyHOME_Suite (PL = 1–15 ; PL = 0 n'est pas une adresse point à point valide).",
-            "interface": "Interface de bus local F422 optionnelle (#4#00–#4#15) pour le routage vers un bus local.",
+            "point": "Point MyHOME_Suite (l'exposition applique la plage de spécification OpenWebNet PL = 1–15).",
+            "interface": "Interface de bus local F422 optionnelle (#4#01–#4#09 ou #4#11–#4#15) pour le routage vers un bus local.",
             "where": "Champ optionnel pour utilisateurs avancés (ex. 31, 08, 0812, 0012, 1008 ou 31#4#01). Lorsqu'il est renseigné, il remplace A, PL et Interface.",
             "entity_id": "Entité cover source Home Assistant (optionnelle si des actions personnalisées sont configurées ci-dessous).",
             "attribute": "Attribut optionnel tel que 'current_position' pour refléter la position du volet.",
@@ -221,7 +221,7 @@
         },
         "who_18": {
           "title": "WHO 18 — Compteur d'énergie / puissance",
-          "description": "Exposez un capteur Home Assistant de puissance (W / kW) ou d'énergie (Wh / kWh) sur une adresse de compteur OpenWebNet inutilisée (51–5255 ou 71#0–7255#0).",
+          "description": "Exposez un capteur Home Assistant de puissance (W / kW) ou d'énergie (Wh / kWh) sur une adresse de compteur OpenWebNet inutilisée (5N ou 7N#0 avec N = 1–255, c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–7255#0).",
           "data": {
             "where": "Adresse WHERE du compteur",
             "dimension": "Dimension énergie/puissance OpenWebNet",
@@ -234,7 +234,7 @@
             "value_template": "Modèle de valeur (Jinja2, optionnel)"
           },
           "data_description": {
-            "where": "Adresse de compteur inutilisée telle que 51..5255 (ex. 51) ou 7N#0 (ex. 71#0)."
+            "where": "Adresse de compteur inutilisée au format 5N ou 7N#0 (N = 1–255, ex. 51, 512, 5255 ou 71#0)."
           }
         }
       },
@@ -244,17 +244,17 @@
         "point_required": "Sélectionnez le Point (PL, 1–15) ou saisissez une adresse WHERE brute.",
         "invalid_area": "La Zone (A) doit être comprise entre 0 et 10.",
         "invalid_point": "Le Point (PL) doit être compris entre 1 et 15.",
-        "invalid_bus_interface": "L'interface de bus local doit être 'Bus SCS principal' ou 00–15.",
+        "invalid_bus_interface": "L'interface de bus local doit être 'Bus SCS principal', 01–09 ou 11–15.",
         "where_required": "Une adresse WHERE est requise pour ce sous-système WHO.",
         "invalid_where_use_2_digits": "\"{raw}\" utilise 4 chiffres, ce qui n'est valide que lorsque A = 10 ou PL = 10–15. Pour A = {area}, PL = {point}, utilisez \"{suggested}\" (2 chiffres).",
         "invalid_where_use_4_digits": "\"{raw}\" utilise 3 chiffres, ce qui n'est pas valide en OpenWebNet. Pour A = {area}, PL = {point}, utilisez \"{suggested}\" (4 chiffres avec zéro initial).",
-        "invalid_where_pl_zero": "\"{raw}\" indique PL = 0, qui n'est qu'une valeur par défaut non configurée dans MyHOME_Suite. Une adresse point à point valide exige PL = 1–15.",
+        "invalid_where_pl_zero": "\"{raw}\" indique PL = 0 ; l'exposition applique la plage de spécification OpenWebNet PL = 1–15 (PL = 0 est la valeur par défaut non configurée dans MyHOME_Suite).",
         "invalid_where_apl_range": "\"{raw}\" est en dehors de la plage point à point valide (A = 0–10, PL = 1–15).",
         "invalid_where_group_or_scope": "L'exposition exige une adresse point à point A / PL ; les adresses générales ('0'), de zone ('00', '1'..'9', '100') et de groupe ('#N') ne sont pas autorisées.",
-        "invalid_where_interface": "Suffixe d'interface bus local non valide. Attendu : #4#00 à #4#15 (ex. 88#4#01 ou 0812#4#01).",
+        "invalid_where_interface": "Suffixe d'interface bus local non valide. Attendu : #4#01–#4#09 ou #4#11–#4#15 (ex. 88#4#01 ou 0812#4#01).",
         "invalid_where_apl": "Adresse WHERE point à point non valide. Sélectionnez A (0–10) et PL (1–15) ci-dessus, ou saisissez une adresse WHERE canonique telle que 88, 08, 0812, 0012, 1008 ou 88#4#01.",
         "invalid_where_who4": "Adresse WHERE de sonde WHO 4 non valide. Attendu : sonde maître de zone 1–99 (ex. 50), sonde externe 100–900 ou PZZ 101–899.",
-        "invalid_where_who18": "Adresse WHERE de compteur WHO 18 non valide. Attendu : 51–5255 (ex. 51) ou 7N#0 (ex. 71#0).",
+        "invalid_where_who18": "Adresse WHERE de compteur WHO 18 non valide. Attendu : 5N ou 7N#0 avec N = 1–255 (c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–79#0, 710#0–7255#0).",
         "entity_required": "Une entité Home Assistant source (ou une action personnalisée pour WHO 1 / WHO 2) est requise.",
         "action_not_supported_for_who": "Les actions personnalisées ne sont prises en charge que pour WHO 1 (allumage/extinction et pas +/-) et WHO 2 (allumage/extinction uniquement) ; effacez les actions non prises en charge ou modifiez le WHO.",
         "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
@@ -845,7 +845,6 @@
     "expose_bus_interface": {
       "options": {
         "none": "Bus SCS principal (sans interface F422)",
-        "00": "Interface 00 (#4#00)",
         "01": "Interface 01 (#4#01)",
         "02": "Interface 02 (#4#02)",
         "03": "Interface 03 (#4#03)",
@@ -855,7 +854,6 @@
         "07": "Interface 07 (#4#07)",
         "08": "Interface 08 (#4#08)",
         "09": "Interface 09 (#4#09)",
-        "10": "Interface 10 (#4#10)",
         "11": "Interface 11 (#4#11)",
         "12": "Interface 12 (#4#12)",
         "13": "Interface 13 (#4#13)",
@@ -874,9 +872,9 @@
       "options": {
         "113": "113 - Puissance active (W)",
         "51": "51 - Énergie totale (Wh)",
-        "52": "52 - Énergie du mois en cours (Wh)",
-        "53": "53 - Énergie partielle du mois (Wh)",
-        "54": "54 - Énergie partielle du jour / aujourd'hui (Wh)"
+        "52": "52 - Totalisateur d'énergie mensuel (Wh)",
+        "53": "53 - Énergie partielle du mois en cours (Wh)",
+        "54": "54 - Énergie partielle du jour en cours (Wh)"
       }
     }
   }

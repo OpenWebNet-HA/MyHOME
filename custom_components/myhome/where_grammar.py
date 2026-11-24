@@ -331,6 +331,11 @@ def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
     return sorted(zones, key=int), True
 
 
+def _is_ascii_uint(value: str) -> bool:
+    """Return True when ``value`` consists solely of ASCII decimal digits."""
+    return bool(value) and value.isascii() and value.isdigit()
+
+
 def is_probe(where: str) -> bool:
     """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
 
@@ -339,7 +344,7 @@ def is_probe(where: str) -> bool:
     not a probe but the group of all probes in zone ``ZZ``.
     """
     bare = where.removeprefix("4-").removeprefix("#")
-    return bare.isdigit() and int(bare) >= 100
+    return _is_ascii_uint(bare) and int(bare) >= 100
 
 
 def where_param(message: Any) -> list[str]:
@@ -539,7 +544,7 @@ def canonical_point_spelling(where: str) -> str:
     The pure rewrite behind :func:`canonical_point_where`, for stored spellings
     (registry ids, entry options) that nobody typed in myhome.yaml.
     """
-    if len(where) == 4 and where.isdigit() and where[:3] == "000" and where[3] != "0":
+    if len(where) == 4 and _is_ascii_uint(where) and where[:3] == "000" and where[3] != "0":
         return f"{where[1]}{where[3]}"
     return where
 
@@ -550,6 +555,12 @@ def canonical_point_address(address: str) -> str:
     return f"{canonical_point_spelling(base)}{sep}{rest}"
 
 
+_LOCAL_BUS_SUFFIX_RE = re.compile(r"4#(0\d|1[0-5])", re.ASCII)
+_GROUP_SCOPE_WHERE_RE = re.compile(
+    r"#[1-9]\d*(?:#(?:3|4#(?:0\d|1[0-5])))?", re.ASCII
+)
+
+
 def encode_apl_where(
     area: int, point: int, interface: str | int | None = None
 ) -> str:
@@ -558,7 +569,8 @@ def encode_apl_where(
     Uses 2-digit ``APL`` when ``0 <= A <= 9`` and ``1 <= PL <= 9`` (e.g. ``88``,
     ``08``), and 4-digit zero-padded ``AAPL`` whenever ``A == 10`` or ``PL >= 10``
     (e.g. ``0812``, ``0012``, ``1008``, ``1012``), optionally followed by
-    ``#4#00``..``#4#15`` for a local-bus interface.
+    ``#4#01``..``#4#09`` or ``#4#11``..``#4#15`` for an F422 local-bus interface
+    (``00`` and ``10`` are also tolerated for legacy YAML compatibility).
     """
     if isinstance(area, bool) or not isinstance(area, int) or not (0 <= area <= 10):
         raise ValueError(f"Area A must be an integer in 0..10 (got {area!r})")
@@ -578,7 +590,7 @@ def encode_apl_where(
         iface_int = interface
     elif isinstance(interface, str):
         iface_str = interface.strip()
-        if not (iface_str.isascii() and iface_str.isdigit() and 1 <= len(iface_str) <= 2):
+        if not (_is_ascii_uint(iface_str) and 1 <= len(iface_str) <= 2):
             raise ValueError(f"Invalid local-bus interface: {interface!r}")
         iface_int = int(iface_str)
     else:
@@ -593,11 +605,11 @@ def parse_apl_where(where: str | None) -> tuple[int, int, str | None] | None:
     if not isinstance(where, str):
         return None
     raw = where.strip()
-    if not raw or raw.startswith("#"):
+    if not raw or not raw.isascii() or raw.startswith("#"):
         return None
     base, sep, suffix = raw.partition("#")
     if sep:
-        if not re.fullmatch(r"4#(0\d|1[0-5])", suffix):
+        if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
             return None
         iface: str | None = suffix[2:]
     else:
@@ -618,23 +630,23 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
     raw = raw_where.strip()
     if not raw or parse_apl_where(raw) is not None:
         return None
-    if re.fullmatch(r"#[1-9]\d*", raw):
+    if _GROUP_SCOPE_WHERE_RE.fullmatch(raw):
         return ("invalid_where_group_or_scope", {})
     if raw.startswith("#"):
         return ("invalid_where_apl", {})
 
     base, sep, suffix = raw.partition("#")
     if sep:
-        if not re.fullmatch(r"4#(0\d|1[0-5])", suffix):
+        if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
             return ("invalid_where_interface", {})
         iface: str | None = suffix[2:]
     else:
         iface = None
 
-    if base in ("0", "00", "100") or (len(base) == 1 and base.isdigit()):
-        return ("invalid_where_group_or_scope", {})
-    if not (base.isascii() and base.isdigit()):
+    if not _is_ascii_uint(base):
         return ("invalid_where_apl", {})
+    if base in ("0", "00", "100") or len(base) == 1:
+        return ("invalid_where_group_or_scope", {})
 
     if len(base) == 2:
         return ("invalid_where_pl_zero", {"raw": raw})
@@ -687,6 +699,8 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
         # OWNd keeps `0004` as typed (OWNd#123); the gateways only accept and
         # report an area-0 point in two digits, so the MyHOME boundary spells
         # it `04` (#147). Silent: the yaml / UI value is validated elsewhere.
+        if not raw.isascii():
+            return raw
         return canonical_point_address(normalize_where(raw) or raw)
     return raw
 
@@ -862,11 +876,6 @@ def thermo_event_actuator(message: Any) -> str:
     if act is not None and str(act).isdigit():
         return str(int(str(act)))
     return "1"
-
-
-def _is_ascii_uint(value: str) -> bool:
-    """Return True when ``value`` consists solely of ASCII decimal digits."""
-    return bool(value) and value.isascii() and value.isdigit()
 
 
 def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:

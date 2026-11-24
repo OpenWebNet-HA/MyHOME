@@ -345,12 +345,76 @@ def test_apl_where_encode_parse_and_diagnose():
             "invalid_where_apl_range",
             {"raw": out_of_range},
         )
-    for scope in ("0", "00", "5", "100", "#1"):
+    for scope in ("0", "00", "5", "100", "#1", "#1#4#01", "#1#3", "0#4#01", "5#4#01"):
         assert diagnose_apl_where(scope) == ("invalid_where_group_or_scope", {})
-    for bad_if_str in ("88#4#1", "88#4#16", "88#3"):
+    for bad_if_str in ("88#4#1", "88#4#16", "88#3", "88#4#0١"):
         assert diagnose_apl_where(bad_if_str) == ("invalid_where_interface", {})
-    for bad_apl in ("abc", "#bad", "12345", "899"):
+    for bad_apl in (
+        "abc",
+        "#bad",
+        "#1#bad",
+        "12345",
+        "899",
+        "00016",
+        "000088",
+        "001012",
+        "²",
+        "1²",
+        "¹²",
+        "001²",
+        "１２",
+        "０８１２",
+    ):
+        assert parse_apl_where(bad_apl) is None
         assert diagnose_apl_where(bad_apl) == ("invalid_where_apl", {})
+
+    # Unicode superscript & non-ASCII digits in is_probe / normalize_expose_where never crash or match
+    from custom_components.myhome.where_grammar import (
+        canonical_point_spelling,
+        is_probe,
+        normalize_expose_where,
+    )
+
+    for non_ascii_probe in ("1²", "¹²³", "１０５", "10٥", "5٠"):
+        assert is_probe(non_ascii_probe) is False
+    assert canonical_point_spelling("000²") == "000²"
+    assert canonical_point_spelling("000４") == "000４"
+    assert normalize_expose_where(1, "001²") == "001²"
+    assert normalize_expose_where(4, "1²") == "1²"
+
+    # YAML expose_entry_schema rejects 0016..0099, 001012, 000088 (no silent mutation) & non-ASCII
+    for corrupt_candidate in (
+        "0016",
+        "0088",
+        "0099",
+        "0088#4#01",
+        "00016",
+        "000088",
+        "001012",
+        "1²",
+        "¹²",
+        "001²",
+        "１２",
+        "０８１２",
+        "88#4#0١",
+    ):
+        with pytest.raises(vol.Invalid, match="point-to-point actuator address"):
+            expose_entry_schema(
+                {"who": 1, "where": corrupt_candidate, "entity_id": "light.t"}
+            )
+    for bad_w4 in ("1²", "5٠", "１０５"):
+        with pytest.raises(vol.Invalid, match="probe address"):
+            expose_entry_schema({"who": 4, "where": bad_w4, "entity_id": "sensor.t"})
+    for bad_w18 in ("51٠", "51#٠", "５１", "1²"):
+        with pytest.raises(vol.Invalid, match="WHO=18 expose 'where'"):
+            expose_entry_schema(
+                {"who": 18, "where": bad_w18, "dimension": 113, "entity_id": "sensor.p"}
+            )
+    for bad_dim_ascii in ("²", "０", "１１３"):
+        with pytest.raises(vol.Invalid, match="expected an integer"):
+            expose_entry_schema(
+                {"who": 18, "where": "51", "dimension": bad_dim_ascii, "entity_id": "sensor.p"}
+            )
 
     # YAML expose_entry_schema includes targeted hints on point-to-point errors
     with pytest.raises(vol.Invalid, match="use '88'"):
@@ -359,7 +423,7 @@ def test_apl_where_encode_parse_and_diagnose():
         expose_entry_schema({"who": 1, "where": "812", "entity_id": "light.t"})
     with pytest.raises(vol.Invalid, match="PL=0 is invalid"):
         expose_entry_schema({"who": 1, "where": "80", "entity_id": "light.t"})
-    with pytest.raises(vol.Invalid, match="#4#00\\.\\.#4#15"):
+    with pytest.raises(vol.Invalid, match="#4#01\\.\\.#4#09 or #4#11\\.\\.#4#15"):
         expose_entry_schema({"who": 1, "where": "88#4#1", "entity_id": "light.t"})
 
 
@@ -1226,7 +1290,7 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     step2_keys = {getattr(k, "schema", k): k for k in reconf_step2["data_schema"].schema}
     assert step2_keys[CONF_EXPOSE_AREA].description == {"suggested_value": "9"}
     assert step2_keys[CONF_EXPOSE_POINT].description == {"suggested_value": "8"}
-    assert step2_keys[CONF_BUS_INTERFACE].default() == "none"
+    assert step2_keys[CONF_BUS_INTERFACE].description == {"suggested_value": "none"}
     assert step2_keys["where"].description == {"suggested_value": ""}
 
     # Reconfigure with validation error re-renders form with user_input merged
@@ -4356,7 +4420,8 @@ async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
         actual_keys = {getattr(k, "schema", k) for k in step_res["data_schema"].schema}
         assert actual_keys == exp_keys, f"WHO={who_code} schema mismatch"
 
-    # 5. Reconfigure pre-fill (0812#4#01 -> area=8, point=12, interface=01, where="") & edit -> 0813
+    # 5. Reconfigure pre-fill (0812#4#01 -> area=8, point=12, interface=01, where="")
+    #    & clearing interface via frontend 'x' (omitting CONF_BUS_INTERFACE) -> 0813 on main bus
     sub_0812_id = next(
         sid
         for sid, sub in entry.subentries.items()
@@ -4375,7 +4440,13 @@ async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
     s2_map = {getattr(k, "schema", k): k for k in reconf_s2["data_schema"].schema}
     assert s2_map[CONF_EXPOSE_AREA].description == {"suggested_value": "8"}
     assert s2_map[CONF_EXPOSE_POINT].description == {"suggested_value": "12"}
-    assert s2_map[CONF_BUS_INTERFACE].default() == "01"
+    assert s2_map[CONF_BUS_INTERFACE].description == {"suggested_value": "01"}
+    iface_selector = reconf_s2["data_schema"].schema[s2_map[CONF_BUS_INTERFACE]]
+    assert iface_selector.config["options"] == [
+        "none",
+        *(f"{i:02d}" for i in range(1, 10)),
+        *(f"{i:02d}" for i in range(11, 16)),
+    ]
     assert s2_map["where"].description == {"suggested_value": ""}
 
     with patch.object(hass.config_entries, "async_schedule_reload"):
@@ -4384,7 +4455,6 @@ async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
             {
                 CONF_EXPOSE_AREA: "8",
                 CONF_EXPOSE_POINT: "13",
-                CONF_BUS_INTERFACE: "none",
                 "where": "",
                 "entity_id": "light.hue_living",
             },
@@ -4411,7 +4481,7 @@ async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
     sw12_map = {getattr(k, "schema", k): k for k in sw12_s2["data_schema"].schema}
     assert sw12_map[CONF_EXPOSE_AREA].description == {"suggested_value": "8"}
     assert sw12_map[CONF_EXPOSE_POINT].description == {"suggested_value": "8"}
-    assert sw12_map[CONF_BUS_INTERFACE].default() == "none"
+    assert sw12_map[CONF_BUS_INTERFACE].description == {"suggested_value": "none"}
 
     with patch.object(hass.config_entries, "async_schedule_reload"):
         sw12_done = await hass.config_entries.subentries.async_configure(
@@ -4485,6 +4555,12 @@ def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
         assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "#legacy"}) == {
             "where": "#legacy"
         }
+        assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "88#4#00"}) == {
+            "where": "88#4#00"
+        }
+        assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "88#4#10"}) == {
+            "where": "88#4#10"
+        }
         assert handler._initial_step2_defaults(
             18, {CONF_WHO: 18, "where": "51", CONF_DIMENSION: 54}
         ) == {"where": "51", CONF_DIMENSION: 54}
@@ -4511,18 +4587,22 @@ def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
         )
         assert err_w1_dim[CONF_DIMENSION] == "invalid_dimension"
 
-        _, err_w4_dim, _, _ = handler._validate_and_clean(
-            4,
-            {"where": "50", "entity_id": "sensor.t", CONF_DIMENSION: True},
-        )
-        assert err_w4_dim[CONF_DIMENSION] == "invalid_dimension"
+        for bad_w4_dim in (True, "²", "０", "1"):
+            _, err_w4_dim, _, _ = handler._validate_and_clean(
+                4,
+                {"where": "50", "entity_id": "sensor.t", CONF_DIMENSION: bad_w4_dim},
+            )
+            assert err_w4_dim[CONF_DIMENSION] == "invalid_dimension"
 
         cleaned_w13, err_w13, _, _ = handler._validate_and_clean(13, {})
         assert err_w13 == {}
         assert cleaned_w13[CONF_DIMENSION] == 22
 
-        _, err_w13_bool, _, _ = handler._validate_and_clean(13, {CONF_DIMENSION: True})
-        assert err_w13_bool[CONF_DIMENSION] == "invalid_dimension"
+        for bad_w13_dim in (True, "²", "２２", "99"):
+            _, err_w13_bad, _, _ = handler._validate_and_clean(
+                13, {CONF_DIMENSION: bad_w13_dim}
+            )
+            assert err_w13_bad[CONF_DIMENSION] == "invalid_dimension"
 
         cleaned_w18, err_w18, _, _ = handler._validate_and_clean(
             18,
@@ -4530,6 +4610,29 @@ def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
         )
         assert err_w18 == {}
         assert cleaned_w18[CONF_DIMENSION] == 113
+
+        for bad_w18_dim in (True, "²", "１１３", "99"):
+            _, err_w18_bad, _, _ = handler._validate_and_clean(
+                18,
+                {"where": "51", "entity_id": "sensor.p", CONF_DIMENSION: bad_w18_dim},
+            )
+            assert err_w18_bad[CONF_DIMENSION] == "invalid_dimension"
+
+        for bad_w1_unicode in ("1²", "¹²", "001²", "１２", "88#4#0١"):
+            _, err_w1_u, _, _ = handler._validate_and_clean(
+                1, {"where": bad_w1_unicode, "entity_id": "light.x"}
+            )
+            assert "where" in err_w1_u
+        for bad_w4_unicode in ("1²", "5٠", "１０５"):
+            _, err_w4_u, _, _ = handler._validate_and_clean(
+                4, {"where": bad_w4_unicode, "entity_id": "sensor.t"}
+            )
+            assert err_w4_u["where"] == "invalid_where_who4"
+        for bad_w18_unicode in ("51٠", "51#٠", "５１", "1²"):
+            _, err_w18_u, _, _ = handler._validate_and_clean(
+                18, {"where": bad_w18_unicode, "entity_id": "sensor.p"}
+            )
+            assert err_w18_u["where"] == "invalid_where_who18"
 
         _, err_w18_req, _, _ = handler._validate_and_clean(
             18,
@@ -4567,16 +4670,17 @@ def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
             CONF_BUS_INTERFACE: "invalid_bus_interface",
         }
 
-        _, err_iface_oob, _, _ = handler._validate_and_clean(
-            1,
-            {
-                CONF_EXPOSE_AREA: "8",
-                CONF_EXPOSE_POINT: "8",
-                CONF_BUS_INTERFACE: "16",
-                "entity_id": "light.x",
-            },
-        )
-        assert err_iface_oob == {CONF_BUS_INTERFACE: "invalid_bus_interface"}
+        for bad_iface_val in ("00", "10", "16", "０１"):
+            _, err_iface_oob, _, _ = handler._validate_and_clean(
+                1,
+                {
+                    CONF_EXPOSE_AREA: "8",
+                    CONF_EXPOSE_POINT: "8",
+                    CONF_BUS_INTERFACE: bad_iface_val,
+                    "entity_id": "light.x",
+                },
+            )
+            assert err_iface_oob == {CONF_BUS_INTERFACE: "invalid_bus_interface"}
 
         # Optional attribute, value_template, and comma-separated on_states formatting
         cleaned_opt, err_opt, _, _ = handler._validate_and_clean(
@@ -4619,6 +4723,10 @@ def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
                     subentry_type=SUBENTRY_TYPE_EXPOSE,
                     data={CONF_WHO: 18, "where": "51"},
                 ),
+                "s_who18_empty_dim": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "52", CONF_DIMENSION: ""},
+                ),
             }
         )
 
@@ -4630,4 +4738,10 @@ def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
             {"where": "51", "entity_id": "sensor.p"},
         )
         assert err_dup18 == {"base": "already_configured"}
+
+        _, err_dup18_empty, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "52", "entity_id": "sensor.p"},
+        )
+        assert err_dup18_empty == {"base": "already_configured"}
 
