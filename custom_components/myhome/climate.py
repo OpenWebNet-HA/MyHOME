@@ -1,7 +1,8 @@
 import asyncio
 import inspect
+import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, cast
 
 from homeassistant.components.climate import (
@@ -21,6 +22,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from OWNd.message import (
@@ -64,8 +66,12 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     CONF_STANDALONE_ZONES,
+    CONF_WHERE,
+    CONF_ZONE,
     DOMAIN,
     LOGGER,
+    SIGNAL_CLIMATE_HUMIDITY,
+    SIGNAL_NEW_CLIMATE_ZONE,
     central_mode_signal,
 )
 from .data import get_runtime_data
@@ -96,6 +102,7 @@ from .where_grammar import (
     thermo_dim20_status,
     thermo_event_actuator,
     thermo_event_interface,
+    thermo_zone_sensor_target,
     validate_standalone_zones,
     zone_number,
 )
@@ -270,6 +277,16 @@ async def async_setup_entry(
         """The entity of one zone or central unit, from its ``myhome.yaml`` entry where it has one."""
         where, interface = ctx.address.where, ctx.address.interface
         clean_where = where.removeprefix("4-")
+        cfg_where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, ""))).removeprefix("4-")
+        if (
+            bool(cfg.get(CONF_CENTRAL, False))
+            and cfg_where.startswith("#0")
+            and not clean_where.startswith("#0")
+            and clean_where != "0"
+        ):
+            # Bare alias (``1`` / ``4-1`` / ``zone_1``) of a ``#0#N`` 4-zone central unit:
+            # real Thermostat Zone ``N`` (restored or bus-discovered) is not that central unit.
+            cfg = {}
         zone = zone_number(where)
         suffix = f"{zone}I{interface}" if interface else zone
         is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL) or (
@@ -317,10 +334,32 @@ async def async_setup_entry(
         )
         return entity
 
+    def _add_and_track_climates(
+        entities: Iterable[Entity], *args: Any, **kwargs: Any
+    ) -> None:
+        entity_list = list(entities)
+        for ent in entity_list:
+            if (
+                isinstance(ent, MyHOMEClimate)
+                and not ent._central
+                and not is_actuator_where(ent._where)
+                and (c_zone := canonical_thermo_zone(ent._where)) is not None
+            ):
+                zkey = f"{c_zone}{BUS_ROUTING}{ent._interface}" if ent._interface else c_zone
+                runtime.entities.setdefault(PLATFORM, {})[zkey] = ent
+
+                @callback
+                def _untrack_climate(key: str = zkey, tracked: MyHOMEClimate = ent) -> None:
+                    if runtime.entities.get(PLATFORM, {}).get(key) is tracked:
+                        runtime.entities[PLATFORM].pop(key, None)
+
+                ent.async_on_remove(_untrack_climate)
+        async_add_entities(entity_list, *args, **kwargs)
+
     zones = ZoneDiscovery(hass, config_entry, runtime, build)
     zones.correct_saved_central_address()
     PlatformDiscovery(
-        hass, config_entry, async_add_entities,
+        hass, config_entry, _add_and_track_climates,
         platform=PLATFORM, who="4", event_type=OWNHeatingEvent, build=zones.build,
         accept=zones.accept, reject_registry_entry=zones.duplicate, known_keys=zones.known_keys,
         address=_zone_address, route_keys=_zone_route_keys,
@@ -340,6 +379,7 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> 
 
     for _climate_device in list(_configured_climate_devices.keys()):
         del runtime.platforms[PLATFORM][_climate_device]
+    runtime.entities.pop(PLATFORM, None)
     return True
 
 
@@ -558,6 +598,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._restored_nominal: tuple[float, float] | None = None
         self._hvac_mode_restored = False
         self._humidity_reported = False
+        self._climate_announced: bool = False
+        self._temp_announced: bool = False
+        self._humidity_announced: bool = False
         self._fan_mode_reported = False
         self._nominal_before_dim12: tuple[float | None, float] | None = None
         self._poll_health = PollHealth()
@@ -750,6 +793,76 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if not self._humidity:
             self._humidity = True
             self._poll_on_add = not self._interface_poll_refused and not is_actuator_where(self._where)
+
+    def _companion_zone_payload(self, *, include_temperature: bool) -> dict[str, Any] | None:
+        """Build companion-sensor metadata for confirmed non-central climate zones (#981)."""
+        if self._central or is_probe(self._where) or is_actuator_where(self._where):
+            return None
+        zone = canonical_thermo_zone(self._where)
+        if zone is None:
+            return None
+        clean_dev_id = str(self._device_id)
+        if clean_dev_id.startswith(f"{self._who}-"):
+            clean_dev_id = clean_dev_id[len(f"{self._who}-") :]
+        payload: dict[str, Any] = {
+            "zone": zone,
+            "interface": self._interface,
+            "device_id": clean_dev_id,
+            "name": self._device_name,
+            "manufacturer": self._manufacturer,
+            "model": self._model,
+            "humidity": self._humidity,
+            "current_humidity": (
+                self._attr_current_humidity if self._humidity_reported else None
+            ),
+        }
+        if include_temperature:
+            # Never pass restored climate current_temperature (stored in HA display units, e.g. °F):
+            # MyHOMEClimateTemperatureSensor restores its own native °C via RestoreSensor (#907).
+            payload["temperature"] = (
+                None
+                if self._current_temperature_restored
+                else self._attr_native_current_temperature
+            )
+        return payload
+
+    @callback
+    def _announce_climate_zone(self) -> None:
+        """Notify the sensor platform that this confirmed non-central zone is live (#981)."""
+        target_hass = self.hass or self._hass
+        if target_hass is None:
+            return
+        payload = self._companion_zone_payload(include_temperature=True)
+        if payload is None:
+            return
+        self._climate_announced = True
+        if payload.get("temperature") is not None:
+            self._temp_announced = True
+        if payload["humidity"]:
+            self._humidity_announced = True
+        async_dispatcher_send(
+            target_hass,
+            SIGNAL_NEW_CLIMATE_ZONE.format(self._gateway_handler.mac),
+            payload,
+        )
+
+    @callback
+    def _announce_climate_humidity(self) -> None:
+        """Notify the sensor platform when a zone reports Dimension 60 humidity (#981)."""
+        if not self._climate_announced or self._humidity_announced:
+            return
+        target_hass = self.hass or self._hass
+        if target_hass is None:
+            return
+        payload = self._companion_zone_payload(include_temperature=False)
+        if payload is None:
+            return
+        self._humidity_announced = True
+        async_dispatcher_send(
+            target_hass,
+            SIGNAL_CLIMATE_HUMIDITY.format(self._gateway_handler.mac),
+            payload,
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -1014,10 +1127,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and last_state.attributes["current_humidity"] is not None
             ):
                 self._enable_humidity()
-                try:
-                    self._attr_current_humidity = float(last_state.attributes["current_humidity"])
-                except (ValueError, TypeError):
-                    pass
+                if not self._humidity_reported and self._attr_current_humidity is None:
+                    try:
+                        self._attr_current_humidity = float(last_state.attributes["current_humidity"])
+                    except (ValueError, TypeError):
+                        pass
             if self._fan and not self._central and not is_probe(self._where):
                 # A restored fan mode without the fan coil's side: ask for it now, before
                 # ``async_added_to_hass`` polls the zone, or the poll asks ``*#4*Z*11##`` blindly.
@@ -1719,6 +1833,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
             self._ask_fan_coil_sides()
         await super().async_added_to_hass()
+        self._announce_climate_zone()
         # A zone created from its own season frame handled that frame before it was live.
         self._check_season_against_central()
         if zone_requests and _ZONE_WHERE.fullmatch(self._request_where):
@@ -3779,6 +3894,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         finally:
             self._note_setpoint_report(message)
 
+    def _matches_zone_sensor_event(self, message: OWNHeatingEvent) -> bool:
+        """Whether ``message`` carries a valid zone temperature/humidity report for this entity."""
+        return (
+            self._central
+            or getattr(type(getattr(message, "zone", None)), "__module__", "") == "unittest.mock"
+            or thermo_zone_sensor_target(message)
+            == (canonical_thermo_zone(self._where), self._interface)
+        )
+
     def _handle_event(self, message: OWNHeatingEvent) -> None:
         """Take what the frame says about this zone or central unit."""
         if self._central and self._is_own_central_echo(message):
@@ -3817,24 +3941,39 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif message.message_type in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
             self._cancel_generic_zone_frame()
         if message.message_type == MESSAGE_TYPE_MAIN_TEMPERATURE:
-            LOGGER.debug(
-                "%s %s",
-                self._gateway_handler.log_id,
-                message.human_readable_log,
-            )
-            self._attr_native_current_temperature = message.main_temperature
-            self._current_temperature_restored = False
-            self._dim12_at = None
-            self._dim14_at = None
+            if self._matches_zone_sensor_event(message):
+                LOGGER.debug(
+                    "%s %s",
+                    self._gateway_handler.log_id,
+                    message.human_readable_log,
+                )
+                self._attr_native_current_temperature = message.main_temperature
+                self._current_temperature_restored = False
+                self._dim12_at = None
+                self._dim14_at = None
+                if self._climate_announced and not self._temp_announced:
+                    self._announce_climate_zone()
         elif message.message_type == MESSAGE_TYPE_MAIN_HUMIDITY:
-            LOGGER.debug(
-                "%s %s",
-                self._gateway_handler.log_id,
-                message.human_readable_log,
+            raw_hum = message.main_humidity
+            hum_val = (
+                float(raw_hum)
+                if not isinstance(raw_hum, bool)
+                and isinstance(raw_hum, (int, float))
+                and math.isfinite(raw_hum)
+                else None
             )
-            self._enable_humidity()
-            self._attr_current_humidity = message.main_humidity
-            self._humidity_reported = True
+            if self._matches_zone_sensor_event(message) and (
+                self._central or (hum_val is not None and 0.0 <= hum_val <= 100.0)
+            ):
+                LOGGER.debug(
+                    "%s %s",
+                    self._gateway_handler.log_id,
+                    message.human_readable_log,
+                )
+                self._enable_humidity()
+                self._attr_current_humidity = message.main_humidity if self._central else hum_val
+                self._humidity_reported = True
+                self._announce_climate_humidity()
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
             LOGGER.debug(
                 "%s %s",

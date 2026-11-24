@@ -267,9 +267,9 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
     {
         "model": "**MH200N**",
         "profile_name": "MH200N",
-        "pinned_whos": [1, 2, 4, 16],
+        "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [],
-        "notes": "Lighting, cover, climate, and sound queries (`bt_difson` hardware and firmware-verified). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm and energy queries omitted.",
+        "notes": "Lighting, cover, climate, sound (`bt_difson` hardware and firmware-verified), and energy meter 51 queries (`bt_supervisione` in the `010108` image; a physical MH200N 1.1.8 answers `*#18*51*51##`, `tests/fixtures/traces/issue_466`). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm query omitted.",
     },
     {
         "model": "**H4684 / H/L4684**",

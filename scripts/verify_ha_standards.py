@@ -180,7 +180,13 @@ def check_translation_coverage(checker: StandardsChecker):
 
     config_translated = set(en_data.get("config", {}).get("step", {}).keys())
     options_translated = set(en_data.get("options", {}).get("step", {}).keys())
-    all_translated = config_translated | options_translated
+    subentry_translated = {
+        step_id
+        for sub_cfg in en_data.get("config_subentries", {}).values()
+        if isinstance(sub_cfg, dict)
+        for step_id in sub_cfg.get("step", {}).keys()
+    }
+    all_translated = config_translated | options_translated | subentry_translated
 
     for flow_file in sorted(CUSTOM_COMPONENTS_DIR.glob("config_flow*.py")):
         with open(flow_file, "r", encoding="utf-8") as f:

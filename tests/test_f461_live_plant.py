@@ -369,7 +369,13 @@ async def test_send_message_refuses_who4_dimension_22(hass, attach_gateway, fram
     await async_setup_services(hass)
     gw = _gateway()
     attach_gateway(MAC, gw)
-    await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_GATEWAY: MAC, ATTR_MESSAGE: frame}, blocking=True)
+    from homeassistant.exceptions import ServiceValidationError
+
+    # Refused, and the caller is told: the action no longer returns success with a log line only.
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_GATEWAY: MAC, ATTR_MESSAGE: frame}, blocking=True)
+    assert err.value.translation_key == "send_message_refused_frame"
+    assert err.value.translation_placeholders == {"message": frame}
     assert gw.sent == []
     assert "dimension 22" in caplog.text
 

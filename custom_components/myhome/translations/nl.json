@@ -108,70 +108,158 @@
       "step": {
         "user": {
           "title": "Home Assistant-entiteit op SCS-bus aanbieden",
-          "description": "Emuleer een virtueel OpenWebNet-apparaat op de SCS-bus op basis van een Home Assistant-entiteit.",
+          "description": "Selecteer het OpenWebNet WHO-subsysteem om op de SCS-bus te emuleren. In de volgende stap ziet u alleen de bijbehorende adres- en bedieningsvelden.",
           "data": {
-            "who": "WHO-subsysteem",
-            "where": "WHERE-adres",
-            "entity_id": "Bronentiteit",
-            "attribute": "Statusattribuut (optioneel)",
-            "dimension": "OpenWebNet-dimensie (optioneel)",
-            "cooldown": "Afkoeltijd (seconden)",
-            "min_delta": "Minimale deltadrempel (optioneel)",
-            "periodic_send": "Periodiek zendinterval (seconden)",
-            "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
-            "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
-            "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
-            "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
-            "value_template": "Waardesjabloon (Jinja2, optioneel)",
-            "turn_on_action": "Inschakel- / omhoog-actie (optioneel)",
-            "turn_off_action": "Uitschakel- / omlaag-actie (optioneel)",
-            "step_up_action": "Stap-omhoog-actie (optioneel)",
-            "step_down_action": "Stap-omlaag-actie (optioneel)"
+            "who": "WHO-subsysteem"
           },
           "data_description": {
-            "turn_on_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
-            "turn_off_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
-            "step_up_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer).",
-            "step_down_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer)."
+            "who": "WHO 1 (verlichting/schakelaar) en WHO 2 (rolluiken) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
           }
         },
         "reconfigure": {
           "title": "Aangeboden entiteit herconfigureren",
-          "description": "Werk het OpenWebNet-adres, de bronentiteit, de verzendparameters of de aangepaste acties voor deze koppeling bij.",
+          "description": "Bevestig of wijzig het OpenWebNet WHO-subsysteem voor deze koppeling en werk daarna het adres, de bronentiteit of acties bij.",
           "data": {
-            "who": "WHO-subsysteem",
-            "where": "WHERE-adres",
+            "who": "WHO-subsysteem"
+          },
+          "data_description": {
+            "who": "Wisselen tussen WHO 1 en WHO 2 behoudt uw A / PL-adres; wisselen naar een ander WHO toont de velden voor dat subsysteem."
+          }
+        },
+        "who_1": {
+          "title": "WHO 1 — Verlichting / Schakelaar / Virtuele actuator",
+          "description": "Kies Zone (A) en Punt (PL) zoals geconfigureerd in MyHOME_Suite (bijv. A = 8, PL = 8 of A = 8, PL = 12), of laat ze leeg en vul hieronder een ruw OpenWebNet WHERE-adres in.",
+          "data": {
+            "area": "Zone (A, 0–10)",
+            "point": "Punt (PL, 1–15)",
+            "interface": "Lokale businterface (optioneel)",
+            "where": "Ruw WHERE-adres (optioneel)",
             "entity_id": "Bronentiteit",
             "attribute": "Statusattribuut (optioneel)",
-            "dimension": "OpenWebNet-dimensie (optioneel)",
             "cooldown": "Afkoeltijd (seconden)",
-            "min_delta": "Minimale deltadrempel (optioneel)",
             "periodic_send": "Periodiek zendinterval (seconden)",
             "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
             "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
             "brightness_step_pct": "Helderheidsstap per dimmerdruk (%)",
             "on_states": "Aangepaste 'aan'-statussen (komma-gescheiden, optioneel)",
             "value_template": "Waardesjabloon (Jinja2, optioneel)",
-            "turn_on_action": "Inschakel- / omhoog-actie (optioneel)",
-            "turn_off_action": "Uitschakel- / omlaag-actie (optioneel)",
+            "turn_on_action": "Inschakel-actie (optioneel)",
+            "turn_off_action": "Uitschakel-actie (optioneel)",
             "step_up_action": "Stap-omhoog-actie (optioneel)",
             "step_down_action": "Stap-omlaag-actie (optioneel)"
           },
           "data_description": {
-            "turn_on_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
-            "turn_off_action": "Alleen ondersteund voor WHO 1 (verlichting/schakelaar) en WHO 2 (rolluik/automatisering).",
-            "step_up_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer).",
-            "step_down_action": "Alleen ondersteund voor WHO 1 (verlichting/dimmer)."
+            "area": "MyHOME_Suite Zone / Ambiente (A = 0–10). Genegeerd wanneer een ruw WHERE-adres is ingevuld.",
+            "point": "MyHOME_Suite Lichtpunt / Punto Luce (aanbieden dwingt het OpenWebNet-specificatiebereik PL = 1–15 af).",
+            "interface": "Optionele F422 lokale businterface (#4#01–#4#09 of #4#11–#4#15) voor routering naar een lokale bus.",
+            "where": "Optioneel veld voor gevorderde gebruikers (bijv. 88, 08, 0812, 0012, 1008 of 88#4#01). Indien ingevuld overschrijft dit A, PL en Interface.",
+            "entity_id": "Home Assistant-bronentiteit (optioneel als hieronder minstens één aangepaste actie is ingesteld).",
+            "attribute": "Optioneel attribuut zoals 'brightness' om dimmerniveaus te spiegelen.",
+            "turn_on_action": "Optionele aangepaste actiereeks bij een inkomend AAN-commando vanaf de bus.",
+            "turn_off_action": "Optionele aangepaste actiereeks bij een inkomend UIT-commando vanaf de bus.",
+            "step_up_action": "Optionele aangepaste actiereeks bij een inkomende dimmer stap-omhoog-actie.",
+            "step_down_action": "Optionele aangepaste actiereeks bij een inkomende dimmer stap-omlaag-actie."
+          }
+        },
+        "who_2": {
+          "title": "WHO 2 — Automatisering / Rolluik",
+          "description": "Kies Zone (A) en Punt (PL) zoals geconfigureerd in MyHOME_Suite (bijv. A = 3, PL = 1 of A = 8, PL = 12), of laat ze leeg en vul hieronder een ruw OpenWebNet WHERE-adres in.",
+          "data": {
+            "area": "Zone (A, 0–10)",
+            "point": "Punt (PL, 1–15)",
+            "interface": "Lokale businterface (optioneel)",
+            "where": "Ruw WHERE-adres (optioneel)",
+            "entity_id": "Bronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op status-/dimensievragen vanaf de bus",
+            "bidirectional": "Bidirectioneel (reageren op inkomende buscommando's)",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)",
+            "turn_on_action": "Omhoog- / open-actie (optioneel)",
+            "turn_off_action": "Omlaag- / sluit-actie (optioneel)"
+          },
+          "data_description": {
+            "area": "MyHOME_Suite Zone / Ambiente (A = 0–10). Genegeerd wanneer een ruw WHERE-adres is ingevuld.",
+            "point": "MyHOME_Suite Punt / Punto Luce (aanbieden dwingt het OpenWebNet-specificatiebereik PL = 1–15 af).",
+            "interface": "Optionele F422 lokale businterface (#4#01–#4#09 of #4#11–#4#15) voor routering naar een lokale bus.",
+            "where": "Optioneel veld voor gevorderde gebruikers (bijv. 31, 08, 0812, 0012, 1008 of 31#4#01). Indien ingevuld overschrijft dit A, PL en Interface.",
+            "entity_id": "Home Assistant cover-bronentiteit (optioneel als hieronder aangepaste acties zijn ingesteld).",
+            "attribute": "Optioneel attribuut zoals 'current_position' om rolluikposities te spiegelen.",
+            "turn_on_action": "Optionele aangepaste actiereeks bij een inkomend OMHOOG / open-commando vanaf de bus.",
+            "turn_off_action": "Optionele aangepaste actiereeks bij een inkomend OMLAAG / sluit-commando vanaf de bus."
+          }
+        },
+        "who_4": {
+          "title": "WHO 4 — Temperatuursensor (Dimensie 0)",
+          "description": "Publiceer een Home Assistant-temperatuursensor op een ongebruikt OpenWebNet-sensoradres (zonemaster 1–99, externe sensor 100–900 of PZZ 101–899; 1–99 vereist op F461 / bt_termo-gateways).",
+          "data": {
+            "where": "Sensor WHERE-adres",
+            "entity_id": "Temperatuur-bronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "min_delta": "Minimale deltadrempel (optioneel)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op temperatuurvragen vanaf de bus",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+          },
+          "data_description": {
+            "where": "Ongebruikt zonemasteradres (1–99, bijv. 50) of sensoradres (100–900 / 101–899)."
+          }
+        },
+        "who_13": {
+          "title": "WHO 13 — Busklok & zomertijdsynchronisatie",
+          "description": "Synchroniseer SCS-wandtouchscreens en thermostaten met de lokale tijd, datum en zomertijd (DST) van Home Assistant.",
+          "data": {
+            "dimension": "Klokdimensie",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op klokvragen vanaf de bus"
+          },
+          "data_description": {
+            "periodic_send": "Laat leeg voor dagelijkse synchronisatie (86400 s), stel bijv. 3600 in voor elk uur, of 0 om alleen op leesverzoeken te antwoorden."
+          }
+        },
+        "who_18": {
+          "title": "WHO 18 — Energie- / vermogensmeter",
+          "description": "Bied een Home Assistant-vermogenssensor (W / kW) of energiesensor (Wh / kWh) aan op een ongebruikt OpenWebNet-meteradres (5N of 7N#0 met N = 1–255, d.w.z. 51–59, 510–599, 5100–5255 of 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
+          "data": {
+            "where": "Meter WHERE-adres",
+            "dimension": "OpenWebNet energie-/vermogensdimensie",
+            "entity_id": "Energie-/vermogensbronentiteit",
+            "attribute": "Statusattribuut (optioneel)",
+            "cooldown": "Afkoeltijd (seconden)",
+            "min_delta": "Minimale deltadrempel (optioneel)",
+            "periodic_send": "Periodiek zendinterval (seconden)",
+            "respond_to_read": "Reageren op metervragen vanaf de bus",
+            "value_template": "Waardesjabloon (Jinja2, optioneel)"
+          },
+          "data_description": {
+            "where": "Ongebruikt meteradres in 5N- of 7N#0-vorm (N = 1–255, bijv. 51, 512, 5255 of 71#0)."
           }
         }
       },
       "error": {
         "invalid_who": "Niet-ondersteund WHO-subsysteem (ondersteund: 1, 2, 4, 13, 18).",
+        "area_required": "Selecteer Zone (A, 0–10) of voer een ruw WHERE-adres in.",
+        "point_required": "Selecteer Punt (PL, 1–15) of voer een ruw WHERE-adres in.",
+        "invalid_area": "Zone (A) moet tussen 0 en 10 liggen.",
+        "invalid_point": "Punt (PL) moet tussen 1 en 15 liggen.",
+        "invalid_bus_interface": "De lokale businterface moet 'Hoofd-SCS-bus', 01–09 of 11–15 zijn.",
         "where_required": "Een WHERE-adres is vereist voor dit WHO-subsysteem.",
+        "invalid_where_use_2_digits": "\"{raw}\" gebruikt 4 cijfers; dat is alleen geldig wanneer A = 10 of PL = 10–15. Voor A = {area}, PL = {point} gebruikt u \"{suggested}\" (2 cijfers).",
+        "invalid_where_use_4_digits": "\"{raw}\" gebruikt 3 cijfers en is ongeldig in OpenWebNet. Voor A = {area}, PL = {point} gebruikt u \"{suggested}\" (4 cijfers met voorloopnul).",
+        "invalid_where_pl_zero": "\"{raw}\" heeft PL = 0; aanbieden dwingt het OpenWebNet-specificatiebereik PL = 1–15 af (PL = 0 is de ongeconfigureerde standaardwaarde in MyHOME_Suite).",
+        "invalid_where_apl_range": "\"{raw}\" valt buiten het geldige punt-tot-puntbereik (A = 0–10, PL = 1–15).",
+        "invalid_where_group_or_scope": "Aanbieden vereist een punt-tot-punt A / PL-adres; algemene ('0'), zone- ('00', '1'..'9', '100') en groepsadressen ('#N') zijn niet toegestaan.",
+        "invalid_where_interface": "Ongeldig achtervoegsel voor lokale businterface. Verwacht: #4#01–#4#09 of #4#11–#4#15 (bijv. 88#4#01 of 0812#4#01).",
+        "invalid_where_apl": "Ongeldig punt-tot-punt WHERE-adres. Selecteer hierboven A (0–10) en PL (1–15), of voer een canoniek WHERE-adres in zoals 88, 08, 0812, 0012, 1008 of 88#4#01.",
+        "invalid_where_who4": "Ongeldig WHO 4 sensor WHERE-adres. Verwacht: zonemaster 1–99 (bijv. 50), externe sensor 100–900 of PZZ 101–899.",
+        "invalid_where_who18": "Ongeldig WHO 18 meter WHERE-adres. Verwacht: 5N of 7N#0 met N = 1–255 (d.w.z. 51–59, 510–599, 5100–5255 of 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "Een Home Assistant-bronentiteit (of aangepaste actie voor WHO 1 / WHO 2) is vereist.",
         "action_not_supported_for_who": "Aangepaste acties worden alleen ondersteund voor WHO 1 (in-/uitschakelen en stap omhoog/omlaag) en WHO 2 (alleen in-/uitschakelen); wis niet-ondersteunde acties of wijzig WHO.",
         "invalid_dimension": "Ongeldige dimensie voor het geselecteerde WHO-subsysteem.",
-        "invalid_expose": "Ongeldige configuratie of dubbele WHO/WHERE/dimensie-koppeling.",
+        "already_configured": "Er is al een aangeboden koppeling met dit WHO, WHERE en dimensie geconfigureerd op deze gateway.",
+        "invalid_expose": "Ongeldige configuratie.",
         "who_injection_unsupported": "De firmware van deze gateway ondersteunt het injecteren van frames voor het geselecteerde WHO-subsysteem op de SCS-bus niet (ondersteund op alle gateways: WHO 1, 2, 13).",
         "who4_probe_where_unsupported": "Deze gateway vertaalt WHO 4 #0-temperatuurschrijfopdrachten alleen op ongebruikte zonemasteradressen 1..99 (bijv. 50); 3-cijferige sensoradressen (100..900) worden door de firmware geweigerd."
       },
@@ -676,6 +764,27 @@
     },
     "lock_command_failed": {
       "message": "{name}: ontgrendelcommando voor deurintercom mislukt: {error}"
+    },
+    "command_rejected": {
+      "message": "{name}: gateway {gateway} heeft het commando ({frame}) afgewezen met NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name}: het commando ({frame}) kon niet naar gateway {gateway} worden verzonden, of de verbinding is verbroken vóór het antwoord; het is mogelijk wel uitgevoerd"
+    },
+    "command_not_confirmed": {
+      "message": "{name}: gateway {gateway} heeft het commando ({frame}) niet op tijd bevestigd; het is mogelijk wel uitgevoerd"
+    },
+    "gateway_not_found": {
+      "message": "Gateway \"{gateway}\" niet gevonden"
+    },
+    "no_gateway_loaded": {
+      "message": "Er is geen MyHOME-gateway ingesteld"
+    },
+    "send_message_invalid_frame": {
+      "message": "\"{message}\" is geen geldig OpenWebNet-frame; er is niets verzonden"
+    },
+    "send_message_refused_frame": {
+      "message": "Verzenden van \"{message}\" geweigerd: dit frame is uit veiligheidsvoorzorg geblokkeerd; er is niets verzonden"
     }
   },
   "entity": {
@@ -752,6 +861,50 @@
         "18": "18 - Energiebeheer",
         "22": "22 - Geluidsdistributie (audiomatrix)",
         "25": "25 - CEN+-scenario's"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Verlichting / Schakelaar / Virtuele actuator",
+        "2": "WHO 2 — Automatisering / Rolluik",
+        "4": "WHO 4 — Temperatuursensor (Dimensie 0)",
+        "13": "WHO 13 — Busklok & zomertijdsynchronisatie",
+        "18": "WHO 18 — Energie- / vermogensmeter"
+      }
+    },
+    "expose_bus_interface": {
+      "options": {
+        "none": "Hoofd-SCS-bus (geen F422-interface)",
+        "01": "Interface 01 (#4#01)",
+        "02": "Interface 02 (#4#02)",
+        "03": "Interface 03 (#4#03)",
+        "04": "Interface 04 (#4#04)",
+        "05": "Interface 05 (#4#05)",
+        "06": "Interface 06 (#4#06)",
+        "07": "Interface 07 (#4#07)",
+        "08": "Interface 08 (#4#08)",
+        "09": "Interface 09 (#4#09)",
+        "11": "Interface 11 (#4#11)",
+        "12": "Interface 12 (#4#12)",
+        "13": "Interface 13 (#4#13)",
+        "14": "Interface 14 (#4#14)",
+        "15": "Interface 15 (#4#15)"
+      }
+    },
+    "expose_who13_dimension": {
+      "options": {
+        "22": "22 - Tijd, datum & kalender (aanbevolen)",
+        "0": "0 - Alleen tijd",
+        "1": "1 - Alleen datum"
+      }
+    },
+    "expose_who18_dimension": {
+      "options": {
+        "113": "113 - Actief vermogen (W)",
+        "51": "51 - Totale energie (Wh)",
+        "52": "52 - Maandelijkse energieteller (Wh)",
+        "53": "53 - Gedeeltelijke energie huidige maand (Wh)",
+        "54": "54 - Gedeeltelijke energie huidige dag (Wh)"
       }
     }
   }

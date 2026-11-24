@@ -223,16 +223,20 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
         gateway.send.assert_called_once()
         gateway.send.reset_mock()
 
-        # Test send_message service (invalid)
-        await hass.services.async_call(
-            DOMAIN, "send_message", {ATTR_GATEWAY: "00:03:50:00:12:34", ATTR_MESSAGE: "invalid"}, blocking=True
-        )
+        # Test send_message service (invalid): nothing sent, and the caller is told
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(
+                DOMAIN, "send_message", {ATTR_GATEWAY: "00:03:50:00:12:34", ATTR_MESSAGE: "invalid"}, blocking=True
+            )
+        assert err.value.translation_key == "send_message_invalid_frame"
         gateway.send.assert_not_called()
 
         # Test missing gateway
-        await hass.services.async_call(
-            DOMAIN, "send_message", {ATTR_GATEWAY: "00:03:50:00:00:00", ATTR_MESSAGE: "*1*1*12##"}, blocking=True
-        )
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(
+                DOMAIN, "send_message", {ATTR_GATEWAY: "00:03:50:00:00:00", ATTR_MESSAGE: "*1*1*12##"}, blocking=True
+            )
+        assert err.value.translation_key == "gateway_not_found"
         gateway.send.assert_not_called()
 
         # Test send_message without gateway specified (hits line 266: gateway = _gw_keys[0])
@@ -242,22 +246,34 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
         gateway.send.assert_called_once()
         gateway.send.reset_mock()
 
-        # Test sync_time with invalid MAC format (lines 237-241)
-        with patch("homeassistant.helpers.device_registry.format_mac", return_value=None):
+        # Test sync_time with a gateway that is no MAC of a loaded gateway: nothing sent, the
+        # caller is told
+        gateway.send.reset_mock()
+        with pytest.raises(ServiceValidationError) as err:
             await hass.services.async_call(
                 DOMAIN, "sync_time", {ATTR_GATEWAY: "invalid_mac"}, blocking=True
             )
+        assert err.value.translation_key == "gateway_not_found"
+        gateway.send.assert_not_called()
 
-        # Test sync_time with unconfigured valid MAC (lines 250-254)
-        await hass.services.async_call(
-            DOMAIN, "sync_time", {ATTR_GATEWAY: "00:03:50:00:99:99"}, blocking=True
-        )
+        # Test sync_time with unconfigured valid MAC: nothing sent, and the caller is told
+        gateway.send.reset_mock()
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(
+                DOMAIN, "sync_time", {ATTR_GATEWAY: "00:03:50:00:99:99"}, blocking=True
+            )
+        assert err.value.translation_key == "gateway_not_found"
+        assert err.value.translation_placeholders == {"gateway": "00:03:50:00:99:99"}
+        gateway.send.assert_not_called()
 
-        # Test send_message with invalid MAC format (lines 270-275)
-        with patch("homeassistant.helpers.device_registry.format_mac", return_value=None):
+        # Test send_message with a gateway that is no MAC of a loaded gateway
+        gateway.send.reset_mock()
+        with pytest.raises(ServiceValidationError) as err:
             await hass.services.async_call(
                 DOMAIN, "send_message", {ATTR_GATEWAY: "invalid_mac", ATTR_MESSAGE: "*1*1*12##"}, blocking=True
             )
+        assert err.value.translation_key == "gateway_not_found"
+        gateway.send.assert_not_called()
 
         # Test sweep_bus service with specific gateway
         gateway.send.reset_mock()
@@ -290,12 +306,10 @@ async def test_services(hass: HomeAssistant, fast_bus_pacing):
         saved_runtime = config_entry.runtime_data
         config_entry.runtime_data = None
         try:
-            await hass.services.async_call(
-                DOMAIN, "sync_time", {}, blocking=True
-            )
-            await hass.services.async_call(
-                DOMAIN, "send_message", {ATTR_MESSAGE: "*1*1*12##"}, blocking=True
-            )
+            for service, data in (("sync_time", {}), ("send_message", {ATTR_MESSAGE: "*1*1*12##"})):
+                with pytest.raises(ServiceValidationError) as err:
+                    await hass.services.async_call(DOMAIN, service, data, blocking=True)
+                assert err.value.translation_key == "no_gateway_loaded"
             await hass.services.async_call(
                 DOMAIN, "sweep_bus", {}, blocking=True
             )

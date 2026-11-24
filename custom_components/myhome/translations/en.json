@@ -111,70 +111,158 @@
       "step": {
         "user": {
           "title": "Expose Home Assistant entity to SCS bus",
-          "description": "Emulate a virtual OpenWebNet device on the SCS bus backed by a Home Assistant entity.",
+          "description": "Select the OpenWebNet WHO subsystem to emulate on the SCS bus. The next step shows only the addressing and control fields for that subsystem.",
           "data": {
-            "who": "WHO subsystem",
-            "where": "WHERE address",
-            "entity_id": "Source entity",
-            "attribute": "State attribute (optional)",
-            "dimension": "OpenWebNet dimension (optional)",
-            "cooldown": "Cooldown (seconds)",
-            "min_delta": "Minimum delta threshold (optional)",
-            "periodic_send": "Periodic broadcast interval (seconds)",
-            "respond_to_read": "Respond to bus status/dimension queries",
-            "bidirectional": "Bidirectional (act on incoming bus commands)",
-            "brightness_step_pct": "Brightness step per dimmer press (%)",
-            "on_states": "Custom 'on' states (comma-separated, optional)",
-            "value_template": "Value template (Jinja2, optional)",
-            "turn_on_action": "Turn-on / raise action (optional)",
-            "turn_off_action": "Turn-off / lower action (optional)",
-            "step_up_action": "Step-up action (optional)",
-            "step_down_action": "Step-down action (optional)"
+            "who": "WHO subsystem"
           },
           "data_description": {
-            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
-            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
-            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
-            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
+            "who": "WHO 1 (lights/switches) and WHO 2 (covers) provide A / PL selectors plus an optional raw WHERE override; WHO 4, 13, and 18 show only their own fields."
           }
         },
         "reconfigure": {
           "title": "Reconfigure exposed entity",
-          "description": "Update the OpenWebNet address, source entity, throttling parameters, or custom actions for this exposed binding.",
+          "description": "Confirm or change the OpenWebNet WHO subsystem for this exposed binding, then update its address, source entity, or actions on the next step.",
           "data": {
-            "who": "WHO subsystem",
-            "where": "WHERE address",
+            "who": "WHO subsystem"
+          },
+          "data_description": {
+            "who": "Switching between WHO 1 and WHO 2 preserves your A / PL address; switching to another WHO opens the fields for that subsystem."
+          }
+        },
+        "who_1": {
+          "title": "WHO 1 — Lighting / Switch / Virtual Actuator",
+          "description": "Choose Area (A) and Point (PL) as configured in MyHOME_Suite (e.g. A = 8, PL = 8 or A = 8, PL = 12), or leave them blank and enter a raw OpenWebNet WHERE override below.",
+          "data": {
+            "area": "Area (A, 0–10)",
+            "point": "Point (PL, 1–15)",
+            "interface": "Local-bus interface (optional)",
+            "where": "Raw WHERE override (optional)",
             "entity_id": "Source entity",
             "attribute": "State attribute (optional)",
-            "dimension": "OpenWebNet dimension (optional)",
             "cooldown": "Cooldown (seconds)",
-            "min_delta": "Minimum delta threshold (optional)",
             "periodic_send": "Periodic broadcast interval (seconds)",
             "respond_to_read": "Respond to bus status/dimension queries",
             "bidirectional": "Bidirectional (act on incoming bus commands)",
             "brightness_step_pct": "Brightness step per dimmer press (%)",
             "on_states": "Custom 'on' states (comma-separated, optional)",
             "value_template": "Value template (Jinja2, optional)",
-            "turn_on_action": "Turn-on / raise action (optional)",
-            "turn_off_action": "Turn-off / lower action (optional)",
+            "turn_on_action": "Turn-on action (optional)",
+            "turn_off_action": "Turn-off action (optional)",
             "step_up_action": "Step-up action (optional)",
             "step_down_action": "Step-down action (optional)"
           },
           "data_description": {
-            "turn_on_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
-            "turn_off_action": "Supported on WHO 1 (lighting/switch) and WHO 2 (cover/automation) only.",
-            "step_up_action": "Supported on WHO 1 (lighting/dimmer) only.",
-            "step_down_action": "Supported on WHO 1 (lighting/dimmer) only."
+            "area": "MyHOME_Suite Area / Ambiente (A = 0–10). Ignored if Raw WHERE override is filled.",
+            "point": "MyHOME_Suite Light Point / Punto Luce (Expose enforces the OpenWebNet spec range PL = 1–15).",
+            "interface": "Optional F422 local-bus interface (#4#01–#4#09 or #4#11–#4#15) when routing to a local bus.",
+            "where": "Optional power-user override (e.g. 88, 08, 0812, 0012, 1008, or 88#4#01). When filled, overrides A, PL, and Interface.",
+            "entity_id": "Source Home Assistant entity (optional if at least one custom action is configured below).",
+            "attribute": "Optional attribute such as 'brightness' to mirror dimmer levels.",
+            "turn_on_action": "Optional custom action sequence run on incoming bus ON commands.",
+            "turn_off_action": "Optional custom action sequence run on incoming bus OFF commands.",
+            "step_up_action": "Optional custom action sequence run on incoming dimmer step-up presses.",
+            "step_down_action": "Optional custom action sequence run on incoming dimmer step-down presses."
+          }
+        },
+        "who_2": {
+          "title": "WHO 2 — Automation / Cover",
+          "description": "Choose Area (A) and Point (PL) as configured in MyHOME_Suite (e.g. A = 3, PL = 1 or A = 8, PL = 12), or leave them blank and enter a raw OpenWebNet WHERE override below.",
+          "data": {
+            "area": "Area (A, 0–10)",
+            "point": "Point (PL, 1–15)",
+            "interface": "Local-bus interface (optional)",
+            "where": "Raw WHERE override (optional)",
+            "entity_id": "Source entity",
+            "attribute": "State attribute (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus status/dimension queries",
+            "bidirectional": "Bidirectional (act on incoming bus commands)",
+            "value_template": "Value template (Jinja2, optional)",
+            "turn_on_action": "Raise / open action (optional)",
+            "turn_off_action": "Lower / close action (optional)"
+          },
+          "data_description": {
+            "area": "MyHOME_Suite Area / Ambiente (A = 0–10). Ignored if Raw WHERE override is filled.",
+            "point": "MyHOME_Suite Point / Punto Luce (Expose enforces the OpenWebNet spec range PL = 1–15).",
+            "interface": "Optional F422 local-bus interface (#4#01–#4#09 or #4#11–#4#15) when routing to a local bus.",
+            "where": "Optional power-user override (e.g. 31, 08, 0812, 0012, 1008, or 31#4#01). When filled, overrides A, PL, and Interface.",
+            "entity_id": "Source Home Assistant cover entity (optional if custom actions are configured below).",
+            "attribute": "Optional attribute such as 'current_position' to mirror shutter positions.",
+            "turn_on_action": "Optional custom action sequence run on incoming bus UP / raise commands.",
+            "turn_off_action": "Optional custom action sequence run on incoming bus DOWN / lower commands."
+          }
+        },
+        "who_4": {
+          "title": "WHO 4 — Temperature Probe (Dimension 0)",
+          "description": "Publish a Home Assistant temperature sensor onto an unused OpenWebNet probe address (zone master probe 1–99, external probe 100–900, or PZZ 101–899; 1–99 required on F461 / bt_termo gateways).",
+          "data": {
+            "where": "Probe WHERE address",
+            "entity_id": "Source temperature entity",
+            "attribute": "State attribute (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "min_delta": "Minimum delta threshold (optional)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus temperature queries",
+            "value_template": "Value template (Jinja2, optional)"
+          },
+          "data_description": {
+            "where": "Unused zone master probe (1–99, e.g. 50) or probe address (100–900 / 101–899)."
+          }
+        },
+        "who_13": {
+          "title": "WHO 13 — Bus Clock & DST Sync",
+          "description": "Synchronize SCS wall touchscreens and thermostats to Home Assistant's local time, date, and DST.",
+          "data": {
+            "dimension": "Clock dimension",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus clock queries"
+          },
+          "data_description": {
+            "periodic_send": "Leave blank for daily sync (86400 s), set e.g. 3600 for hourly updates, or set 0 for query-only replies."
+          }
+        },
+        "who_18": {
+          "title": "WHO 18 — Energy / Power Meter",
+          "description": "Expose a Home Assistant power (W / kW) or energy (Wh / kWh) sensor onto an unused OpenWebNet meter address (5N or 7N#0 with N = 1–255, i.e. 51–59, 510–599, 5100–5255, or 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
+          "data": {
+            "where": "Meter WHERE address",
+            "dimension": "OpenWebNet energy/power dimension",
+            "entity_id": "Source energy/power entity",
+            "attribute": "State attribute (optional)",
+            "cooldown": "Cooldown (seconds)",
+            "min_delta": "Minimum delta threshold (optional)",
+            "periodic_send": "Periodic broadcast interval (seconds)",
+            "respond_to_read": "Respond to bus meter queries",
+            "value_template": "Value template (Jinja2, optional)"
+          },
+          "data_description": {
+            "where": "Unused meter address in 5N or 7N#0 form (N = 1–255, e.g. 51, 512, 5255, or 71#0)."
           }
         }
       },
       "error": {
         "invalid_who": "Unsupported WHO subsystem (supported: 1, 2, 4, 13, 18).",
+        "area_required": "Select Area (A, 0–10) or enter a raw WHERE override.",
+        "point_required": "Select Point (PL, 1–15) or enter a raw WHERE override.",
+        "invalid_area": "Area (A) must be between 0 and 10.",
+        "invalid_point": "Point (PL) must be between 1 and 15.",
+        "invalid_bus_interface": "Local-bus interface must be 'Main SCS bus', 01–09, or 11–15.",
         "where_required": "A WHERE address is required for this WHO subsystem.",
+        "invalid_where_use_2_digits": "\"{raw}\" uses 4-digit padding, which is only valid when A = 10 or PL = 10–15. For A = {area}, PL = {point}, use \"{suggested}\" (2 digits).",
+        "invalid_where_use_4_digits": "\"{raw}\" uses 3 digits, which is invalid on OpenWebNet. For A = {area}, PL = {point}, use \"{suggested}\" (4 digits with leading zero).",
+        "invalid_where_pl_zero": "\"{raw}\" has PL = 0; Expose enforces the OpenWebNet specification range PL = 1–15 (PL = 0 is the unconfigured default in MyHOME_Suite).",
+        "invalid_where_apl_range": "\"{raw}\" is outside the valid point-to-point range (A = 0–10, PL = 1–15).",
+        "invalid_where_group_or_scope": "Expose requires a point-to-point A / PL address; general ('0'), area ('00', '1'..'9', '100'), and group ('#N') addresses are not allowed.",
+        "invalid_where_interface": "Invalid local-bus interface suffix. Expected #4#01–#4#09 or #4#11–#4#15 (e.g. 88#4#01 or 0812#4#01).",
+        "invalid_where_apl": "Invalid point-to-point WHERE address. Select A (0–10) and PL (1–15) above, or enter a canonical WHERE such as 88, 08, 0812, 0012, 1008, or 88#4#01.",
+        "invalid_where_who4": "Invalid WHO 4 probe WHERE address. Expected zone master probe 1–99 (e.g. 50), external probe 100–900, or PZZ 101–899.",
+        "invalid_where_who18": "Invalid WHO 18 meter WHERE address. Expected 5N or 7N#0 with N = 1–255 (i.e. 51–59, 510–599, 5100–5255, or 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "A source Home Assistant entity (or custom action for WHO 1 / WHO 2) is required.",
         "action_not_supported_for_who": "Custom actions are supported only on WHO 1 (turn on/off and step up/down) and WHO 2 (turn on/off only); clear unsupported actions or change WHO.",
         "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
-        "invalid_expose": "Invalid expose configuration or duplicate WHO/WHERE/dimension binding.",
+        "already_configured": "An exposed binding with this WHO, WHERE, and dimension is already configured on this gateway.",
+        "invalid_expose": "Invalid expose configuration.",
         "who_injection_unsupported": "This gateway firmware does not support injecting frames for the selected WHO subsystem onto the SCS bus (supported on all gateways: WHO 1, 2, 13).",
         "who4_probe_where_unsupported": "This gateway only translates WHO 4 #0 temperature writes on unused zone master addresses 1..99 (e.g. 50); 3-digit probe addresses (100..900) are rejected by firmware."
       },
@@ -654,6 +742,15 @@
     "zone_cool_in_heating_season": {
       "message": "{name} follows the central unit, which is in the heating season: change the season on the central unit"
     },
+    "command_rejected": {
+      "message": "{name}: gateway {gateway} rejected the command ({frame}) with NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name}: the command ({frame}) could not be sent to gateway {gateway}, or the connection was lost before its answer; it may or may not have been executed"
+    },
+    "command_not_confirmed": {
+      "message": "{name}: gateway {gateway} did not confirm the command ({frame}) in time; it may or may not have been executed"
+    },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
     },
@@ -780,6 +877,18 @@
     "scenario_plus_command_invalid": {
       "message": "Could not build scenario plus command for where \"{where}\" and action \"{action}\""
     },
+    "gateway_not_found": {
+      "message": "Gateway \"{gateway}\" not found"
+    },
+    "no_gateway_loaded": {
+      "message": "No MyHOME gateway is set up"
+    },
+    "send_message_invalid_frame": {
+      "message": "\"{message}\" is not a valid OpenWebNet frame; nothing was sent"
+    },
+    "send_message_refused_frame": {
+      "message": "Refusing to send \"{message}\": this frame is blocked as a safety precaution; nothing was sent"
+    },
     "sync_time_unsupported_offset": {
       "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."
     },
@@ -882,6 +991,50 @@
         "18": "18 - Energy management",
         "22": "22 - Sound diffusion (audio matrix)",
         "25": "25 - CEN+ scenarios"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Lighting / Switch / Virtual Actuator",
+        "2": "WHO 2 — Automation / Cover",
+        "4": "WHO 4 — Temperature Probe (Dimension 0)",
+        "13": "WHO 13 — Bus Clock & DST Sync",
+        "18": "WHO 18 — Energy / Power Meter"
+      }
+    },
+    "expose_bus_interface": {
+      "options": {
+        "none": "Main SCS bus (no F422 interface)",
+        "01": "Interface 01 (#4#01)",
+        "02": "Interface 02 (#4#02)",
+        "03": "Interface 03 (#4#03)",
+        "04": "Interface 04 (#4#04)",
+        "05": "Interface 05 (#4#05)",
+        "06": "Interface 06 (#4#06)",
+        "07": "Interface 07 (#4#07)",
+        "08": "Interface 08 (#4#08)",
+        "09": "Interface 09 (#4#09)",
+        "11": "Interface 11 (#4#11)",
+        "12": "Interface 12 (#4#12)",
+        "13": "Interface 13 (#4#13)",
+        "14": "Interface 14 (#4#14)",
+        "15": "Interface 15 (#4#15)"
+      }
+    },
+    "expose_who13_dimension": {
+      "options": {
+        "22": "22 - Time, date & calendar (recommended)",
+        "0": "0 - Time only",
+        "1": "1 - Date only"
+      }
+    },
+    "expose_who18_dimension": {
+      "options": {
+        "113": "113 - Active power (W)",
+        "51": "51 - Total energy (Wh)",
+        "52": "52 - Monthly energy totalizer (Wh)",
+        "53": "53 - Current-month partial energy (Wh)",
+        "54": "54 - Current-day partial energy (Wh)"
       }
     }
   },

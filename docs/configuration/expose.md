@@ -27,30 +27,37 @@ The integration supports two methods for configuring exposed bindings: **UI Conf
 
 ### Method 1: Home Assistant UI (Config Subentries)
 
-In Home Assistant, exposed bindings are configured as **Config Subentries** on your gateway entry:
+In Home Assistant, exposed bindings are configured as **Config Subentries** on your gateway entry using a **2-step `WHO`-tailored wizard** (with zero breaking changes — Home Assistant still stores the exact same canonical `WHERE` string internally):
 
 1. In Home Assistant, navigate to **Settings → Devices & Services → Integrations → MyHOME**.
 2. Click on your gateway card (e.g. `F454`, `067292`, or `MyHomeServer1`).
 3. Scroll down to the **Subentries** section (or click the three dots `⋮` menu in the upper corner).
 4. Click **+ Add exposed entity** (or **Expose entity to SCS bus**).
-5. Complete the setup form:
+5. **Step 1 — Choose `WHO` subsystem**: Select the OpenWebNet domain (`WHO 1`, `WHO 2`, `WHO 4`, `WHO 13`, or `WHO 18`; subsystems whose injection is unsupported by your gateway firmware are hidden automatically) and click **Next**.
+6. **Step 2 — Configure subsystem fields**: Only the fields that apply to the chosen `WHO` are shown:
+   - **`WHO = 1` (Lighting / Switch) & `WHO = 2` (Automation / Cover)**: Pick **`Area (A, 0–10)`** and **`Point (PL, 1–15)`** plus an optional **Local-bus interface (`#4#01–#4#09` or `#4#11–#4#15`)** directly from *MyHOME_Suite* — or leave them blank and paste a canonical **Raw `WHERE` override** (`88`, `08`, `0812`, `0012`, `1008`, `88#4#01`) from Bus Monitor traces. On reconfigure, existing bindings automatically pre-fill `A`, `PL`, and `interface`.
+   - **`WHO = 4` (Temperature Probe)**: Enter a probe `WHERE` address (`1–99` zone master probe, `100–900` external probe, or `101–899` `PZZ`), source entity, and deadband/interval options (`dimension` is fixed to `0`; `WHO 1/2`-only options and custom actions are hidden).
+   - **`WHO = 18` (Energy / Power Meter)**: Enter a meter `WHERE` (`5N` or `7N#0` with `N = 1..255`, i.e. `51..59`, `510..599`, `5100..5255`, or `71#0..79#0`, `710#0..799#0`, `7100#0..7255#0`) and pick an **OpenWebNet energy/power dimension** (`113`, `51–54`) from the dropdown.
+   - **`WHO = 13` (Bus Clock & DST Sync)**: Pick the **Clock dimension** (`22`, `0`, or `1`), broadcast interval (`0` for query-only), and read-response toggle (no `WHERE` or entity required).
 
-| Field | Description | Example |
-| :--- | :--- | :--- |
-| **WHO Subsystem** | The OpenWebNet domain to emulate (`1`, `2`, `4`, `13`, or `18`). | `WHO 1 — Lighting / Switch / Virtual Actuator` |
-| **WHERE Address** | Unused SCS address assigned to the button/tile in **MyHOME_Suite**. *(Omit for WHO 13)* | `25` or `83` |
-| **Source Entity** *(Optional on WHO 1/2 if custom actions are set)* | The Home Assistant entity providing state and commands. | `light.hue_living_room` |
-| **State Attribute** *(Optional)* | Entity attribute providing the value (`brightness` for `WHO = 1` dimmers; `current_position` for `WHO = 2` covers). | `brightness` |
-| **OpenWebNet Dimension** *(Optional)* | Dimension selector (`0` for temperature; `51..54` / `113` for energy/power; `0`, `1`, `22` for clock). *(Not used for WHO 1 or WHO 2)* | `0` |
-| **Cooldown** *(Optional)* | Rate-limiting debounce window in seconds (default: `1.0` s). | `1.0` |
-| **Minimum Delta** *(Optional)* | Deadband threshold; changes smaller than this value are not sent. | `0.5` |
-| **Periodic Broadcast Interval** *(Optional)* | Interval in seconds for recurring heartbeat broadcasts. | `60` |
-| **Respond to Bus Queries** | Reply to incoming `*#WHO*WHERE...##` status and dimension read requests (default: `true`). | `true` |
-| **Bidirectional** | Act on incoming `WHO = 1` / `WHO = 2` bus commands and wall-switch presses (default: `true`). | `true` |
-| **Brightness Step (%)** | Relative step size (`1..100%`) applied per `WHO = 1` dimmer step-up / step-down command (default: `10%`). | `25` |
-| **Custom 'On' States** *(Optional)* | Comma-separated list of states considered ON (e.g. `on, playing, open`). | `on, playing` |
-| **Value Template** *(Optional)* | Jinja2 template to extract or transform values before publishing. | `{{ value \| round(1) }}` |
-| **Turn-on / Turn-off / Step-up / Step-down Actions** *(Optional)* | Visual Home Assistant action sequences overriding default entity service calls (`turn_on` / `turn_off` for `WHO = 1` & `WHO = 2`; `step_up` / `step_down` for `WHO = 1`; hidden for `WHO = 4`, `13`, and `18`). | `media_player.volume_up` |
+| Field | Applies to | Description | Example |
+| :--- | :--- | :--- | :--- |
+| **WHO Subsystem** *(Step 1)* | All | The OpenWebNet domain to emulate (`1`, `2`, `4`, `13`, or `18`). | `WHO 1 — Lighting / Switch / Virtual Actuator` |
+| **Area (`A`, `0–10`) & Point (`PL`, `1–15`)** | `WHO = 1, 2` | *MyHOME_Suite* area and point selectors; automatically encoded to canonical `WHERE` on save. | `A = 8, PL = 12` → `0812` |
+| **Local-bus Interface** *(Optional)* | `WHO = 1, 2` | Optional F422 routing interface (`Main SCS bus`, `01–09`, or `11–15` → `#4#01`..`#4#09`, `#4#11`..`#4#15`). | `01` → `#4#01` |
+| **Raw `WHERE` Override** *(Optional on `1, 2`; required on `4, 18`)* | `WHO = 1, 2, 4, 18` | Canonical OpenWebNet `WHERE` string; when entered on `WHO = 1 / 2`, overrides `A` / `PL` / interface. *(Omitted on `WHO = 13`)* | `88`, `0812#4#01`, `50`, `51` |
+| **Source Entity** *(Optional on `1, 2` with actions)* | `WHO = 1, 2, 4, 18` | The Home Assistant entity providing state and commands. | `light.hue_living_room` |
+| **State Attribute** *(Optional)* | `WHO = 1, 2, 4, 18` | Entity attribute providing the value (`brightness` for `WHO = 1` dimmers; `current_position` for `WHO = 2` covers). | `brightness` |
+| **OpenWebNet Dimension** | `WHO = 13, 18` | Dropdown selector (`22`, `0`, `1` for clock; `113`, `51..54` for power/energy). *(Fixed to `0` on `WHO = 4`; hidden on `1, 2`)* | `113` |
+| **Cooldown** *(Optional)* | `WHO = 1, 2, 4, 18` | Rate-limiting debounce window in seconds (default: `1.0` s). | `1.0` |
+| **Minimum Delta** *(Optional)* | `WHO = 4, 18` | Deadband threshold; changes smaller than this value are not sent. | `0.5` |
+| **Periodic Broadcast Interval** *(Optional)* | All | Interval in seconds for recurring heartbeat broadcasts (`0` disables proactive clock sync on `WHO = 13`). | `60` |
+| **Respond to Bus Queries** | All | Reply to incoming `*#WHO*WHERE...##` status and dimension read requests (default: `true`). | `true` |
+| **Bidirectional** | `WHO = 1, 2` | Act on incoming `WHO = 1` / `WHO = 2` bus commands and wall-switch presses (default: `true`). | `true` |
+| **Brightness Step (%)** | `WHO = 1` | Relative step size (`1..100%`) applied per `WHO = 1` dimmer step-up / step-down command (default: `10%`). | `25` |
+| **Custom 'On' States** *(Optional)* | `WHO = 1` | Comma-separated list of states considered ON (e.g. `on, playing, open`). | `on, playing` |
+| **Value Template** *(Optional)* | `WHO = 1, 2, 4, 18` | Jinja2 template to extract or transform values before publishing. | `{{ value \| round(1) }}` |
+| **Turn-on / Turn-off / Step-up / Step-down Actions** *(Optional)* | `WHO = 1, 2` | Visual Home Assistant action sequences overriding default entity service calls (`turn_on` / `turn_off` for `WHO = 1` & `WHO = 2`; `step_up` / `step_down` for `WHO = 1`). | `media_player.volume_up` |
 
 Click **Submit**. The binding activates immediately without requiring a Home Assistant restart.
 
@@ -135,6 +142,29 @@ You can also define exposed bindings in `/config/myhome.yaml` under your gateway
       periodic_send: 3600
       respond_to_read: true
 ```
+
+---
+
+## 🔢 OpenWebNet Addressing Reference (`A` / `PL` → `WHERE`)
+
+When configuring `WHO = 1` (Lighting / Switch) or `WHO = 2` (Automation / Cover) in **MyHOME_Suite** (`Object 400` / `401`) or on physical configurators, point-to-point addresses consist of **`A` (Area / Ambiente, `0–10`)** and **`PL` (Point / Punto Luce, `1–15`)** *(note: Expose enforces the published OpenWebNet point-to-point range `PL = 1–15`; `PL = 0` is the unconfigured default in MyHOME_Suite)*.
+
+On the OpenWebNet wire and in `myhome.yaml` (`where:`), leading zeros are **not** uniformly 2-digit or 4-digit — they depend on whether either half has two digits:
+
+| `A` (`0–10`) | `PL` (`1–15`) | Canonical `WHERE` | Example | Common Mistake (Rejected) |
+| :---: | :---: | :---: | :---: | :--- |
+| `1–9` | `1–9` | **2 digits** (`APL`) | `A = 8, PL = 8` → **`88`** | `0808` *(4-digit `01..09` is valid only when `PL = 10–15`)* |
+| `0` | `1–9` | **2 digits** (`0PL`) | `A = 0, PL = 8` → **`08`** | `8` / `008` *(area `8` / 3-digit; note: legacy `0008` is auto-normalized to `08`)* |
+| `1–9` | `10–15` | **4 digits** (`0APL`) | `A = 8, PL = 12` → **`0812`** | `812` *(3-digit strings are invalid)* |
+| `0` | `10–15` | **4 digits** (`00PL`) | `A = 0, PL = 12` → **`0012`** | `012` / `12` |
+| `10` | `1–9` | **4 digits** (`100PL`) | `A = 10, PL = 8` → **`1008`** | `108` |
+| `10` | `10–15` | **4 digits** (`10PL`) | `A = 10, PL = 12` → **`1012`** | `001012` |
+
+- **Optional local-bus routing (`F422` interface)**: Append `#4#01`..`#4#09` or `#4#11`..`#4#15` (for example `88#4#01` or `0812#4#01`), or pick the interface in the UI **Local-bus interface** dropdown.
+- **Non-`A/PL` subsystems**:
+  - **`WHO = 4` (Temperature Probe)**: Zone master probe `1–99` (required on `F461` / `bt_termo`), external probe `100–900`, or individual probe `PZZ` (`101–899`).
+  - **`WHO = 18` (Energy / Power Meter)**: Meter address `5N` or `7N#0` with `N = 1..255` (i.e. `51..59`, `510..599`, `5100..5255`, or `71#0..79#0`, `710#0..799#0`, `7100#0..7255#0`).
+  - **`WHO = 13` (Bus Clock)**: Bus-wide broadcast; no `WHERE` address is used.
 
 ---
 
@@ -285,4 +315,5 @@ Different gateway models handle bus frame injection differently:
 
 - **Check Active Bindings**: Open **Settings → Devices & Services → MyHOME → Download Diagnostics**. The JSON file contains an `"expose"` section detailing all active bindings, throttles, and last-sent timestamps.
 - **Unsupported / Unverified Gateway Warning**: The UI Config Subentry flow hides `WHO = 4` and `WHO = 18` on gateways whose firmware cannot inject them onto the SCS bus, and rejects 3-digit `WHO = 4` probe addresses (`100..900`) on `#0`-only gateways (`F461`). If a legacy YAML or pre-existing binding targets an unsupported gateway or address, a single warning is logged at startup (*"Expose WHO=... is disabled: gateway ... Nothing is sent for this binding"*).
-- **Duplicate Address Error (`invalid_expose`)**: Each `(who, where, dimension)` triplet must be unique per gateway.
+- **Field-Level `WHERE` Validation Hints**: Both the UI raw `WHERE` override field and `myhome.yaml` report specific corrective hints for common `A` / `PL` mistakes (e.g. `0808` suggests `88`, `812` suggests `0812`, `108` suggests `1008`, and `PL = 0` explains that point addresses start at `1`).
+- **Duplicate Address Error (`already_configured`)**: Each `(who, where, dimension)` triplet must be unique per gateway.

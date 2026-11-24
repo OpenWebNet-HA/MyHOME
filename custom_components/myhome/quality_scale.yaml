@@ -13,7 +13,7 @@ rules:
     comment: Services are registered once in async_setup (services.py) and stay registered regardless of config entry state.
   appropriate-polling:
     status: done
-    comment: local_push; only temperature sensors poll (5 min) and probes (WHERE >= 100) are receive-only unless the push stream goes silent.
+    comment: local_push; only explicit temperature sensors poll (5 min), probes (WHERE >= 100) are receive-only unless the push stream goes silent, and climate companion temperature/humidity sensors are strictly passive (should_poll = False).
   brands:
     status: done
     comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, dark_icon.png, dark_icon@2x.png, logo.png, logo@2x.png, dark_logo.png, dark_logo@2x.png) for HA 2026.8+, Home Assistant Marketplace (2026.11+), and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
@@ -72,7 +72,7 @@ rules:
   # 🥈 Silver
   action-exceptions:
     status: done
-    comment: Handled in services.py with parameter validation and robust logging.
+    comment: services.py validates parameters with closed schemas and raises translated ServiceValidationError when nothing can be sent (send_message - empty, unparsable or refused frame; send_message / sync_time / send_scenario_plus_command - unknown gateway or no gateway set up; sync_time - half-hour time zone). A frame that was queued and is NACKed by the gateway afterwards is logged, not raised, by these actions, and diagnostic sweep_bus logs and returns when no matching gateway is loaded.
   config-entry-unloading:
     status: done
     comment: async_unload_entry unloads platforms via async_unload_platforms and closes the gateway sessions; listeners are registered with entry.async_on_unload.
@@ -143,7 +143,7 @@ rules:
     comment: Audited in tests/test_entity_audit.py - lock/unlock and calibration buttons, binary-sensor invert switches, and native-cover minimum position step numbers are EntityCategory.CONFIG; every other entity is a primary control or measurement and carries no category (there are no diagnostic entities).
   entity-device-class:
     status: done
-    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet; config invert switch has none), cover (shutter), binary sensors, sensors (power/energy/temperature/illuminance), media player (speaker), and tuner frequency number (frequency; cover minimum position step config number has none) declare device classes; light, climate, button and alarm panel have none applicable.
+    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet; config invert switch has none), cover (shutter), binary sensors, sensors (power/energy/temperature/humidity/illuminance; proportional actuator output level has none applicable), media player (speaker), and tuner frequency number (frequency; cover minimum position step config number has none) declare device classes; light, climate, button and alarm panel have none applicable.
   entity-disabled-by-default:
     status: done
     comment: Audited in tests/test_entity_audit.py - the daily and monthly energy counters are disabled by default; all other entities are primary controls and stay enabled.

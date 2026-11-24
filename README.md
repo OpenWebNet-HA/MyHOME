@@ -131,7 +131,7 @@ Upgrading from the previous stable release? Follow the [upgrade guide](https://o
 | **`climate`** | WHO=4 | Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, 0–10 V proportional actuator output levels (`0..100 %`), offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation |
 | **`alarm_control_panel`** | WHO=5 | Central units (3485/3486), read-only state (disarmed / armed away / triggered), zone 0 broadcast sync; arm/disarm via AUX frames ([docs](docs/configuration/alarm.md)) |
 | **`binary_sensor`** | WHO=1 / 9 / 25 | Magnetic contacts, door/window sensors, PIR motion, AUX channels (1–9), dry contacts (F482/3477), inverted contacts |
-| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), 0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), illuminance / lux sensors |
+| **`sensor`** | WHO=1 / 4 / 18 | Power meters, energy counters (total/daily/monthly), temperature probes (3475), passive climate zone companion temperature & dynamic humidity sensors (WHO=4 Dimension 0 / 60), 0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), illuminance / lux sensors |
 | **`button`** | WHO=14 / 2 / 16 / 22 | Hardware actuator lock/unlock for lights, switches & covers (WHO=14), cover travel time calibration buttons (per cover & gateway-wide, WHO=2), F500/F500N FM tuner Seek up / Seek down buttons (WHO=16 / 22) |
 | **`number`** | WHO=2 / 16 / 22 | Native cover minimum position step (`1–5 %`, `EntityCategory.CONFIG`, WHO=2), direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) for declared F500/F500N tuner sources (WHO=16 / 22) |
 | **`media_player`** | WHO=16 / 22 | F441/F441M audio zones, F500/F500N FM radio tuners (presets, RDS, Media Browser, manual frequency & preset storage on WHO=16 & WHO=22), volume normalization, software mute, streaming dynamic proxy (Music Assistant / Spotify Connect) |
@@ -152,11 +152,11 @@ Upgrading from the previous stable release? Follow the [upgrade guide](https://o
 | **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |  | ✅ |  |
 | **F455** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
 | **F459** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
-| **F461** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ | ✅ |  |  |  |  |  |  | ✅ |  | ✅ |  |
+| **F461** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ | ✅ |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
 | **H4684 / H/L4684** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ | ✅ |  |  |
 | **H4890 / AM4890** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |  |
 | **MH200** |  | ✅ | ✅ |  |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |
-| **MH200N** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ |
+| **MH200N** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  | ✅ | ✅ |
 | **MH201** | ✅ | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  | ✅ |  |  | ✅ |  | ✅ |  |  |  |  |
 | **MH202** |  | ✅ | ✅ |  | ✅ | ✅ | ✅ |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  | ✅ | ✅ | ✅ |  |  | ✅ |  |
 | **MyHomeServer1** |  | ✅ | ✅ |  | ✅ |  |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ | ✅ | ✅ |  | ✅ |  |
@@ -224,6 +224,7 @@ The integration maintains 7038 automated unit tests (100% line coverage across a
 | [`button.py`](custom_components/myhome/button.py) | **100%** | WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek |
 | [`climate.py`](custom_components/myhome/climate.py) | **100%** | WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync |
 | [`climate_discovery.py`](custom_components/myhome/climate_discovery.py) | **100%** | WHO=4 zone discovery: registry, myhome.yaml and bus frames, held actuator-only frames (#785), and the thermostat reads at start |
+| [`command_delivery.py`](custom_components/myhome/command_delivery.py) | **100%** | Delivery confirmation for entity actions: translated errors on gateway NACK, lost or unconfirmed commands |
 | [`config_flow.py`](custom_components/myhome/config_flow.py) | **100%** | Gateway onboarding, manual/SSDP setup, and subentry flow registration |
 | [`config_flow_audio.py`](custom_components/myhome/config_flow_audio.py) | **100%** | Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options |
 | [`config_flow_discovery.py`](custom_components/myhome/config_flow_discovery.py) | **100%** | SSDP discovery, connection probing, reauthentication, and reconfiguration steps |

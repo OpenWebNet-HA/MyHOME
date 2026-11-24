@@ -197,10 +197,17 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "bus_interface_from_message",
+    "canonical_contact_where",
+    "canonical_point_address",
+    "canonical_point_spelling",
     "canonical_thermo_zone",
     "central_report_zone",
     "central_unit_season",
     "central_unit_where",
+    "contact_where_aliases",
+    "diagnose_apl_where",
+    "encode_apl_where",
     "expose_message_where",
     "four_zone_central_where",
     "is_actuator_where",
@@ -216,6 +223,8 @@ __all__ = [
     "is_valid_rgb_tuple",
     "normalize_expose_where",
     "normalize_where",
+    "padded_contact_where",
+    "parse_apl_where",
     "parse_thermo_actuator_where",
     "thermo_dim19_status",
     "thermo_dim20_actuator_target",
@@ -226,6 +235,7 @@ __all__ = [
     "thermo_event_interface",
     "thermo_event_zone",
     "thermo_output_level",
+    "thermo_zone_sensor_target",
     "validate_standalone_zones",
     "validate_thermo_trigger_command",
     "where_param",
@@ -328,6 +338,11 @@ def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
     return sorted(zones, key=int), True
 
 
+def _is_ascii_uint(value: str) -> bool:
+    """Return True when ``value`` consists solely of ASCII decimal digits."""
+    return bool(value) and value.isascii() and value.isdigit()
+
+
 def is_probe(where: str) -> bool:
     """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
 
@@ -336,12 +351,37 @@ def is_probe(where: str) -> bool:
     not a probe but the group of all probes in zone ``ZZ``.
     """
     bare = where.removeprefix("4-").removeprefix("#")
-    return bare.isdigit() and int(bare) >= 100
+    return _is_ascii_uint(bare) and int(bare) >= 100
 
 
 def where_param(message: Any) -> list[str]:
     """The ``#``-separated tail of a frame's WHERE, however the OWNd version names it."""
     return getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
+
+
+def bus_interface_from_message(message: Any) -> tuple[bool, str | None]:
+    """Extract optional F422 ``#4#II`` interface (``00``..``15``) or reject foreign ``where_param``."""
+    iface_attr = getattr(message, "interface", None)
+    raw_iface = iface_attr if isinstance(iface_attr, str) and iface_attr else None
+    raw_params = where_param(message)
+    params = [str(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
+    if raw_iface is not None:
+        if params and not (len(params) == 2 and params[0] == "4"):
+            return False, None
+        if _is_ascii_uint(raw_iface) and 1 <= len(raw_iface) <= 2 and int(raw_iface) <= 15:
+            return True, raw_iface.zfill(2)
+        return False, None
+    if not params:
+        return True, None
+    if (
+        len(params) == 2
+        and params[0] == "4"
+        and _is_ascii_uint(params[1])
+        and 1 <= len(params[1]) <= 2
+        and int(params[1]) <= 15
+    ):
+        return True, params[1].zfill(2)
+    return False, None
 
 
 def is_external_probe(where: str) -> bool:
@@ -536,7 +576,7 @@ def canonical_point_spelling(where: str) -> str:
     The pure rewrite behind :func:`canonical_point_where`, for stored spellings
     (registry ids, entry options) that nobody typed in myhome.yaml.
     """
-    if len(where) == 4 and where.isdigit() and where[:3] == "000" and where[3] != "0":
+    if len(where) == 4 and _is_ascii_uint(where) and where[:3] == "000" and where[3] != "0":
         return f"{where[1]}{where[3]}"
     return where
 
@@ -545,6 +585,193 @@ def canonical_point_address(address: str) -> str:
     """:func:`canonical_point_spelling` of the WHERE before an optional ``#4#II`` suffix."""
     base, sep, rest = address.partition("#")
     return f"{canonical_point_spelling(base)}{sep}{rest}"
+
+
+_LOCAL_BUS_SUFFIX_RE = re.compile(r"4#(0[1-9]|1[1-5])", re.ASCII)
+_GROUP_SCOPE_WHERE_RE = re.compile(
+    r"#[1-9]\d*(?:#(?:3|4#(?:0[1-9]|1[1-5])))?", re.ASCII
+)
+
+
+def encode_apl_where(
+    area: int, point: int, interface: str | int | None = None
+) -> str:
+    """Encode ``(area, point, interface)`` into canonical OpenWebNet ``WHERE``.
+
+    Uses 2-digit ``APL`` when ``0 <= A <= 9`` and ``1 <= PL <= 9`` (e.g. ``88``,
+    ``08``), and 4-digit zero-padded ``AAPL`` whenever ``A == 10`` or ``PL >= 10``
+    (e.g. ``0812``, ``0012``, ``1008``, ``1012``), optionally followed by
+    ``#4#01``..``#4#09`` or ``#4#11``..``#4#15`` for an F422 local-bus interface.
+    """
+    if isinstance(area, bool) or not isinstance(area, int) or not (0 <= area <= 10):
+        raise ValueError(f"Area A must be an integer in 0..10 (got {area!r})")
+    if isinstance(point, bool) or not isinstance(point, int) or not (1 <= point <= 15):
+        raise ValueError(f"Point PL must be an integer in 1..15 (got {point!r})")
+
+    if area == 10 or point >= 10:
+        base = f"{area:02d}{point:02d}"
+    else:
+        base = f"{area}{point}"
+
+    if interface is None or (isinstance(interface, str) and interface.strip() == ""):
+        return base
+    if isinstance(interface, bool):
+        raise ValueError(f"Invalid local-bus interface: {interface!r}")
+    if isinstance(interface, int):
+        iface_int = interface
+    elif isinstance(interface, str):
+        iface_str = interface.strip()
+        if not (_is_ascii_uint(iface_str) and 1 <= len(iface_str) <= 2):
+            raise ValueError(f"Invalid local-bus interface: {interface!r}")
+        iface_int = int(iface_str)
+    else:
+        raise ValueError(f"Invalid local-bus interface: {interface!r}")
+    if not (1 <= iface_int <= 9 or 11 <= iface_int <= 15):
+        raise ValueError(
+            f"Local-bus interface must be 01..09 or 11..15 (got {interface!r})"
+        )
+    return f"{base}#4#{iface_int:02d}"
+
+
+def parse_apl_where(where: str | None) -> tuple[int, int, str | None] | None:
+    """Parse a point-to-point ``WHO = 1`` / ``WHO = 2`` ``WHERE`` into ``(A, PL, interface)``."""
+    if not isinstance(where, str):
+        return None
+    raw = where.strip()
+    if not raw or not raw.isascii() or raw.startswith("#"):
+        return None
+    base, sep, suffix = raw.partition("#")
+    if sep:
+        if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
+            return None
+        iface: str | None = suffix[2:]
+    else:
+        iface = None
+    if not is_apl_address(base):
+        return None
+    if len(base) == 2:
+        return (int(base[0]), int(base[1]), iface)
+    return (int(base[:2]), int(base[2:]), iface)
+
+
+def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
+    """Return ``(error_key, placeholders)`` for an invalid ``WHO = 1`` / ``2`` point ``WHERE``.
+
+    Returns ``None`` for valid point-to-point strings (including ``0001..0009``, which
+    auto-normalize to ``01..09``) or empty strings.
+    """
+    raw = raw_where.strip()
+    if not raw or parse_apl_where(raw) is not None:
+        return None
+    if _GROUP_SCOPE_WHERE_RE.fullmatch(raw):
+        return ("invalid_where_group_or_scope", {})
+    if raw.startswith("#"):
+        return ("invalid_where_apl", {})
+
+    base, sep, suffix = raw.partition("#")
+    if not _is_ascii_uint(base):
+        return ("invalid_where_apl", {})
+    if sep:
+        if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
+            return ("invalid_where_interface", {})
+        iface: str | None = suffix[2:]
+    else:
+        iface = None
+    if base in ("0", "00", "100") or len(base) == 1:
+        return ("invalid_where_group_or_scope", {})
+
+    if len(base) == 2:
+        return ("invalid_where_pl_zero", {"raw": raw})
+
+    if len(base) == 4:
+        a = int(base[:2])
+        pl = int(base[2:])
+        if 0 <= a <= 10 and pl == 0:
+            return ("invalid_where_pl_zero", {"raw": raw})
+        if 1 <= a <= 9 and 1 <= pl <= 9:
+            suggested = encode_apl_where(a, pl, iface)
+            return (
+                "invalid_where_use_2_digits",
+                {"raw": raw, "suggested": suggested, "area": str(a), "point": str(pl)},
+            )
+        return ("invalid_where_apl_range", {"raw": raw})
+
+    if len(base) == 3:
+        if base.startswith("10") and 1 <= int(base[2]) <= 9:
+            a, pl = 10, int(base[2])
+            suggested = encode_apl_where(a, pl, iface)
+            return (
+                "invalid_where_use_4_digits",
+                {"raw": raw, "suggested": suggested, "area": str(a), "point": str(pl)},
+            )
+        if 0 <= int(base[0]) <= 9 and 10 <= int(base[1:]) <= 15:
+            a, pl = int(base[0]), int(base[1:])
+            suggested = encode_apl_where(a, pl, iface)
+            return (
+                "invalid_where_use_4_digits",
+                {"raw": raw, "suggested": suggested, "area": str(a), "point": str(pl)},
+            )
+        return ("invalid_where_apl", {})
+
+    return ("invalid_where_apl", {})
+
+
+# A WHO 25 dry contact is ``3`` + its number, [1-201] for the automation interface and Z N
+# ([1-9][1-9]) for the alarm / IR one (WHO 25 PDF, WHERE table), so no published WHERE has a
+# ``0`` right after the ``3``. An F455 1.0.76 writes contacts 1 and 2 as ``301`` / ``302`` where
+# an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
+# ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
+# that one padding zero in front of a single digit was captured, so only that is rewritten.
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+_SHORT_CONTACT_RE = re.compile(r"^3([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+
+
+def canonical_contact_where(where: str) -> str:
+    """``301`` -> ``31`` (WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given.
+
+    The spelling of the WHO 25 PDF examples (``*25*31#1*31##`` is contact 1) and of every other
+    gateway with a capture (F454, MH200N, MH202: ``31``, ``33``). Both gateways put either
+    spelling of the status request on the bus, but an F461 2.0.11 answered the padded request
+    ``*#25*301##`` on its command session with NACK (four reads of four, the contact's answer
+    ``*25*31#0*31##`` was on the bus) and acknowledged ``*#25*31##``; requests are therefore
+    written with this spelling, and an entity keeps the unique id it was created with.
+    """
+    match = _PADDED_CONTACT_RE.match(str(where))
+    return f"3{match[1]}{match[2]}" if match else str(where)
+
+
+def padded_contact_where(where: str) -> str:
+    """``31`` -> ``301`` (F455 padded WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given."""
+    match = _SHORT_CONTACT_RE.match(str(where))
+    return f"30{match[1]}{match[2]}" if match else str(where)
+
+
+def contact_where_aliases(where: str) -> list[str]:
+    """Return both short and F455-padded spellings for a WHO 25 contact, normalizing leading zeros and ``#4#I``."""
+    text = str(where)
+    base, sep, iface = text.partition("#4#")
+    clean_base = base.lstrip("0") or "0" if _is_ascii_uint(base) else base
+    valid_iface = bool(sep and _is_ascii_uint(iface) and 1 <= len(iface) <= 2 and int(iface) <= 15)
+    clean_iface = iface.zfill(2) if valid_iface else iface
+    normalized = f"{clean_base}#4#{clean_iface}" if sep else clean_base
+    candidates = [
+        text,
+        normalized,
+        canonical_contact_where(text),
+        padded_contact_where(text),
+        canonical_contact_where(normalized),
+        padded_contact_where(normalized),
+    ]
+    if valid_iface:
+        short_routed = f"{clean_base}#4#{int(iface)}"
+        candidates.extend(
+            (
+                short_routed,
+                canonical_contact_where(short_routed),
+                padded_contact_where(short_routed),
+            )
+        )
+    return list(dict.fromkeys(candidates))
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:
@@ -562,6 +789,8 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
         # OWNd keeps `0004` as typed (OWNd#123); the gateways only accept and
         # report an area-0 point in two digits, so the MyHOME boundary spells
         # it `04` (#147). Silent: the yaml / UI value is validated elsewhere.
+        if not raw.isascii():
+            return raw
         return canonical_point_address(normalize_where(raw) or raw)
     return raw
 
@@ -731,17 +960,55 @@ def thermo_event_zone(message: Any) -> str | None:
     return None
 
 
+def thermo_zone_sensor_target(message: Any) -> tuple[str, str | None] | None:
+    """Return ``(zone, interface)`` for a point WHO=4 zone temperature/humidity report, else ``None``.
+
+    Accepts bare zone master-probe addresses ``Z`` (``1 <= Z <= 99``, 1-2 digits) and
+    F422-routed zone addresses ``Z#4#II`` (``00 <= II <= 15``) on non-write frames.
+    Rejects ``#DIM`` writes (``is_dimension_writing``), central-unit addresses
+    (``#0``, ``#0#C``, ``#Z``), all-probes-in-zone selectors (``001..099``),
+    actuator/split addresses (``Z#N``, ``Z#N#4#II``, ``3#Z#N``), pumps (``0#N``),
+    and standalone probes (``>= 100``).
+    """
+    raw_where = getattr(message, "where", None)
+    where_str = str(raw_where).strip().removeprefix("4-") if raw_where is not None else ""
+    if (
+        getattr(message, "is_dimension_writing", False) is True
+        or is_central_thermo_where(message)
+        or (
+            where_str != ""
+            and (len(where_str.split("#", 1)[0]) > 2 or is_actuator_where(where_str))
+        )
+        or (zone := thermo_event_zone(message)) is None
+    ):
+        return None
+    wp = where_param(message)
+    if not wp:
+        iface = thermo_event_interface(message)
+        return (
+            (zone, f"{int(iface):02d}")
+            if iface is not None and _is_ascii_uint(iface) and int(iface) <= 15
+            else (zone, None)
+            if iface is None
+            else None
+        )
+    if (
+        len(wp) == 2
+        and str(wp[0]) == "4"
+        and (iface := thermo_event_interface(message)) is not None
+        and _is_ascii_uint(iface)
+        and int(iface) <= 15
+    ):
+        return (zone, f"{int(iface):02d}")
+    return None
+
+
 def thermo_event_actuator(message: Any) -> str:
     """Return actuator id ``"0"``..``"9"`` (default ``"1"``) of a WHO=4 Dimension 20 frame."""
     act = getattr(message, "actuator", None)
     if act is not None and str(act).isdigit():
         return str(int(str(act)))
     return "1"
-
-
-def _is_ascii_uint(value: str) -> bool:
-    """Return True when ``value`` consists solely of ASCII decimal digits."""
-    return bool(value) and value.isascii() and value.isdigit()
 
 
 def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:

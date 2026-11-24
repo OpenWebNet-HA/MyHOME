@@ -110,7 +110,7 @@ Before upgrading, review these key architectural changes:
     - If a gateway's configured hardware `model` is contradicted by live `WHO = 13` device-type frames, v2 raises a `gateway_identity_mismatch` / `gateway_identity_corrected` **Repair Issue** (resolved under **Settings → Devices & Services → MyHOME → Configure**).
 
 ### 2. MyHomeServer1 Session Concurrency & Pacing (`#397`)
-* **Change**: `MyHomeServer1` firmware supports up to **4** concurrent command sessions (`default = 2` command workers, `max = 4`, with a **`20 ms`** inter-frame delay). v2 enforces profile-specific worker caps and ticket-ordered FIFO queue pacing so `MyHomeServer1` stays responsive alongside the mobile app without exhausting its socket pool.
+* **Change**: `MyHomeServer1` firmware supports up to **4** concurrent command sessions (`default = 2` command workers, `max = 4`, with a **`20 ms`** inter-frame delay). v2 enforces profile-specific worker caps and per-cover ordering of overlapping frames (see [runtime behaviour](../configuration/runtime_behaviour.md)) so `MyHomeServer1` stays responsive alongside the mobile app without exhausting its socket pool.
 
 ### 3. Core & Python Requirements
 * **Change**: v2 requires Home Assistant Core ≥ 2026.8 running on Python 3.14+ (or compatible container). Legacy Python 3.11 environments cannot import the modern async core.

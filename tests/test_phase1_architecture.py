@@ -142,14 +142,27 @@ class TestGatewayProfiles:
         assert profile.max_queue_size == 100
         assert profile.command_queue_delay == 0.15
         assert profile.supports_audio is _OWND_MH200N_HAS_SOUND
-        assert profile.supports_energy_instant_power is False
+        # OWNd 184: the MH200N carries WHO 18 and reports instant power (issue_466 captures)
+        assert profile.supports_energy_instant_power is True
         # OWNd releases up to 2.0.0b8 omit WHO 16 from MH200N; OWNd#63 enables it
         assert profile.supports_who(WHO_LIGHTING) is True
         assert profile.supports_who(WHO_AUTOMATION) is True
         assert profile.supports_who(WHO_SOUND) is _OWND_MH200N_HAS_SOUND
-        assert profile.supports_who(WHO_ENERGY) is False
+        assert profile.supports_who(WHO_ENERGY) is True
         assert profile.can_support_workers(1) is True
         assert profile.can_support_workers(2) is False
+
+        # Catalogue aliases 003565 / 03565 resolve to MH200NProfile with WHO 18 + instant power;
+        # MH200 (020102, bt_energia WHO 3 only) keeps WHO 18 and instant power disabled (OWNd#184).
+        for alias in ("003565", "03565"):
+            aliased = get_gateway_profile(alias)
+            assert isinstance(aliased, MH200NProfile)
+            assert aliased.supports_who(WHO_ENERGY) is True
+            assert aliased.supports_energy_instant_power is True
+
+        mh200 = get_gateway_profile("MH200")
+        assert mh200.supports_who(WHO_ENERGY) is False
+        assert mh200.supports_energy_instant_power is False
 
     def test_mh202_profile(self):
         profile = MH202Profile()

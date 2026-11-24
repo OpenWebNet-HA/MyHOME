@@ -219,7 +219,7 @@ class Group(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
+        if isinstance(v, str) and v.startswith("#") and v[1:].isascii() and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
             return f"#{int(v[1:])}"
         else:
             raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
@@ -261,7 +261,7 @@ class PointToPoint:
         self.canonical = canonical
 
     def __call__(self, v: typing.Any) -> typing.Any:
-        if isinstance(v, str) and v.isdigit():
+        if isinstance(v, str) and v.isascii() and v.isdigit():
             _length = len(v)
             if _length == 2 or _length == 4:
                 _a = v[0 : _length // 2]
@@ -284,7 +284,7 @@ class SpecialWhere(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.isdigit():
+        if isinstance(v, str) and v.isascii() and v.isdigit():
             return v
         else:
             raise Invalid(f"Invalid WHERE {v}, it must be a string of digits.")
@@ -301,7 +301,7 @@ class BusInterface(object):
         if v is None:
             return v
         # ``interface: 3`` and an unquoted ``interface: 03`` both reach here as "3"
-        if isinstance(v, str) and v.isdigit() and 1 <= len(v) <= 2:
+        if isinstance(v, str) and v.isascii() and v.isdigit() and 1 <= len(v) <= 2:
             if int(v) > 15:
                 raise Invalid(f"Invalid Bus Interface number {v}, it must be between 00 and 15.")
             return v.zfill(2)
@@ -785,11 +785,44 @@ def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any
     return device
 
 
+def _validate_binary_sensor_entry(device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate binary sensor WHERE, optional F422 bus routing, and WHO=1 canonical point."""
+    who = str(device.get(CONF_WHO, "25"))
+    device[CONF_WHO] = who
+    raw_where = str(device[CONF_WHERE])
+    inline_iface: str | None = None
+    if BUS_ROUTING in raw_where:
+        base, _, tail = raw_where.partition(BUS_ROUTING)
+        if not base or "#" in base or "#" in tail:
+            raise Invalid(
+                f"Invalid WHERE {raw_where}, it must be '<digits>' or '<digits>#4#<interface>'."
+            )
+        raw_where = SpecialWhere()(base)  # type: ignore[no-untyped-call]
+        inline_iface = BusInterface()(tail)  # type: ignore[no-untyped-call]
+    else:
+        raw_where = SpecialWhere()(raw_where)  # type: ignore[no-untyped-call]
+
+    explicit_iface = device.get(CONF_BUS_INTERFACE)
+    if inline_iface is not None:
+        if explicit_iface is not None and explicit_iface != inline_iface:
+            raise Invalid(
+                f"Conflicting bus interface between where '{device[CONF_WHERE]}' and interface '{explicit_iface}'."
+            )
+        device[CONF_BUS_INTERFACE] = inline_iface
+
+    if who == "9" and device.get(CONF_BUS_INTERFACE) is not None:
+        raise Invalid("WHO=9 auxiliary channels do not support bus interface routing.")
+
+    device[CONF_WHERE] = raw_where
+    return _canonical_who1_point(device)
+
+
 binary_sensor_schema = MyHomeDeviceSchema(
     {
         Required(str): All({
             Optional(CONF_WHO, default="25"): All(Coerce(str), In(["1", "9", "25"])),
-            Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
+            Required(CONF_WHERE): Coerce(str),
+            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_INVERTED, default=False): Boolean(),
@@ -851,7 +884,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
             ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }, _canonical_who1_point)
+        }, _validate_binary_sensor_entry)
     }
 )
 
@@ -977,9 +1010,11 @@ def _finite_float(v: typing.Any) -> float:
 
 
 def _non_bool_int(v: typing.Any) -> int:
-    """Coerce ``v`` to an int, rejecting booleans, non-finite floats, and fractional floats."""
-    if isinstance(v, bool) or (
-        isinstance(v, float) and (not math.isfinite(v) or not v.is_integer())
+    """Coerce ``v`` to an int, rejecting booleans, non-ASCII strings, non-finite floats, and fractional floats."""
+    if (
+        isinstance(v, bool)
+        or (isinstance(v, str) and not v.isascii())
+        or (isinstance(v, float) and (not math.isfinite(v) or not v.is_integer()))
     ):
         raise Invalid(f"expected an integer, got {v!r}")
     try:
@@ -1028,15 +1063,19 @@ def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
 # N00 (N = 1..9), or individual probe PZZ (P = 1..8, ZZ = 01..99).
 # 0 and 001..099 address all probes and all probes of a zone, and #Z addresses
 # the central unit's zone object, so a virtual probe must not answer on them.
-_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
+_WHO4_EXPOSE_PROBE_RE = re.compile(
+    r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))",
+    re.ASCII,
+)
 _WHO18_EXPOSE_WHERE_RE = re.compile(
-    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
+    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)",
+    re.ASCII,
 )
 
 
 def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Validate cross-field constraints on a single expose entry."""
-    from .where_grammar import is_apl_address, normalize_expose_where
+    from .where_grammar import diagnose_apl_where, normalize_expose_where
 
     who = int(item[CONF_WHO])
     raw_where_val = item.get(CONF_WHERE)
@@ -1065,9 +1104,6 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             f"expose entry for WHO={who} requires a non-empty 'where' address without '*'"
         )
 
-    where = normalize_expose_where(who, raw_where)
-    item[CONF_WHERE] = where
-
     has_entity = bool(item.get(CONF_ENTITY_ID))
     action_keys = (
         CONF_TURN_ON_ACTION,
@@ -1086,16 +1122,32 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
     if who in (1, 2):
         if dim is not None:
             raise Invalid(f"WHO={who} expose does not support 'dimension' (got {dim})")
-        base_where, sep, suffix = where.partition("#")
-        if (
-            where.startswith("#")
-            or not is_apl_address(base_where)
-            or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
-        ):
+        diag = diagnose_apl_where(raw_where)
+        if diag is not None:
+            hint = ""
+            err_key, placeholders = diag
+            if err_key in (
+                "invalid_where_use_2_digits",
+                "invalid_where_use_4_digits",
+            ):
+                hint = (
+                    f"; for A={placeholders['area']}, PL={placeholders['point']} "
+                    f"use '{placeholders['suggested']}'"
+                )
+            elif err_key == "invalid_where_pl_zero":
+                hint = "; PL=0 is invalid, PL must be 1..15"
+            elif err_key == "invalid_where_interface":
+                hint = "; local-bus suffix must be #4#01..#4#09 or #4#11..#4#15"
             raise Invalid(
-                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
+                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r}){hint}"
             )
-    elif who == 4:
+        item[CONF_WHERE] = normalize_expose_where(who, raw_where)
+        return item
+
+    where = normalize_expose_where(who, raw_where)
+    item[CONF_WHERE] = where
+
+    if who == 4:
         if not _WHO4_EXPOSE_PROBE_RE.fullmatch(where):
             raise Invalid(
                 f"WHO=4 expose 'where' must be a probe address (zone master probe '1'..'99', external probe '100'..'900', or probe PZZ '101'..'899', got {raw_where!r})"
@@ -1121,7 +1173,7 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             )
         if not _WHO18_EXPOSE_WHERE_RE.fullmatch(where):
             raise Invalid(
-                f"WHO=18 expose 'where' must be '5N' (e.g. '51'..'5255') or '7N#0' (got {raw_where!r})"
+                f"WHO=18 expose 'where' must be '5N' or '7N#0' with N=1..255 (e.g. '51', '512', '5255', '71#0'; got {raw_where!r})"
             )
         if default_val is not None:
             def_en = _finite_float(default_val)

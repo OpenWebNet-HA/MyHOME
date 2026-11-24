@@ -103,6 +103,7 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`sensor`**",
         "capabilities": (
             "Power meters, energy counters (total/daily/monthly), temperature probes (3475), "
+            "passive climate zone companion temperature & dynamic humidity sensors (WHO=4 Dimension 0 / 60), "
             "0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), "
             "illuminance / lux sensors"
         ),

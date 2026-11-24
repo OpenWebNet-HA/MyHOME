@@ -25,6 +25,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .command_delivery import async_send_confirmed
 from .const import (
     CONF_BUS_INTERFACE,
     CONF_DEVICE_MODEL,
@@ -396,10 +397,12 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         self._unregister_entity_ref("disable")
 
     async def async_press(self) -> None:
-        """Press the button."""
+        """Press the button; raise when the gateway rejects or never receives the frame."""
         cmd = OWNCommand.parse(f"*14*0*{self._full_where}##")
         if cmd is not None:
-            await self._gateway_handler.send(cmd)
+            # A live F455 1.0.76 answered this frame with NACK (an F461 2.0.11 acknowledged it;
+            # why the F455 refused is unknown): the press must fail visibly, not return success.
+            await async_send_confirmed(self._gateway_handler, cmd, name=self._display_name)
 
 
 class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
@@ -457,10 +460,12 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         self._unregister_entity_ref("enable")
 
     async def async_press(self) -> None:
-        """Press the button."""
+        """Press the button; raise when the gateway rejects or never receives the frame."""
         cmd = OWNCommand.parse(f"*14*1*{self._full_where}##")
         if cmd is not None:
-            await self._gateway_handler.send(cmd)
+            # A live F455 1.0.76 answered this frame with NACK (an F461 2.0.11 acknowledged it;
+            # why the F455 refused is unknown): the press must fail visibly, not return success.
+            await async_send_confirmed(self._gateway_handler, cmd, name=self._display_name)
 
 
 class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):

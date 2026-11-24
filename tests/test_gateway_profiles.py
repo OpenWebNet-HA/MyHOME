@@ -190,7 +190,7 @@ def test_generate_gateway_discovery_table_and_verify_oracle():
     assert "| **F452 / F453 / F453AV** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
     assert "| **F455** | WHO 1, 2, 4, 18 | WHO 1, 2, 18 (firmware drops `*#4*0##`; `*#4*0#0*20##` sent in place of `*#4*0##`) |" in block
     assert "| **MH200** *(Legacy)* | WHO 1, 2, 4, 16 | WHO 1, 2, 16 (firmware drops `*#4*0##`) |" in block
-    assert "| **MH200N** | WHO 1, 2, 4, 16 | WHO 1, 2, 4, 16 |" in block
+    assert "| **MH200N** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 4, 16, 18 |" in block
     assert "| **MH201** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
     assert "| **H4684 / H/L4684** | WHO 1, 2, 4, 16, 18 | WHO 1, 2, 16, 18 (firmware drops `*#4*0##`) |" in block
     # Rows that follow the OWNd profile (WHO 16 on the F461 / MyHomeServer1 is being dropped

@@ -79,7 +79,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | HVAC modes | ✅ | `heat`, `cool`, `auto`, `off`; heating / cooling support per zone from YAML. |
 | Fan speed (3-speed fancoil) | ✅ | Auto-detected from dimension 11/20 frames, or explicit `fan: true`. |
 | Proportional 0–10 V output level (`100..200`) | 👁️ | Exposed on `Dimension 20` strictly for explicit `Z#N` (`1 <= Z <= 99`, `1 <= N <= 9`) point actuators as `actuator_levels` (`0..100 %`, excluded from recorder history via `_unrecorded_attributes`) while keeping `actuators` `"on"` / `"off"`, alongside an auto-discovered `%` `sensor` entity per proportional actuator. |
-| Current humidity | ✅ | Auto-detected from dimension 60 frames, restored across restarts, or explicit `humidity: true`. |
+| Current humidity | ✅ | Auto-detected from dimension 60 frames, restored across restarts, or explicit `humidity: true`; dynamically attaches a passive companion `%` `sensor` entity on the zone device. |
 | Central unit modes | ✅ | Central unit 3550 (`#0`) and 4695 (`#0#1`..`#0#4`) as `central: true` zones; seasonal propagation. 99-zone `#0` is polled via `*#4*#0##`, while 4-zone `#0#1`..`#0#4` units remain exempt from point-to-point status polling. |
 | Weekly programs / scenarios | ❌ | Program selection frames (`*4*11xx*#0##`) can be sent with `myhome.send_message`. |
 | Temperature-only probes | 👁️ | `sensor` platform (see below). |
@@ -109,16 +109,16 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | :--- | :---: | :--- |
 | Instantaneous power (W) | ✅ | Push-driven; `myhome.start_sending_instant_power` requests a burst of readings (`myhome.stop_sending_instant_power` stops it). |
 | Energy total / today / month (Wh) | ✅ | Today and month are **disabled by default**. |
-| Temperature (zones and probes) | ✅ | Standalone probes (`WHERE ≥ 100` or Dimension 15) auto-discover and are push-driven (polled only when silent); thermostat zones `1..99` belong to `climate` unless declared under `sensor:` in `myhome.yaml` (polled every 5 min). |
+| Temperature (zones and probes) | ✅ | Confirmed non-central `WHO = 4` climate zones automatically expose a strictly passive (`should_poll = False`) companion temperature `sensor` (`°C`, `state_class: measurement`, `RestoreSensor`) attached to the zone device for Long-Term Statistics; standalone probes (`WHERE ≥ 100` or Dimension 15) auto-discover independently (polled only when silent), and explicit `sensor:` entries in `myhome.yaml` remain supported without duplicates. |
 | Proportional 0–10 V actuator output level (`%`) | ✅ | Auto-discovered strictly for explicit `Z#N` (`1 <= Z <= 99`, `1 <= N <= 9`) `Dimension 20` reports (`*#4*Z#N*20*100..200##`) and attached to the zone's `climate` device; inherits `SensorEntity` (`unknown` after restart until the first bus report) and registers `watch_zone_actuators` (startup/reconnect) plus `homeassistant.update_entity` where supported. Discrete `0..22` actuators create no extra entities. |
 | Illuminance (lux) | ✅ | WHO 1 light sensors. |
-| Humidity | 👁️ | Shown as the climate entity's `current_humidity` when the zone reports it; no separate sensor. |
+| Humidity | ✅ | Dynamically created passive companion `sensor` (`%`, `state_class: measurement`) attached to the zone's `climate` device only when the zone reports `Dimension 60` humidity, restores prior humidity state, or configures `humidity: true`; never polls `*#4*Z*60##`. |
 
 ### `button` (WHO 14 / 2 / 16 / 22)
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Lock / unlock actuator | ✅ | On every light, switch and cover device (`EntityCategory.CONFIG`). |
+| Lock / unlock actuator | ✅ | On every light, switch and cover device (`EntityCategory.CONFIG`). A press waits for the gateway's answer and raises an error when the gateway rejects the frame with NACK (`command_rejected`), when the frame could not be delivered (`command_not_delivered`) or was not confirmed within 15 s (`command_not_confirmed`). Whether the gateway acknowledges depends on the gateway and the target: a physical `F455` (firmware `1.0.76`) answered `*14*0*05##` and `*14*1*05##` with NACK, a physical `F461` (`2.0.11`) acknowledged both. Why that `F455` answered NACK is unknown; an `F461` also answers NACK for an address with no device (`*14*0*99##`, `tests/fixtures/traces/f461_who14_live_2026-10-18/README.md`). |
 | Calibrate travel time | ✅ | On every timed cover device, plus *Calibrate all covers* on the gateway device. |
 | FM tuner seek up / down | ✅ | Companion *Seek up* and *Seek down* buttons on every declared F500 / F500N `Audio Source` device (`WHO 16` `*16*5000/5100*10S##` or `WHO 22` `*22*5/6*2#S##`). |
 

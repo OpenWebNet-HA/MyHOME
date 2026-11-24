@@ -82,17 +82,38 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Tries the OWNd branch named like this one first, so a paired OWNd + MyHOME
-      # change is tested together. The branch name reaches the shell through env,
-      # never through ${{ }}: on a fork PR it is chosen by the PR author.
+      # Keeps the pinned OWNd release from pyproject.toml / manifest.json by default so
+      # unreleased commits on OWNd@master (tested by ownd-smoke's dev job) do not break
+      # MyHOME PRs. Overrides OWNd only when a matching non-default branch exists on
+      # OpenWebNet-HA/OWNd (paired feature PRs such as feat/233-openzigbee-serial), or
+      # falls back to OWNd@master if the pinned version is not yet published to PyPI.
+      # The branch name reaches the shell through env, never through ${{ }}: on a fork
+      # PR it is chosen by the PR author.
       - name: Install test dependencies
+        shell: bash
         env:
           OWND_REF: ${{ github.head_ref || github.ref_name }}
         run: |
+          has_paired_ownd_branch() {
+            case "$OWND_REF" in
+              ""|"master"|"main"|*[*?\[]*) return 1 ;;
+            esac
+            local out
+            out=$(git ls-remote --heads https://github.com/OpenWebNet-HA/OWNd.git -- "refs/heads/${OWND_REF}" 2>/dev/null) || return 1
+            printf '%s\n' "$out" | cut -f2 | grep -Fx -- "refs/heads/${OWND_REF}" >/dev/null
+          }
           python -m pip install --upgrade pip
-          pip install ".[test]" homeassistant python-dateutil pytz pytest-socket
-          pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}" \
-            || pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
+          if ! pip install ".[test]" homeassistant python-dateutil pytz pytest-socket; then
+            if has_paired_ownd_branch; then
+              pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}"
+            else
+              pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
+            fi
+            pip install ".[test]" homeassistant python-dateutil pytz pytest-socket
+          elif has_paired_ownd_branch; then
+            pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}"
+          fi
+          python -c "import OWNd, importlib.metadata as m; print('OWNd', m.version('OWNd'), 'from', OWNd.__file__)"
 
       - name: Run test suite with coverage tracking
         run: |
