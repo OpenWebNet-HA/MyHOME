@@ -985,3 +985,128 @@ async def test_live_tilt_before_restore_is_not_overwritten_and_empty_last_run_ig
     await cover.async_added_to_hass()
     assert cover.current_cover_tilt_position == 80
     assert not cover._last_run
+
+
+async def test_unanchored_moving_cover_saved_unavailable_stays_unknown_and_keeps_relay_hold(
+    hass, gateway, clock, fake_time
+) -> None:
+    """A cover closing from unknown (or a closing simple cover) does not export transient is_closed=False as 'open',
+    while preserving motion_started_at for M=0 relay-hold protection across a mid-run unavailable reload."""
+    gateway.emits_cover_pre_move_stop = False
+    closing_from_unknown = _make_cover(hass, gateway)
+    closing_from_unknown.handle_event(OWNEvent.parse("*2*2*05##"))
+    assert closing_from_unknown.is_closing is True
+    assert closing_from_unknown.current_cover_position is None
+    saved_data = closing_from_unknown.extra_restore_state_data
+    assert saved_data is not None
+    record = saved_data.as_dict()
+    assert "is_closed" not in record
+    assert "position" not in record
+    assert isinstance(record.get("motion_started_at"), str)
+
+    restarted = _make_cover(hass, gateway)
+    restarted.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    restarted.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData(record))
+    await restarted.async_added_to_hass()
+    assert restarted.current_cover_position is None
+    assert restarted.is_closed is None
+    assert restarted.state is None  # unknown, not fabricated "open"
+    assert restarted._stops_before_move(False) is True
+
+    # Assumed-state (simple) cover closing when saved unavailable also stays unknown rather than "open".
+    simple_closing = _make_cover(hass, gateway, travel_time=0)
+    simple_closing.handle_event(OWNEvent.parse("*2*2*05##"))
+    assert simple_closing.is_closing is True
+    simple_saved = simple_closing.extra_restore_state_data
+    assert simple_saved is not None
+    assert "is_closed" not in simple_saved.as_dict()
+
+    simple_restarted = _make_cover(hass, gateway, travel_time=0)
+    simple_restarted.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    simple_restarted.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData(simple_saved.as_dict()))
+    await simple_restarted.async_added_to_hass()
+    assert simple_restarted.is_closed is None
+    assert simple_restarted.state is None
+
+
+async def test_partial_run_before_restore_is_not_overwritten_by_unavailable_record(
+    hass, gateway, clock, fake_time
+) -> None:
+    """A partial wall run completed before async_restore_last_state leaves position unknown rather than restoring pre-move height."""
+    cover = _make_cover(hass, gateway, slat_tilt=True, slat_time=1.5)
+    cover.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 0.8  # shorter than travel_time (6 s): position stays None, slats turn to 53 %
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover.current_cover_position is None
+    assert cover.current_cover_tilt_position == 53
+    assert cover.is_closed is None
+
+    cover.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False, "tilt": 20})
+    )
+    await cover.async_added_to_hass()
+    assert cover.current_cover_position is None
+    assert cover.current_cover_tilt_position == 53
+    assert cover.is_closed is None
+
+    # A slat pulse from an unknown angle stopped midway before restore also stays unknown (not overwritten by record tilt).
+    pulse_cover = _make_cover(hass, gateway, slat_tilt=True, slat_time=1.5)
+    await pulse_cover.async_open_cover_tilt()
+    _, pulse_written = gateway.deliveries[-1]
+    pulse_written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.12
+    pulse_cover.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 0.4  # < 1.5 s slat_time from unknown: tilt stays None
+    pulse_cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert pulse_cover.current_cover_tilt_position is None
+    pulse_cover.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    pulse_cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False, "tilt": 20})
+    )
+    await pulse_cover.async_added_to_hass()
+    assert pulse_cover.current_cover_position is None
+    assert pulse_cover.current_cover_tilt_position is None
+
+    # Also covers the non-position was_closed fallback when a run occurred since start.
+    cover2 = _make_cover(hass, gateway)
+    cover2.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 1.0
+    cover2.handle_event(OWNEvent.parse("*2*0*05##"))
+    cover2.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    cover2.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData({"is_closed": True}))
+    await cover2.async_added_to_hass()
+    assert cover2.current_cover_position is None
+    assert cover2.is_closed is None
+
+
+async def test_advanced_cover_restores_custom_native_strategy_state(hass, gateway) -> None:
+    """A custom NativePositionStrategy subclass receives its exported state back on an advanced cover."""
+    from custom_components.myhome.cover_strategies import NativePositionStrategy
+
+    class StatefulNativeStrategy(NativePositionStrategy):
+        name = "stateful_native"
+
+        def __init__(self, marker: int = 0) -> None:
+            super().__init__()
+            self.marker = marker
+
+        def export_state(self) -> dict[str, int]:
+            return {"marker": self.marker}
+
+        def restore_state(self, state: dict[str, int]) -> None:
+            self.marker = int(state["marker"])
+
+    cover = _make_cover(hass, gateway, advanced=True, model="F401")
+    cover._strategy = StatefulNativeStrategy(marker=7)
+    stored = cover.extra_restore_state_data
+    assert stored is not None
+    assert stored.as_dict() == {"strategy": "stateful_native", "state": {"marker": 7}}
+
+    restarted = _make_cover(hass, gateway, advanced=True, model="F401")
+    restarted._strategy = StatefulNativeStrategy(marker=0)
+    restarted.async_get_last_extra_data = AsyncMock(return_value=RestoredExtraData(stored.as_dict()))
+    with patch.object(restarted, "_async_poll_if_needed", AsyncMock()):
+        await restarted.async_added_to_hass()
+    assert restarted.strategy.marker == 7

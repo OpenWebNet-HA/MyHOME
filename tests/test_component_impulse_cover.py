@@ -808,8 +808,13 @@ async def test_stop_of_a_supervised_gate_is_immediate_while_it_moves(hass: HomeA
 
 
 async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, impulse_gate):
-    """The fault attribute of the last state re-latches the fault when the entity is added."""
+    """The fault attribute of the last state (or extra_restore_state_data when saved unavailable) re-latches the fault."""
+    from homeassistant.core import State
+    from homeassistant.helpers.restore_state import RestoredExtraData
+
+    assert impulse_gate.extra_restore_state_data is None
     last = MagicMock()
+    last.state = "closed"
     last.attributes = {"fault_reason": "did not close: possible obstacle or reversal"}
     with (
         patch.object(MyHOMEImpulseCover, "async_get_last_state", AsyncMock(return_value=last)),
@@ -818,6 +823,63 @@ async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, im
         await impulse_gate.async_added_to_hass()
     assert impulse_gate.extra_state_attributes["access_phase"] == "fault"
     assert impulse_gate.extra_state_attributes["fault_reason"] == "did not close: possible obstacle or reversal"
+    stored_extra = impulse_gate.extra_restore_state_data
+    assert stored_extra is not None
+    assert stored_extra.as_dict() == {"fault_reason": "did not close: possible obstacle or reversal"}
+
+    # Saved while the gateway was unreachable (attributes stripped by HA): extra_restore_state_data preserves the fault.
+    impulse_gate._access.fault_reason = None
+    with (
+        patch.object(
+            MyHOMEImpulseCover,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.main_gate", "unavailable", {})),
+        ),
+        patch.object(
+            MyHOMEImpulseCover,
+            "async_get_last_extra_data",
+            AsyncMock(return_value=RestoredExtraData(stored_extra.as_dict())),
+        ),
+        patch("custom_components.myhome.cover.MyHOMEEntity.async_added_to_hass", AsyncMock()),
+    ):
+        await impulse_gate.async_added_to_hass()
+    assert impulse_gate.extra_state_attributes["access_phase"] == "fault"
+    assert impulse_gate.extra_state_attributes["fault_reason"] == "did not close: possible obstacle or reversal"
+
+    # Acknowledged fault saved while reachable (fault_reason=None) is never re-latched from stale extra data,
+    # and a missing restore cache on async_get_last_extra_data does not raise.
+    impulse_gate._access.fault_reason = None
+    with (
+        patch.object(
+            MyHOMEImpulseCover,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.main_gate", "closed", {"fault_reason": None})),
+        ),
+        patch.object(
+            MyHOMEImpulseCover,
+            "async_get_last_extra_data",
+            AsyncMock(return_value=RestoredExtraData(stored_extra.as_dict())),
+        ),
+        patch("custom_components.myhome.cover.MyHOMEEntity.async_added_to_hass", AsyncMock()),
+    ):
+        await impulse_gate.async_added_to_hass()
+    assert impulse_gate.extra_state_attributes["fault_reason"] is None
+
+    with (
+        patch.object(
+            MyHOMEImpulseCover,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.main_gate", "unavailable", {})),
+        ),
+        patch.object(
+            MyHOMEImpulseCover,
+            "async_get_last_extra_data",
+            AsyncMock(side_effect=RuntimeError("no restore cache")),
+        ),
+        patch("custom_components.myhome.cover.MyHOMEEntity.async_added_to_hass", AsyncMock()),
+    ):
+        await impulse_gate.async_added_to_hass()
+    assert impulse_gate.extra_state_attributes["fault_reason"] is None
 
     with (
         patch.object(MyHOMEImpulseCover, "async_get_last_state", AsyncMock(return_value=None)),

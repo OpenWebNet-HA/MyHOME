@@ -1517,7 +1517,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             health, address = self._device_health(), self._health_address
             if health is not None and address is not None:
                 health.name_address(*address, self._device_name, owner=self._health_owner)
-            self._restore_last_run(await self._async_last_restore_record())
+            record = await self._async_last_restore_record()
+            self._restore_last_run(record)
+            self._restore_strategy_state(record)
             await self._async_poll_if_needed()
         else:
             await super().async_added_to_hass()
@@ -1553,19 +1555,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # with no position. What the entity knew then is in its own restore record.
         saved_unavailable = last_state.state == STATE_UNAVAILABLE
         moving_on_add = bool(self._attr_is_opening or self._attr_is_closing)
+        ran_since_start = self._last_stop_at is not None
         if self._strategy.assumed_state:
             if not moving_on_add:
                 if last_state.state in (STATE_CLOSED, "closed"):
                     self._attr_is_closed = True
                 elif last_state.state in (STATE_OPEN, "open"):
                     self._attr_is_closed = False
-                elif saved_unavailable and self.is_closed is None and isinstance(record.get("is_closed"), bool):
+                elif (
+                    saved_unavailable
+                    and not ran_since_start
+                    and self.is_closed is None
+                    and isinstance(record.get("is_closed"), bool)
+                ):
                     self._attr_is_closed = record["is_closed"]
         elif not self._advanced:
             restored = False
             last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
             # The record fills what is unknown, never what a run since startup set.
-            if last_pos is None and saved_unavailable and self._attr_current_cover_position is None:
+            if (
+                last_pos is None
+                and saved_unavailable
+                and not ran_since_start
+                and self._attr_current_cover_position is None
+            ):
                 last_pos = record.get("position")
             if last_pos is not None:
                 try:
@@ -1581,7 +1594,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     was_closed = True
                 elif last_state.state in (STATE_OPEN, "open"):
                     was_closed = False
-                elif saved_unavailable and self.is_closed is None and isinstance(record.get("is_closed"), bool):
+                elif (
+                    saved_unavailable
+                    and not ran_since_start
+                    and self.is_closed is None
+                    and isinstance(record.get("is_closed"), bool)
+                ):
                     was_closed = record["is_closed"]
                 if was_closed is True:
                     self._attr_current_cover_position = 0
@@ -1598,7 +1616,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
         if self._slat_tilt:
             last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
-            if last_tilt is None and saved_unavailable and self._attr_current_cover_tilt_position is None:
+            if (
+                last_tilt is None
+                and saved_unavailable
+                and not ran_since_start
+                and self._attr_current_cover_tilt_position is None
+            ):
                 last_tilt = record.get("tilt")
             if last_tilt is not None:
                 try:
@@ -1611,8 +1634,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             else:
                 raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
                 if not raw_ts and saved_unavailable:
-                    last_run = record.get("last_run")
-                    if isinstance(last_run, Mapping):
+                    raw_ts = record.get("motion_started_at")
+                    if not raw_ts and isinstance(last_run := record.get("last_run"), Mapping):
                         raw_ts = last_run.get("ended_at")
                 if isinstance(raw_ts, str) and (parsed_dt := dt_util.parse_datetime(raw_ts)) is not None:
                     age = (dt_util.utcnow() - parsed_dt).total_seconds()
@@ -1639,12 +1662,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             data["state"] = state
         if not self._advanced:
             # An advanced cover reads its position from the actuator after a restart.
+            # While moving without a position (a run from unknown, or a simple cover),
+            # _attr_is_closed is transiently False and must not be stored as "open".
             if (position := self.current_cover_position) is not None:
                 data["position"] = position
-            if (is_closed := self.is_closed) is not None:
+                data["is_closed"] = position == 0
+            elif not (self._attr_is_opening or self._attr_is_closing) and (is_closed := self.is_closed) is not None:
                 data["is_closed"] = is_closed
             if self._slat_tilt and (tilt := self.current_cover_tilt_position) is not None:
                 data["tilt"] = tilt
+            if self._motion_started_at:
+                data["motion_started_at"] = self._motion_started_at
         if self._last_run:
             data["last_run"] = dict(self._last_run)
         return RestoredExtraData(data) if data else None
@@ -4125,6 +4153,13 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             return self._attr_extra_state_attributes
         return {**self._attr_extra_state_attributes, **self._access.attributes()}
 
+    @property
+    def extra_restore_state_data(self) -> ExtraStoredData | None:
+        """Keep a latched watchdog fault across a restart saved while unavailable."""
+        if self._access is not None and self._access.fault_reason:
+            return RestoredExtraData({"fault_reason": self._access.fault_reason})
+        return None
+
     async def async_added_to_hass(self) -> None:
         """Register listeners when added to Home Assistant."""
         await super().async_added_to_hass()
@@ -4133,8 +4168,15 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             # A latched fault must survive a restart or reload: it is only cleared on site.
             last_state = await self.async_get_last_state()
             fault = last_state.attributes.get("fault_reason") if last_state is not None else None
-            if fault:
-                self._access.restore_fault(str(fault))
+            if not fault and last_state is not None and last_state.state == STATE_UNAVAILABLE:
+                try:
+                    extra = await self.async_get_last_extra_data()
+                except Exception:  # pylint: disable=broad-except  # not registered with the restore cache
+                    extra = None
+                if extra is not None:
+                    fault = extra.as_dict().get("fault_reason")
+            if isinstance(fault, str) and fault:
+                self._access.restore_fault(fault)
         if self._state_sensor and self.hass is not None:
             @callback
             def _sensor_state_changed(event: Any) -> None:
