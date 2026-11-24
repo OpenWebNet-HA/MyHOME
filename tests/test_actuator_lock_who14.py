@@ -1064,3 +1064,86 @@ async def test_f422_cover_scope_members_and_multi_gateway_lifecycle_failover_and
     assert standalone_sec._actuator_locks.is_locked("44") is True
     assert standalone_sec._actuator_locks.is_locked("33") is True
     assert orphan_sec_ent in standalone_sec._actuator_locks._entities[("44", None)]
+
+    # 5. Non-observed RestoreEntity conflict across secondary -> primary updates mismatched entity attribute
+    pri_ent_45 = _DummyPointEntity(hass, pri_gw_3, who="1", platform="light", where="45")
+    pri_ent_45._actuator_locked = False
+    pri_gw_3._actuator_locks._entities[("45", None)] = [pri_ent_45]
+    pri_gw_3._actuator_locks.set_point_lock("45", None, False, observed=False)
+    sec2_gw._actuator_locks.set_point_lock("45", None, True, observed=False)
+    pri_gw_3._actuator_locks._sync_secondary_gateways()
+    assert pri_gw_3._actuator_locks.is_locked("45") is True
+    assert pri_ent_45.actuator_locked is True
+
+    # 6. Outbound WHO=14 sent directly on connected Warm Standby (while Primary is also connected)
+    #    updates Primary's _actuator_locks, and #988 Lock/Unlock buttons confirm ACK vs raise on NACK!
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.myhome.button import (
+        DisableCommandButtonEntity,
+        EnableCommandButtonEntity,
+    )
+
+    pri_gw_3.is_connected = True
+    stb_gw.is_connected = True
+    stb_gw._event_session_ready.set()
+    sec_gw._event_session_ready.set()
+    fake_stb_sess = MagicMock()
+    fake_stb_sess.is_open = True
+    fake_stb_sess.last_error = None
+    fake_stb_sess.connect = AsyncMock(return_value=True)
+    fake_stb_sess.send = AsyncMock(return_value=True)
+    fake_stb_sess.close = AsyncMock()
+    fake_stb_sess.disconnect = AsyncMock()
+    with patch(
+        "custom_components.myhome.gateway.OWNCommandSession",
+        return_value=fake_stb_sess,
+    ):
+        stb_worker = asyncio.create_task(stb_gw.sending_loop(0))
+        sec_worker = asyncio.create_task(sec_gw.sending_loop(0))
+        try:
+            fut_stb = await stb_gw.send(OWNActuatorLockCommand.lock("45"))
+            await asyncio.wait_for(fut_stb, timeout=2.0)
+            assert pri_gw_3._actuator_locks.is_locked("45") is True
+
+            # Lock / Unlock button entities (#988 + #977): delegates WHO=14 to sec_gw (F454),
+            # ACK updates Primary's _actuator_locks, NACK raises HomeAssistantError naming F454!
+            btn_unlock = EnableCommandButtonEntity(
+                hass=hass,
+                platform="light",
+                name="Light 45",
+                device_id="1-45",
+                who="1",
+                where="45",
+                interface=None,
+                manufacturer="BTicino",
+                model="F418",
+                gateway=pri_gw_3,
+            )
+            btn_lock = DisableCommandButtonEntity(
+                hass=hass,
+                platform="light",
+                name="Light 45",
+                device_id="1-45",
+                who="1",
+                where="45",
+                interface=None,
+                manufacturer="BTicino",
+                model="F418",
+                gateway=pri_gw_3,
+            )
+            await btn_unlock.async_press()
+            assert pri_gw_3._actuator_locks.is_locked("45") is False
+            fake_stb_sess.send = AsyncMock(return_value=None)
+            fake_stb_sess.last_error = OWNNackError("*14*0*45##")
+            with pytest.raises(HomeAssistantError, match="F454"):
+                await btn_lock.async_press()
+            assert pri_gw_3._actuator_locks.is_locked("45") is False
+        finally:
+            sec_gw._command_pool.close()
+            stb_gw._command_pool.close()
+            sec_worker.cancel()
+            stb_worker.cancel()
+            for w in (sec_worker, stb_worker):
+                with pytest.raises(asyncio.CancelledError):
+                    await w

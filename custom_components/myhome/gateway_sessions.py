@@ -1740,6 +1740,16 @@ class CommandWorkerPool:
                             echo_watchdog.command_acknowledged(task["message"], written_at)
                         if not task["is_status_request"] and not is_exposed:
                             actuator_locks = actuator_locks_of(self.handler)
+                            if (
+                                actuator_locks is None
+                                and getattr(self.handler, "is_standby", False) is True
+                            ):
+                                pri_gw = self.handler._get_primary_gateway()
+                                if (
+                                    pri_gw is not None
+                                    and pri_gw._get_standby_gateway() is self.handler
+                                ):
+                                    actuator_locks = actuator_locks_of(pri_gw)
                             if actuator_locks is not None:
                                 actuator_locks.observe(task["message"])
                     responses_to_dispatch: Any = collected

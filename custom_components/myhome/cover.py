@@ -896,7 +896,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if self._is_tilting:
                 self._cancel_stop_task()
                 self._run_generation += 1
-                self._abort_tilt()
+                if self._tilt_start_time is None and self._tilt_follows is not None:
+                    self._tilt_start_time = self._tilt_follows._tilt_start_time
+                if self._tilt_start_time is not None:
+                    self._apply_tilt_stop(time.monotonic())
+                else:
+                    self._abort_tilt()
                 self._publish_state()
                 return
             if self._attr_is_opening or self._attr_is_closing:
@@ -3816,6 +3821,35 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             == _normalize_bus_interface(self._interface)
         )
 
+    def _is_from_cover_poll(self, message: Any) -> bool:
+        """Return True when ``message`` is a reply to a WHO=2 status/dimension poll or sweep."""
+        if getattr(message, "_from_status_request", False) is True:
+            return True
+        gw = self._gateway_handler
+        sec_fn = getattr(gw, "_get_secondary_for_who", None)
+        stb_fn = getattr(gw, "_get_standby_gateway", None)
+        for h in (
+            gw,
+            sec_fn(2) if callable(sec_fn) else None,
+            stb_fn() if callable(stb_fn) else None,
+        ):
+            if h is None:
+                continue
+            if getattr(h, "sweep_active", False) is True:
+                return True
+            in_flight = getattr(getattr(h, "_command_pool", None), "_in_flight_messages", ())
+            for sent in tuple(in_flight):
+                if (
+                    getattr(sent, "who", None) == 2
+                    and (
+                        getattr(sent, "is_status_request", False) is True
+                        or getattr(sent, "is_dimension_request", False) is True
+                    )
+                    and self._is_own_point_message(sent)
+                ):
+                    return True
+        return False
+
     def _handle_echo(self, message: OWNMessage, now: float) -> bool:
         """Consume frames the gateway relays for our own in-flight command.
 
@@ -4089,8 +4123,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 and self._scope_run_active_until is not None
                 and not (self._attr_is_opening or self._attr_is_closing)
                 and getattr(message, "_what", getattr(message, "what", None)) in (0, 10, "0", "10")
-                and getattr(message, "_from_status_request", False) is not True
-                and getattr(self._gateway_handler, "sweep_active", False) is not True
+                and not self._is_from_cover_poll(message)
             ):
                 if now <= self._scope_run_active_until:
                     self._actuation_unconfirmed = False

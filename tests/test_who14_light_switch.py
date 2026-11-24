@@ -1887,3 +1887,139 @@ async def test_dali_combined_ct_brightness_f422_nack_poll_guard_and_coarse_quant
     dali.handle_event(OWNEvent.parse("*1*19*25#4#02##"))
     assert dali._fade_engine.is_fading is False
     assert dali.is_on is False
+
+    # 12. Cold-boot locked fine dimmer coarse preset -> exact Dim 1 refinement (MH200 FW 2.1.0:
+    #     *1*10*43## 100% -> +150ms *#1*43*1*189*2## 89%) MUST NOT clear actuator_locked,
+    #     and unlocked coarse-start fade down (75% -> 20%) is NOT cancelled by in-flight Dim 1 poll (88%)!
+    dim43 = MyHOMELight(
+        hass=hass,
+        name="Dim 43",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="43",
+        who="1",
+        where="43",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim43, "light.dim_43_mh200")
+    dim43.handle_actuator_lock(True)
+    assert dim43.actuator_locked is True
+    dim43.handle_event(OWNEvent.parse("*1*10*43##"))  # 100% coarse bucket
+    assert dim43._attr_brightness_pct == 100
+    assert dim43.actuator_locked is True
+    dim43.handle_event(OWNEvent.parse("*#1*43*1*189*2##"))  # exact 89% (+150ms)
+    assert dim43._attr_brightness_pct == 89
+    assert dim43.actuator_locked is True  # still locked!
+    # Real subsequent brightness change (offline unlock -> 85%) DOES self-heal actuator_locked!
+    dim43.handle_event(OWNEvent.parse("*#1*43*1*185*2##"))
+    assert dim43._attr_brightness_pct == 85
+    assert dim43.actuator_locked is False
+
+    dim44 = MyHOMELight(
+        hass=hass,
+        name="Dim 44",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="44",
+        who="1",
+        where="44",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim44, "light.dim_44_fade_down")
+    dim44.handle_event(OWNEvent.parse("*1*9*44##"))  # 75% coarse bucket
+    dim44._fade_engine.first_echo_timeout = 0.2
+    await dim44.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 20, ATTR_TRANSITION: 0.25})
+    assert dim44._fade_task is not None
+    await asyncio.sleep(0)
+    step1_44 = dim44._fade_engine.pending_first_step_pct
+    assert isinstance(step1_44, int) and step1_44 < 75
+    # In-flight Dim 1 poll refines 75% -> 88% (abs(88 - step1_44) >= 10) without cancelling fade!
+    msg_poll_88 = OWNEvent.parse("*#1*44*1*188*2##")
+    setattr(msg_poll_88, "_from_status_request", True)
+    dim44.handle_event(msg_poll_88)
+    assert dim44._fade_engine.is_fading is True
+    assert dim44._fade_engine.fade_start_pct == 88
+    # Step 1 echo arrives and completes the fade to 20%!
+    dim44.handle_event(OWNEvent.parse(f"*#1*44*1*{100 + step1_44}*2##"))
+    await dim44._fade_task
+    assert dim44._attr_brightness_pct == 20
+
+    # 13. _is_from_poll real secondary/standby/follower topology + plain *#1*W## vs Dim 14
+    #     + confirmed_ct_step + combined CT + sub-50ms transition (0.02s)!
+    dali_cold._attr_is_on = False
+    dali_cold._attr_color_temp = None
+    handler.send = AsyncMock(side_effect=_fresh_fut)
+    await dali_cold.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 4000})
+    # Plain *#1*W## (dimension=None) in _in_flight_messages does NOT block Dim 14 OFF->ON!
+    handler._command_pool._in_flight_messages.append(OWNCommand.parse("*#1*26#4#02##"))
+    try:
+        dali_cold.handle_event(OWNEvent.parse("*#1*26#4#02*14*250##"))
+    finally:
+        handler._command_pool._in_flight_messages.clear()
+    assert dali_cold.is_on is True
+
+    # Delegated secondary / standby / follower sweep & in-flight poll checks + confirmed_ct_step
+    fake_sec = SimpleNamespace(
+        sweep_active=False,
+        _command_pool=SimpleNamespace(_in_flight_messages=[OWNCommand.parse("*#1*26#4#02*14##")]),
+    )
+    fake_stb = SimpleNamespace(
+        sweep_active=True,
+        _command_pool=SimpleNamespace(_in_flight_messages=[]),
+    )
+    with (
+        patch.object(handler, "_get_secondary_for_who", return_value=fake_sec),
+        patch.object(handler, "_get_standby_gateway", return_value=fake_stb),
+    ):
+        assert dali_cold._is_from_poll(OWNEvent.parse("*#1*26#4#02*14*250##"), 14) is True
+        fake_stb.sweep_active = False
+        assert dali_cold._is_from_poll(OWNEvent.parse("*#1*26#4#02*14*250##"), 14) is True
+        # Follower gateway resolves primary's secondary/standby too
+        follower_gw = SimpleNamespace(
+            is_follower=True,
+            sweep_active=False,
+            _command_pool=SimpleNamespace(_in_flight_messages=[]),
+            _get_primary_gateway=lambda: handler,
+        )
+        orig_gw = dali_cold._gateway_handler
+        dali_cold._gateway_handler = follower_gw  # type: ignore[assignment]
+        try:
+            assert dali_cold._is_from_poll(OWNEvent.parse("*#1*26#4#02*14*250##"), 14) is True
+        finally:
+            dali_cold._gateway_handler = orig_gw
+
+        # confirmed_ct_step: when prev_color_temp (370) moves to target (250), lingering *#1*W*14## poll is overridden!
+        dali_cold._attr_is_on = False
+        dali_cold._attr_color_temp = 370
+        await dali_cold.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 4000})
+        dali_cold.handle_event(OWNEvent.parse("*#1*26#4#02*14*250##"))
+        assert dali_cold.is_on is True
+
+    # Combined CT + sub-50ms software_stepped transition (0.02s) anchors pending brightness without premature fallback!
+    dali._attr_is_on = False
+    dali._attr_brightness_pct = 0
+    dali._last_brightness_pct = 82
+    f_ct_fast = hass.loop.create_future()
+    f_ct_fast.set_result(time.monotonic())
+    f_br_fast = hass.loop.create_future()
+    handler.send = AsyncMock(side_effect=[f_ct_fast, f_br_fast])
+    await dali.async_turn_on(
+        **{ATTR_COLOR_TEMP_KELVIN: 4000, ATTR_BRIGHTNESS_PCT: 45, ATTR_TRANSITION: 0.02}
+    )
+    await asyncio.sleep(0)
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*250##"))
+    assert dali.is_on is True
+    assert dali._attr_brightness_pct == 0  # held until Dim 1 echo or NACK!
+    f_br_fast.cancel()
+    await asyncio.sleep(0)
+    assert dali._attr_brightness_pct == 82  # falls back cleanly on Dim 1 NACK!

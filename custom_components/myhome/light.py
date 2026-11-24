@@ -951,26 +951,37 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         msg_canon = canonical_point_spelling(normalize_where(target_pt) or target_pt)
         return bool(own_canon) and msg_canon == own_canon
 
-    def _is_from_poll(self, message: Any, dimension: int) -> bool:
-        """Return True when ``message`` is a reply to a status/dimension poll or sweep."""
-        if (
-            getattr(message, "_from_status_request", False) is True
-            or getattr(self._gateway_handler, "sweep_active", False) is True
-        ):
-            return True
+    def _bus_gateways_for_who1(self) -> tuple[Any, ...]:
+        """Return candidate gateways on this bus that may hold WHO=1 sweeps or in-flight polls."""
         gw = self._gateway_handler
-        sec_fn = getattr(gw, "_find_delegated_secondary", None)
-        stb_fn = getattr(gw, "_find_warm_standby", None)
-        handlers = [
+        pri_fn = getattr(gw, "_get_primary_gateway", None)
+        pri_gw = (
+            pri_fn()
+            if callable(pri_fn) and getattr(gw, "is_follower", False) is True
+            else None
+        )
+        root = pri_gw if pri_gw is not None else gw
+        sec_fn = getattr(root, "_get_secondary_for_who", None)
+        stb_fn = getattr(root, "_get_standby_gateway", None)
+        return tuple(
             h
             for h in (
                 gw,
+                pri_gw,
                 sec_fn(1) if callable(sec_fn) else None,
                 stb_fn() if callable(stb_fn) else None,
             )
             if h is not None
-        ]
-        for h in handlers:
+        )
+
+    def _is_from_poll(self, message: Any, dimension: int) -> bool:
+        """Return True when ``message`` is a reply to a status/dimension poll or sweep."""
+        if getattr(message, "_from_status_request", False) is True:
+            return True
+        allowed_dims = (None, 1) if dimension == 1 else (dimension,)
+        for h in self._bus_gateways_for_who1():
+            if getattr(h, "sweep_active", False) is True:
+                return True
             in_flight = getattr(getattr(h, "_command_pool", None), "_in_flight_messages", ())
             for sent in tuple(in_flight):
                 if (
@@ -979,7 +990,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         getattr(sent, "is_dimension_request", False) is True
                         or getattr(sent, "is_status_request", False) is True
                     )
-                    and getattr(sent, "dimension", None) in (None, dimension)
+                    and getattr(sent, "dimension", None) in allowed_dims
                     and self._is_own_point_event(sent)
                 ):
                     return True
@@ -1350,6 +1361,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         handled_inst = await self._maybe_instant_brightness(
                             start_pct, clamped_target, is_on=True
                         )
+                        if not handled_inst and transition < 0.05:
+                            handled_inst = True
+                            self._fade_engine.last_instant_written = (
+                                await self._fade_engine.set_brightness_instant(clamped_target)
+                            )
                     except (Exception, asyncio.CancelledError):
                         if combined_ct_brightness:
                             self._pending_cmd_brightness_pct = prev_pending_br
@@ -2035,7 +2051,20 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             new_ct = cast(int, message.color_temp)
             self._attr_color_temp = new_ct
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(new_ct)
-            from_poll = self._is_from_poll(message, 14)
+            any_sweep = any(
+                getattr(h, "sweep_active", False) is True
+                for h in self._bus_gateways_for_who1()
+            )
+            confirmed_ct_step = (
+                pending_ct is not None
+                and time.monotonic() < pending_ct[1]
+                and getattr(message, "_from_status_request", False) is not True
+                and not any_sweep
+                and prev_color_temp is not None
+                and new_ct != prev_color_temp
+                and abs(new_ct - pending_ct[0]) <= 5
+            )
+            from_poll = False if confirmed_ct_step else self._is_from_poll(message, 14)
             if not from_poll:
                 self._pending_cmd_color_temp = None
             if (
@@ -2095,6 +2124,21 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         ):
             self._bus_state_complete = True
 
+        coarse_dim1_refinement = False
+        coarse_quantized_start = False
+        raw_fade_start = getattr(self._fade_engine, "fade_start_pct", None)
+        fade_start = (
+            raw_fade_start
+            if isinstance(raw_fade_start, int) and not isinstance(raw_fade_start, bool)
+            else None
+        )
+        raw_pending_step = getattr(self._fade_engine, "pending_first_step_pct", None)
+        pending_step = (
+            raw_pending_step
+            if isinstance(raw_pending_step, int) and not isinstance(raw_pending_step, bool)
+            else None
+        )
+
         if (
             (
                 ColorMode.BRIGHTNESS in self._attr_supported_color_modes
@@ -2108,25 +2152,54 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         ):
             # A dimmer that is on at level 0 is shown at the lowest level, never at 0.
             level = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
+            from_poll_dim1 = self._is_from_poll(message, 1)
+            coarse_base = (
+                was_coarse_preset
+                and not was_fine
+                and prev_is_on is True
+                and not self._coarse_speed_seen
+                and getattr(message, "is_coarse_dimmer", None) is not True
+            )
             if is_fading:
-                # Precise policy during fade: only apply significant physical changes.
-                # Pre-09W29 coarse dimmers (is_coarse_dimmer=True, #767) quantize levels
-                # onto BTicino's coarse ladder where 86% -> WHAT 10 -> 100% spans 14 pp.
-                pending_step = getattr(self._fade_engine, "pending_first_step_pct", None)
-                current_opt = (
-                    pending_step
-                    if isinstance(pending_step, int) and not isinstance(pending_step, bool)
-                    else (self._attr_brightness_pct or 0)
+                coarse_quantized_start = (
+                    coarse_base
+                    and self._is_own_point_event(message)
+                    and fade_start is not None
+                    and pending_step is not None
+                    and abs(level - fade_start) <= 15
+                    and (
+                        self._actuator_locked is True
+                        or from_poll_dim1
+                        or abs(level - pending_step) > 1
+                    )
                 )
-                reported = level
-                cancel_delta = (
-                    25 if getattr(message, "is_coarse_dimmer", None) is True else 10
-                )
-                if reported == 0 or abs(reported - current_opt) >= cancel_delta:
-                    self._cancel_fade_if_active()
-                    self._apply_brightness_state(reported)
-                # else: keep optimistic state
+                if coarse_quantized_start:
+                    coarse_dim1_refinement = True
+                    self._fade_engine.fade_start_pct = level
+                    self._apply_brightness_state(level, is_on=True)
+                else:
+                    # Precise policy during fade: only apply significant physical changes.
+                    # Pre-09W29 coarse dimmers (is_coarse_dimmer=True, #767) quantize levels
+                    # onto BTicino's coarse ladder where 86% -> WHAT 10 -> 100% spans 14 pp.
+                    current_opt = (
+                        pending_step
+                        if pending_step is not None
+                        else (self._attr_brightness_pct or 0)
+                    )
+                    reported = level
+                    cancel_delta = (
+                        25 if getattr(message, "is_coarse_dimmer", None) is True else 10
+                    )
+                    if reported == 0 or abs(reported - current_opt) >= cancel_delta:
+                        self._cancel_fade_if_active()
+                        self._apply_brightness_state(reported)
+                    # else: keep optimistic state
             else:
+                coarse_dim1_refinement = (
+                    coarse_base
+                    and prev_brightness_pct is not None
+                    and abs(level - prev_brightness_pct) <= 15
+                )
                 self._attr_brightness_pct = level
                 self._attr_brightness = percent_to_eight_bits(level)
                 self._brightness_restored = False
@@ -2174,18 +2247,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._request_brightness_refresh()
 
         if self._fade_engine.is_fading and self._is_own_point_event(message):
-            raw_fade_start = getattr(self._fade_engine, "fade_start_pct", None)
-            fade_start = (
-                raw_fade_start
-                if isinstance(raw_fade_start, int) and not isinstance(raw_fade_start, bool)
-                else None
-            )
-            raw_pending_step = getattr(self._fade_engine, "pending_first_step_pct", None)
-            pending_step = (
-                raw_pending_step
-                if isinstance(raw_pending_step, int) and not isinstance(raw_pending_step, bool)
-                else None
-            )
             fading_down = (
                 fade_start is not None
                 and pending_step is not None
@@ -2194,31 +2255,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             step1_confirmed_by_event = False
             if has_level and message.brightness is not None and not has_preset:
                 reported_lvl = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
-                from_poll_dim1 = self._is_from_poll(message, 1)
-                coarse_quantized_start = (
-                    was_coarse_preset
-                    and not was_fine
-                    and prev_is_on is True
-                    and not self._coarse_speed_seen
-                    and getattr(message, "is_coarse_dimmer", None) is not True
-                    and fade_start is not None
-                    and pending_step is not None
-                    and abs(reported_lvl - fade_start) <= 15
-                    and (
-                        self._actuator_locked is True
-                        or from_poll_dim1
-                        or abs(reported_lvl - pending_step) > 1
-                    )
-                )
-                if coarse_quantized_start:
-                    self._fade_engine.fade_start_pct = reported_lvl
-                    self._apply_brightness_state(reported_lvl, is_on=True)
-                elif prev_is_on is not True or fade_start is None:
-                    step1_confirmed_by_event = reported_lvl > 0
-                elif fading_down:
-                    step1_confirmed_by_event = 0 < reported_lvl < fade_start
-                else:
-                    step1_confirmed_by_event = reported_lvl > fade_start
+                if not coarse_quantized_start:
+                    if prev_is_on is not True or fade_start is None:
+                        step1_confirmed_by_event = reported_lvl > 0
+                    elif fading_down:
+                        step1_confirmed_by_event = 0 < reported_lvl < fade_start
+                    else:
+                        step1_confirmed_by_event = reported_lvl > fade_start
             elif has_level and has_preset:
                 clamped_p = self._coarse_preset_pct(message, cast(int, preset))
                 progressed = (
@@ -2260,7 +2303,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 and self._attr_is_on != prev_is_on
             )
             brightness_changed = (
-                prev_brightness_pct is not None
+                not coarse_dim1_refinement
+                and prev_brightness_pct is not None
                 and self._attr_brightness_pct is not None
                 and self._attr_is_on is True
                 and self._attr_brightness_pct != prev_brightness_pct

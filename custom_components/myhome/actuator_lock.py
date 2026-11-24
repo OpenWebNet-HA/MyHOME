@@ -306,7 +306,7 @@ class ActuatorLockManager:
             for ent in list(self._entities.get(key, ())):
                 if is_obs:
                     ent.handle_actuator_lock(locked)
-                elif getattr(ent, "_actuator_locked", None) is None:
+                elif getattr(ent, "_actuator_locked", None) is not locked:
                     apply_actuator_lock_state(ent, locked)
 
     def evacuate_secondary_entities(self) -> None:

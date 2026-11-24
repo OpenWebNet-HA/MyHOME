@@ -2041,6 +2041,77 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
                 assert cov_race._stop_task is active_tilt_stop
                 cov_race._cancel_stop_task()
                 cov_race._abort_tilt()
+
+                # Mid-pulse WHO=14 / Dim10 SHUTTER_INFO=12 lock freezes interpolated angle and
+                # claims the actuator's stopped-level report (0 -> 1) without snapping tilt to 100%!
+                handler.send = orig_send  # type: ignore[method-assign]
+                cov_f401 = MyHOMECover(
+                    hass=hass,
+                    name="Venetian F401 38",
+                    entity_name=None,
+                    device_id="38",
+                    who="2",
+                    where="38",
+                    interface=None,
+                    device_class=None,
+                    advanced=True,
+                    manufacturer="BTicino",
+                    model="F401",
+                    gateway=handler,
+                    travel_time=20.0,
+                    slat_tilt=True,
+                    slat_time=2.0,
+                )
+                cov_f401.entity_id = "cover.venetian_f401_38"
+                cov_f401._register_availability_listener()
+                cov_f401.async_write_ha_state = MagicMock()
+                cov_f401.async_schedule_update_ha_state = MagicMock()
+                cov_f401.handle_event(OWNEvent.parse("*#2*38*10*10*0*001*15##"))
+                assert cov_f401.current_cover_position == 0
+                cov_f401._attr_current_cover_tilt_position = 0
+
+                # (a) Unstarted pulse locked before _tilt_start_time is set -> aborts at 0%
+                await cov_f401._async_start_tilt(50)
+                cov_f401._tilt_start_time = None
+                cov_f401.handle_actuator_lock(True)
+                assert cov_f401._is_tilting is False
+                assert cov_f401.current_cover_tilt_position == 0
+                cov_f401.handle_actuator_lock(False)
+
+                # (b) Started pulse locked 1.0s into a 2.0s slat rotation -> freezes at ~50%
+                #     and claims *#2*38*10*10*1*001*12## (0 -> 1) instead of snapping to 100%!
+                await cov_f401._async_start_tilt(80)
+                cov_f401._tilt_start_time = time.monotonic() - 1.0
+                cov_f401.handle_event(OWNEvent.parse("*#2*38*10*10*1*001*12##"))
+                assert cov_f401.actuator_locked is True
+                assert cov_f401._is_tilting is False
+                assert cov_f401.current_cover_position == 1
+                assert 35 <= (cov_f401.current_cover_tilt_position or 0) <= 65
+
+                # (c) Scope-follower pulse locked mid-run picks up leader._tilt_start_time!
+                cov_f401.handle_actuator_lock(False)
+                cov_f401._attr_current_cover_tilt_position = 0
+                fake_leader = SimpleNamespace(_tilt_start_time=time.monotonic() - 1.0, _pulse_written=None)
+                cov_f401._follow_pulse(fake_leader, "open")  # type: ignore[arg-type]
+                assert cov_f401._tilt_start_time is None
+                cov_f401.handle_actuator_lock(True)
+                assert 35 <= (cov_f401.current_cover_tilt_position or 0) <= 65
+
+                # (d) _is_from_cover_poll ignores unmarked *99*1## *2*0*W## during in-flight *#2*W## poll or standby sweep
+                cov_race._actuation_unconfirmed = True
+                cov_race._note_scope_run_for_unconfirmed(time.monotonic(), True)
+                handler._command_pool._in_flight_messages.append(OWNMessage.parse("*#2*37##"))
+                try:
+                    cov_race.handle_event(OWNEvent.parse("*2*0*37##"))
+                finally:
+                    handler._command_pool._in_flight_messages.clear()
+                assert cov_race._actuation_unconfirmed is True
+                fake_stb_cov = SimpleNamespace(sweep_active=True, _command_pool=SimpleNamespace(_in_flight_messages=[]))
+                with patch.object(handler, "_get_standby_gateway", return_value=fake_stb_cov):
+                    cov_race._note_scope_run_for_unconfirmed(time.monotonic(), True)
+                    cov_race.handle_event(OWNEvent.parse("*2*0*37##"))
+                assert cov_race._actuation_unconfirmed is True
+                await cov_f401.async_will_remove_from_hass()
             finally:
                 handler.send = orig_send  # type: ignore[method-assign]
                 await cov_tilt.async_will_remove_from_hass()
