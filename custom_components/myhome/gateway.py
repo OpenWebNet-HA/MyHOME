@@ -1327,16 +1327,20 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             # command session only): a drop would make OWNd log in again from inside it.
             # Repeated: OWNd suppresses one CancelledError while it recycles a socket.
             if reported_by_listener:
-                self.hass.loop.call_soon(self._cancel_listener, listener)
+                listener.add_done_callback(self._clear_cancel_listener_handle)
+                self._cancel_listener_handle = self.hass.loop.call_soon(
+                    self._cancel_listener, listener
+                )
             else:
                 self._cancel_listener(listener)
         # Nothing recovers without the user, so no reconnect grace period.
         self.is_connected = False
         self._event_runner.is_connected = False
-        self._mark_unavailable(None)
-        if self.config_entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS:
+        self._mark_unavailable(None, auth_refused=True)
+        entry = getattr(self, "config_entry", None)
+        if entry is None or entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS:
             return
-        self.config_entry.async_start_reauth(self.hass)
+        entry.async_start_reauth(self.hass)
 
     @callback
     def _clear_cancel_listener_handle(self, _task: Any = None) -> None:
@@ -1351,7 +1355,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if listener.done() or self._event_runner._closing_session or attempt >= 60:
             self._clear_cancel_listener_handle()
             return
-        if attempt == 0:
+        if attempt == 0 and self._cancel_listener_handle is None:
             listener.add_done_callback(self._clear_cancel_listener_handle)
         listener.cancel()
         if attempt < 10:
@@ -1364,8 +1368,8 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             )
 
     @callback
-    def _mark_unavailable(self, _now: Any) -> None:
-        """Mark the gateway unavailable after the reconnect grace period."""
+    def _mark_unavailable(self, _now: Any, *, auth_refused: bool = False) -> None:
+        """Mark the gateway unavailable after the reconnect grace period or an auth refusal."""
         if self._unavailable_timer is not None:
             self._unavailable_timer()
             self._unavailable_timer = None
@@ -1376,11 +1380,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self.available:  # carried by the warm standby; refresh entities whose standby coverage differs
             async_dispatcher_send(self.hass, self.availability_signal)
             return
-        LOGGER.warning(
-            "%s Gateway unavailable (outage exceeded %ss).",
-            self.log_id,
-            AVAILABILITY_GRACE,
-        )
+        if not (auth_refused or self._auth_refused):
+            LOGGER.warning(
+                "%s Gateway unavailable (outage exceeded %ss).",
+                self.log_id,
+                AVAILABILITY_GRACE,
+            )
         self._notify_availability()
 
     @callback

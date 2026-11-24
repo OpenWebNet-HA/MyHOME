@@ -150,10 +150,12 @@ async def test_event_session_refused_on_reconnect_starts_reauth_and_stops(
 
     assert gateway.proofs == 1, "the refused password was presented again"
     assert handler.available is False
+    assert handler._cancel_listener_handle is None
     flows = _reauth_flows(hass)
     assert len(flows) == 1
     assert flows[0]["context"]["entry_id"] == entry.entry_id
     assert "refused the OpenWebNet password (password_error) on the event session" in caplog.text
+    assert "Gateway unavailable (outage exceeded" not in caplog.text
     assert DUMMY_PASSWORD not in caplog.text
 
     # Nothing is queued for a worker that will never come back.
@@ -178,8 +180,8 @@ async def test_command_session_refused_stops_the_event_listener_too(
     await asyncio.wait_for(asyncio.gather(handler.listening_worker, return_exceptions=True), timeout=5)
     await hass.async_block_till_done()
 
-    # Two workers opened their session at the same moment; neither tries again.
-    assert 1 <= gateway.proofs <= 2
+    # Handshakes serialize across the worker pool: only the first worker presents the password.
+    assert gateway.proofs == 1
     proofs = gateway.proofs
     assert handler.listening_worker.done()
     assert handler.available is False
@@ -695,7 +697,10 @@ async def test_split_auth_reauth_rejects_wrong_command_session_password(
     await hass.async_block_till_done()
     handler = entry.runtime_data.gateway
     try:
-        await _until(lambda: handler.available, "event session up")
+        await _until(
+            lambda: handler.available and "*99*0##" in harness.received_messages,
+            "event and command sessions up",
+        )
         script.protect = ("*99*0##",)
         await harness.disconnect_all_clients()
         await handler.send(OWNCommand.parse("*1*1*21##"))
@@ -736,7 +741,10 @@ async def test_split_auth_reauth_handles_command_session_connect_and_close_excep
     await hass.async_block_till_done()
     handler = entry.runtime_data.gateway
     try:
-        await _until(lambda: handler.available, "event session up")
+        await _until(
+            lambda: handler.available and "*99*0##" in harness.received_messages,
+            "event and command sessions up",
+        )
         script.protect = ("*99*0##",)
         await harness.disconnect_all_clients()
         await handler.send(OWNCommand.parse("*1*1*21##"))
@@ -803,7 +811,10 @@ async def test_reauth_refreshes_host_after_mid_reauth_ssdp_ip_change(
     await hass.async_block_till_done()
     first = entry.runtime_data.gateway
     try:
-        await _until(lambda: first.available, "event session up")
+        await _until(
+            lambda: first.available and "*99*0##" in harness.received_messages,
+            "event and command sessions up",
+        )
         script.protect = ("*99*0##", "*99*1##")
         await harness.disconnect_all_clients()
         await _until(lambda: bool(_reauth_flows(hass)), "reauth flow started")
@@ -835,3 +846,230 @@ async def test_ended_by_auth_refusal_scoped_to_managed_workers_and_class_default
     handler._auth_refused = True
     # Current test task is neither listening_worker nor in sending_workers.
     assert handler._ended_by_auth_refusal() is False
+
+
+async def test_multi_worker_pool_serializes_handshakes_avoiding_hmac_lockout(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    harness: MockGatewayHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """M-12: 4 concurrent workers serialize handshakes on initial connect and in-send() reconnect.
+
+    Presenting a changed password concurrently across 3+ workers would trip the
+    gateway's 3-failures-in-60s HMAC lockout before the first refusal returned.
+    """
+    monkeypatch.setattr(event_session, "RECONNECT_PAUSE_FATAL", 0.05)
+
+    # 1. Initial startup with 4 command workers on split-auth (*99*0## protected): exactly 1 proof.
+    script = RefusingGateway(harness, protect=("*99*0##",))
+    first = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    first._request_gateway_identity = MagicMock()  # type: ignore[method-assign]
+    first.listening_worker = asyncio.create_task(first.listening_loop())
+    for wid in range(4):
+        first.sending_workers.append(asyncio.create_task(first.sending_loop(wid)))
+    try:
+        await asyncio.wait_for(asyncio.gather(*first.sending_workers), timeout=5)
+        await asyncio.wait_for(asyncio.gather(first.listening_worker, return_exceptions=True), timeout=5)
+        await hass.async_block_till_done()
+        assert script.proofs == 1
+    finally:
+        await first.close_listener()
+
+    for flow in _reauth_flows(hass):
+        hass.config_entries.flow.async_abort(flow["flow_id"])
+
+    # 2. All 4 workers hold open sockets, peer closes command sockets after password rotation,
+    #    and 4 commands fire concurrently (including an unmanaged worker hitting _connect_lock
+    #    inside OWNCommandSession.send()): still only 1 proof on the wire.
+    script.proofs = 0
+    script.protect = ()
+    command_writers: list[asyncio.StreamWriter] = []
+
+    def track_command_writers(msg: str, writer: asyncio.StreamWriter) -> str | None:
+        if msg == "*99*0##" and writer not in command_writers:
+            command_writers.append(writer)
+        return script._reply(msg, writer)
+
+    harness.set_custom_handler(track_command_writers)
+    second = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    second._request_gateway_identity = MagicMock()  # type: ignore[method-assign]
+    second.listening_worker = asyncio.create_task(second.listening_loop())
+    for wid in range(3):
+        second.sending_workers.append(asyncio.create_task(second.sending_loop(wid)))
+    # Unmanaged 4th worker exercises the post-lock _auth_refused short-circuit inside send()
+    # without being task-cancelled via sending_workers.
+    unmanaged_worker = asyncio.create_task(second.sending_loop(3))
+    try:
+        await _until(lambda: second.available and len(command_writers) == 4, "4 command sessions open")
+        script.protect = ("*99*0##",)
+        for writer in list(command_writers):
+            writer.close()
+        await asyncio.sleep(0.05)
+
+        futures = [
+            await second.send(OWNCommand.parse(f"*1*1*{11 + i}##"))
+            for i in range(4)
+        ]
+        await asyncio.wait_for(
+            asyncio.gather(*second.sending_workers, unmanaged_worker, return_exceptions=True),
+            timeout=5,
+        )
+        await asyncio.wait_for(
+            asyncio.gather(second.listening_worker, return_exceptions=True),
+            timeout=5,
+        )
+        await hass.async_block_till_done()
+        assert all(fut.cancelled() for fut in futures)
+        assert script.proofs == 1
+    finally:
+        await second.close_listener()
+        if not unmanaged_worker.done():
+            unmanaged_worker.cancel()
+            await asyncio.gather(unmanaged_worker, return_exceptions=True)
+
+    for flow in _reauth_flows(hass):
+        hass.config_entries.flow.async_abort(flow["flow_id"])
+
+    # 3. All 4 workers close their idle command sockets, password rotates, and 4 commands
+    #    arrive simultaneously: reopen connect() serializes to 1 proof and cancels all 4 futures.
+    monkeypatch.setattr(type(second), "command_session_idle_timeout", property(lambda _: 0.03))
+    script.proofs = 0
+    script.protect = ()
+    harness.set_custom_handler(script._reply)
+    third = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    third._request_gateway_identity = MagicMock()  # type: ignore[method-assign]
+    third.listening_worker = asyncio.create_task(third.listening_loop())
+    for wid in range(4):
+        third.sending_workers.append(asyncio.create_task(third.sending_loop(wid)))
+    try:
+        await _until(
+            lambda: third.available and len(harness.connected_clients) == 1,
+            "all 4 command sockets closed after idle timeout",
+        )
+        script.protect = ("*99*0##",)
+        idle_futures = [
+            await third.send(OWNCommand.parse(f"*1*1*{21 + i}##"))
+            for i in range(4)
+        ]
+        await asyncio.wait_for(
+            asyncio.gather(*third.sending_workers, return_exceptions=True),
+            timeout=5,
+        )
+        await asyncio.wait_for(
+            asyncio.gather(third.listening_worker, return_exceptions=True),
+            timeout=5,
+        )
+        await hass.async_block_till_done()
+        assert all(fut.cancelled() for fut in idle_futures)
+        assert script.proofs == 1
+    finally:
+        await third.close_listener()
+
+
+async def test_split_auth_reauth_checks_command_session_when_runtime_data_is_none(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    harness: MockGatewayHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Split-auth (*99*1## open, *99*0## protected) still verifies *99*0## when runtime_data is None."""
+    import custom_components.myhome.config_flow as cf
+    import custom_components.myhome.config_flow_discovery as cfd
+
+    # Case 1: entry was never loaded (entry.runtime_data is None from the start).
+    assert getattr(entry, "runtime_data", None) is None
+    script = RefusingGateway(harness, protect=("*99*0##",))
+    init_res = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    assert init_res["type"] is FlowResultType.FORM
+    assert init_res["step_id"] == "password"
+
+    wrong_res = await hass.config_entries.flow.async_configure(
+        init_res["flow_id"], {CONF_OWN_PASSWORD: "wrong_password"}
+    )
+    assert wrong_res["type"] is FlowResultType.FORM
+    assert wrong_res["step_id"] == "password"
+    assert wrong_res["errors"].get(CONF_OWN_PASSWORD) == "password_error"
+
+    script.protect = ()
+    monkeypatch.setattr(hass.config_entries, "async_reload", AsyncMock(return_value=True))
+    ok_res = await hass.config_entries.flow.async_configure(
+        init_res["flow_id"], {CONF_OWN_PASSWORD: ROTATED_PASSWORD}
+    )
+    await hass.async_block_till_done()
+    assert ok_res["type"] is FlowResultType.ABORT
+    assert ok_res["reason"] == "reauth_successful"
+
+    # Case 2: entry had runtime_data when reauth started, then runtime_data became None before submit.
+    fake_runtime = MagicMock()
+    fake_runtime.gateway._auth_refused_session = "command"
+    entry.runtime_data = fake_runtime
+    init_res2 = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    entry.runtime_data = None
+
+    class _RefusingCmdSession:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def connect(self) -> dict[str, Any]:
+            return {"Success": False, "Message": "password_error"}
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(cf.OWNSession, "test_connection", AsyncMock(return_value={"Success": True}))
+    monkeypatch.setattr(cfd, "OWNCommandSession", _RefusingCmdSession)
+    wrong_res2 = await hass.config_entries.flow.async_configure(
+        init_res2["flow_id"], {CONF_OWN_PASSWORD: "still_wrong"}
+    )
+    assert wrong_res2["type"] is FlowResultType.FORM
+    assert wrong_res2["errors"].get(CONF_OWN_PASSWORD) == "password_error"
+    hass.config_entries.flow.async_abort(init_res2["flow_id"])
+
+
+async def test_auth_refusal_detached_entry_log_and_reported_by_listener_handle(
+    hass: HomeAssistant,
+    handler: MyHOMEGatewayHandler,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Detached config_entry=None is safe, normal outage still logs, and call_soon handle is tracked."""
+    caplog.set_level(logging.WARNING)
+
+    # Normal grace-period outage still logs the outage warning.
+    handler._on_event_connection_state_change(True)
+    assert handler.available is True
+    handler.is_connected = False
+    handler._mark_unavailable(None)
+    assert "Gateway unavailable (outage exceeded" in caplog.text
+    caplog.clear()
+
+    # Auth refusal with config_entry=None and reported inside listening_worker tracks _cancel_listener_handle
+    # and suppresses the misleading outage warning.
+    handler._on_event_connection_state_change(True)
+    handler.config_entry = None  # type: ignore[assignment]
+    observed_handle: list[asyncio.Handle | None] = []
+    hold = asyncio.Event()
+
+    async def _inside_listener() -> None:
+        handler._on_auth_refused("password_error", "event")
+        observed_handle.append(handler._cancel_listener_handle)
+        await hold.wait()
+
+    handler.listening_worker = asyncio.create_task(_inside_listener())
+    await _until(lambda: bool(observed_handle), "refusal invoked inside listener")
+    assert observed_handle[0] is not None
+    # Closing listener before the loop finishes cancels and clears the tracked handle.
+    await handler.close_listener()
+    assert handler._cancel_listener_handle is None
+    assert "Gateway unavailable (outage exceeded" not in caplog.text
+    assert not _reauth_flows(hass)
+    hold.set()
+    await asyncio.gather(handler.listening_worker, return_exceptions=True)

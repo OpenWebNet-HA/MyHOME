@@ -60,6 +60,31 @@ EVENT_INACTIVITY_TIMEOUT: float | None = None
 # password again (reauth).
 AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
 
+class _PooledCommandSession(OWNCommandSession):
+    """``OWNCommandSession`` whose handshake serializes across a ``CommandWorkerPool``."""
+
+    def __init__(self, pool: CommandWorkerPool, **kwargs: Any) -> None:
+        """Bind this command session's handshake lock to ``pool``."""
+        super().__init__(**kwargs)
+        self._pool = pool
+
+    async def _negotiate(self) -> dict[str, Any]:
+        """Serialize session negotiation across the pool and abort once auth is refused."""
+        async with self._pool._connect_lock:
+            if self._pool._auth_refused or self._pool._terminate_sender:
+                reason = (
+                    self._pool._auth_refused_reason or "password_error"
+                    if self._pool._auth_refused
+                    else "connection_refused"
+                )
+                return {"Success": False, "Message": reason}
+            result: dict[str, Any] = await super()._negotiate()
+            msg = result.get("Message")
+            if not result.get("Success") and isinstance(msg, str) and msg in AUTH_REFUSALS:
+                self._pool._auth_refused_reason = msg
+                self._pool.handler._on_auth_refused(msg, "command")
+            return result
+
 
 def _resolve_written(task: dict[str, Any], when: float) -> None:
     """Complete a queued frame's delivery future with the write timestamp."""
@@ -1397,6 +1422,11 @@ class CommandWorkerPool:
         self._in_flight_messages: list[Any] = []
         # Set once the gateway refused the password: nothing is queued any more.
         self._auth_refused: bool = False
+        self._auth_refused_reason: str | None = None
+        # Serializes command-session handshakes across workers so a changed password
+        # is never presented by 2–4 workers concurrently (avoiding the 3-in-60s HMAC
+        # gateway lockout, OpenWebNet Encyclopedia `protocol/authentication.md`).
+        self._connect_lock: asyncio.Lock = asyncio.Lock()
 
         queue_max_size = (
             self.gateway.profile.max_queue_size
@@ -1560,6 +1590,12 @@ class CommandWorkerPool:
         )
         return written
 
+    def _on_auth_error(self, error: Any) -> None:
+        """OWNd's ``on_auth_error`` hook: the gateway refused the password on a command session."""
+        reason = getattr(error, "reason", None)
+        self._auth_refused_reason = reason if isinstance(reason, str) else "password_error"
+        self.handler._on_auth_refused(reason, "command")
+
     def _connect_refused(self, result: Any, worker_id: int) -> bool:
         """A command-session ``connect()`` result the worker must not retry on."""
         if isinstance(result, dict) and not result.get("Success", True):
@@ -1622,7 +1658,19 @@ class CommandWorkerPool:
             worker_id,
         )
 
-        _command_session = command_session_cls(gateway=self.gateway, logger=LOGGER)
+        if command_session_cls is OWNCommandSession:
+            _command_session: Any = _PooledCommandSession(
+                self,
+                gateway=self.gateway,
+                logger=LOGGER,
+                on_auth_error=self._on_auth_error,
+            )
+        else:
+            _command_session = command_session_cls(
+                gateway=self.gateway,
+                logger=LOGGER,
+                on_auth_error=self._on_auth_error,
+            )
         self._active_worker_loops += 1
         try:
             try:
@@ -1638,7 +1686,7 @@ class CommandWorkerPool:
                 )
                 res = None
 
-            if self._connect_refused(res, worker_id):
+            if self._connect_refused(res, worker_id) or self._auth_refused or self._terminate_sender:
                 return
 
             while not self._terminate_sender:
@@ -1694,7 +1742,11 @@ class CommandWorkerPool:
                     # never replayed.
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
+                        if (
+                            self._connect_refused(res, worker_id)
+                            or self._auth_refused
+                            or self._terminate_sender
+                        ):
                             _cancel_written(task)
                             return
                         if not session_is_open(_command_session):
@@ -1927,6 +1979,8 @@ class CommandWorkerPool:
     def stop_after_auth_refusal(self) -> None:
         """Stop every worker and refuse new frames: the gateway refused the password."""
         self._auth_refused = True
+        if self._auth_refused_reason is None:
+            self._auth_refused_reason = "password_error"
         self.close()
         # A worker in connect()'s retry delay, or holding a dequeued frame while its
         # session reopens, would log in again or write that frame: cancel it (not

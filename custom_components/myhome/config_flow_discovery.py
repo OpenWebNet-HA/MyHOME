@@ -22,7 +22,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import device_registry as dr
 from OWNd.connection import OWNCommandSession
-from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
+from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand, OWNSignaling
 from voluptuous import All, Coerce, Range, Required
 
 from .const import (
@@ -243,6 +243,7 @@ class ConfigFlowDiscoveryMixin:
     gateway_handler: typing.Any
     discovered_gateways: dict[str, dict[str, typing.Any]] | None
     _existing_entry: typing.Any
+    _auth_refused_session: str | None = None
     _pending_entry: tuple[str, dict[str, typing.Any], dict[str, typing.Any]] | None
     _custom_address: str
     _custom_port: int
@@ -447,6 +448,11 @@ class ConfigFlowDiscoveryMixin:
                 DOMAIN, config[CONF_MAC]
             )
         self._existing_entry = entry
+        self._auth_refused_session = getattr(
+            getattr(getattr(entry, "runtime_data", None), "gateway", None),
+            "_auth_refused_session",
+            None,
+        )
 
         mac = entry.unique_id if entry else (config.get(CONF_MAC) if config else None)
         if mac:
@@ -505,11 +511,30 @@ class ConfigFlowDiscoveryMixin:
 
         self._update_flow_context(gateway)
 
+        monitor_open_no_challenge = False
+
         async def _run_test_connection() -> dict[str, typing.Any]:
+            nonlocal monitor_open_no_challenge
+            monitor_open_no_challenge = False
             try:
                 session = _cf.OWNSession(gateway=gateway, logger=LOGGER)
+                saw_frames: list[str] = []
+                orig_read_frame = getattr(session, "_read_frame", None)
+                if isinstance(session, _cf.OWNSession) and callable(orig_read_frame):
+
+                    async def _tracked_read_frame(timeout: float | None = None) -> str:
+                        frame = str(await orig_read_frame(timeout))
+                        saw_frames.append(frame)
+                        return frame
+
+                    setattr(session, "_read_frame", _tracked_read_frame)
                 res: typing.Any = await session.test_connection()
                 if isinstance(res, dict):
+                    if res.get("Success") and saw_frames:
+                        monitor_open_no_challenge = not any(
+                            OWNSignaling(f).is_sha() or OWNSignaling(f).is_nonce()
+                            for f in saw_frames
+                        )
                     return res
                 return {"Success": False, "Message": "cannot_connect"}
             except (OSError, TimeoutError, ConnectionError) as exc:
@@ -548,15 +573,19 @@ class ConfigFlowDiscoveryMixin:
             test_result = await _run_test_connection()
 
         if test_result.get("Success") and self._existing_entry:
-            refused_session = getattr(
-                getattr(getattr(self._existing_entry, "runtime_data", None), "gateway", None),
-                "_auth_refused_session",
-                None,
+            refused_session = (
+                getattr(
+                    getattr(getattr(self._existing_entry, "runtime_data", None), "gateway", None),
+                    "_auth_refused_session",
+                    None,
+                )
+                or self._auth_refused_session
             )
-            if refused_session == "command":
+            if refused_session == "command" or monitor_open_no_challenge:
                 # Split authentication: monitor session (*99*1##) can be open while
                 # the command session (*99*0##) requires the password. Verify the
-                # command session too so a wrong password does not reload into a loop.
+                # command session too (even if entry.runtime_data is None) so a
+                # wrong password does not reload into a loop.
                 cmd_session = OWNCommandSession(gateway=gateway, logger=LOGGER)
                 try:
                     cmd_res: typing.Any = await cmd_session.connect()
