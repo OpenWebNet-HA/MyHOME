@@ -592,6 +592,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._local_target_reported = False
         self._local_target_base: float | None = None
         self._nominal_from_dim12 = False
+        # 4-zone central unit (#0#N): master-zone Dim 12 arrives both while idle/protected
+        # (7.0 / 35.0 °C) and ahead of a weekly-program wake (*4*1*N## + *#4*N*12*TTTT*3##
+        # before *4*110x*#0#N##). Track active-master pairing so waking into a schedule
+        # reconciles fresh schedule setpoints without promoting stale protection Dim 12.
+        self._local_target_from_active_master = False
+        self._master_season_active_at: float | None = None
+        self._idle_dim12_at: float | None = None
+        self._pending_master_dim12: tuple[float, float] | None = None
         self._dim12_at: float | None = None
         self._dim13_at: float | None = None
         self._unpaired_dim12_at: float | None = None
@@ -610,7 +618,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._temp_announced: bool = False
         self._humidity_announced: bool = False
         self._fan_mode_reported = False
-        self._nominal_before_dim12: tuple[float | None, float] | None = None
+        self._nominal_before_dim12: tuple[float | None, bool, float] | None = None
         self._poll_health = PollHealth()
         # BTicino 3550 central unit (#0) diagnostic status flags (WHAT 20..24, 30, 31)
         self._remote_control: str | None = None
@@ -883,11 +891,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             "local_target_temperature": self._local_target_temperature,
             "knob_pos": self._knob_pos,
         }
-        if not self._central and self._target_temperature is not None:
-            # The commanded setpoint (dimension 14), without the knob offset. ``temperature`` is
-            # the setpoint in force (dimension 12) and, while the zone is off or in antifreeze /
-            # thermal protection, the protection setpoint (#383): this is what the zone goes
-            # back to, and what a restart must not lose (see ``async_restore_last_state``).
+        if (
+            not self._central or self._has_four_zone_manual_nominal()
+        ) and self._target_temperature is not None:
+            # The commanded setpoint (dimension 14 for a zone, or manual *4*110#TTTT*#0#N##
+            # / *4*210#TTTT*#0#N## on a 4-zone central unit), without the knob offset.
+            # ``temperature`` is the setpoint in force (dimension 12) and, while off or in
+            # antifreeze / thermal protection, the protection setpoint (#383): this is what
+            # the entity goes back to, and what a restart must not lose (see
+            # ``async_restore_last_state``).
             restored_nominal = self._saved_nominal_in_force()
             attrs["nominal_temperature"] = (
                 restored_nominal if restored_nominal is not None else self._target_temperature
@@ -1007,31 +1019,37 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 except (ValueError, TypeError):
                     shown = None
                 saved_nominal: float | None = None
-                if shown is not None and not self._central:
+                if shown is not None and (not self._central or self._is_four_zone_central):
                     try:
                         raw_nominal = last_state.attributes.get("nominal_temperature")
                         saved_nominal = float(raw_nominal) if raw_nominal is not None else None
                     except (ValueError, TypeError):
                         saved_nominal = None
-                if shown is not None and setpoint_live and not self._central:
-                    self._restore_knob_beside_live_setpoint(last_state)
+                if shown is not None and setpoint_live:
+                    if not self._central:
+                        self._restore_knob_beside_live_setpoint(last_state)
                     if (
-                        self._target_temperature is None
+                        (
+                            not self._central
+                            or (self._is_four_zone_central and not self._has_central_schedule)
+                        )
+                        and self._target_temperature is None
                         and self._local_target_reported
                         and saved_nominal is not None
                     ):
-                        # Only dimension 12 replayed before the saved state (mode was unknown):
-                        # keep the saved commanded setpoint alongside the live setpoint in force
-                        # so entering protection does not lose it, and the silent poll still asks
-                        # dimension 14 until the zone reports it.
+                        # Only dimension 12 replayed before the saved state (mode was unknown or
+                        # idle/protection): keep the saved commanded setpoint alongside the live
+                        # setpoint in force so entering/leaving protection does not lose it, and
+                        # on a zone the silent poll still asks dimension 14 until reported.
                         self._target_temperature = round(saved_nominal, 1)
                         self._restored_nominal = (self._target_temperature, self._target_temperature)
                         self._nominal_from_dim12 = False
                 if shown is not None and not setpoint_live:
-                    # The saved ``nominal_temperature`` is the commanded setpoint (dimension 14);
-                    # the value shown can be the setpoint in force or a protection setpoint
-                    # (#383). A state saved before the attribute existed keeps the old rules.
-                    # A knob position the zone reported before the restore is live.
+                    # The saved ``nominal_temperature`` is the commanded setpoint (dimension 14,
+                    # or central manual setpoint on #0#N); the value shown can be the setpoint
+                    # in force or a protection setpoint (#383). A state saved before the
+                    # attribute existed keeps the old rules. A knob position the zone reported
+                    # before the restore is live.
                     try:
                         saved_offset = int(float(last_state.attributes.get("local_offset") or 0))
                     except (ValueError, TypeError):
@@ -1039,46 +1057,79 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     if not self._local_offset_reported:
                         self._local_offset = saved_offset
                     self._restored_nominal = None
-                    # Saved off, or with no mode and no commanded setpoint at all (``unknown``:
-                    # a setpoint in force that came before the zone's mode): the value shown can
-                    # be a protection setpoint, so only a saved commanded setpoint is taken.
-                    maybe_protection = not self._central and (
-                        last_state.state == HVACMode.OFF.value or (not saved_running and saved_nominal is None)
+                    saved_central_protection = self._is_four_zone_central and (
+                        last_state.attributes.get("central_operation")
+                        in ("antifreeze", "thermal_protection")
                     )
-                    if maybe_protection:
-                        self._target_temperature = (
-                            round(saved_nominal, 1) if saved_nominal is not None else None
-                        )
-                        if self._target_temperature is not None:
-                            self._restored_nominal = (self._target_temperature, self._target_temperature)
-                    else:
-                        # Shown: the setpoint in force less the offset (#820). The commanded
-                        # setpoint saved next to it is what `heat` / `cool` write until the zone
-                        # reports again (``_effective_nominal_temperature``). A state saved
-                        # before the attribute existed has only the value shown: it stands in
-                        # for the commanded setpoint, and stays "the saved one" (asked for)
-                        # until the zone reports its own.
-                        self._target_temperature = round(
-                            shown - (0 if self._central else saved_offset), 1
-                        )
-                        if not self._central:
-                            self._restored_nominal = (
-                                self._target_temperature,
-                                round(saved_nominal, 1) if saved_nominal is not None else self._target_temperature,
+                    saved_central_schedule = self._is_four_zone_central and any(
+                        last_state.attributes.get(attr) is not None
+                        for attr in ("program", "scenario", "holiday_days")
+                    )
+                    # Saved off, in 4-zone central protection, or with no mode and no commanded
+                    # setpoint at all (``unknown``: a setpoint in force that came before the
+                    # mode): the value shown can be a protection or schedule setpoint, so only
+                    # a saved commanded setpoint is taken.
+                    maybe_protection = (not self._central or self._is_four_zone_central) and (
+                        last_state.state == HVACMode.OFF.value
+                        or saved_central_protection
+                        or (not saved_running and saved_nominal is None)
+                    )
+                    if not (self._is_four_zone_central and mode_live and self._has_central_schedule):
+                        if maybe_protection:
+                            self._target_temperature = (
+                                round(saved_nominal, 1) if saved_nominal is not None else None
                             )
-                        if not (mode_live and self._attr_hvac_mode == HVACMode.OFF):
-                            # The value shown was saved with the knob where it was then. A zone
-                            # that said it is off shows no knob offset (as in the knob branch).
-                            shown = round(self._target_temperature + self._applied_local_offset, 1)
-                    self._local_target_base = None
-                    self._nominal_from_dim12 = False
-                    self._local_target_temperature = shown
-                    self._target_temperature_restored = True
-                    if maybe_protection and mode_live and self._attr_hvac_mode != HVACMode.OFF:
-                        # The zone said it is running before the saved state was read: what was
-                        # saved while off is its protection setpoint (#383), not what it runs at.
-                        self._local_target_temperature = None
-                        self._show_nominal()
+                            if self._target_temperature is not None:
+                                self._restored_nominal = (
+                                    self._target_temperature,
+                                    self._target_temperature,
+                                )
+                            self._nominal_from_dim12 = False
+                        else:
+                            # Shown: the setpoint in force less the offset (#820). The commanded
+                            # setpoint saved next to it is what `heat` / `cool` write until the zone
+                            # reports again (``_effective_nominal_temperature``). A state saved
+                            # before the attribute existed has only the value shown: it stands in
+                            # for the commanded setpoint, and stays "the saved one" (asked for)
+                            # until the zone reports its own.
+                            if self._is_four_zone_central and saved_nominal is not None:
+                                self._target_temperature = round(saved_nominal, 1)
+                                self._restored_nominal = (
+                                    self._target_temperature,
+                                    self._target_temperature,
+                                )
+                            else:
+                                self._target_temperature = round(
+                                    shown - (0 if self._central else saved_offset), 1
+                                )
+                                if not self._central:
+                                    self._restored_nominal = (
+                                        self._target_temperature,
+                                        round(saved_nominal, 1)
+                                        if saved_nominal is not None
+                                        else self._target_temperature,
+                                    )
+                            if not (mode_live and self._attr_hvac_mode == HVACMode.OFF):
+                                # The value shown was saved with the knob where it was then. A zone
+                                # that said it is off shows no knob offset (as in the knob branch).
+                                shown = round(self._target_temperature + self._applied_local_offset, 1)
+                            self._nominal_from_dim12 = bool(
+                                saved_central_schedule and saved_nominal is None
+                            )
+                        self._local_target_base = None
+                        self._local_target_temperature = shown
+                        self._target_temperature_restored = True
+                        if (
+                            maybe_protection
+                            and mode_live
+                            and self._attr_hvac_mode != HVACMode.OFF
+                            and self._central_operation is None
+                        ):
+                            # The zone or central unit said it is actively running before the
+                            # saved state was read: what was saved while off or in protection is
+                            # its protection setpoint (#383), not what it runs at.
+                            self._local_target_temperature = None
+                            self._show_nominal()
             if not mode_live:
                 if "program" in last_state.attributes:
                     try:
@@ -3010,6 +3061,69 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         def target_temperature(self) -> float | None:
             return self.native_target_temperature
 
+    @property
+    def _is_four_zone_central(self) -> bool:
+        """Whether this entity is a 4-zone central unit (#0#N, BTicino 4695)."""
+        return self._central and is_four_zone_central_where(self._where)
+
+    @property
+    def _has_central_schedule(self) -> bool:
+        """Whether a weekly program, scenario, or holiday plan is active."""
+        return (
+            self._program is not None
+            or self._scenario is not None
+            or self._holiday_days is not None
+        )
+
+    def _has_four_zone_manual_nominal(self) -> bool:
+        """Whether a 4-zone central unit holds an authoritative central manual setpoint."""
+        return (
+            self._is_four_zone_central
+            and self._target_temperature is not None
+            and not self._nominal_from_dim12
+            and not self._has_central_schedule
+        )
+
+    def _clear_master_dim12_pairing(self) -> None:
+        """Reset pending master-zone Dim 12 pairing state on a 4-zone central unit."""
+        self._master_season_active_at = None
+        self._idle_dim12_at = None
+        self._local_target_from_active_master = False
+        self._pending_master_dim12 = None
+
+    def _apply_four_zone_schedule_setpoint(
+        self, *, leaving_idle: bool, had_manual: bool
+    ) -> None:
+        """Reconcile or clear the setpoint when a 4-zone central unit enters a schedule."""
+        now = time.monotonic()
+        pending = self._pending_master_dim12
+        active_season_fresh = (
+            self._master_season_active_at is not None
+            and now - self._master_season_active_at <= _PROTECTION_FRAME_WINDOW
+        )
+        if self._local_target_reported and self._local_target_from_active_master:
+            self._reconcile_local_target()
+            self._clear_master_dim12_pairing()
+        elif (
+            had_manual
+            and pending is not None
+            and now - pending[1] <= _PROTECTION_FRAME_WINDOW
+            and active_season_fresh
+        ):
+            self._local_target_temperature = pending[0]
+            self._local_target_reported = True
+            self._reconcile_local_target()
+            self._clear_master_dim12_pairing()
+        elif leaving_idle or had_manual:
+            self._target_temperature = None
+            self._nominal_from_dim12 = False
+            self._restored_nominal = None
+            self._target_temperature_restored = False
+            self._local_target_temperature = None
+            self._local_target_reported = False
+            self._local_target_base = None
+            self._clear_master_dim12_pairing()
+
     def _saved_nominal_in_force(self) -> float | None:
         """The commanded setpoint saved before a restart, while nothing has replaced the restored setpoint."""
         restored: tuple[float, float] | None = getattr(self, "_restored_nominal", None)
@@ -3381,7 +3495,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         nominal = self._effective_nominal_temperature()
         use_manual = (
             nominal is not None
-            and self._program is None
+            and not self._has_central_schedule
             and not self._nominal_from_dim12
         )
         if use_manual and nominal is not None:
@@ -3391,9 +3505,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             await self._send_central_command(restore, "_central_echo", refusal_raises=True)
         if self._central_report_count != reports_before:
             return
+        was_idle = self._attr_hvac_mode == HVACMode.OFF or self._central_operation is not None
         self._central_operation = None
         if use_manual:
             self._show_nominal()
+        elif was_idle and not self._local_target_from_active_master:
+            self._local_target_temperature = None
+            self._local_target_reported = False
         if self._attr_hvac_action == HVACAction.OFF:
             self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
@@ -3530,8 +3648,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _remember_nominal(self, saved_nominal: float | None = None) -> None:
         """Keep the nominal setpoint a dimension 12 frame is about to replace."""
-        nominal = saved_nominal if saved_nominal is not None else self._target_temperature
-        self._nominal_before_dim12 = (nominal, time.monotonic())
+        if saved_nominal is not None:
+            nominal: float | None = saved_nominal
+            from_dim12 = False
+        else:
+            nominal = self._target_temperature
+            from_dim12 = self._nominal_from_dim12
+        self._nominal_before_dim12 = (nominal, from_dim12, time.monotonic())
 
     def _restore_nominal_before_protection(self) -> None:
         """A protection setpoint arrives just before the frame that turns the zone OFF.
@@ -3547,9 +3670,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._unpaired_dim12_at = None
         self._paired_burst = None
         self._dim14_at = None
-        if remembered is not None and time.monotonic() - remembered[1] <= _PROTECTION_FRAME_WINDOW:
+        if remembered is not None and time.monotonic() - remembered[2] <= _PROTECTION_FRAME_WINDOW:
             self._target_temperature = remembered[0]
-            self._nominal_from_dim12 = False
+            self._nominal_from_dim12 = remembered[1] if self._is_four_zone_central else False
 
     def _show_nominal(self) -> None:
         """Show the nominal setpoint plus the knob offset until the zone reports dimension 12 again.
@@ -3661,11 +3784,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         await self._send_central_command(command, "_central_echo", refusal_raises=True)
         if self._central_report_count != reports_before:
             return
+        was_idle = self._attr_hvac_mode == HVACMode.OFF or self._central_operation is not None
         self._central_operation = None
         if hvac_mode == HVACMode.OFF:
             self._attr_hvac_action = HVACAction.OFF
-        elif self._attr_hvac_action == HVACAction.OFF:
-            self._attr_hvac_action = HVACAction.IDLE
+            if self._is_four_zone_central:
+                self._clear_master_dim12_pairing()
+        else:
+            if (
+                self._is_four_zone_central
+                and was_idle
+                and not self._local_target_from_active_master
+            ):
+                self._local_target_temperature = None
+                self._local_target_reported = False
+            if self._attr_hvac_action == HVACAction.OFF:
+                self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
         if self.hass is not None:
             self.async_write_ha_state()
@@ -4092,6 +4226,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._humidity_reported = True
                 self._announce_climate_humidity()
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
+            if self._is_four_zone_central:
+                # On a 4-zone central unit (#0#N, BTicino 4695), authoritative central manual
+                # setpoints arrive via *4*110#TTTT*#0#N## / *4*210#TTTT*#0#N## (MODE_TARGET).
+                # Plain master-zone Dimension 14 (*#4*N*14*TTTT*3##, returned by *#4*N## even
+                # during weekly programs and protection, plant-cu4695.tsv:17,23) and echoed
+                # #14 writes must never establish or overwrite central manual provenance.
+                return
             LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
@@ -4213,8 +4354,34 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             now = time.monotonic()
             raw_msg = str(message)
+            is_protection_or_off = self._dimension_3_is_protection(message)
+            if self._has_four_zone_manual_nominal() and not is_protection_or_off:
+                # Central manual setpoint (*4*110#TTTT*#0#N## / *4*210#TTTT*#0#N##) is
+                # authoritative for the plant-wide target; a delayed master-zone Dim 12
+                # (which includes Zone N's local knob offset) must neither shift the central
+                # setpoint nor flip _nominal_from_dim12 to True. Stash it briefly in case the
+                # 4695 is transitioning directly from manual into a weekly program whose
+                # *4*110x*#0#N## report follows this Dim 12.
+                if message.local_set_temperature is not None:
+                    self._pending_master_dim12 = (message.local_set_temperature, now)
+                return
             self._local_target_temperature = message.local_set_temperature
             self._local_target_reported = self._local_target_temperature is not None
+            if self._is_four_zone_central:
+                self._pending_master_dim12 = None
+                if is_protection_or_off and self._local_target_reported:
+                    if (
+                        self._master_season_active_at is not None
+                        and now - self._master_season_active_at <= _PROTECTION_FRAME_WINDOW
+                    ):
+                        self._local_target_from_active_master = True
+                        self._idle_dim12_at = None
+                    else:
+                        self._local_target_from_active_master = False
+                        self._idle_dim12_at = now
+                else:
+                    self._local_target_from_active_master = False
+                    self._idle_dim12_at = None
             self._dim12_at = (
                 now
                 if self._local_target_reported
@@ -4222,7 +4389,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and self._central_operation is None
                 else None
             )
-            is_protection_or_off = self._dimension_3_is_protection(message)
             saved_nominal = self._saved_nominal_in_force()
             written = self._written_target_temperature
             if written is not None and self._attr_hvac_mode == HVACMode.OFF and self._is_own_write_echo(now):
@@ -4267,15 +4433,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._paired_burst = (raw_msg, now)
         elif message.message_type == MESSAGE_TYPE_SEASON:
             if (
-                self._central
-                and is_four_zone_central_where(self._where)
+                self._is_four_zone_central
                 and four_zone_central_where(message) is None
-                and self._central_report_count > 0
             ):
-                # On a unified 4-zone central unit (#0#N), plain master-zone season frames
-                # (*4*1*N## / *4*0*N##) belong to the embedded probe's local mode echo, not
-                # the central unit's state: keep #0#N authoritative once it has reported.
-                return
+                now = time.monotonic()
+                self._master_season_active_at = now
+                if (
+                    self._idle_dim12_at is not None
+                    and now - self._idle_dim12_at <= _PROTECTION_FRAME_WINDOW
+                ):
+                    self._local_target_from_active_master = True
+                    self._idle_dim12_at = None
+                if self._central_report_count > 0:
+                    # On a unified 4-zone central unit (#0#N), plain master-zone season frames
+                    # (*4*1*N## / *4*0*N##) belong to the embedded probe's local mode echo, not
+                    # the central unit's state: keep #0#N authoritative once it has reported.
+                    return
             # *4*1*Z## / *4*0*Z## is the zone operation mode frame: the zone
             # (or the central unit) runs in the heating / conditioning season
             # (Legrand WHO 4 v2.0.0 p. 5, 13, 16, 19, 63). OWNd decodes it as
@@ -4364,20 +4537,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
             if (
-                self._central
-                and is_four_zone_central_where(self._where)
+                self._is_four_zone_central
                 and four_zone_central_where(message) is None
                 and self._central_report_count > 0
             ):
                 # On a unified 4-zone central unit (#0#N), plain master-zone mode frames
-                # (e.g. *4*303*1##) accompany the central unit's richer #0#N reports: keep
-                # #0#N authoritative once it has reported.
+                # (e.g. *4*303*1##, *4*102*1##, *4*202*1##) accompany the central unit's
+                # richer #0#N reports: keep #0#N authoritative once it has reported, while
+                # clearing any active-master Dim 12 pairing when the probe reports OFF or
+                # protection.
+                plain_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
+                if (
+                    message.mode == CLIMATE_MODE_OFF
+                    or plain_what in _CENTRAL_PROTECTION
+                    or plain_what == _CENTRAL_GENERIC_PROTECTION
+                ):
+                    self._clear_master_dim12_pairing()
                 return
             if not self._central and is_central_thermo_where(message):
                 self._unpaired_dim12_at = None
             self._hvac_mode_restored = False  # the zone itself says what it runs in
             prev_mode = self._attr_hvac_mode
             prev_central_op = self._central_operation
+            had_manual_before = self._has_four_zone_manual_nominal()
             previous_season = self._season
             self._remember_season(message)
             self._note_own_season(message)
@@ -4423,6 +4605,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # thermal_device.cpp WIN_PROTECTION / SUM_PROTECTION).
                 LOGGER.debug("%s %s (%s)", self._gateway_handler.log_id, message.human_readable_log, protection[0])
                 self._restore_nominal_before_protection()
+                if self._is_four_zone_central:
+                    self._clear_master_dim12_pairing()
                 if protection[1] in self._attr_hvac_modes:
                     self._attr_hvac_mode = protection[1]
                 if self._attr_hvac_action == HVACAction.OFF:
@@ -4461,18 +4645,19 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     message.human_readable_log,
                 )
                 self._restore_nominal_before_protection()
+                if self._is_four_zone_central:
+                    self._clear_master_dim12_pairing()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
                 self._mark_actuators_off()
             self._hydrate_nominal_from_local(prev_mode)
-            if (
-                (prev_mode == HVACMode.OFF or prev_central_op is not None)
-                and self._attr_hvac_mode != HVACMode.OFF
-                and self._central_operation is None
-            ):
-                if self._central and self._program is not None and self._local_target_reported:
-                    self._reconcile_local_target()
-                elif self._target_temperature is not None:
+            if self._attr_hvac_mode != HVACMode.OFF and self._central_operation is None:
+                leaving_idle = prev_mode == HVACMode.OFF or prev_central_op is not None
+                if self._is_four_zone_central and self._has_central_schedule:
+                    self._apply_four_zone_schedule_setpoint(
+                        leaving_idle=leaving_idle, had_manual=had_manual_before
+                    )
+                elif leaving_idle and self._target_temperature is not None:
                     self._show_nominal()
             if (
                 self._central
@@ -4548,6 +4733,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._attr_hvac_action = HVACAction.OFF
                 self._mark_actuators_off()
             if message.set_temperature is not None and message.set_temperature >= 0:
+                if self._is_four_zone_central:
+                    self._clear_master_dim12_pairing()
                 self._target_temperature = message.set_temperature
                 self._nominal_from_dim12 = False
                 self._target_temperature_restored = False

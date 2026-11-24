@@ -992,3 +992,303 @@ async def test_four_zone_central_sensor_event_validation_and_pre_report_season()
         central.handle_event(OWNHeatingEvent(bad_raw))
     assert central.current_temperature == 19.4
     assert central.current_humidity == 47.0
+
+
+# ── critical PR #1000 state-machine regressions (F-1, F-2, F-3) ──
+
+
+async def test_four_zone_central_restart_preserves_protection_program_and_manual_semantics() -> None:
+    """F-1: protection/OFF/program Dim 12 never leaks across HA restarts as a manual setpoint,
+    while genuine central manual setpoints (*4*110#TTTT*#0#N##) do survive restarts.
+    """
+    from homeassistant.core import State
+
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    def _saved(entity: MyHOMEClimate) -> State:
+        assert entity.hvac_mode is not None
+        return State(
+            "climate.central_unit_01",
+            entity.hvac_mode.value,
+            {"temperature": entity.target_temperature, **entity.extra_state_attributes},
+        )
+
+    # 1. Antifreeze (7.0 °C) across restart -> HEAT must send 3100, never manual 7.0 °C.
+    gw = _gateway(has_central_unit=False)
+    live = _climate(gw, "#0#1", standalone=None, central=True)
+    live.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    live.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    assert live.target_temperature == 7.0
+    assert live.extra_state_attributes["central_operation"] == "antifreeze"
+    assert "nominal_temperature" not in live.extra_state_attributes
+    saved_af = _saved(live)
+
+    restored_af = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_af.async_restore_last_state(saved_af)
+    assert restored_af.target_temperature == 7.0
+    assert restored_af._target_temperature is None
+    assert restored_af.extra_state_attributes["central_operation"] == "antifreeze"
+    restored_af.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    await restored_af.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+    assert restored_af.target_temperature is None
+    assert "central_operation" not in restored_af.extra_state_attributes
+    # Subsequent *4*1103*#0#1## without a fresh Dim 12 (plant-cu4695.tsv:46) stays None until fresh Dim 12.
+    restored_af.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert restored_af.target_temperature is None
+    restored_af.handle_event(OWNHeatingEvent("*#4*1*12*0185*3##"))
+    assert restored_af.target_temperature == 18.5
+    assert restored_af._nominal_from_dim12 is True
+
+    # 2. Thermal protection (35.0 °C) across restart -> COOL must send 3100, never manual 35.0 °C.
+    gw.send.reset_mock()
+    live_tp = _climate(gw, "#0#1", standalone=None, central=True)
+    live_tp.handle_event(OWNHeatingEvent("*4*202*#0#1##"))
+    live_tp.handle_event(OWNHeatingEvent("*#4*1*12*0350*3##"))
+    assert "nominal_temperature" not in live_tp.extra_state_attributes
+    restored_tp = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_tp.async_restore_last_state(_saved(live_tp))
+    assert restored_tp._target_temperature is None
+    restored_tp.handle_event(OWNHeatingEvent("*4*202*#0#1##"))
+    await restored_tp.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+    assert restored_tp.target_temperature is None
+
+    # 3. Weekly Program 3 (14.0 °C) -> OFF across restart -> HEAT must send 3100, never manual 14.0 °C.
+    gw.send.reset_mock()
+    live_prog = _climate(gw, "#0#1", standalone=None, central=True)
+    live_prog.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    live_prog.handle_event(OWNHeatingEvent("*#4*1*12*0140*3##"))
+    assert "nominal_temperature" not in live_prog.extra_state_attributes
+    saved_running_prog = _saved(live_prog)
+    live_prog.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    assert "nominal_temperature" not in live_prog.extra_state_attributes
+    restored_off_prog = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_off_prog.async_restore_last_state(_saved(live_prog))
+    assert restored_off_prog._target_temperature is None
+    restored_off_prog.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await restored_off_prog.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+
+    # 4. Weekly Program 3 saved while running -> restart -> OFF -> HEAT also resumes via 3100.
+    gw.send.reset_mock()
+    restored_prog = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_prog.async_restore_last_state(saved_running_prog)
+    assert restored_prog.target_temperature == 14.0
+    assert restored_prog._nominal_from_dim12 is True
+    assert "nominal_temperature" not in restored_prog.extra_state_attributes
+    restored_prog.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await restored_prog.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+
+    # 5. Control: genuine manual 20.0 °C persists nominal_temperature across running, antifreeze, and OFF restarts.
+    live_man = _climate(gw, "#0#1", standalone=None, central=True)
+    live_man.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    assert live_man.extra_state_attributes["nominal_temperature"] == 20.0
+    saved_man_run = _saved(live_man)
+
+    gw.send.reset_mock()
+    restored_man_run = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_man_run.async_restore_last_state(saved_man_run)
+    assert restored_man_run.target_temperature == 20.0
+    assert restored_man_run.extra_state_attributes["nominal_temperature"] == 20.0
+    await restored_man_run.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*#4*#0#1*#14*0200*3##"]
+
+    live_man.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    live_man.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    assert live_man.target_temperature == 7.0
+    assert live_man.extra_state_attributes["nominal_temperature"] == 20.0
+    saved_man_af = _saved(live_man)
+
+    gw.send.reset_mock()
+    restored_man_af = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_man_af.async_restore_last_state(saved_man_af)
+    assert restored_man_af.target_temperature == 7.0
+    assert restored_man_af.extra_state_attributes["nominal_temperature"] == 20.0
+    await restored_man_af.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*#4*#0#1*#14*0200*3##"]
+    assert restored_man_af.target_temperature == 20.0
+
+    live_man.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    saved_man_off = _saved(live_man)
+    gw.send.reset_mock()
+    restored_man_off = _climate(gw, "#0#1", standalone=None, central=True)
+    await restored_man_off.async_restore_last_state(saved_man_off)
+    assert restored_man_off.extra_state_attributes["nominal_temperature"] == 20.0
+    restored_man_off.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await restored_man_off.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*#4*#0#1*#14*0200*3##"]
+
+    # 6. Pre-restore live bus frames:
+    # 6a. Live antifreeze + Dim 12 before restore still recovers saved manual 20.0 nominal.
+    gw.send.reset_mock()
+    live_before_af = _climate(gw, "#0#1", standalone=None, central=True)
+    live_before_af.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    live_before_af.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    await live_before_af.async_restore_last_state(saved_man_af)
+    assert live_before_af.target_temperature == 7.0
+    assert live_before_af.extra_state_attributes["nominal_temperature"] == 20.0
+    await live_before_af.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*#4*#0#1*#14*0200*3##"]
+
+    # 6b. Live weekly program before restore never inherits a stale saved manual nominal.
+    gw.send.reset_mock()
+    live_before_prog = _climate(gw, "#0#1", standalone=None, central=True)
+    live_before_prog.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    await live_before_prog.async_restore_last_state(saved_man_off)
+    assert live_before_prog.target_temperature is None
+    assert live_before_prog._target_temperature is None
+    await live_before_prog.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+
+    # 6c. Live active pre-report season before restore discards saved antifreeze 7.0 display.
+    live_before_season = _climate(gw, "#0#1", standalone=None, central=True)
+    live_before_season.handle_event(OWNHeatingEvent("*4*1*1##"))
+    await live_before_season.async_restore_last_state(saved_af)
+    assert live_before_season.target_temperature is None
+
+
+async def test_four_zone_central_leaving_protection_or_off_into_program_ignores_stale_dim12() -> None:
+    """F-2: transitioning from antifreeze/OFF/manual into a weekly program without a fresh
+    active master-zone Dim 12 clears stale 7/35 °C or old manual setpoints, while preserving
+    active-master Dim 12 in both F454 and F461/MHS1/MH200N frame orders.
+    """
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # 1. Manual 19.0 -> Antifreeze -> master Dim 12 (7.0 °C) -> Program 3 (*4*1103*#0#1##, no new Dim 12).
+    gw = _gateway(has_central_unit=False)
+    central = _climate(gw, "#0#1", standalone=None, central=True)
+    central.handle_event(OWNHeatingEvent("*4*110#0190*#0#1##"))
+    central.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    central.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    assert central.target_temperature == 7.0
+    central.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.extra_state_attributes["program"] == 3
+    assert central.target_temperature is None
+    assert central._target_temperature is None
+    assert "nominal_temperature" not in central.extra_state_attributes
+    # Fresh schedule Dim 12 updates display and survives periodic *4*1103*#0#1## poll repeats.
+    central.handle_event(OWNHeatingEvent("*#4*1*12*0180*3##"))
+    assert central.target_temperature == 18.0
+    assert central._nominal_from_dim12 is True
+    central.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert central.target_temperature == 18.0
+
+    # 2. Manual 19.0 -> OFF -> master Dim 12 (7.0 °C) + *4*303*1## -> Program 3 (no new Dim 12).
+    gw2 = _gateway(has_central_unit=False)
+    central2 = _climate(gw2, "#0#1", standalone=None, central=True)
+    central2.handle_event(OWNHeatingEvent("*4*110#0190*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    central2.handle_event(OWNHeatingEvent("*4*303*1##"))
+    central2.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert central2.target_temperature is None
+    assert central2._target_temperature is None
+    central2.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await central2.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw2) == ["*4*3100*#0#1##"]
+
+    # 3. F461/MHS1/MH200N wake order (Dim 12 immediately before *4*1*1##, ahead of *4*1103*#0#1##).
+    central2.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*#4*1*12*0140*3##"))
+    central2.handle_event(OWNHeatingEvent("*4*1*1##"))
+    central2.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert central2.target_temperature == 14.0
+    assert central2._nominal_from_dim12 is True
+
+    # 4a. Direct Manual 20.0 -> Program 3 without fresh Dim 12 clears old manual 20.0.
+    gw3 = _gateway(has_central_unit=False)
+    central3 = _climate(gw3, "#0#1", standalone=None, central=True)
+    central3.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    central3.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert central3.target_temperature is None
+    assert central3._target_temperature is None
+    central3.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await central3.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw3) == ["*4*3100*#0#1##"]
+
+    # 4b. Direct Manual 20.0 -> *4*1*1## + *#4*1*12*0140*3## -> *4*1103*#0#1## adopts fresh 14.0.
+    central3.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    central3.handle_event(OWNHeatingEvent("*4*1*1##"))
+    central3.handle_event(OWNHeatingEvent("*#4*1*12*0140*3##"))
+    assert central3.target_temperature == 20.0  # manual stays untouched until #0#1 confirms Program 3
+    central3.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert central3.target_temperature == 14.0
+    assert central3._nominal_from_dim12 is True
+    assert "nominal_temperature" not in central3.extra_state_attributes
+
+    # 5. Optimistic AUTO wake from Antifreeze clears stale 7.0 °C display.
+    gw4 = _gateway(has_central_unit=False)
+    central4 = _climate(gw4, "#0#1", standalone=None, central=True)
+    central4.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    central4.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    assert central4.target_temperature == 7.0
+    await central4.async_set_hvac_mode(HVACMode.AUTO)
+    assert _sent(gw4) == ["*4*3100*#0#1##"]
+    assert central4.target_temperature is None
+
+
+async def test_four_zone_central_master_dim12_and_dim14_do_not_corrupt_manual_or_program_state() -> None:
+    """F-3: master-zone Dim 12 / Dim 14 reports (*#4*1##, plant-cu4695.tsv:23) never turn a
+    weekly program or antifreeze into a manual setpoint, and never flip manual mode into program.
+    """
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # 1. Weekly Program 3 + *#4*1## Dim 12 & Dim 14 -> OFF -> HEAT stays 3100 (never manual 18.0).
+    gw = _gateway(has_central_unit=False)
+    central = _climate(gw, "#0#1", standalone=None, central=True)
+    central.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    central.handle_event(OWNHeatingEvent("*#4*1*12*0180*3##"))
+    central.handle_event(OWNHeatingEvent("*#4*1*14*0180*3##"))
+    assert central.target_temperature == 18.0
+    assert central._nominal_from_dim12 is True
+    assert "nominal_temperature" not in central.extra_state_attributes
+    central.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+
+    # 2. Antifreeze + master Dim 14 (*#4*1*14*0070*3##) never plants 7.0 °C manual nominal.
+    gw2 = _gateway(has_central_unit=False)
+    central2 = _climate(gw2, "#0#1", standalone=None, central=True)
+    central2.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*#4*1*14*0070*3##"))
+    assert central2._target_temperature is None
+    await central2.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw2) == ["*4*3100*#0#1##"]
+
+    # 2b. Manual 20.0 -> Antifreeze + master Dim 14 (7.0 °C) preserves genuine manual 20.0.
+    gw2.send.reset_mock()
+    central2.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*#4*1*14*0070*3##"))
+    assert central2._target_temperature == 20.0
+    await central2.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw2) == ["*#4*#0#1*#14*0200*3##"]
+
+    # 3. Manual 20.0 + master knob +2 & delayed Dim 12 (22.0 °C) -> OFF -> HEAT keeps manual 20.0.
+    gw3 = _gateway(has_central_unit=False)
+    central3 = _climate(gw3, "#0#1", standalone=None, central=True)
+    central3.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    central3.handle_event(OWNHeatingEvent("*#4*1*13*02##"))
+    central3.handle_event(OWNHeatingEvent("*#4*1*12*0220*3##"))
+    assert central3.target_temperature == 20.0
+    assert central3._target_temperature == 20.0
+    assert central3._nominal_from_dim12 is False
+    assert central3.extra_state_attributes["nominal_temperature"] == 20.0
+    central3.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    await central3.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw3) == ["*#4*#0#1*#14*0200*3##"]
+
+    # 4. Reverse-arrival Program 3 -> Dim 12 (7.0 °C) -> OFF preserves _nominal_from_dim12=True.
+    gw4 = _gateway(has_central_unit=False)
+    central4 = _climate(gw4, "#0#1", standalone=None, central=True)
+    central4.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    central4.handle_event(OWNHeatingEvent("*#4*1*12*0140*3##"))
+    central4.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    central4.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    assert central4._nominal_from_dim12 is True
+    assert "nominal_temperature" not in central4.extra_state_attributes
+    await central4.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw4) == ["*4*3100*#0#1##"]
