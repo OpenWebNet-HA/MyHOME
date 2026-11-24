@@ -444,19 +444,25 @@ class MyHOMEScopeCover(MyHOMECover):
         *,
         record_end: bool = True,
         unstopped: bool = False,
+        direction_failed: bool | None = None,
     ) -> None:
         start = self._tilt_start_time
         # The members' levels come on their own addresses: what ends this pulse without a
         # level of its own (a failed direction frame, an undelivered stop, a takeover)
-        # ends theirs the same way.
-        record_end = record_end and not self._pulse_direction_failed()
-        super()._apply_tilt_stop(at, record_end=record_end, unstopped=unstopped)
+        # ends theirs the same way. Compute failure before super() clears _pulse_written.
+        failed = self._pulse_direction_failed() if direction_failed is None else direction_failed
+        record_end = record_end and not failed
+        super()._apply_tilt_stop(
+            at, record_end=record_end, unstopped=unstopped, direction_failed=failed
+        )
         followers, self._pulse_followers = self._pulse_followers, []
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 if member._tilt_start_time is None:
                     member._tilt_start_time = start
-                member._apply_tilt_stop(at, record_end=record_end, unstopped=unstopped)
+                member._apply_tilt_stop(
+                    at, record_end=record_end, unstopped=unstopped, direction_failed=failed
+                )
                 member._publish_state()
 
     def _abort_tilt(self) -> None:
