@@ -229,6 +229,7 @@ __all__ = [
     "thermo_event_interface",
     "thermo_event_zone",
     "thermo_output_level",
+    "thermo_zone_sensor_target",
     "validate_standalone_zones",
     "validate_thermo_trigger_command",
     "where_param",
@@ -867,6 +868,49 @@ def thermo_event_zone(message: Any) -> str | None:
     bare = raw_where.removeprefix("4-").removeprefix("#")
     if bare.isdigit() and 1 <= int(bare) <= 99:
         return str(int(bare))
+    return None
+
+
+def thermo_zone_sensor_target(message: Any) -> tuple[str, str | None] | None:
+    """Return ``(zone, interface)`` for a point WHO=4 zone temperature/humidity report, else ``None``.
+
+    Accepts bare zone master-probe addresses ``Z`` (``1 <= Z <= 99``, 1-2 digits) and
+    F422-routed zone addresses ``Z#4#II`` (``00 <= II <= 15``) on non-write frames.
+    Rejects ``#DIM`` writes (``is_dimension_writing``), central-unit addresses
+    (``#0``, ``#0#C``, ``#Z``), all-probes-in-zone selectors (``001..099``),
+    actuator/split addresses (``Z#N``, ``Z#N#4#II``, ``3#Z#N``), pumps (``0#N``),
+    and standalone probes (``>= 100``).
+    """
+    raw_where = getattr(message, "where", None)
+    where_str = str(raw_where).strip().removeprefix("4-") if raw_where is not None else ""
+    if (
+        getattr(message, "is_dimension_writing", False) is True
+        or is_central_thermo_where(message)
+        or (
+            where_str != ""
+            and (len(where_str.split("#", 1)[0]) > 2 or is_actuator_where(where_str))
+        )
+        or (zone := thermo_event_zone(message)) is None
+    ):
+        return None
+    wp = where_param(message)
+    if not wp:
+        iface = thermo_event_interface(message)
+        return (
+            (zone, f"{int(iface):02d}")
+            if iface is not None and _is_ascii_uint(iface) and int(iface) <= 15
+            else (zone, None)
+            if iface is None
+            else None
+        )
+    if (
+        len(wp) == 2
+        and str(wp[0]) == "4"
+        and (iface := thermo_event_interface(message)) is not None
+        and _is_ascii_uint(iface)
+        and int(iface) <= 15
+    ):
+        return (zone, f"{int(iface):02d}")
     return None
 
 

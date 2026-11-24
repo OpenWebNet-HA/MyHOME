@@ -200,6 +200,8 @@ class KnownDevices:
 
 #: Buttons button.py hangs off an actuator, as suffixes of the actuator's unique id.
 COMPANION_SUFFIXES = ("-disable", "-enable", "-calibrate")
+#: Companion temperature / humidity sensors sensor.py attaches to a WHO=4 climate zone.
+CLIMATE_COMPANION_SENSOR_SUFFIXES = ("-temperature", "-humidity")
 #: Platforms whose entities get those buttons.
 ACTUATOR_DOMAINS = ("light", "switch", "cover")
 
@@ -228,6 +230,25 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
             for e in list(remaining):
                 if e.domain == "switch" and (e.unique_id or "").endswith("-invert"):
                     registry.async_remove(e.entity_id)
+    if entry.domain == "climate":
+        if entry.unique_id:
+            for suffix in CLIMATE_COMPANION_SENSOR_SUFFIXES:
+                comp_sensor = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.unique_id}{suffix}")
+                if comp_sensor is not None:
+                    registry.async_remove(comp_sensor)
+        if entry.device_id:
+            remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+            if not any(
+                e.domain == "climate" and e.config_entry_id == config_entry_id
+                for e in remaining
+            ):
+                for e in list(remaining):
+                    if (
+                        e.domain == "sensor"
+                        and e.config_entry_id == config_entry_id
+                        and (e.unique_id or "").endswith(CLIMATE_COMPANION_SENSOR_SUFFIXES)
+                    ):
+                        registry.async_remove(e.entity_id)
     if entry.device_id and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True):
         dr.async_get(hass).async_remove_device(entry.device_id)
 

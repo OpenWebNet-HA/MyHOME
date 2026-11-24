@@ -34,6 +34,8 @@ from custom_components.myhome.media_player import MyHOMEMediaPlayer
 from custom_components.myhome.number import MyHOMECoverMinPositionDeltaNumber
 from custom_components.myhome.sensor import (
     MyHOMEActuatorOutputSensor,
+    MyHOMEClimateHumiditySensor,
+    MyHOMEClimateTemperatureSensor,
     MyHOMEEnergySensor,
     MyHOMEIlluminanceSensor,
     MyHOMEPowerSensor,
@@ -104,6 +106,30 @@ def _actuator_output(hass, gw):
     )
 
 
+def _climate_temperature(hass, gw):
+    return MyHOMEClimateTemperatureSensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="1",
+        zone="1",
+        interface=None,
+        gateway=gw,
+        **COMMON,
+    )
+
+
+def _climate_humidity(hass, gw):
+    return MyHOMEClimateHumiditySensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="1",
+        zone="1",
+        interface=None,
+        gateway=gw,
+        **COMMON,
+    )
+
+
 def _media(hass, gw):
     return MyHOMEMediaPlayer(hass=hass, name="A", entity_name=None, device_id="1#16", who="16", where="1",
                              gateway=gw, **COMMON)
@@ -144,6 +170,8 @@ AUDIT = [
      SensorDeviceClass.ENERGY, None, False),
     ("temperature", lambda h, g: _sensor(MyHOMETemperatureSensor, h, g, SensorDeviceClass.TEMPERATURE),
      SensorDeviceClass.TEMPERATURE, None, True),
+    ("climate temperature", _climate_temperature, SensorDeviceClass.TEMPERATURE, None, True),
+    ("climate humidity", _climate_humidity, SensorDeviceClass.HUMIDITY, None, True),
     ("illuminance", lambda h, g: _sensor(MyHOMEIlluminanceSensor, h, g, SensorDeviceClass.ILLUMINANCE),
      SensorDeviceClass.ILLUMINANCE, None, True),
     ("actuator output", _actuator_output, None, None, True),
