@@ -224,7 +224,7 @@
         },
         "who_18": {
           "title": "WHO 18 — Energy / Power Meter",
-          "description": "Expose a Home Assistant power (W / kW) or energy (Wh / kWh) sensor onto an unused OpenWebNet meter address (5N or 7N#0 with N = 1–255, i.e. 51–59, 510–599, 5100–5255, or 71#0–7255#0).",
+          "description": "Expose a Home Assistant power (W / kW) or energy (Wh / kWh) sensor onto an unused OpenWebNet meter address (5N or 7N#0 with N = 1–255, i.e. 51–59, 510–599, 5100–5255, or 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
           "data": {
             "where": "Meter WHERE address",
             "dimension": "OpenWebNet energy/power dimension",
@@ -257,7 +257,7 @@
         "invalid_where_interface": "Invalid local-bus interface suffix. Expected #4#01–#4#09 or #4#11–#4#15 (e.g. 88#4#01 or 0812#4#01).",
         "invalid_where_apl": "Invalid point-to-point WHERE address. Select A (0–10) and PL (1–15) above, or enter a canonical WHERE such as 88, 08, 0812, 0012, 1008, or 88#4#01.",
         "invalid_where_who4": "Invalid WHO 4 probe WHERE address. Expected zone master probe 1–99 (e.g. 50), external probe 100–900, or PZZ 101–899.",
-        "invalid_where_who18": "Invalid WHO 18 meter WHERE address. Expected 5N or 7N#0 with N = 1–255 (i.e. 51–59, 510–599, 5100–5255, or 71#0–79#0, 710#0–7255#0).",
+        "invalid_where_who18": "Invalid WHO 18 meter WHERE address. Expected 5N or 7N#0 with N = 1–255 (i.e. 51–59, 510–599, 5100–5255, or 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "A source Home Assistant entity (or custom action for WHO 1 / WHO 2) is required.",
         "action_not_supported_for_who": "Custom actions are supported only on WHO 1 (turn on/off and step up/down) and WHO 2 (turn on/off only); clear unsupported actions or change WHO.",
         "invalid_dimension": "Invalid dimension for the selected WHO subsystem.",
@@ -970,6 +970,15 @@
         "18": "18 - Energy management",
         "22": "22 - Sound diffusion (audio matrix)",
         "25": "25 - CEN+ scenarios"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Lighting / Switch / Virtual Actuator",
+        "2": "WHO 2 — Automation / Cover",
+        "4": "WHO 4 — Temperature Probe (Dimension 0)",
+        "13": "WHO 13 — Bus Clock & DST Sync",
+        "18": "WHO 18 — Energy / Power Meter"
       }
     },
     "expose_bus_interface": {

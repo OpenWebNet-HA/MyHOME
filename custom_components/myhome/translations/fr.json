@@ -221,7 +221,7 @@
         },
         "who_18": {
           "title": "WHO 18 — Compteur d'énergie / puissance",
-          "description": "Exposez un capteur Home Assistant de puissance (W / kW) ou d'énergie (Wh / kWh) sur une adresse de compteur OpenWebNet inutilisée (5N ou 7N#0 avec N = 1–255, c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–7255#0).",
+          "description": "Exposez un capteur Home Assistant de puissance (W / kW) ou d'énergie (Wh / kWh) sur une adresse de compteur OpenWebNet inutilisée (5N ou 7N#0 avec N = 1–255, c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
           "data": {
             "where": "Adresse WHERE du compteur",
             "dimension": "Dimension énergie/puissance OpenWebNet",
@@ -254,7 +254,7 @@
         "invalid_where_interface": "Suffixe d'interface bus local non valide. Attendu : #4#01–#4#09 ou #4#11–#4#15 (ex. 88#4#01 ou 0812#4#01).",
         "invalid_where_apl": "Adresse WHERE point à point non valide. Sélectionnez A (0–10) et PL (1–15) ci-dessus, ou saisissez une adresse WHERE canonique telle que 88, 08, 0812, 0012, 1008 ou 88#4#01.",
         "invalid_where_who4": "Adresse WHERE de sonde WHO 4 non valide. Attendu : sonde maître de zone 1–99 (ex. 50), sonde externe 100–900 ou PZZ 101–899.",
-        "invalid_where_who18": "Adresse WHERE de compteur WHO 18 non valide. Attendu : 5N ou 7N#0 avec N = 1–255 (c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–79#0, 710#0–7255#0).",
+        "invalid_where_who18": "Adresse WHERE de compteur WHO 18 non valide. Attendu : 5N ou 7N#0 avec N = 1–255 (c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "Une entité Home Assistant source (ou une action personnalisée pour WHO 1 / WHO 2) est requise.",
         "action_not_supported_for_who": "Les actions personnalisées ne sont prises en charge que pour WHO 1 (allumage/extinction et pas +/-) et WHO 2 (allumage/extinction uniquement) ; effacez les actions non prises en charge ou modifiez le WHO.",
         "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
@@ -840,6 +840,15 @@
         "18": "18 - Gestion de l'énergie",
         "22": "22 - Diffusion sonore (matrice audio)",
         "25": "25 - Scénarios CEN+"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Éclairage / Interrupteur / Actionneur virtuel",
+        "2": "WHO 2 — Automatisme / Volet",
+        "4": "WHO 4 — Sonde de température (Dimension 0)",
+        "13": "WHO 13 — Horloge du bus et heure d'été",
+        "18": "WHO 18 — Compteur d'énergie / puissance"
       }
     },
     "expose_bus_interface": {

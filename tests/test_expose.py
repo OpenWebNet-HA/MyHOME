@@ -273,16 +273,22 @@ def test_apl_where_encode_parse_and_diagnose():
     assert encode_apl_where(10, 8) == "1008"
     assert encode_apl_where(10, 12) == "1012"
 
-    # Optional F422 local-bus interface encoding
+    # Optional F422 local-bus interface encoding (01..09 and 11..15)
     assert encode_apl_where(8, 8, "01") == "88#4#01"
     assert encode_apl_where(8, 12, 1) == "0812#4#01"
-    assert encode_apl_where(0, 8, "00") == "08#4#00"
+    assert encode_apl_where(0, 8, "09") == "08#4#09"
+    assert encode_apl_where(0, 8, "11") == "08#4#11"
     assert encode_apl_where(10, 12, "15") == "1012#4#15"
     assert encode_apl_where(8, 8, "") == "88"
     assert encode_apl_where(8, 8, None) == "88"
 
-    # Exhaustive 165-pair (A=0..10, PL=1..15) round-trip across interfaces
-    for iface in (None, "00", "01", "15"):
+    # Exhaustive 165-pair (A=0..10, PL=1..15) round-trip across all valid F422 interfaces
+    all_valid_ifaces = (
+        None,
+        *(f"{i:02d}" for i in range(1, 10)),
+        *(f"{i:02d}" for i in range(11, 16)),
+    )
+    for iface in all_valid_ifaces:
         for a in range(11):
             for pl in range(1, 16):
                 encoded = encode_apl_where(a, pl, iface)
@@ -293,21 +299,31 @@ def test_apl_where_encode_parse_and_diagnose():
                 )
                 assert validated["where"] == encoded
 
-    # Invalid bounds in encode_apl_where
+    # Invalid bounds in encode_apl_where (including non-spec 00 and 10)
     for bad_a in (-1, 11, True, "8"):
         with pytest.raises(ValueError):
             encode_apl_where(bad_a, 1)  # type: ignore[arg-type]
     for bad_pl in (0, 16, False, "8"):
         with pytest.raises(ValueError):
             encode_apl_where(1, bad_pl)  # type: ignore[arg-type]
-    for bad_if in (-1, 16, "16", "abc", True, 1.5):
+    for bad_if in (-1, 0, 10, 16, "00", "10", "16", "abc", True, 1.5):
         with pytest.raises(ValueError):
             encode_apl_where(8, 8, bad_if)  # type: ignore[arg-type]
 
     # parse_apl_where handles 0008 normalization target and rejects non-APL inputs
     assert parse_apl_where("0008") == (0, 8, None)
     assert parse_apl_where("0008#4#01") == (0, 8, "01")
-    for non_apl in ("0808", "812", "#1", "0", "88#4#1", "", None):
+    for non_apl in (
+        "0808",
+        "812",
+        "#1",
+        "0",
+        "88#4#00",
+        "88#4#10",
+        "88#4#1",
+        "",
+        None,
+    ):
         assert parse_apl_where(non_apl) is None
 
     # diagnose_apl_where covers every mistake class
@@ -347,10 +363,23 @@ def test_apl_where_encode_parse_and_diagnose():
         )
     for scope in ("0", "00", "5", "100", "#1", "#1#4#01", "#1#3", "0#4#01", "5#4#01"):
         assert diagnose_apl_where(scope) == ("invalid_where_group_or_scope", {})
-    for bad_if_str in ("88#4#1", "88#4#16", "88#3", "88#4#0١"):
+    for bad_if_str in (
+        "88#4#1",
+        "88#4#00",
+        "88#4#10",
+        "0808#4#00",
+        "812#4#10",
+        "88#4#16",
+        "88#3",
+        "88#4#0١",
+    ):
         assert diagnose_apl_where(bad_if_str) == ("invalid_where_interface", {})
     for bad_apl in (
         "abc",
+        "foo#bar",
+        "foo#4#01",
+        "*1*1*88##",
+        "*1*1*88#4#01##",
         "#bad",
         "#1#bad",
         "12345",
@@ -360,6 +389,7 @@ def test_apl_where_encode_parse_and_diagnose():
         "001012",
         "²",
         "1²",
+        "1²#4#01",
         "¹²",
         "001²",
         "１２",
@@ -423,8 +453,11 @@ def test_apl_where_encode_parse_and_diagnose():
         expose_entry_schema({"who": 1, "where": "812", "entity_id": "light.t"})
     with pytest.raises(vol.Invalid, match="PL=0 is invalid"):
         expose_entry_schema({"who": 1, "where": "80", "entity_id": "light.t"})
-    with pytest.raises(vol.Invalid, match="#4#01\\.\\.#4#09 or #4#11\\.\\.#4#15"):
-        expose_entry_schema({"who": 1, "where": "88#4#1", "entity_id": "light.t"})
+    for bad_yaml_iface in ("88#4#1", "88#4#00", "88#4#10", "0808#4#00", "812#4#10"):
+        with pytest.raises(vol.Invalid, match="#4#01\\.\\.#4#09 or #4#11\\.\\.#4#15"):
+            expose_entry_schema(
+                {"who": 1, "where": bad_yaml_iface, "entity_id": "light.t"}
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -3372,8 +3405,8 @@ async def test_expose_subentry_flow_hides_and_rejects_unsupported_gateway_whos(
 
     form = await flow.async_step_user(None)
     who_selector = next(iter(form["data_schema"].schema.values()))
-    who_values = [opt["value"] for opt in who_selector.config["options"]]
-    assert who_values == ["1", "2", "13"]
+    assert who_selector.config["translation_key"] == "expose_who"
+    assert who_selector.config["options"] == ["1", "2", "13"]
 
     # Submitting WHO=4 or WHO=18 on H4890 returns who_injection_unsupported on Step 1 and Step 2
     for blocked_who in ("4", "18"):
@@ -3391,16 +3424,16 @@ async def test_expose_subentry_flow_hides_and_rejects_unsupported_gateway_whos(
     flow.context = {"source": "reconfigure", "subentry_id": "sub_legacy_w4"}
     reconf_form = await flow.async_step_reconfigure(None)
     reconf_selector = next(iter(reconf_form["data_schema"].schema.values()))
-    reconf_values = [opt["value"] for opt in reconf_selector.config["options"]]
-    assert reconf_values == ["1", "2", "4", "13"]
+    assert reconf_selector.config["translation_key"] == "expose_who"
+    assert reconf_selector.config["options"] == ["1", "2", "4", "13"]
 
     # When runtime_data is unloaded/None, _gateway_profile_for_who returns None and all 5 WHOs appear
     entry.runtime_data = None
     flow.context = {"source": "user"}
     unloaded_form = await flow.async_step_user(None)
     unloaded_selector = next(iter(unloaded_form["data_schema"].schema.values()))
-    unloaded_values = [opt["value"] for opt in unloaded_selector.config["options"]]
-    assert unloaded_values == ["1", "2", "4", "13", "18"]
+    assert unloaded_selector.config["translation_key"] == "expose_who"
+    assert unloaded_selector.config["options"] == ["1", "2", "4", "13", "18"]
 
 
 @pytest.mark.asyncio
@@ -4313,6 +4346,12 @@ async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
     for bad_where, exp_err in (
         ("0", "invalid_where_group_or_scope"),
         ("88#4#16", "invalid_where_interface"),
+        ("88#4#00", "invalid_where_interface"),
+        ("0808#4#00", "invalid_where_interface"),
+        ("812#4#10", "invalid_where_interface"),
+        ("*1*1*88##", "invalid_where_apl"),
+        ("*1*1*88#4#01##", "invalid_where_apl"),
+        ("foo#bar", "invalid_where_apl"),
     ):
         err_res = await hass.config_entries.subentries.async_configure(
             s_err["flow_id"],

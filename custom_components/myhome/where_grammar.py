@@ -555,9 +555,9 @@ def canonical_point_address(address: str) -> str:
     return f"{canonical_point_spelling(base)}{sep}{rest}"
 
 
-_LOCAL_BUS_SUFFIX_RE = re.compile(r"4#(0\d|1[0-5])", re.ASCII)
+_LOCAL_BUS_SUFFIX_RE = re.compile(r"4#(0[1-9]|1[1-5])", re.ASCII)
 _GROUP_SCOPE_WHERE_RE = re.compile(
-    r"#[1-9]\d*(?:#(?:3|4#(?:0\d|1[0-5])))?", re.ASCII
+    r"#[1-9]\d*(?:#(?:3|4#(?:0[1-9]|1[1-5])))?", re.ASCII
 )
 
 
@@ -569,8 +569,7 @@ def encode_apl_where(
     Uses 2-digit ``APL`` when ``0 <= A <= 9`` and ``1 <= PL <= 9`` (e.g. ``88``,
     ``08``), and 4-digit zero-padded ``AAPL`` whenever ``A == 10`` or ``PL >= 10``
     (e.g. ``0812``, ``0012``, ``1008``, ``1012``), optionally followed by
-    ``#4#01``..``#4#09`` or ``#4#11``..``#4#15`` for an F422 local-bus interface
-    (``00`` and ``10`` are also tolerated for legacy YAML compatibility).
+    ``#4#01``..``#4#09`` or ``#4#11``..``#4#15`` for an F422 local-bus interface.
     """
     if isinstance(area, bool) or not isinstance(area, int) or not (0 <= area <= 10):
         raise ValueError(f"Area A must be an integer in 0..10 (got {area!r})")
@@ -595,8 +594,10 @@ def encode_apl_where(
         iface_int = int(iface_str)
     else:
         raise ValueError(f"Invalid local-bus interface: {interface!r}")
-    if not (0 <= iface_int <= 15):
-        raise ValueError(f"Local-bus interface must be 00..15 (got {interface!r})")
+    if not (1 <= iface_int <= 9 or 11 <= iface_int <= 15):
+        raise ValueError(
+            f"Local-bus interface must be 01..09 or 11..15 (got {interface!r})"
+        )
     return f"{base}#4#{iface_int:02d}"
 
 
@@ -636,15 +637,14 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
         return ("invalid_where_apl", {})
 
     base, sep, suffix = raw.partition("#")
+    if not _is_ascii_uint(base):
+        return ("invalid_where_apl", {})
     if sep:
         if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
             return ("invalid_where_interface", {})
         iface: str | None = suffix[2:]
     else:
         iface = None
-
-    if not _is_ascii_uint(base):
-        return ("invalid_where_apl", {})
     if base in ("0", "00", "100") or len(base) == 1:
         return ("invalid_where_group_or_scope", {})
 

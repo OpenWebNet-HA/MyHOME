@@ -221,7 +221,7 @@
         },
         "who_18": {
           "title": "WHO 18 — Contatore energia / potenza",
-          "description": "Esponi un sensore Home Assistant di potenza (W / kW) o energia (Wh / kWh) su un indirizzo contatore OpenWebNet non utilizzato (5N o 7N#0 con N = 1–255, es. 51–59, 510–599, 5100–5255 o 71#0–7255#0).",
+          "description": "Esponi un sensore Home Assistant di potenza (W / kW) o energia (Wh / kWh) su un indirizzo contatore OpenWebNet non utilizzato (5N o 7N#0 con N = 1–255, es. 51–59, 510–599, 5100–5255 o 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
           "data": {
             "where": "Indirizzo WHERE contatore",
             "dimension": "Dimensione energia/potenza OpenWebNet",
@@ -254,7 +254,7 @@
         "invalid_where_interface": "Suffisso interfaccia bus locale non valido. Atteso #4#01–#4#09 o #4#11–#4#15 (es. 88#4#01 o 0812#4#01).",
         "invalid_where_apl": "Indirizzo WHERE punto-punto non valido. Seleziona A (0–10) e PL (1–15) sopra oppure inserisci un WHERE canonico come 88, 08, 0812, 0012, 1008 o 88#4#01.",
         "invalid_where_who4": "Indirizzo WHERE sonda WHO 4 non valido. Attesa sonda master di zona 1–99 (es. 50), sonda esterna 100–900 o PZZ 101–899.",
-        "invalid_where_who18": "Indirizzo WHERE contatore WHO 18 non valido. Atteso 5N o 7N#0 con N = 1–255 (cioè 51–59, 510–599, 5100–5255 o 71#0–79#0, 710#0–7255#0).",
+        "invalid_where_who18": "Indirizzo WHERE contatore WHO 18 non valido. Atteso 5N o 7N#0 con N = 1–255 (cioè 51–59, 510–599, 5100–5255 o 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "È richiesta un'entità Home Assistant sorgente (o un'azione personalizzata per WHO 1 / WHO 2).",
         "action_not_supported_for_who": "Le azioni personalizzate sono supportate solo per WHO 1 (accensione/spegnimento e passo su/giù) e WHO 2 (solo accensione/spegnimento); rimuovi le azioni non supportate o cambia WHO.",
         "invalid_dimension": "Dimensione non valida per il sottosistema WHO selezionato.",
@@ -840,6 +840,15 @@
         "18": "18 - Gestione energia",
         "22": "22 - Diffusione sonora (matrice audio)",
         "25": "25 - Scenari CEN+"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Illuminazione / Interruttore / Attuatore virtuale",
+        "2": "WHO 2 — Automazione / Tapparella",
+        "4": "WHO 4 — Sonda di temperatura (Dimensione 0)",
+        "13": "WHO 13 — Orologio bus e sincronizzazione DST",
+        "18": "WHO 18 — Contatore energia / potenza"
       }
     },
     "expose_bus_interface": {

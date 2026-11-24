@@ -49,6 +49,7 @@ from .where_grammar import (
 CONF_EXPOSE_AREA = "area"
 CONF_EXPOSE_POINT = "point"
 _IFACE_NONE = "none"
+_SELECTOR_WHO = "expose_who"
 _SELECTOR_BUS_INTERFACE = "expose_bus_interface"
 _SELECTOR_WHO13_DIMENSION = "expose_who13_dimension"
 _SELECTOR_WHO18_DIMENSION = "expose_who18_dimension"
@@ -61,13 +62,7 @@ _WHO_STEP_ID: dict[int, str] = {
     18: "who_18",
 }
 
-_WHO_OPTIONS: tuple[tuple[int, str], ...] = (
-    (1, "WHO 1 — Lighting / Switch / Virtual Actuator"),
-    (2, "WHO 2 — Automation / Cover"),
-    (4, "WHO 4 — Temperature Probe (Dimension 0)"),
-    (13, "WHO 13 — Bus Clock & DST Sync"),
-    (18, "WHO 18 — Energy / Power Meter"),
-)
+_WHO_CODES: tuple[int, ...] = (1, 2, 4, 13, 18)
 
 _WHO1_ACTION_KEYS: tuple[str, ...] = (
     CONF_TURN_ON_ACTION,
@@ -153,18 +148,17 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
     ) -> typing.Any:
         """Build Step 1 schema selecting the OpenWebNet WHO subsystem."""
         who_default = str(defaults.get(CONF_WHO, include_who or "1"))
-        who_options = [
-            selector.SelectOptionDict(value=str(code), label=label)
-            for code, label in _WHO_OPTIONS
+        who_options: list[str] = [
+            str(code)
+            for code in _WHO_CODES
             if str(code) == include_who
             or (
                 (prof := self._gateway_profile_for_who(code)) is None
                 or injection_block_reason(prof, code) is None
             )
         ]
-        valid_values = {opt["value"] for opt in who_options}
-        if who_default not in valid_values and who_options:
-            who_default = who_options[0]["value"]
+        if who_default not in who_options and who_options:
+            who_default = who_options[0]
 
         return flow_schema(
             {
@@ -172,6 +166,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
                     selector.SelectSelectorConfig(
                         options=who_options,
                         mode=selector.SelectSelectorMode.DROPDOWN,
+                        translation_key=_SELECTOR_WHO,
                     )
                 )
             }
@@ -217,9 +212,7 @@ class ExposeSubentryFlowHandler(ConfigSubentryFlow):
             if old_who in (1, 2):
                 existing_where = str(subentry_data.get(CONF_WHERE) or "").strip()
                 parsed = parse_apl_where(existing_where)
-                if parsed is not None and (
-                    parsed[2] is None or parsed[2] in _VALID_BUS_INTERFACES
-                ):
+                if parsed is not None:
                     area_val, point_val, iface_val = parsed
                     defaults[CONF_EXPOSE_AREA] = str(area_val)
                     defaults[CONF_EXPOSE_POINT] = str(point_val)

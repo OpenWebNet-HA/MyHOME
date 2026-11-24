@@ -37,7 +37,7 @@ In Home Assistant, exposed bindings are configured as **Config Subentries** on y
 6. **Step 2 — Configure subsystem fields**: Only the fields that apply to the chosen `WHO` are shown:
    - **`WHO = 1` (Lighting / Switch) & `WHO = 2` (Automation / Cover)**: Pick **`Area (A, 0–10)`** and **`Point (PL, 1–15)`** plus an optional **Local-bus interface (`#4#01–#4#09` or `#4#11–#4#15`)** directly from *MyHOME_Suite* — or leave them blank and paste a canonical **Raw `WHERE` override** (`88`, `08`, `0812`, `0012`, `1008`, `88#4#01`) from Bus Monitor traces. On reconfigure, existing bindings automatically pre-fill `A`, `PL`, and `interface`.
    - **`WHO = 4` (Temperature Probe)**: Enter a probe `WHERE` address (`1–99` zone master probe, `100–900` external probe, or `101–899` `PZZ`), source entity, and deadband/interval options (`dimension` is fixed to `0`; `WHO 1/2`-only options and custom actions are hidden).
-   - **`WHO = 18` (Energy / Power Meter)**: Enter a meter `WHERE` (`5N` or `7N#0` with `N = 1..255`, i.e. `51..59`, `510..599`, `5100..5255`, or `71#0..7255#0`) and pick an **OpenWebNet energy/power dimension** (`113`, `51–54`) from the dropdown.
+   - **`WHO = 18` (Energy / Power Meter)**: Enter a meter `WHERE` (`5N` or `7N#0` with `N = 1..255`, i.e. `51..59`, `510..599`, `5100..5255`, or `71#0..79#0`, `710#0..799#0`, `7100#0..7255#0`) and pick an **OpenWebNet energy/power dimension** (`113`, `51–54`) from the dropdown.
    - **`WHO = 13` (Bus Clock & DST Sync)**: Pick the **Clock dimension** (`22`, `0`, or `1`), broadcast interval (`0` for query-only), and read-response toggle (no `WHERE` or entity required).
 
 | Field | Applies to | Description | Example |
@@ -163,7 +163,7 @@ On the OpenWebNet wire and in `myhome.yaml` (`where:`), leading zeros are **not*
 - **Optional local-bus routing (`F422` interface)**: Append `#4#01`..`#4#09` or `#4#11`..`#4#15` (for example `88#4#01` or `0812#4#01`), or pick the interface in the UI **Local-bus interface** dropdown.
 - **Non-`A/PL` subsystems**:
   - **`WHO = 4` (Temperature Probe)**: Zone master probe `1–99` (required on `F461` / `bt_termo`), external probe `100–900`, or individual probe `PZZ` (`101–899`).
-  - **`WHO = 18` (Energy / Power Meter)**: Meter address `5N` or `7N#0` with `N = 1..255` (i.e. `51..59`, `510..599`, `5100..5255`, or `71#0`, `710#0`, `7255#0`).
+  - **`WHO = 18` (Energy / Power Meter)**: Meter address `5N` or `7N#0` with `N = 1..255` (i.e. `51..59`, `510..599`, `5100..5255`, or `71#0..79#0`, `710#0..799#0`, `7100#0..7255#0`).
   - **`WHO = 13` (Bus Clock)**: Bus-wide broadcast; no `WHERE` address is used.
 
 ---

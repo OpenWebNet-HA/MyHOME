@@ -221,7 +221,7 @@
         },
         "who_18": {
           "title": "WHO 18 — Energie- / vermogensmeter",
-          "description": "Bied een Home Assistant-vermogenssensor (W / kW) of energiesensor (Wh / kWh) aan op een ongebruikt OpenWebNet-meteradres (5N of 7N#0 met N = 1–255, d.w.z. 51–59, 510–599, 5100–5255 of 71#0–7255#0).",
+          "description": "Bied een Home Assistant-vermogenssensor (W / kW) of energiesensor (Wh / kWh) aan op een ongebruikt OpenWebNet-meteradres (5N of 7N#0 met N = 1–255, d.w.z. 51–59, 510–599, 5100–5255 of 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
           "data": {
             "where": "Meter WHERE-adres",
             "dimension": "OpenWebNet energie-/vermogensdimensie",
@@ -254,7 +254,7 @@
         "invalid_where_interface": "Ongeldig achtervoegsel voor lokale businterface. Verwacht: #4#01–#4#09 of #4#11–#4#15 (bijv. 88#4#01 of 0812#4#01).",
         "invalid_where_apl": "Ongeldig punt-tot-punt WHERE-adres. Selecteer hierboven A (0–10) en PL (1–15), of voer een canoniek WHERE-adres in zoals 88, 08, 0812, 0012, 1008 of 88#4#01.",
         "invalid_where_who4": "Ongeldig WHO 4 sensor WHERE-adres. Verwacht: zonemaster 1–99 (bijv. 50), externe sensor 100–900 of PZZ 101–899.",
-        "invalid_where_who18": "Ongeldig WHO 18 meter WHERE-adres. Verwacht: 5N of 7N#0 met N = 1–255 (d.w.z. 51–59, 510–599, 5100–5255 of 71#0–79#0, 710#0–7255#0).",
+        "invalid_where_who18": "Ongeldig WHO 18 meter WHERE-adres. Verwacht: 5N of 7N#0 met N = 1–255 (d.w.z. 51–59, 510–599, 5100–5255 of 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "Een Home Assistant-bronentiteit (of aangepaste actie voor WHO 1 / WHO 2) is vereist.",
         "action_not_supported_for_who": "Aangepaste acties worden alleen ondersteund voor WHO 1 (in-/uitschakelen en stap omhoog/omlaag) en WHO 2 (alleen in-/uitschakelen); wis niet-ondersteunde acties of wijzig WHO.",
         "invalid_dimension": "Ongeldige dimensie voor het geselecteerde WHO-subsysteem.",
@@ -840,6 +840,15 @@
         "18": "18 - Energiebeheer",
         "22": "22 - Geluidsdistributie (audiomatrix)",
         "25": "25 - CEN+-scenario's"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Verlichting / Schakelaar / Virtuele actuator",
+        "2": "WHO 2 — Automatisering / Rolluik",
+        "4": "WHO 4 — Temperatuursensor (Dimensie 0)",
+        "13": "WHO 13 — Busklok & zomertijdsynchronisatie",
+        "18": "WHO 18 — Energie- / vermogensmeter"
       }
     },
     "expose_bus_interface": {
