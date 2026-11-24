@@ -1170,3 +1170,114 @@ async def test_advanced_cover_restores_custom_native_strategy_state(hass, gatewa
     with patch.object(restarted, "_async_poll_if_needed", AsyncMock()):
         await restarted.async_added_to_hass()
     assert restarted.strategy.marker == 7
+
+
+async def test_scope_cover_moving_unanchored_member_and_failed_scope_tilt(
+    hass, gateway, clock, fake_time
+) -> None:
+    """A moving unanchored member omits scope is_closed, and a failed scope tilt leaves members un-ran."""
+    members = _make_members(hass, gateway)
+    area = _make_area(hass, gateway, members)
+    members[0].handle_event(OWNEvent.parse("*2*2*11##"))
+    assert area.is_closing is True
+    assert area._attr_is_closing is False
+    assert area.current_cover_position is None
+    saved = area.extra_restore_state_data
+    assert saved is None or "is_closed" not in saved.as_dict()
+
+    slat_members = [
+        _make_cover(hass, gateway, name=f"Blind {where}", device_id=where, where=where, slat_tilt=True, slat_time=1.5)
+        for where in ("11", "12")
+    ]
+    for member in slat_members:
+        member._attr_current_cover_tilt_position = 50
+    family = CoverFamily()
+    area_tilt = MyHOMEScopeCover(
+        hass=hass,
+        gateway=gateway,
+        name="Area 1",
+        entity_name=None,
+        device_id="1",
+        who="2",
+        where="1",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="Area",
+        travel_time=6,
+        slat_tilt=True,
+        slat_time=1.5,
+        scope=CoverScope.of("1"),
+    )
+    area_tilt.hass = hass
+    area_tilt.entity_id = "cover.area_1"
+    area_tilt.async_write_ha_state = MagicMock()
+    area_tilt.async_schedule_update_ha_state = MagicMock()
+    for cover in (*slat_members, area_tilt):
+        family.add(cover)
+
+    await area_tilt.async_open_cover_tilt()
+    _, pulse_written = gateway.deliveries[-1]
+    pulse_written.cancel()
+    # Stopping/taking over before the background task aborts clears _pulse_written on super().
+    area_tilt._apply_tilt_stop(clock.now)
+    await _yield()
+    assert area_tilt._ran_since_start is False
+    assert all(member._ran_since_start is False for member in slat_members)
+
+
+async def test_reachable_restore_respects_ran_since_start_and_moving_anchor_and_dim10_clears_motion_started_at(
+    hass, gateway, clock, fake_time
+) -> None:
+    """Reachable restore does not clobber pre-restore runs or moving anchors; Dim 10 stops clear motion_started_at."""
+    # Reachable restore after a partial wall run keeps live post-run position and slat angle.
+    cover = _make_cover(hass, gateway, slat_tilt=True, slat_time=1.5)
+    cover.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 0.8
+    cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert cover._ran_since_start is True
+    assert cover.current_cover_position is None
+    assert cover.current_cover_tilt_position == 53
+    await cover.async_restore_last_state(
+        State("cover.shutter_05", "open", {ATTR_CURRENT_POSITION: 40, ATTR_CURRENT_TILT_POSITION: 20})
+    )
+    assert cover.current_cover_position is None
+    assert cover.current_cover_tilt_position == 53
+
+    # Reachable closed restore after an assumed-state run keeps live open state.
+    simple = _make_cover(hass, gateway, travel_time=0)
+    simple.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 0.5
+    simple.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert simple._ran_since_start is True
+    assert simple.is_closed is False
+    await simple.async_restore_last_state(State("cover.shutter_05", "closed", {}))
+    assert simple.is_closed is False
+
+    # Reachable "open" without current_position does not clobber an already anchored moving cover.
+    moving = _make_cover(hass, gateway)
+    moving._attr_current_cover_position = moving._start_position = 50
+    moving.handle_event(OWNEvent.parse("*2*1*05##"))
+    assert moving.is_opening is True
+    assert moving._start_position == 50
+    await moving.async_restore_last_state(State("cover.shutter_05", "open", {}))
+    assert moving._start_position == 50
+    assert moving.current_cover_position == 50
+
+    # Non-advanced cover stopped by a Dimension 10 frame clears motion_started_at.
+    dim10 = _make_cover(hass, gateway, allow_auto_advanced=False)
+    dim10.handle_event(OWNEvent.parse("*2*2*05##"))
+    assert dim10._motion_started_at is not None
+    dim10.handle_event(OWNEvent.parse("*#2*05*10*10*40*001*0##"))
+    assert dim10._motion_started_at is None
+    assert dim10.extra_state_attributes["motion_started_at"] is None
+    dim10_saved = dim10.extra_restore_state_data
+    assert dim10_saved is not None
+    assert "motion_started_at" not in dim10_saved.as_dict()
+
+    # Stopping an unwritten queued command (_run_started_at is None) does not set _ran_since_start.
+    queued = _make_cover(hass, gateway)
+    queued._begin_run("open")
+    assert queued._run_started_at is None
+    queued._freeze_position(clock.now)
+    assert queued._ran_since_start is False

@@ -887,6 +887,36 @@ async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, im
     assert "extra restore data" in caplog.text
     assert "no restore cache" in caplog.text
 
+    # Corrupt extra_data.as_dict() logs a warning without preventing _state_sensor listener registration.
+    caplog.clear()
+    corrupt_extra = MagicMock()
+    corrupt_extra.as_dict.side_effect = ValueError("corrupt cache")
+    hass.states.async_set("binary_sensor.gate_contact", STATE_OFF)
+    impulse_gate._state_sensor = "binary_sensor.gate_contact"
+    impulse_gate.async_on_remove = MagicMock()
+    try:
+        with (
+            caplog.at_level(logging.WARNING),
+            patch.object(
+                MyHOMEImpulseCover,
+                "async_get_last_state",
+                AsyncMock(return_value=State("cover.main_gate", "unavailable", {})),
+            ),
+            patch.object(
+                MyHOMEImpulseCover,
+                "async_get_last_extra_data",
+                AsyncMock(return_value=corrupt_extra),
+            ),
+            patch("custom_components.myhome.cover.MyHOMEEntity.async_added_to_hass", AsyncMock()),
+        ):
+            await impulse_gate.async_added_to_hass()
+        assert impulse_gate.extra_state_attributes["fault_reason"] is None
+        assert "corrupt cache" in caplog.text
+        assert impulse_gate.async_on_remove.called
+        assert impulse_gate.is_closed is True
+    finally:
+        impulse_gate._state_sensor = None
+
     with (
         patch.object(MyHOMEImpulseCover, "async_get_last_state", AsyncMock(return_value=None)),
         patch("custom_components.myhome.cover.MyHOMEEntity.async_added_to_hass", AsyncMock()),
