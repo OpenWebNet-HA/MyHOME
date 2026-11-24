@@ -152,6 +152,18 @@ class TestGatewayProfiles:
         assert profile.can_support_workers(1) is True
         assert profile.can_support_workers(2) is False
 
+        # Catalogue aliases 003565 / 03565 resolve to MH200NProfile with WHO 18 + instant power;
+        # MH200 (020102, bt_energia WHO 3 only) keeps WHO 18 and instant power disabled (OWNd#184).
+        for alias in ("003565", "03565"):
+            aliased = get_gateway_profile(alias)
+            assert isinstance(aliased, MH200NProfile)
+            assert aliased.supports_who(WHO_ENERGY) is True
+            assert aliased.supports_energy_instant_power is True
+
+        mh200 = get_gateway_profile("MH200")
+        assert mh200.supports_who(WHO_ENERGY) is False
+        assert mh200.supports_energy_instant_power is False
+
     def test_mh202_profile(self):
         profile = MH202Profile()
         assert profile.model_name == "MH202"

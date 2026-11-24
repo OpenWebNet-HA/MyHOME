@@ -331,7 +331,7 @@ async def test_gateway_initial_discovery_profile_unsupported(gateway_handler, fa
 
 @pytest.mark.asyncio
 async def test_gateway_initial_discovery_profiles_who5_who18(mock_config_entry, fast_bus_pacing):
-    """Profile-specific discovery sends WHO 5 on MH202, WHO 18 on F454 and on the MH200N (#681, OWNd 184)."""
+    """Profile-specific discovery sends WHO 5 on MH202, WHO 18 on F454 and MH200N, and omits both on MH200 (#681, OWNd 184)."""
     mock_hass = MagicMock()
     mock_hass.data = {}
 
@@ -361,6 +361,14 @@ async def test_gateway_initial_discovery_profiles_who5_who18(mock_config_entry, 
     assert "*#5*0##" not in frames_mh200n
     assert "*#18*51*51##" in frames_mh200n
     assert "*#18*51*113##" in frames_mh200n
+
+    # MH200 (020102): ships bt_energia (WHO 3 only) without bt_supervisione — omits WHO 5 and WHO 18.
+    h_mh200 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
+    h_mh200.gateway.profile = get_gateway_profile("MH200")
+    frames_mh200 = h_mh200._discovery_frames()
+    assert "*#5*0##" not in frames_mh200
+    assert "*#18*51*51##" not in frames_mh200
+    assert "*#18*51*113##" not in frames_mh200
 
     # F455: supports WHO 1, 2, 4, 18, but NOT WHO 5 or WHO 16
     h_f455 = MyHOMEGatewayHandler(mock_hass, mock_config_entry)
