@@ -114,6 +114,7 @@ from .thermo_switch import load_thermo_switch_subentries
 from .topology import peer_unique_id
 from .typing_compat import as_any
 from .where_grammar import (
+    bus_interface_from_message,
     canonical_thermo_zone,
     is_actuator_where,
     is_central_thermo_where,
@@ -543,8 +544,11 @@ async def async_setup_entry(
             return None
         if getattr(message, "is_general", False) is True or str(getattr(message, "where", "")) in ("0", "00"):
             return None
+        valid_iface, interface = bus_interface_from_message(message)
+        if not valid_iface:
+            return None
         where = str(message.where)
-        return Address(normalize_where(where) or where)
+        return Address(normalize_where(where) or where, interface)
 
     def build_illuminance(ctx: DeviceContext) -> MyHOMEIlluminanceSensor | None:
         if ctx.source == "yaml":
@@ -553,17 +557,18 @@ async def async_setup_entry(
             if where in ("0", "00") or normalize_where(where) in ("0", "00"):
                 return None
             return MyHOMEIlluminanceSensor(
-                hass=hass, device_id=ctx.config_id or ctx.key, who=cfg[CONF_WHO], where=cfg[CONF_WHERE],
+                hass=hass, device_id=ctx.config_id or ctx.key, who=cfg[CONF_WHO], where=ctx.address.key,
                 name=cfg[CONF_NAME], device_class=SensorDeviceClass.ILLUMINANCE, manufacturer=cfg[CONF_MANUFACTURER],
                 model=cfg[CONF_DEVICE_MODEL], gateway=gateway,
             )
         where = ctx.address.key
         clean = where.split("-")[-1]
         primary = normalize_where(where) or normalize_where(clean) or where
-        if primary in ("0", "00"):
+        if primary in ("0", "00") or ctx.address.clean_where in ("0", "00"):
             return None
+        label_addr = Address.from_device_id(normalize_where(clean) or clean)
         sensor = MyHOMEIlluminanceSensor(
-            hass=hass, device_id=primary, who="1", where=primary, name=f"Illuminance {normalize_where(clean) or clean}",
+            hass=hass, device_id=primary, who="1", where=primary, name=f"Illuminance {label_addr.suffix}",
             device_class=SensorDeviceClass.ILLUMINANCE, manufacturer="BTicino", model="Light Sensor", gateway=gateway,
         )
         if ctx.registry_entry is not None:
