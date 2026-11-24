@@ -69,11 +69,39 @@ Instead, the integration debounces across a bidirectional window:
 4. Otherwise, one status request is sent:
 
     - **Group** `#G`: `*#1*#G##` (the group's own status).
-    - **Area** `A`: `*#1*A##`, using the frame's own `WHERE` (`"00"`, `"1"`.."9", `"100"`)
-      - never a value re-derived from an integer, which would risk emitting the banned
-      `*#1*0##`.
-    - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
-      (`light` or `switch` in the entity registry), never `*#1*0##`.
+    - **Area** `A` of the gateway's own bus: `*#1*A##`, using the frame's own `WHERE`
+      (`"00"`, `"1"`.."9", `"100"`) - never a value re-derived from an integer, which
+      would risk emitting the banned `*#1*0##`.
+    - **General** of the gateway's own bus: one `*#1*A##` per area of that bus that has
+      at least one known WHO=1 actuator (`light` or `switch` in the entity registry),
+      never `*#1*0##`.
+    - **Behind an F422 interface** (`*1*x*A#4#<Int>##`, `*1*x*0#4#<Int>##`): the same
+      `A` / `PL` exists on every bus, so an area behind interface `Int` is a scope of
+      its own (`A#4#<Int>`). Its echoes do not count for the gateway's own area `A`
+      and the other way round, and it is read light by light with
+      `*#1*<APL>#4#<Int>##` for each known light of that scope (no area request is
+      sent behind an interface). A scope behind an interface with no known light
+      sends nothing. `*1*x*0#4#<Int>##` sweeps the scopes of that interface only.
+    - **General of the whole system** (`*1*x*0##`): selects every known scope, and each
+      scope is read its own way: an area of the gateway's own bus with `*#1*A##`, an
+      area behind an interface with one point request per known light.
+
+A status request is answered with `*1*<status>*<where>##` frames, on the command and on
+the event session, and for a scope that is the frame of a scope command: a physical F461
+(2.0.11) and F455 (1.0.76) answered `*#1*00##` with `*1*0*00##` frames between the point
+statuses. Two rules keep an answer from starting the next sweep:
+
+- While the integration's own request for a scope is queued or being answered, and for
+  0.5 s after the gateway closes it (`RESYNC_REPLY_GRACE_S`), a frame for that scope that
+  states the ON/OFF of the command being read back is its answer. A frame that states
+  the other (the scope switched back within a second) is a new command and is swept.
+- A scope is swept at most 3 times in 30 s for the same commanded state
+  (`RESYNC_STORM_SWEEPS`, `RESYNC_STORM_WINDOW_S`). After that it gets one more sweep
+  once it has been quiet for 30 s, so the last command is still read back, and nothing
+  else until it has been quiet for 30 s again; a warning names the scope. This is what
+  ends the exchange when another client on the same bus (a second Home Assistant, for
+  example) sweeps the scope and its answer is seen here. Dim steps (`WHAT` 30 / 31) are
+  never held.
 
 Disable this with **Sweep group/area/general light addresses for status** in the
 Options Flow if your gateway lags on repeated status requests.
@@ -247,6 +275,8 @@ The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged po
 - **The read-back carries the whole `WHERE`**: `09#4#01` behind an interface, `<id>#9` on a Zigbee gateway.
 - **Only for commands this gateway entry sent.** When another client switches several lights at once (another gateway, a scenario module), the `F455` leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.
 - **Not used for** group / area / general commands (see *Broadcast re-sync* above), frames sent for exposed (virtual) addresses, and `WHO = 2` covers, whose position model is anchored on the write time.
+
+On a fine dimmer a preset frame (`WHAT = 2..10`) asks Dimension 1 for the exact level (#851). A preset frame that arrives while that read is out is taken as part of its answer (a `MyHomeServer1` and a `3488` answer the read with the level and with the preset frame). A read that brings no new level is repeated at most twice for the same preset; then the light is not asked again until its preset or level changes, it goes off, a command is sent to it from Home Assistant, or it has sent no preset frame for `30 s`.
 
 ---
 
