@@ -48,6 +48,7 @@ from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .topology import entry_for_mac, peer_unique_id
+from .where_grammar import contact_where_aliases
 
 
 @dataclass(frozen=True)
@@ -66,7 +67,14 @@ class Address:
         if key_suffix and device_id.endswith(key_suffix):
             device_id = device_id[: -len(key_suffix)]
         base, routing, interface = device_id.rpartition(BUS_ROUTING)
-        if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
+        if (
+            routing
+            and base
+            and interface.isascii()
+            and interface.isdigit()
+            and 1 <= len(interface) <= 2
+            and int(interface) <= 15
+        ):
             return cls(base, interface.zfill(2), key_suffix)
         return cls(device_id, None, key_suffix)
 
@@ -81,13 +89,41 @@ class Address:
     @classmethod
     def from_config(cls, dev_id: str, cfg: dict[str, Any]) -> Address:
         """Address of a ``myhome.yaml`` device: ``where`` (``zone`` for heating), else the key."""
-        interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
+        interface = next(
+            (
+                cfg[k]
+                for k in (CONF_BUS_INTERFACE, "bus_interface", "interface")
+                if k in cfg and cfg[k] is not None and cfg[k] != ""
+            ),
+            None,
+        )
         where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id)))
-        if not interface:
+        if interface is None:
             base, routing, inline_iface = where.rpartition(BUS_ROUTING)
-            if routing and base and inline_iface.isdigit() and 1 <= len(inline_iface) <= 2:
+            if (
+                routing
+                and base
+                and inline_iface.isascii()
+                and inline_iface.isdigit()
+                and 1 <= len(inline_iface) <= 2
+                and int(inline_iface) <= 15
+            ):
                 return cls(base, inline_iface.zfill(2))
-        return cls(where, str(interface) if interface else None)
+            return cls(where, None)
+        iface_str = str(interface)
+        if iface_str.isascii() and iface_str.isdigit() and 1 <= len(iface_str) <= 2 and int(iface_str) <= 15:
+            iface_str = iface_str.zfill(2)
+        base, routing, inline_iface = where.rpartition(BUS_ROUTING)
+        if (
+            routing
+            and base
+            and inline_iface.isascii()
+            and inline_iface.isdigit()
+            and 1 <= len(inline_iface) <= 2
+            and inline_iface.zfill(2) == iface_str
+        ):
+            where = base
+        return cls(where, iface_str)
 
     @property
     def key(self) -> str:
@@ -161,7 +197,11 @@ def config_for(configured: dict[str, Any], address: Address, *extra_keys: str) -
     if address.interface is None:
         candidates = [address.key, address.where, address.clean_where, *extra_keys]
     else:
-        iface = address.interface.zfill(2) if address.interface.isdigit() else address.interface
+        iface = (
+            address.interface.zfill(2)
+            if address.interface.isascii() and address.interface.isdigit()
+            else address.interface
+        )
         candidates = [
             address.key,
             address.clean_key,
@@ -214,10 +254,11 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
     longer provided") on a device without its actuator.
     """
     registry.async_remove(entry.entity_id)
-    for suffix in COMPANION_SUFFIXES:
-        button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
-        if button is not None:
-            registry.async_remove(button)
+    if not any(registry.async_get_entity_id(d, DOMAIN, entry.unique_id) for d in ACTUATOR_DOMAINS):
+        for suffix in COMPANION_SUFFIXES:
+            button = registry.async_get_entity_id("button", DOMAIN, f"{entry.unique_id}{suffix}")
+            if button is not None:
+                registry.async_remove(button)
     if entry.domain == "cover":
         delta_number = registry.async_get_entity_id(
             "number", DOMAIN, f"{entry.unique_id}-min_position_delta"
@@ -303,7 +344,14 @@ def binary_sensor_only_on_primary(with_sensor: set[str], device_identifier: str,
     of every device identifier (an entry's stored ``CONF_MAC`` may differ in case).
     """
     peer = peer_unique_id(device_identifier, own_mac, primary_mac)
-    return peer is not None and device_identifier not in with_sensor and peer in with_sensor
+    if peer is None or device_identifier in with_sensor:
+        return False
+    if peer in with_sensor:
+        return True
+    head, sep, where = peer.partition("-25-")
+    if sep:
+        return any(f"{head}-25-{alias}" in with_sensor for alias in contact_where_aliases(where))
+    return False
 
 
 @callback
@@ -509,6 +557,10 @@ class PlatformDiscovery:
     route_translations:
         Route command-translation frames (``is_translation``) to known entities
         and scope handlers without discovering new devices from them.
+    peer_spellings:
+        Optional: other unique ids the same device may have on the primary
+        gateway, given this follower's unique id rewritten onto the primary
+        (a dry contact an F455 registered as ``301`` is the primary's ``31``).
     """
 
     def __init__(
@@ -536,6 +588,7 @@ class PlatformDiscovery:
         route_keys: Callable[[Any, Address | None], Iterable[str]] | None = None,
         one_per_address: bool = True,
         route_translations: bool = False,
+        peer_spellings: Callable[[str], Iterable[str]] | None = None,
     ) -> None:
         self.hass = hass
         self.config_entry = config_entry
@@ -559,6 +612,7 @@ class PlatformDiscovery:
         self.route_keys = route_keys
         self.one_per_address = one_per_address
         self.route_translations = route_translations
+        self.peer_spellings = peer_spellings
         self.runtime: MyHOMERuntimeData = config_entry.runtime_data
         # Signals are keyed on the entry's MAC (what the gateway handler publishes under).
         self.mac: str = str(config_entry.data.get(CONF_MAC) or self.runtime.mac)
@@ -618,7 +672,7 @@ class PlatformDiscovery:
             if self.reject_registry_entry and self.reject_registry_entry(entry, ctx):
                 if registry is not None:
                     try:
-                        registry.async_remove(entry.entity_id)
+                        prune_entity(self.hass, registry, entry, self.config_entry.entry_id)
                         LOGGER.info("%s: removed stale registry entry %s", self.platform, entry.entity_id)
                     except Exception as err:  # the entry may already be gone
                         LOGGER.debug("%s: could not remove %s: %s", self.platform, entry.entity_id, err)
@@ -723,7 +777,8 @@ class PlatformDiscovery:
             return False
         # Unique ids start with the gateway's normalised MAC; the entry's stored MAC may differ in case
         peer = peer_unique_id(unique_id, str(self.runtime.mac), primary_mac)
-        return peer is not None and isinstance(registry.async_get_entity_id(self.platform, DOMAIN, peer), str)
+        peers = [peer, *(self.peer_spellings(peer) if self.peer_spellings else ())] if peer else []
+        return any(isinstance(registry.async_get_entity_id(self.platform, DOMAIN, p), str) for p in peers)
 
     def _discovers(self) -> bool:
         """Whether this gateway creates new entities of this platform's WHO from bus traffic.

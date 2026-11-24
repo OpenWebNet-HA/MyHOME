@@ -501,7 +501,7 @@ async def test_binary_sensor_entity_registry_and_motion_discovery(hass):
         async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", motion_interface)
         await hass.async_block_till_done()
         assert len(added) == 6
-        assert added[5]._where == "52"
+        assert added[5]._where == "52#4#01"
 
         # Motion message with hyphenated WHERE to hit clean_where != where
         hyphen_msg = MagicMock(spec=OWNLightingEvent)

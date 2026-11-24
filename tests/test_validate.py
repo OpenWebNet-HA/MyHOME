@@ -416,6 +416,67 @@ class TestDeviceSchemas:
         with pytest.raises(Invalid):
             binary_sensor_schema(raw)
 
+    def test_binary_sensor_schema_bus_interface_and_inline_routing(self):
+        """Binary sensor schema accepts inline ``#4#II`` and ``interface:`` for WHO 1 and 25, rejecting WHO 9."""
+        res = binary_sensor_schema(
+            {
+                "garage": {
+                    CONF_WHO: "25",
+                    CONF_WHERE: "301#4#01",
+                    CONF_NAME: "Garage",
+                    CONF_DEVICE_CLASS: BinarySensorDeviceClass.GARAGE_DOOR,
+                },
+                "side_gate": {
+                    CONF_WHO: "25",
+                    CONF_WHERE: 302,
+                    CONF_BUS_INTERFACE: 1,
+                    CONF_NAME: "Side Gate",
+                    CONF_DEVICE_CLASS: BinarySensorDeviceClass.DOOR,
+                },
+                "matching_both": {
+                    CONF_WHO: "25",
+                    CONF_WHERE: "303#4#1",
+                    CONF_BUS_INTERFACE: "01",
+                    CONF_NAME: "Back Gate",
+                },
+                "routed_pir": {
+                    CONF_WHO: "1",
+                    CONF_WHERE: "0004#4#1",
+                    CONF_NAME: "Hall PIR",
+                    CONF_DEVICE_CLASS: BinarySensorDeviceClass.MOTION,
+                },
+            }
+        )
+        assert res["25-301#4#01"][CONF_WHERE] == "301"
+        assert res["25-301#4#01"][CONF_BUS_INTERFACE] == "01"
+        assert res["25-302#4#01"][CONF_WHERE] == "302"
+        assert res["25-302#4#01"][CONF_BUS_INTERFACE] == "01"
+        assert res["25-303#4#01"][CONF_WHERE] == "303"
+        assert res["25-303#4#01"][CONF_BUS_INTERFACE] == "01"
+        assert res["1-04#4#01"][CONF_WHERE] == "04"
+        assert res["1-04#4#01"][CONF_BUS_INTERFACE] == "01"
+
+        for bad in (
+            {CONF_WHO: "25", CONF_WHERE: "301#4#01", CONF_BUS_INTERFACE: "02", CONF_NAME: "Conflict"},
+            {CONF_WHO: "25", CONF_WHERE: "#4#01", CONF_NAME: "Missing base"},
+            {CONF_WHO: "25", CONF_WHERE: "301#4#01#4#02", CONF_NAME: "Double routing"},
+            {CONF_WHO: "25", CONF_WHERE: "301#1", CONF_NAME: "Not F422"},
+            {CONF_WHO: "25", CONF_WHERE: "301#4#99", CONF_NAME: "Out of range"},
+            {CONF_WHO: "9", CONF_WHERE: "1", CONF_BUS_INTERFACE: "01", CONF_NAME: "Aux routed"},
+            {CONF_WHO: "9", CONF_WHERE: "1#4#01", CONF_NAME: "Aux inline routed"},
+            {CONF_WHO: "25", CONF_WHERE: "٣١", CONF_NAME: "Non-ASCII where"},
+            {CONF_WHO: "25", CONF_WHERE: "31", CONF_BUS_INTERFACE: "٠١", CONF_NAME: "Non-ASCII iface"},
+        ):
+            with pytest.raises(Invalid):
+                binary_sensor_schema({"bad": bad})
+
+        for non_ascii_validator, sample in (
+            (PointToPoint(), "٠٤"),
+            (Group(), "#١"),
+        ):
+            with pytest.raises(Invalid):
+                non_ascii_validator(sample)
+
     def test_climate_schema_zones_and_naming(self):
         """Test climate schema handling zone formatting and default names."""
         raw = {
