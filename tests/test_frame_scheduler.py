@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from OWNd.message import OWNAutomationCommand, OWNCommand
 
+from custom_components.myhome.cover import MyHOMECover
 from custom_components.myhome.gateway import FrameScheduler, MyHOMEGatewayHandler
 from custom_components.myhome.gateway_sessions import (
     CommandPriorityQueue,
@@ -633,7 +634,7 @@ async def test_gateway_send_fade_step_and_is_cancel_delegation() -> None:
 
 def _cmd(frame: str) -> dict[str, Any]:
     """Envelope with the shape ``CommandWorkerPool._enqueue`` builds."""
-    return {"message": OWNCommand(frame), "is_status_request": False, "is_cancel": False}
+    return {"message": OWNCommand(frame), "is_status_request": False}
 
 
 @pytest.mark.parametrize(
@@ -864,11 +865,9 @@ async def test_new_direction_cancels_stale_motion_for_alias():
     scheduler = FrameScheduler()
     written = asyncio.get_running_loop().create_future()
     await scheduler.put(
-        {"message": OWNAutomationCommand.raise_shutter("09#4#01"), "written": written}
+        dict(_cmd(str(OWNAutomationCommand.raise_shutter("09#4#01"))), written=written)
     )
-    await scheduler.put(
-        {"message": OWNAutomationCommand.stop_shutter("0009#4#01"), "is_cancel": True}
-    )
+    await scheduler.put(_cmd(str(OWNAutomationCommand.stop_shutter("0009#4#01"))))
     assert written.cancelled(), [str(i["message"]) for i in scheduler._queue]
 
 
@@ -881,7 +880,7 @@ async def test_discarding_withdrawn_frame_does_not_release_another_workers_targe
 
     withdrawn_fut = asyncio.get_running_loop().create_future()
     scheduler.put_nowait(dict(_cmd("*2*2*11##"), written=withdrawn_fut))
-    scheduler.put_nowait(_cmd("*2*0*11##"))
+    scheduler.put_nowait(_cmd("*2*1*11##"))
     withdrawn_fut.cancel()
 
     # Worker 1 pops and completes the withdrawn frame; Worker 0's lock on (2, "11") MUST remain held.
@@ -890,25 +889,25 @@ async def test_discarding_withdrawn_frame_does_not_release_another_workers_targe
     scheduler.complete_task(discarded)
     assert (2, "11") in scheduler.in_flight_targets
 
-    # The live stop for cover 11 must still wait for Worker 0 to finish.
+    # The live command for cover 11 must still wait for Worker 0 to finish.
     with pytest.raises(asyncio.QueueEmpty):
         scheduler.acquire_nowait()
 
     scheduler.complete_task(worker0_item)
-    live_stop = scheduler.acquire_nowait()
-    assert str(live_stop["message"]) == "*2*0*11##"
-    scheduler.complete_task(live_stop)
+    live_cmd = scheduler.acquire_nowait()
+    assert str(live_cmd["message"]) == "*2*1*11##"
+    scheduler.complete_task(live_cmd)
 
 
 async def test_stop_overtakes_withdrawn_motion_for_same_cover() -> None:
-    """A withdrawn motion frame in the command tier does not hold back a stop for the same cover."""
+    """A withdrawn motion frame in the command tier does not hold back an overlapping or opt-out stop."""
     scheduler = FrameScheduler()
-    written = asyncio.get_running_loop().create_future()
-    scheduler.put_nowait(dict(_cmd("*2*1*11##"), written=written))
-    written.cancel()
+    scope_written = asyncio.get_running_loop().create_future()
+    scheduler.put_nowait(dict(_cmd("*2*1*1##"), written=scope_written))
+    scope_written.cancel()
     scheduler.put_nowait(_cmd("*2*0*11##"))
 
-    # The stop was inserted at index 0 ahead of the withdrawn motion frame.
+    # The point stop was inserted at index 0 ahead of the withdrawn overlapping scope frame.
     first = scheduler.acquire_nowait()
     assert str(first["message"]) == "*2*0*11##"
     scheduler.complete_task(first)
@@ -916,10 +915,22 @@ async def test_stop_overtakes_withdrawn_motion_for_same_cover() -> None:
     assert second["written"].cancelled()
     scheduler.complete_task(second)
 
+    # Also verify explicit is_cancel=False opt-out on the exact same cover WHERE.
+    same_written = asyncio.get_running_loop().create_future()
+    scheduler.put_nowait(dict(_cmd("*2*1*11##"), written=same_written))
+    same_written.cancel()
+    scheduler.put_nowait(dict(_cmd("*2*0*11##"), is_cancel=False))
+    opt_out_stop = scheduler.acquire_nowait()
+    assert str(opt_out_stop["message"]) == "*2*0*11##"
+    scheduler.complete_task(opt_out_stop)
+    withdrawn_same = scheduler.acquire_nowait()
+    assert withdrawn_same["written"].cancelled()
+    scheduler.complete_task(withdrawn_same)
+
 
 @pytest.mark.parametrize("use_async_put", [False, True])
 async def test_superseded_scope_wakes_all_waiting_getters(use_async_put: bool) -> None:
-    """Dropping a held scope frame via cancel wakes every sleeping worker for newly eligible targets."""
+    """Dropping a held scope frame via an ordinary WHO=2 stop wakes every sleeping worker."""
     scheduler = FrameScheduler()
     scheduler.put_nowait(_cmd("*2*1*11##"))
     worker0_item = scheduler.acquire_nowait()
@@ -935,9 +946,9 @@ async def test_superseded_scope_wakes_all_waiting_getters(use_async_put: bool) -
     assert not w1.done()
     assert not w2.done()
 
-    # Superseding *2*1*1## with *2*0*1## (is_cancel=True) removes it from index 0 and appends the
-    # stop behind 12 and 13, making BOTH 12 and 13 eligible at once.
-    cancel_area = {"message": OWNCommand.parse("*2*0*1##"), "is_cancel": True}
+    # Superseding *2*1*1## with a standard *2*0*1## envelope (no explicit is_cancel=True)
+    # removes it from index 0 and appends the stop behind 12 and 13, waking BOTH workers.
+    cancel_area = _cmd("*2*0*1##")
     if use_async_put:
         await scheduler.put(cancel_area)
     else:
@@ -1022,3 +1033,201 @@ async def test_get_forwards_wakeup_when_cancelled_after_resolution() -> None:
     got = await asyncio.wait_for(w2, timeout=1.0)
     assert str(got["message"]) == "*2*1*11##"
     scheduler.task_done()
+
+
+async def test_cover_async_stop_supersedes_queued_move_in_command_worker_pool(hass: Any) -> None:
+    """Production cover._async_stop() through MyHOMEGatewayHandler + CommandWorkerPool drops queued moves."""
+    gw = MagicMock()
+    gw.hass = hass
+    gw.mac = "00:03:50:aa:bb:cc"
+    gw.log_id = "[test-gw]"
+    gw.availability_signal = "myhome_avail"
+    gw.available = True
+    gw.device_registry_id = None
+    gw.config_entry = None
+    gw.command_session_idle_timeout = 5.0
+    gw.gateway = MagicMock()
+    gw.gateway.profile.max_queue_size = 250
+    gw.gateway.profile.command_queue_delay = 0.0
+    gw.bus_monitor = MagicMock()
+    gw._delegated_target = MagicMock(return_value=None)
+    gw._failover_target = MagicMock(return_value=None)
+    gw.send_status_request = AsyncMock()
+    gw.send = lambda msg, **kw: MyHOMEGatewayHandler.send(gw, msg, **kw)
+
+    pool = CommandWorkerPool(gw)
+    pool._event_session_ready.set()
+    gw._command_pool = pool
+    gw.send_buffer = pool.send_buffer
+
+    cover = MyHOMECover(
+        hass=hass,
+        name="Shutter 21",
+        entity_name=None,
+        device_id="21",
+        who="2",
+        where="21",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter",
+        gateway=gw,
+        travel_time=10,
+    )
+    cover.hass = hass
+    cover.async_write_ha_state = MagicMock()  # type: ignore[method-assign]
+    cover.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    cover._attr_current_cover_position = 100
+    cover._start_position = 100
+
+    wire_frames: list[str] = []
+    blocker_sending = asyncio.Event()
+    release_blocker = asyncio.Event()
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self._stream_reader: object | None = object()
+            self._stream_writer: object | None = object()
+
+        async def connect(self) -> dict[str, Any]:
+            self._stream_reader = object()
+            self._stream_writer = object()
+            return {"Success": True}
+
+        async def send(self, message: Any, is_status_request: bool = False) -> list[Any]:
+            raw = str(message)
+            if raw == "*1*1*55##":
+                blocker_sending.set()
+                await release_blocker.wait()
+            wire_frames.append(raw)
+            return []
+
+        async def close(self) -> None:
+            self._stream_reader = None
+            self._stream_writer = None
+
+    with patch(
+        "custom_components.myhome.gateway.OWNCommandSession",
+        side_effect=lambda **_: FakeSession(),
+    ):
+        worker = asyncio.create_task(pool.sending_loop(0))
+        await asyncio.sleep(0)
+
+        # Occupy the worker with an unrelated light frame so subsequent commands queue up.
+        f_blocker = await gw.send(OWNCommand("*1*1*55##"))
+        await blocker_sending.wait()
+
+        # Queue a cover close via MyHOMECover, followed by an unrelated cover move.
+        await cover.async_close_cover()
+        queued_close = pool.send_buffer._queue._commands[0]
+        assert str(queued_close["message"]) == "*2*2*21##"
+        assert "is_cancel" not in queued_close
+        close_written = queued_close["written"]
+
+        f_unrelated = await gw.send(OWNCommand("*2*1*35##"))
+
+        # User stops the cover before *2*2*21## leaves send_buffer:
+        # _async_stop() calls gw.send(*2*0*21##) without is_cancel=True, which must implicitly
+        # drop *2*2*21##, cancel its delivery future, and jump ahead of *2*1*35## (#645, #1010).
+        await cover.async_stop_cover()
+
+        assert close_written.cancelled()
+        queued_frames = [str(item["message"]) for item in pool.send_buffer._queue._commands]
+        assert queued_frames == ["*2*0*21##", "*2*1*35##"]
+
+        release_blocker.set()
+        await asyncio.wait_for(asyncio.gather(f_blocker, f_unrelated), timeout=1.0)
+        await pool.send_buffer.join()
+
+        await pool.send_buffer.put(None)
+        await asyncio.wait_for(worker, timeout=1.0)
+
+    assert wire_frames == ["*1*1*55##", "*2*0*21##", "*2*1*35##"]
+    assert cover.current_cover_position == 100
+    assert cover.is_closing is False
+    assert cover.is_opening is False
+
+
+async def test_pool_stop_supersedes_held_scope_and_wakes_blocked_workers() -> None:
+    """Implicit WHO=2 stop via CommandWorkerPool.send() drops a held scope move and wakes workers."""
+    mock_handler = MagicMock()
+    mock_handler.mac = "00:03:50:aa:bb:cc"
+    mock_handler.log_id = "[test-gw]"
+    mock_handler.config_entry = None
+    mock_handler.command_session_idle_timeout = 5.0
+    mock_handler.gateway = MagicMock()
+    mock_handler.gateway.profile.max_queue_size = 250
+    mock_handler.gateway.profile.command_queue_delay = 0.0
+    mock_handler.bus_monitor = MagicMock()
+
+    pool = CommandWorkerPool(mock_handler)
+    pool._event_session_ready.set()
+
+    wire_order: list[tuple[int, str]] = []
+    w0_in_flight = asyncio.Event()
+    release_w0 = asyncio.Event()
+
+    class FakeSession:
+        def __init__(self, idx: int) -> None:
+            self.idx = idx
+            self._stream_reader: object | None = object()
+            self._stream_writer: object | None = object()
+
+        async def connect(self) -> dict[str, Any]:
+            self._stream_reader = object()
+            self._stream_writer = object()
+            return {"Success": True}
+
+        async def send(self, message: Any, is_status_request: bool = False) -> list[Any]:
+            raw = str(message)
+            if self.idx == 0 and raw == "*2*1*11##":
+                w0_in_flight.set()
+                await release_w0.wait()
+            wire_order.append((self.idx, raw))
+            return []
+
+        async def close(self) -> None:
+            self._stream_reader = None
+            self._stream_writer = None
+
+    sessions = iter([FakeSession(0), FakeSession(1)])
+
+    with patch(
+        "custom_components.myhome.gateway.OWNCommandSession",
+        side_effect=lambda **_: next(sessions),
+    ):
+        w0 = asyncio.create_task(pool.sending_loop(0))
+        w1 = asyncio.create_task(pool.sending_loop(1))
+        await asyncio.sleep(0)
+
+        f_11 = await pool.send(OWNCommand("*2*1*11##"))
+        await w0_in_flight.wait()
+
+        # Area 1 waits behind in-flight 11, holding back independent covers 12 and 13 on Worker 1.
+        f_area = await pool.send(OWNCommand("*2*1*1##"))
+        f_12 = await pool.send(OWNCommand("*2*2*12##"))
+        f_13 = await pool.send(OWNCommand("*2*2*13##"))
+        await asyncio.sleep(0.02)
+        assert wire_order == []
+
+        # Normal stop (default is_cancel=False) drops *2*1*1## and wakes Worker 1 immediately.
+        f_stop_area = await pool.send(OWNCommand("*2*0*1##"))
+        assert f_area.cancelled()
+
+        await asyncio.wait_for(asyncio.gather(f_12, f_13), timeout=1.0)
+        assert [frame for _, frame in wire_order] == ["*2*2*12##", "*2*2*13##"]
+        assert not f_stop_area.done()
+
+        release_w0.set()
+        await asyncio.wait_for(asyncio.gather(f_11, f_stop_area), timeout=1.0)
+
+        await pool.send_buffer.put(None)
+        await pool.send_buffer.put(None)
+        await asyncio.wait_for(asyncio.gather(w0, w1), timeout=1.0)
+
+    assert [frame for _, frame in wire_order] == [
+        "*2*2*12##",
+        "*2*2*13##",
+        "*2*1*11##",
+        "*2*0*1##",
+    ]
