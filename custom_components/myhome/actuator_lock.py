@@ -408,7 +408,7 @@ class ActuatorLockManager:
                 for dev_cfg in plat_cfgs.values():
                     raw_cfg_iface = dev_cfg.get(CONF_BUS_INTERFACE)
                     if raw_cfg_iface is None:
-                        raw_cfg_iface = dev_cfg.get("interface")
+                        raw_cfg_iface = dev_cfg.get("bus_interface")
                     cfg_iface = _normalize_iface(raw_cfg_iface)
                     if cfg_iface != iface:
                         continue

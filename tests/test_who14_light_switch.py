@@ -375,7 +375,7 @@ async def test_watchdog_dimension_aware_read_back_zigbee_guard_and_lock_skip(
         assert dog.pending == {}
 
         # 6. Dim 14 sentinel write (<= 1) returns None in _commanded_on
-        assert gateway_confirm._commanded_on(OWNCommand.parse("*#1*25*#14*1##")) is False
+        assert gateway_confirm._commanded_on(OWNCommand.parse("*#1*25*#14*1##")) is None
         assert (
             gateway_confirm._commanded_on(SimpleNamespace(what=None, dimension=14, dimension_value=[]))
             is None
@@ -2023,3 +2023,366 @@ async def test_dali_combined_ct_brightness_f422_nack_poll_guard_and_coarse_quant
     f_br_fast.cancel()
     await asyncio.sleep(0)
     assert dali._attr_brightness_pct == 82  # falls back cleanly on Dim 1 NACK!
+
+
+async def test_premerge_audit_light_switch_fade_unavailable_and_unsent_token_guards(
+    hass: HomeAssistant,
+) -> None:
+    """Verify established fine dimmer coarse_base, STATE_UNAVAILABLE restore, _PENDING_UNSENT, and cancel_fade_robustly."""
+    from homeassistant.const import STATE_UNAVAILABLE
+    from homeassistant.helpers.restore_state import RestoredExtraData
+
+    from custom_components.myhome.light_fade import SoftwareFadeEngine
+
+    entry, handler = _make_gateway(
+        hass,
+        model="MH200",
+        options={CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE},
+    )
+    handler._event_session_ready.set()
+
+    # 1. Established fine dimmer (_exact_level_seen=True / was_fine=True):
+    #    - coarse WHAT 9 (*1*9*44## -> 75%) + lock (*14*0*44##) + Dim 1 refinement (*#1*44*1*188*2## -> 88%)
+    #      keeps actuator_locked=True (coarse_dim1_refinement=True)!
+    #    - unlocked fade 75% -> 20% survives in-flight Dim 1 poll 88% (coarse_quantized_start=True)!
+    #    - cold-boot unseen lock at *1*9*44## (75%, true 88%) fading 75% -> 95% (pending_step == 88)
+    #      does NOT falsely confirm step 1 when polled *#1*44*1*188*2## arrives!
+    dim44 = MyHOMELight(
+        hass=hass,
+        name="Fine Dimmer 44",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="44",
+        who="1",
+        where="44",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    dim44._poll_on_add = False
+    dim44._probe_dimmer_on_add = False
+    _attach_live_entity(hass, dim44, "light.fine_44")
+
+    # Establish _exact_level_seen = True first!
+    dim44.handle_event(OWNEvent.parse("*#1*44*1*150*2##"))
+    assert dim44._exact_level_seen is True
+
+    dim44.handle_event(OWNEvent.parse("*1*9*44##"))  # 75%, _brightness_from_coarse_preset = True
+    assert dim44._attr_brightness_pct == 75
+    assert dim44._brightness_from_coarse_preset is True
+    assert handler._actuator_locks.observe(OWNCommand.parse("*14*0*44##")) is True
+    assert dim44.actuator_locked is True
+
+    dim44.handle_event(OWNEvent.parse("*#1*44*1*188*2##"))  # +13 pp refinement on established fine dimmer
+    assert dim44._attr_brightness_pct == 88
+    assert dim44.actuator_locked is True
+    # Trailing *1*9*44## inside #851/#984 refresh window holds exact 88% & keeps lock intact
+    dim44.handle_event(OWNEvent.parse("*1*9*44##"))
+    assert dim44._attr_brightness_pct == 88
+    assert dim44.actuator_locked is True
+
+    # Unlocked fade 75% -> 20% on established fine dimmer when Dim 1 poll refines 75% -> 88%
+    assert handler._actuator_locks.observe(OWNCommand.parse("*14*1*44##")) is True
+    if dim44._brightness_refresh_task is not None:
+        dim44._brightness_refresh_task.cancel()
+        await asyncio.gather(dim44._brightness_refresh_task, return_exceptions=True)
+    dim44._reset_brightness_refresh_guard()
+    dim44._brightness_refresh_after = 0.0
+    dim44.handle_event(OWNEvent.parse("*1*9*44##"))
+    assert dim44._brightness_from_coarse_preset is True
+
+    def _done_write(_cmd: Any = None) -> asyncio.Future[float]:
+        fut = hass.loop.create_future()
+        fut.set_result(time.monotonic())
+        return fut
+
+    handler.send = AsyncMock(side_effect=_done_write)
+    handler.send_fade_step = AsyncMock(side_effect=_done_write)
+    dim44._fade_engine.first_echo_timeout = 0.25
+    await dim44.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 20, ATTR_TRANSITION: 0.20})
+    await asyncio.sleep(0)
+    s1 = dim44._fade_engine.pending_first_step_pct
+    assert isinstance(s1, int) and s1 < 75
+    poll_88 = OWNEvent.parse("*#1*44*1*188*2##")
+    setattr(poll_88, "_from_status_request", True)
+    dim44.handle_event(poll_88)
+    assert dim44._fade_engine.is_fading is True
+    assert dim44._fade_engine.fade_start_pct == 88
+    dim44.handle_event(OWNEvent.parse(f"*#1*44*1*{100 + s1}*2##"))
+    assert dim44._fade_task is not None
+    await dim44._fade_task
+    assert dim44._attr_brightness_pct == 20
+
+    # Cold-boot unseen lock on established fine dimmer at *1*9*44## (75%, true 88%), fade -> 95%
+    handler._actuator_locks._locks.pop(("44", None), None)
+    dim44._actuator_locked = None
+    if dim44._brightness_refresh_task is not None:
+        dim44._brightness_refresh_task.cancel()
+        await asyncio.gather(dim44._brightness_refresh_task, return_exceptions=True)
+    dim44._reset_brightness_refresh_guard()
+    dim44._brightness_refresh_after = 0.0
+    dim44.handle_event(OWNEvent.parse("*1*9*44##"))
+    dim44._fade_engine.first_echo_timeout = 0.08
+    await dim44.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 95, ATTR_TRANSITION: 0.12})
+    await asyncio.sleep(0)
+    poll_88_cold = OWNEvent.parse("*#1*44*1*188*2##")
+    setattr(poll_88_cold, "_from_status_request", True)
+    dim44.handle_event(poll_88_cold)
+    assert dim44._fade_task is not None
+    await dim44._fade_task
+    assert dim44._attr_brightness_pct == 88  # aborted cleanly at real frozen level, NOT 95%!
+
+    # 2. STATE_UNAVAILABLE persistence via MyHOMEEntity.extra_restore_state_data (light + switch + error fallback)
+    assert dim44.extra_restore_state_data is None
+    assert handler._actuator_locks.observe(OWNCommand.parse("*14*0*44##")) is True
+    saved_light_extra = dim44.extra_restore_state_data
+    assert saved_light_extra is not None
+    assert saved_light_extra.as_dict() == {"actuator_locked": True}
+
+    handler._actuator_locks.clear()
+    dim44_restarted = MyHOMELight(
+        hass=hass,
+        name="Fine Dimmer 44",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="44",
+        who="1",
+        where="44",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    dim44_restarted._poll_on_add = False
+    dim44_restarted._probe_dimmer_on_add = False
+    dim44_restarted.entity_id = "light.fine_44"
+    with (
+        patch.object(
+            dim44_restarted,
+            "async_get_last_state",
+            AsyncMock(return_value=State("light.fine_44", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            dim44_restarted,
+            "async_get_last_extra_data",
+            AsyncMock(return_value=RestoredExtraData(saved_light_extra.as_dict())),
+        ),
+    ):
+        await dim44_restarted.async_added_to_hass()
+    assert dim44_restarted.actuator_locked is True
+    assert handler._actuator_locks.is_locked("44") is True
+
+    sw_46 = MyHOMESwitch(
+        hass=hass,
+        name="Switch 46",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="46",
+        who="1",
+        where="46",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F411/4",
+        gateway=handler,
+    )
+    sw_46._poll_on_add = False
+    sw_46.entity_id = "switch.sw_46"
+    with (
+        patch.object(
+            sw_46,
+            "async_get_last_state",
+            AsyncMock(return_value=State("switch.sw_46", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            sw_46,
+            "async_get_last_extra_data",
+            AsyncMock(return_value=RestoredExtraData({"actuator_locked": True})),
+        ),
+    ):
+        await sw_46.async_added_to_hass()
+    assert sw_46.actuator_locked is True
+    sw_46._restore_actuator_lock(State("switch.sw_46", "on", {"actuator_locked": False}))
+    assert sw_46.actuator_locked is True
+    assert sw_46.extra_restore_state_data is not None
+    assert sw_46.extra_restore_state_data.as_dict() == {"actuator_locked": True}
+    assert handler._actuator_locks.is_locked("46") is True
+
+    # Missing restore cache on STATE_UNAVAILABLE degrades gracefully without raising
+    sw_47 = MyHOMESwitch(
+        hass=hass,
+        name="Switch 47",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="47",
+        who="1",
+        where="47",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F411/4",
+        gateway=handler,
+    )
+    sw_47._poll_on_add = False
+    sw_47.entity_id = "switch.sw_47"
+    with (
+        patch.object(
+            sw_47,
+            "async_get_last_state",
+            AsyncMock(return_value=State("switch.sw_47", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            sw_47,
+            "async_get_last_extra_data",
+            AsyncMock(side_effect=RuntimeError("no restore cache")),
+        ),
+    ):
+        await sw_47.async_added_to_hass()
+    assert sw_47.actuator_locked is None
+    assert sw_47.extra_restore_state_data is None
+
+    # 3. _PENDING_UNSENT sentinel preserves _pending_cmd_color_temp & _pending_cmd_brightness_pct
+    #    when *1*0*W## or *1*1*W## arrives DURING await _send_switch_on(...)!
+    dali28 = MyHOMELight(
+        hass=hass,
+        name="DALI 28",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="28",
+        who="1",
+        where="28",
+        interface="02",
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F429",
+        gateway=handler,
+        color_temp=True,
+    )
+    dali28._poll_on_add = False
+    dali28._probe_dimmer_on_add = False
+    _attach_live_entity(hass, dali28, "light.dali_28")
+    dali28._attr_is_on = False
+    dali28._last_brightness_pct = 25
+
+    send_calls_28 = 0
+
+    async def _send_with_mid_await_off_and_on(cmd: Any) -> asyncio.Future[float]:
+        nonlocal send_calls_28
+        send_calls_28 += 1
+        if send_calls_28 == 1:
+            # Arrives while Dim 14 token[0] is still _PENDING_UNSENT!
+            dali28.handle_event(OWNEvent.parse("*1*0*28#4#02##"))
+        elif send_calls_28 == 2:
+            # Arrives while Dim 1 token[0] is still _PENDING_UNSENT!
+            dali28.handle_event(OWNEvent.parse("*1*1*28#4#02##"))
+            dali28.handle_event(OWNEvent.parse("*#1*28#4#02*14*250##"))
+        fut = hass.loop.create_future()
+        fut.set_result(time.monotonic())
+        return fut
+
+    handler.send = _send_with_mid_await_off_and_on  # type: ignore[assignment]
+    await dali28.async_turn_on(**{ATTR_COLOR_TEMP: 250, ATTR_BRIGHTNESS_PCT: 80})
+    assert dali28._pending_cmd_brightness_pct is not None
+    assert dali28._attr_brightness_pct != 25  # did NOT bounce to stale _last_brightness_pct=25!
+    dali28.handle_event(OWNEvent.parse("*#1*28#4#02*1*180*0##"))
+    assert dali28.is_on is True
+    assert dali28._attr_brightness_pct == 80
+    assert dali28._pending_cmd_brightness_pct is None
+
+    # 4. SoftwareFadeEngine.cancel_fade_robustly:
+    #    (a) concurrent newer fade_task started while old fade unwinds is NOT clobbered to None!
+    #    (b) cancelling the caller task itself propagates CancelledError!
+    swallow_cancel = True
+    unwinding_entered = asyncio.Event()
+
+    async def _send_cb(_pct: int) -> asyncio.Future[float]:
+        fut = hass.loop.create_future()
+        fut.set_result(time.monotonic())
+        return fut
+
+    eng = SoftwareFadeEngine(
+        where="99",
+        create_task_cb=lambda coro: asyncio.create_task(coro),
+        send_instant_cb=_send_cb,
+        apply_state_cb=lambda _p, _o: None,
+        update_ha_state_cb=lambda: None,
+        get_worker_count_cb=lambda: 1,
+        get_transition_mode_cb=lambda: TRANSITION_MODE_SOFTWARE,
+        is_on_cb=lambda: True,
+    )
+
+    async def _sticky_fade() -> None:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            unwinding_entered.set()
+            if swallow_cancel:
+                await asyncio.sleep(10)
+            raise
+
+    t_old = asyncio.create_task(_sticky_fade())
+    eng.fade_task = t_old
+    await asyncio.sleep(0)
+
+    cancel_coro = asyncio.create_task(eng.cancel_fade_robustly())
+    await unwinding_entered.wait()
+    # Concurrent Fade #2 starts while Fade #1 is still unwinding inside cancel_fade_robustly!
+    t_new = eng.start_fade(20, 80, 0.30)
+    await cancel_coro  # 0.15 s shield timeout finishes without wiping t_new!
+    assert eng.fade_task is t_new
+    assert eng.is_fading is True
+    t_old.cancel()
+    await asyncio.gather(t_old, return_exceptions=True)
+    eng.cancel_fade_if_active()
+    await asyncio.gather(t_new, return_exceptions=True)
+
+    # Caller task itself cancelled while awaiting cancel_fade_robustly -> propagates CancelledError!
+    t_caller_target = asyncio.create_task(_sticky_fade())
+    eng.fade_task = t_caller_target
+    await asyncio.sleep(0)
+    unwinding_entered.clear()
+    caller_task = asyncio.create_task(eng.cancel_fade_robustly())
+    await unwinding_entered.wait()
+    caller_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller_task
+    assert eng.fade_task is None
+    t_caller_target.cancel()
+    await asyncio.gather(t_caller_target, return_exceptions=True)
+
+    # Also cover task raising RuntimeError inside cancel_fade_robustly
+    async def _boom_on_cancel() -> None:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError as err:
+            raise RuntimeError("boom during unwind") from err
+
+    t_boom = asyncio.create_task(_boom_on_cancel())
+    eng.fade_task = t_boom
+    await asyncio.sleep(0)
+    await eng.cancel_fade_robustly()
+    assert eng.fade_task is None
+
+    # 5. LightEchoWatchdog #4#1 -> #4#01 canonicalization & ActuatorLockManager 'bus_interface' config key
+    dog = LightEchoWatchdog(SimpleNamespace(hass=hass, log_id="[GW]", send_status_request=AsyncMock()))  # type: ignore[arg-type]
+    try:
+        dog.command_acknowledged(OWNCommand.parse("*1*1*09#4#1##"), time.monotonic())
+        assert "09#4#01" in dog.pending
+        dog.status_seen(OWNMessage.parse("*1*1*09#4#01##"))
+        assert dog.pending == {}
+    finally:
+        dog.cancel_all()
+
+    assert entry.runtime_data is not None
+    entry.runtime_data.platforms["light"] = {
+        "g2": {"where": "#2", "bus_interface": "1", "members": ["12"]},
+    }
+    assert ("12", "01") in handler._actuator_locks._resolve_group_keys("#2", "01")

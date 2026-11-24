@@ -474,10 +474,7 @@ async def test_f461_live_what18_hardware_timed_pulse_and_impulse_cover_replay(
         assert unpop_res["events_after"] == []
 
     # 3. Replay captured bus sequence through MyHOMEImpulseCover at WHERE="06"
-    try:
-        from custom_components.myhome.cover import MyHOMEImpulseCover
-    except ImportError:  # pragma: no cover
-        return
+    from custom_components.myhome.cover import MyHOMEImpulseCover
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
@@ -583,3 +580,139 @@ def test_f461_live_who6_and_who8_nack_on_automation_gateway() -> None:
     assert r4_results["verify_07_off"]["replies"] == ["*1*0*07##"]
     assert r4_results["verify_shutter_05_stopped"]["replies"] == ["*2*0*05##"]
 
+
+
+@pytest.mark.asyncio
+async def test_f461_unpopulated_relay_nack_reaches_the_impulse_cover_as_a_failed_pulse(
+    hass: HomeAssistant,
+) -> None:
+    """Replay the captured NACK of `*1*18*71##` / `*1*1*71##` through the real command worker.
+
+    The F461 answered both frames with `*#*0##` after ~2.06 s (rows of step `unpopulated_71`).
+    OWNd writes a NACKed command a second time and then returns ``None``; the worker turns
+    that into a *cancelled* delivery future. The impulse cover must report it as a pulse
+    that was not confirmed (no ``asyncio.CancelledError``, no deadband, no motion shown), and a
+    software pulse must still owe its OFF and send it at once.
+    """
+    import asyncio
+    from unittest.mock import patch
+
+    from homeassistant.components.cover import CoverDeviceClass
+    from homeassistant.exceptions import HomeAssistantError
+    from OWNd.connection import OWNCommandSession
+
+    from custom_components.myhome.cover import MyHOMEImpulseCover
+
+    data = json.loads(F461_FIXTURE_PATH.read_text(encoding="utf-8"))
+    cmd_rows = [
+        r
+        for r in data["rows"]
+        if r["step"] == "unpopulated_71" and r.get("session") == "cmd"
+    ]
+    # tx frame -> the reply the gateway gave on the command session, as captured
+    replies = {
+        tx["frame"]: rx["frame"]
+        for tx, rx in zip(cmd_rows[::2], cmd_rows[1::2], strict=True)
+        if tx["dir"] == "tx" and rx["dir"] == "rx"
+    }
+    assert replies == {"*1*18*71##": "*#*0##", "*1*1*71##": "*#*0##"}
+
+    written: list[str] = []
+
+    class _Writer:
+        transport = None
+
+        def __init__(self, reader: asyncio.StreamReader) -> None:
+            self._reader = reader
+
+        def write(self, payload: bytes) -> None:
+            frame = payload.decode()
+            written.append(frame)
+            self._reader.feed_data(replies[frame].encode())
+
+        async def drain(self) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+        async def wait_closed(self) -> None:
+            return None
+
+        def is_closing(self) -> bool:
+            return False
+
+        def get_extra_info(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    class _ReplaySession(OWNCommandSession):
+        """OWNd's real command session on a stream that answers from the capture."""
+
+        async def connect(self) -> dict[str, bool]:  # type: ignore[override]
+            self._stream_reader = asyncio.StreamReader()
+            self._stream_writer = _Writer(self._stream_reader)  # type: ignore[assignment]
+            return {"Success": True}
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.0.2.92",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "open",
+            CONF_MAC: "00:03:50:00:04:97",
+        },
+        entry_id="test_f461_unpopulated_71",
+    )
+    entry.add_to_hass(hass)
+    gateway = MyHOMEGatewayHandler(hass, entry)
+    gateway._event_session_ready.set()
+
+    def _cover(pulse_duration: float) -> MyHOMEImpulseCover:
+        cover = MyHOMEImpulseCover(
+            hass=hass,
+            name="Gate 71",
+            entity_name=None,
+            device_id="1-71",
+            who="1",
+            where="71",
+            interface=None,
+            device_class=CoverDeviceClass.GATE,
+            travel_time=10.0,
+            pulse_duration=pulse_duration,
+            min_cycle_time=5.0,
+            pin_code=None,
+            state_sensor=None,
+            manufacturer="BTicino",
+            model="F411",
+            gateway=gateway,
+        )
+        cover.hass = hass
+        cover.async_write_ha_state = lambda: None  # type: ignore[method-assign]
+        return cover
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", _ReplaySession):
+        worker = asyncio.create_task(gateway.sending_loop(0))
+        software = _cover(1.0)
+        try:
+            # Hardware-timed pulse: NACKed, written twice by OWNd's one retry.
+            timed = _cover(0.5)
+            with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
+                await timed.async_open_cover()
+            assert written == ["*1*18*71##", "*1*18*71##"]
+            assert timed.is_opening is False
+            assert timed._last_pulse_time == -1e9
+            assert timed._pulse_in_flight is False
+
+            # Software pulse: the ON is NACKed too, and its OFF stays owed.
+            written.clear()
+            with pytest.raises(HomeAssistantError, match="pulse was not confirmed"):
+                await software.async_open_cover()
+            assert written == ["*1*1*71##", "*1*1*71##"]
+            assert software._off_pending is True
+            assert software._off_task is not None  # the ON may be on the bus: the OFF is on its way
+        finally:
+            if software._off_task is not None:
+                software._off_task.cancel()
+                await asyncio.gather(software._off_task, return_exceptions=True)
+            gateway._command_pool.close()
+            await asyncio.wait_for(worker, 5)

@@ -207,7 +207,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### Code Coverage
 
-The integration maintains 7038 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+The integration maintains 7982 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
 
 <details>
 <summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>

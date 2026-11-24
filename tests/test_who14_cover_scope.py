@@ -699,8 +699,8 @@ async def test_s4_f461_translations_and_stationary_probe_reply_zero_drift(
             assert cov_05._actuation_unconfirmed is True
 
             # Also verify translation stop (*2*1000#0*05##) after ECHO_WINDOW on an unconfirmed run
-            # aborts cleanly without setting _actuation_unconfirmed, AND P2P stop_cover() inside
-            # ECHO_WINDOW on an unlocked cover anchors from _provisional_write_ts!
+            # aborts cleanly without setting _actuation_unconfirmed, P2P stop_cover() inside
+            # ECHO_WINDOW on an unconfirmed move keeps 0% position drift, while a confirmed move freezes!
             cov_05._actuation_unconfirmed = False
             cov_05._begin_run("open")
             cov_05._echo_until = time.monotonic() - 1.0
@@ -709,13 +709,25 @@ async def test_s4_f461_translations_and_stationary_probe_reply_zero_drift(
             assert cov_05._actuation_unconfirmed is False
             assert cov_05.current_cover_position == 80
 
-            # Unlocked cover stopped inside ECHO_WINDOW before motor-start echo arrives
+            # Unconfirmed cover stopped inside ECHO_WINDOW before motor-start echo arrives -> 0% drift!
             monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
             session.sent_frames.clear()
             await cov_05.async_close_cover()
             await _wait_for_tx(handler, session, 1, hass)
             assert cov_05._provisional_write_ts is not None
-            cov_05._provisional_write_ts = time.monotonic() - 2.0  # 2 s of 10 s = 20%
+            cov_05._provisional_write_ts = time.monotonic() - 2.0
+            await cov_05.async_stop_cover()
+            await _wait_for_tx(handler, session, 2, hass)
+            assert cov_05.is_closing is False
+            assert cov_05.current_cover_position == 80
+
+            # Confirmed cover (*2*2*05## echoed) stopped inside ECHO_WINDOW freezes at interpolated %
+            session.sent_frames.clear()
+            await cov_05.async_close_cover()
+            await _wait_for_tx(handler, session, 1, hass)
+            cov_05.handle_event(OWNEvent.parse("*2*2*05##"))
+            assert cov_05._move_confirmed is True
+            cov_05._move_start_time = cov_05._run_started_at = time.monotonic() - 2.0
             await cov_05.async_stop_cover()
             await _wait_for_tx(handler, session, 2, hass)
             assert cov_05.is_closing is False
@@ -1651,6 +1663,11 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
 
             cov_short.handle_event(OWNEvent.parse("*2*1*0##"))
             assert cov_short._scope_run_active_until is not None
+            # Immediate *2*0*W## inside ECHO_WINDOW (e.g. locked L4671/2 64 answering *2*2*6## on MH201)
+            # must NOT clear _actuation_unconfirmed!
+            cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
+            assert cov_short._actuation_unconfirmed is True
+            await asyncio.sleep(0.06)
             handler._active_sweeps = 1
             cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
             assert cov_short._actuation_unconfirmed is True
@@ -2121,3 +2138,1063 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
             worker.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await worker
+
+
+@pytest.mark.asyncio
+async def test_premerge_audit_cover_scope_unavailable_probe_autostop_venetian_dim10_and_access_gate(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify STATE_UNAVAILABLE restore, unconfirmed->confirmed _auto_stop, mid-await scope lock, unconfirmed stop/tilt, scope polls, Dim 10 INFO=14/12, and access: locked gate."""
+    from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+    from homeassistant.core import Context
+    from homeassistant.helpers.restore_state import RestoredExtraData
+
+    from custom_components.myhome.access_policy import Phase
+    from custom_components.myhome.cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
+
+    entry, handler = _make_real_gateway(hass, mac="00:03:50:97:60:ee", model="MH201")
+    handler._event_session_ready.set()
+
+    # 1. CoverScope interface zero-padding ("2" vs "02")
+    cov_if02 = MyHOMECover(
+        hass=hass,
+        name="Shutter 11#4#02",
+        entity_name=None,
+        device_id="11#4#02",
+        who="2",
+        where="11",
+        interface="02",
+        advanced=False,
+        manufacturer="BTicino",
+        model="F411/2",
+        gateway=handler,
+        travel_time=10,
+    )
+    sc_area_2 = CoverScope.of("1", "2")
+    sc_grp_2 = CoverScope.of("#1", "2", ("11",))
+    sc_gen_2 = CoverScope.of("0", "2")
+    assert sc_area_2 is not None and sc_area_2.contains(cov_if02) is True
+    assert sc_grp_2 is not None and sc_grp_2.contains(cov_if02) is True
+    assert sc_gen_2 is not None and sc_gen_2.contains(cov_if02) is True
+    fam_if = CoverFamily()
+    cov_if02.async_on_remove = MagicMock()
+    fam_if.add(cov_if02)
+    grp_cov_2 = MyHOMEScopeCover(
+        hass=hass,
+        name="Group #1 if 2",
+        entity_name=None,
+        device_id="#1#4#02",
+        who="2",
+        where="#1",
+        interface="2",
+        advanced=False,
+        manufacturer="BTicino",
+        model="Group",
+        gateway=handler,
+        travel_time=10,
+        scope=sc_grp_2,
+    )
+    grp_cov_2.async_on_remove = MagicMock()
+    fam_if.add(grp_cov_2)
+    assert fam_if.keys_moved_by("#1", "02") == ["11#4#02"]
+    assert CoverScope.of("1", "") is not None
+    assert CoverScope.of("1", True) is not None  # type: ignore[arg-type]
+
+    # 2. STATE_UNAVAILABLE persistence on timed cover (suppressing MH201 _relay_hold_until),
+    #    advanced cover (+ last_state is None vs unavailable), and MyHOMEImpulseCover!
+    cov_timed = MyHOMECover(
+        hass=hass,
+        name="Shutter 56",
+        entity_name=None,
+        device_id="56",
+        who="2",
+        where="56",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="L4671/2",
+        gateway=handler,
+        travel_time=10,
+    )
+    cov_timed._poll_on_add = False
+    cov_timed.entity_id = "cover.shutter_56"
+    cov_timed._attr_current_cover_position = 40
+    cov_timed._start_position = 40
+    cov_timed._attr_is_closed = False
+    cov_timed._motion_started_at = dt_util.utcnow().isoformat(timespec="milliseconds")
+    cov_timed._register_availability_listener()
+    handler._actuator_locks.set_point_lock("56", None, True, observed=True)
+    saved_timed = cov_timed.extra_restore_state_data
+    assert saved_timed is not None
+    assert saved_timed.as_dict()["actuator_locked"] is True
+    assert saved_timed.as_dict()["position"] == 40
+
+    handler._actuator_locks.clear()
+    cov_timed_restart = MyHOMECover(
+        hass=hass,
+        name="Shutter 56",
+        entity_name=None,
+        device_id="56",
+        who="2",
+        where="56",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="L4671/2",
+        gateway=handler,
+        travel_time=10,
+    )
+    cov_timed_restart._poll_on_add = False
+    cov_timed_restart.entity_id = "cover.shutter_56"
+    with (
+        patch.object(
+            cov_timed_restart,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.shutter_56", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            cov_timed_restart,
+            "async_get_last_extra_data",
+            AsyncMock(return_value=RestoredExtraData(saved_timed.as_dict())),
+        ),
+    ):
+        await cov_timed_restart.async_added_to_hass()
+    assert cov_timed_restart.current_cover_position == 40
+    assert cov_timed_restart.actuator_locked is True
+    assert cov_timed_restart._relay_hold_until is None
+    assert cov_timed_restart._stops_before_move(False) is False
+
+    adv_57 = MyHOMECover(
+        hass=hass,
+        name="Advanced 57",
+        entity_name=None,
+        device_id="57",
+        who="2",
+        where="57",
+        interface=None,
+        advanced=True,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+    )
+    adv_57._poll_on_add = False
+    adv_57.entity_id = "cover.adv_57"
+    with (
+        patch.object(
+            adv_57,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.adv_57", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            adv_57,
+            "async_get_last_extra_data",
+            AsyncMock(
+                return_value=RestoredExtraData(
+                    {
+                        "actuator_locked": True,
+                        "last_run": {"seconds": 8.5, "direction": "open", "ended_at": "2026-11-24T12:00:00Z"},
+                    }
+                )
+            ),
+        ),
+    ):
+        await adv_57.async_added_to_hass()
+    assert adv_57.actuator_locked is True
+    assert adv_57.current_cover_position is None
+    assert adv_57.extra_state_attributes["last_run_seconds"] == 8.5
+
+    adv_58 = MyHOMECover(
+        hass=hass,
+        name="Advanced 58",
+        entity_name=None,
+        device_id="58",
+        who="2",
+        where="58",
+        interface=None,
+        advanced=True,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+    )
+    adv_58._poll_on_add = False
+    adv_58.entity_id = "cover.adv_58"
+    with (
+        patch.object(adv_58, "async_get_last_state", AsyncMock(return_value=None)),
+        patch.object(
+            adv_58,
+            "async_get_last_extra_data",
+            AsyncMock(
+                return_value=RestoredExtraData(
+                    {"last_run": {"seconds": 4.2, "direction": "close", "ended_at": "2026-11-24T12:00:00Z"}}
+                )
+            ),
+        ),
+    ):
+        await adv_58.async_added_to_hass()
+    assert adv_58.extra_state_attributes["last_run_seconds"] == 4.2
+
+    # 3. Post-ECHO_WINDOW *#2*W## probe confirming motion (open AND close, plus sync non-Future probe)
+    #    on a previously _actuation_unconfirmed cover preserves set_cover_position's _auto_stop!
+    monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+    monkeypatch.setattr(cover_module, "MOTOR_START_DELAY", 0.01)
+    entry_pos, handler_pos = _make_real_gateway(
+        hass,
+        mac="00:03:50:97:60:ef",
+        model="F455",
+        platforms={
+            PLATFORM: {
+                "61": {CONF_WHERE: "61", CONF_NAME: "Pos 61", CONF_TRAVEL_TIME: 2},
+            }
+        },
+    )
+    entities_pos = await _setup_covers_on_gateway(hass, entry_pos, handler_pos)
+    cov_pos = entities_pos["61"]
+    assert isinstance(cov_pos, MyHOMECover)
+    cov_pos._min_motor_pulse = 0.05
+
+    probe_dir = "1"
+
+    def _probe_moving_responder(raw: str, is_req: bool) -> Any:
+        if is_req and raw == "*#2*61##":
+            return [OWNMessage.parse(f"*2*{probe_dir}*61##")]
+        return True
+
+    sess_pos = _FakeCommandSession(_probe_moving_responder)
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=sess_pos):
+        worker_pos = asyncio.create_task(handler_pos.sending_loop(0))
+        try:
+            cov_pos._attr_current_cover_position = 20
+            cov_pos._start_position = 20
+            cov_pos._actuation_unconfirmed = True
+            probe_dir = "1"
+            sess_pos.sent_frames.clear()
+            await cov_pos.async_set_cover_position(**{ATTR_POSITION: 60})
+            assert cov_pos._attr_is_opening is False
+            assert cov_pos._stop_task is not None
+            await asyncio.wait_for(cov_pos._stop_task, timeout=3.0)
+            await _wait_for_tx(handler_pos, sess_pos, 3, hass)
+            assert [f for f, _ in sess_pos.sent_frames] == ["*2*1*61##", "*#2*61##", "*2*0*61##"]
+            assert cov_pos._actuation_unconfirmed is False
+            assert 50 <= (cov_pos.current_cover_position or 0) <= 75
+
+            cov_pos._clear_relay_hold()
+            cov_pos._attr_current_cover_position = 70
+            cov_pos._start_position = 70
+            cov_pos._actuation_unconfirmed = True
+            probe_dir = "2"
+            sess_pos.sent_frames.clear()
+            await cov_pos.async_set_cover_position(**{ATTR_POSITION: 30})
+            assert cov_pos._attr_is_closing is False
+            assert cov_pos._stop_task is not None
+            await asyncio.wait_for(cov_pos._stop_task, timeout=3.0)
+            await _wait_for_tx(handler_pos, sess_pos, 3, hass)
+            assert [f for f, _ in sess_pos.sent_frames] == ["*2*2*61##", "*#2*61##", "*2*0*61##"]
+            assert 15 <= (cov_pos.current_cover_position or 0) <= 40
+
+            cov_pos._clear_relay_hold()
+            orig_sr = handler_pos.send_status_request
+            handler_pos.send_status_request = lambda _cmd: None  # type: ignore[method-assign]
+            try:
+                cov_pos._attr_current_cover_position = 30
+                cov_pos._start_position = 30
+                cov_pos._actuation_unconfirmed = True
+                sess_pos.sent_frames.clear()
+                await cov_pos.async_set_cover_position(**{ATTR_POSITION: 60})
+                assert cov_pos._stop_task is not None
+                await asyncio.wait_for(cov_pos._stop_task, timeout=3.0)
+                await _wait_for_tx(handler_pos, sess_pos, 2, hass)
+                assert [f for f, _ in sess_pos.sent_frames] == ["*2*1*61##", "*2*0*61##"]
+            finally:
+                handler_pos.send_status_request = orig_sr  # type: ignore[method-assign]
+        finally:
+            worker_pos.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await worker_pos
+
+    sess_sc = _FakeCommandSession(lambda _raw, _is_req: True)
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=sess_sc):
+        worker_pos = asyncio.create_task(handler.sending_loop(0))
+        try:
+
+            # 4. Mid-await scope lock & supersede races in MyHOMEScopeCover & MyHOMECover._async_stop
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            m_a = MyHOMECover(
+                hass=hass,
+                name="Member 71",
+                entity_name=None,
+                device_id="71",
+                who="2",
+                where="71",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=5.0,
+            )
+            m_b = MyHOMECover(
+                hass=hass,
+                name="Member 72",
+                entity_name=None,
+                device_id="72",
+                who="2",
+                where="72",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=5.0,
+            )
+            fam_sc = CoverFamily()
+            sc_7 = CoverScope.of("#7", None, ("71", "72"))
+            assert sc_7 is not None
+            grp_7 = MyHOMEScopeCover(
+                hass=hass,
+                name="Group #7",
+                entity_name=None,
+                device_id="#7",
+                who="2",
+                where="#7",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="Group",
+                gateway=handler,
+                travel_time=5.0,
+                scope=sc_7,
+            )
+            for c_ent, eid in ((m_a, "cover.m_71"), (m_b, "cover.m_72"), (grp_7, "cover.grp_7")):
+                c_ent.hass = hass
+                c_ent.entity_id = eid
+                c_ent.async_write_ha_state = MagicMock()
+                c_ent.async_schedule_update_ha_state = MagicMock()
+                c_ent._register_availability_listener()
+                fam_sc.add(c_ent)
+            m_a._attr_current_cover_position = m_a._start_position = 0
+            m_b._attr_current_cover_position = m_b._start_position = 0
+
+            orig_send_sc = handler.send
+
+            async def _send_lock_71_mid_await(_cmd: Any) -> asyncio.Future[float]:
+                handler._actuator_locks.set_point_lock("71", None, True, observed=True)
+                fut = hass.loop.create_future()
+                fut.set_result(time.monotonic())
+                return fut
+
+            handler.send = _send_lock_71_mid_await  # type: ignore[method-assign]
+            await grp_7.async_open_cover()
+            assert m_a.actuator_locked is True
+            assert m_a._following_scope is False
+            assert m_a._stop_task is None
+            assert m_a.current_cover_position == 0
+            assert m_b._following_scope is True
+            assert m_b._stop_task is not None
+            m_b._cancel_stop_task()
+            m_b._abort_motion()
+            m_b._clear_relay_hold()
+
+            handler._actuator_locks.set_point_lock("71", None, False, observed=True)
+
+            async def _send_lock_71_then_fail(_cmd: Any) -> asyncio.Future[float]:
+                handler._actuator_locks.set_point_lock("71", None, True, observed=True)
+                raise RuntimeError("scope send failed")
+
+            handler.send = _send_lock_71_then_fail  # type: ignore[method-assign]
+            with pytest.raises(RuntimeError, match="scope send failed"):
+                await grp_7.async_open_cover()
+            assert m_b.is_opening is False
+
+            handler._actuator_locks.set_point_lock("71", None, False, observed=True)
+
+            async def _send_supersede_scope(_cmd: Any) -> asyncio.Future[float]:
+                grp_7._run_generation += 1
+                grp_7._pending_cmd = None
+                fut = hass.loop.create_future()
+                fut.set_result(time.monotonic())
+                return fut
+
+            handler.send = _send_supersede_scope  # type: ignore[method-assign]
+            await grp_7._async_run_to_end(True)
+            assert m_a.is_opening is False
+            assert grp_7._stop_task is None
+
+            m_a._begin_run("open")
+            m_a._move_confirmed = True
+            m_a._anchor_run(time.monotonic())
+            m_b._begin_run("open")
+            m_b._move_confirmed = True
+            m_b._anchor_run(time.monotonic())
+
+            async def _send_supersede_m_a_on_scope_stop(_cmd: Any) -> asyncio.Future[float]:
+                m_a._begin_run("close")
+                fut = hass.loop.create_future()
+                fut.set_result(time.monotonic())
+                return fut
+
+            handler.send = _send_supersede_m_a_on_scope_stop  # type: ignore[method-assign]
+            await grp_7.async_stop_cover()
+            await asyncio.sleep(0)
+            assert m_a._pending_cmd == "close"
+            assert m_b.is_opening is False
+            m_a._abort_motion()
+            m_a._clear_relay_hold()
+            m_b._clear_relay_hold()
+
+            m_b._begin_run("open")
+
+            async def _send_fail_scope_stop(_cmd: Any) -> asyncio.Future[float]:
+                raise RuntimeError("stop fail")
+
+            handler.send = _send_fail_scope_stop  # type: ignore[method-assign]
+            with pytest.raises(RuntimeError, match="stop fail"):
+                await grp_7.async_stop_cover()
+
+            m_b._begin_run("open")
+            m_b._move_confirmed = True
+            m_b._anchor_run(time.monotonic())
+
+            async def _send_supersede_p2p_stop(_cmd: Any) -> None:
+                m_b._begin_run("close")
+                return None
+
+            handler.send = _send_supersede_p2p_stop  # type: ignore[method-assign]
+            await m_b.async_stop_cover()
+            assert m_b._pending_cmd == "close"
+            m_b._abort_motion()
+            m_b._clear_relay_hold()
+
+            # 5. Unconfirmed stop (_settle_unconfirmed_stop) across Venetian slats, simple cover,
+            #    non-Future send(), and pre-write *2*1000#0*, *2*0*W##, and *2*0*#7## echoes!
+            ven_73 = MyHOMECover(
+                hass=hass,
+                name="Venetian 73",
+                entity_name=None,
+                device_id="73",
+                who="2",
+                where="73",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=10.0,
+                slat_tilt=True,
+                slat_time=1.5,
+            )
+            ven_73.hass = hass
+            ven_73.entity_id = "cover.ven_73"
+            ven_73.async_write_ha_state = MagicMock()
+            ven_73.async_schedule_update_ha_state = MagicMock()
+            ven_73._register_availability_listener()
+            ven_73._attr_current_cover_position = ven_73._start_position = 50
+            ven_73._attr_current_cover_tilt_position = 0
+
+            handler.send = AsyncMock(return_value=None)  # type: ignore[method-assign]
+            await ven_73.async_open_cover()
+            await ven_73.async_stop_cover()
+            assert ven_73.current_cover_position == 50
+            assert ven_73.current_cover_tilt_position == 0
+
+            simp_74 = MyHOMECover(
+                hass=hass,
+                name="Simple 74",
+                entity_name=None,
+                device_id="74",
+                who="2",
+                where="74",
+                interface=None,
+                advanced=False,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=0,
+            )
+            simp_74.hass = hass
+            simp_74.entity_id = "cover.simp_74"
+            simp_74.async_write_ha_state = MagicMock()
+            simp_74.async_schedule_update_ha_state = MagicMock()
+            simp_74._register_availability_listener()
+            simp_74._attr_is_closed = True
+            pending_stop_fut: asyncio.Future[float] = hass.loop.create_future()
+            handler.send = AsyncMock(return_value=pending_stop_fut)  # type: ignore[method-assign]
+            await simp_74.async_open_cover()
+            await simp_74.async_stop_cover()
+            simp_74.handle_event(OWNEvent.parse("*2*1000#0*74##"))
+            assert simp_74.is_closed is True
+            assert simp_74._ran_since_start is False
+
+            simp_74._begin_run("open")
+            simp_74._begin_stop()
+            simp_74.handle_event(OWNEvent.parse("*2*0*74##"))
+            assert simp_74.is_closed is True
+            simp_74._begin_run("open")
+            simp_74._begin_stop(scope_where="#7")
+            simp_74.handle_event(OWNEvent.parse("*2*0*#7##"))
+            assert simp_74.is_closed is True
+
+            # 6. Unconfirmed Venetian slat pulse locked AFTER write_ts + MOTOR_START_DELAY -> 0% tilt advance!
+            handler.send = orig_send_sc  # type: ignore[method-assign]
+            ven_73._clear_relay_hold()
+            ven_73._attr_current_cover_tilt_position = 0
+            await ven_73._async_start_tilt(60)
+            ven_73._tilt_start_time = time.monotonic() - 0.8
+            ven_73.handle_actuator_lock(True)
+            assert ven_73._is_tilting is False
+            assert ven_73.current_cover_tilt_position == 0
+            assert ven_73._pulse_ended_at is None
+            ven_73.handle_actuator_lock(False)
+
+            ven_73._begin_run("open", is_tilting=True)
+            ven_73._tilt_direction = "open"
+            ven_73._echo_until = time.monotonic() - 1.0
+            ven_73.handle_event(OWNEvent.parse("*2*1*73##"))
+            assert ven_73._move_confirmed is True
+            ven_73._abort_tilt()
+            assert ven_73._move_confirmed is False
+
+            ven_73._begin_run("close", is_tilting=True)
+            ven_73._tilt_direction = "close"
+            ven_73._echo_until = time.monotonic() - 1.0
+            ven_73.handle_event(OWNEvent.parse("*2*2*73##"))
+            assert ven_73._move_confirmed is True
+            ven_73._apply_tilt_stop(time.monotonic())
+            assert ven_73._move_confirmed is False
+
+            ven_73._move_confirmed = True
+            ven_73._follow_pulse(grp_7, "open")
+            assert ven_73._move_confirmed is False
+            ven_73.handle_event(OWNEvent.parse("*#2*73*10*10*55*001*14##"))
+            assert ven_73._is_tilting is False
+            assert ven_73.current_cover_position == 55
+
+            # 7. Dim 10 SHUTTER_INFO=14 preserves live position (is_closed branch + 255 position_unknown +
+            #    non-advanced allow_auto_advanced=False + is_closed=None), and SHUTTER_INFO=12 on status=11!
+            m_a._allow_auto_advanced = False
+            m_a._attr_is_opening = True
+            m_a._move_confirmed = False
+            fake_info14_nonadv = SimpleNamespace(
+                who=2,
+                is_general=False,
+                is_area=False,
+                is_group=False,
+                is_translation=False,
+                where="71",
+                interface=None,
+                dimension=10,
+                dimension_value=["10", "35", "001", "14"],
+                current_position=35,
+                is_position_unknown=False,
+                is_opening=False,
+                is_closing=False,
+                is_closed=None,
+                _what=None,
+                human_readable_log="dim10 info 14 nonadv",
+            )
+            m_a.handle_event(fake_info14_nonadv)  # type: ignore[arg-type]
+            assert m_a.current_cover_position == 35
+            assert m_a._start_position == 35
+            assert m_a._position_drift_bound == 0.0
+            assert m_a.is_closed is False
+
+            simp_74._begin_run("open")
+            simp_74._arm_unconfirmed_move_timer(time.monotonic() - 2.0)
+            probe_74_fut: asyncio.Future[float] = hass.loop.create_future()
+
+            async def _async_sr_simp(_cmd: Any) -> asyncio.Future[float]:
+                await asyncio.sleep(0)
+                simp_74.handle_event(OWNEvent.parse("*2*1*74##"))
+                probe_74_fut.set_result(time.monotonic())
+                return probe_74_fut
+
+            orig_sr_simp = handler.send_status_request
+            handler.send_status_request = _async_sr_simp  # type: ignore[method-assign]
+            try:
+                async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=1))
+                if simp_74._unconfirmed_move_task is not None:
+                    await asyncio.wait_for(simp_74._unconfirmed_move_task, timeout=2.0)
+            finally:
+                handler.send_status_request = orig_sr_simp  # type: ignore[method-assign]
+            assert simp_74._unconfirmed_move_task is None
+            simp_74._abort_motion()
+            simp_74._clear_relay_hold()
+
+            # Eager synchronous probe completion leaves _unconfirmed_move_task as None too!
+            simp_74._begin_run("open")
+            simp_74._arm_unconfirmed_move_timer(time.monotonic() - 2.0)
+            handler.send_status_request = lambda _cmd: None  # type: ignore[method-assign]
+            try:
+                async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2))
+                await asyncio.sleep(0)
+            finally:
+                handler.send_status_request = orig_sr_simp  # type: ignore[method-assign]
+            assert simp_74._unconfirmed_move_task is None
+            simp_74._abort_motion()
+            simp_74._clear_relay_hold()
+
+            adv_75 = MyHOMECover(
+                hass=hass,
+                name="Adv 75",
+                entity_name=None,
+                device_id="75",
+                who="2",
+                where="75",
+                interface=None,
+                advanced=True,
+                manufacturer="BTicino",
+                model="F401",
+                gateway=handler,
+            )
+            adv_75.hass = hass
+            adv_75.entity_id = "cover.adv_75"
+            adv_75._register_availability_listener()
+            adv_75._attr_current_cover_position = 80
+            adv_75._attr_is_opening = True
+            adv_75._move_confirmed = False
+            info14_msg = OWNEvent.parse("*#2*75*10*10*50*001*14##")
+            adv_75.handle_event(info14_msg)
+            assert adv_75.is_opening is False
+            assert adv_75.current_cover_position == 50
+            assert adv_75.is_closed is False
+
+            adv_75._attr_is_opening = True
+            adv_75._move_confirmed = False
+            fake_info14 = SimpleNamespace(
+                is_general=False,
+                is_area=False,
+                is_group=False,
+                is_translation=False,
+                where="75",
+                interface=None,
+                dimension=10,
+                dimension_value=["10", "0", "001", "14"],
+                current_position=0,
+                is_position_unknown=False,
+                is_opening=False,
+                is_closing=False,
+                is_closed=True,
+                _what=None,
+                human_readable_log="dim10 info 14",
+            )
+            adv_75.handle_event(fake_info14)  # type: ignore[arg-type]
+            assert adv_75.current_cover_position == 0
+            assert adv_75.is_closed is True
+
+            adv_75._attr_is_opening = True
+            adv_75._move_confirmed = False
+            adv_75.handle_event(OWNEvent.parse("*#2*75*10*10*255*001*14##"))
+            assert adv_75.current_cover_position is None
+            assert adv_75.is_closed is None
+
+            adv_75.handle_event(OWNEvent.parse("*#2*75*10*11*40*001*12##"))
+            assert adv_75.actuator_locked is True
+
+            # 8. Post-scope *2*0*W## guards: own P2P stop_cover, *#2*0## / *#2*#7## scope polls,
+            #    follower gateway poll, and post-_empty_reply *99*1## reply!
+            m_a._actuation_unconfirmed = True
+            m_a._note_scope_run_for_unconfirmed(time.monotonic(), True)
+            await m_a.async_stop_cover()
+            await _wait_for_tx(handler, sess_pos, len(sess_pos.sent_frames), hass)
+            m_a.handle_event(OWNEvent.parse("*2*0*71##"))
+            assert m_a._actuation_unconfirmed is True
+
+            m_a._note_scope_run_for_unconfirmed(time.monotonic() - 2.0, True)
+            fake_bad_scope_poll = SimpleNamespace(
+                who=2,
+                is_status_request=True,
+                is_dimension_request=False,
+                is_general=False,
+                is_area=True,
+                is_group=False,
+                where="999",
+                interface=None,
+            )
+            handler._command_pool._in_flight_messages.extend(
+                [
+                    OWNMessage.parse("*#1*71##"),
+                    OWNMessage.parse("*#2*72##"),
+                    fake_bad_scope_poll,
+                    OWNMessage.parse("*#2*0##"),
+                ]
+            )
+            try:
+                m_a.handle_event(OWNEvent.parse("*2*0*71##"))
+            finally:
+                handler._command_pool._in_flight_messages.clear()
+            assert m_a._actuation_unconfirmed is True
+
+            m_a._note_scope_run_for_unconfirmed(time.monotonic() - 2.0, True)
+            handler._command_pool._in_flight_messages.append(OWNMessage.parse("*#2*#7##"))
+            try:
+                m_a.handle_event(OWNEvent.parse("*2*0*71##"))
+            finally:
+                handler._command_pool._in_flight_messages.clear()
+            assert m_a._actuation_unconfirmed is True
+
+            m_a._note_scope_run_for_unconfirmed(time.monotonic() - 2.0, True)
+            sess_sc._responder = lambda _raw, _is_req: True
+            poll_fut = await handler.send_status_request(OWNMessage.parse("*#2*0##"))
+            await asyncio.wait_for(poll_fut, timeout=2.0)
+            follower_cov_gw = SimpleNamespace(
+                is_follower=True,
+                sweep_active=False,
+                _command_pool=SimpleNamespace(_in_flight_messages=[], _recent_who2_polls=[]),
+                _get_primary_gateway=lambda: handler,
+                log_id="[FOL]",
+                mac=handler.mac,
+            )
+            orig_m_a_gw = m_a._gateway_handler
+            m_a._gateway_handler = follower_cov_gw  # type: ignore[assignment]
+            try:
+                m_a.handle_event(OWNEvent.parse("*2*0*71##"))
+            finally:
+                m_a._gateway_handler = orig_m_a_gw
+            assert m_a._actuation_unconfirmed is True
+
+            # 9. MyHOMEImpulseCover with access: while actuator_locked is True!
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.08)
+            handler.send = orig_send_sc  # type: ignore[method-assign]
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.05)
+
+            notified: list[tuple[str, dict[str, Any]]] = []
+
+            async def _record_notify(call: Any) -> None:
+                notified.append((call.service, dict(call.data)))
+
+            hass.services.async_register("notify", "mobile_app_owner", _record_notify)
+            hass.states.async_set("binary_sensor.gate_81_closed", STATE_ON)
+            hass.states.async_set("binary_sensor.gate_81_beam", STATE_OFF)
+            hass.states.async_set("person.owner", "home", {"user_id": "u_owner"})
+
+            gate_81 = MyHOMEImpulseCover(
+                hass=hass,
+                name="Gate 81",
+                entity_name=None,
+                device_id="1-81",
+                who="1",
+                where="81",
+                interface=None,
+                device_class=CoverDeviceClass.GATE,
+                travel_time=5.0,
+                pulse_duration=0.5,
+                min_cycle_time=0.0,
+                pin_code=None,
+                state_sensor="binary_sensor.gate_81_closed",
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                access_config={
+                    "allowed_users": ["u_owner"],
+                    "approvers": {"u_owner": "notify.mobile_app_owner"},
+                    "remote_close": "at_home",
+                    "safety_devices_verified": dt_util.now().date(),
+                    "close_block_entity": "binary_sensor.gate_81_beam",
+                    "prewarn_seconds": 0.02,
+                    "watchdog_margin": 0.5,
+                },
+            )
+            gate_81.hass = hass
+            gate_81.entity_id = "cover.gate_81"
+            gate_81.async_write_ha_state = MagicMock()
+            gate_81.async_schedule_update_ha_state = MagicMock()
+            with patch.object(gate_81, "async_get_last_state", AsyncMock(return_value=None)):
+                await gate_81.async_added_to_hass()
+
+            handler._actuator_locks.set_point_lock("81", None, True, observed=True)
+            assert gate_81.actuator_locked is True
+
+            gate_81._context = Context(user_id="u_owner")
+            await gate_81.async_close_cover()
+            assert gate_81._access is not None
+            assert gate_81._access.phase is Phase.PENDING
+            approve_action = notified[-1][1]["data"]["actions"][0]["action"]
+            hass.bus.async_fire(
+                "mobile_app_notification_action",
+                {"action": approve_action},
+                context=Context(user_id="u_owner"),
+            )
+            await asyncio.sleep(0.01)
+            assert gate_81._access._tasks
+            await asyncio.wait_for(
+                asyncio.gather(*list(gate_81._access._tasks)), timeout=3.0
+            )
+            await hass.async_block_till_done()
+            assert gate_81._access.phase is Phase.IDLE
+            assert gate_81._access.fault_reason is None
+            assert any("actuator is locked" in d.get("message", "") for _, d in notified)
+            assert gate_81.extra_restore_state_data is not None
+            assert gate_81.extra_restore_state_data.as_dict() == {"actuator_locked": True}
+
+            notified.clear()
+            await gate_81.async_close_cover()
+            approve_action_2 = notified[-1][1]["data"]["actions"][0]["action"]
+            hass.bus.async_fire(
+                "mobile_app_notification_action",
+                {"action": approve_action_2},
+                context=Context(user_id="u_owner"),
+            )
+            for _ in range(50):
+                if gate_81._locked_pulse_echo is not None:
+                    break
+                await asyncio.sleep(0.01)
+            gate_81.handle_event(OWNEvent.parse("*1*1*81##"))
+            if gate_81._access._tasks:
+                await asyncio.wait_for(
+                    asyncio.gather(*list(gate_81._access._tasks)), timeout=3.0
+                )
+            await hass.async_block_till_done()
+            assert gate_81.actuator_locked is False
+            assert gate_81._access.phase is Phase.MONITORING
+
+            handler._actuator_locks.set_point_lock("81", None, True, observed=True)
+            with pytest.raises(HomeAssistantError, match="stop pulse was not sent"):
+                await gate_81.async_stop_cover()
+            assert gate_81._access.phase is Phase.MONITORING
+
+            hass.states.async_set("binary_sensor.gate_81_closed", STATE_OFF)
+            await hass.async_block_till_done()
+            assert gate_81._access.phase is Phase.IDLE
+            gate_81._access.restore_fault("beam fault")
+            both_extra = gate_81.extra_restore_state_data
+            assert both_extra is not None
+            assert both_extra.as_dict() == {"fault_reason": "beam fault", "actuator_locked": True}
+            await gate_81.async_will_remove_from_hass()
+            await ven_73.async_will_remove_from_hass()
+            await simp_74.async_will_remove_from_hass()
+            await adv_75.async_will_remove_from_hass()
+            await m_a.async_will_remove_from_hass()
+            await m_b.async_will_remove_from_hass()
+            await grp_7.async_will_remove_from_hass()
+            await cov_pos.async_will_remove_from_hass()
+        finally:
+            handler._command_pool.close()
+            worker_pos.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await worker_pos
+
+
+@pytest.mark.asyncio
+async def test_ermanno00_mh201_area6_opposite_scope_interlock_stop_and_immediate_locked_stop(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Live MH201 (3.6.44) + L4671/2 Area 6 (61-64) report (#977#issuecomment-7141618737):
+    - 3a: locked 64 answers *2*2*6## and *2*1*6## immediately with *2*0*64## (stays locked / unconfirmed at 100%).
+    - 3b: unlocked 61-63 closing on *2*2*6## stop physically at ~80% on un-pre-stopped *2*1*6## 5 s later
+      (interlocked relay trips to STOP with zero bus frames); a second *2*1*6## >= 0.6 s later opens to 100%.
+    - Also covers post-arrival M=0 relay-hold opposite scope interlock stop (open->close & close->open),
+      same-direction scope continuation, Venetian tilt opposite scope interlock stop, STATE_UNAVAILABLE
+      last_run direction restore, and F461 / stop_before_move=False / advanced=True non-interlock.
+    """
+    from homeassistant.const import STATE_UNAVAILABLE
+    from homeassistant.helpers.restore_state import RestoredExtraData
+
+    now_val = 1000.0
+    monkeypatch.setattr("custom_components.myhome.cover.time.monotonic", lambda: now_val)
+    monkeypatch.setattr("custom_components.myhome.cover_scope.time.monotonic", lambda: now_val)
+
+    entry, handler = _make_real_gateway(
+        hass,
+        mac="00:03:50:97:60:f6",
+        model="MH201",
+        platforms={
+            PLATFORM: {
+                "61": {CONF_WHERE: "61", CONF_NAME: "Shutter 61", CONF_TRAVEL_TIME: 25},
+                "62": {CONF_WHERE: "62", CONF_NAME: "Shutter 62", CONF_TRAVEL_TIME: 25},
+                "63": {
+                    CONF_WHERE: "63",
+                    CONF_NAME: "Venetian 63",
+                    CONF_TRAVEL_TIME: 25,
+                    CONF_SLAT_TILT: True,
+                    CONF_SLAT_TIME: 1.5,
+                },
+                "64": {CONF_WHERE: "64", CONF_NAME: "Shutter 64", CONF_TRAVEL_TIME: 25},
+                "6": {CONF_WHERE: "6", CONF_NAME: "Area 6", CONF_TRAVEL_TIME: 25},
+            }
+        },
+    )
+    entities = await _setup_covers_on_gateway(hass, entry, handler)
+    c61 = entities["61"]
+    c62 = entities["62"]
+    c63 = entities["63"]
+    c64 = entities["64"]
+    area6 = entities["6"]
+    assert isinstance(c61, MyHOMECover)
+    assert isinstance(c62, MyHOMECover)
+    assert isinstance(c63, MyHOMECover)
+    assert isinstance(c64, MyHOMECover)
+    assert isinstance(area6, MyHOMEScopeCover)
+
+    for c in (c61, c62, c63, c64):
+        c._attr_current_cover_position = 100
+        c._start_position = 100
+        c._attr_is_closed = False
+    c63._attr_current_cover_tilt_position = 100
+
+    # Lock 64 (*14*0*64## ACKed -> gateway relays only *2*0*64##)
+    assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*64##")) is True
+    c64.handle_event(OWNEvent.parse("*2*0*64##"))
+    assert c64.actuator_locked is True
+    assert c64.current_cover_position == 100
+
+    # Step 3: send *2*2*6## at t=1000.0; gateway answers immediately (+0.1 s) with *2*0*64##
+    for ent in (c61, c62, c63, c64, area6):
+        ent.handle_event(OWNEvent.parse("*2*2*6##"))
+    now_val += 0.1
+    c64.handle_event(OWNEvent.parse("*2*0*64##"))
+    assert c64.current_cover_position == 100
+    assert c64.is_closing is False
+    assert c61.is_closing is True and c62.is_closing is True and c63.is_closing is True
+    assert area6.is_closing is True
+
+    # +4.9 s later (total 5.0 s into 25 s travel): send *2*1*6## without a stop!
+    # Physical L4671/2s 61-63 trip their interlocked relay to STOP (~80%) and emit 0 frames;
+    # 64 answers *2*0*64## and stays at 100%.
+    now_val += 4.9
+    for ent in (c61, c62, c63, c64, area6):
+        ent.handle_event(OWNEvent.parse("*2*1*6##"))
+    now_val += 0.1
+    c64.handle_event(OWNEvent.parse("*2*0*64##"))
+
+    assert c64.current_cover_position == 100
+    assert c61.is_opening is False and c61.is_closing is False
+    assert c62.is_opening is False and c62.is_closing is False
+    assert c63.is_opening is False and c63.is_closing is False
+    assert c61.current_cover_position == 80
+    assert c62.current_cover_position == 80
+    assert 80 <= (c63.current_cover_position or 0) <= 86
+    assert area6.is_opening is False and area6.is_closing is False
+    assert area6._stop_task is None and c61._stop_task is None
+
+    # Follow-up *2*1*6## after 0.6 s capacitor settle now opens 61-63 cleanly to 100%!
+    now_val += 1.0
+    for ent in (c61, c62, c63, c64, area6):
+        ent.handle_event(OWNEvent.parse("*2*1*6##"))
+    assert c61.is_opening is True and c62.is_opening is True and c63.is_opening is True
+    assert c64.is_opening is False and c64.current_cover_position == 100
+
+    # Opposite *2*2*6## mid-OPEN also trips interlock to STOP on MH201!
+    now_val += 2.5
+    for ent in (c61, c62, c63):
+        ent.handle_event(OWNEvent.parse("*2*2*6##"))
+    assert c61.is_opening is False and c61.is_closing is False
+    assert c61.current_cover_position == 90
+
+    # Post-arrival M=0 relay hold (61 finishes opening to 100%, UP relay still held at +10 s):
+    # same-direction *2*1*6## does NOT trip interlock, while opposite *2*2*6## DOES trip interlock at 100%!
+    now_val += 1.0
+    c61._finish_end_of_run_settle(True)
+    c61._arm_relay_hold(now_val, opening=True)
+    assert c61.current_cover_position == 100
+    now_val += 5.0
+    c61.handle_event(OWNEvent.parse("*2*1*6##"))  # same direction -> allowed
+    assert c61.is_opening is True
+    c61._cancel_stop_task()
+    c61._finish_end_of_run_settle(True)
+    c61._arm_relay_hold(now_val, opening=True)
+    now_val += 5.0
+    c61.handle_event(OWNEvent.parse("*2*2*6##"))  # opposite direction during UP hold -> trips hold at 100%!
+    assert c61.is_closing is False and c61.current_cover_position == 100
+
+    # Once the 0.6 s settle expires, *2*2*6## closes 61!
+    now_val += 1.0
+    c61.handle_event(OWNEvent.parse("*2*2*6##"))
+    assert c61.is_closing is True
+    c61._cancel_stop_task()
+    c61._abort_motion()
+    c61._clear_relay_hold()
+
+    # Venetian tilt pulse interrupted by opposite-direction scope broadcast on MH201 -> interlock stop!
+    c63._is_tilting = True
+    c63._tilt_direction = "close"
+    c63._tilt_start_time = now_val - 0.3
+    c63._tilt_initial_position = 100
+    c63.handle_event(OWNEvent.parse("*2*1*6##"))
+    assert c63._is_tilting is False
+    assert c63.is_opening is False and c63.is_closing is False
+
+    # Cold-boot unseen lock on 64 (_actuation_unconfirmed=True): immediate *2*0*64## on *2*2*6## keeps it excluded!
+    handler._actuator_locks.clear()
+    c64._actuator_locked = None
+    c64._actuation_unconfirmed = True
+    c64.handle_event(OWNEvent.parse("*2*2*6##"))
+    now_val += 0.1
+    c64.handle_event(OWNEvent.parse("*2*0*64##"))
+    assert c64._actuation_unconfirmed is True
+
+    # Explicit stop_before_move=False, stop_before_move=True, advanced=True, and F461 non-interlock
+    c62._stop_before_move = False
+    c62.handle_event(OWNEvent.parse("*2*2*6##"))
+    now_val += 2.5
+    c62.handle_event(OWNEvent.parse("*2*1*6##"))
+    assert c62.is_opening is True  # explicit opt-out reverses without interlock stop
+    c62._cancel_stop_task()
+    c62._abort_motion()
+    c62._clear_relay_hold()
+
+    from unittest.mock import PropertyMock
+
+    with patch.object(
+        type(handler), "emits_cover_pre_move_stop", new_callable=PropertyMock, return_value=True
+    ):
+        c62._stop_before_move = None
+        c62.handle_event(OWNEvent.parse("*2*2*6##"))
+        now_val += 2.5
+        c62.handle_event(OWNEvent.parse("*2*1*6##"))
+        assert c62.is_opening is True
+        c62._cancel_stop_task()
+        c62._abort_motion()
+        c62._clear_relay_hold()
+
+        c62._stop_before_move = True  # explicit opt-in even on F461
+        c62.handle_event(OWNEvent.parse("*2*2*6##"))
+        now_val += 2.5
+        c62.handle_event(OWNEvent.parse("*2*1*6##"))
+        assert c62.is_opening is False and c62.is_closing is False
+
+    # STATE_UNAVAILABLE restore preserves last_run.direction into _relay_hold_opening
+    ended_iso = dt_util.utcnow().isoformat(timespec="milliseconds")
+    c_rest = MyHOMECover(
+        hass=hass,
+        name="Restored 65",
+        entity_name=None,
+        device_id="65",
+        who="2",
+        where="65",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="L4671/2",
+        gateway=handler,
+        travel_time=25,
+    )
+    c_rest._poll_on_add = False
+    c_rest.entity_id = "cover.restored_65"
+    with (
+        patch.object(
+            c_rest,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.restored_65", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            c_rest,
+            "async_get_last_extra_data",
+            AsyncMock(
+                return_value=RestoredExtraData(
+                    {
+                        "position": 0,
+                        "is_closed": True,
+                        "last_run": {"seconds": 25.0, "direction": "close", "ended_at": ended_iso},
+                    }
+                )
+            ),
+        ),
+    ):
+        await c_rest.async_added_to_hass()
+    assert c_rest._relay_hold_opening is False
+    c_rest.handle_event(OWNEvent.parse("*2*1*6##"))  # opposite direction during restored close hold -> stops at 0%!
+    assert c_rest.is_opening is False and c_rest.current_cover_position == 0
+
+    for ent in (*entities.values(), c_rest):
+        await ent.async_will_remove_from_hass()

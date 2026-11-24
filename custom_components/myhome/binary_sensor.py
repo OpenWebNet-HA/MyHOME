@@ -574,9 +574,12 @@ def _aux_address(message) -> Address | None:  # type: ignore
 
 def _motion_address(message) -> Address | None:  # type: ignore
     """Motion / PIR frames of a WHO=1 sensor; ``None`` for anything else on WHO=1."""
+    # Do not check ``message.is_sensor`` here: OWNLightingEvent.is_sensor is also True
+    # for WHO 1 illuminance (DIMENSION 6 / MESSAGE_TYPE_ILLUMINANCE), which is owned by
+    # sensor.py; matching it here spawns a phantom Motion Sensor that races with the
+    # Illuminance device name and queues unsolicited PIR sensitivity/timeout polls.
     is_motion = (
-        getattr(message, "is_sensor", False) is True
-        or getattr(message, "motion", False) is True
+        getattr(message, "motion", False) is True
         or getattr(message, "message_type", None) in (MESSAGE_TYPE_MOTION, MESSAGE_TYPE_MOTION_TIMEOUT, MESSAGE_TYPE_PIR_SENSITIVITY)
         or getattr(message, "dimension", None) in (5, 7)
         or getattr(message, "_state", None) == 34

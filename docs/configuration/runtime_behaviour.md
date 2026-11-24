@@ -69,11 +69,39 @@ Instead, the integration debounces across a bidirectional window:
 4. Otherwise, one status request is sent:
 
     - **Group** `#G`: `*#1*#G##` (the group's own status).
-    - **Area** `A`: `*#1*A##`, using the frame's own `WHERE` (`"00"`, `"1"`.."9", `"100"`)
-      - never a value re-derived from an integer, which would risk emitting the banned
-      `*#1*0##`.
-    - **General**: one `*#1*A##` per area that has at least one known WHO=1 actuator
-      (`light` or `switch` in the entity registry), never `*#1*0##`.
+    - **Area** `A` of the gateway's own bus: `*#1*A##`, using the frame's own `WHERE`
+      (`"00"`, `"1"`.."9", `"100"`) - never a value re-derived from an integer, which
+      would risk emitting the banned `*#1*0##`.
+    - **General** of the gateway's own bus: one `*#1*A##` per area of that bus that has
+      at least one known WHO=1 actuator (`light` or `switch` in the entity registry),
+      never `*#1*0##`.
+    - **Behind an F422 interface** (`*1*x*A#4#<Int>##`, `*1*x*0#4#<Int>##`): the same
+      `A` / `PL` exists on every bus, so an area behind interface `Int` is a scope of
+      its own (`A#4#<Int>`). Its echoes do not count for the gateway's own area `A`
+      and the other way round, and it is read light by light with
+      `*#1*<APL>#4#<Int>##` for each known light of that scope (no area request is
+      sent behind an interface). A scope behind an interface with no known light
+      sends nothing. `*1*x*0#4#<Int>##` sweeps the scopes of that interface only.
+    - **General of the whole system** (`*1*x*0##`): selects every known scope, and each
+      scope is read its own way: an area of the gateway's own bus with `*#1*A##`, an
+      area behind an interface with one point request per known light.
+
+A status request is answered with `*1*<status>*<where>##` frames, on the command and on
+the event session, and for a scope that is the frame of a scope command: a physical F461
+(2.0.11) and F455 (1.0.76) answered `*#1*00##` with `*1*0*00##` frames between the point
+statuses. Two rules keep an answer from starting the next sweep:
+
+- While the integration's own request for a scope is queued or being answered, and for
+  0.5 s after the gateway closes it (`RESYNC_REPLY_GRACE_S`), a frame for that scope that
+  states the ON/OFF of the command being read back is its answer. A frame that states
+  the other (the scope switched back within a second) is a new command and is swept.
+- A scope is swept at most 3 times in 30 s for the same commanded state
+  (`RESYNC_STORM_SWEEPS`, `RESYNC_STORM_WINDOW_S`). After that it gets one more sweep
+  once it has been quiet for 30 s, so the last command is still read back, and nothing
+  else until it has been quiet for 30 s again; a warning names the scope. This is what
+  ends the exchange when another client on the same bus (a second Home Assistant, for
+  example) sweeps the scope and its answer is seen here. Dim steps (`WHAT` 30 / 31) are
+  never held.
 
 Disable this with **Sweep group/area/general light addresses for status** in the
 Options Flow if your gateway lags on repeated status requests.
@@ -108,6 +136,8 @@ OWNd's event session returns *no message* for the read cycle in which it transpa
 ## 🔐 Authentication failures use Home Assistant's reauth
 
 If the gateway rejects the OpenWebNet password during setup, the integration raises `ConfigEntryAuthFailed`. Home Assistant then shows the entry as **Reauthentication required** with a repair prompt, instead of *Failed to set up*, and opens the reauth flow itself. Any other connection-test failure raises `ConfigEntryNotReady` so Home Assistant retries with backoff.
+
+If the gateway refuses the password while the entry is loaded (the gateway's password was changed, or it refuses the stored one on a reconnect of the event or command session), both sessions stop, every entity of the gateway becomes unavailable, no command is sent, and the password is not presented again: the integration opens the reauth flow once. Entering the password there reloads the entry. A connection that is only refused or lost (no password involved) does not open it; the normal reconnect goes on. An SSDP announcement of the gateway does not reload an entry that waits for its password: the announced data is stored and applied by the reload after the password is entered.
 
 ---
 
@@ -250,15 +280,17 @@ The gateway handler (`gateway_confirm.py`) therefore notes every acknowledged po
 
 ## 🔒 Bidirectional `WHO = 14` actuator lock tracking
 
-OpenWebNet `WHO = 14` (`*14*0*<where>##` lock, `*14*1*<where>##` unlock) cannot be polled at startup (`*#14*<where>##` is NACKed in `5–53 ms` on every gateway), and event-session (`*99*1##`) echoing of `*14*0/1*<where>##` depends on both the gateway (`MH201` never relays `WHO = 14`; `MH202` synthesizes locally) and whether the physical actuator or `F422` riser transmits `B8 <addr> 11/10 00` on SCS (omitted by 1st-gen `L4671/2`, legacy `MH200N` relays, and `#4#II` local risers).
+OpenWebNet `WHO = 14` (`*14*0*<where>##` lock, `*14*1*<where>##` unlock) cannot be polled at startup (`*#14*<where>##` is NACKed in `50–52 ms` on `F461` and immediately on `MH200` / `MH201`), and event-session (`*99*1##`) echoing of `*14*0/1*<where>##` depends on both the gateway (`MH201` never relays `WHO = 14`; `MH202` synthesizes locally) and whether the physical actuator or `F422` local-bus interface transmits `B8 <addr> 11/10 00` on SCS (omitted by 1st-gen `L4671/2`, legacy `MH200` / `MH200N` relays, and `#4#II` local-bus interfaces).
 
 `ActuatorLockManager` (`actuator_lock.py`, routed to the primary entry under Warm Standby / WHO delegation) therefore tracks `actuator_locked` across three sources:
 
 1. **Inbound `*99*1##` `OWNActuatorLockEvent` frames** (ignoring `1000#` command translations).
-2. **Acknowledged outbound `OWNActuatorLockCommand` writes** in `CommandWorkerPool` upon `*#*1##` `ACK` (covering `button.<name>_lock` / `unlock`, `myhome.send_message`, scenes, and automations on `MH201` and `#4#II` risers while rejecting `*#*0##` NACKs such as `F450` or `~2.05 s` unpopulated addresses on `F460`/`F461`/`MyHomeServer1`/`3488`).
+2. **Acknowledged outbound `OWNActuatorLockCommand` writes** in `CommandWorkerPool` upon `*#*1##` `ACK` (covering `button.<name>_lock` / `unlock`, `myhome.send_message`, scenes, and automations on `MH201` and `#4#II` local-bus interfaces while rejecting `*#*0##` NACKs such as `F450` or `~2.05 s` unpopulated addresses on `F460`/`F461`/`MyHomeServer1`/`3488`).
 3. **`WHO = 2` `Dimension 10` `SHUTTER_INFO`** on positioned `Object 218` shutters (`F401`, `K4672M2S`: `12`/`13` locked, `0`/`15` unlocked).
 
-Lock scopes resolve across point (`APL`), Area (`00`, `1`–`9`, `100`), configured `#G` groups, and General (`0`) with strict `#4#II` interface isolation, soft-restore via `RestoreEntity` across restarts, never block outbound bus writes (actuator RAM clears on power loss), and self-heal strictly on genuine point-to-point cover motion (`*2*1/2*<where>##` or `Dimension 10` `11/12`, never `*2*0*` or scope broadcasts) or an actual `WHO = 1` state change (never an unchanged poll reply). *(#976)*
+Lock scopes resolve across point (`APL`), Area (`00`, `1`–`9`, `100`), configured `#G` groups, and General (`0`) with strict `#4#II` local-bus interface isolation, soft-restore via `RestoreEntity` (including `extra_restore_state_data` across `unavailable` saves), never block outbound bus writes (actuator RAM clears on power loss), and self-heal strictly on genuine point-to-point cover motion (`*2*1/2*<where>##` or `Dimension 10` `11/12`, never `*2*0*` or scope broadcasts) or an actual `WHO = 1` state change (never an unchanged poll reply). *(#976)*
+
+On a fine dimmer a preset frame (`WHAT = 2..10`) asks Dimension 1 for the exact level (#851). A preset frame that arrives while that read is out is taken as part of its answer (a `MyHomeServer1` and a `3488` answer the read with the level and with the preset frame). A read that brings no new level is repeated at most twice for the same preset; then the light is not asked again until its preset or level changes, it goes off, a command is sent to it from Home Assistant, or it has sent no preset frame for `30 s`.
 
 ---
 

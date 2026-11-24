@@ -30,6 +30,7 @@ from homeassistant.helpers.dispatcher import (
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import RegistryEntry
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoredExtraData
 from OWNd.message import (
     OWNCommand,
     OWNHeatingCommand,
@@ -615,6 +616,13 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             self._attr_icon = self._off_icon
 
         self._attr_is_on = None
+
+    @property
+    def extra_restore_state_data(self) -> ExtraStoredData | None:
+        """Persist ``actuator_locked`` across restarts saved while ``unavailable``."""
+        if self._actuator_locked is not None:
+            return RestoredExtraData({"actuator_locked": self._actuator_locked})
+        return None
 
     def _is_own_point_event(self, message: Any) -> bool:
         """Return True if ``message`` is a point-to-point WHO=1 event for this switch's address."""

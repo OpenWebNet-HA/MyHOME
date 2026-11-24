@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
+from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -282,11 +283,19 @@ class MyHOMEEntity(RestoreEntity):
         self._actuator_lock_registered = True
 
     @callback
-    def _restore_actuator_lock(self, last_state: State) -> None:
-        """Soft-restore ``actuator_locked`` from ``last_state`` when unseen live."""
+    def _restore_actuator_lock(
+        self, last_state: State, extra_record: Mapping[str, Any] | None = None
+    ) -> None:
+        """Soft-restore ``actuator_locked`` from ``last_state`` or ``extra_record`` when unseen live."""
         if not self._actuator_lock_registered or self._actuator_locked is not None:
             return
         restored_lock = last_state.attributes.get("actuator_locked")
+        if (
+            not isinstance(restored_lock, bool)
+            and last_state.state == STATE_UNAVAILABLE
+            and extra_record is not None
+        ):
+            restored_lock = extra_record.get("actuator_locked")
         if not isinstance(restored_lock, bool):
             return
         mgr = actuator_locks_of(self._gateway_handler)
@@ -299,6 +308,25 @@ class MyHOMEEntity(RestoreEntity):
             )
         if self._actuator_locked is None:
             apply_actuator_lock_state(self, restored_lock)
+
+    async def _async_restore_actuator_lock(
+        self, last_state: State, extra_record: Mapping[str, Any] | None = None
+    ) -> None:
+        """Soft-restore ``actuator_locked``, falling back to extra restore data when ``unavailable``."""
+        if not self._actuator_lock_registered or self._actuator_locked is not None:
+            return
+        if (
+            extra_record is None
+            and not isinstance(last_state.attributes.get("actuator_locked"), bool)
+            and last_state.state == STATE_UNAVAILABLE
+        ):
+            try:
+                extra = await self.async_get_last_extra_data()
+                raw_dict = extra.as_dict() if extra is not None else None
+                extra_record = raw_dict if isinstance(raw_dict, Mapping) else {}
+            except Exception:
+                extra_record = {}
+        self._restore_actuator_lock(last_state, extra_record)
 
     @callback
     def _handle_availability_update(self) -> None:
@@ -348,7 +376,6 @@ class MyHOMEEntity(RestoreEntity):
         except Exception:
             last_state = None
         if last_state is not None:
-            self._restore_actuator_lock(last_state)
             await self.async_restore_last_state(last_state)
         await self._async_poll_if_needed()
 
@@ -395,7 +422,7 @@ class MyHOMEEntity(RestoreEntity):
 
     async def async_restore_last_state(self, last_state: State) -> None:
         """Hook for entities to restore specific attributes and modes."""
-        self._restore_actuator_lock(last_state)
+        await self._async_restore_actuator_lock(last_state)
         if hasattr(self, "_attr_is_on") and getattr(self, "_attr_is_on") is None:
             if last_state.state == "on":
                 setattr(self, "_attr_is_on", True)

@@ -10,7 +10,7 @@ import typing
 from typing import TYPE_CHECKING
 
 import voluptuous as vol
-from homeassistant.config_entries import SOURCE_IGNORE
+from homeassistant.config_entries import SOURCE_IGNORE, SOURCE_REAUTH
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -22,7 +22,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import device_registry as dr
 from OWNd.connection import OWNCommandSession
-from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
+from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand, OWNSignaling
 from voluptuous import All, Coerce, Range, Required
 
 from .const import (
@@ -243,6 +243,7 @@ class ConfigFlowDiscoveryMixin:
     gateway_handler: typing.Any
     discovered_gateways: dict[str, dict[str, typing.Any]] | None
     _existing_entry: typing.Any
+    _auth_refused_session: str | None = None
     _pending_entry: tuple[str, dict[str, typing.Any], dict[str, typing.Any]] | None
     _custom_address: str
     _custom_port: int
@@ -271,9 +272,22 @@ class ConfigFlowDiscoveryMixin:
         # An already configured or ignored gateway is announced again every few minutes, and
         # Home Assistant's search finds it again every ten: DEBUG for those, INFO for a new one.
         LOGGER.debug("SSDP announcement of gateway %s at %s", gateway.unique_id, gateway.address)
-        self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
-            updates=self._ssdp_entry_updates(gateway)
+        # An entry waiting for its password (reauth flow open, or the loaded gateway refused
+        # the stored one) is not reloaded: the reload would present the refused password
+        # again. The metadata is still stored; the reauth's own reload applies it.
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)  # type: ignore[attr-defined]
+        waits_for_password = entry is not None and (
+            any(entry.async_get_active_flows(self.hass, {SOURCE_REAUTH}))
+            or getattr(getattr(getattr(entry, "runtime_data", None), "gateway", None), "_auth_refused", False)
         )
+        if waits_for_password:
+            self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+                updates=self._ssdp_entry_updates(gateway), reload_on_update=False
+            )
+        else:
+            self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+                updates=self._ssdp_entry_updates(gateway)
+            )
         LOGGER.info("Found gateway: %s", gateway.address)
 
         self.gateway_handler = gateway
@@ -434,6 +448,11 @@ class ConfigFlowDiscoveryMixin:
                 DOMAIN, config[CONF_MAC]
             )
         self._existing_entry = entry
+        self._auth_refused_session = getattr(
+            getattr(getattr(entry, "runtime_data", None), "gateway", None),
+            "_auth_refused_session",
+            None,
+        )
 
         mac = entry.unique_id if entry else (config.get(CONF_MAC) if config else None)
         if mac:
@@ -478,13 +497,44 @@ class ConfigFlowDiscoveryMixin:
         gateway = self.gateway_handler
         assert gateway is not None
 
+        if self._existing_entry:
+            # SSDP may have updated CONF_HOST with reload_on_update=False while the
+            # reauth prompt was open; test against the latest address, not the snapshot.
+            current_entry = (
+                self.hass.config_entries.async_get_entry(self._existing_entry.entry_id)
+                or self._existing_entry
+            )
+            self._existing_entry = current_entry
+            latest_host = current_entry.data.get(CONF_HOST)
+            if latest_host and latest_host != gateway.address:
+                gateway.address = latest_host
+
         self._update_flow_context(gateway)
 
+        monitor_open_no_challenge = False
+
         async def _run_test_connection() -> dict[str, typing.Any]:
+            nonlocal monitor_open_no_challenge
+            monitor_open_no_challenge = False
             try:
                 session = _cf.OWNSession(gateway=gateway, logger=LOGGER)
+                saw_frames: list[str] = []
+                orig_read_frame = getattr(session, "_read_frame", None)
+                if isinstance(session, _cf.OWNSession) and callable(orig_read_frame):
+
+                    async def _tracked_read_frame(timeout: float | None = None) -> str:
+                        frame = str(await orig_read_frame(timeout))
+                        saw_frames.append(frame)
+                        return frame
+
+                    setattr(session, "_read_frame", _tracked_read_frame)
                 res: typing.Any = await session.test_connection()
                 if isinstance(res, dict):
+                    if res.get("Success") and saw_frames:
+                        monitor_open_no_challenge = not any(
+                            OWNSignaling(f).is_sha() or OWNSignaling(f).is_nonce()
+                            for f in saw_frames
+                        )
                     return res
                 return {"Success": False, "Message": "cannot_connect"}
             except (OSError, TimeoutError, ConnectionError) as exc:
@@ -521,6 +571,37 @@ class ConfigFlowDiscoveryMixin:
             )
             await _cf.asyncio.sleep(_cf.TEST_CONNECTION_RETRY_DELAY)
             test_result = await _run_test_connection()
+
+        if test_result.get("Success") and self._existing_entry:
+            refused_session = (
+                getattr(
+                    getattr(getattr(self._existing_entry, "runtime_data", None), "gateway", None),
+                    "_auth_refused_session",
+                    None,
+                )
+                or self._auth_refused_session
+            )
+            if refused_session == "command" or monitor_open_no_challenge:
+                # Split authentication: monitor session (*99*1##) can be open while
+                # the command session (*99*0##) requires the password. Verify the
+                # command session too (even if entry.runtime_data is None) so a
+                # wrong password does not reload into a loop.
+                cmd_session = OWNCommandSession(gateway=gateway, logger=LOGGER)
+                try:
+                    cmd_res: typing.Any = await cmd_session.connect()
+                except Exception:  # pylint: disable=broad-except
+                    cmd_res = {"Success": False, "Message": "cannot_connect"}
+                finally:
+                    try:
+                        await cmd_session.close()
+                    except Exception:  # pylint: disable=broad-except
+                        pass
+                if not isinstance(cmd_res, dict) or not cmd_res.get("Success"):
+                    test_result = (
+                        cmd_res
+                        if isinstance(cmd_res, dict)
+                        else {"Success": False, "Message": "cannot_connect"}
+                    )
 
         if test_result.get("Success"):
             if self._existing_entry:

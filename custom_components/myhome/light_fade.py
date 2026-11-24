@@ -122,15 +122,23 @@ class SoftwareFadeEngine:
         self._step1_echo_event = None
         self.pending_first_step_pct = None
         self.fade_start_pct = None
-        if self.fade_task and not self.fade_task.done():
-            self.fade_task.cancel()
+        task = self.fade_task
+        if task and not task.done():
+            task.cancel()
             try:
                 # shield() prevents wait_for from double-cancelling the task
                 # when the 0.15 s timeout fires (we already called .cancel()).
-                await asyncio.wait_for(asyncio.shield(self.fade_task), timeout=0.15)
-            except (Exception, asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(task), timeout=0.15)
+            except asyncio.CancelledError:
+                caller = asyncio.current_task()
+                if caller is not None and caller.cancelling() > 0:
+                    if self.fade_task is task:
+                        self.fade_task = None
+                    raise
+            except Exception:
                 pass
-            self.fade_task = None
+            if self.fade_task is task:
+                self.fade_task = None
 
     def start_fade(self, start_pct: int, target_pct: int, duration: float) -> asyncio.Task[None]:
         """Start a software fade background task on the entity's Home Assistant loop."""

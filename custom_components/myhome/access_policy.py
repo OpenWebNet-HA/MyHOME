@@ -57,6 +57,7 @@ from .const import (
     CONF_SAFETY_CHECK_DAYS,
     CONF_SAFETY_DEVICES_VERIFIED,
     CONF_WATCHDOG_MARGIN,
+    DOMAIN,
     EVENT_ACCESS_PREWARNING,
     LOGGER,
 )
@@ -79,6 +80,23 @@ class Intent(StrEnum):
     OPEN = "open"
     CLOSE = "close"
     STOP = "stop"
+
+
+class PulseOutcome(StrEnum):
+    """What became of a pulse the cover was asked to send.
+
+    ``NOT_SENT``: zero bytes reached the gateway (deadband, another pulse being
+    written, the relay of the pulse before could not be released, the send queue
+    refused the frame, or the command session failed to connect / the frame was
+    withdrawn before writing). The door did not move because of this request.
+    ``UNCONFIRMED``: the frame was handed to the gateway and its confirmation never
+    came (NACK, acknowledgement timeout, session lost, write timeout). The relay may or
+    may not have switched: the door has to be treated as possibly moving.
+    """
+
+    CONFIRMED = "confirmed"
+    NOT_SENT = "not_sent"
+    UNCONFIRMED = "unconfirmed"
 
 
 class Effect(StrEnum):
@@ -207,7 +225,7 @@ class AccessController:
         config: AccessConfig,
         state_sensor: str | None,
         travel_time: float,
-        send_pulse: Callable[[Intent, Effect], Awaitable[bool]],
+        send_pulse: Callable[[Intent, Effect], Awaitable[PulseOutcome]],
         publish: Callable[[], None],
         entity_id: Callable[[], str | None],
     ) -> None:
@@ -227,7 +245,16 @@ class AccessController:
         self._unsub_expiry: CALLBACK_TYPE | None = None
         self._unsub_watchdog: CALLBACK_TYPE | None = None
         self._cancel_event: asyncio.Event | None = None
-        self._task: asyncio.Task[None] | None = None
+        # Not None while the approved pulse is on its way to the bus: handed to the
+        # gateway, outcome unknown. Nothing can be cancelled any more and nothing is
+        # supervised yet; set (and dropped) once the phase says what became of it.
+        self._pulse_outcome: asyncio.Event | None = None
+        self._pulse_sent = PulseOutcome.NOT_SENT
+        # The intent of the approved pulse behind ``_pulse_outcome``; read only with it.
+        self._pulse_intent: Intent | None = None
+        # Every task this controller started and that still runs (the execution of an
+        # approved request, notifications): all of them end with the entity.
+        self._tasks: set[asyncio.Task[Any]] = set()
         self._failed_pins: dict[str, tuple[int, float]] = {}
         self._expected_sensor_state: str | None = None
 
@@ -256,8 +283,11 @@ class AccessController:
         user_id = context.user_id if context is not None else None
         if intent is Intent.STOP and self.phase in (Phase.PENDING, Phase.PREWARNING, Phase.MONITORING):
             # Stopping a door that is about to move or moving is never withheld, whoever asks.
-            await self._async_stop_now()
-            return
+            if await self._async_stop_now():
+                return
+            # The pulse went out while this stop waited for it and nothing supervises the
+            # door (no state sensor): the stop is the ordinary request it would have been
+            # a moment later, never a silent success.
         if self.phase in (Phase.PENDING, Phase.PREWARNING, Phase.MONITORING):
             raise AccessDenied(f"{self._name}: another operation is in progress ({self.phase})")
         self._check_user(user_id)
@@ -290,19 +320,72 @@ class AccessController:
         LOGGER.info("%s: %s requested by user %s, waiting for approval", self._name, intent, user_id)
         self._publish()
 
-    async def _async_stop_now(self) -> None:
-        """Drop a pending request or pre-warning, or pulse a moving door to a stop, without approval."""
+    async def _async_stop_now(self) -> bool:
+        """Drop a pending request or pre-warning, or pulse a moving door to a stop, without approval.
+
+        Returns False in one case only: the stop arrived while the approved pulse was
+        being written, that pulse was handed to the gateway, and the door is not
+        supervised afterwards (no state sensor). When that approved pulse was itself a
+        STOP, the stop asked for is the one that was just written and shares its fate:
+        True when the gateway confirmed it, an error when it did not, and no second pulse
+        or approval either way.
+        """
         if self.cancel("stop requested"):
-            return
+            return True
+        if (outcome := self._pulse_outcome) is not None:
+            # The approved pulse is with the gateway and can neither be cancelled nor,
+            # safely, withdrawn (a frame already written would move the door with nobody
+            # supervising it). Wait for its fate - the write is bounded by the cover -
+            # and stop the door if it started or may have started, instead of returning
+            # as if it had been stopped.
+            in_flight = self._pulse_intent
+            await outcome.wait()
+            sent = self._pulse_sent
+            if sent is PulseOutcome.NOT_SENT:
+                LOGGER.info("%s: stop requested while the pulse was being sent; it was not sent, nothing moves", self._name)
+                return True
+            if in_flight is Intent.STOP:
+                if sent is PulseOutcome.CONFIRMED:
+                    LOGGER.info("%s: stop requested while a stop was being sent; the stop asked for is the one just sent", self._name)
+                    return True
+                raise self._stop_unconfirmed()
+            if self.phase is not Phase.MONITORING:
+                return False
         if self.phase is not Phase.MONITORING:
-            return  # pragma: no cover - the request moved on between the check and here
-        if not await self._send_pulse(Intent.STOP, Effect.MAY_CLOSE):
+            return True  # pragma: no cover - the request moved on between the check and here
+        sent = await self._send_pulse(Intent.STOP, Effect.MAY_CLOSE)
+        if not self._supervising():
+            # Settled while this stop was being written: another stop that this one joined,
+            # or the contact reached the expected state.
+            return True
+        if sent is PulseOutcome.NOT_SENT:
             # Still moving and still supervised: the watchdog keeps running.
-            raise HomeAssistantError(f"{self._name}: the stop pulse was not sent (deadband or write failed)")
+            raise HomeAssistantError(
+                f"{self._name}: the stop pulse was not sent",
+                translation_domain=DOMAIN,
+                translation_key="impulse_stop_not_sent",
+                translation_placeholders={"name": self._name},
+            )
+        if sent is PulseOutcome.UNCONFIRMED:
+            raise self._stop_unconfirmed()
         self._cancel_watchdog()
         LOGGER.info("%s: stopped while moving", self._name)
         self._settle()
         self._spawn(self._notify_all(f"{self._name}: stopped"))
+        return True
+
+    def _supervising(self) -> bool:
+        """Whether the door is under the watchdog, read afresh (the phase changes across an await)."""
+        return self.phase is Phase.MONITORING
+
+    def _stop_unconfirmed(self) -> HomeAssistantError:
+        """The error of a stop pulse the gateway did not confirm; supervision, if any, keeps running."""
+        return HomeAssistantError(
+            f"{self._name}: the stop pulse was not confirmed by the gateway; the door may still be moving: check it",
+            translation_domain=DOMAIN,
+            translation_key="impulse_stop_unconfirmed",
+            translation_placeholders={"name": self._name},
+        )
 
     @callback
     def restore_fault(self, reason: str) -> None:
@@ -319,7 +402,7 @@ class AccessController:
             self._settle()
             self._spawn(self._cancel_and_notify(pending.notify_service, f"{self._name}: request cancelled ({reason})"))
             return True
-        if self.phase is Phase.PREWARNING and self._cancel_event is not None:
+        if self.phase in (Phase.PENDING, Phase.PREWARNING) and self._cancel_event is not None:
             self._cancel_event.set()
             return True
         return False
@@ -373,13 +456,12 @@ class AccessController:
         self._cancel_watchdog()
         if self._cancel_event is not None:
             self._cancel_event.set()
-        if self._task is not None and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except (asyncio.CancelledError, Exception):  # pragma: no cover - teardown only
-                pass
-        self._task = None
+        tasks = [task for task in self._tasks if not task.done()]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._tasks.clear()
 
     # ── Policy checks ────────────────────────────────────────────────────
 
@@ -574,7 +656,9 @@ class AccessController:
                 self._spawn(self._notify(pending.notify_service, f"{self._name}: wrong PIN, nothing moved"))
                 return
             self._failed_pins.pop(pending.user_id, None)
-        self._spawn(self._async_execute(pending))
+        cancel_event = asyncio.Event()
+        self._cancel_event = cancel_event
+        self._spawn(self._async_execute(pending, cancel_event))
 
     def _register_failed_pin(self, user_id: str) -> None:
         now = time.monotonic()
@@ -598,13 +682,22 @@ class AccessController:
         hass = self._require_hass()
         task: asyncio.Task[Any] = hass.async_create_task(coro)  # type: ignore[arg-type]
         if isinstance(task, asyncio.Task):
-            self._task = task
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
 
     # ── Execution ────────────────────────────────────────────────────────
 
-    def _revalidate(self, pending: PendingRequest) -> None:
-        """Every check again on the state of *now*: the door may have moved since the request."""
-        if time.monotonic() - pending.created > self.config.approval_timeout:
+    def _revalidate(self, pending: PendingRequest, *, approved: bool = False) -> None:
+        """Every check again on the state of *now*: the door may have moved since the request.
+
+        ``approved``: the approval was already accepted in time and the pre-warning has
+        run since. ``approval_timeout`` bounds the wait for the approval, not the
+        warning that follows it: counting ``prewarn_seconds`` against it refused every
+        approval given in the last ``prewarn_seconds`` after the light had flashed, and
+        every close at all with ``approval_timeout`` <= ``prewarn_seconds`` (15-300 s and
+        3-30 s in ``validate.access_schema``).
+        """
+        if not approved and time.monotonic() - pending.created > self.config.approval_timeout:
             raise AccessDenied(f"{self._name}: the approval arrived too late")
         self._check_user(pending.user_id)
         effect = classify(pending.intent, self._state_sensor, self._sensor_state())
@@ -613,38 +706,94 @@ class AccessController:
         if effect is Effect.MAY_CLOSE:
             self._check_close_allowed(self._is_home(pending.user_id))
 
-    async def _async_execute(self, pending: PendingRequest) -> None:
+    async def _async_execute(
+        self, pending: PendingRequest, cancel_event: asyncio.Event
+    ) -> None:
+        # True once this run gave the phase back (settled) or put the door under the
+        # watchdog. While it is False the phase is still PENDING / PREWARNING with nothing
+        # pending behind it, a state every later request is refused in and a STOP finds
+        # nothing to act on.
+        handed_over = False
         try:
             user = await self._user_name(pending.user_id)
+            if cancel_event.is_set():
+                raise AccessDenied(f"{self._name}: cancelled before execution")
             what = self._describe(pending)
             self._revalidate(pending)
             if pending.effect is Effect.MAY_CLOSE:
                 self.phase = Phase.PREWARNING
                 self._publish()
-                if await self._prewarn():
+                if await self._prewarn(cancel_event):
                     raise AccessDenied(f"{self._name}: cancelled during the warning")
-                self._revalidate(pending)
-            if not await self._send_pulse(pending.intent, pending.effect):
+                self._revalidate(pending, approved=True)
+            self._cancel_event = None
+            self._pulse_sent = PulseOutcome.NOT_SENT
+            self._pulse_intent = pending.intent
+            outcome = self._pulse_outcome = asyncio.Event()
+            try:
+                self._pulse_sent = await self._send_pulse(pending.intent, pending.effect)
+            finally:
+                # Released on every exit (a cancelled task included); a stop waiting on it
+                # runs after this task next yields, when the phase below is settled.
+                self._pulse_outcome = None
+                outcome.set()
+            if self._pulse_sent is PulseOutcome.NOT_SENT:
                 raise AccessDenied(
-                    f"{self._name}: the pulse was dropped (too soon after previous one or write failed)"
+                    f"{self._name}: the pulse was not sent "
+                    "(too soon after the previous one, the relay could not be released, "
+                    "or the command session was unavailable)"
                 )
-            LOGGER.info("%s: %s executed for user %s", self._name, what, pending.user_id)
-            await self._notify_all(f"{self._name}: {what} by {user}")
-            self._start_watchdog(pending)
+            confirmed = self._pulse_sent is PulseOutcome.CONFIRMED
+            if confirmed:
+                LOGGER.info("%s: %s executed for user %s", self._name, what, pending.user_id)
+            else:
+                # Handed to the gateway, never confirmed: the relay may have switched. The
+                # door is supervised as if it had, and nobody is told it did not move.
+                LOGGER.warning(
+                    "%s: %s for user %s was not confirmed by the gateway; supervising as if the door had started",
+                    self._name,
+                    what,
+                    pending.user_id,
+                )
+            # Supervise first, report second: the door is (or may be) moving now, and only
+            # the MONITORING phase lets a STOP pulse it to a halt without approval. A slow
+            # notifier must not delay that.
+            unverifiable = self._start_watchdog(pending, confirmed=confirmed)
+            handed_over = True
+            if confirmed:
+                await self._notify_all(f"{self._name}: {what} by {user}")
+            else:
+                await self._notify_all(
+                    f"{self._name}: {what} by {user}: the gateway did not confirm the pulse. "
+                    "The door may or may not have moved: check it."
+                )
+            if unverifiable is not None:
+                await self._notify_all(unverifiable)
         except AccessDenied as err:
             self._settle()
+            handed_over = True
             await self._notify(pending.notify_service, f"Not executed: {err}")
             return
         except Exception as err:
             LOGGER.exception("%s: unexpected error during execution: %s", self._name, err)
+            self._cancel_watchdog()
             self._settle()
+            handed_over = True
             await self._notify(pending.notify_service, f"Execution failed: {err}")
             return
+        finally:
+            if self._cancel_event is cancel_event:
+                self._cancel_event = None
+            if not handed_over:
+                # asyncio.CancelledError (this task was cancelled, or something awaited
+                # below was) is a BaseException and skips both handlers above. Never
+                # leave the controller wedged in an approval nobody can answer.
+                self._settle()
 
-    async def _prewarn(self) -> bool:
+    async def _prewarn(self, cancel_event: asyncio.Event) -> bool:
         """Flash the warning light and announce; return True when cancelled."""
         hass = self._require_hass()
-        self._cancel_event = asyncio.Event()
+        self._cancel_event = cancel_event
         hass.bus.async_fire(
             EVENT_ACCESS_PREWARNING,
             {"entity_id": self._entity_id(), "name": self._name, "seconds": self.config.prewarn_seconds},
@@ -653,22 +802,28 @@ class AccessController:
         original = hass.states.get(light) if light is not None else None
         steps = max(1, int(round(self.config.prewarn_seconds)))
         interval = self.config.prewarn_seconds / steps
-        cancelled = False
         try:
             for _ in range(steps):
                 if light is not None:
                     await self._light_call("toggle", light)
                 try:
-                    await asyncio.wait_for(self._cancel_event.wait(), interval)
-                    cancelled = True
+                    await asyncio.wait_for(cancel_event.wait(), interval)
                     break
                 except TimeoutError:
                     continue
         finally:
-            if light is not None and original is not None and original.state in (STATE_ON, STATE_OFF):
-                await self._light_call("turn_on" if original.state == STATE_ON else "turn_off", light)
-            self._cancel_event = None
-        return cancelled
+            try:
+                if light is not None and original is not None and original.state in (STATE_ON, STATE_OFF):
+                    await self._light_call("turn_on" if original.state == STATE_ON else "turn_off", light)
+            finally:
+                if self._cancel_event is cancel_event:
+                    self._cancel_event = None
+        # Read only now: cancel() accepts a cancellation for as long as the event exists,
+        # which includes the light calls above (a toggle or the restore can take seconds
+        # on a slow light). A wall-button press or a stop acknowledged there must not be
+        # followed by the pulse: the button already started the door, and a second pulse
+        # stops or reverses it (PR 667 review).
+        return cancel_event.is_set()
 
     async def _light_call(self, service: str, entity_id: str) -> None:
         try:
@@ -676,15 +831,20 @@ class AccessController:
         except Exception as err:  # noqa: BLE001 - the warning light is a courtesy, not a safety function
             LOGGER.warning("%s: warning light %s failed: %s", self._name, entity_id, err)
 
-    def _start_watchdog(self, pending: PendingRequest) -> None:
+    def _start_watchdog(self, pending: PendingRequest, *, confirmed: bool = True) -> str | None:
+        """Supervise the movement just started; return a message when it cannot be verified.
+
+        ``confirmed`` False: the gateway did not confirm the pulse. The door is watched
+        all the same, but a door that then stays where it was is reported, not latched as
+        a fault: the pulse most likely never reached the relay, and a fault says "obstacle".
+        """
         hass = self._require_hass()
         if self._state_sensor is None:
             self._settle()
-            self._spawn(self._notify_all(f"{self._name}: the result cannot be verified (no state sensor)"))
-            return
+            return f"{self._name}: the result cannot be verified (no state sensor)"
         if pending.intent is Intent.STOP:
             self._settle()
-            return
+            return None
         expected = STATE_ON if pending.effect is Effect.OPEN else STATE_OFF
         self._expected_sensor_state = expected
         timeout = self.config.watchdog_margin
@@ -704,6 +864,12 @@ class AccessController:
                 self._settle()
                 self._spawn(self._notify_all(f"{self._name}: did not start opening"))
                 return
+            if not confirmed:
+                self._settle()
+                self._spawn(
+                    self._notify_all(f"{self._name}: did not close; the gateway had not confirmed the pulse")
+                )
+                return
             self.fault_reason = "did not close: possible obstacle or reversal"
             self._settle()
             LOGGER.error("%s: %s", self._name, self.fault_reason)
@@ -715,6 +881,7 @@ class AccessController:
             )
 
         self._unsub_watchdog = async_call_later(hass, timeout, _expired)
+        return None
 
     def _cancel_watchdog(self) -> None:
         self._expected_sensor_state = None

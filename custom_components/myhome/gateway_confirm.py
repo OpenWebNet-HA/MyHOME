@@ -95,7 +95,7 @@ def _light_where(message: Any) -> str | None:
     where = expose_message_where(message)
     if not _POINT_WHERE.fullmatch(where) or where.split("#", 1)[0].strip("0") == "":
         return None  # no address, or a broadcast (``0``, the Zigbee unit broadcast ``0#01#9``)
-    return where
+    return _canon_light_where(where)
 
 
 def _commanded_on(message: Any) -> bool | None:
@@ -119,10 +119,11 @@ def _commanded_on(message: Any) -> bool | None:
         values = getattr(message, "dimension_value", None)
         if isinstance(values, (list, tuple)) and len(values) > 2 and str(values[2]).isdigit():
             return int(values[2]) > 0
-    elif dimension == 14:  # ``*#1*<where>*#14*<mireds>##`` (> 1 mireds; 1 is DALI sentinel)
+    elif dimension == 14:  # ``*#1*<where>*#14*<mireds>##`` (> 1 mireds; <= 1 is DALI sentinel)
         values = getattr(message, "dimension_value", None)
         if isinstance(values, (list, tuple)) and values and str(values[0]).isdigit():
-            return int(values[0]) > 1
+            if int(values[0]) > 1:
+                return True
     return None
 
 

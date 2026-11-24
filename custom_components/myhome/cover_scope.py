@@ -22,10 +22,21 @@ if TYPE_CHECKING:
 _AREA_WHERES = frozenset({"00", "100", *"123456789"})
 
 
+def _normalize_scope_iface(interface: Any) -> str | None:
+    """Normalize an optional bus interface to zero-padded two digits when numeric."""
+    if interface is None or isinstance(interface, bool):
+        return None
+    text = str(interface).strip()
+    if not text:
+        return None
+    return f"{int(text):02d}" if text.isascii() and text.isdigit() else text
+
+
 def _canonical_point_key(where: str, interface: str | None) -> str:
     """Return canonical router key for a point cover address (``0004`` -> ``04``)."""
     canon = canonical_point_spelling(normalize_where(where) or str(where))
-    return f"{canon}{BUS_ROUTING}{interface}" if interface else canon
+    norm_iface = _normalize_scope_iface(interface)
+    return f"{canon}{BUS_ROUTING}{norm_iface}" if norm_iface else canon
 
 
 @dataclass(frozen=True)
@@ -48,26 +59,29 @@ class CoverScope:
     def of(cls, where: str, interface: str | None = None, members: Iterable[str] = ()) -> CoverScope | None:
         """The scope a WHERE addresses, or ``None`` for a point-to-point address."""
         where = str(where)
+        norm_iface = _normalize_scope_iface(interface)
         if where == "0":
-            return cls("general", where, interface)
+            return cls("general", where, norm_iface)
         if where in _AREA_WHERES:
-            return cls("area", where, interface)
+            return cls("area", where, norm_iface)
         if where.startswith("#"):
-            keys = frozenset(_canonical_point_key(str(m), interface) for m in members)
-            return cls("group", where, interface, keys)
+            keys = frozenset(_canonical_point_key(str(m), norm_iface) for m in members)
+            return cls("group", where, norm_iface, keys)
         return None
 
     def contains(self, cover: MyHOMECover) -> bool:
         """Whether this scope moves ``cover`` (point-to-point covers only)."""
         if cover.scope is not None:
             return False
+        own_iface = _normalize_scope_iface(self.interface)
+        cov_iface = _normalize_scope_iface(cover._interface)
         if self.kind == "general":
             # as relay_general delivers it; behind an interface, that interface's covers
-            return self.interface is None or cover._interface == self.interface
+            return own_iface is None or cov_iface == own_iface
         if self.kind == "area":
             canon = canonical_point_spelling(normalize_where(cover._where) or cover._where)
-            return cover._interface == self.interface and area_of_where(canon) == self.where
-        return _canonical_point_key(cover._where, cover._interface) in self.members
+            return cov_iface == own_iface and area_of_where(canon) == self.where
+        return _canonical_point_key(cover._where, cov_iface) in self.members
 
 
 class CoverFamily:
@@ -93,8 +107,14 @@ class CoverFamily:
 
     def keys_moved_by(self, where: str, interface: str | None) -> list[str]:
         """Router keys of the covers a scope frame moves: an area's by address, a group's as declared."""
-        scopes = [c.scope for c in self._covers if c.scope is not None and (c.scope.where, c.scope.interface) == (where, interface)]
-        if (own := CoverScope.of(where, interface)) is not None:
+        norm_iface = _normalize_scope_iface(interface)
+        scopes = [
+            c.scope
+            for c in self._covers
+            if c.scope is not None
+            and (c.scope.where, _normalize_scope_iface(c.scope.interface)) == (where, norm_iface)
+        ]
+        if (own := CoverScope.of(where, norm_iface)) is not None:
             scopes.append(own)
         return [c._device_id for c in self._covers if any(s.contains(c) for s in scopes)]
 
@@ -277,29 +297,42 @@ class MyHOMEScopeCover(MyHOMECover):
         # The scope's frame takes every member's motor over from a slat pulse: the scope's
         # own (its followers with it), and a member's own, whose auto-stop would stop the run.
         self._end_pulse_for_takeover()
-        followers = [
-            m for m in self._members()
-            if not m._is_scope_excluded() and m._settles_full_run(opening)
-        ]
-        for member in followers:
-            member._begin_run(direction)
+        follower_gens: list[tuple[MyHOMECover, int]] = []
+        for member in self._members():
+            if not member._is_scope_excluded() and member._settles_full_run(opening):
+                member._begin_run(direction)
+                follower_gens.append((member, member._run_generation))
+        gen_box: list[int] = []
         try:
-            written = await self._async_move(direction, pre_stopped=True)
+            written = await self._async_move(direction, pre_stopped=True, _gen_out=gen_box)
         except Exception:
-            for member in followers:
-                member._abort_motion()  # the scope frame never reached the bus: nothing moved
+            for member, m_gen in follower_gens:
+                if member._run_generation == m_gen and not member._is_scope_excluded() and not member._advanced:
+                    member._abort_motion()  # the scope frame never reached the bus: nothing moved
             raise
+        if not gen_box or self._run_generation != gen_box[0]:
+            for member, m_gen in follower_gens:
+                if member._run_generation == m_gen and not member._is_scope_excluded() and not member._advanced:
+                    member._abort_motion()
+            return written
         now_scope = time.monotonic()
         for member in self._members():
             member._note_scope_run_for_unconfirmed(now_scope, opening)
-        for member in followers:
-            member._follow_scope_run_to_end(opening, written)
+        for member, m_gen in follower_gens:
+            if (
+                member._run_generation == m_gen
+                and not member._is_scope_excluded()
+                and member._settles_full_run(opening)
+            ):
+                member._follow_scope_run_to_end(opening, written)
         return written
 
     async def _async_run_to_end(self, opening: bool, *, pre_stopped: bool = False) -> None:
         """`set_cover_position: 0` / `100` with one scope frame: the members settle too."""
         with suppress(_MoveSuperseded):
             written = await self._async_run_members_to_end(opening, pre_stopped=pre_stopped)
+            if self._pending_cmd != ("open" if opening else "close"):
+                return
             self._cancel_run_timeout()
             self._settle_run_to_end(opening, written)
 
@@ -309,7 +342,7 @@ class MyHOMEScopeCover(MyHOMECover):
             self._cancel_run_timeout()
         at = kwargs.get("at")
         queued_at = time.monotonic()
-        followers: list[MyHOMECover] = []
+        follower_gens: list[tuple[MyHOMECover, int]] = []
         tilting_leaders: list[tuple[MyHOMECover, int]] = []
         seen_leaders: set[int] = set()
         for member in self._members():
@@ -329,18 +362,20 @@ class MyHOMEScopeCover(MyHOMECover):
                 # so known members freeze (even without relayed stop frames or inside
                 # ECHO_WINDOW) and unknown members stay unknown (#770).
                 member._begin_stop(scope_where=self._full_where)
-                followers.append(member)
+                follower_gens.append((member, member._run_generation))
             else:
                 member._cancel_stop_task()
         try:
             written = await self._async_stop(**kwargs)
         except Exception:
-            for member in followers:
-                member._end_echo_window()
+            for member, m_gen in follower_gens:
+                if member._run_generation == m_gen:
+                    member._end_echo_window()
             raise
         stop_gen = self._last_stop_generation
-        for member in followers:
-            member._follow_scope_stop(written)
+        for member, m_gen in follower_gens:
+            if member._run_generation == m_gen and not member._advanced:
+                member._follow_scope_stop(written)
         not_before = max(at, queued_at) if at is not None else queued_at
         for leader, leader_gen in tilting_leaders:
             if leader._is_tilting and leader_gen == leader._run_generation:
@@ -515,19 +550,25 @@ class MyHOMEScopeCover(MyHOMECover):
         *,
         record_end: bool = True,
         unstopped: bool = False,
+        direction_failed: bool | None = None,
     ) -> None:
         start = self._tilt_start_time
         # The members' levels come on their own addresses: what ends this pulse without a
         # level of its own (a failed direction frame, an undelivered stop, a takeover)
-        # ends theirs the same way.
-        record_end = record_end and not self._pulse_direction_failed()
-        super()._apply_tilt_stop(at, record_end=record_end, unstopped=unstopped)
+        # ends theirs the same way. Compute failure before super() clears _pulse_written.
+        failed = self._pulse_direction_failed() if direction_failed is None else direction_failed
+        record_end = record_end and not failed
+        super()._apply_tilt_stop(
+            at, record_end=record_end, unstopped=unstopped, direction_failed=failed
+        )
         followers, self._pulse_followers = self._pulse_followers, []
         for member in followers:
             if member._tilt_follows is self and member._is_tilting:
                 if member._tilt_start_time is None:
                     member._tilt_start_time = start
-                member._apply_tilt_stop(at, record_end=record_end, unstopped=unstopped)
+                member._apply_tilt_stop(
+                    at, record_end=record_end, unstopped=unstopped, direction_failed=failed
+                )
                 member._publish_state()
 
     def _abort_tilt(self) -> None:
