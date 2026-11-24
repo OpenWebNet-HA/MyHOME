@@ -3652,6 +3652,18 @@ async def test_failover_routed_sweep_uses_entity_owner_registry(hass):
         er.async_get(hass).async_get_or_create(
             "light", DOMAIN, f"{primary.mac}-1-{where}", config_entry=entry
         )
+    # Disabled and ignored routed lights on primary are skipped during standby failover sweep.
+    er.async_get(hass).async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{primary.mac}-1-13#4#01",
+        config_entry=entry,
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+    er.async_get(hass).async_get_or_create(
+        "light", DOMAIN, f"{primary.mac}-1-14#4#01", config_entry=entry
+    )
+    hass.config_entries.async_update_entry(entry, options={**entry.options, "ignored_addresses": ["1/14#4#01"]})
     assert primary._known_light_areas() == ["1#4#01"]
     # The area frame and its two point reads are those of
     # `test_area_sweep_stays_on_the_bus_of_the_area_frame` (tests/test_issue_368_resync.py).

@@ -30,6 +30,7 @@ from .const import (
     normalize_where,
 )
 from .discovery import Address, parse_unique_id
+from .ignored import IgnoredAddresses
 from .where_grammar import canonical_point_spelling
 
 if TYPE_CHECKING:
@@ -143,6 +144,26 @@ class LightingResyncManager:
         return clean_base
 
     @staticmethod
+    def _point_area(where: str | int | None) -> str | None:
+        """Return the area scope WHERE for a point-to-point lighting address.
+
+        Delegates to ``OWNd.area_of_where`` for ``PL >= 1`` addresses and covers
+        the real-plant ``PL = 0`` points that ``OWNd`` omits: ``10``..``90``
+        (``A = 1..9, PL = 0`` -> ``"1"``..``"9"``; see #402) and ``1000``
+        (``A = 10, PL = 00`` -> ``"100"``). Broadcast areas (``"0"``, ``"00"``,
+        ``"1"``..``"9"``, ``"100"``) and ``"0000"`` still return ``None``.
+        """
+        area = area_of_where(where)
+        if isinstance(area, str) or where is None:
+            return area if isinstance(area, str) else None
+        base = str(where).strip().split("#", 1)[0]
+        if len(base) == 2 and base[0] in "123456789" and base[1] == "0":
+            return base[0]
+        if base == "1000":
+            return "100"
+        return None
+
+    @staticmethod
     def _area_scope(area: str, interface: str | None = None) -> str:
         """Return the sweep scope of an area: ``A``, or ``A#4#<interface>`` behind an F422.
 
@@ -191,7 +212,7 @@ class LightingResyncManager:
         interface = self._message_interface(message)
         ptp_where = self._normalize_ptp_where(message.where, interface)
         clean_where = normalize_where(str(message.where).split("#", 1)[0])
-        bare_area = area_of_where(clean_where)
+        bare_area = self._point_area(clean_where)
         # The area on the echo's own bus: `09#4#01` reports for `00#4#01`, not for `00`.
         area = self._area_scope(bare_area, interface) if bare_area else None
         msg_on = getattr(message, "is_on", None)
@@ -257,6 +278,7 @@ class LightingResyncManager:
                 owners.append(primary)
         registry: er.EntityRegistry | None = None
         seen_entries: set[str] = set()
+        handler_ignored = IgnoredAddresses.from_config_entry(getattr(self.handler, "config_entry", None))
         for owner in owners:
             config_entry = getattr(owner, "config_entry", None)
             entry_id = getattr(config_entry, "entry_id", None) if config_entry is not None else None
@@ -265,6 +287,14 @@ class LightingResyncManager:
             seen_entries.add(entry_id)
             if registry is None:
                 registry = er.async_get(self.hass)
+            owner_ignored = (
+                handler_ignored
+                if owner is self.handler
+                else IgnoredAddresses.from_config_entry(config_entry)
+            )
+            ignored_for_owner = (
+                (owner_ignored,) if owner is self.handler else (owner_ignored, handler_ignored)
+            )
             # Both identities, as the switch platform's setup parses them: the ids carry
             # the config entry's MAC, which can differ from the live gateway's (else the
             # MAC is read as the WHO and a WHO 4 switch passes for a light).
@@ -272,18 +302,25 @@ class LightingResyncManager:
             raw_entry_mac = entry_data.get(CONF_MAC) if isinstance(entry_data, Mapping) else None
             entry_mac = raw_entry_mac if isinstance(raw_entry_mac, str) else None
             for entry in er.async_entries_for_config_entry(registry, entry_id):
-                if entry.domain in ("light", "switch"):
-                    who, key = parse_unique_id(entry.unique_id, str(owner.mac), entry_mac)
-                    if not key or (who is not None and who.isdigit() and who != "1"):
-                        continue
-                    address = Address.from_device_id(key)
-                    clean_where = normalize_where(address.clean_where)
-                    area = area_of_where(clean_where)
-                    if area:
-                        scope = self._area_scope(area, address.interface)
-                        area_map.setdefault(scope, set()).add(
-                            self._normalize_ptp_where(clean_where, address.interface)
-                        )
+                if entry.domain not in ("light", "switch") or getattr(entry, "disabled", False) is True:
+                    continue
+                who, key = parse_unique_id(entry.unique_id, str(owner.mac), entry_mac)
+                if not key or (who is not None and who.isdigit() and who != "1"):
+                    continue
+                address = Address.from_device_id(key)
+                clean_where = normalize_where(address.clean_where)
+                area = self._point_area(clean_where)
+                if not area:
+                    continue
+                ptp_where = self._normalize_ptp_where(clean_where, address.interface)
+                if any(
+                    ig.is_ignored(1, address.where, address.interface)
+                    or ig.is_ignored(1, ptp_where)
+                    for ig in ignored_for_owner
+                ):
+                    continue
+                scope = self._area_scope(area, address.interface)
+                area_map.setdefault(scope, set()).add(ptp_where)
         return area_map
 
     def known_light_areas(self) -> list[str]:
@@ -394,9 +431,16 @@ class LightingResyncManager:
             return RESYNC_STORM_WINDOW_S
         return RESYNC_DEBOUNCE_S
 
+    def _closing(self) -> bool:
+        """Whether the gateway's listener or sender is closing: nothing new is sent."""
+        return (
+            getattr(self.handler, "_terminate_listener", False) is True
+            or getattr(self.handler, "_terminate_sender", False) is True
+        )
+
     def schedule_resync(self, message: Any) -> None:
         """Schedule a debounced state resynchronization sweep."""
-        if not getattr(self.handler, "broadcast_resync", True):
+        if not getattr(self.handler, "broadcast_resync", True) or self._closing():
             return
 
         dim = getattr(message, "dimension", None)
@@ -544,7 +588,7 @@ class LightingResyncManager:
         self._resync_area_echoes.pop(where, None)
         self._resync_echoed_members.pop(where, None)
         expected_on = self._resync_expected_on.pop(where, None)
-        if getattr(self.handler, "_terminate_listener", False):
+        if self._closing():
             return
         routed = not where.startswith("#") and BUS_ROUTING in where
         members = sorted(self.known_area_entities(where)) if routed else []
@@ -572,7 +616,7 @@ class LightingResyncManager:
                 # oracle row holds an area request on an interface (`*#1*<A>#4#<Int>##`).
                 recorded = False
                 for member in members:
-                    if getattr(self.handler, "_terminate_listener", False):
+                    if self._closing():
                         return
                     await self.handler.send_status_request(OWNLightingCommand.status(member))
                     if not recorded:

@@ -566,7 +566,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_after: float = 0.0
         self._brightness_refresh_out = False
         self._brightness_refresh_again = False
-        self._brightness_refresh_task: asyncio.Task[None] | None = None
+        self._brightness_refresh_task: asyncio.Task[bool] | None = None
         self._brightness_refresh_preset: int | None = None
         self._brightness_refresh_next_preset: int | None = None
         self._brightness_refresh_level: int | None = None
@@ -1252,11 +1252,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         )
         if not task.done():
             self._brightness_refresh_task = task
+        elif isinstance(task, asyncio.Task) and (task.cancelled() or task.result() is False):
+            return False
         return True
 
-    async def _async_brightness_refresh(self) -> None:
+    async def _async_brightness_refresh(self) -> bool:
         """Send the Dimension 1 read and wait until it closes; ask once more if the preset moved meanwhile."""
-        cancelled = False
+        aborted = False
         try:
             async with asyncio.timeout(_BRIGHTNESS_REFRESH_TIMEOUT_S):
                 written = await self._gateway_handler.send_status_request(
@@ -1267,14 +1269,25 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         except TimeoutError:
             pass
         except asyncio.CancelledError:
-            cancelled = True
+            aborted = True
             raise
+        except Exception as err:
+            aborted = True
+            LOGGER.debug(
+                "%s light %s: Dimension 1 brightness refresh failed: %r",
+                self._gateway_handler.log_id,
+                self._full_where,
+                err,
+            )
         finally:
             if self._brightness_refresh_task is asyncio.current_task():
                 self._brightness_refresh_task = None
             self._brightness_refresh_out = False
             self._brightness_refresh_after = time.monotonic() + _BRIGHTNESS_REFRESH_WINDOW_S
-            if not cancelled and self._brightness_refresh_again:
+            if aborted:
+                self._brightness_refresh_again = False
+                self._brightness_refresh_next_preset = None
+            elif self._brightness_refresh_again:
                 self._brightness_refresh_again = False
                 next_preset = self._brightness_refresh_next_preset
                 self._brightness_refresh_next_preset = None
@@ -1283,6 +1296,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._brightness_refresh_level = self._exact_level_pct
                     self._brightness_refresh_repeats = 1
                 self._request_brightness_refresh(force=True)
+        return not aborted
 
     def _request_status_check(self, background: bool) -> bool:
         """Ask the light for its on / off status; return whether a check was started.

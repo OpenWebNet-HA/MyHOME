@@ -428,3 +428,67 @@ async def test_level_zero_while_on_and_dimension_4_and_no_load_and_timed_on(hass
     await light.async_turn_on_timed(duration=60)
     assert light._brightness_refresh_repeats == 0
     assert light._brightness_refresh_preset is None
+
+
+async def test_brightness_refresh_queue_shutdown_swallowed_and_cancels_followup(hass, clock):
+    """QueueShutDown inside _async_brightness_refresh logs no unretrieved task error and spawns no follow-up."""
+    loop = asyncio.get_running_loop()
+    unhandled: list[dict] = []
+    prev_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: unhandled.append(context))
+    try:
+        # Case 1: async QueueShutDown while suspended waiting to enqueue, with a follow-up preset armed.
+        light, gateway = _light(hass, where="0010")
+        gate = loop.create_future()
+        attempts: list[str] = []
+
+        async def _fail_after_suspend(message):
+            attempts.append(str(message))
+            await gate
+            raise asyncio.QueueShutDown
+
+        gateway.send_status_request = _fail_after_suspend
+        _feed(light, "*#1*0010*1*153*4##")
+        clock.now += 60.0
+        _feed(light, "*1*7*0010##")
+        await _tick()
+        assert len(attempts) == 1
+        assert light._brightness_refresh_out is True
+
+        # A different preset arrives while read 1 is still pending, arming _brightness_refresh_again.
+        clock.now += 0.2
+        _feed(light, "*1*8*0010##")
+        assert light._brightness_refresh_again is True
+        assert light._brightness_refresh_next_preset == 8
+
+        # Command queue shuts down: read 1 must swallow QueueShutDown and NOT fire a follow-up read.
+        gate.set_result(None)
+        await hass.async_block_till_done()
+        assert len(attempts) == 1
+        assert light._brightness_refresh_out is False
+        assert light._brightness_refresh_task is None
+        assert light._brightness_refresh_again is False
+        assert light._brightness_refresh_next_preset is None
+        assert unhandled == []
+
+        # Case 2: immediate/eager QueueShutDown returns False without advancing repeat hold state.
+        light2, gateway2 = _light(hass, where="0010")
+        eager_attempts: list[str] = []
+
+        async def _fail_immediately(message):
+            eager_attempts.append(str(message))
+            raise asyncio.QueueShutDown
+
+        gateway2.send_status_request = _fail_immediately
+        _feed(light2, "*#1*0010*1*153*4##")
+        clock.now += 60.0
+        _feed(light2, "*1*7*0010##")
+        await hass.async_block_till_done()
+        assert len(eager_attempts) == 1
+        assert light2._brightness_refresh_out is False
+        assert light2._brightness_refresh_task is None
+        assert light2._brightness_refresh_repeats == 0
+        assert light2._brightness_refresh_preset is None
+        assert unhandled == []
+    finally:
+        loop.set_exception_handler(prev_handler)
