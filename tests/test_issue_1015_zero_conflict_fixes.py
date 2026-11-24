@@ -21,6 +21,9 @@ Covers:
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -95,8 +98,8 @@ PRIMARY_MAC = "00:03:50:11:22:33"
 
 def test_ignored_addresses_preserve_canonical_apl_and_f422_isolation() -> None:
     """WHO 1/2/14 canonical 2-digit vs 4-digit A/PL addresses and #4#II risers never collide."""
-    # 1. A=0, PL=10..15 ('0010'..'0015') vs A=1, PL=0..5 ('10'..'15')
-    for who in (1, 2, 14):
+    # 1. A=0, PL=10..15 ('0010'..'0015') vs A=1, PL=0..5 ('10'..'15') across WHO 0/1/2/14/15
+    for who in (0, 1, 2, 14, 15):
         for pl in range(10, 16):
             four_digit = f"00{pl}"
             two_digit = f"{pl}"
@@ -148,10 +151,14 @@ def test_ignored_addresses_preserve_canonical_apl_and_f422_isolation() -> None:
     assert ign_sub01.is_ignored(1, "14#4#1", interface="01") is True
     assert ign_sub01.is_ignored(1, "14#4#01", interface="02") is False
 
-    # 6. Non-WHO-1/2/14 subsystems continue stripping leading zeros
+    # 6. Non-WHO-0/1/2/14/15 subsystems continue stripping leading zeros, and rpartition("#4#")
+    # normalizes trailing F422 interface on multi-hash WHEREs (e.g. #0#4#4#1 -> 0#4#4#01)
     assert IgnoredAddresses(["4/01"]).is_ignored(4, "1") is True
     assert IgnoredAddresses(["4/00"]).is_ignored(4, "0") is True
     assert IgnoredAddresses(["25/31"]).is_ignored(25, "31", interface="01") is False
+    assert IgnoredAddresses(["25/0301#4#1"]).is_ignored(25, "31", interface="01") is True
+    assert IgnoredAddresses._norm_where("0#4#4#1", 4) == "0#4#4#01"
+    assert IgnoredAddresses._norm_where("1#4#4#1", 4) == "1#4#4#01"
 
 
 async def test_platform_discovery_ignoring_main_bus_14_preserves_f422_and_0014(
@@ -466,6 +473,30 @@ async def test_prune_climate_removes_yaml_temp_when_ignored_exposed_or_on_primar
     prune_entity(hass, ent_reg, clim_fol, fol_entry.entry_id)
     assert ent_reg.async_get(temp_fol.entity_id) is None
 
+    # Follower whose primary owns non-canonical {primary_mac}-4-01-temperature also prunes
+    ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{PRIMARY_MAC}-4-03-temperature", config_entry=pri_entry
+    )
+    fol_mac_03 = "00:03:50:00:00:55"
+    fol_entry_03 = _setup_climate_entry(
+        hass,
+        mac=fol_mac_03,
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_STANDBY,
+            CONF_PRIMARY_GATEWAY: PRIMARY_MAC,
+        },
+        sensor_yaml={"4-03": {"who": "4", "where": "03", "class": "temperature"}},
+    )
+    clim_fol_03 = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{fol_mac_03}-4-03", config_entry=fol_entry_03
+    )
+    temp_fol_03 = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{fol_mac_03}-4-03-temperature", config_entry=fol_entry_03
+    )
+    prune_entity(hass, ent_reg, clim_fol_03, fol_entry_03.entry_id)
+    assert ent_reg.async_get(temp_fol_03.entity_id) is None
+
     # Follower whose primary does NOT have the sensor keeps its active YAML temperature sensor
     fol_mac_2 = "00:03:50:00:00:44"
     fol_entry_2 = _setup_climate_entry(
@@ -550,6 +581,13 @@ async def test_prune_climate_preserves_companions_when_sibling_climate_exists_an
         config_entry=bare_entry,
         device_id=dev_bare.id,
     )
+    keep_probe_sensor = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        "00:03:50:99:88:77-4-101-temperature",
+        config_entry=bare_entry,
+        device_id=dev_bare.id,
+    )
     temp_bare = ent_reg.async_get_or_create(
         "sensor", DOMAIN, "00:03:50:99:88:77-4-1-temperature", config_entry=bare_entry
     )
@@ -560,7 +598,37 @@ async def test_prune_climate_preserves_companions_when_sibling_climate_exists_an
     assert ent_reg.async_get(temp_bare.entity_id) is None
     assert ent_reg.async_get(extra_dev_sensor.entity_id) is None
     assert ent_reg.async_get(keep_other_sensor.entity_id) is not None
+    assert ent_reg.async_get(keep_probe_sensor.entity_id) is not None
     assert ent_reg.async_get(foreign_mac_out.entity_id) is not None
+
+    # Whole-zone thermo_switch ({mac}-4-4) sharing dev_ts with climate keeps dev_ts while
+    # still removing an emptied split companion device (extra_devices) and 1-digit #4#1 output
+    dev_ts = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-4-4#4#01")},
+    )
+    dev_split_comp = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-4-4#1#4#01")},
+    )
+    ts_switch = ent_reg.async_get_or_create(
+        "switch", DOMAIN, f"{MAC}-4-4#4#01", config_entry=entry, device_id=dev_ts.id
+    )
+    clim_ts = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-4#4#01", config_entry=entry, device_id=dev_ts.id
+    )
+    split_out = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{MAC}-4-4#1#4#1-output-level",
+        config_entry=entry,
+        device_id=dev_split_comp.id,
+    )
+    prune_entity(hass, ent_reg, clim_ts, entry.entry_id)
+    assert ent_reg.async_get(ts_switch.entity_id) is not None
+    assert ent_reg.async_get(split_out.entity_id) is None
+    assert dev_reg.async_get(dev_ts.id) is not None
+    assert dev_reg.async_get(dev_split_comp.id) is None
 
     # Second climate entry remaining on the same device keeps device-attached companions
     dev_shared = dev_reg.async_get_or_create(
@@ -655,11 +723,15 @@ def test_gateway_crash_frame_classifier_and_model_resolution() -> None:
     assert _is_mh202_who4_crash_frame("*#4*001##") is True
     assert _is_mh202_who4_crash_frame("*#4*001*0##") is True
     assert _is_mh202_who4_crash_frame("*#4*099*0##") is True
+    assert _is_mh202_who4_crash_frame("*#4*001#4#01*0##") is True
+    assert _is_mh202_who4_crash_frame("*#4*001*#14*0200*1##") is True
     assert _is_mh202_who4_crash_frame("*#4*2#1##") is True
     assert _is_mh202_who4_crash_frame("*#4*2#4#01##") is True
     assert _is_mh202_who4_crash_frame("*#4*2#1#4#01##") is True
     assert _is_mh202_who4_crash_frame("*#4*2##") is False
     assert _is_mh202_who4_crash_frame("*#4*#0##") is False
+    assert _is_mh202_who4_crash_frame("*#4*0#1*20##") is False
+    assert _is_mh202_who4_crash_frame("*#4*101*0##") is False
     assert _is_mh202_who4_crash_frame("*#4*2#abc##") is False
     assert _is_mh202_who4_crash_frame("*#4*1#2#3#4#5##") is False
     assert _is_mh202_who4_crash_frame("*#4*2#4#12##") is False
@@ -681,6 +753,12 @@ def test_gateway_crash_frame_classifier_and_model_resolution() -> None:
     f461_with_mh202 = SimpleNamespace(_model_key="F461", _who4_target=lambda: mh202_peer)
     assert gateway_crash_frame_reason(f461_with_mh202, "*#4*2#1##") is not None
     assert gateway_crash_frame_reason(f461_with_mh202, "*#13**12##") is None
+
+    # Reverse delegation from MH202 primary to F461 secondary allows WHO 4 001*0 reads
+    f461_peer = SimpleNamespace(_model_key="F461")
+    mh202_with_f461 = SimpleNamespace(_model_key="MH202", _who4_target=lambda: f461_peer)
+    assert gateway_crash_frame_reason(mh202_with_f461, "*#4*001##") is None
+    assert gateway_crash_frame_reason(mh202_with_f461, "*#4*001*0##") is None
 
     # Self _who4_target or empty peer key does not block on F461
     f461_self = SimpleNamespace(_model_key="F461")
@@ -786,7 +864,9 @@ async def test_per_gateway_crash_frames_blocked_in_send_message_and_websocket(
 # ── M-20: CI workflows (pypi_standards.yml & ownd-smoke.yml) ────────────────
 
 
-def test_ci_workflows_cover_release_branches_and_strip_ownd_in_fallback() -> None:
+def test_ci_workflows_cover_release_branches_and_strip_ownd_in_fallback(
+    tmp_path: Path,
+) -> None:
     """M-20: both workflows trigger on chore/release-* PRs and pypi_standards strips OWNd on git fallback."""
     pypi_wf = yaml.safe_load(
         (REPO_ROOT / ".github" / "workflows" / "pypi_standards.yml").read_text(encoding="utf-8")
@@ -808,16 +888,37 @@ def test_ci_workflows_cover_release_branches_and_strip_ownd_in_fallback() -> Non
     assert run_script.count('pip install ".[test]"') == 1
     assert "pip install --no-deps ." in run_script
 
-    # Verify the exact tomllib extraction logic strips OWNd while keeping test dependencies
-    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    extracted = [
-        d
-        for d in pyproject["project"]["optional-dependencies"]["test"]
-        if not d.lower().startswith("ownd")
-    ]
+    # Execute the exact python -c one-liner from pypi_standards.yml against real & synthetic pyproject.toml
+    match = re.search(r"python -c '([^']+)'", run_script)
+    assert match is not None
+    one_liner = match.group(1)
+
+    out_real = tmp_path / "real-test-reqs.txt"
+    subprocess.run(
+        [sys.executable, "-c", one_liner, str(out_real)],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    extracted = out_real.read_text(encoding="utf-8").splitlines()
     assert extracted
     assert all(not d.lower().startswith("ownd") for d in extracted)
     assert any(d.startswith("pytest") for d in extracted)
+
+    synth_dir = tmp_path / "synth"
+    synth_dir.mkdir()
+    (synth_dir / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1"\ndependencies = ["OWNd==99.99.99", "aiohttp>=3.9"]\n'
+        '[project.optional-dependencies]\ntest = ["OWNd==99.99.99", "pytest>=8.0"]\n',
+        encoding="utf-8",
+    )
+    out_synth = tmp_path / "synth-test-reqs.txt"
+    subprocess.run(
+        [sys.executable, "-c", one_liner, str(out_synth)],
+        cwd=synth_dir,
+        check=True,
+    )
+    assert out_synth.read_text(encoding="utf-8").splitlines() == ["aiohttp>=3.9", "pytest>=8.0"]
+    assert tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
 
 # ── L-07: binary_sensor.py empty WHERE on malformed *#1**5*2## ──────────────

@@ -158,10 +158,12 @@ class IgnoredAddresses:
 
     @staticmethod
     def _norm_where(where: str, who: int | None = None) -> str:
-        """Normalize WHERE, preserving canonical 2-digit vs 4-digit A/PL addresses on WHO 1/2/14."""
-        base, sep, iface = where.partition("#4#")
+        """Normalize WHERE, preserving canonical 2-digit vs 4-digit A/PL addresses on WHO 0/1/2/14/15."""
+        base, sep, iface = where.rpartition("#4#")
+        if not sep:
+            base, iface = where, ""
         if base.isascii() and base.isdigit():
-            if who in (1, 2, 14):
+            if who in (0, 1, 2, 14, 15):
                 if is_apl_address(base):
                     clean_base = canonical_point_spelling(base)
                 elif base in ("0", "00", "100"):

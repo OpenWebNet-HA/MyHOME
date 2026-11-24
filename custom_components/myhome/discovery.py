@@ -258,7 +258,7 @@ COMPANION_SUFFIXES = ("-disable", "-enable", "-calibrate")
 #: Companion temperature / humidity / actuator-output sensors sensor.py attaches to a WHO=4 climate zone.
 CLIMATE_COMPANION_SENSOR_SUFFIXES = ("-temperature", "-humidity", "-output-level")
 _CLIMATE_ACTUATOR_OUTPUT_RE = re.compile(
-    r"^4-([1-9][0-9]?)#[1-9](?:#4#([0-9]{2}))?-output-level$", re.ASCII
+    r"^4-([1-9][0-9]?)#[1-9](?:#4#(0?[0-9]|1[0-5]))?-output-level$", re.ASCII
 )
 #: Platforms whose entities get those buttons.
 ACTUATOR_DOMAINS = ("light", "switch", "cover")
@@ -346,6 +346,15 @@ def _climate_zone_from_unique_id(
     return canon_zone, c_addr.interface, macs
 
 
+def _is_who4_probe_temperature_uid(unique_id: str | None) -> bool:
+    """Whether ``unique_id`` belongs to a standalone WHO=4 probe (``PZZ >= 100``)."""
+    if not unique_id or not unique_id.endswith("-temperature") or "-4-" not in unique_id:
+        return False
+    _, _, tail = unique_id.partition("-4-")
+    addr = Address.from_device_id(tail.removesuffix("-temperature"))
+    return is_probe(addr.clean_where)
+
+
 def _has_active_yaml_zone_temperature(
     hass: HomeAssistant,
     registry: er.EntityRegistry,
@@ -363,11 +372,16 @@ def _has_active_yaml_zone_temperature(
         or is_exposed_on_bus(hass, cfg_entry, 4, zkey)
     ):
         return False
-    if runtime.is_follower and runtime.primary_gateway_mac:
+    follower_primary = (
+        str(runtime.primary_gateway_mac)
+        if runtime.is_follower and runtime.primary_gateway_mac
+        else ""
+    )
+    if follower_primary:
         peer = peer_unique_id(
             f"{runtime.mac}-4-{zkey}-temperature",
             str(runtime.mac),
-            str(runtime.primary_gateway_mac),
+            follower_primary,
         )
         if peer is not None and registry.async_get_entity_id("sensor", DOMAIN, peer) is not None:
             return False
@@ -386,6 +400,17 @@ def _has_active_yaml_zone_temperature(
         if is_probe(cfg_addr.clean_where) or is_actuator_where(cfg_addr.clean_where):
             continue
         if canonical_thermo_zone(cfg_addr.clean_where) == zone and cfg_addr.interface == iface:
+            if follower_primary:
+                raw_peer = peer_unique_id(
+                    f"{runtime.mac}-4-{cfg_addr.clean_key}-temperature",
+                    str(runtime.mac),
+                    follower_primary,
+                )
+                if (
+                    raw_peer is not None
+                    and registry.async_get_entity_id("sensor", DOMAIN, raw_peer) is not None
+                ):
+                    return False
             return True
     return False
 
@@ -457,8 +482,11 @@ def _prune_climate_companions(
                     "",
                 )
                 match = _CLIMATE_ACTUATOR_OUTPUT_RE.fullmatch(after_mac)
-                if match is not None and match.groups() == (zone, iface):
-                    _remove_sensor(cand.entity_id)
+                if match is not None:
+                    m_zone, m_iface = match.groups()
+                    norm_iface = m_iface.zfill(2) if m_iface is not None else None
+                    if (m_zone, norm_iface) == (zone, iface):
+                        _remove_sensor(cand.entity_id)
 
     if entry.device_id and not sibling_climate:
         remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
@@ -471,6 +499,7 @@ def _prune_climate_companions(
                     e.domain == "sensor"
                     and e.config_entry_id == config_entry_id
                     and (e.unique_id or "").endswith(allowed_suffixes)
+                    and not _is_who4_probe_temperature_uid(e.unique_id)
                 ):
                     _remove_sensor(e.entity_id)
 
@@ -512,9 +541,14 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
         if entry.domain == "climate"
         else set()
     )
-    if not kept_by_sibling:
+    devices_to_check = set(extra_devices)
+    if not kept_by_sibling and entry.device_id:
+        devices_to_check.add(entry.device_id)
+    elif entry.device_id:
+        devices_to_check.discard(entry.device_id)
+    if devices_to_check:
         dev_reg = dr.async_get(hass)
-        for dev_id in ({entry.device_id} if entry.device_id else set()) | extra_devices:
+        for dev_id in devices_to_check:
             if dev_reg.async_get(dev_id) is not None and not er.async_entries_for_device(
                 registry, dev_id, include_disabled_entities=True
             ):

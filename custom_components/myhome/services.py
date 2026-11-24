@@ -60,7 +60,7 @@ _ownd_destructive_frame_reason: Callable[[str], str | None] | None = getattr(
 
 _ASCII_OWN_FRAME_RE = re.compile(r"\*[0-9*#]*##", re.ASCII)
 _MH202_ALL_PROBES_CRASH_RE = re.compile(
-    r"\*#4\*0(?:0[1-9]|[1-9][0-9])(?:\*[^#]*)?##", re.ASCII
+    r"\*#4\*0(?:0[1-9]|[1-9][0-9])(?:[#*][0-9*#]*)?##", re.ASCII
 )
 _WHO4_DIMENSIONLESS_STATUS_RE = re.compile(r"\*#4\*([^*]+)##", re.ASCII)
 _WHO13_NETWORK_DIM_CRASH_RE = re.compile(
@@ -119,24 +119,21 @@ def _handler_model_key(handler: Any) -> str:
     return _resolve_model_key("", profile=profile) if profile is not None else ""
 
 
-def _who4_model_keys(handler: Any, base_key: str) -> set[str]:
-    """Model keys of ``handler`` and any delegated / failover WHO 4 target."""
-    keys = {base_key} if base_key else set()
+def _effective_who4_model_key(handler: Any, base_key: str) -> str:
+    """Model key of the gateway that will actually transmit a WHO 4 frame."""
     who4_target_fn = getattr(handler, "_who4_target", None)
     if callable(who4_target_fn):
         target = who4_target_fn()
         if target is not None and target is not handler:
-            t_key = _handler_model_key(target)
-            if t_key:
-                keys.add(t_key)
-    return keys
+            return _handler_model_key(target)
+    return base_key
 
 
 def _is_mh202_who4_crash_frame(frame: str) -> bool:
     """True when ``frame`` triggers a WHO 4 daemon crash on MH202 (010024).
 
     Covers both confirmed oracle crash families:
-    1. ``*#4*001##`` / ``*#4*001*0##`` (3-digit ``001..099`` all-probes-in-zone reads,
+    1. ``*#4*001##`` / ``*#4*001*0##`` (3-digit ``001..099`` all-probes-in-zone forms,
        ``own-firmware-oracle`` ``ownd-audit-frames.tsv:42-43``).
     2. Dimensionless non-``#`` actuator / 3-token ``A#B#C`` status reads such as
        ``*#4*2#1##`` and ``*#4*2#4#01##`` (``thermo-zone-requests.tsv:21,25``, where
@@ -172,10 +169,10 @@ def gateway_crash_frame_reason(handler: Any, frame: str) -> str | None:
             f"WHO 13 network dimensions 10, 11 and 12 crash the gateway daemon on {model_key} "
             "(own-firmware-oracle who13-identification)"
         )
-    if clean.startswith("*#4*") and "MH202" in _who4_model_keys(handler, model_key):
+    if clean.startswith("*#4*") and _effective_who4_model_key(handler, model_key) == "MH202":
         if _is_mh202_who4_crash_frame(clean):
             return (
-                "this WHO 4 status request crashes the thermoregulation translator (coso) on MH202 "
+                "this WHO 4 frame crashes a gateway daemon on MH202 "
                 "(own-firmware-oracle ownd-audit-frames / thermo-zone-requests)"
             )
     return None
