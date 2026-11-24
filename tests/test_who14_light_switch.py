@@ -2386,3 +2386,86 @@ async def test_premerge_audit_light_switch_fade_unavailable_and_unsent_token_gua
         "g2": {"where": "#2", "bus_interface": "1", "members": ["12"]},
     }
     assert ("12", "01") in handler._actuator_locks._resolve_group_keys("#2", "01")
+
+    # 6. #1013 + #977: Two coarse presets (*1*7* -> 50%, *1*8* -> 60% within <=15 pp of restored 55%)
+    #    arriving while _brightness_refresh_out is True on a locked restored dimmer keep lock True & 55%,
+    #    chain next_preset with the locked 55% fallback, and self-heal when Dim 1 reports 62%!
+    dim48 = MyHOMELight(
+        hass=hass,
+        name="Restored 48",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="48",
+        who="1",
+        where="48",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    dim48._poll_on_add = False
+    dim48._probe_dimmer_on_add = False
+    _attach_live_entity(hass, dim48, "light.restored_48")
+    await dim48.async_restore_last_state(
+        State(
+            "light.restored_48",
+            "on",
+            {"supported_color_modes": ["brightness"], "brightness": 140, "actuator_locked": True},
+        )
+    )
+    assert dim48.actuator_locked is True
+    assert dim48._attr_brightness_pct == 55
+    assert dim48._exact_level_pct is None
+
+    dim1_gate: asyncio.Future[float] = hass.loop.create_future()
+    dim1_second: asyncio.Future[float] = hass.loop.create_future()
+    dim1_second.set_result(time.monotonic())
+    handler.send_status_request = AsyncMock(side_effect=[dim1_gate, dim1_second])
+    dim48._brightness_refresh_after = 0.0
+    dim48.handle_event(OWNEvent.parse("*1*7*48##"))  # 50% -> starts refresh 1 (_brightness_refresh_out=True)
+    await asyncio.sleep(0)
+    assert dim48._brightness_refresh_out is True
+    assert dim48._attr_brightness_pct == 55 and dim48.actuator_locked is True
+    dim48.handle_event(OWNEvent.parse("*1*8*48##"))  # 60% while refresh 1 is out -> queues next_preset=8!
+    assert dim48._brightness_refresh_again is True
+    assert dim48._attr_brightness_pct == 55 and dim48.actuator_locked is True
+    dim1_gate.set_result(time.monotonic())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert dim48._brightness_refresh_preset == 8
+    assert dim48._brightness_refresh_level == 55
+    dim48.handle_event(OWNEvent.parse("*#1*48*1*162*2##"))  # real level moved 55% -> 62%: self-heals!
+    assert dim48._attr_brightness_pct == 62
+    assert dim48.actuator_locked is False
+
+    # 7. Concurrent turn_on(brightness_pct=80) while combined turn_on(color_temp=250, brightness_pct=30)
+    #    fails in _send_switch_on preserves Call 2's (80, ...) pending brightness token!
+    dali28._pending_cmd_brightness_pct = None
+    entered_ct = asyncio.Event()
+    fail_ct = asyncio.Event()
+    ct_call_idx = 0
+
+    async def _interleaved_ct_send(cmd: Any) -> asyncio.Future[float]:
+        nonlocal ct_call_idx
+        ct_call_idx += 1
+        if ct_call_idx == 1:
+            entered_ct.set()
+            await fail_ct.wait()
+            raise RuntimeError("ct send failed")
+        fut = hass.loop.create_future()
+        fut.set_result(time.monotonic())
+        return fut
+
+    handler.send = _interleaved_ct_send  # type: ignore[assignment]
+    t_ct = asyncio.create_task(dali28.async_turn_on(**{ATTR_COLOR_TEMP: 250, ATTR_BRIGHTNESS_PCT: 30}))
+    await entered_ct.wait()
+    await dali28.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 80})
+    assert dali28._pending_cmd_brightness_pct is not None
+    assert dali28._pending_cmd_brightness_pct[0] == 80
+    fail_ct.set()
+    with pytest.raises(RuntimeError, match="ct send failed"):
+        await t_ct
+    assert dali28._pending_cmd_brightness_pct is not None
+    assert dali28._pending_cmd_brightness_pct[0] == 80

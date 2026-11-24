@@ -3105,14 +3105,51 @@ async def test_ermanno00_mh201_area6_opposite_scope_interlock_stop_and_immediate
     c61._abort_motion()
     c61._clear_relay_hold()
 
-    # Venetian tilt pulse interrupted by opposite-direction scope broadcast on MH201 -> interlock stop!
+    # Venetian tilt pulse: unconfirmed pulse does NOT false-stop on *2*1*6##, while confirmed pulse DOES!
     c63._is_tilting = True
+    c63._move_confirmed = False
+    c63._tilt_direction = "close"
+    c63._tilt_start_time = now_val - 0.3
+    c63._tilt_initial_position = 100
+    c63.handle_event(OWNEvent.parse("*2*1*6##"))
+    assert c63.is_opening is True
+    c63._cancel_stop_task()
+    c63._abort_motion()
+    c63._clear_relay_hold()
+
+    c63._is_tilting = True
+    c63._move_confirmed = True
     c63._tilt_direction = "close"
     c63._tilt_start_time = now_val - 0.3
     c63._tilt_initial_position = 100
     c63.handle_event(OWNEvent.parse("*2*1*6##"))
     assert c63._is_tilting is False
     assert c63.is_opening is False and c63.is_closing is False
+
+    # Unconfirmed P2P close_cover (_move_confirmed=False) on MH201 followed by *2*1*6## opens to 100%
+    # rather than falsely freezing as an interlock stop; and _apply_scope_interlock_stop closes any
+    # open P2P echo window so a subsequent external *2*2*61## arms _wall_settle_unsub!
+    c61._clear_relay_hold()
+    c61._attr_current_cover_position = c61._start_position = 50
+    c61._begin_run("close")
+    assert c61._move_confirmed is False
+    now_val += 0.2
+    c61.handle_event(OWNEvent.parse("*2*1*6##"))
+    assert c61.is_opening is True
+    assert c61._wall_settle_unsub is not None
+    # Now c61 is confirmed opening; open a P2P echo window and hit opposite *2*2*6## -> interlock stop
+    c61._pending_cmd = "open"
+    c61._echo_until = now_val + 1.5
+    now_val += 1.0
+    c61.handle_event(OWNEvent.parse("*2*2*6##"))
+    assert c61.is_opening is False and c61.is_closing is False
+    assert c61._pending_cmd is None and c61._echo_until is None
+    now_val += 0.7
+    c61.handle_event(OWNEvent.parse("*2*1*61##"))
+    assert c61.is_opening is True and c61._wall_settle_unsub is not None
+    c61._cancel_stop_task()
+    c61._abort_motion()
+    c61._clear_relay_hold()
 
     # Cold-boot unseen lock on 64 (_actuation_unconfirmed=True): immediate *2*0*64## on *2*2*6## keeps it excluded!
     handler._actuator_locks.clear()
@@ -3196,5 +3233,287 @@ async def test_ermanno00_mh201_area6_opposite_scope_interlock_stop_and_immediate
     c_rest.handle_event(OWNEvent.parse("*2*1*6##"))  # opposite direction during restored close hold -> stops at 0%!
     assert c_rest.is_opening is False and c_rest.current_cover_position == 0
 
-    for ent in (*entities.values(), c_rest):
+    # Mid-motion STATE_UNAVAILABLE save (opening, with a 2-hour-old closing last_run) persists
+    # motion_direction="open" and NEVER pairs motion_started_at with stale last_run.direction!
+    c_mid_src = MyHOMECover(
+        hass=hass,
+        name="MidRun 66",
+        entity_name=None,
+        device_id="66",
+        who="2",
+        where="66",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="L4671/2",
+        gateway=handler,
+        travel_time=25,
+    )
+    c_mid_src._attr_current_cover_position = c_mid_src._start_position = 20
+    c_mid_src._attr_is_opening = True
+    c_mid_src._motion_started_at = ended_iso
+    stale_ended = (dt_util.utcnow() - timedelta(hours=2)).isoformat(timespec="milliseconds")
+    c_mid_src._last_run = {"seconds": 25.0, "direction": "close", "ended_at": stale_ended}
+    mid_saved = c_mid_src.extra_restore_state_data
+    assert mid_saved is not None
+    assert mid_saved.as_dict()["motion_direction"] == "open"
+
+    c_mid_rest = MyHOMECover(
+        hass=hass,
+        name="MidRun 66",
+        entity_name=None,
+        device_id="66",
+        who="2",
+        where="66",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="L4671/2",
+        gateway=handler,
+        travel_time=25,
+    )
+    c_mid_rest._poll_on_add = False
+    c_mid_rest.entity_id = "cover.midrun_66"
+    with (
+        patch.object(
+            c_mid_rest,
+            "async_get_last_state",
+            AsyncMock(return_value=State("cover.midrun_66", STATE_UNAVAILABLE, {})),
+        ),
+        patch.object(
+            c_mid_rest,
+            "async_get_last_extra_data",
+            AsyncMock(return_value=RestoredExtraData(mid_saved.as_dict())),
+        ),
+    ):
+        await c_mid_rest.async_added_to_hass()
+    assert c_mid_rest._relay_hold_opening is True
+    c_mid_rest.handle_event(OWNEvent.parse("*2*1*6##"))  # same direction as restored open -> continues opening!
+    assert c_mid_rest.is_opening is True
+    c_mid_rest._cancel_stop_task()
+    c_mid_rest._abort_motion()
+    c_mid_rest._clear_relay_hold()
+
+    for ent in (*entities.values(), c_rest, c_mid_rest):
         await ent.async_will_remove_from_hass()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_stop_coalesce_active_probe_cancel_and_locked_impulse_deadband_safety(
+    hass: HomeAssistant,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify #1014 stop cancel-coalescing on unconfirmed cover, _begin_stop probe cancel, and #1011 locked impulse deadband/STOP safety."""
+    from homeassistant.const import STATE_OFF, STATE_ON
+    from homeassistant.core import Context
+
+    from custom_components.myhome.access_policy import Phase
+
+    entry, handler = _make_real_gateway(
+        hass,
+        mac="00:03:50:97:60:f9",
+        model="F461",
+        platforms={
+            PLATFORM: {
+                "41": {CONF_WHERE: "41", CONF_NAME: "Coalesce 41", CONF_TRAVEL_TIME: 10},
+                "42": {CONF_WHERE: "42", CONF_NAME: "Simple 42", CONF_TRAVEL_TIME: 0},
+            }
+        },
+    )
+    entities = await _setup_covers_on_gateway(hass, entry, handler)
+    cov_41 = entities["41"]
+    cov_42 = entities["42"]
+    assert isinstance(cov_41, MyHOMECover)
+    assert isinstance(cov_42, MyHOMECover)
+    cov_41._attr_current_cover_position = cov_41._start_position = 50
+    cov_41._arm_relay_hold(time.monotonic(), opening=True)
+    assert cov_41._relay_hold_opening is True
+
+    # 1. #1014 implicit WHO=2 stop cancel-coalescing while open_cover is still unwritten in pool:
+    #    open_cover future is cancelled pre-wire, stop_cover settles at 50% with zero drift and
+    #    clears _relay_hold_opening!
+    await cov_41.async_open_cover()
+    await cov_41.async_stop_cover()
+    sess = _FakeCommandSession(lambda _raw, _is_req: True)
+    with patch("custom_components.myhome.gateway.OWNCommandSession", return_value=sess):
+        worker = asyncio.create_task(handler.sending_loop(0))
+        try:
+            await _wait_for_tx(handler, sess, 1, hass)
+            await hass.async_block_till_done()
+            assert [f for f, _ in sess.sent_frames] == ["*2*0*41##"]
+            assert cov_41.current_cover_position == 50
+            assert cov_41.is_opening is False and cov_41.is_closing is False
+            assert cov_41._actuation_unconfirmed is False
+            assert cov_41._relay_hold_opening is None
+
+            # 2. _begin_stop immediately cancels an active _unconfirmed_move_task probe!
+            blocked_probe: asyncio.Future[float] = hass.loop.create_future()
+            with patch.object(handler, "send_status_request", AsyncMock(return_value=blocked_probe)):
+                cov_42._begin_run("open")
+                cov_42._arm_unconfirmed_move_timer(time.monotonic() - 2.0)
+                async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=1))
+                await asyncio.sleep(0)
+                active_probe = cov_42._unconfirmed_move_task
+                assert active_probe is not None and not active_probe.done()
+                await cov_42.async_stop_cover()
+                await asyncio.gather(active_probe, return_exceptions=True)
+                assert active_probe.cancelled() or active_probe.done()
+                assert cov_42._unconfirmed_move_task is None
+                blocked_probe.cancel()
+
+            # 3. MyHOMEImpulseCover with min_cycle_time=10.0s:
+            #    (a) Under access: concurrent stop_cover during ECHO_WINDOW wait on locked CLOSE -> IDLE (no fault),
+            #        and during MONITORING: locked STOP #1 fails -> unlock -> STOP #2 inside min_cycle_time SENDS pulse!
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 0.08)
+            notified: list[tuple[str, dict[str, Any]]] = []
+
+            async def _rec_notify(call: Any) -> None:
+                notified.append((call.service, dict(call.data)))
+
+            hass.services.async_register("notify", "mobile_app_guard", _rec_notify)
+            hass.states.async_set("binary_sensor.gate_91_closed", STATE_ON)
+            hass.states.async_set("binary_sensor.gate_91_beam", STATE_OFF)
+            hass.states.async_set("person.guard", "home", {"user_id": "u_guard"})
+
+            gate_91 = MyHOMEImpulseCover(
+                hass=hass,
+                name="Gate 91",
+                entity_name=None,
+                device_id="1-91",
+                who="1",
+                where="91",
+                interface=None,
+                device_class=CoverDeviceClass.GATE,
+                travel_time=5.0,
+                pulse_duration=0.5,
+                min_cycle_time=10.0,
+                pin_code=None,
+                state_sensor="binary_sensor.gate_91_closed",
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                access_config={
+                    "allowed_users": ["u_guard"],
+                    "approvers": {"u_guard": "notify.mobile_app_guard"},
+                    "remote_close": "at_home",
+                    "safety_devices_verified": dt_util.now().date(),
+                    "close_block_entity": "binary_sensor.gate_91_beam",
+                    "prewarn_seconds": 0.01,
+                    "watchdog_margin": 1.0,
+                },
+            )
+            gate_91.hass = hass
+            gate_91.entity_id = "cover.gate_91"
+            gate_91.async_write_ha_state = MagicMock()
+            gate_91.async_schedule_update_ha_state = MagicMock()
+            with patch.object(gate_91, "async_get_last_state", AsyncMock(return_value=None)):
+                await gate_91.async_added_to_hass()
+            gate_91._context = Context(user_id="u_guard")
+            handler._actuator_locks.set_point_lock("91", None, True, observed=True)
+
+            # Concurrent stop_cover arriving DURING the ECHO_WINDOW wait on approved locked CLOSE!
+            sess.sent_frames.clear()
+            await gate_91.async_close_cover()
+            assert gate_91._access is not None
+            act_1 = notified[-1][1]["data"]["actions"][0]["action"]
+            hass.bus.async_fire(
+                "mobile_app_notification_action",
+                {"action": act_1},
+                context=Context(user_id="u_guard"),
+            )
+            for _ in range(50):
+                if gate_91._locked_pulse_echo is not None:
+                    break
+                await asyncio.sleep(0.005)
+            assert gate_91._locked_pulse_echo is not None
+            await gate_91.async_stop_cover()
+            if gate_91._access._tasks:
+                await asyncio.wait_for(asyncio.gather(*list(gate_91._access._tasks)), timeout=2.0)
+            await hass.async_block_till_done()
+            assert gate_91._access.phase is Phase.IDLE
+            assert gate_91._access.fault_reason is None
+
+            # Unlock, approve CLOSE -> MONITORING, then lock mid-run:
+            # STOP #1 while locked fails -> unlock -> STOP #2 within 10s min_cycle_time MUST transmit *1*18*91##!
+            handler._actuator_locks.set_point_lock("91", None, False, observed=True)
+            notified.clear()
+            await gate_91.async_close_cover()
+            act_2 = notified[-1][1]["data"]["actions"][0]["action"]
+            hass.bus.async_fire(
+                "mobile_app_notification_action",
+                {"action": act_2},
+                context=Context(user_id="u_guard"),
+            )
+            if gate_91._access._tasks:
+                await asyncio.wait_for(asyncio.gather(*list(gate_91._access._tasks)), timeout=2.0)
+            await hass.async_block_till_done()
+            assert gate_91._access.phase is Phase.MONITORING
+
+            handler._actuator_locks.set_point_lock("91", None, True, observed=True)
+            sess.sent_frames.clear()
+            with pytest.raises(HomeAssistantError, match="stop pulse was not sent"):
+                await gate_91.async_stop_cover()
+            assert [f for f, _ in sess.sent_frames] == ["*1*18*91##"]
+            assert gate_91._access.phase is Phase.MONITORING
+
+            # Unlock and immediately call stop_cover #2 inside min_cycle_time=10.0s!
+            handler._actuator_locks.set_point_lock("91", None, False, observed=True)
+            sess.sent_frames.clear()
+            await gate_91.async_stop_cover()
+            assert [f for f, _ in sess.sent_frames] == ["*1*18*91##"]
+            assert gate_91._access.phase is Phase.IDLE
+
+            # (b) Direct impulse cover (no access:, min_cycle_time=10.0s): locked STOP does not swallow
+            #     post-unlock STOP or OPEN, while offline-unlocked echo on STOP restores _last_pulse_intent!
+            gate_92 = MyHOMEImpulseCover(
+                hass=hass,
+                name="Gate 92",
+                entity_name=None,
+                device_id="1-92",
+                who="1",
+                where="92",
+                interface=None,
+                device_class=CoverDeviceClass.GATE,
+                travel_time=5.0,
+                pulse_duration=0.5,
+                min_cycle_time=10.0,
+                pin_code=None,
+                state_sensor=None,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+            )
+            gate_92.hass = hass
+            gate_92.entity_id = "cover.gate_92"
+            gate_92.async_write_ha_state = MagicMock()
+            gate_92.async_schedule_update_ha_state = MagicMock()
+            with patch.object(gate_92, "async_get_last_state", AsyncMock(return_value=None)):
+                await gate_92.async_added_to_hass()
+            handler._actuator_locks.set_point_lock("92", None, True, observed=True)
+            sess.sent_frames.clear()
+            await gate_92.async_stop_cover()
+            assert gate_92._last_pulse_intent is None
+            handler._actuator_locks.set_point_lock("92", None, False, observed=True)
+            await gate_92.async_open_cover()
+            assert [f for f, _ in sess.sent_frames] == ["*1*18*92##", "*1*18*92##"]
+            gate_92._cancel_travel_timer()
+
+            # Offline-unlocked echo on locked direct STOP sets _last_pulse_intent = Intent.STOP
+            gate_92._last_pulse_time = -1e9
+            handler._actuator_locks.set_point_lock("92", None, True, observed=True)
+            monkeypatch.setattr(cover_module, "ECHO_WINDOW", 1.5)
+            await gate_92.async_stop_cover()
+            gate_92.handle_event(OWNEvent.parse("*1*18*92##"))
+            assert gate_92.actuator_locked is False
+            assert gate_92._last_pulse_intent is cover_module.Intent.STOP
+
+            hass.states.async_set("binary_sensor.gate_91_closed", STATE_OFF)
+            await gate_91.async_will_remove_from_hass()
+            await gate_92.async_will_remove_from_hass()
+            await cov_41.async_will_remove_from_hass()
+            await cov_42.async_will_remove_from_hass()
+        finally:
+            handler._command_pool.close()
+            worker.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await worker

@@ -1173,8 +1173,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if not self._omits_bus_pre_move_stop():
             return False
         if self._is_tilting:
-            return self._tilt_direction == ("close" if incoming_opening else "open")
-        if self._attr_is_opening or self._attr_is_closing:
+            pulse_moved = self._move_confirmed or self._tilt_follows is not None
+            if pulse_moved and self._tilt_start_time is not None and now > self._tilt_start_time:
+                return self._tilt_direction == ("close" if incoming_opening else "open")
+        elif (self._attr_is_opening or self._attr_is_closing) and (
+            self._move_confirmed or not self._has_lock_tracking()
+        ):
             return bool(self._attr_is_closing) if incoming_opening else bool(self._attr_is_opening)
         if self._relay_hold_until is not None and now < self._relay_hold_until:
             return self._relay_hold_opening is (not incoming_opening)
@@ -1185,6 +1189,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         was_tilting = self._is_tilting
         self._is_tilting = False
         self._cancel_stop_task()
+        self._cancel_unconfirmed_move_timer()
+        self._end_echo_window()
+        self._end_run_from_unknown = False
         self._run_generation += 1
         self._last_stop_at = now
         self._stopped_event.set()
@@ -1302,6 +1309,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._relay_hold_until = min(
                         self._relay_hold_until, write_ts + PRE_MOVE_STOP_SETTLE_DELAY
                     )
+                    self._relay_hold_opening = None
                 if not self._motor_started.is_set():
                     # Motion stops within ~0.04-0.12 s of the write on measured
                     # gateways (MyHOMEServer1 34-47 ms, F461 64-120 ms; #302, #705).
@@ -2029,15 +2037,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if last_state.state in (STATE_OPENING, STATE_CLOSING):
                 self._arm_relay_hold(time.monotonic(), opening=last_state.state == STATE_OPENING)
             else:
-                raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
-                raw_dir = last_state.attributes.get("last_run_direction")
+                raw_ts = last_state.attributes.get("motion_started_at")
+                raw_dir: Any = None
+                if not raw_ts:
+                    raw_ts = last_state.attributes.get("last_run_ended_at")
+                    raw_dir = last_state.attributes.get("last_run_direction")
                 if not raw_ts and saved_unavailable:
                     raw_ts = record.get("motion_started_at")
-                    if isinstance(last_run := record.get("last_run"), Mapping):
-                        if not raw_ts:
-                            raw_ts = last_run.get("ended_at")
-                        if not raw_dir:
-                            raw_dir = last_run.get("direction")
+                    if raw_ts:
+                        raw_dir = record.get("motion_direction")
+                    elif isinstance(last_run := record.get("last_run"), Mapping):
+                        raw_ts = last_run.get("ended_at")
+                        raw_dir = last_run.get("direction")
                 if isinstance(raw_ts, str) and (parsed_dt := dt_util.parse_datetime(raw_ts)) is not None:
                     age = (dt_util.utcnow() - parsed_dt).total_seconds()
                     if 0.0 <= age < M0_RELAY_HOLD_WINDOW:
@@ -2076,6 +2087,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 data["tilt"] = tilt
             if self._motion_started_at:
                 data["motion_started_at"] = self._motion_started_at
+                if self.is_opening or self.is_closing:
+                    data["motion_direction"] = "open" if self.is_opening else "close"
         if self._last_run:
             data["last_run"] = dict(self._last_run)
         if self._actuator_locked is not None and self.scope is None:
@@ -3398,6 +3411,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _begin_stop(self, *, scope_where: str | None = None) -> None:
         """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
         self._cancel_stop_task()
+        self._cancel_unconfirmed_move_timer()
         # HA asked for the stop: its status is never the end stop, whenever it arrives.
         self._full_run_to_end = False
         self._probing_p2p_direction = None
@@ -5345,6 +5359,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             return outcome
         if self.actuator_locked is True:
             if self._access is None:
+                if intent is Intent.STOP:
+                    self._last_pulse_intent = None
                 self._locked_pulse_intent = (intent, time.monotonic() + ECHO_WINDOW)
                 return PulseOutcome.CONFIRMED
             echo_ev = asyncio.Event()
@@ -5354,6 +5370,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 await asyncio.wait_for(echo_ev.wait(), ECHO_WINDOW)
             except TimeoutError:
                 self._locked_pulse_intent = None
+                self._last_pulse_time = -1e9
+                self._last_pulse_intent = None
                 if intent is Intent.STOP:
                     return PulseOutcome.NOT_SENT
                 raise AccessDenied(f"{self._display_name}: actuator is locked (WHO=14)") from None
@@ -5506,6 +5524,9 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     @callback
     def handle_actuator_lock(self, locked: bool) -> None:
         """Apply WHO=14 lock state to this impulse cover."""
+        if not locked and self._actuator_locked is True:
+            self._last_pulse_time = -1e9
+            self._last_pulse_intent = None
         self._locked_pulse_intent = None
         super().handle_actuator_lock(locked)
 
@@ -5552,6 +5573,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             pending_intent = self._locked_pulse_intent
             self._locked_pulse_intent = None
             if pending_intent is not None and now <= pending_intent[1]:
+                self._last_pulse_intent = pending_intent[0]
                 self._start_impulse_motion(pending_intent[0])
                 return
             self._publish_state()
