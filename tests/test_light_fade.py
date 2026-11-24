@@ -449,3 +449,14 @@ async def test_software_fade_step1_timeout_anchors_on_written_future_and_handles
                 fut_f.set_result(loop.time())
             await tf
         apply_f.assert_not_called()
+
+    # 4. Direct start_fade clears stale step-1 echo state before incrementing fade_id
+    eng_clean, _, _, _ = create_engine(auto_echo=True, first_echo_timeout=1.0)
+    eng_clean._step1_echo_event = asyncio.Event()
+    eng_clean.pending_first_step_pct = 42
+    eng_clean.fade_start_pct = 20
+    t_clean = eng_clean.start_fade(start_pct=50, target_pct=50, duration=0.5)
+    assert eng_clean._step1_echo_event is None
+    assert eng_clean.pending_first_step_pct is None
+    assert eng_clean.fade_start_pct is None
+    await t_clean

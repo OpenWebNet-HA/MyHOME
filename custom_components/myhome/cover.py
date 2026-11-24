@@ -3604,7 +3604,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         try:
             written = await self._async_move(direction, is_tilting=True, _gen_out=gen_box)
         except Exception:
-            self._abort_tilt()
+            if not gen_box or self._run_generation == gen_box[0]:
+                self._abort_tilt()
             raise
 
         if not gen_box or self._run_generation != gen_box[0]:

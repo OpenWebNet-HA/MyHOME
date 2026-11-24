@@ -2004,8 +2004,47 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
                 gate_send_a.set()
                 await task_tilt_a
                 assert cov_race._stop_task is None
+
+                # Superseded _async_start_tilt raising an exception must NOT abort a newer active tilt!
+                fail_tilt_a = False
+
+                async def _interleaved_tilt_fail(cmd: Any) -> Any:
+                    nonlocal call_idx
+                    call_idx += 1
+                    if call_idx == 1:
+                        entered_send_a.set()
+                        await gate_send_a.wait()
+                        if fail_tilt_a:
+                            raise HomeAssistantError("superseded tilt send failed")
+                    fut2: asyncio.Future[float] = hass.loop.create_future()
+                    fut2.set_result(time.monotonic())
+                    return fut2
+
+                handler.send = _interleaved_tilt_fail  # type: ignore[method-assign]
+                call_idx = 0
+                fail_tilt_a = True
+                gate_send_a = asyncio.Event()
+                entered_send_a = asyncio.Event()
+                cov_race._abort_tilt()
+                cov_race._attr_current_cover_tilt_position = 0
+                task_tilt_err = asyncio.create_task(cov_race._async_start_tilt(100))
+                await entered_send_a.wait()
+                # Newer tilt supersedes Call 1 before Call 1's send raises
+                await cov_race._async_start_tilt(50)
+                assert cov_race._is_tilting is True
+                active_tilt_stop = cov_race._stop_task
+                assert active_tilt_stop is not None
+                gate_send_a.set()
+                with pytest.raises(HomeAssistantError, match="superseded tilt send failed"):
+                    await task_tilt_err
+                assert cov_race._is_tilting is True
+                assert cov_race._stop_task is active_tilt_stop
+                cov_race._cancel_stop_task()
+                cov_race._abort_tilt()
             finally:
                 handler.send = orig_send  # type: ignore[method-assign]
+                await cov_tilt.async_will_remove_from_hass()
+                await cov_race.async_will_remove_from_hass()
         finally:
             handler._command_pool.close()
             worker.cancel()

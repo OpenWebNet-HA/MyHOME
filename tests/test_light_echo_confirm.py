@@ -737,3 +737,130 @@ async def test_dimension_watches_ignore_plain_on_cache_fast_dim_and_keep_two_fra
     clock[0] += 0.02
     watchdog.status_seen(OWNMessage.parse("*#1*25#4#02*14*169##"))
     assert ("25#4#02", None) not in watchdog._watches
+
+
+async def test_warm_standby_dim14_bridges_to_primary_before_echo_watchdog_status_seen(
+    hass, monkeypatch
+) -> None:
+    """PR #977 review item 5: warm standby bridges Dim 14 echo to primary before status_seen."""
+    from homeassistant.components.light import ATTR_COLOR_TEMP_KELVIN
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import (
+        CONF_BUS_TOPOLOGY,
+        CONF_GATEWAY_ROLE,
+        CONF_PRIMARY_GATEWAY,
+        DOMAIN,
+        ROLE_PRIMARY,
+        ROLE_STANDBY,
+        TOPOLOGY_SHARED,
+    )
+    from custom_components.myhome.light import MyHOMELight
+
+    pri_mac = "00:03:50:dd:00:01"
+    stb_mac = "00:03:50:dd:00:02"
+
+    pri_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.0.2.201",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "12345",
+            CONF_MAC: pri_mac,
+            CONF_NAME: "F461",
+        },
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    pri_entry.add_to_hass(hass)
+    pri_gw = MyHOMEGatewayHandler(hass, pri_entry)
+    pri_gw.is_connected = False
+    pri_gw._available = False
+    pri_entry.runtime_data = MyHOMERuntimeData(gateway=pri_gw)
+
+    harness = MockGatewayHarness()
+    harness.set_custom_handler(
+        lambda frame, _w: "*#1*25#4#02*14*200##*#*1##"
+        if frame == "*#1*25#4#02*#14*200##"
+        else "*#*1##"
+    )
+    port = await harness.start()
+
+    stb_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "127.0.0.1",
+            CONF_PORT: port,
+            CONF_PASSWORD: None,
+            CONF_MAC: stb_mac,
+            CONF_NAME: "F461",
+        },
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_STANDBY,
+            CONF_PRIMARY_GATEWAY: pri_mac,
+        },
+    )
+    stb_entry.add_to_hass(hass)
+    stb_gw = MyHOMEGatewayHandler(hass, stb_entry)
+    stb_gw.is_connected = True
+    stb_gw._available = True
+    stb_gw._event_session_ready.set()
+    stb_entry.runtime_data = MyHOMERuntimeData(gateway=stb_gw)
+
+    dali = MyHOMELight(
+        hass=hass,
+        name="Primary DALI",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="25#4#02",
+        who="1",
+        where="25",
+        interface="02",
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F429",
+        gateway=pri_gw,
+        color_temp=True,
+    )
+    dali.hass = hass
+    dali.entity_id = "light.primary_dali_25"
+    dali.async_write_ha_state = MagicMock()
+    dali.async_schedule_update_ha_state = MagicMock()
+    dali._attr_is_on = False
+    pri_entry.runtime_data.entities["light"] = {"25#4#02": dali}
+    unsub_pri = async_dispatcher_connect(
+        hass,
+        f"myhome_message_{pri_gw.mac}",
+        lambda msg: dali.handle_event(msg) if getattr(msg, "who", None) == 1 else None,
+    )
+
+    worker = asyncio.create_task(stb_gw.sending_loop(0))
+    try:
+        # 1. Event-session path (GatewayEventDispatcher): Dim 14 echo bridges to Primary first -> 0 watches!
+        with monkeypatch.context() as mp:
+            mp.setattr(stb_gw, "send", AsyncMock())
+            await dali.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 4000})
+        stb_gw._echo_watchdog.command_acknowledged(
+            OWNCommand.parse("*#1*25#4#02*#14*250##"), time.monotonic()
+        )
+        assert ("25#4#02", 14) in stb_gw._echo_watchdog._watches
+        await stb_gw._process_message(OWNMessage.parse("*#1*25#4#02*14*250##"))
+        assert dali.is_on is True
+        assert stb_gw._echo_watchdog.pending == {}
+
+        # 2. Command-session reply path (CommandWorkerPool): inline Dim 14 reply bridges first -> 0 watches!
+        dali._attr_is_on = False
+        await dali.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 5000})
+        for _ in range(50):
+            if dali.is_on is True:
+                break
+            await asyncio.sleep(0.02)
+        assert dali.is_on is True
+        assert stb_gw._echo_watchdog.pending == {}
+    finally:
+        unsub_pri()
+        stb_gw._command_pool.close()
+        worker.cancel()
+        await asyncio.gather(worker, return_exceptions=True)
+        await harness.stop()

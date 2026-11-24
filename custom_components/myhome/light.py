@@ -575,6 +575,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._pending_cmd_brightness_pct: _PendingCmdToken | None = None
         self._pending_cmd_color_temp: _PendingCmdToken | None = None
         self._brightness_restored: bool = False
+        self._brightness_from_coarse_preset: bool = False
         # A fine dimmer has reported an exact level on Dimension 1 / 4 with a normal
         # speed; a coarse-only one (speed 240, #767) is still a coarse dimmer even if
         # it reports levels (#851).
@@ -865,6 +866,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_is_on = pct > 0
         self._is_on_restored = False
         self._brightness_restored = False
+        self._brightness_from_coarse_preset = False
         if pct > 0:
             self._last_brightness_pct = pct
 
@@ -906,6 +908,40 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         msg_canon = canonical_point_spelling(normalize_where(target_pt) or target_pt)
         return bool(own_canon) and msg_canon == own_canon
 
+    def _is_from_poll(self, message: Any, dimension: int) -> bool:
+        """Return True when ``message`` is a reply to a status/dimension poll or sweep."""
+        if (
+            getattr(message, "_from_status_request", False) is True
+            or getattr(self._gateway_handler, "sweep_active", False) is True
+        ):
+            return True
+        gw = self._gateway_handler
+        sec_fn = getattr(gw, "_find_delegated_secondary", None)
+        stb_fn = getattr(gw, "_find_warm_standby", None)
+        handlers = [
+            h
+            for h in (
+                gw,
+                sec_fn(1) if callable(sec_fn) else None,
+                stb_fn() if callable(stb_fn) else None,
+            )
+            if h is not None
+        ]
+        for h in handlers:
+            in_flight = getattr(getattr(h, "_command_pool", None), "_in_flight_messages", ())
+            for sent in tuple(in_flight):
+                if (
+                    getattr(sent, "who", None) == 1
+                    and (
+                        getattr(sent, "is_dimension_request", False) is True
+                        or getattr(sent, "is_status_request", False) is True
+                    )
+                    and getattr(sent, "dimension", None) in (None, dimension)
+                    and self._is_own_point_event(sent)
+                ):
+                    return True
+        return False
+
     @callback
     def handle_actuator_lock(self, locked: bool) -> None:
         """Apply WHO=14 lock state, cancelling active fades on lock and polling only if incomplete."""
@@ -913,6 +949,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_locked = self._actuator_locked
         if lock_state:
             self._fade_engine.cancel_fade_if_active()
+            if self._pending_cmd_brightness_pct is None:
+                self._restore_combined_ct_brightness_on_abort()
         super().handle_actuator_lock(lock_state)
         if not lock_state and prev_locked is True and not self._bus_state_complete:
             target_hass = getattr(self, "hass", None)
@@ -1246,7 +1284,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     else 0
                 )
 
-                await self._cancel_fade_robustly()
+                try:
+                    await self._cancel_fade_robustly()
+                except (Exception, asyncio.CancelledError):
+                    if combined_ct_brightness:
+                        self._pending_cmd_brightness_pct = prev_pending_br
+                        self._restore_combined_ct_brightness_on_abort()
+                    raise
                 clamped_target = max(1, min(100, int(target_pct)))
 
                 if self._should_use_software_stepped(transition):
@@ -1269,19 +1313,24 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                             self._restore_combined_ct_brightness_on_abort()
                         raise
                     if handled_inst:
-                        tok_inst_br: list[Any] = [None]
-                        self._pending_cmd_brightness_pct = (
-                            clamped_target,
-                            time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
-                            tok_inst_br,
-                        )
-                        self._anchor_pending_cmd(
-                            "_pending_cmd_brightness_pct",
-                            clamped_target,
-                            tok_inst_br,
-                            self._fade_engine.last_instant_written,
-                            fallback_last_on_cancel=combined_ct_brightness,
-                        )
+                        written_inst = self._fade_engine.last_instant_written
+                        if written_inst is None:
+                            if combined_ct_brightness:
+                                self._pending_cmd_brightness_pct = prev_pending_br
+                        else:
+                            tok_inst_br: list[Any] = [None]
+                            self._pending_cmd_brightness_pct = (
+                                clamped_target,
+                                time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
+                                tok_inst_br,
+                            )
+                            self._anchor_pending_cmd(
+                                "_pending_cmd_brightness_pct",
+                                clamped_target,
+                                tok_inst_br,
+                                written_inst,
+                                fallback_last_on_cancel=combined_ct_brightness,
+                            )
                         return
 
                     self._pending_cmd_brightness_pct = None
@@ -1611,6 +1660,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._cancel_fade_if_active()
         self._attr_is_on = False
         self._brightness_restored = False
+        self._brightness_from_coarse_preset = False
         if not self._is_mode_forbidden(ColorMode.BRIGHTNESS):
             # An on / off only light locked against levels keeps no level (#288).
             self._attr_brightness_pct = 0
@@ -1748,6 +1798,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_hs_color = self._attr_hs_color
         was_restored = self._is_on_restored
         was_brightness_restored = self._brightness_restored
+        was_coarse_preset = self._brightness_from_coarse_preset
         was_fine = self._is_fine_dimmer(message)
         unknown_state = getattr(message, "unknown_state", None)
         is_no_load = unknown_state == 19
@@ -1763,6 +1814,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_is_on = False
             self._is_on_restored = False
             self._brightness_restored = False
+            self._brightness_from_coarse_preset = False
             was_no_load = self._attr_extra_state_attributes.get("no_load", False)
             self._attr_extra_state_attributes["no_load"] = True
             self._attr_extra_state_attributes.pop("unknown_state", None)
@@ -1785,6 +1837,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._is_on_restored = False
             if not self._attr_is_on:
                 self._brightness_restored = False
+                self._brightness_from_coarse_preset = False
             update_bus_state_complete = True
             # A status "on" without a level (``*1*1*0010##``) left the light shown on at 0 %
             # after a level 0: show the confirmed minimum or the last known level instead.
@@ -1841,8 +1894,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
         is_fading = self._fade_engine.is_fading
 
-        # Always cancel fade on physical off (pure on/off events or brightness=0)
-        if is_fading and message.is_on is False and not self._attr_is_on:
+        # Always cancel fade on physical off (pure on/off events, no-load, or brightness=0)
+        if is_fading and not self._attr_is_on and (is_no_load or message.is_on is False):
             self._cancel_fade_if_active()
 
         raw_val = getattr(message, "value", None)
@@ -1924,6 +1977,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_is_on = val > 0
                 self._is_on_restored = False
                 self._brightness_restored = False
+                self._brightness_from_coarse_preset = False
                 if val > 0:
                     self._last_brightness_pct = val
 
@@ -1938,9 +1992,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             new_ct = cast(int, message.color_temp)
             self._attr_color_temp = new_ct
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(new_ct)
-            from_poll = getattr(message, "_from_status_request", False) is True or (
-                getattr(self._gateway_handler, "sweep_active", False) is True
-            )
+            from_poll = self._is_from_poll(message, 14)
             if not from_poll:
                 self._pending_cmd_color_temp = None
             if (
@@ -2035,6 +2087,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._attr_brightness_pct = level
                 self._attr_brightness = percent_to_eight_bits(level)
                 self._brightness_restored = False
+                self._brightness_from_coarse_preset = False
                 if message.brightness > 0:
                     self._last_brightness_pct = message.brightness
             self._learn_dimmer_kind(message)
@@ -2066,6 +2119,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 self._request_brightness_refresh()
             else:
                 self._apply_brightness_state(clamped_preset_pct)
+                if not self._coarse_speed_seen and getattr(message, "is_coarse_dimmer", None) is not True:
+                    self._brightness_from_coarse_preset = True
                 if self._is_fine_dimmer(message):
                     # On a fine dimmer WHAT 2..10 is a quantised view of the level: an F461
                     # answers *#1*WHERE## with *1*7*WHERE## for anything between about 44 and
@@ -2096,20 +2151,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             step1_confirmed_by_event = False
             if has_level and message.brightness is not None and not has_preset:
                 reported_lvl = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
-                from_poll_dim1 = (
-                    getattr(message, "_from_status_request", False) is True
-                    or getattr(self._gateway_handler, "sweep_active", False) is True
-                )
-                dim_vals = getattr(message, "dimension_value", None)
-                non_instant_speed = (
-                    isinstance(dim_vals, (list, tuple))
-                    and len(dim_vals) >= 2
-                    and str(dim_vals[1]).isascii()
-                    and str(dim_vals[1]).isdigit()
-                    and int(str(dim_vals[1])) != 0
-                )
+                from_poll_dim1 = self._is_from_poll(message, 1)
                 coarse_quantized_start = (
-                    not was_fine
+                    was_coarse_preset
+                    and not was_fine
                     and prev_is_on is True
                     and not self._coarse_speed_seen
                     and getattr(message, "is_coarse_dimmer", None) is not True
@@ -2119,7 +2164,6 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     and (
                         self._actuator_locked is True
                         or from_poll_dim1
-                        or non_instant_speed
                         or abs(reported_lvl - pending_step) > 1
                     )
                 )

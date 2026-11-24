@@ -1058,6 +1058,9 @@ async def test_f422_cover_scope_members_and_multi_gateway_lifecycle_failover_and
     orphan_sec_ent = _DummyPointEntity(hass, standalone_sec, who="1", platform="light", where="44")
     pri_gw_3._actuator_locks._locks[("44", None)] = True
     pri_gw_3._actuator_locks._entities[("44", None)] = [orphan_sec_ent]
+    # If standalone_sec already holds a newer observed lock on ("33", None), _copy_locks_to preserves it!
+    assert standalone_sec._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*33##")) is True
     pri_gw_3._actuator_locks.evacuate_secondary_entities()
     assert standalone_sec._actuator_locks.is_locked("44") is True
+    assert standalone_sec._actuator_locks.is_locked("33") is True
     assert orphan_sec_ent in standalone_sec._actuator_locks._entities[("44", None)]

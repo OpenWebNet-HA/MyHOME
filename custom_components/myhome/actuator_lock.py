@@ -246,14 +246,21 @@ class ActuatorLockManager:
         return entries
 
     def _copy_locks_to(self, target: ActuatorLockManager) -> None:
-        """Copy cached lock states and monotonic sequences to ``target``."""
+        """Copy cached lock states and monotonic sequences to ``target`` without downgrading newer observations."""
         for key, locked in self._locks.items():
-            target._locks[key] = locked
-            target._lock_seq[key] = self._lock_seq.get(key, 0)
-            if key in self._observed_keys:
-                target._observed_keys.add(key)
-            else:
-                target._observed_keys.discard(key)
+            src_obs = key in self._observed_keys
+            src_seq = self._lock_seq.get(key, 0)
+            dst_obs = key in target._observed_keys and key in target._locks
+            dst_seq = target._lock_seq.get(key, 0)
+            if (src_obs and (not dst_obs or src_seq >= dst_seq)) or (
+                not dst_obs and (key not in target._locks or src_seq >= dst_seq)
+            ):
+                target._locks[key] = locked
+                target._lock_seq[key] = src_seq
+                if src_obs:
+                    target._observed_keys.add(key)
+                else:
+                    target._observed_keys.discard(key)
 
     def _sync_secondary_gateways(self) -> None:
         """Adopt entities and lock states queued on secondary gateways before primary loaded."""

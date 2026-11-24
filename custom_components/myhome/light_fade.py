@@ -134,6 +134,9 @@ class SoftwareFadeEngine:
 
     def start_fade(self, start_pct: int, target_pct: int, duration: float) -> asyncio.Task[None]:
         """Start a software fade background task on the entity's Home Assistant loop."""
+        self._step1_echo_event = None
+        self.pending_first_step_pct = None
+        self.fade_start_pct = None
         fid = self.next_fade_id()
         task: asyncio.Task[None] = self.create_task_cb(
             self.async_fade_to(start_pct, target_pct, duration, fid)

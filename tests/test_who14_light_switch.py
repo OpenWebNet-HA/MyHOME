@@ -1721,3 +1721,169 @@ async def test_dali_combined_ct_brightness_f422_nack_poll_guard_and_coarse_quant
         assert stb_gw._echo_watchdog._watches == {}
     finally:
         unsub_pri()
+
+    # 9. Real physical F418/F418U2 dimmer after HA restart (RestoreEntity, not was_fine,
+    #    was_coarse_preset is False) ALWAYS echoes stored hardware speed != 0 (e.g. *5 in
+    #    issue_976 MH200N trace lines 571-607): step 1 confirms immediately (including 1 pp
+    #    DALI rounding) instead of aborting unlocked fades!
+    from homeassistant.core import State
+
+    f418_restored = MyHOMELight(
+        hass=hass,
+        name="F418 Restored 41",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="41",
+        who="1",
+        where="41",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, f418_restored, "light.f418_restored_41")
+    await f418_restored.async_restore_last_state(
+        State(
+            "light.f418_restored_41",
+            "on",
+            {"brightness": 102, "supported_color_modes": ["brightness"], "color_mode": "brightness"},
+        )
+    )
+    assert f418_restored.is_on is True
+    assert f418_restored._exact_level_seen is False
+    assert f418_restored._brightness_from_coarse_preset is False
+    f418_restored._fade_engine.first_echo_timeout = 0.05
+
+    def _fresh_fut(_cmd: Any = None) -> asyncio.Future[float]:
+        fut: asyncio.Future[float] = hass.loop.create_future()
+        fut.set_result(time.monotonic())
+        return fut
+
+    handler.send = AsyncMock(side_effect=_fresh_fut)
+    handler.send_fade_step = AsyncMock(side_effect=_fresh_fut)
+    await f418_restored.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 80, ATTR_TRANSITION: 0.25})
+    assert f418_restored._fade_task is not None
+    await asyncio.sleep(0)
+    step1_f418 = f418_restored._fade_engine.pending_first_step_pct
+    assert isinstance(step1_f418, int) and step1_f418 > 40
+    # Unsolicited F418 echo with hardware speed=5 != 0 AND 1 pp rounding confirms step 1!
+    f418_restored.handle_event(OWNEvent.parse(f"*#1*41*1*{100 + step1_f418 - 1}*5##"))
+    await f418_restored._fade_task
+    assert f418_restored._attr_brightness_pct == 80
+
+    # 10. Cold-boot coarse preset (*1*4*42## -> 20%) with exact pending_step == reported_lvl (23%)
+    #     when *#1*42*1## poll is in-flight in _command_pool._in_flight_messages (*99*1## overtake)
+    #     AND cold-boot DALI *#1*28*14## in-flight poll overtake via _is_from_poll!
+    dim42 = MyHOMELight(
+        hass=hass,
+        name="Dim 42",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="42",
+        who="1",
+        where="42",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim42, "light.dim_42_poll_race")
+    dim42.handle_event(OWNEvent.parse("*1*4*42##"))  # 20% coarse -> _brightness_from_coarse_preset=True
+    dim42._fade_engine.first_echo_timeout = 0.05
+    await dim42.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 29, ATTR_TRANSITION: 0.25})
+    assert dim42._fade_task is not None
+    await asyncio.sleep(0)
+    exact_step = dim42._fade_engine.pending_first_step_pct
+    assert isinstance(exact_step, int)
+    handler._command_pool._in_flight_messages.append(OWNCommand.parse("*#1*42*1##"))
+    try:
+        dim42.handle_event(OWNEvent.parse(f"*#1*42*1*{100 + exact_step}*0##"))
+        await dim42._fade_task
+    finally:
+        handler._command_pool._in_flight_messages.clear()
+    assert dim42._attr_brightness_pct == exact_step
+    assert dim42._brightness_from_coarse_preset is False
+
+    dali_cold._attr_is_on = False
+    dali_cold._attr_color_temp = None
+    f_cold2 = hass.loop.create_future()
+    handler.send = AsyncMock(return_value=f_cold2)
+    await dali_cold.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 4000})
+    handler._command_pool._in_flight_messages.append(
+        OWNCommand.parse("*#1*26#4#02*14##")
+    )
+    try:
+        # Unmarked *99*1## event arriving ahead of command-session *#*1## while poll is in flight
+        dali_cold.handle_event(OWNEvent.parse("*#1*26#4#02*14*250##"))
+    finally:
+        handler._command_pool._in_flight_messages.clear()
+    assert dali_cold.is_on is False
+    assert dali_cold._pending_cmd_color_temp is not None
+    f_cold2.cancel()
+    await asyncio.sleep(0)
+
+    # 11. Combined CT + brightness edge cases:
+    #   (a) _cancel_fade_robustly raising CancelledError rolls back _pending_cmd_brightness_pct & restores _last_brightness_pct
+    #   (b) handled_inst with written_inst is None (already ON at target brightness) restores prev_pending_br (no phantom token)
+    #   (c) handle_actuator_lock(True) during step-1 combined CT + fade restores _last_brightness_pct synchronously
+    #   (d) WHAT 19 (is_no_load) cancels an active software_stepped fade
+    dali._attr_is_on = False
+    dali._attr_brightness_pct = 0
+    dali._last_brightness_pct = 68
+    handler.send = AsyncMock(side_effect=_fresh_fut)
+    with patch.object(
+        dali,
+        "_cancel_fade_robustly",
+        AsyncMock(
+            side_effect=lambda: (
+                dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*222##")),
+                (_ for _ in ()).throw(asyncio.CancelledError()),
+            )[1]
+        ),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await dali.async_turn_on(
+                **{ATTR_COLOR_TEMP_KELVIN: 4500, ATTR_BRIGHTNESS_PCT: 50, ATTR_TRANSITION: 2.0}
+            )
+    assert dali._pending_cmd_brightness_pct is None
+    assert dali.is_on is True
+    assert dali._attr_brightness_pct == 68
+
+    # (b) Already ON at 50%: combined CT + brightness_pct=50 + transition=2.0 sends zero Dim 1 frame -> no phantom token!
+    dali._apply_brightness_state(50, is_on=True)
+    dali._pending_cmd_brightness_pct = None
+    await dali.async_turn_on(
+        **{ATTR_COLOR_TEMP_KELVIN: 3500, ATTR_BRIGHTNESS_PCT: 50, ATTR_TRANSITION: 2.0}
+    )
+    assert dali._pending_cmd_brightness_pct is None
+
+    # (c) handle_actuator_lock(True) mid-step-1 combined CT + fade restores _last_brightness_pct synchronously
+    dali._actuator_locked = False
+    dali._attr_is_on = False
+    dali._attr_brightness_pct = 0
+    dali._last_brightness_pct = 74
+    dali._fade_engine.first_echo_timeout = 5.0
+    handler.send_fade_step = AsyncMock(side_effect=_fresh_fut)
+    await dali.async_turn_on(
+        **{ATTR_COLOR_TEMP_KELVIN: 4000, ATTR_BRIGHTNESS_PCT: 40, ATTR_TRANSITION: 2.0}
+    )
+    await asyncio.sleep(0)
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*250##"))
+    assert dali.is_on is True
+    assert dali._attr_brightness_pct == 0
+    dali.handle_actuator_lock(True)
+    assert dali._attr_brightness_pct == 74
+    dali.handle_actuator_lock(False)
+
+    # (d) WHAT 19 (is_no_load) cancels an active software_stepped fade
+    dali._apply_brightness_state(30, is_on=True)
+    await dali.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 80, ATTR_TRANSITION: 2.0})
+    assert dali._fade_engine.is_fading is True
+    await asyncio.sleep(0)
+    dali.handle_event(OWNEvent.parse("*1*19*25#4#02##"))
+    assert dali._fade_engine.is_fading is False
+    assert dali.is_on is False
