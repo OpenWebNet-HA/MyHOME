@@ -8,14 +8,19 @@ Contributed by @eC0y0te on https://github.com/orgs/OpenWebNet-HA/discussions/770
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.cover import ATTR_POSITION, ATTR_TILT_POSITION
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from OWNd.message import OWNCommand, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -392,6 +397,173 @@ async def test_discussion_770_trace2_slat_tilt_schema_and_replay(
     assert cover.current_cover_position == 2
 
 
+# README "Trace 2" table, steps 1-10: the tilt asked for by each pulse, in capture order.
+TRACE2_TILT_TARGETS = [15, 0, 20, 0, 25, 0, 50, 0, 100, 0]
+_REAL_SLEEP = asyncio.sleep
+
+
+def _trace2_pulses() -> list[tuple[int, int]]:
+    """(index of the pulse's direction tx, index of its last frame) for the ten tilt pulses."""
+    frames = _load_json(TRACE2_PATH)["frames"]
+    starts = [
+        i for i, f in enumerate(frames) if f["direction"] == "tx" and f["raw"] in ("*2*1*21##", "*2*2*21##")
+    ][1:]  # the first tx is the initial close sync, a curtain run
+    ends = [*(i - 1 for i in starts[1:]), next(i for i, f in enumerate(frames) if f["raw"] == "*#2*21*#11#001*2##") - 1]
+    return list(zip(starts, ends, strict=True))
+
+
+async def _replay_trace2_pulse(
+    cover: MyHOMECover,
+    clock: SimpleNamespace,
+    first: int,
+    last: int,
+    target: int,
+    *,
+    skip: tuple[str, ...] = (),
+    offset: float = 0.0,
+) -> None:
+    """One HA tilt request on the capture's own clock: its rx frames at their offsets, its stop at the tx stop's.
+
+    ``offset`` shifts every time stamp of the capture together (a replay after an earlier one).
+    """
+    frames = _load_json(TRACE2_PATH)["frames"]
+    assert frames[first]["direction"] == "tx"
+    release = asyncio.Event()
+
+    async def _sleep(delay: float, *args: Any, **kwargs: Any) -> None:
+        if delay > 0:
+            await release.wait()
+        await _REAL_SLEEP(0)
+
+    with patch("custom_components.myhome.cover.asyncio.sleep", side_effect=_sleep):
+        clock.now = frames[first]["timestamp"] + offset
+        await cover.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: target})
+        for frame in frames[first + 1 : last + 1]:
+            clock.now = frame["timestamp"] + offset
+            if frame["direction"] == "tx":
+                assert frame["raw"] == "*2*0*21##"
+                release.set()  # the pulse's auto-stop writes its stop where the capture has it
+                await asyncio.wait_for(cover._stop_task, 1.0)
+                continue
+            if frame["raw"] in skip:
+                continue
+            cover.handle_event(OWNMessage.parse(frame["raw"]))
+            for _ in range(3):
+                await _REAL_SLEEP(0)
+
+
+Trace2Cover = tuple[MyHOMECover, SimpleNamespace, MagicMock]
+
+
+@pytest.fixture
+def trace2_cover() -> Iterator[Trace2Cover]:
+    """Cover 21 as trace 2 had it (advanced F401, slat_time 1.4, min_motor_pulse 0.2), on a clock the test sets."""
+    clock = SimpleNamespace(now=0.0)
+    gateway = MagicMock()
+    gateway.mac = gateway.unique_id = MAC
+    gateway.log_id = "[F454]"
+    gateway.sent = []
+
+    gateway.hold_stop_write = False
+    gateway.held = []
+
+    async def _send(message: Any, *args: Any, **kwargs: Any) -> asyncio.Future[Any]:
+        gateway.sent.append(str(message))
+        written: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+        if gateway.hold_stop_write and str(message) == "*2*0*21##":
+            gateway.held.append(written)  # queued, its write not confirmed yet
+        else:
+            written.set_result(clock.now)
+        return written
+
+    gateway.send = AsyncMock(side_effect=_send)
+    gateway.send_status_request = AsyncMock()
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover = MyHOMECover(
+            hass=None, name="Shutter 21", entity_name=None, device_id="21", who="2", where="21", interface=None,
+            advanced=True, manufacturer="BTicino", model="F401", gateway=gateway, travel_time=25,
+            slat_tilt=True, slat_time=1.4, min_motor_pulse=0.2,
+        )
+    cover.entity_id = "cover.shutter_21"
+    cover.async_schedule_update_ha_state = MagicMock()
+    # After the capture's initial close sync (2 % -> 0 %): closed, slats closed.
+    cover._attr_current_cover_position = 0
+    cover._attr_current_cover_tilt_position = 0
+    with patch("custom_components.myhome.cover.time", SimpleNamespace(monotonic=lambda: clock.now)):
+        yield cover, clock, gateway
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_trace2_tilt_pulses_keep_their_angle(trace2_cover: Trace2Cover) -> None:
+    """Every tilt pulse of trace 2 ends at the angle asked for, whatever level the F401 books for it.
+
+    The F401 counts the pulse as travel and reports `*#2*21*10*10*1*001*15##` (level 0 -> 1) or
+    `...*10*10*0*...` (1 -> 0) 96-134 ms after the pulse's stop. That report was taken as an external
+    level jump and turned the slats a full rotation: 15 %, 25 % and 50 % all ended at 100 %.
+    """
+    cover, clock, gateway = trace2_cover
+    frames = _load_json(TRACE2_PATH)["frames"]
+    pulses = _trace2_pulses()
+    assert len(pulses) == len(TRACE2_TILT_TARGETS) == 10
+    seen: list[tuple[int, int]] = []
+    for (first, last), target in zip(pulses, TRACE2_TILT_TARGETS, strict=True):
+        gateway.sent.clear()
+        await _replay_trace2_pulse(cover, clock, first, last, target)
+        assert gateway.sent == [frames[first]["raw"], "*2*0*21##"], (first, target)
+        assert cover._is_tilting is False
+        assert cover.is_opening is False and cover.is_closing is False
+        seen.append((cover.current_cover_tilt_position, cover.current_cover_position))
+    # (tilt, level the F401 reported): README table, columns "Tilt Command" and "Reported Dimension 10 Level".
+    assert seen == [(15, 1), (0, 0), (20, 0), (0, 0), (25, 1), (0, 0), (50, 1), (0, 0), (100, 1), (0, 0)]
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_level_change_after_a_pulse_is_external_outside_its_window(trace2_cover: Trace2Cover) -> None:
+    """The pulse's own level is taken only right after it, and only in its direction (#868 stays as it was)."""
+    cover, clock, _gateway = trace2_cover
+    first, last = _trace2_pulses()[0]
+    await _replay_trace2_pulse(cover, clock, first, last, 15)  # 0 -> 15 %, level 0 -> 1
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (15, 1)
+
+    # The opposite way inside the window (the capture's own closed report, here without a pulse): a move down.
+    clock.now += 0.2
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*0*001*15##"))
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (0, 0)
+
+    # The second pulse on the capture's frame offsets, but after the first one: the clock never goes back.
+    frames = _load_json(TRACE2_PATH)["frames"]
+    await _replay_trace2_pulse(cover, clock, first, last, 15, offset=clock.now - frames[first]["timestamp"])
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (15, 1)
+    # The same way, but long after the pulse and with no motion frame (the capture's last report, 2 %):
+    # somebody moved the curtain up, which turns the slats open.
+    clock.now += 5.0
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*2*001*15##"))
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (100, 2)
+
+
+@pytest.mark.asyncio
+async def test_discussion_770_level_report_before_the_stop_write_is_confirmed(trace2_cover: Trace2Cover) -> None:
+    """The F401's report of the pulse's stop can beat the gateway's confirmation of that stop.
+
+    Constructed from pulse 1 of trace 2: the stop's write stays unconfirmed and the command
+    translation `*2*1000#0*21##` is left out (F453, F455, MH200, MH201 relay none in the
+    corpus), so `*#2*21*10*10*1*001*15##` is the first frame after the stop. The pulse ends
+    there: the motor ran 0.320 s (README step 1) of a 1.4 s rotation.
+    """
+    cover, clock, gateway = trace2_cover
+    first, last = _trace2_pulses()[0]
+    gateway.hold_stop_write = True
+    await _replay_trace2_pulse(cover, clock, first, last, 15, skip=("*2*1000#0*21##",))
+    assert cover._is_tilting is False
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (23, 1)
+    (stop_written,) = gateway.held
+    stop_written.set_result(clock.now)
+    for _ in range(3):
+        await _REAL_SLEEP(0)
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (23, 1)
+    assert cover._pulse_stop_written is None
+
+
 def test_discussion_770_trace3_schema_and_frame_parsing() -> None:
     """Verify Trace 3 (min_position_delta=1, 1% step progression 1%..10%) schema and parsing."""
     assert TRACE3_PATH.is_file()
@@ -546,3 +718,170 @@ async def test_discussion_770_trace3_cover_21_replay(hass: HomeAssistant) -> Non
             cursor += 1
 
         assert cover.current_cover_position == step_num
+
+
+async def test_failed_stop_does_not_open_own_level_window(trace2_cover: Trace2Cover) -> None:
+    c, clk, gw = trace2_cover
+    level = "*#2*21*10*10*1*001*15##"  # the stopped level after trace 2's first pulse
+    gw.hold_stop_write = True
+    first, last = _trace2_pulses()[0]
+    # Run up to and including TX stop; in this case no stop reaches the actuator.
+    await _replay_trace2_pulse(c, clk, first, last - 3, 15)
+    gw.held[0].set_exception(HomeAssistantError("stop was never delivered"))
+    await _REAL_SLEEP(0)
+    assert not c._is_tilting
+    c.handle_event(OWNMessage.parse(level))
+    assert (c.current_cover_position, c.current_cover_tilt_position) == (1, 100), (
+        "failed stop was used as evidence that the new level came from our stop"
+    )
+
+
+async def test_old_level_must_not_cancel_new_auto_stop(trace2_cover: Trace2Cover) -> None:
+    cover, clock, gw = trace2_cover
+    first, last = _trace2_pulses()[0]
+    # Hold just the stopped level from pulse 1 until the next tilt service call.
+    level = "*#2*21*10*10*1*001*15##"  # the stopped level after trace 2's first pulse
+    await _replay_trace2_pulse(cover, clock, first, last, 15, skip=(level,))
+    assert (cover.current_cover_position, cover.current_cover_tilt_position) == (0, 15)
+    await cover.async_set_cover_tilt_position(tilt_position=0)
+    assert cover._is_tilting and cover._stop_task is not None
+    cover.handle_event(OWNMessage.parse(level))
+    try:
+        assert cover.current_cover_position == 1
+        assert cover._is_tilting and cover._stop_task is not None, (
+            "late level of first tilt cancelled auto-stop of the second"
+        )
+    finally:
+        cover._cancel_stop_task()
+
+
+async def test_translation_and_level_before_confirm(trace2_cover: Trace2Cover) -> None:
+    c, clk, gw = trace2_cover
+    gw.hold_stop_write = True
+    await _replay_trace2_pulse(c, clk, *_trace2_pulses()[0], 15)
+    try:
+        assert c.current_cover_position == 1
+        assert 0 < c.current_cover_tilt_position < 100, (
+            "translation closed pulse but following own level opened slats fully"
+        )
+    finally:
+        for f in gw.held:
+            f.set_result(clk.now)
+
+
+# T: delivery of STOP alone is not evidence that an earlier direction moved the motor.
+async def test_cancelled_direction_followed_by_successful_manual_stop(trace2_cover: Trace2Cover) -> None:
+    cover, clock, gateway = trace2_cover
+    clock.now = 1.0
+    direction, stop = (asyncio.get_running_loop().create_future() for _ in range(2))
+    with patch.object(gateway, "send", AsyncMock(side_effect=[direction, stop])) as send:
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+        await cover.async_stop_cover_tilt()
+        assert [str(call.args[0]) for call in send.await_args_list] == ["*2*1*21##", "*2*0*21##"]
+        # Queue worker cancels the first write without delivery, then sends the stop.
+        direction.cancel()
+        stop.set_result(clock.now)
+        for _ in range(4):
+            await asyncio.sleep(0)
+    assert not cover._is_tilting
+    assert cover.current_cover_tilt_position == 0
+    clock.now += 0.25
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*1*001*15##"))
+    assert cover.current_cover_position == 1
+    assert cover.current_cover_tilt_position == 100, (
+        "the direction did not reach the bus: no own movement to suppress"
+    )
+
+
+# T: a completed pulse must not claim the result of a later HA height command.
+async def test_own_height_write_after_completed_pulse(trace2_cover: Trace2Cover) -> None:
+    cover, clock, gw = trace2_cover
+    # Actual third pulse (README, step 3): the F401 booked zero height change.
+    await _replay_trace2_pulse(cover, clock, *_trace2_pulses()[2], 20)
+    assert (cover.current_cover_tilt_position, cover.current_cover_position) == (20, 0)
+    # Constructed ordering, verbatim height write/echo/report from the end of trace 2.
+    # The client KNOWS a distinct curtain command was written after this pulse.
+    clock.now += 0.1
+    await cover.async_set_cover_position(position=2)
+    assert gw.sent[-1] == "*#2*21*#11#001*2##"
+    cover.handle_event(OWNMessage.parse("*#2*21*#11#001#1*2##"))
+    clock.now += 0.9
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*2*001*15##"))
+    assert cover.current_cover_position == 2
+    assert cover.current_cover_tilt_position == 100
+
+
+async def test_own_absolute_position_write_supersedes_settled_pulse(trace2_cover: Trace2Cover) -> None:
+    cover, clock, gw = trace2_cover
+    a, b = _trace2_pulses()[0]
+    await _replay_trace2_pulse(cover, clock, a, b, 15)
+    assert (cover.current_cover_position, cover.current_cover_tilt_position) == (1, 15)
+    # Trace 3 from this installation uses min_position_delta 1. Construct the adjacent
+    # commands; keep actual step 2 TX->RX offsets, omit the movement reports.
+    cover._strategy.min_position_delta = 1
+    frames = _load_json(TRACE3_PATH)["frames"]
+    i = next(
+        i
+        for i, f in enumerate(frames)
+        if f["direction"] == "tx" and f["raw"] == "*#2*21*#11#001*2##"
+    )
+    clock.now += 0.01
+    start = clock.now
+    await cover.async_set_cover_position(position=2)
+    assert gw.sent[-1] == frames[i]["raw"]
+    for f in frames[i + 1 :]:
+        if f["direction"] == "tx":
+            break
+        msg = OWNMessage.parse(f["raw"])
+        if (
+            getattr(msg, "current_position", None) == 2
+            and not msg.is_opening
+            and not msg.is_closing
+        ):
+            clock.now = start + f["timestamp"] - frames[i]["timestamp"]
+            cover.handle_event(msg)
+            break
+    assert cover.current_cover_position == 2
+    assert cover.current_cover_tilt_position == 100, (
+        "native position write reached its new target; not another slat-pulse level"
+    )
+
+
+async def test_a_followed_pulse_keeps_the_earlier_pulse_claim_on_its_stopped_level(trace2_cover: Trace2Cover) -> None:
+    """A blind that follows an area pulse right after its own pulse still takes that pulse's late level as its own."""
+    cover, clock, _gateway = trace2_cover
+    first, last = _trace2_pulses()[0]
+    level = "*#2*21*10*10*1*001*15##"  # the stopped level after trace 2's first pulse
+    await _replay_trace2_pulse(cover, clock, first, last, 15, skip=(level,))
+    assert (cover.current_cover_position, cover.current_cover_tilt_position) == (0, 15)
+    leader = MagicMock()
+    cover._follow_pulse(leader, "close")
+    cover.handle_event(OWNMessage.parse(level))
+    assert cover.current_cover_position == 1
+    assert cover._is_tilting and cover._tilt_follows is leader
+
+
+async def test_a_followed_pulse_that_interrupts_a_running_pulse_keeps_its_claim(trace2_cover: Trace2Cover) -> None:
+    """The interrupted pulse ends where the area pulse takes over, and its stopped level is still its own.
+
+    A gateway that stops the actuator ahead of the area's direction frame makes it report the level the
+    interrupted pulse left (here the capture's closed report, 1 -> 0, of a closing pulse) while the blind
+    already follows the area pulse: it keeps following it.
+    """
+    cover, clock, _gateway = trace2_cover
+    first, last = _trace2_pulses()[0]
+    await _replay_trace2_pulse(cover, clock, first, last, 15)
+    assert (cover.current_cover_position, cover.current_cover_tilt_position) == (1, 15)
+    await cover.async_set_cover_tilt_position(tilt_position=0)
+    assert cover._is_tilting
+    leader = MagicMock()
+    leader._pulse_stop_written = None
+    cover._follow_pulse(leader, "open")
+    assert cover._is_tilting and cover._tilt_follows is leader
+    assert (cover._pulse_ended_at, cover._pulse_ended_direction) == (clock.now, "close")
+    clock.now += 0.1
+    cover.handle_event(OWNMessage.parse("*#2*21*10*10*0*001*15##"))
+    assert cover.current_cover_position == 0
+    assert cover._is_tilting and cover._tilt_follows is leader
+    # The claim was for that one level: the next change under the area pulse is not the old pulse's.
+    assert cover._pulse_ended_at is None
