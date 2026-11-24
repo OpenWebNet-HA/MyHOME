@@ -330,6 +330,23 @@ async def test_ws_send_frame(hass: HomeAssistant, mock_ws_connection, attach_gat
         "and is blocked for safety",
     )
 
+    # 5b. Block OWNd destructive crash frames (bare WHO 22 power, WHO 18 dim 52)
+    for msg_id, bad_frame in ((29, "*22*1*1##"), (30, "*#18*51*#52*1##")):
+        mock_ws_connection.send_error.reset_mock()
+        mock_ws_connection.send_result.reset_mock()
+        ws_bus_monitor_send(
+            hass,
+            mock_ws_connection,
+            {"id": msg_id, "type": "myhome/bus_monitor/send", "frame": bad_frame},
+        )
+        await hass.async_block_till_done()
+        mock_ws_connection.send_result.assert_not_called()
+        mock_ws_connection.send_error.assert_called_once()
+        err_args = mock_ws_connection.send_error.call_args.args
+        assert err_args[0] == msg_id
+        assert err_args[1] == websocket_api.ERR_INVALID_FORMAT
+        assert bad_frame in err_args[2]
+
     # 6. Block signaling and syntactically invalid frames that start with * and end with ##
     for msg_id, bad_frame in ((26, "*#*1##"), (27, "*1*2##"), (28, "*foo*bar##")):
         mock_ws_connection.send_error.reset_mock()

@@ -742,6 +742,15 @@
     "zone_cool_in_heating_season": {
       "message": "{name} follows the central unit, which is in the heating season: change the season on the central unit"
     },
+    "command_rejected": {
+      "message": "{name}: gateway {gateway} rejected the command ({frame}) with NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name}: the command ({frame}) could not be sent to gateway {gateway}, or the connection was lost before its answer; it may or may not have been executed"
+    },
+    "command_not_confirmed": {
+      "message": "{name}: gateway {gateway} did not confirm the command ({frame}) in time; it may or may not have been executed"
+    },
     "command_delivery_cancelled": {
       "message": "{name}: direction command delivery was cancelled before reaching the bus"
     },
@@ -867,6 +876,18 @@
     },
     "scenario_plus_command_invalid": {
       "message": "Could not build scenario plus command for where \"{where}\" and action \"{action}\""
+    },
+    "gateway_not_found": {
+      "message": "Gateway \"{gateway}\" not found"
+    },
+    "no_gateway_loaded": {
+      "message": "No MyHOME gateway is set up"
+    },
+    "send_message_invalid_frame": {
+      "message": "\"{message}\" is not a valid OpenWebNet frame; nothing was sent"
+    },
+    "send_message_refused_frame": {
+      "message": "Refusing to send \"{message}\": this frame is blocked as a safety precaution; nothing was sent"
     },
     "sync_time_unsupported_offset": {
       "message": "Cannot synchronise the gateway clock for time zone \"{timezone}\": {error}. OpenWebNet only carries whole-hour UTC offsets."

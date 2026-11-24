@@ -1700,6 +1700,13 @@ class CommandWorkerPool:
                                 setattr(written, "_command_timeout", True)
                             self._pause_status_after_desync()
                         elif (
+                            getattr(last_error, "reason", None) == "command_timeout"
+                            and isinstance(written, asyncio.Future)
+                            and not written.done()
+                        ):
+                            # A written command the gateway did not answer in time.
+                            setattr(written, "_no_answer", True)
+                        elif (
                             getattr(last_error, "reason", None) == "nack"
                             and isinstance(written, asyncio.Future)
                             and not written.done()
@@ -1707,8 +1714,9 @@ class CommandWorkerPool:
                             # The gateway answered the frame, a read or a command, with a NACK
                             # (OWNd's `OWNNackError` of a written frame; a refused negotiation
                             # has another reason). Every other cancellation here is a frame that
-                            # was not written or whose socket was lost: a probe's fallback read
-                            # and a setpoint write tell the two apart.
+                            # was not written or whose socket was lost: a probe's fallback read,
+                            # a setpoint write and an action that reports the failure
+                            # (command_delivery.py) tell the two apart.
                             setattr(written, "_gateway_nack", True)
                         _cancel_written(task)
                     else:

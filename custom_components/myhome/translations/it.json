@@ -764,6 +764,27 @@
     },
     "lock_command_failed": {
       "message": "{name}: comando di apertura serratura non riuscito: {error}"
+    },
+    "command_rejected": {
+      "message": "{name}: il gateway {gateway} ha rifiutato il comando ({frame}) con NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name}: impossibile inviare il comando ({frame}) al gateway {gateway}, oppure la connessione è caduta prima della risposta; il comando potrebbe essere stato eseguito"
+    },
+    "command_not_confirmed": {
+      "message": "{name}: il gateway {gateway} non ha confermato il comando ({frame}) in tempo; potrebbe essere stato eseguito"
+    },
+    "gateway_not_found": {
+      "message": "Gateway \"{gateway}\" non trovato"
+    },
+    "no_gateway_loaded": {
+      "message": "Nessun gateway MyHOME configurato"
+    },
+    "send_message_invalid_frame": {
+      "message": "\"{message}\" non è un frame OpenWebNet valido; non è stato inviato nulla"
+    },
+    "send_message_refused_frame": {
+      "message": "Invio di \"{message}\" rifiutato: questo frame è bloccato per precauzione di sicurezza; non è stato inviato nulla"
     }
   },
   "entity": {
