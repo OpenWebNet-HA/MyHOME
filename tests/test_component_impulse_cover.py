@@ -139,10 +139,11 @@ async def test_impulse_cover_setup_restores_and_configures(hass: HomeAssistant, 
         attach_runtime(hass, config_entry)
         await async_setup_entry(hass, config_entry, fake_add_entities)
 
-        # 1 restored (where=21) + 1 configured from YAML (where=22); removed (where=29) rejected
+        # 1 restored (where=21) + 1 configured from YAML (where=22); removed (where=29) pruned
         impulse_entities = [e for e in added_entities if isinstance(e, MyHOMEImpulseCover)]
         assert len(impulse_entities) == 2
         assert not any(e._where == "29" for e in impulse_entities)
+        mock_er.async_remove.assert_any_call(reg_removed.entity_id)
         gate = next(e for e in impulse_entities if e._where == "22")
         assert gate._device_name == "Entrance Gate"
         assert gate.device_class == CoverDeviceClass.GATE
@@ -1012,4 +1013,106 @@ async def test_f422_sub_bus_impulse_cover_does_not_swallow_local_light_or_cover(
 
     sub_gate._cancel_travel_timer()
     await sub_gate.async_will_remove_from_hass()
+
+
+@pytest.mark.parametrize("light_first", [True, False])
+async def test_stale_impulse_cover_registry_entry_is_pruned_and_does_not_block_yaml_light(
+    hass: HomeAssistant, mock_gateway, light_first: bool
+):
+    """Removing a WHO=1 impulse cover from myhome.yaml prunes its registry row and lets light reuse the address."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.light import async_setup_entry as add_lights
+
+    mac = mock_gateway.mac
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac}, unique_id=mac)
+    entry.add_to_hass(hass)
+
+    reg = er.async_get(hass)
+    stale_cov = reg.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-05",
+        config_entry=entry,
+    )
+
+    hass.data[DOMAIN] = {
+        mac: {
+            "entity": mock_gateway,
+            CONF_PLATFORMS: {
+                "light": {
+                    "light_simple": {CONF_WHERE: "05", CONF_NAME: "Light Simple", CONF_WHO: "1"},
+                },
+                "cover": {},
+            },
+        }
+    }
+    attach_runtime(hass, entry)
+
+    lights: list = []
+    covers: list = []
+    if light_first:
+        await add_lights(hass, entry, lights.extend)
+        await async_setup_entry(hass, entry, covers.extend)
+    else:
+        await async_setup_entry(hass, entry, covers.extend)
+        await add_lights(hass, entry, lights.extend)
+
+    assert [e._where for e in lights] == ["05"]
+    assert covers == []
+    assert reg.async_get(stale_cov.entity_id) is None
+
+
+async def test_configured_impulse_cover_still_blocks_light_at_same_address(
+    hass: HomeAssistant, mock_gateway
+):
+    """An actively configured YAML WHO=1 impulse cover continues to exclude light at that address."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.light import async_setup_entry as add_lights
+
+    mac = mock_gateway.mac
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac}, unique_id=mac)
+    entry.add_to_hass(hass)
+
+    reg = er.async_get(hass)
+    active_cov = reg.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-05",
+        config_entry=entry,
+    )
+    reg.async_get_or_create(
+        domain="lock",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-07",
+        config_entry=entry,
+    )
+
+    hass.data[DOMAIN] = {
+        mac: {
+            "entity": mock_gateway,
+            CONF_PLATFORMS: {
+                "light": {
+                    "light_simple": {CONF_WHERE: "05", CONF_NAME: "Light Simple", CONF_WHO: "1"},
+                    "light_lock": {CONF_WHERE: "07", CONF_NAME: "Light Lock", CONF_WHO: "1"},
+                },
+                "cover": {
+                    "1-05": {CONF_WHERE: "05", CONF_WHO: "1", CONF_NAME: "Relay Gate"},
+                },
+            },
+        }
+    }
+    attach_runtime(hass, entry)
+
+    lights: list = []
+    covers: list = []
+    await add_lights(hass, entry, lights.extend)
+    await async_setup_entry(hass, entry, covers.extend)
+
+    assert lights == []
+    assert len(covers) == 1 and isinstance(covers[0], MyHOMEImpulseCover)
+    assert reg.async_get(active_cov.entity_id) is not None
 

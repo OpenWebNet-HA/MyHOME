@@ -426,18 +426,27 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             return False
         return str(ctx.cfg.get(CONF_WHO, "2")) == "1"
 
+    configured_impulse_keys: set[str] = set()
+    for dev_id, cfg in runtime.platforms.get(PLATFORM, {}).items():
+        if not isinstance(cfg, Mapping) or str(cfg.get(CONF_WHO, "2")) != "1":
+            continue
+        addr = Address.from_config(str(dev_id), dict(cfg))
+        configured_impulse_keys.update({addr.key, addr.clean_key})
+
+    def stale_impulse_registry_entry(_entry: er.RegistryEntry, ctx: DeviceContext) -> bool:
+        """Prune removed YAML-only WHO=1 impulse cover entries so they never stay unavailable or block lights."""
+        return ctx.address.key not in configured_impulse_keys and ctx.address.clean_key not in configured_impulse_keys
+
     def build(ctx: DeviceContext) -> MyHOMECover:
         cfg = ctx.cfg
         kwargs: dict[str, Any] = {}
         stored_cal = _stored_calibration(config_entry, ctx.key)
-        if ctx.source != "yaml" or cfg.get(CONF_EXPLICIT_KINEMATICS) is False:
-            # Registry / discovered / cosmetic-only YAML covers carry stored calibration.
-            kwargs["travel_time_source"] = "yaml" if _has_explicit_travel_time(cfg) else "default"
-            kwargs["calibration"] = stored_cal
-        elif stored_cal and stored_cal.get(CONF_SLAT_TIME) is not None:
-            # Explicit-kinematics YAML covers keep their configured travel time, while
-            # a slat time set with myhome.set_cover_travel_time wins until reset.
-            kwargs["calibration"] = {CONF_SLAT_TIME: stored_cal[CONF_SLAT_TIME]}
+        # Apply travel_time_source and stored calibration identically across first-start
+        # YAML creation (ctx.source == "yaml") and registry restoration (ctx.source == "registry").
+        # Partial stored records (slat_time / min_motor_pulse only) keep the YAML travel time
+        # and travel_time_source until full travel times are measured or set explicitly.
+        kwargs["travel_time_source"] = "yaml" if _has_explicit_travel_time(cfg) else "default"
+        kwargs["calibration"] = stored_cal
         # cover_schema folds a yaml `device_class:` into CONF_DEVICE_CLASS; the raw
         # key is kept as a fallback for callers that bypass the schema, as build_impulse does.
         raw_dev_class = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
@@ -537,6 +546,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         hass, config_entry, async_add_entities,
         platform=PLATFORM, who="1", event_type=None, build=build_impulse, announce=True,
         registry_address=cover_registry_address("1"), accept=accept_impulse,
+        reject_registry_entry=stale_impulse_registry_entry,
     ).start(listen=False)
 
     SCHEMA_SET_COVER_TRAVEL_TIME = {
