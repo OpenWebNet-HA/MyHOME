@@ -159,8 +159,8 @@ class IgnoredAddresses:
     def _norm_where(where: str) -> str:
         """Normalize WHERE: strip leading zeros from device number if numeric."""
         base, sep, iface = where.partition("#4#")
-        clean_base = base.lstrip("0") or "0" if base.isdigit() else base
-        clean_iface = iface.zfill(2) if iface.isdigit() else iface
+        clean_base = base.lstrip("0") or "0" if base.isascii() and base.isdigit() else base
+        clean_iface = iface.zfill(2) if iface.isascii() and iface.isdigit() else iface
         return f"{clean_base}#4#{clean_iface}" if sep else clean_base
 
     def is_ignored(self, who: int | str, where: str, interface: str | None = None) -> bool:
@@ -182,7 +182,7 @@ class IgnoredAddresses:
 
         candidates = {where}
         if interface:
-            iface_str = interface.zfill(2) if interface.isdigit() else interface
+            iface_str = interface.zfill(2) if interface.isascii() and interface.isdigit() else interface
             candidates.add(f"{where}#4#{interface}")
             candidates.add(f"{where}#4#{iface_str}")
 

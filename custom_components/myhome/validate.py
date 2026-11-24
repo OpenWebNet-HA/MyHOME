@@ -219,7 +219,7 @@ class Group(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
+        if isinstance(v, str) and v.startswith("#") and v[1:].isascii() and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
             return f"#{int(v[1:])}"
         else:
             raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
@@ -261,7 +261,7 @@ class PointToPoint:
         self.canonical = canonical
 
     def __call__(self, v: typing.Any) -> typing.Any:
-        if isinstance(v, str) and v.isdigit():
+        if isinstance(v, str) and v.isascii() and v.isdigit():
             _length = len(v)
             if _length == 2 or _length == 4:
                 _a = v[0 : _length // 2]
@@ -284,7 +284,7 @@ class SpecialWhere(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.isdigit():
+        if isinstance(v, str) and v.isascii() and v.isdigit():
             return v
         else:
             raise Invalid(f"Invalid WHERE {v}, it must be a string of digits.")
@@ -301,7 +301,7 @@ class BusInterface(object):
         if v is None:
             return v
         # ``interface: 3`` and an unquoted ``interface: 03`` both reach here as "3"
-        if isinstance(v, str) and v.isdigit() and 1 <= len(v) <= 2:
+        if isinstance(v, str) and v.isascii() and v.isdigit() and 1 <= len(v) <= 2:
             if int(v) > 15:
                 raise Invalid(f"Invalid Bus Interface number {v}, it must be between 00 and 15.")
             return v.zfill(2)

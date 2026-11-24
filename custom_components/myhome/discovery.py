@@ -197,7 +197,11 @@ def config_for(configured: dict[str, Any], address: Address, *extra_keys: str) -
     if address.interface is None:
         candidates = [address.key, address.where, address.clean_where, *extra_keys]
     else:
-        iface = address.interface.zfill(2) if address.interface.isdigit() else address.interface
+        iface = (
+            address.interface.zfill(2)
+            if address.interface.isascii() and address.interface.isdigit()
+            else address.interface
+        )
         candidates = [
             address.key,
             address.clean_key,

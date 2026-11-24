@@ -391,7 +391,9 @@ async def async_setup_entry(
                 if candidate in configured_bs
                 else (norm_w or bs_where.split("-")[-1])
             )
-            default_name = f"Dry Contact {norm_w or bs_where.split('-')[-1]}"
+            bs_where_addr = Address.from_device_id(bs_where.split("-")[-1])
+            bs_norm_base = normalize_where(bs_where_addr.clean_where) or bs_where_addr.clean_where
+            default_name = f"Dry Contact {Address(bs_norm_base, bs_where_addr.interface).suffix}"
             default_model = "Dry Contact Interface"
         else:
             bs_cfg = _bs_first_cfg(
@@ -471,7 +473,7 @@ async def async_setup_entry(
         bs_addr = Address.from_config(str(dev_id), bs_cfg)
         default_model = "Dry Contact" if bs_who == "25" else "Auxiliary Channel"
         default_name = (
-            f"Dry Contact {bs_addr.where}"
+            f"Dry Contact {bs_addr.suffix}"
             if bs_who == "25"
             else f"Auxiliary Channel {bs_addr.where}"
         )

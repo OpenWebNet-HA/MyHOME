@@ -464,9 +464,18 @@ class TestDeviceSchemas:
             {CONF_WHO: "25", CONF_WHERE: "301#4#99", CONF_NAME: "Out of range"},
             {CONF_WHO: "9", CONF_WHERE: "1", CONF_BUS_INTERFACE: "01", CONF_NAME: "Aux routed"},
             {CONF_WHO: "9", CONF_WHERE: "1#4#01", CONF_NAME: "Aux inline routed"},
+            {CONF_WHO: "25", CONF_WHERE: "٣١", CONF_NAME: "Non-ASCII where"},
+            {CONF_WHO: "25", CONF_WHERE: "31", CONF_BUS_INTERFACE: "٠١", CONF_NAME: "Non-ASCII iface"},
         ):
             with pytest.raises(Invalid):
                 binary_sensor_schema({"bad": bad})
+
+        for non_ascii_validator, sample in (
+            (PointToPoint(), "٠٤"),
+            (Group(), "#١"),
+        ):
+            with pytest.raises(Invalid):
+                non_ascii_validator(sample)
 
     def test_climate_schema_zones_and_naming(self):
         """Test climate schema handling zone formatting and default names."""

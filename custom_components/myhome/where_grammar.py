@@ -197,7 +197,10 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "bus_interface_from_message",
     "canonical_contact_where",
+    "canonical_point_address",
+    "canonical_point_spelling",
     "canonical_thermo_zone",
     "central_report_zone",
     "central_unit_season",
@@ -354,6 +357,31 @@ def is_probe(where: str) -> bool:
 def where_param(message: Any) -> list[str]:
     """The ``#``-separated tail of a frame's WHERE, however the OWNd version names it."""
     return getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
+
+
+def bus_interface_from_message(message: Any) -> tuple[bool, str | None]:
+    """Extract optional F422 ``#4#II`` interface (``00``..``15``) or reject foreign ``where_param``."""
+    iface_attr = getattr(message, "interface", None)
+    raw_iface = iface_attr if isinstance(iface_attr, str) and iface_attr else None
+    raw_params = where_param(message)
+    params = [str(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
+    if raw_iface is not None:
+        if params and not (len(params) == 2 and params[0] == "4"):
+            return False, None
+        if _is_ascii_uint(raw_iface) and 1 <= len(raw_iface) <= 2 and int(raw_iface) <= 15:
+            return True, raw_iface.zfill(2)
+        return False, None
+    if not params:
+        return True, None
+    if (
+        len(params) == 2
+        and params[0] == "4"
+        and _is_ascii_uint(params[1])
+        and 1 <= len(params[1]) <= 2
+        and int(params[1]) <= 15
+    ):
+        return True, params[1].zfill(2)
+    return False, None
 
 
 def is_external_probe(where: str) -> bool:
@@ -722,25 +750,28 @@ def contact_where_aliases(where: str) -> list[str]:
     """Return both short and F455-padded spellings for a WHO 25 contact, normalizing leading zeros and ``#4#I``."""
     text = str(where)
     base, sep, iface = text.partition("#4#")
-    clean_base = base.lstrip("0") or "0" if base.isascii() and base.isdigit() else base
-    clean_iface = (
-        iface.zfill(2)
-        if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 and int(iface) <= 15
-        else iface
-    )
+    clean_base = base.lstrip("0") or "0" if _is_ascii_uint(base) else base
+    valid_iface = bool(sep and _is_ascii_uint(iface) and 1 <= len(iface) <= 2 and int(iface) <= 15)
+    clean_iface = iface.zfill(2) if valid_iface else iface
     normalized = f"{clean_base}#4#{clean_iface}" if sep else clean_base
-    return list(
-        dict.fromkeys(
+    candidates = [
+        text,
+        normalized,
+        canonical_contact_where(text),
+        padded_contact_where(text),
+        canonical_contact_where(normalized),
+        padded_contact_where(normalized),
+    ]
+    if valid_iface:
+        short_routed = f"{clean_base}#4#{int(iface)}"
+        candidates.extend(
             (
-                text,
-                normalized,
-                canonical_contact_where(text),
-                padded_contact_where(text),
-                canonical_contact_where(normalized),
-                padded_contact_where(normalized),
+                short_routed,
+                canonical_contact_where(short_routed),
+                padded_contact_where(short_routed),
             )
         )
-    )
+    return list(dict.fromkeys(candidates))
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:

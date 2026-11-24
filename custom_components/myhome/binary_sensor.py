@@ -60,6 +60,7 @@ from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .where_grammar import (
+    bus_interface_from_message,
     canonical_contact_where,
     contact_where_aliases,
     padded_contact_where,
@@ -177,7 +178,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
                             device_id = ident.split("-25-", 1)[1]
                             break
             device_class = cfg.get(CONF_DEVICE_CLASS, getattr(ctx.registry_entry, "original_device_class", None) or BinarySensorDeviceClass.OPENING)
-            name, model = cfg.get(CONF_NAME, f"Dry Contact {clean_norm or where.split('-')[-1]}"), "Dry Contact Interface"
+            where_addr = Address.from_device_id(where.split("-")[-1])
+            norm_base = normalize_where(where_addr.clean_where) or where_addr.clean_where
+            default_label = Address(norm_base, where_addr.interface).suffix
+            name, model = cfg.get(CONF_NAME, f"Dry Contact {default_label}"), "Dry Contact Interface"
         else:
             cfg, where = {}, ctx.address.key
             device_id, device_class = where, BinarySensorDeviceClass.OPENING
@@ -545,35 +549,14 @@ def _primary(where: str) -> str:
     return normalize_where(where) or normalize_where(clean) or clean
 
 
-def _bus_interface_from_message(message: Any) -> tuple[bool, str | None]:
-    """Extract optional F422 ``#4#II`` interface (00..15) or reject foreign ``where_param``."""
-    iface_attr = getattr(message, "interface", None)
-    raw_iface = iface_attr if isinstance(iface_attr, str) and iface_attr else None
-    raw_params = where_param(message)
-    params = [str(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
-    if raw_iface is not None:
-        if params and not (len(params) == 2 and params[0] == "4"):
-            return False, None
-        if raw_iface.isascii() and raw_iface.isdigit() and 1 <= len(raw_iface) <= 2 and int(raw_iface) <= 15:
-            return True, raw_iface.zfill(2)
-        return False, None
-    if not params:
-        return True, None
-    if (
-        len(params) == 2
-        and params[0] == "4"
-        and params[1].isascii()
-        and params[1].isdigit()
-        and 1 <= len(params[1]) <= 2
-        and int(params[1]) <= 15
-    ):
-        return True, params[1].zfill(2)
-    return False, None
+_bus_interface_from_message = bus_interface_from_message
 
 
 def _contact_address(message) -> Address | None:  # type: ignore
     # An F455 pads the contact number (301), every other gateway and the WHO 25 PDF do not (31).
     # OWNd leaves F422 routing (``301#4#01``) in ``where_param == ["4", "01"]`` for WHO 25.
+    if not message.where:
+        return None
     valid_iface, interface = _bus_interface_from_message(message)
     if not valid_iface:
         return None
@@ -581,6 +564,11 @@ def _contact_address(message) -> Address | None:  # type: ignore
 
 
 def _aux_address(message) -> Address | None:  # type: ignore
+    if not message.channel:
+        return None
+    raw_params = where_param(message)
+    if isinstance(raw_params, (list, tuple)) and raw_params:
+        return None
     return Address(str(message.channel))
 
 

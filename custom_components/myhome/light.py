@@ -85,7 +85,12 @@ from .light_fade import SoftwareFadeEngine
 from .light_group import MyHOMELightGroup, _color_modes_from_flags
 from .myhome_device import MyHOMEEntity
 from .services import async_register_turn_on_timed_service
-from .where_grammar import is_valid_hs_tuple, is_valid_rgb_tuple
+from .where_grammar import (
+    bus_interface_from_message,
+    canonical_point_spelling,
+    is_valid_hs_tuple,
+    is_valid_rgb_tuple,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -245,26 +250,48 @@ async def async_setup_entry(
         sensor platforms themselves; switches do not listen to the bus, so
         their frames are published from here.
         """
+        valid_iface, iface = bus_interface_from_message(message)
         if foreign.is_sensor_frame(message):
-            foreign.mark_sensor(address)
-            if not foreign.is_configured_light(address):
-                known.discard(address.key)
+            if valid_iface:
+                sensor_addr = Address(address.where, iface)
+                foreign.mark_sensor(sensor_addr)
+                if not foreign.is_configured_light(sensor_addr):
+                    known.discard(sensor_addr.key)
+                    known.discard(address.key)
             return True
-        if foreign.is_sensor_only(address, address.key) and address.key not in hinted and getattr(message, "is_on", None) is not None:
+        if not valid_iface:
+            return True
+        effective_addr = Address(address.where, iface) if iface != address.interface else address
+        if (
+            foreign.is_sensor_only(effective_addr, effective_addr.key)
+            and effective_addr.key not in hinted
+            and getattr(message, "is_on", None) is not None
+        ):
             # A sensor that switches no load of its own (Legrand 048834 in scenario mode,
             # #244) and a detector driving the actuator at its own address (067226 + F411,
             # #777) look the same here; only the user knows which it is.
-            hinted.add(address.key)
+            hinted.add(effective_addr.key)
             LOGGER.info(
                 "WHO 1 address %s reports motion or illuminance, so its on/off frames do not create a"
                 " light. If a light actuator shares this address, declare it under light: in myhome.yaml",
-                address.key,
+                effective_addr.key,
             )
-        if foreign.blocks_light(address, address.key):
+        if foreign.blocks_light(effective_addr, effective_addr.key):
             keys: tuple[str, ...] = (
-                (address.key, address.clean_key)
-                if address.interface and not foreign.is_switch(address, address.key)
-                else (address.key, address.where, normalize_where(address.where))
+                tuple(
+                    dict.fromkeys(
+                        k
+                        for k in (
+                            effective_addr.key,
+                            effective_addr.clean_key,
+                            address.key,
+                            address.clean_key,
+                        )
+                        if k
+                    )
+                )
+                if effective_addr.interface and not foreign.is_switch(effective_addr, effective_addr.key)
+                else (effective_addr.key, effective_addr.where, normalize_where(effective_addr.where))
             )
             runtime.router.publish("1", keys, message)
             return True
@@ -332,7 +359,7 @@ class _ForeignAddresses:
                 if str(cfg.get(CONF_WHO, default_who)) != "1":
                     continue
                 address = Address.from_config(dev_id, cfg)
-                self._add_sensor(str(dev_id), address.where, address.clean_where)
+                self._add_sensor(address, str(dev_id))
 
         try:
             registry = er.async_get(hass)
@@ -340,23 +367,26 @@ class _ForeignAddresses:
         except Exception:
             entries = []
         for entry in entries:
-            who, device_id = parse_unique_id(entry.unique_id or "", gateway_mac, entry_mac)
+            uid = entry.unique_id or ""
+            who, device_id = parse_unique_id(uid, gateway_mac, entry_mac)
             if entry.domain == "switch" and who in (None, "1"):
                 self.switches.update({device_id, device_id.split("#4#")[0].split("-")[-1]})
             elif entry.domain in ("cover", "lock") and who == "1":
                 self._add_cover(device_id, Address.from_device_id(device_id))
             elif entry.domain in ("binary_sensor", "sensor"):
+                after_mac = uid.replace(f"{gateway_mac}-", "", 1).replace(
+                    f"{entry_mac}-", "", 1
+                )
                 if who == "1":
-                    dev = device_id.split("-")[0]
-                elif "-motion" in entry.unique_id or "-illuminance" in entry.unique_id:
-                    dev = (
-                        entry.unique_id.replace(f"{gateway_mac}-", "", 1).replace(
-                            f"{entry_mac}-", "", 1
-                        )
-                    ).split("-")[0]
+                    dev = device_id.removesuffix("-motion").removesuffix("-illuminance")
+                elif (
+                    ("-motion" in uid or "-illuminance" in uid)
+                    and who not in ("4", "9", "18", "25")
+                ):
+                    dev = after_mac.removesuffix("-motion").removesuffix("-illuminance")
                 else:
                     continue
-                self._add_sensor(dev, dev.split("#4#")[0].split("-")[-1])
+                self._add_sensor(Address.from_device_id(dev), dev)
 
     def _add_cover(self, dev_id: str, address: Address) -> None:
         if address.interface:
@@ -366,20 +396,41 @@ class _ForeignAddresses:
                 {dev_id, address.key, address.clean_key, address.where, address.clean_where}
             )
 
-    def _add_sensor(self, *wheres: str) -> None:
-        for where in wheres:
-            self.sensors.update({where, normalize_where(where)})
+    def _add_sensor(self, address: Address, dev_id: str | None = None) -> None:
+        self.sensors.update(self._spellings(address))
+        if dev_id and (not address.interface or BUS_ROUTING in dev_id):
+            self.sensors.add(dev_id)
 
     def mark_sensor(self, address: Address) -> None:
-        self._add_sensor(address.where, address.key, address.clean_where)
+        self._add_sensor(address)
 
     @staticmethod
     def _spellings(address: Address) -> set[str]:
         """Every spelling of the address, bus interface included: a light at 52 behind
         interface 01 does not vouch for a sensor at 52 on another bus."""
-        routing = f"{BUS_ROUTING}{address.interface}" if address.interface else ""
-        wheres = {address.where, address.clean_where, normalize_where(address.where), normalize_where(address.clean_where)}
-        return {f"{where}{routing}" for where in wheres if where}
+        iface = (
+            address.interface.zfill(2)
+            if address.interface
+            and address.interface.isascii()
+            and address.interface.isdigit()
+            and 1 <= len(address.interface) <= 2
+            and int(address.interface) <= 15
+            else address.interface
+        )
+        routings = (
+            {f"{BUS_ROUTING}{iface}", f"{BUS_ROUTING}{address.interface}"}
+            if address.interface
+            else {""}
+        )
+        wheres = {
+            address.where,
+            address.clean_where,
+            normalize_where(address.where),
+            normalize_where(address.clean_where),
+            canonical_point_spelling(address.where),
+            canonical_point_spelling(address.clean_where),
+        }
+        return {f"{where}{routing}" for where in wheres if where for routing in routings}
 
     def is_switch(self, address: Address, key: str) -> bool:
         return bool({key, address.where, address.clean_where} & self.switches)
@@ -393,13 +444,9 @@ class _ForeignAddresses:
         return bool(cover_candidates & self.covers)
 
     def is_sensor(self, address: Address, key: str) -> bool:
-        candidates = {
-            key,
-            address.where,
-            address.clean_where,
-            normalize_where(address.where),
-            normalize_where(address.clean_where),
-        }
+        candidates = set(self._spellings(address))
+        if not address.interface or BUS_ROUTING in key:
+            candidates.add(key)
         return bool(candidates & self.sensors)
 
     def is_configured_light(self, address: Address) -> bool:
