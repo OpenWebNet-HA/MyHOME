@@ -1619,9 +1619,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if moving_on_add:
                     self._run_start_position = self._start_position
 
-        if self._slat_tilt and not ran_since_start and self._attr_current_cover_tilt_position is None:
+        if self._slat_tilt and not ran_since_start and not self._bus_state_complete:
             last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
-            if last_tilt is None and saved_unavailable:
+            if last_tilt is None and saved_unavailable and self._attr_current_cover_tilt_position is None:
                 last_tilt = record.get("tilt")
             if last_tilt is not None:
                 try:
