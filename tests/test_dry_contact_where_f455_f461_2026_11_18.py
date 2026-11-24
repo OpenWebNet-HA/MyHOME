@@ -1190,9 +1190,26 @@ async def test_routed_who1_sensors_and_foreign_where_params_do_not_poison_local_
         assert f"{PRI}-1-07" in _unique_ids(hass, entry, "light")
 
         # Routed illuminance *#1*08#4#01*6*250## and single-digit *1*34*09#4#1## keep local 08 / 09 isolated
-        await _feed(hass, entry, "*#1*08#4#01*6*250##", "*1*1*08##", "*1*34*09#4#1##", "*1*1*09#4#01##", "*1*1*09##")
+        with caplog.at_level("DEBUG"):
+            await _feed(
+                hass,
+                entry,
+                "*#1*08#4#01*6*250##",
+                "*1*1*08##",
+                "*1*1*08#4#01##",
+                "*1*34*09#4#1##",
+                "*1*1*09#4#01##",
+                "*1*1*09##",
+            )
         assert f"{PRI}-08#4#01-illuminance" in _unique_ids(hass, entry, "sensor")
+        assert f"{PRI}-08#4#01-motion" not in _unique_ids(hass, entry, "binary_sensor")
+        assert f"{PRI}-09#4#01-motion" in _unique_ids(hass, entry, "binary_sensor")
+        assert "*#1*08#4#01*5##" not in caplog.text
+        assert "*#1*08#4#01*7##" not in caplog.text
+        assert "*#1*09#4#01*5##" in caplog.text
+        assert "*#1*09#4#01*7##" in caplog.text
         assert f"{PRI}-1-08" in _unique_ids(hass, entry, "light")
+        assert f"{PRI}-1-08#4#01" not in _unique_ids(hass, entry, "light")
         assert f"{PRI}-1-09" in _unique_ids(hass, entry, "light")
         assert f"{PRI}-1-09#4#01" not in _unique_ids(hass, entry, "light")
         lux_eid = registry.async_get_entity_id("sensor", DOMAIN, f"{PRI}-08#4#01-illuminance")
