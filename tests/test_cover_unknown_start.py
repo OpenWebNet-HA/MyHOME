@@ -811,7 +811,11 @@ async def test_position_survives_a_reload_while_the_gateway_is_unreachable(hass)
     assert "last_run_seconds" not in unavailable.attributes
 
     await platform.async_remove_entity(entity_id)  # the entry reloads, or Home Assistant stops
-    stored = restore_state.async_get(hass).last_states[entity_id]
+    restore_data = restore_state.async_get(hass)
+    # HA 2026.11+ (core#183906) exposes async_get_stored_state(entity_id); HA <= 2026.10 uses .last_states.
+    get_stored = getattr(restore_data, "async_get_stored_state", None)
+    stored = get_stored(entity_id) if callable(get_stored) else restore_data.last_states[entity_id]
+    assert stored is not None
     assert stored.state.state == "unavailable"
     assert stored.extra_data.as_dict() == {
         "position": 40,
