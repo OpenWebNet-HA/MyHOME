@@ -500,7 +500,7 @@ async def test_scope_async_failed_reversal_clears_follower_pulse_end(
     """When a scope tilt reversal's queued Future fails asynchronously, neither leader nor follower keeps a claim."""
     cover, clock, gateway, release = blind
     area = _area_3(blind)
-    cover._attr_current_cover_position = 2
+    cover._attr_current_cover_position = 1
     cover._attr_current_cover_tilt_position = 0
     await area.async_set_cover_tilt_position(tilt_position=100)
     area._tilt_start_time = clock.now
@@ -515,9 +515,9 @@ async def test_scope_async_failed_reversal_clears_follower_pulse_end(
     assert not area._is_tilting and not cover._is_tilting
     assert area._pulse_ended_at is None
     assert cover._pulse_ended_at is None
+    assert cover.current_cover_tilt_position == 45
     await _receive(cover, clock, _raw(29, "*#2*31*10*10*2*001*0##"), after=0.1)
-    await _receive(cover, clock, _raw(40, "*#2*31*10*10*1*001*0##"), after=0.1)
-    assert cover.current_cover_tilt_position == 0
+    assert (cover.current_cover_position, cover.current_cover_tilt_position) == (2, 100)
     release.set()
     await _settle()
 
@@ -601,7 +601,8 @@ async def test_scope_pulse_interrupting_member_pulse_via_service_keeps_claim(
     # Now start another member pulse (closing from 75 -> 0) and interrupt it mid-pulse with an opening scope pulse.
     release.clear()
     await _pulse_running(blind, 2, 75, 0)
-    clock.now += 0.16  # 0.16 s elapsed -> member tilt at 55%
+    clock.now += 0.16  # 0.20 s elapsed with the 0.04 s after *#2*31*10*12*2*001*0## -> member tilt at 50%
+    assert cover._live_tilt(clock.now) == 50
     await area.async_set_cover_tilt_position(tilt_position=100)
     assert gateway.sent[-1] == "*2*1*3##"
     assert area._is_tilting and cover._is_tilting and cover._tilt_follows is area
@@ -612,3 +613,101 @@ async def test_scope_pulse_interrupting_member_pulse_via_service_keeps_claim(
     await area.async_stop_cover()
     release.set()
     await _settle()
+
+
+@pytest.mark.asyncio
+async def test_partial_set_position_on_mh201_pre_stops_running_pulse_before_takeover(
+    blind: Blind,
+) -> None:
+    """On MH201/MH202, partial `set_cover_position` emits pre-move STOP before clearing a timed pulse's relay state."""
+    cover, _clock, gateway, release = blind
+    gateway.emits_cover_pre_move_stop = False
+    area = _area_3(blind)
+    assert area._family is not None
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        cover_32 = MyHOMECover(
+            hass=None, name="Blind 32", entity_name=None, device_id="32", who="2", where="32", interface=None,
+            advanced=False, manufacturer="BTicino", model="L4671/2", gateway=gateway, travel_time=25,
+            slat_tilt=True, slat_time=0.8, min_motor_pulse=0.2,
+        )
+    cover_32.entity_id = "cover.blind_32"
+    cover_32.async_schedule_update_ha_state = MagicMock()
+    area._family.add(cover_32)
+
+    # 1. Scope partial takeover while timed member `cover_32` runs its own slat pulse (no `_relay_hold_until`).
+    cover._attr_current_cover_position = 50
+    cover_32._attr_current_cover_position = 50
+    cover_32._attr_current_cover_tilt_position = 0
+    await cover_32.async_set_cover_tilt_position(tilt_position=50)
+    assert gateway.sent[-1] == "*2*1*32##"
+    assert cover_32._is_tilting and cover_32._relay_hold_until is None
+
+    scope_task = asyncio.create_task(area.async_set_cover_position(position=20))
+    await _settle()
+    assert gateway.sent[-1] == "*2*0*3##", "MH201/MH202 pre-move scope STOP was skipped"
+    assert "*2*2*3##" not in gateway.sent
+    assert not cover_32._is_tilting
+
+    release.set()
+    await scope_task
+    assert gateway.sent[-2:] == ["*2*0*3##", "*2*2*3##"]
+    assert "*2*0*32##" not in gateway.sent
+    area._cancel_stop_task()
+
+    # 2. Point partial takeover while timed `cover_32` runs a slat pulse.
+    release.clear()
+    cover_32._attr_current_cover_position = 50
+    cover_32._attr_current_cover_tilt_position = 50
+    cover_32._attr_is_opening = False
+    cover_32._attr_is_closing = False
+    cover_32._clear_relay_hold()
+    await cover_32.async_set_cover_tilt_position(tilt_position=0)
+    assert gateway.sent[-1] == "*2*2*32##"
+    assert cover_32._is_tilting and cover_32._relay_hold_until is None
+
+    sent_idx = len(gateway.sent)
+    point_task = asyncio.create_task(cover_32.async_set_cover_position(position=80))
+    await _settle()
+    assert gateway.sent[sent_idx:] == ["*2*0*32##"], "MH201/MH202 pre-move point STOP was skipped"
+
+    release.set()
+    await point_task
+    assert gateway.sent[sent_idx:] == ["*2*0*32##", "*2*1*32##"]
+    assert cover_32._pulse_ended_at is None
+    cover_32._cancel_stop_task()
+
+
+@pytest.mark.asyncio
+async def test_scope_set_position_at_current_level_checks_member_tilting_and_motion(
+    blind: Blind,
+) -> None:
+    """`area.set_cover_position(curr_pos)` stops a member's own pulse or curtain move, and ignores stale scope flags."""
+    cover, clock, gateway, release = blind
+    area = _area_3(blind)
+
+    # 1. `diff == 0` while a member runs its own slat pulse stops via `*2*0*3##`.
+    await _pulse_running(blind, 2, 100, 50)
+    clock.now += 0.16  # 0.20 s elapsed -> member tilt at 75%
+    await area.async_set_cover_position(position=2)
+    await _settle()
+    assert gateway.sent[-1] == "*2*0*3##"
+    assert not cover._is_tilting and cover.current_cover_tilt_position == 75
+    release.set()
+    await _settle()
+    assert "*2*0*31##" not in gateway.sent
+
+    # 2. `diff == 0` when members are stationary (even with stale `area._attr_is_opening`) writes nothing and keeps claim.
+    cover._attr_current_cover_position = 50
+    cover._pulse_ended_at = clock.now
+    cover._pulse_ended_direction = "close"
+    area._attr_is_opening = True
+    sent_before = list(gateway.sent)
+    await area.async_set_cover_position(position=50)
+    assert gateway.sent == sent_before
+    assert cover._pulse_ended_at is not None
+
+    # 3. `diff == 0` while a member's curtain moves on its own (with `area._attr_is_opening == False`) sends `*2*0*3##`.
+    area._attr_is_opening = False
+    cover._attr_is_opening = True
+    await area.async_set_cover_position(position=50)
+    assert gateway.sent[-1] == "*2*0*3##"

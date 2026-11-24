@@ -2732,7 +2732,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self._async_run_to_end(target_position >= 100)
             return
         diff = target_position - curr_pos
-        if diff == 0 and self._is_tilting:
+        if diff == 0 and self._any_tilting():
             # Already at this level while a slat pulse runs: stop the pulse here.
             await self.async_stop_cover()
             return
@@ -2748,7 +2748,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
 
         if diff == 0:
-            if self._attr_is_opening or self._attr_is_closing:
+            if self.is_opening or self.is_closing:
                 # Already there while a curtain run passes this level: stop it here.
                 # Only cancelling the running auto-stop would leave the motor running.
                 await self.async_stop_cover()
@@ -2757,7 +2757,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
 
         self._cancel_stop_task()
-        self._end_pulse_for_takeover()
 
         pre_stopped = False
         target_int = int(round(target_position))
@@ -2776,6 +2775,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             if diff == 0:
                 return
 
+        self._end_pulse_for_takeover()
         self._end_curtain_for_takeover(time.monotonic())
         opening = diff > 0
         direction = "open" if opening else "close"
