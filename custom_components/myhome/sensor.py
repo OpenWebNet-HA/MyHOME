@@ -117,6 +117,7 @@ from .where_grammar import (
     bus_interface_from_message,
     canonical_thermo_zone,
     four_zone_central_where,
+    four_zone_central_zone,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_report,
@@ -730,6 +731,70 @@ async def async_setup_entry(
             return not _has_climate_zone_entity(zone, iface)
         return False
 
+    def _is_explicit_standalone_zone(zone: str, iface: str | None) -> bool:
+        if iface is None and zone in standalone_zones:
+            return True
+        z_cfg = _climate_zone_config(configured_climate, zone, iface) or (
+            _climate_zone_config(configured_climate, f"0{zone}", iface)
+            if len(zone) == 1
+            else {}
+        )
+        return z_cfg.get(CONF_STANDALONE) is True
+
+    def _unified_four_zone_central_meta(
+        zone: str, iface: str | None
+    ) -> tuple[str, str, str, str] | None:
+        """Device metadata of a 4-zone central unit (#0#N) unifying ``(zone, iface)``, if any."""
+        if _is_explicit_standalone_zone(zone, iface):
+            return None
+        default_name = (
+            f"Central Unit {zone.zfill(2)}I{iface}"
+            if iface
+            else f"Central Unit {zone.zfill(2)}"
+        )
+        cu_dev_id = f"#0#{zone}{BUS_ROUTING}{iface}" if iface else f"#0#{zone}"
+        for cfg_id, cfg in configured_climate.items():
+            if isinstance(cfg, dict):
+                addr = Address.from_config(str(cfg_id), cfg)
+                if four_zone_central_zone(addr.clean_where) == zone and addr.interface == iface:
+                    return (
+                        cu_dev_id,
+                        str(cfg.get(CONF_NAME) or default_name),
+                        str(cfg.get(CONF_MANUFACTURER) or "BTicino"),
+                        str(cfg.get(CONF_DEVICE_MODEL) or "Central Unit (4695)"),
+                    )
+        cur_reg, cur_entries = _safe_registry_entries()
+        if cur_reg is not None:
+            for ent in cur_entries:
+                if ent.domain != "climate" or not ent.unique_id:
+                    continue
+                c_who, c_dev_id = parse_unique_id(ent.unique_id, gateway.mac, entry_mac)
+                c_addr = Address.from_device_id(c_dev_id)
+                if (
+                    c_who == "4"
+                    and four_zone_central_zone(c_addr.clean_where) == zone
+                    and c_addr.interface == iface
+                ):
+                    dev = dr.async_get(hass).async_get(ent.device_id) if ent.device_id else None
+                    raw_name = getattr(dev, "name", None)
+                    raw_mfg = getattr(dev, "manufacturer", None)
+                    raw_model = getattr(dev, "model", None)
+                    return (
+                        c_dev_id,
+                        raw_name if isinstance(raw_name, str) and raw_name else default_name,
+                        raw_mfg if isinstance(raw_mfg, str) and raw_mfg else "BTicino",
+                        raw_model if isinstance(raw_model, str) and raw_model else "Central Unit (4695)",
+                    )
+        live_cu = runtime.entities.get("climate", {}).get(cu_dev_id)
+        if live_cu is not None:
+            return (
+                cu_dev_id,
+                str(getattr(live_cu, "_device_name", "") or default_name),
+                str(getattr(live_cu, "_manufacturer", "") or "BTicino"),
+                str(getattr(live_cu, "_model", "") or "Central Unit (4695)"),
+            )
+        return None
+
     def _resolve_climate_device_meta(
         zone: str, iface: str | None
     ) -> tuple[str, str, str, str, bool | None]:
@@ -751,6 +816,8 @@ async def async_setup_entry(
             manufacturer = str(cfg.get(CONF_MANUFACTURER) or "BTicino")
             model = str(cfg.get(CONF_DEVICE_MODEL) or "Heating Zone")
             return (cfg_addr.key, dev_name, manufacturer, model, standalone_cfg)
+        if (cu_meta := _unified_four_zone_central_meta(zone, iface)) is not None:
+            return (*cu_meta, False)
         reg = er.async_get(hass)
         dev_reg = dr.async_get(hass)
         for ent in er.async_entries_for_config_entry(reg, config_entry.entry_id):
@@ -923,7 +990,10 @@ async def async_setup_entry(
             if len(zone) == 1
             else {}
         )
-        return bool(z_cfg.get(CONF_CENTRAL, False))
+        return (
+            bool(z_cfg.get(CONF_CENTRAL, False))
+            or _unified_four_zone_central_meta(zone, iface) is not None
+        )
 
     def _is_climate_companion_excluded(
         zone: str, iface: str | None, *, has_live_climate: bool = False
@@ -1063,7 +1133,7 @@ async def async_setup_entry(
         c_cfg = _climate_zone_config(configured_climate, c_zone, c_addr.interface)
         if not c_cfg and len(c_zone) == 1:
             c_cfg = _climate_zone_config(configured_climate, f"0{c_zone}", c_addr.interface)
-        if c_cfg and bool(c_cfg.get(CONF_CENTRAL, False)):
+        if _has_central_climate_config(c_zone, c_addr.interface):
             continue
         if c_pair in thermo_switch_whole_zones:
             continue
@@ -1163,8 +1233,6 @@ async def async_setup_entry(
         ):
             return False
         if is_broadcast_where(ctx.address.clean_where):
-            if reg_obj is not None and isinstance(entry, er.RegistryEntry):
-                prune_entity(hass, reg_obj, entry, config_entry.entry_id)
             return True
         if not is_probe(ctx.address.clean_where):
             c_zone = canonical_thermo_zone(ctx.address.clean_where)
@@ -1184,8 +1252,6 @@ async def async_setup_entry(
                         "-temperature",
                     )
                 ):
-                    if reg_obj is not None and isinstance(entry, er.RegistryEntry):
-                        prune_entity(hass, reg_obj, entry, config_entry.entry_id)
                     return True
         return False
 

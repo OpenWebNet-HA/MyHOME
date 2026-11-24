@@ -406,6 +406,7 @@ class ZoneDiscovery:
     ) -> None:
         self._hass = hass
         self._config_entry = config_entry
+        self._runtime = runtime
         self._gateway = runtime.gateway
         self._runtime_mac = str(getattr(runtime, "mac", self._gateway.mac))
         self._configured: dict[str, Any] = runtime.platforms.get(Platform.CLIMATE, {})
@@ -492,7 +493,7 @@ class ZoneDiscovery:
             if not self._is_explicit_standalone_zone(master, ctx.address.interface):
                 pair = (master, _two_digit_interface(ctx.address.interface))
                 if ctx.source == "bus":
-                    self._prune_superseded_master_zone(pair)
+                    self._prune_superseded_master_zone(pair, target=entity)
         if pair is not None:
             self._candidates.pop(pair, None)
             self._candidates_unanswered.discard(pair)
@@ -500,8 +501,47 @@ class ZoneDiscovery:
                 entity.handle_event(held)
         return entity
 
-    def _prune_superseded_master_zone(self, pair: ZonePair) -> None:
+    @staticmethod
+    def _seed_master_zone_telemetry(src: Any, dst: Any) -> None:
+        """Carry live master-zone telemetry from a superseded ``Climate Zone N`` onto ``#0#N``."""
+        temp = getattr(src, "_attr_native_current_temperature", None)
+        if (
+            getattr(dst, "_attr_native_current_temperature", None) is None
+            and temp is not None
+            and not getattr(src, "_current_temperature_restored", True)
+        ):
+            dst._attr_native_current_temperature = temp
+            dst._current_temperature_restored = False
+        if (
+            not getattr(dst, "_humidity_reported", False)
+            and getattr(src, "_humidity_reported", False)
+            and getattr(src, "_attr_current_humidity", None) is not None
+        ):
+            dst._enable_humidity()
+            dst._attr_current_humidity = src._attr_current_humidity
+            dst._humidity_reported = True
+        if not getattr(dst, "_local_offset_reported", False) and getattr(src, "_local_offset_reported", False):
+            dst._local_offset = src._local_offset
+            dst._local_offset_reported = True
+            dst._knob_pos = src._knob_pos
+        src_actuators = getattr(src, "_actuator_states", None)
+        if not getattr(dst, "_actuator_states", None) and (src_actuators or getattr(src, "_zone_active", None) is not None):
+            dst._actuator_states = dict(src_actuators or {})
+            dst._actuator_levels = dict(getattr(src, "_actuator_levels", {}))
+            dst._actuator_fan_speeds = dict(getattr(src, "_actuator_fan_speeds", {}))
+            dst._zone_active = getattr(src, "_zone_active", None)
+            dst._active_source = getattr(src, "_active_source", None)
+            dst._active_sides = getattr(src, "_active_sides", None)
+
+    def _prune_superseded_master_zone(self, pair: ZonePair, target: Any = None) -> None:
         """Remove an existing unconfigured master zone entity once unified Central Unit 0N arrives."""
+        zone_addr = Address(pair[0], pair[1])
+        zone_cfg = _zone_config(self._configured, zone_addr, zone_addr.key)
+        if not _own_entry(zone_addr, zone_cfg or {}):
+            live_climates = getattr(self._runtime, "entities", {}).get(Platform.CLIMATE)
+            superseded = live_climates.pop(zone_addr.key, None) if isinstance(live_climates, dict) else None
+            if target is not None and superseded is not None and superseded is not target:
+                self._seed_master_zone_telemetry(superseded, target)
         try:
             registry = er.async_get(self._hass)
             entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))

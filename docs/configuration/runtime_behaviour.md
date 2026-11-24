@@ -189,8 +189,8 @@ Central thermoregulation units (such as the BTicino **3550** at address `#0` and
 Central units handle status updates differently from subordinate zones (`1..99`):
 
 - **Dimension 14 queries rejected**: Gateways reject Dimension 14 status queries (`*#4*#0*14##`) with fast NACK, as Dimension 14 status queries are only defined for zone thermostats `1..99` (#629).
-- **Plain status requests supported**: Authentic physical gateway traces (#629) confirm that 99-zone central units (`#0`) reliably answer the plain status request `*#4*#0##` within ~0.17 s, returning their operating mode (`*4*202*#0##` for conditional OFF) and status flags (`*4*21*#0##`, `*4*22*#0##`, `*4*24*#0##`).
-- **Startup Polling**: On startup, and when an update of the entity is asked for (`homeassistant.update_entity`), the integration queries central unit `#0` with `*#4*#0##`; Home Assistant does not poll the entity on an interval. Answering populates the seasonal mode and coordinates subordinate zones. This poll is informational: an unanswered `*#4*#0##` never raises an `unresponsive_zone` repair (captured on an F454 and an F455 so far). 4-zone central units (`#0#1`) remain exempt to prevent gateway timeouts.
+- **Plain status requests supported**: Authentic physical gateway traces confirm that 99-zone central units (`#0`, #629) answer `*#4*#0##` within ~0.17 s and 4-zone central units (`#0#N`, #994) answer `*#4*#0#N##` within ~0.14 s, returning their operating mode and status flags (`*4*21*...`, `*4*31*...`, etc.).
+- **Startup Polling**: On startup, and when an update of the entity is asked for (`homeassistant.update_entity`), the integration queries `#0` with `*#4*#0##` and `#0#N` with `*#4*#0#N##` (plus master zone temperature `*#4*N*0##` on gateways that drop `*#4*0##` when unified `#0#N` has no live temperature yet); Home Assistant does not poll central units on an interval. This poll is informational: an unanswered central-unit poll never raises an `unresponsive_zone` repair.
 
 Central units coordinate with the plant as follows:
 

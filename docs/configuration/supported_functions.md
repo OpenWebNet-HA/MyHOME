@@ -80,7 +80,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 | Fan speed (3-speed fancoil) | ✅ | Auto-detected from dimension 11/20 frames, or explicit `fan: true`. |
 | Proportional 0–10 V output level (`100..200`) | 👁️ | Exposed on `Dimension 20` strictly for explicit `Z#N` (`1 <= Z <= 99`, `1 <= N <= 9`) point actuators as `actuator_levels` (`0..100 %`, excluded from recorder history via `_unrecorded_attributes`) while keeping `actuators` `"on"` / `"off"`, alongside an auto-discovered `%` `sensor` entity per proportional actuator. |
 | Current humidity | ✅ | Auto-detected from dimension 60 frames, restored across restarts, or explicit `humidity: true`; dynamically attaches a passive companion `%` `sensor` entity on the zone device. |
-| Central unit modes | ✅ | Central unit 3550 (`#0`) and 4695 (`#0#1`..`#0#4`) as `central: true` zones; seasonal propagation. 99-zone `#0` is polled via `*#4*#0##`, while 4-zone `#0#1`..`#0#4` units remain exempt from point-to-point status polling. |
+| Central unit modes | ✅ | Central unit 3550 (`#0`) and 4695 (`#0#1`..`#0#96`) as `central: true` zones; seasonal propagation. 99-zone `#0` is polled via `*#4*#0##` and 4-zone `#0#N` via `*#4*#0#N##` (informational, never raising unresponsive-zone repairs). |
 | Weekly programs / scenarios | ❌ | Program selection frames (`*4*11xx*#0##`) can be sent with `myhome.send_message`. |
 | Temperature-only probes | 👁️ | `sensor` platform (see below). |
 

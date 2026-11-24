@@ -13,9 +13,10 @@ The form a 99-zone central unit's zones require (``*#4*#Z*#14*TTTT*3##``,
 holds one such write, ``*#4*#1*#14*0150*3##`` (13), and ends 0.08 s after it; that the plant
 does not act on it is the reporter's account in the issue ("the command is ignored").
 
-A zone's own off (``*4*303*Z##``) and a direct write to zone 1 are in neither capture: the
-first is the frame version 0.9.3 sent for a zone marked ``standalone``, as the reporter's file
-did, the second follows the rule of zones 3 and 4.
+Master zone 1 is unified into ``Central Unit 01`` (``#0#1``) under Option A because BTicino
+4695 firmware (``LH4695_AM5875_010103.fwz``, ROM ``0x0E987C..0x0E989C``) drops direct zone
+writes to its built-in master zone, while subordinate zones 3 and 4 are written directly
+(``*#4*Z*#14*TTTT*3##``, ``*4*303*Z##``) unless a 99-zone central unit (``#0``) is present.
 """
 
 from __future__ import annotations
@@ -148,20 +149,37 @@ async def test_the_central_unit_found_on_the_bus_is_written_at_its_own_address(h
 
 
 async def test_heat_and_cool_on_the_four_zone_central_unit_same_and_cross_season(hass: HomeAssistant) -> None:
-    """Same-season writes generic manual M=3 (and clears HVACAction.OFF); cross-season sends season + 3100."""
+    """Same-season preserves weekly program via 3100 (or writes M=3 in manual); cross-season sends season + 3100."""
     gateway, found = await _plant(hass, None, FIRST, SECOND)
     central = found["#0#1"]
     assert central.target_temperature == 14.0  # `*#4*1*12*0140*3##` during program 3
+    assert central._program == 3 and central._nominal_from_dim12 is True
+
+    # [N-P2-2] Same-season HEAT while running Weekly Program 3 keeps/resumes the schedule via 3100,
+    # never overwriting the schedule with a permanent manual 14.0 °C night-setback override.
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*4*3100*#0#1##"]
+    gateway.send.reset_mock()
+
+    # [N-P2-2] Going OFF and waking HEAT from a Dim-12 schedule setpoint also resumes via 3100.
     await central.async_set_hvac_mode(HVACMode.OFF)
     assert central.hvac_action == HVACAction.OFF
     gateway.send.reset_mock()
-
-    # Same-season wake (reported heating): writes M=3 setpoint, no season frame, resets action OFF -> IDLE.
     await central.async_set_hvac_mode(HVACMode.HEAT)
-    assert _sent(gateway) == ["*#4*#0#1*#14*0140*3##"]
+    assert _sent(gateway) == ["*4*3100*#0#1##"]
     assert central.hvac_mode == HVACMode.HEAT
     assert central.hvac_action == HVACAction.IDLE
-    assert central.target_temperature == 14.0
+
+    # Manual setpoint (*4*110#0175*#0#1##) -> OFF -> same-season wake writes M=3 manual setpoint.
+    central.handle_event(OWNHeatingEvent("*4*110#0175*#0#1##"))
+    assert central._program is None and central._nominal_from_dim12 is False
+    await central.async_set_hvac_mode(HVACMode.OFF)
+    gateway.send.reset_mock()
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*#4*#0#1*#14*0175*3##"]
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.hvac_action == HVACAction.IDLE
+    assert central.target_temperature == 17.5
 
     # Cross-season switch (heating -> cool): sends season frame + 3100 restore, waits for bus report.
     gateway.send.reset_mock()
@@ -698,3 +716,279 @@ def test_saved_central_doubled_and_where_grammar_edge_cases() -> None:
     assert four_zone_central_where(bad_iface) is None
     ok_iface = MagicMock(where="#0", where_param=["1", "4", "01"])
     assert four_zone_central_where(ok_iface) == "#0#1"
+
+
+# ── review 6040005040 regressions ──
+
+
+async def test_four_zone_central_protection_dim12_preserves_nominal_setpoint() -> None:
+    """[N-P0-1] Antifreeze/thermal protection + master Zone N Dim 12 never clobbers #0#N nominal."""
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # 1. Antifreeze (*4*102*#0#1##) followed by master Zone 1 Dim 12 (7.0 °C) + *4*102*1##.
+    gw = _gateway(has_central_unit=False)
+    central = _climate(gw, "#0#1", standalone=None, central=True)
+    central.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    assert central.target_temperature == 20.0
+    central.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    central.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    central.handle_event(OWNHeatingEvent("*4*102*1##"))
+    assert central._central_operation == "antifreeze"
+    assert central._target_temperature == 20.0
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*#4*#0#1*#14*0200*3##"]
+    assert central._central_operation is None
+    assert central.target_temperature == 20.0
+
+    # 2. Thermal protection (*4*202*#0#1##) followed by master Zone 1 Dim 12 (35.0 °C).
+    gw.send.reset_mock()
+    central.handle_event(OWNHeatingEvent("*4*210#0250*#0#1##"))
+    central.handle_event(OWNHeatingEvent("*4*202*#0#1##"))
+    central.handle_event(OWNHeatingEvent("*#4*1*12*0350*3##"))
+    assert central._central_operation == "thermal_protection"
+    assert central._target_temperature == 25.0
+    await central.async_set_hvac_mode(HVACMode.COOL)
+    assert _sent(gw) == ["*#4*#0#1*#14*0250*3##"]
+    assert central.target_temperature == 25.0
+
+    # 3. Reverse arrival (*#4*1*12*0070*3## before *4*102*#0#1##) + bus exit from protection.
+    gw2 = _gateway(has_central_unit=False)
+    central2 = _climate(gw2, "#0#1", standalone=None, central=True)
+    central2.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    central2.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    central2.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    assert central2._target_temperature == 20.0
+    assert central2._nominal_from_dim12 is False
+    # Leaving central protection via bus report restores displayed nominal setpoint (20.0, not 7.0).
+    central2.handle_event(OWNHeatingEvent("*4*110*#0#1##"))
+    assert central2._central_operation is None
+    assert central2.target_temperature == 20.0
+
+    # 4. Boot straight into Antifreeze with no known nominal: Dim 12 7.0 °C must not leak into HEAT wake.
+    gw3 = _gateway(has_central_unit=False)
+    central3 = _climate(gw3, "#0#1", standalone=None, central=True)
+    central3.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    central3.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    assert central3._effective_nominal_temperature() is None
+    await central3.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw3) == ["*4*3100*#0#1##"]
+
+
+async def test_four_zone_central_upgrade_prunes_companions_empty_device_and_attaches_0_10v_actuator(
+    hass: HomeAssistant,
+) -> None:
+    """[N-P1-1] Upgrade/restart prunes Climate Zone 1 + #981 companions + empty device,
+    and 1#A 0-10V proportional actuator sensors attach to Central Unit 01 (#0#1).
+    """
+    from homeassistant.components.sensor import SensorDeviceClass
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.myhome.sensor import async_setup_entry as sensor_setup_entry
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    zone1_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-4-1")}, name="Climate Zone 1"
+    )
+    cu_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-4-#0#1")},
+        name="Central Unit 01",
+    )
+    zone1_ent = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-1", config_entry=entry, device_id=zone1_dev.id
+    )
+    temp_ent = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{MAC}-4-1-temperature",
+        config_entry=entry,
+        device_id=zone1_dev.id,
+        original_device_class=SensorDeviceClass.TEMPERATURE,
+    )
+    hum_ent = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{MAC}-4-1-humidity",
+        config_entry=entry,
+        device_id=zone1_dev.id,
+        original_device_class=SensorDeviceClass.HUMIDITY,
+    )
+    ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-#0#1", config_entry=entry, device_id=cu_dev.id
+    )
+
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.log_id = "[issue 994]"
+    gateway.has_central_unit = False
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    runtime.platforms["climate"] = {}
+    runtime.platforms["sensor"] = {}
+
+    # Run sensor setup FIRST (worst-case concurrent startup order) then climate setup.
+    sensors: list = []
+    climates: list[MyHOMEClimate] = []
+    await sensor_setup_entry(hass, entry, sensors.extend)
+    await async_setup_entry(hass, entry, climates.extend)
+    await hass.async_block_till_done()
+
+    assert [c._where for c in climates] == ["#0#1"]
+    assert sensors == []
+    assert ent_reg.async_get(zone1_ent.entity_id) is None
+    assert ent_reg.async_get(temp_ent.entity_id) is None
+    assert ent_reg.async_get(hum_ent.entity_id) is None
+    assert dev_reg.async_get(zone1_dev.id) is None
+
+    # 0-10V proportional actuator output on master Zone 1 (1#1) attaches to Central Unit 01 (#0#1).
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1#1*20*150##"))
+    await hass.async_block_till_done()
+    assert len(sensors) == 1
+    out_sensor = sensors[0]
+    assert isinstance(out_sensor, MyHOMEActuatorOutputSensor)
+    assert out_sensor._device_id == "#0#1"
+    assert out_sensor._device_name == "Central Unit 01"
+    assert out_sensor._model == "Central Unit (4695)"
+    assert out_sensor.native_value == 50
+
+    # Live bus-discovered #0#5 (no YAML, no registry entry yet) also routes 5#1 output sensor to #0#5.
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*110#0200*#0#5##"))
+    await hass.async_block_till_done()
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*5#1*20*140##"))
+    await hass.async_block_till_done()
+    out5 = [s for s in sensors if isinstance(s, MyHOMEActuatorOutputSensor) and s._zone == "5"]
+    assert len(out5) == 1 and out5[0]._device_id == "#0#5" and out5[0].native_value == 40
+
+    # YAML-configured #0#9 (zone: "9", central: true) also routes 9#1 output sensor to #0#9 with YAML name.
+    yaml_cfg: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms(
+        {"climate": climate_schema({"cu9": {"zone": "9", "central": True, "name": "Centrale 9"}})},
+        yaml_cfg,
+    )
+    runtime.platforms["climate"].update(yaml_cfg["climate"])
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*9#1*20*160##"))
+    await hass.async_block_till_done()
+    out9 = [s for s in sensors if isinstance(s, MyHOMEActuatorOutputSensor) and s._zone == "9"]
+    assert len(out9) == 1 and out9[0]._device_id == "#0#9" and out9[0]._device_name == "Centrale 9"
+
+
+async def test_live_reverse_discovery_from_f454_sweep_transfers_master_telemetry_to_four_zone_central(
+    hass: HomeAssistant,
+) -> None:
+    """[N-P1-1] On live reverse discovery (F454 + LN4695 sweep #1002 creates Climate Zone 1 first,
+    then #0#1 arrives later), Central Unit 01 inherits live temperature, humidity, knob, and actuators.
+    """
+    sweep = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "issue_994_f454_sweep_2026-11-22"
+        / "myhome_sweep_F454_all_2026-11-22T21-35-56.json"
+    )
+    _gateway_, found = await _plant(hass, None, sweep)
+    assert "1" in found and "#0#1" not in found
+    zone1 = found["1"]
+    assert zone1.current_temperature == 19.4
+    # Also feed humidity & knob onto live Zone 1 before #0#1 arrives.
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*60*48##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*13*01##"))
+    await hass.async_block_till_done()
+    assert zone1.current_humidity == 48.0
+    assert zone1.extra_state_attributes["knob_pos"] == "+1"
+
+    # Now #0#1 reports dynamically on the bus -> inherits Zone 1's live telemetry cleanly.
+    created: list[MyHOMEClimate] = []
+    # Re-run via full setup capturing newly added #0#1 entity from runtime/entities list.
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:44:55:77"}, unique_id="00:03:50:44:55:77")
+    entry.add_to_hass(hass)
+    gw2 = MagicMock(mac="00:03:50:44:55:77", is_connected=True, log_id="[sweep]", has_central_unit=False)
+    gw2.send = AsyncMock()
+    gw2.send_status_request = AsyncMock()
+    rt2 = attach_runtime(hass, entry, gw2.mac, gw2)
+    rt2.platforms["climate"] = {}
+    await async_setup_entry(hass, entry, created.extend)
+    for raw in (*_received(sweep), "*#4*1*60*48##", "*#4*1*13*01##"):
+        async_dispatcher_send(hass, f"myhome_message_{gw2.mac}", OWNEvent.parse(raw))
+        await hass.async_block_till_done()
+    assert any(e._where == "1" for e in created)
+    async_dispatcher_send(hass, f"myhome_message_{gw2.mac}", OWNEvent.parse("*4*110#0160*#0#1##"))
+    await hass.async_block_till_done()
+    central = next(e for e in created if e._where == "#0#1")
+    assert central.current_temperature == 19.4
+    assert central.current_humidity == 48.0
+    assert central.extra_state_attributes["knob_pos"] == "+1"
+    assert central.extra_state_attributes["actuators"] == {"1": "off"}
+    assert central.target_temperature == 16.0
+
+
+async def test_four_zone_central_polls_status_and_master_temp_after_f454_sweep(
+    hass: HomeAssistant,
+) -> None:
+    """[N-P1-2] #0#N polls *#4*#0#N## on startup/update (even if #0 central_status_just_asked is True),
+    and polls master Zone N temperature (*#4*N*0##) on gateways dropping *#4*0## when unreported.
+    """
+    sweep = (
+        Path(__file__).parent
+        / "fixtures"
+        / "traces"
+        / "issue_994_f454_sweep_2026-11-22"
+        / "myhome_sweep_F454_all_2026-11-22T21-35-56.json"
+    )
+    gateway, found = await _plant(hass, REPORTERS_FILE, sweep)
+    central = found["#0#1"]
+    gateway.general_zone_request_refused = True
+    gateway.central_status_just_asked = True  # #0 sweep must NOT suppress #0#1's own *#4*#0#1## poll
+    assert central._poll_on_add is True
+    assert central.current_temperature == 19.4  # already reported by sweep
+
+    # Sweep already reported temperature -> only *#4*#0#1## is polled (no redundant *#4*1*0##).
+    await central.async_update()
+    assert [str(c.args[0]) for c in gateway.send_status_request.await_args_list] == ["*#4*#0#1##"]
+
+    # Without a live temperature report (e.g. F461 / MHS1 / F455), both *#4*#0#1## and *#4*1*0## are polled.
+    gateway.send_status_request.reset_mock()
+    central._attr_native_current_temperature = None
+    await central.async_update()
+    assert [str(c.args[0]) for c in gateway.send_status_request.await_args_list] == [
+        "*#4*#0#1##",
+        "*#4*1*0##",
+    ]
+
+
+async def test_four_zone_central_sensor_event_validation_and_pre_report_season() -> None:
+    """[N-P2-1] & [N-P2-3]: #0#N enforces thermo_zone_sensor_target + 0..100% humidity bounds,
+    and accepts pre-report plain *4*1*N## / *4*0*N## until #0#N itself reports.
+    """
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    gw = _gateway(has_central_unit=False)
+    central = _climate(gw, "#0#1", standalone=None, central=True)
+
+    # [N-P2-3] Before any #0#1 report (_central_report_count == 0), *4*1*1## seeds season & mode.
+    central.handle_event(OWNHeatingEvent("*4*1*1##"))
+    assert central._central_report_count == 0
+    assert central._season == "heating"
+    assert central.hvac_mode == HVACMode.HEAT
+
+    # [N-P2-1] Valid master Zone 1 temperature & humidity update #0#1; invalid selectors & 255% rejected.
+    central.handle_event(OWNHeatingEvent("*#4*1*0*0194##"))
+    central.handle_event(OWNHeatingEvent("*#4*1*60*47##"))
+    assert central.current_temperature == 19.4
+    assert central.current_humidity == 47.0
+
+    for bad_raw in (
+        "*#4*001*0*0299##",
+        "*#4*1#1*0*0299##",
+        "*#4*#1*0*0299##",
+        "*#4*1*#0*0299##",
+        "*#4*1*60*255##",
+    ):
+        central.handle_event(OWNHeatingEvent(bad_raw))
+    assert central.current_temperature == 19.4
+    assert central.current_humidity == 47.0

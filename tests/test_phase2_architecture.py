@@ -281,9 +281,9 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*#4*#0#1*#14*0175*3##"
 
-    # Status update is a no-op for central units (no *#4*#0#1*14## status poll, #582)
+    # Status update sends canonical *#4*#0#1## status query (never *#4*#0#1*14##, #582 / #994)
     await cu4.async_update()
-    gateway.send_status_request.assert_not_called()
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##"]
 
 
 @pytest.mark.asyncio
