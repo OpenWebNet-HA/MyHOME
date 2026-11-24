@@ -4074,6 +4074,10 @@ def _consume_write_exception(fut: asyncio.Future[Any]) -> None:
         fut.exception()
 
 
+class _PulseNotWrittenError(HomeAssistantError):
+    """Delivery future was cancelled or withdrawn before any byte reached the command session."""
+
+
 class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     """An impulse-driven gate or garage door powered by a WHO=1 relay.
 
@@ -4285,6 +4289,15 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         """Monotonic time the last pulse handed to the gateway ended, confirmed or not."""
         return max(self._last_pulse_time, self._unconfirmed_at)
 
+    @staticmethod
+    def _is_unwritten_pool_future(fut: asyncio.Future[Any]) -> bool:
+        """Return True when ``fut`` is still queued in CommandWorkerPool before ``send()``."""
+        return (
+            not fut.done()
+            and getattr(fut, "_queued_in_pool", False) is True
+            and getattr(fut, "_written_under", None) is None
+        )
+
     async def _async_confirm_write(self, write_fut: Any, *, withdraw: bool) -> float | None:
         """Wait until the gateway confirmed a queued frame; raise when it did not.
 
@@ -4292,9 +4305,14 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         whose acknowledgement timed out or that was never written
         (``gateway_sessions._cancel_written``). That is a failed delivery, not a
         cancellation of this task, and must not escape as ``asyncio.CancelledError``
-        (a ``BaseException`` no ``except Exception`` sees). ``withdraw`` cancels a frame
-        that is still unconfirmed when the wait ends, so the worker never writes it late;
-        a frame that is not withdrawn (an OFF) is left alone, whatever awaitable carries it.
+        (a ``BaseException`` no ``except Exception`` sees). When the worker or queue
+        proves zero bytes reached the command session (``_not_written``), or a pool
+        future is withdrawn before ``_written_under`` is stamped, this raises
+        :class:`_PulseNotWrittenError` so the caller classifies the pulse as
+        :attr:`PulseOutcome.NOT_SENT` instead of :attr:`PulseOutcome.UNCONFIRMED`.
+        ``withdraw`` cancels a frame that is still unconfirmed when the wait ends, so
+        the worker never writes it late; a frame that is not withdrawn (an OFF) is left
+        alone, whatever awaitable carries it.
 
         Returns the monotonic time the worker wrote the frame (what it resolves the
         future with), or None when the handler gave no such time.
@@ -4311,13 +4329,22 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             # for the frame any more. `asyncio.wait` never raises for the future's own
             # cancellation, so this is always the caller's.
             if withdraw:
+                if self._is_unwritten_pool_future(write_fut):
+                    setattr(write_fut, "_not_written", True)
                 write_fut.cancel()
             else:
                 write_fut.add_done_callback(_consume_write_exception)
             raise
         if not done:
             if withdraw:
+                unwritten = self._is_unwritten_pool_future(write_fut)
+                if unwritten:
+                    setattr(write_fut, "_not_written", True)
                 write_fut.cancel()
+                if unwritten:
+                    raise _PulseNotWrittenError(
+                        f"withdrawn after {IMPULSE_WRITE_TIMEOUT:.0f} s before it could be written to the gateway"
+                    )
             else:
                 write_fut.add_done_callback(_consume_write_exception)
             raise HomeAssistantError(
@@ -4325,8 +4352,12 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 + ("; withdrawn if it had not been written yet" if withdraw else "")
             )
         if write_fut.cancelled():
+            if getattr(write_fut, "_not_written", False) is True:
+                raise _PulseNotWrittenError(
+                    "command session unavailable or queue closed before frame was written"
+                )
             raise HomeAssistantError(
-                "rejected or dropped by the gateway (NACK, acknowledgement timeout or command session unavailable)"
+                "rejected or dropped by the gateway (NACK, acknowledgement timeout or command session lost)"
             )
         written_at = write_fut.result()  # re-raises a delivery error
         return written_at if isinstance(written_at, float) else None
@@ -4418,6 +4449,7 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         self._pulse_in_flight = True
         written = self._pulse_written = asyncio.Event()
         outcome = PulseOutcome.NOT_SENT
+        write_fut: Any = None
         try:
             if is_stop:
                 hold = self._last_handover + self._pulse_duration + OFF_SETTLE_DELAY - time.monotonic()
@@ -4481,8 +4513,27 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             self._last_pulse_intent = intent
             outcome = PulseOutcome.CONFIRMED
             return outcome
+        except _PulseNotWrittenError as err:
+            # Zero bytes reached the command session (connect failed/refused, queue
+            # closed, or withdrawn from the pool before send()): the relay did not
+            # switch and no software OFF is owed.
+            outcome = PulseOutcome.NOT_SENT
+            self._off_pending = False
+            self._last_pulse_error = str(err)
+            LOGGER.error(
+                "%s: Impulse command was not written to gateway: %s",
+                self._display_name,
+                err,
+            )
+            return outcome
         except asyncio.CancelledError:
             # The service call was cancelled or the entity removed.
+            if (
+                outcome is PulseOutcome.UNCONFIRMED
+                and getattr(write_fut, "_not_written", False) is True
+            ):
+                outcome = PulseOutcome.NOT_SENT
+                self._off_pending = False
             if outcome is PulseOutcome.UNCONFIRMED:
                 self._mark_unconfirmed()
             elif self._off_pending and self._pulse_off_cancel is None:

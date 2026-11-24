@@ -19,12 +19,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.components.cover import CoverDeviceClass
-from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.const import CONF_HOST, CONF_MAC, CONF_PASSWORD, CONF_PORT, STATE_OFF, STATE_ON
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNMessage
 from pytest_homeassistant_custom_component.common import (
+    MockConfigEntry,
     async_fire_time_changed_exact,
     async_mock_service,
 )
@@ -32,7 +33,9 @@ from voluptuous import Invalid
 
 from custom_components.myhome import cover as cover_module
 from custom_components.myhome.access_policy import AccessController, Intent, Phase, PulseOutcome
+from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.cover import OFF_SETTLE_DELAY, MyHOMEImpulseCover
+from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from custom_components.myhome.validate import cover_schema
 from tests.test_access_policy import SENSOR, _approve_action, _config, _press, _user, _wait_phase
 
@@ -725,3 +728,293 @@ async def test_nack_retry_delay_does_not_collapse_software_pulse_to_zero(
     async_fire_time_changed_exact(hass, dt_util.utcnow() + timedelta(seconds=1.1))
     await hass.async_block_till_done()
     assert bus.frames == [ON, OFF]
+
+
+# ── 8. M-09: Pre-wire cancelled/withdrawn pool futures are NOT_SENT ────────
+
+
+def _make_pool_gateway(hass: HomeAssistant, entry_id: str) -> MyHOMEGatewayHandler:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.0.2.93",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "open",
+            CONF_MAC: "00:03:50:00:88:99",
+        },
+        entry_id=entry_id,
+    )
+    entry.add_to_hass(hass)
+    gateway = MyHOMEGatewayHandler(hass, entry)
+    gateway._event_session_ready.set()
+    return gateway
+
+
+def _make_pool_gate(
+    hass: HomeAssistant,
+    gateway: MyHOMEGatewayHandler,
+    *,
+    pulse_duration: float = 1.0,
+    state_sensor: str | None = None,
+    access: bool = False,
+) -> MyHOMEImpulseCover:
+    with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
+        gate = MyHOMEImpulseCover(
+            hass=hass,
+            name="Garage",
+            entity_name=None,
+            device_id="24",
+            who="1",
+            where="24",
+            interface=None,
+            device_class=CoverDeviceClass.GARAGE,
+            travel_time=10.0,
+            pulse_duration=pulse_duration,
+            min_cycle_time=5.0,
+            pin_code=None,
+            state_sensor=state_sensor,
+            manufacturer="BTicino",
+            model="Impulse Cover",
+            gateway=gateway,
+            access_config={} if access else None,
+        )
+    gate.hass = hass
+    gate.entity_id = "cover.garage"
+    gate.async_write_ha_state = MagicMock()
+    return gate
+
+
+async def test_prewire_connect_failure_is_not_sent_for_direct_and_access_covers(hass: HomeAssistant):
+    """When CommandWorkerPool cannot open a command session, zero bytes were written: NOT_SENT, no supervision, no OFF retries."""
+    sent_frames: list[str] = []
+
+    class _UnavailableSession:
+        def __init__(self, **_kwargs: Any) -> None:
+            self._stream_reader = None
+            self._stream_writer = None
+            self.last_error = None
+
+        async def connect(self) -> dict[str, Any]:
+            return {"Success": False, "Message": "connection_unavailable"}
+
+        async def send(self, message: Any, **_kwargs: Any) -> Any:
+            sent_frames.append(str(message))
+            return True
+
+        async def close(self) -> None:
+            return None
+
+    gateway = _make_pool_gateway(hass, "test_m09_connect_unavailable")
+    direct = _make_pool_gate(hass, gateway, pulse_duration=1.0, state_sensor=SENSOR)
+    hass.states.async_set(SENSOR, STATE_OFF)
+    direct._handle_sensor_update(STATE_OFF)
+
+    supervised = _make_pool_gate(hass, gateway, pulse_duration=1.0, state_sensor=SENSOR, access=True)
+    user = await _user(hass, "Parent")
+    supervised._context = Context(user_id=user.id)
+    assert supervised._access is not None
+    supervised._access.config = _config(user.id)
+    supervised._handle_sensor_update(STATE_OFF)
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", _UnavailableSession):
+        worker = asyncio.create_task(gateway.sending_loop(0))
+        try:
+            with pytest.raises(HomeAssistantError, match="pulse was not sent") as err:
+                await direct.async_open_cover()
+            assert err.value.translation_key == "impulse_pulse_send_failed"
+            assert sent_frames == []
+            assert direct._off_pending is False
+            assert direct._off_task is None
+            assert direct._pulse_off_cancel is None
+            assert direct._unconfirmed_at == -1e9
+            assert direct._relay_seen_at == -1e9
+            # Closed and at rest: stop_cover sends nothing because the failed connect did not stamp _relay_seen_at.
+            await direct.async_stop_cover()
+            assert sent_frames == []
+
+            # Supervised access: settles to IDLE with "Not executed", never starts Phase.MONITORING or OFF retries.
+            await supervised.async_open_cover()
+            await _press(hass, _approve_action(calls)["action"], user.id)
+            await _wait_phase(supervised._access, Phase.IDLE)
+            await hass.async_block_till_done()
+            messages = [str(c.data.get("message", "")) for c in calls]
+            assert any("Not executed" in m and "was not sent" in m for m in messages)
+            assert not any("did not confirm" in m for m in messages)
+            assert supervised._off_pending is False
+            assert supervised._off_task is None
+            assert sent_frames == []
+        finally:
+            await supervised._access.async_shutdown()
+            gateway._command_pool.close()
+            await asyncio.wait_for(worker, 5)
+
+
+async def test_prewire_connect_refused_and_connect_exception_are_not_sent(hass: HomeAssistant):
+    """Auth refusal on reconnect or an exception raised inside connect() cancels pre-wire -> NOT_SENT."""
+    attempts = 0
+
+    class _RefusedOnReconnectSession:
+        def __init__(self, **_kwargs: Any) -> None:
+            self._stream_reader = None
+            self._stream_writer = None
+            self.last_error = None
+
+        async def connect(self) -> dict[str, Any]:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                # Initial worker connect fails softly so worker enters loop with closed session.
+                return {"Success": False, "Message": "connection_unavailable"}
+            if attempts == 2:
+                raise RuntimeError("socket setup boom")
+            return {"Success": False, "Message": "password_error"}
+
+        async def send(self, message: Any, **_kwargs: Any) -> Any:  # pragma: no cover - never reached
+            raise AssertionError(f"must not send {message}")
+
+        async def close(self) -> None:
+            return None
+
+    gateway = _make_pool_gateway(hass, "test_m09_connect_refused")
+    gate = _make_pool_gate(hass, gateway, pulse_duration=1.0)
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", _RefusedOnReconnectSession):
+        worker = asyncio.create_task(gateway.sending_loop(0))
+        try:
+            # Attempt 2: connect() raises RuntimeError before send() -> NOT_SENT, no OFF task.
+            with pytest.raises(HomeAssistantError, match="pulse was not sent") as err1:
+                await gate.async_open_cover()
+            assert err1.value.translation_key == "impulse_pulse_send_failed"
+            assert gate._off_pending is False
+            assert gate._off_task is None
+            assert gate._unconfirmed_at == -1e9
+
+            # Attempt 3: connect() returns password_error -> worker exits after pre-wire cancel -> NOT_SENT.
+            with pytest.raises(HomeAssistantError, match="pulse was not sent") as err2:
+                await gate.async_open_cover()
+            assert err2.value.translation_key == "impulse_pulse_send_failed"
+            assert gate._off_pending is False
+            assert gate._off_task is None
+            assert gate._unconfirmed_at == -1e9
+            await asyncio.wait_for(worker, 5)
+        finally:
+            gateway._command_pool.close()
+            if not worker.done():
+                await asyncio.wait_for(worker, 5)
+
+
+async def test_prewire_pool_close_timeout_and_caller_cancel_are_not_sent(hass: HomeAssistant, monkeypatch):
+    """Frames withdrawn from CommandWorkerPool before _written_under never reach the wire -> NOT_SENT, no OFF."""
+    monkeypatch.setattr(cover_module, "IMPULSE_WRITE_TIMEOUT", 0.02)
+
+    # 1. Timeout withdraws a frame still queued in the pool (no worker has written it).
+    gateway1 = _make_pool_gateway(hass, "test_m09_pool_timeout")
+    gate1 = _make_pool_gate(hass, gateway1, pulse_duration=1.0)
+    with pytest.raises(HomeAssistantError, match="pulse was not sent.*withdrawn") as err:
+        await gate1.async_open_cover()
+    assert err.value.translation_key == "impulse_pulse_send_failed"
+    assert gate1._off_pending is False
+    assert gate1._off_task is None
+    assert gate1._unconfirmed_at == -1e9
+    gateway1._command_pool.close()
+
+    # 2. Caller CancelledError withdraws a frame still queued in the pool -> NOT_SENT, no OFF task.
+    monkeypatch.setattr(cover_module, "IMPULSE_WRITE_TIMEOUT", 5.0)
+    gateway2 = _make_pool_gateway(hass, "test_m09_pool_cancel")
+    gate2 = _make_pool_gate(hass, gateway2, pulse_duration=1.0)
+    task = asyncio.create_task(gate2.async_open_cover())
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert gate2._last_written == (Intent.OPEN, PulseOutcome.NOT_SENT)
+    assert gate2._off_pending is False
+    assert gate2._off_task is None
+    assert gate2._unconfirmed_at == -1e9
+    gateway2._command_pool.close()
+
+    # 3. Pool close() cancels queued frames pre-wire -> NOT_SENT, no OFF task.
+    gateway3 = _make_pool_gateway(hass, "test_m09_pool_close")
+    gate3 = _make_pool_gate(hass, gateway3, pulse_duration=1.0)
+    opening = asyncio.create_task(gate3.async_open_cover())
+    await asyncio.sleep(0.01)
+    gateway3._command_pool.close()
+    with pytest.raises(HomeAssistantError, match="pulse was not sent") as err3:
+        await opening
+    assert err3.value.translation_key == "impulse_pulse_send_failed"
+    assert gate3._off_pending is False
+    assert gate3._off_task is None
+    assert gate3._unconfirmed_at == -1e9
+
+
+async def test_postwire_timeout_and_drop_in_pool_remain_unconfirmed_and_owe_off(hass: HomeAssistant, monkeypatch):
+    """Once CommandWorkerPool stamps _written_under and enters send(), timeout or drop stays UNCONFIRMED and owes OFF."""
+    # Exceed Generic gateway's 0.05 s command_queue_delay so the eagerly-started OFF task
+    # completes once release_send unblocks the worker after the ON timeout.
+    monkeypatch.setattr(cover_module, "IMPULSE_WRITE_TIMEOUT", 0.2)
+    monkeypatch.setattr(cover_module, "OFF_ATTEMPTS", 1)
+    in_send = asyncio.Event()
+    release_send = asyncio.Event()
+    seen_frames: list[str] = []
+
+    class _StallThenDropSession:
+        def __init__(self, **_kwargs: Any) -> None:
+            self._stream_reader: Any = None
+            self._stream_writer: Any = None
+            self.last_error = None
+
+        async def connect(self) -> dict[str, Any]:
+            self._stream_reader = object()
+            self._stream_writer = object()
+            return {"Success": True}
+
+        async def send(self, message: Any, **_kwargs: Any) -> Any:
+            frame = str(message)
+            seen_frames.append(frame)
+            if len(seen_frames) == 1:
+                in_send.set()
+                await release_send.wait()
+                return None
+            if len(seen_frames) == 3:
+                # Mid-flight socket drop after _written_under was stamped.
+                return None
+            return True
+
+        async def close(self) -> None:
+            self._stream_reader = None
+            self._stream_writer = None
+
+    gateway = _make_pool_gateway(hass, "test_m09_postwire")
+    gate = _make_pool_gate(hass, gateway, pulse_duration=1.0)
+
+    with patch("custom_components.myhome.gateway.OWNCommandSession", _StallThenDropSession):
+        worker = asyncio.create_task(gateway.sending_loop(0))
+        try:
+            # 1. Timeout after _written_under is stamped -> UNCONFIRMED + immediate OFF task.
+            with pytest.raises(HomeAssistantError, match="pulse was not confirmed") as err:
+                await gate.async_open_cover()
+            assert err.value.translation_key == "impulse_pulse_unconfirmed"
+            assert in_send.is_set()
+            assert gate._unconfirmed_at > 0
+            assert gate._off_pending is True
+            assert gate._off_task is not None
+            release_send.set()
+            await asyncio.wait_for(gate._off_task, 5)
+            assert gate._off_pending is False
+            assert seen_frames == [ON, OFF]
+
+            # 2. Mid-flight drop inside send() after _written_under is stamped -> UNCONFIRMED + OFF task.
+            monkeypatch.setattr(cover_module, "IMPULSE_WRITE_TIMEOUT", 5.0)
+            with pytest.raises(HomeAssistantError, match="pulse was not confirmed") as err2:
+                await gate.async_open_cover()
+            assert err2.value.translation_key == "impulse_pulse_unconfirmed"
+            assert gate._off_pending is True
+            assert gate._off_task is not None
+            await asyncio.wait_for(gate._off_task, 5)
+            assert gate._off_pending is False
+            assert seen_frames == [ON, OFF, ON, OFF]
+        finally:
+            release_send.set()
+            gateway._command_pool.close()
+            await asyncio.wait_for(worker, 5)

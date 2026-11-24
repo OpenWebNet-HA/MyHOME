@@ -85,9 +85,10 @@ class Intent(StrEnum):
 class PulseOutcome(StrEnum):
     """What became of a pulse the cover was asked to send.
 
-    ``NOT_SENT``: nothing was handed to the gateway (deadband, another pulse being
+    ``NOT_SENT``: zero bytes reached the gateway (deadband, another pulse being
     written, the relay of the pulse before could not be released, the send queue
-    refused the frame). The door did not move because of this request.
+    refused the frame, or the command session failed to connect / the frame was
+    withdrawn before writing). The door did not move because of this request.
     ``UNCONFIRMED``: the frame was handed to the gateway and its confirmation never
     came (NACK, acknowledgement timeout, session lost, write timeout). The relay may or
     may not have switched: the door has to be treated as possibly moving.
@@ -739,7 +740,8 @@ class AccessController:
             if self._pulse_sent is PulseOutcome.NOT_SENT:
                 raise AccessDenied(
                     f"{self._name}: the pulse was not sent "
-                    "(too soon after the previous one, or the relay could not be released)"
+                    "(too soon after the previous one, the relay could not be released, "
+                    "or the command session was unavailable)"
                 )
             confirmed = self._pulse_sent is PulseOutcome.CONFIRMED
             if confirmed:

@@ -60,10 +60,17 @@ def _resolve_written(task: dict[str, Any], when: float) -> None:
         written.set_result(when)
 
 
-def _cancel_written(task: dict[str, Any]) -> None:
-    """Cancel a queued frame's delivery future (the frame will never be written)."""
+def _cancel_written(task: dict[str, Any], *, not_written: bool = False) -> None:
+    """Cancel a queued frame's delivery future.
+
+    ``not_written=True`` records that zero bytes of this frame were handed to a
+    command session (superseded in the queue, queue closed before dequeue, or
+    the command session could not be opened before ``send()``).
+    """
     written = task.get("written")
     if isinstance(written, asyncio.Future) and not written.done():
+        if not_written:
+            setattr(written, "_not_written", True)
         written.cancel()
 
 
@@ -1147,7 +1154,7 @@ class FrameScheduler:
         """Drop superseded queued frames for the same target and cancel their futures."""
         dropped = self._queue.drop_superseded(item)
         for old_item in dropped:
-            _cancel_written(old_item)
+            _cancel_written(old_item, not_written=True)
             if self._unfinished_tasks > 0:
                 self._unfinished_tasks -= 1
                 if self._unfinished_tasks == 0:
@@ -1333,7 +1340,7 @@ class FrameScheduler:
             while not self.empty():
                 item = self._queue.popleft()
                 if isinstance(item, dict):
-                    _cancel_written(item)
+                    _cancel_written(item, not_written=True)
                 if self._unfinished_tasks > 0:
                     self._unfinished_tasks -= 1
             self._in_flight_targets.clear()
@@ -1476,6 +1483,7 @@ class CommandWorkerPool:
     ) -> asyncio.Future[float]:
         """Put a frame on the send queue and hand back its delivery future."""
         written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        setattr(written, "_queued_in_pool", True)
         envelope: dict[str, Any] = {
             "message": message,
             "is_status_request": is_status_request,
@@ -1593,6 +1601,7 @@ class CommandWorkerPool:
                         await _command_session.close()
                     continue
 
+                sent_to_session = False
                 try:
                     if task is None:
                         break
@@ -1625,7 +1634,7 @@ class CommandWorkerPool:
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
                         if self._connect_refused(res, worker_id):
-                            _cancel_written(task)
+                            _cancel_written(task, not_written=True)
                             return
                         if not session_is_open(_command_session):
                             LOGGER.warning(
@@ -1633,7 +1642,7 @@ class CommandWorkerPool:
                                 self.log_id,
                                 task["message"],
                             )
-                            _cancel_written(task)
+                            _cancel_written(task, not_written=True)
                             continue
                         if isinstance(written, asyncio.Future) and written.cancelled():
                             # Re-check after `connect()`: OWNd's 5-attempt retry loop
@@ -1665,6 +1674,7 @@ class CommandWorkerPool:
                             "_written_under",
                             (self.handler, getattr(self.handler, "event_connections", None)),
                         )
+                    sent_to_session = True
                     self._in_flight_messages.append(task["message"])
                     try:
                         collected = await _command_session.send(
@@ -1786,10 +1796,10 @@ class CommandWorkerPool:
                                 # A reply to a request sent for an offline primary
                                 self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
-                    _cancel_written(task)
+                    _cancel_written(task, not_written=not sent_to_session)
                     raise
                 except Exception:
-                    _cancel_written(task)
+                    _cancel_written(task, not_written=not sent_to_session)
                     LOGGER.exception(
                         "%s Worker %s: unexpected error while sending `%s`; "
                         "delivery is unconfirmed.",
@@ -1847,7 +1857,7 @@ class CommandWorkerPool:
             except asyncio.QueueEmpty:
                 break
             if task is not None:
-                _cancel_written(task)
+                _cancel_written(task, not_written=True)
             self.send_buffer.task_done()
 
         if isinstance(self.send_buffer, FrameScheduler):
