@@ -23,7 +23,9 @@ Log: `Gateway could not be reached or connection failed at <host>` or `Gateway c
 
 ### "Reauthentication required"
 
-Log: `Gateway rejected the OpenWebNet password (password_error|password_required)`.
+Log at setup: `Gateway rejected the OpenWebNet password (password_error|password_required)`.
+
+Log while Home Assistant runs: `The gateway refused the OpenWebNet password (password_error|password_required) on the event|command session. Both sessions are stopped so that it is not presented again; enter the password in the re-authentication prompt.` Every entity of the gateway is then unavailable and no command is sent until the password is entered and the entry reloads.
 
 Home Assistant opens the reauth flow itself; enter the OpenWebNet password configured on the gateway (not the web-UI password). `MH200`, `MH200N`, `MH201`, `F452`, `F453`, `F453AV`, `H4684`, and `AM4890` / `H4890` only support the legacy numeric OPEN password; SHA-256 HMAC (alphanumeric) is supported on `F454`, `F455`, `F461`, `MH202`, and `MyHomeServer1`. If the gateway has no password, leave the field empty and make sure its IP-range whitelist includes Home Assistant.
 

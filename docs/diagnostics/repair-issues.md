@@ -94,10 +94,11 @@ No action is required unless the correction was incorrect. If your physical hard
 ### What it means
 The gateway rejected the OpenWebNet password or HMAC SHA-negotiation credentials.
 
+This also happens while Home Assistant runs: the gateway's password was changed, or the gateway refuses the stored one on a reconnect. Then both sessions (event and command) stop, every entity of the gateway becomes unavailable, no command is sent, and the password is not presented again until you enter one.
+
 ### How to resolve
-1. Open **Settings → Devices & Services → MyHOME**.
-2. Click **Reconfigure** on the gateway card.
-3. Enter the correct OpenWebNet numeric password or HMAC secret.
+1. Open the **Reauthentication required** prompt of the gateway entry (**Settings → Devices & Services → MyHOME**) and enter the OpenWebNet numeric password or HMAC secret configured on the gateway. The entry reloads by itself.
+2. Or open **Settings → Devices & Services → MyHOME**, click **Reconfigure** on the gateway card and enter the correct password. A Reconfigure dialog that is already open takes the place of the prompt (Home Assistant starts no reauth while one is open): finish it with the right password, or close it and reload the entry.
 
 ---
 

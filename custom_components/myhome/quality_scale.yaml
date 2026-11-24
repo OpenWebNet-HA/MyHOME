@@ -96,7 +96,7 @@ rules:
     comment: PARALLEL_UPDATES = 0 declared across all 11 platform files for push-driven event streaming.
   reauthentication-flow:
     status: done
-    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.
+    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; a password refused while the entry is loaded stops both sessions and starts the same reauth flow (gateway.py _on_auth_refused).
   test-coverage:
     status: done
     comment: 100.0% statement coverage verified across all integration modules.

@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -538,6 +538,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     _central_season: str | None = None
     central_season_changed_at: float | None = None
     central_season_learned_at: float | None = None
+    _auth_refused: bool = False
+    _auth_refused_session: str | None = None
+    _cancel_listener_handle: asyncio.Handle | None = None
 
     def __init__(
         self,
@@ -573,6 +576,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         self._failover_active = False
         self._setup_at = time.monotonic()
         self._unavailable_timer: CALLBACK_TYPE | None = None
+        # Set when the gateway refused the stored password while the entry was loaded.
+        self._auth_refused = False
+        self._auth_refused_session: str | None = None
+        self._cancel_listener_handle: asyncio.Handle | None = None
         self.listening_worker: asyncio.Task[None] | None = None
         self.bus_monitor = BusMonitor()
         self.device_health = DeviceHealth(self)
@@ -1222,6 +1229,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @callback
     def _on_event_connection_state_change(self, connected: bool) -> None:
         """Gate commands and publish sustained event-session availability."""
+        if connected and (self._auth_refused or self._terminate_listener):
+            # A late reconnect callback arriving after auth refusal or shutdown must not
+            # flip availability back on while sessions are torn down.
+            self.is_connected = False
+            self._event_runner.is_connected = False
+            return
         was_connected = self.is_connected
         self.is_connected = connected
         self._event_runner.is_connected = connected
@@ -1280,8 +1293,83 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
             )
 
     @callback
-    def _mark_unavailable(self, _now: Any) -> None:
-        """Mark the gateway unavailable after the reconnect grace period."""
+    def _on_auth_refused(self, reason: str | None, session: str) -> None:
+        """The gateway refused the stored password while the entry is loaded.
+
+        Setup answers this with ``ConfigEntryAuthFailed``; here the entry is already
+        loaded, so the reauth flow is started by hand (OWNd's ``on_auth_error`` was
+        added for this, OpenWebNet-HA/OWNd#132). Both sessions stop for good: a refused
+        password is never presented again, by either session, until the user has
+        entered a new one and the entry reloads. An HMAC gateway disables its
+        authentication service after 3 failed handshakes in 60 s
+        (OpenWebNet Encyclopedia ``protocol/authentication.md``, HMAC Simple
+        Authentication Mode).
+        """
+        if self._auth_refused or self._terminate_listener:
+            return
+        self._auth_refused = True
+        self._auth_refused_session = session
+        LOGGER.error(
+            "%s The gateway refused the OpenWebNet password (%s) on the %s session. "
+            "Both sessions are stopped so that it is not presented again; "
+            "enter the password in the re-authentication prompt.",
+            self.log_id,
+            reason or "password_error",
+            session,
+        )
+        self._command_pool.stop_after_auth_refusal()
+        self._event_runner.close()
+        listener = self.listening_worker
+        # The hook can run inside the listener itself: it is then cancelled from the loop.
+        reported_by_listener = listener is asyncio.current_task()
+        if listener is not None and not listener.done():
+            # Blocked in get_next() on a session that may still be open (a refusal on the
+            # command session only): a drop would make OWNd log in again from inside it.
+            # Repeated: OWNd suppresses one CancelledError while it recycles a socket.
+            if reported_by_listener:
+                listener.add_done_callback(self._clear_cancel_listener_handle)
+                self._cancel_listener_handle = self.hass.loop.call_soon(
+                    self._cancel_listener, listener
+                )
+            else:
+                self._cancel_listener(listener)
+        # Nothing recovers without the user, so no reconnect grace period.
+        self.is_connected = False
+        self._event_runner.is_connected = False
+        self._mark_unavailable(None, auth_refused=True)
+        entry = getattr(self, "config_entry", None)
+        if entry is None or entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS:
+            return
+        entry.async_start_reauth(self.hass)
+
+    @callback
+    def _clear_cancel_listener_handle(self, _task: Any = None) -> None:
+        """Cancel any pending listener-cancel repeat timer."""
+        if self._cancel_listener_handle is not None:
+            self._cancel_listener_handle.cancel()
+            self._cancel_listener_handle = None
+
+    @callback
+    def _cancel_listener(self, listener: asyncio.Task[None], attempt: int = 0) -> None:
+        """Cancel the stopped event listener until it has ended or entered session cleanup (bounded)."""
+        if listener.done() or self._event_runner._closing_session or attempt >= 60:
+            self._clear_cancel_listener_handle()
+            return
+        if attempt == 0 and self._cancel_listener_handle is None:
+            listener.add_done_callback(self._clear_cancel_listener_handle)
+        listener.cancel()
+        if attempt < 10:
+            self._cancel_listener_handle = self.hass.loop.call_soon(
+                self._cancel_listener, listener, attempt + 1
+            )
+        else:
+            self._cancel_listener_handle = self.hass.loop.call_later(
+                0.1, self._cancel_listener, listener, attempt + 1
+            )
+
+    @callback
+    def _mark_unavailable(self, _now: Any, *, auth_refused: bool = False) -> None:
+        """Mark the gateway unavailable after the reconnect grace period or an auth refusal."""
         if self._unavailable_timer is not None:
             self._unavailable_timer()
             self._unavailable_timer = None
@@ -1292,11 +1380,12 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if self.available:  # carried by the warm standby; refresh entities whose standby coverage differs
             async_dispatcher_send(self.hass, self.availability_signal)
             return
-        LOGGER.warning(
-            "%s Gateway unavailable (outage exceeded %ss).",
-            self.log_id,
-            AVAILABILITY_GRACE,
-        )
+        if not (auth_refused or self._auth_refused):
+            LOGGER.warning(
+                "%s Gateway unavailable (outage exceeded %ss).",
+                self.log_id,
+                AVAILABILITY_GRACE,
+            )
         self._notify_availability()
 
     @callback
@@ -1306,7 +1395,11 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def listening_loop(self) -> None:
         """Run the event session, recreating it whenever it dies or stalls."""
-        await self._event_runner.listening_loop()
+        try:
+            await self._event_runner.listening_loop()
+        except asyncio.CancelledError:
+            if not self._ended_by_auth_refusal():
+                raise
 
     def profile_supports_who(self, who: int) -> bool:
         """Return whether the startup sweep asks this gateway's profile about a WHO."""
@@ -1352,7 +1445,27 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     async def sending_loop(self, worker_id: int) -> None:
         """Run sending loop for worker."""
-        await self._command_pool.sending_loop(worker_id)
+        try:
+            await self._command_pool.sending_loop(worker_id)
+        except asyncio.CancelledError:
+            if not self._ended_by_auth_refusal():
+                raise
+
+    def _ended_by_auth_refusal(self) -> bool:
+        """A listener or worker cancelled by ``_on_auth_refused`` ends normally.
+
+        The refusal stops both sessions by cancelling their tasks; that is the
+        intended end of the task, not an outside cancellation, so whoever awaits
+        it sees it finish instead of a ``CancelledError``.
+        """
+        if not self._auth_refused:
+            return False
+        task = asyncio.current_task()
+        if task is None or (task is not self.listening_worker and task not in self.sending_workers):
+            return False
+        while task.cancelling():
+            task.uncancel()
+        return True
 
     @property
     def initial_discovery_pending(self) -> bool:
@@ -1641,6 +1754,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         LOGGER.info("%s Closing event listener", self.log_id)
         if self._unavailable_timer is not None:
             self._unavailable_timer()
+        self._clear_cancel_listener_handle()
         self._resync_manager.cancel_all()
         self._echo_watchdog.cancel_all()
         if self._zone_request_task is not None:
