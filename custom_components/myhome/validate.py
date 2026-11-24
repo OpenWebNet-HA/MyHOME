@@ -785,11 +785,44 @@ def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any
     return device
 
 
+def _validate_binary_sensor_entry(device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate binary sensor WHERE, optional F422 bus routing, and WHO=1 canonical point."""
+    who = str(device.get(CONF_WHO, "25"))
+    device[CONF_WHO] = who
+    raw_where = str(device[CONF_WHERE])
+    inline_iface: str | None = None
+    if BUS_ROUTING in raw_where:
+        base, _, tail = raw_where.partition(BUS_ROUTING)
+        if not base or "#" in base or "#" in tail:
+            raise Invalid(
+                f"Invalid WHERE {raw_where}, it must be '<digits>' or '<digits>#4#<interface>'."
+            )
+        raw_where = SpecialWhere()(base)  # type: ignore[no-untyped-call]
+        inline_iface = BusInterface()(tail)  # type: ignore[no-untyped-call]
+    else:
+        raw_where = SpecialWhere()(raw_where)  # type: ignore[no-untyped-call]
+
+    explicit_iface = device.get(CONF_BUS_INTERFACE)
+    if inline_iface is not None:
+        if explicit_iface is not None and explicit_iface != inline_iface:
+            raise Invalid(
+                f"Conflicting bus interface between where '{device[CONF_WHERE]}' and interface '{explicit_iface}'."
+            )
+        device[CONF_BUS_INTERFACE] = inline_iface
+
+    if who == "9" and device.get(CONF_BUS_INTERFACE) is not None:
+        raise Invalid("WHO=9 auxiliary channels do not support bus interface routing.")
+
+    device[CONF_WHERE] = raw_where
+    return _canonical_who1_point(device)
+
+
 binary_sensor_schema = MyHomeDeviceSchema(
     {
         Required(str): All({
             Optional(CONF_WHO, default="25"): All(Coerce(str), In(["1", "9", "25"])),
-            Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
+            Required(CONF_WHERE): Coerce(str),
+            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_INVERTED, default=False): Boolean(),
@@ -851,7 +884,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
             ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }, _canonical_who1_point)
+        }, _validate_binary_sensor_entry)
     }
 )
 

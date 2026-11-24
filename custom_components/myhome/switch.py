@@ -381,6 +381,8 @@ async def async_setup_entry(
         bs_who, candidate = classified
         clean_cand = candidate.split("-")[-1]
         if bs_who == "25":
+            candidate = Address.from_device_id(candidate).key
+            clean_cand = candidate.split("-")[-1]
             bs_cfg = _bs_first_cfg(*dry_contact_config_keys(candidate))
             bs_where = Address.from_config(candidate, bs_cfg).key if bs_cfg else candidate
             norm_w = normalize_where(bs_where) or normalize_where(bs_where.split("-")[-1])

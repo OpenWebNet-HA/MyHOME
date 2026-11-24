@@ -233,24 +233,34 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     # ── WHO 1: motion sensors ───────────────────────────────────────────
     def build_motion(ctx: DeviceContext) -> MyHOMEMotionSensor:
         if ctx.source == "yaml":
-            cfg, where, device_id = ctx.cfg, ctx.address.where, ctx.config_id or ctx.key
+            cfg, where, device_id = ctx.cfg, ctx.address.key, ctx.config_id or ctx.key
             name = cfg[CONF_NAME]
         elif ctx.source == "registry":
-            raw = ctx.address.where
+            raw = ctx.address.key
             clean_raw = raw.split("-")[-1]
-            norm_raw, clean_norm = normalize_where(raw), normalize_where(clean_raw)
+            norm_raw = binary_sensor_canonical_where("1", raw)
+            clean_norm = binary_sensor_canonical_where("1", clean_raw)
             cfg = _first_config(configured, f"1-{norm_raw}", f"1-{raw}", norm_raw, raw, clean_norm, clean_raw)
-            where = str(cfg.get(CONF_WHERE, norm_raw or raw))
-            device_id = norm_raw or clean_norm or clean_raw
-            name = cfg.get(CONF_NAME, f"Motion Sensor {clean_norm or clean_raw}")
+            where = Address.from_config(raw, cfg).key if cfg else (norm_raw or raw)
+            device_id = raw if raw in configured else (norm_raw or clean_norm or clean_raw)
+            reg_dev_id = getattr(ctx.registry_entry, "device_id", None)
+            if isinstance(reg_dev_id, str) and reg_dev_id:
+                existing_dev = dr.async_get(hass).async_get(reg_dev_id)
+                if existing_dev is not None:
+                    for dom, ident in existing_dev.identifiers:
+                        if dom == DOMAIN and "-1-" in ident:
+                            device_id = ident.split("-1-", 1)[1]
+                            break
+            default_label = ctx.address.suffix if ctx.address.interface else (clean_norm or clean_raw)
+            name = cfg.get(CONF_NAME, f"Motion Sensor {default_label}")
         else:
-            cfg, where, device_id = {}, ctx.address.where, ctx.address.where
-            name = f"Motion Sensor {where}"
+            cfg, where, device_id = {}, ctx.address.key, ctx.address.key
+            name = f"Motion Sensor {ctx.address.suffix}"
         motion = MyHOMEMotionSensor(
             hass=hass,
             device_id=device_id,
             who="1",
-            where=normalize_where(where) or where,
+            where=binary_sensor_canonical_where("1", where) or where,
             name=name,
             entity_name=cfg.get(CONF_ENTITY_NAME),
             inverted=cfg.get(CONF_INVERTED, False),
@@ -300,7 +310,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         claim = getattr(gateway, "claim_in_flight_dimension_where", None)
         where = claim(1, dimension) if callable(claim) else None
         if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _spellings(where)):
-            ctx_discovery["1"].route(message, Address(where))
+            ctx_discovery["1"].route(message, Address.from_device_id(where))
 
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
     ctx_discovery["25"] = PlatformDiscovery(
@@ -341,9 +351,23 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
 
 def _spellings(where: str) -> list[str]:
-    """``0031`` may also appear as ``31``, and a legacy ``25-0031`` as either."""
+    """``0031`` may also appear as ``31``, ``04#4#1`` as ``04#4#01``, and a legacy ``25-0031`` as either."""
     clean = where.split("-")[-1]
-    return list(dict.fromkeys(k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k))
+    base, sep, iface = clean.partition(BUS_ROUTING)
+    norm_clean = normalize_where(clean)
+    if sep:
+        norm_base = normalize_where(base) or base
+        norm_iface = (
+            iface.zfill(2)
+            if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 and int(iface) <= 15
+            else iface
+        )
+        norm_clean = f"{norm_base}{BUS_ROUTING}{norm_iface}"
+    return list(
+        dict.fromkeys(
+            k for k in (where, normalize_where(where), clean, normalize_where(clean), norm_clean) if k
+        )
+    )
 
 
 def _contact_spellings(where: str) -> list[str]:
@@ -434,7 +458,11 @@ def binary_sensor_canonical_where(who: str, where: str) -> str:
     else:
         norm_base = normalize_where(base) or base
     if sep:
-        norm_iface = iface.zfill(2) if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 else iface
+        norm_iface = (
+            iface.zfill(2)
+            if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 and int(iface) <= 15
+            else iface
+        )
         combined = f"{norm_base}{BUS_ROUTING}{norm_iface}"
     else:
         combined = norm_base
@@ -517,19 +545,38 @@ def _primary(where: str) -> str:
     return normalize_where(where) or normalize_where(clean) or clean
 
 
+def _bus_interface_from_message(message: Any) -> tuple[bool, str | None]:
+    """Extract optional F422 ``#4#II`` interface (00..15) or reject foreign ``where_param``."""
+    iface_attr = getattr(message, "interface", None)
+    raw_iface = iface_attr if isinstance(iface_attr, str) and iface_attr else None
+    raw_params = where_param(message)
+    params = [str(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
+    if raw_iface is not None:
+        if params and not (len(params) == 2 and params[0] == "4"):
+            return False, None
+        if raw_iface.isascii() and raw_iface.isdigit() and 1 <= len(raw_iface) <= 2 and int(raw_iface) <= 15:
+            return True, raw_iface.zfill(2)
+        return False, None
+    if not params:
+        return True, None
+    if (
+        len(params) == 2
+        and params[0] == "4"
+        and params[1].isascii()
+        and params[1].isdigit()
+        and 1 <= len(params[1]) <= 2
+        and int(params[1]) <= 15
+    ):
+        return True, params[1].zfill(2)
+    return False, None
+
+
 def _contact_address(message) -> Address | None:  # type: ignore
     # An F455 pads the contact number (301), every other gateway and the WHO 25 PDF do not (31).
     # OWNd leaves F422 routing (``301#4#01``) in ``where_param == ["4", "01"]`` for WHO 25.
-    raw_iface: str | None = getattr(message, "interface", None) or None
-    if raw_iface is None:
-        params = [str(p) for p in where_param(message)]
-        if len(params) == 2 and params[0] == "4" and params[1].isascii() and params[1].isdigit() and 1 <= len(params[1]) <= 2:
-            raw_iface = params[1]
-    interface = (
-        raw_iface.zfill(2)
-        if raw_iface and raw_iface.isascii() and raw_iface.isdigit() and 1 <= len(raw_iface) <= 2
-        else raw_iface
-    )
+    valid_iface, interface = _bus_interface_from_message(message)
+    if not valid_iface:
+        return None
     return Address(canonical_contact_where(_primary(str(message.where))), interface)
 
 
@@ -549,7 +596,10 @@ def _motion_address(message) -> Address | None:  # type: ignore
     )
     if not is_motion or getattr(message, "where", None) is None:
         return None
-    return Address(_primary(str(message.where)))
+    valid_iface, interface = _bus_interface_from_message(message)
+    if not valid_iface:
+        return None
+    return Address(_primary(str(message.where)), interface)
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:  # type: ignore
@@ -760,7 +810,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         model: str,
         gateway: MyHOMEGatewayHandler,
     ):
-        norm_where = normalize_where(where) or where
+        norm_where = binary_sensor_canonical_where("1", where) or where
         super().__init__(
             hass=hass,
             name=name,
@@ -789,7 +839,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
         self._attr_should_poll = False
         self._attr_is_on = False
-        where_str = str(self._where)
+        where_str = str(self._where).partition(BUS_ROUTING)[0]
         half = len(where_str) // 2
         a_val = where_str[:half] if half > 0 else "0"
         pl_val = where_str[half:] if half > 0 else where_str

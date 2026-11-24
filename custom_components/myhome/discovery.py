@@ -67,7 +67,14 @@ class Address:
         if key_suffix and device_id.endswith(key_suffix):
             device_id = device_id[: -len(key_suffix)]
         base, routing, interface = device_id.rpartition(BUS_ROUTING)
-        if routing and base and interface.isdigit() and 1 <= len(interface) <= 2:
+        if (
+            routing
+            and base
+            and interface.isascii()
+            and interface.isdigit()
+            and 1 <= len(interface) <= 2
+            and int(interface) <= 15
+        ):
             return cls(base, interface.zfill(2), key_suffix)
         return cls(device_id, None, key_suffix)
 
@@ -82,13 +89,41 @@ class Address:
     @classmethod
     def from_config(cls, dev_id: str, cfg: dict[str, Any]) -> Address:
         """Address of a ``myhome.yaml`` device: ``where`` (``zone`` for heating), else the key."""
-        interface = cfg.get(CONF_BUS_INTERFACE) or cfg.get("bus_interface") or cfg.get("interface")
+        interface = next(
+            (
+                cfg[k]
+                for k in (CONF_BUS_INTERFACE, "bus_interface", "interface")
+                if k in cfg and cfg[k] is not None and cfg[k] != ""
+            ),
+            None,
+        )
         where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, dev_id)))
-        if not interface:
+        if interface is None:
             base, routing, inline_iface = where.rpartition(BUS_ROUTING)
-            if routing and base and inline_iface.isdigit() and 1 <= len(inline_iface) <= 2:
+            if (
+                routing
+                and base
+                and inline_iface.isascii()
+                and inline_iface.isdigit()
+                and 1 <= len(inline_iface) <= 2
+                and int(inline_iface) <= 15
+            ):
                 return cls(base, inline_iface.zfill(2))
-        return cls(where, str(interface) if interface else None)
+            return cls(where, None)
+        iface_str = str(interface)
+        if iface_str.isascii() and iface_str.isdigit() and 1 <= len(iface_str) <= 2 and int(iface_str) <= 15:
+            iface_str = iface_str.zfill(2)
+        base, routing, inline_iface = where.rpartition(BUS_ROUTING)
+        if (
+            routing
+            and base
+            and inline_iface.isascii()
+            and inline_iface.isdigit()
+            and 1 <= len(inline_iface) <= 2
+            and inline_iface.zfill(2) == iface_str
+        ):
+            where = base
+        return cls(where, iface_str)
 
     @property
     def key(self) -> str:

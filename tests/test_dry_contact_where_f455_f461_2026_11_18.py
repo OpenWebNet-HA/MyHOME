@@ -30,13 +30,18 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.binary_sensor import (
     MyHOMEDryContact,
+    _bus_interface_from_message,
+    _contact_address,
     _contact_peer_spellings,
     _contact_spellings,
+    _motion_address,
+    _spellings,
     binary_sensor_canonical_where,
     resolve_binary_sensor_inverted,
 )
 from custom_components.myhome.const import (
     CONF_BUS_TOPOLOGY,
+    CONF_FILE_PATH,
     CONF_GATEWAY_ROLE,
     CONF_IGNORED_ADDRESSES,
     CONF_INVERTED_BINARY_SENSORS,
@@ -46,7 +51,7 @@ from custom_components.myhome.const import (
     ROLE_STANDBY,
     TOPOLOGY_SHARED,
 )
-from custom_components.myhome.discovery import binary_sensor_only_on_primary, prune_entity
+from custom_components.myhome.discovery import Address, binary_sensor_only_on_primary, prune_entity
 from custom_components.myhome.gateway import AVAILABILITY_GRACE
 from custom_components.myhome.ignored import IgnoredAddresses
 from custom_components.myhome.legacy_yaml import CONF_MIGRATED_YAML_PLATFORMS
@@ -487,8 +492,11 @@ async def test_a_standby_f461_drops_its_31_when_primary_f455_has_301(hass: HomeA
 
 
 def test_binary_sensor_only_on_primary_matches_contact_aliases() -> None:
+    assert binary_sensor_only_on_primary({f"{PRI}-25-31"}, f"{SB}-25-31", SB, PRI) is True
     assert binary_sensor_only_on_primary({f"{PRI}-25-31"}, f"{SB}-25-301", SB, PRI) is True
     assert binary_sensor_only_on_primary({f"{PRI}-25-301"}, f"{SB}-25-31", SB, PRI) is True
+    assert binary_sensor_only_on_primary({f"{PRI}-25-31", f"{SB}-25-31"}, f"{SB}-25-31", SB, PRI) is False
+    assert binary_sensor_only_on_primary({f"{PRI}-25-31"}, "unrelated-25-31", SB, PRI) is False
     assert binary_sensor_only_on_primary({f"{PRI}-25-344"}, f"{SB}-25-31", SB, PRI) is False
     assert binary_sensor_only_on_primary({f"{PRI}-9-1"}, f"{SB}-9-2", SB, PRI) is False
 
@@ -552,6 +560,11 @@ def test_prune_entity_preserves_companion_buttons_when_another_actuator_shares_u
     assert registry.async_get(ghost_light.entity_id) is None
     assert registry.async_get(live_switch.entity_id) is not None
     assert registry.async_get(disable_btn.entity_id) is not None
+
+    # Once the sole remaining actuator is pruned too, its companion button goes with it
+    prune_entity(hass, registry, live_switch, entry.entry_id)
+    assert registry.async_get(live_switch.entity_id) is None
+    assert registry.async_get(disable_btn.entity_id) is None
 
 
 def test_ignored_contact_normalizes_routed_and_leading_zero_spellings() -> None:
@@ -779,3 +792,209 @@ async def test_removed_named_yaml_key_gate_301_does_not_steal_contact_31_invert_
         await _feed(hass, entry, "*25*31#0*31##")
         assert hass.states.get(fw_eid).state == "on"
         assert hass.states.get(gate_reg.entity_id).state == "off"
+
+
+async def test_live_myhome_yaml_file_loads_routed_contacts_and_motion_sensors(
+    hass: HomeAssistant, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Real ``myhome.yaml`` parsing through ``validate.config_schema`` supports ``#4#II`` and ``interface:``."""
+    yaml_file = tmp_path / "myhome.yaml"
+    yaml_file.write_text(
+        f"""
+gateway:
+  mac: {PRI}
+  binary_sensor:
+    garage:
+      who: 25
+      where: 301#4#01
+      name: Garage
+      class: garage_door
+    side_gate:
+      who: 25
+      where: 302
+      interface: 1
+      name: Side Gate
+      class: door
+    hall_pir:
+      who: 1
+      where: 0004#4#1
+      name: Hall PIR
+      class: motion
+""",
+        encoding="utf-8",
+    )
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=PRI,
+        data={"host": "127.0.0.1", "mac": PRI, "port": 20000, "password": "pass"},
+        options={CONF_FILE_PATH: str(yaml_file)},
+    )
+    entry.add_to_hass(hass)
+    p1, p2, p3 = _setup_patches()
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        _connected(entry)
+        assert "does not generate unique IDs" not in caplog.text
+
+        await _feed(hass, entry, "*25*31#0*301#4#01##", "*25*31#0*302#4#01##", "*1*34*04#4#01##")
+        assert _state(hass, f"{PRI}-25-301#4#01-garage_door") == "on"
+        assert _state(hass, f"{PRI}-25-302#4#01-door") == "on"
+        assert _state(hass, f"{PRI}-1-04#4#01-motion") == "on"
+
+        pir_eid = er.async_get(hass).async_get_entity_id("binary_sensor", DOMAIN, f"{PRI}-1-04#4#01-motion")
+        assert pir_eid is not None
+        pir_state = hass.states.get(pir_eid)
+        assert pir_state is not None
+        assert pir_state.attributes["A"] == "0"
+        assert pir_state.attributes["PL"] == "4"
+
+
+async def test_routed_who1_motion_sensor_restoration_discovery_and_anonymous_reply(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Restored and bus-discovered F422 motion sensors keep ``#4#01``, poll routed WHERE, and ignore local ``04``."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=PRI,
+        data={"host": "127.0.0.1", "mac": PRI, "port": 20000, "password": "pass"},
+        options={
+            CONF_MIGRATED_YAML_PLATFORMS: {
+                "binary_sensor": {
+                    "1-04": {"who": "1", "where": "04", "name": "Local Hall PIR", "class": "motion"},
+                }
+            }
+        },
+    )
+    entry.add_to_hass(hass)
+    registry, devices = er.async_get(hass), dr.async_get(hass)
+    routed_dev = devices.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{PRI}-1-04#4#01")},
+        name="Motion Sensor 04I01",
+    )
+    routed_reg = registry.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{PRI}-1-04#4#01-motion",
+        config_entry=entry,
+        device_id=routed_dev.id,
+        original_device_class="motion",
+    )
+    # Also restore a second routed PIR without device_id to exercise default routed registry naming
+    orphan_reg = registry.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{PRI}-05#4#1-motion",
+        config_entry=entry,
+        original_device_class="motion",
+    )
+
+    p1, p2, p3 = _setup_patches()
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        _connected(entry)
+        assert "does not generate unique IDs" not in caplog.text
+
+        # Both routed device {PRI}-1-04#4#01 and local YAML {PRI}-1-04 exist separately
+        who1_devs = sorted(
+            ident
+            for d in dr.async_entries_for_config_entry(devices, entry.entry_id)
+            for dom, ident in d.identifiers
+            if dom == DOMAIN and "-1-" in ident
+        )
+        assert f"{PRI}-1-04" in who1_devs
+        assert f"{PRI}-1-04#4#01" in who1_devs
+        assert f"{PRI}-1-05#4#01" in who1_devs
+        assert registry.async_get(routed_reg.entity_id).device_id == routed_dev.id
+        assert hass.states.get(orphan_reg.entity_id) is not None
+
+        # Routed motion triggers only 04#4#01; local motion triggers only 04; bus-discovered 06#4#01 stays separate
+        await _feed(hass, entry, "*1*34*04#4#01##", "*1*34*06#4#01##")
+        assert _state(hass, f"{PRI}-1-04#4#01-motion") == "on"
+        assert _state(hass, f"{PRI}-1-04-motion") == "off"
+        assert _state(hass, f"{PRI}-06#4#01-motion") == "on"
+
+        # Anonymous WHERE=0 dimension 5 reply routes to routed PIR when its request is in flight
+        entry.runtime_data.gateway.claim_in_flight_dimension_where = MagicMock(return_value="04#4#1")
+        await _feed(hass, entry, "*#1*0*5*3##")
+        assert hass.states.get(routed_reg.entity_id).attributes["Sensitivity"] == "very high"
+
+
+def test_foreign_where_params_and_out_of_range_interfaces_are_not_rewritten_as_local_contacts() -> None:
+    """Non-F422 ``where_param`` (ZigBee ``#9``, ``#1``) and out-of-range ``#4#99`` never map onto local ``31``."""
+    for raw in (
+        "*25*31#0*301#1##",
+        "*25*31#1*301#01#9##",
+        "*25*31#0*301#4#99##",
+    ):
+        assert _contact_address(OWNMessage.parse(raw)) is None
+
+    for raw in (
+        "*1*34*04#9##",
+        "*1*34*04#4#99##",
+    ):
+        assert _motion_address(OWNMessage.parse(raw)) is None
+
+    assert _contact_address(OWNMessage.parse("*25*31#0*301#4#1##")) == Address("31", "01")
+    assert _motion_address(OWNMessage.parse("*1*34*04#4#1##")) == Address("04", "01")
+
+    synthetic_conflict = MagicMock(interface="01", where="301", where_param=["9"])
+    assert _bus_interface_from_message(synthetic_conflict) == (False, None)
+
+    assert canonical_contact_where("301#4#99") == "301#4#99"
+    assert padded_contact_where("31#4#99") == "31#4#99"
+    assert contact_where_aliases("301#4#99") == ["301#4#99"]
+    assert binary_sensor_canonical_where("25", "301#4#99") == "301#4#99"
+    assert binary_sensor_canonical_where("9", "01") == "01"
+    assert _spellings("04#4#1") == ["04#4#1", "04#4#01"]
+    assert _spellings("04#4#99") == ["04#4#99"]
+
+    assert Address.from_device_id("301#4#99") == Address("301#4#99", None)
+    assert Address.from_config("side", {"where": "301", "interface": 1}) == Address("301", "01")
+    assert Address.from_config("side", {"where": "301", "interface": 0}) == Address("301", "00")
+    assert Address.from_config("side", {"where": "301#4#1", "interface": "01"}) == Address("301", "01")
+    assert Address.from_config("bad", {"where": "301#4#99"}) == Address("301#4#99", None)
+
+
+async def test_single_digit_routed_registry_contact_and_invert_switch_share_one_device(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Single-digit ``#4#1`` registry entries and ``interface: '1'`` configs unify on ``{mac}-25-301#4#01``."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=PRI,
+        data={"host": "127.0.0.1", "mac": PRI, "port": 20000, "password": "pass"},
+        options={
+            CONF_MIGRATED_YAML_PLATFORMS: {
+                "binary_sensor": {
+                    "side": {"who": "25", "where": "302", "interface": "1", "name": "Side", "class": "door"},
+                }
+            }
+        },
+    )
+    entry.add_to_hass(hass)
+    er.async_get(hass).async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{PRI}-301#4#1-opening",
+        config_entry=entry,
+        original_device_class="opening",
+    )
+    p1, p2, p3 = _setup_patches()
+    with p1, p2, p3:
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        _connected(entry)
+        assert "does not generate unique IDs" not in caplog.text
+
+        assert _contact_devices(hass, entry) == [f"{PRI}-25-301#4#01", f"{PRI}-25-side"]
+        assert _unique_ids(hass, entry, "switch") == [
+            f"{PRI}-25-301#4#01-invert",
+            f"{PRI}-25-side-invert",
+        ]
+
+        # Foreign where_param frames on the live bus must not create or toggle local contact 31
+        await _feed(hass, entry, "*25*31#0*301#1##", "*25*31#1*301#01#9##", "*25*31#0*301#4#99##")
+        assert f"{PRI}-31-opening" not in _unique_ids(hass, entry)

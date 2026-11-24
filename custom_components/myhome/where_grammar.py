@@ -694,8 +694,8 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
 # an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
 # ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
 # that one padding zero in front of a single digit was captured, so only that is rewritten.
-_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#[0-9]{1,2})?)$")
-_SHORT_CONTACT_RE = re.compile(r"^3([1-9])((?:#4#[0-9]{1,2})?)$")
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+_SHORT_CONTACT_RE = re.compile(r"^3([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
 
 
 def canonical_contact_where(where: str) -> str:
@@ -723,7 +723,11 @@ def contact_where_aliases(where: str) -> list[str]:
     text = str(where)
     base, sep, iface = text.partition("#4#")
     clean_base = base.lstrip("0") or "0" if base.isascii() and base.isdigit() else base
-    clean_iface = iface.zfill(2) if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 else iface
+    clean_iface = (
+        iface.zfill(2)
+        if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 and int(iface) <= 15
+        else iface
+    )
     normalized = f"{clean_base}#4#{clean_iface}" if sep else clean_base
     return list(
         dict.fromkeys(
