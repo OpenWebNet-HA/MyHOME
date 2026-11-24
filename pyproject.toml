@@ -35,7 +35,7 @@ test = [
     "check-wheel-contents>=0.6.0",
     "validate-pyproject[all]>=0.16",
     "ruff>=0.4.0",
-    "OWNd==2.0.1",
+    "OWNd==2.0.2",
 ]
 
 [project.urls]
@@ -67,6 +67,7 @@ filterwarnings = [
     # anyio is imported by HA's dependency tree before pytest registers it for
     # assertion rewriting; only affects assert introspection inside anyio itself.
     "ignore:Module already imported so cannot be rewritten:pytest.PytestAssertRewriteWarning",
+    "error::RuntimeWarning",
 ]
 
 [tool.coverage.run]

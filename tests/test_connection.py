@@ -892,7 +892,12 @@ class TestOWNEventAndCommandSessionRemainingCoverage:
     @pytest.mark.asyncio
     async def test_command_session_send_to_gateway_classmethod(self):
         gw = OWNGateway({"address": "127.0.0.1", "port": 20000})
-        with patch.object(OWNCommandSession, "connect", new_callable=AsyncMock):
+        with patch.object(
+            OWNCommandSession,
+            "connect",
+            new_callable=AsyncMock,
+            return_value={"Success": True},
+        ):
             with patch.object(OWNCommandSession, "send", new_callable=AsyncMock) as mock_send:
                 await OWNCommandSession.send_to_gateway("*1*1*12##", gw)
                 mock_send.assert_called_once_with("*1*1*12##")

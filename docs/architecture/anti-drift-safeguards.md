@@ -25,7 +25,7 @@ graph TD
         B --> B4[Diagnostics & In-Band Bus Monitor WebSocket]
     end
 
-    A -->|Published via PyPI: OWNd==2.0.1| B
+    A -->|Published via PyPI: OWNd==2.0.2| B
 ```
 
 ### Why Decouple?
@@ -108,7 +108,7 @@ To keep production and development dependencies in lock-step:
    ```json
    {
      "requirements": [
-       "OWNd==2.0.1"
+       "OWNd==2.0.2"
      ]
    }
    ```
