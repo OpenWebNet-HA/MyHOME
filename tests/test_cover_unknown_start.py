@@ -1081,6 +1081,66 @@ async def test_partial_run_before_restore_is_not_overwritten_by_unavailable_reco
     assert cover2.is_closed is None
 
 
+async def test_ran_since_start_ignores_idle_stop_poll_and_tracks_write_settled_stops(
+    hass, gateway, clock, fake_time
+) -> None:
+    """Static idle *2*0*WHERE## polls do not block restore, while write-settled stops without bus echoes do."""
+    # Idle *2*0*05## poll reply before restore sets _last_stop_at without any real motion.
+    idle_cover = _make_cover(hass, gateway, slat_tilt=True, slat_time=1.5)
+    idle_cover.handle_event(OWNEvent.parse("*2*0*05##"))
+    assert idle_cover._last_stop_at is not None
+    assert idle_cover._ran_since_start is False
+    idle_cover.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    idle_cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False, "tilt": 20})
+    )
+    await idle_cover.async_added_to_hass()
+    assert idle_cover.current_cover_position == 40
+    assert idle_cover.is_closed is False
+    assert idle_cover.current_cover_tilt_position == 20
+
+    # Write-settled partial curtain stop (no bus *2*0*05## echo) still blocks stale restore.
+    curtain = _make_cover(hass, gateway)
+    curtain.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 1.0
+    await curtain.async_stop_cover()
+    _, stop_written = gateway.deliveries[-1]
+    stop_written.set_result(clock.now)
+    await _yield()
+    assert curtain._last_stop_at is None
+    assert curtain._ran_since_start is True
+    curtain.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    curtain.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False})
+    )
+    await curtain.async_added_to_hass()
+    assert curtain.current_cover_position is None
+    assert curtain.is_closed is None
+
+    # Write-settled partial slat pulse stop (no bus *2*0*05## echo) blocks stale tilt/position restore.
+    pulse_cover = _make_cover(hass, gateway, slat_tilt=True, slat_time=1.5)
+    await pulse_cover.async_open_cover_tilt()
+    _, pulse_written = gateway.deliveries[-1]
+    pulse_written.set_result(clock.now)
+    await _yield()
+    clock.now += 0.12
+    pulse_cover.handle_event(OWNEvent.parse("*2*1*05##"))
+    clock.now += 0.4
+    await pulse_cover.async_stop_cover()
+    _, pulse_stop_written = gateway.deliveries[-1]
+    pulse_stop_written.set_result(clock.now)
+    await _yield()
+    assert pulse_cover._last_stop_at is None
+    assert pulse_cover._ran_since_start is True
+    pulse_cover.async_get_last_state = AsyncMock(return_value=State("cover.shutter_05", "unavailable", {}))
+    pulse_cover.async_get_last_extra_data = AsyncMock(
+        return_value=RestoredExtraData({"position": 40, "is_closed": False, "tilt": 20})
+    )
+    await pulse_cover.async_added_to_hass()
+    assert pulse_cover.current_cover_position is None
+    assert pulse_cover.current_cover_tilt_position is None
+
+
 async def test_advanced_cover_restores_custom_native_strategy_state(hass, gateway) -> None:
     """A custom NativePositionStrategy subclass receives its exported state back on an advanced cover."""
     from custom_components.myhome.cover_strategies import NativePositionStrategy

@@ -1,5 +1,6 @@
 """Tests for MyHOME impulse cover platform (gates, garage doors, impulse relays WHO=1)."""
 import asyncio
+import logging
 import time
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -808,7 +809,7 @@ async def test_stop_of_a_supervised_gate_is_immediate_while_it_moves(hass: HomeA
     assert impulse_gate.extra_state_attributes["access_phase"] == "idle"
 
 
-async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, impulse_gate):
+async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, impulse_gate, caplog):
     """The fault attribute of the last state (or extra_restore_state_data when saved unavailable) re-latches the fault."""
     from homeassistant.core import State
     from homeassistant.helpers.restore_state import RestoredExtraData
@@ -866,7 +867,9 @@ async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, im
         await impulse_gate.async_added_to_hass()
     assert impulse_gate.extra_state_attributes["fault_reason"] is None
 
+    caplog.clear()
     with (
+        caplog.at_level(logging.WARNING),
         patch.object(
             MyHOMEImpulseCover,
             "async_get_last_state",
@@ -881,6 +884,8 @@ async def test_latched_fault_is_restored_after_a_restart(hass: HomeAssistant, im
     ):
         await impulse_gate.async_added_to_hass()
     assert impulse_gate.extra_state_attributes["fault_reason"] is None
+    assert "extra restore data" in caplog.text
+    assert "no restore cache" in caplog.text
 
     with (
         patch.object(MyHOMEImpulseCover, "async_get_last_state", AsyncMock(return_value=None)),

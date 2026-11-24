@@ -27,9 +27,11 @@ from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
     STATE_CLOSED,
+    STATE_CLOSING,
     STATE_OFF,
     STATE_ON,
     STATE_OPEN,
+    STATE_OPENING,
     STATE_UNAVAILABLE,
 )
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
@@ -704,6 +706,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._calibration_interrupted: str | None = None
         self._stopped_event: asyncio.Event = asyncio.Event()
         self._last_stop_at: float | None = None
+        # Set once a real curtain run or slat pulse finishes (never by a static
+        # *2*0*WHERE## poll reply while idle, nor by an aborted write).
+        self._ran_since_start: bool = False
         self._last_run: dict[str, Any] = {}  # the last completed run as measured, see _freeze_position
         self._motion_started_at: str | None = None
 
@@ -1211,6 +1216,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._stop_live_refresh()
         is_opening = bool(self._attr_is_opening)
         is_closing = bool(self._attr_is_closing)
+        if is_opening or is_closing:
+            self._ran_since_start = True
         run_started_at = self._run_started_at
         lead = self._move_lead if self._move_start_time is not None else 0.0
         if self._run_started_at is not None:
@@ -1555,12 +1562,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # with no position. What the entity knew then is in its own restore record.
         saved_unavailable = last_state.state == STATE_UNAVAILABLE
         moving_on_add = bool(self._attr_is_opening or self._attr_is_closing)
-        ran_since_start = self._last_stop_at is not None
+        # Set by every real run-completion path (bus stops, write-settled stops,
+        # timer settles, and delivered slat pulses) rather than _last_stop_at, which
+        # misses write-settled/timer stops and is also set by static *2*0*WHERE##
+        # status polls received while idle before restore finishes.
+        ran_since_start = self._ran_since_start
         if self._strategy.assumed_state:
             if not moving_on_add:
-                if last_state.state in (STATE_CLOSED, "closed"):
+                if last_state.state == STATE_CLOSED:
                     self._attr_is_closed = True
-                elif last_state.state in (STATE_OPEN, "open"):
+                elif last_state.state == STATE_OPEN:
                     self._attr_is_closed = False
                 elif (
                     saved_unavailable
@@ -1590,9 +1601,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     restored = False
             if not restored:
                 was_closed: bool | None = None
-                if last_state.state in (STATE_CLOSED, "closed"):
+                if last_state.state == STATE_CLOSED:
                     was_closed = True
-                elif last_state.state in (STATE_OPEN, "open"):
+                elif last_state.state == STATE_OPEN:
                     was_closed = False
                 elif (
                     saved_unavailable
@@ -1629,8 +1640,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 except (ValueError, TypeError):
                     pass
         if not self._advanced:
-            if last_state.state in ("opening", "closing"):
-                self._arm_relay_hold(time.monotonic(), opening=last_state.state == "opening")
+            if last_state.state in (STATE_OPENING, STATE_CLOSING):
+                self._arm_relay_hold(time.monotonic(), opening=last_state.state == STATE_OPENING)
             else:
                 raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
                 if not raw_ts and saved_unavailable:
@@ -2123,6 +2134,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _end_run_on_reversal(self, now: float) -> None:
         """Tell the strategy the opposite direction on the bus ended the running run."""
         if not self._advanced and self._run_started_at is not None:
+            self._ran_since_start = True
             self._accumulate_position_drift(
                 max(0.0, now - self._run_started_at),
                 bool(self._attr_is_opening),
@@ -2618,6 +2630,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _finish_end_of_run_settle(self, opening: bool) -> None:
         """Publish the end position once ``travel_time + END_SETTLE_MARGIN`` has elapsed."""
         self._stop_live_refresh()
+        self._ran_since_start = True
         self._attr_current_cover_position = 100 if opening else 0
         self._start_position = self._attr_current_cover_position
         if self._slat_tilt:
@@ -3151,6 +3164,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             stopped_at = at if at is not None else time.monotonic()
             self._attr_current_cover_tilt_position = self._interpolated_tilt(stopped_at)
             self._carry_overshoot_into_curtain(stopped_at)
+        if not self._pulse_direction_failed() and self._tilt_direction is not None:
+            self._ran_since_start = True
         # The pulse is over: a direction frame from now on is a keypad press, not its echo.
         self._end_echo_window()
         self._is_tilting = False
@@ -3263,6 +3278,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             and self._run_started_at is not None
         ):
             self._stop_live_refresh()
+            self._ran_since_start = True
             self._start_position = self.current_cover_position if self.current_cover_position is not None else self._start_position
             self._attr_current_cover_position = self._start_position
             self._turn_slats_for_run(now, self._run_started_at, bool(self._attr_is_opening), bool(self._attr_is_closing))
@@ -3811,6 +3827,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 self._clear_pulse_end()
             if was_opening or was_closing:
                 self._last_stop_at = now
+                self._ran_since_start = True
                 self._stopped_event.set()
                 if self._advanced and self._run_started_at is not None:
                     self._last_run = {
@@ -3939,6 +3956,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # way (documented). The motor time is still measured for calibration.
                 self._stop_live_refresh()
                 self._last_stop_at = now
+                self._ran_since_start = True
                 self._stopped_event.set()
                 self._last_run = {
                     "seconds": round(now - self._run_started_at, 2),
@@ -4171,7 +4189,12 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             if not fault and last_state is not None and last_state.state == STATE_UNAVAILABLE:
                 try:
                     extra = await self.async_get_last_extra_data()
-                except Exception:  # pylint: disable=broad-except  # not registered with the restore cache
+                except Exception as err:  # pylint: disable=broad-except  # not registered with the restore cache
+                    LOGGER.warning(
+                        "%s: Could not read extra restore data while restoring latched fault: %s",
+                        self._display_name,
+                        err,
+                    )
                     extra = None
                 if extra is not None:
                     fault = extra.as_dict().get("fault_reason")
