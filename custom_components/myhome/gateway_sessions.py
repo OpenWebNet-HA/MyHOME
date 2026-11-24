@@ -1667,6 +1667,8 @@ class CommandWorkerPool:
                                 parsed=resp if isinstance(resp, OWNMessage) else None,
                             )
                             if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                if task["is_status_request"]:
+                                    setattr(resp, "_from_status_request", True)
                                 if isinstance(resp, OWNGatewayEvent):
                                     self.handler._handle_gateway_diagnostics(resp)
                                 elif (

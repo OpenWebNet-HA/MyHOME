@@ -15,9 +15,11 @@ import pytest
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_BRIGHTNESS_PCT,
+    ATTR_COLOR_TEMP_KELVIN,
     ATTR_HS_COLOR,
     ATTR_RGB_COLOR,
     ATTR_TRANSITION,
+    ColorMode,
 )
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import Event, HomeAssistant, State, callback
@@ -1304,3 +1306,103 @@ async def test_issue_976_archived_mh200n_trace_replay_on_ownd_202(
     assert dimmer_55.actuator_locked is False
     assert dimmer_55.is_on is False
     assert dimmer_55._attr_brightness_pct == 0
+
+
+async def test_dali_combined_ct_brightness_f422_nack_poll_guard_and_coarse_quantized_fade(
+    hass: HomeAssistant,
+) -> None:
+    """Verify combined Dim 14+Dim 1 zero spike & F422 NACK rollback, cold-boot CT poll guard, and coarse-start fade."""
+    _entry, handler = _make_gateway(hass, model="F461")
+    dali = MyHOMELight(
+        hass=hass,
+        name="DALI 25",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="25#4#02",
+        who="1",
+        where="25",
+        interface="02",
+        dimmable=True,
+        manufacturer="BTicino",
+        model="DALI",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dali, "light.dali_25_boost")
+    dali._promote_color_mode(ColorMode.COLOR_TEMP)
+    dali._attr_is_on = False
+    dali._attr_brightness_pct = 0
+    dali._last_brightness_pct = 100
+
+    # 1. Combined turn_on(color_temp_kelvin=5000, brightness_pct=30):
+    #    - Pre-write *1*0*W## preserves queued Dim 14 and Dim 1 tokens
+    #    - No intermediate 100% brightness spike when Dim 14 echoes ahead of Dim 1
+    #    - F422 FIFO NACK on Dim 1 clears _pending_cmd_brightness_pct and restores _last_brightness_pct
+    f_ct = hass.loop.create_future()
+    f_br = hass.loop.create_future()
+    seq = iter([f_ct, f_br])
+    handler.send = AsyncMock(side_effect=lambda _cmd: next(seq))
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 5000, ATTR_BRIGHTNESS_PCT: 30})
+    dali.handle_event(OWNEvent.parse("*1*0*25#4#02##"))
+    assert dali._pending_cmd_color_temp is not None
+    assert dali._pending_cmd_brightness_pct is not None
+    f_ct.set_result(time.monotonic())
+    await asyncio.sleep(0)
+    dali.handle_event(OWNEvent.parse("*#1*25#4#02*14*200##"))
+    assert dali.is_on is True
+    assert dali._attr_brightness_pct == 0  # zero 100% spike while Dim 1 is still in flight
+    f_br.cancel()
+    await asyncio.sleep(0)
+    assert dali._pending_cmd_brightness_pct is None
+    assert dali._attr_brightness_pct == 100
+
+    # Combined send-error rollback restores previous _pending_cmd_brightness_pct
+    handler.send = AsyncMock(side_effect=RuntimeError("socket down"))
+    with pytest.raises(RuntimeError):
+        await dali.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 3500, ATTR_BRIGHTNESS: 128})
+    assert dali._pending_cmd_color_temp is None
+    assert dali._pending_cmd_brightness_pct is None
+
+    # 2. Cold-boot locked-OFF DALI (ct=250): passive status-request Dim 14 reply does NOT flip light ON
+    dali._attr_is_on = False
+    dali._attr_color_temp = 250
+    done_fut = hass.loop.create_future()
+    done_fut.set_result(time.monotonic())
+    handler.send = AsyncMock(return_value=done_fut)
+    await dali.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 4050})
+    poll_ct = OWNEvent.parse("*#1*25#4#02*14*250##")
+    setattr(poll_ct, "_from_status_request", True)
+    dali.handle_event(poll_ct)
+    assert dali.is_on is False
+
+    # 3. Cold-boot coarse-quantized fine dimmer (*1*4*55## = 20%, physically locked at 23%):
+    #    frozen *#1*55*1*123*5## updates start level to 23% without running optimistic fade to 80%
+    _e2, gw2 = _make_gateway(hass, model="F461")
+    step_fut = hass.loop.create_future()
+    step_fut.set_result(time.monotonic())
+    gw2.send_fade_step = AsyncMock(return_value=step_fut)
+    dim55 = MyHOMELight(
+        hass=hass,
+        name="Dim 55",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="55",
+        who="1",
+        where="55",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=gw2,
+    )
+    _attach_live_entity(hass, dim55, "light.dim_55_coarse_quant")
+    dim55.handle_event(OWNEvent.parse("*1*4*55##"))
+    dim55._fade_engine.first_echo_timeout = 0.05
+    await dim55.async_turn_on(**{ATTR_BRIGHTNESS_PCT: 80, ATTR_TRANSITION: 2.5})
+    assert dim55._fade_task is not None
+    await asyncio.sleep(0)
+    dim55.handle_event(OWNEvent.parse("*#1*55*1*123*5##"))
+    await dim55._fade_task
+    assert dim55._attr_brightness_pct == 23
+    assert gw2.send_fade_step.await_count == 1

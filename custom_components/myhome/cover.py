@@ -3865,6 +3865,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 and self._scope_run_active_until is not None
                 and not (self._attr_is_opening or self._attr_is_closing)
                 and getattr(message, "_what", getattr(message, "what", None)) in (0, 10, "0", "10")
+                and getattr(message, "_from_status_request", False) is not True
+                and getattr(self._gateway_handler, "sweep_active", False) is not True
             ):
                 if now <= self._scope_run_active_until:
                     self._actuation_unconfirmed = False

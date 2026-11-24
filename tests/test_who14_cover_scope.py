@@ -1650,6 +1650,14 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
 
             cov_short.handle_event(OWNEvent.parse("*2*1*0##"))
             assert cov_short._scope_run_active_until is not None
+            handler._active_sweeps = 1
+            cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
+            assert cov_short._actuation_unconfirmed is True
+            handler._active_sweeps = 0
+            poll_stop_35 = OWNEvent.parse("*2*0*35##")
+            setattr(poll_stop_35, "_from_status_request", True)
+            cov_short.handle_event(poll_stop_35)
+            assert cov_short._actuation_unconfirmed is True
             cov_short.handle_event(OWNEvent.parse("*2*0*35##"))
             assert cov_short._actuation_unconfirmed is False
             assert "actuation_unconfirmed" not in cov_short.extra_state_attributes

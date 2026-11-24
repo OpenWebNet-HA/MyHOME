@@ -920,19 +920,22 @@ async def test_f422_cover_scope_members_and_multi_gateway_lifecycle_failover_and
     assert pri_gw._actuator_locks.is_locked("29") is None
 
     # 5b: Primary reloads (close_listener -> new handler) while Secondary stays loaded!
+    assert pri_gw._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*28##")) is True
     await pri_gw.close_listener()
-    # Secondary entities & lock states were evacuated back to sec_gw._actuator_locks!
+    # Secondary entities & all shared-bus lock states were evacuated back to sec_gw._actuator_locks!
     assert sec_gw._actuator_locks.is_locked("12") is True
+    assert sec_gw._actuator_locks.is_locked("28") is True
     assert ("12", None) in sec_gw._actuator_locks._entities
 
     pri_gw_2 = MyHOMEGatewayHandler(hass, pri_entry)
     pri_gw_2.is_connected = True
     pri_gw_2._event_session_ready.set()
     pri_entry.runtime_data = MyHOMERuntimeData(gateway=pri_gw_2)
-    # First WHO=14 frame routed via Secondary to reloaded Primary re-adopts Secondary entities and unlocks 12!
+    # First WHO=14 frame routed via Secondary to reloaded Primary re-adopts Secondary entities & entity-less locks!
     await sec_gw._process_message(OWNMessage.parse("*14*1*12##"))
     assert sec_ent_12.actuator_locked is False
     assert pri_gw_2._actuator_locks.is_locked("12") is False
+    assert pri_gw_2._actuator_locks.is_locked("28") is True
 
     # Removing sec_ent_12 unsubscribes cleanly from both managers
     for cb in list(sec_ent_12._on_remove or ()):

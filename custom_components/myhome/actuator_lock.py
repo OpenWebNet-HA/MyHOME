@@ -272,7 +272,18 @@ class ActuatorLockManager:
             sec_mgr.clear()
 
     def evacuate_secondary_entities(self) -> None:
-        """Re-home still-loaded secondary entities onto their gateway managers before primary unload."""
+        """Re-home still-loaded secondary entities and bus locks before primary unload."""
+        for entry in self._bus_config_entries():
+            rt = get_runtime_data(entry)
+            gw = getattr(rt, "gateway", None) if rt is not None else None
+            if gw is None or gw is self.handler:
+                continue
+            sec_mgr = getattr(gw, "_actuator_locks", None)
+            if isinstance(sec_mgr, ActuatorLockManager):
+                for key, locked in self._locks.items():
+                    sec_mgr._locks[key] = locked
+                    if key in self._observed_keys:
+                        sec_mgr._observed_keys.add(key)
         for key, ents in list(self._entities.items()):
             for ent in list(ents):
                 ent_gw = getattr(ent, "_gateway_handler", None)

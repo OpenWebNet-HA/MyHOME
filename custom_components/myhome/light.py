@@ -82,7 +82,7 @@ from .discovery import (
 from .gateway import MyHOMEGatewayHandler
 from .gateway_confirm import ECHO_CONFIRM_DELAY_S
 from .light_dali import DaliFeatureLock
-from .light_fade import SoftwareFadeEngine
+from .light_fade import DEFAULT_FIRST_ECHO_TIMEOUT, SoftwareFadeEngine
 from .light_group import MyHOMELightGroup, _color_modes_from_flags
 from .myhome_device import MyHOMEEntity
 from .services import async_register_turn_on_timed_service
@@ -452,9 +452,14 @@ async def async_unload_entry(hass: HomeAssistant, config_entry: MyHOMEConfigEntr
     return True
 
 
+_PENDING_CMD_QUEUE_MAX_S = 30.0
+
+type _PendingCmdToken = tuple[int, float, list[Any]]
+
+
 class MyHOMELight(MyHOMEEntity, LightEntity):
-    _pending_cmd_brightness_pct: tuple[int, float] | None = None
-    _pending_cmd_color_temp: tuple[int, float, list[Any]] | None = None
+    _pending_cmd_brightness_pct: _PendingCmdToken | None = None
+    _pending_cmd_color_temp: _PendingCmdToken | None = None
     _brightness_restored: bool = False
 
     def __init__(
@@ -564,8 +569,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._attr_brightness_pct: int | None = None
 
         self._last_brightness_pct: int = 100
-        self._pending_cmd_brightness_pct: tuple[int, float] | None = None
-        self._pending_cmd_color_temp: tuple[int, float, list[Any]] | None = None
+        self._pending_cmd_brightness_pct: _PendingCmdToken | None = None
+        self._pending_cmd_color_temp: _PendingCmdToken | None = None
         self._brightness_restored: bool = False
         # A fine dimmer has reported an exact level on Dimension 1 / 4 with a normal
         # speed; a coarse-only one (speed 240, #767) is still a coarse dimmer even if
@@ -954,12 +959,17 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             )
         ):
             clamped_pct = max(1, min(100, int(target_pct)))
-            await self._send_switch_on(
-                OWNLightingCommand.set_brightness(self._full_where, clamped_pct)
-            )
+            tok_timed: list[Any] = [None]
             self._pending_cmd_brightness_pct = (
                 clamped_pct,
-                time.monotonic() + ECHO_CONFIRM_DELAY_S,
+                time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
+                tok_timed,
+            )
+            written_timed = await self._send_switch_on(
+                OWNLightingCommand.set_brightness(self._full_where, clamped_pct)
+            )
+            self._anchor_pending_cmd(
+                "_pending_cmd_brightness_pct", clamped_pct, tok_timed, written_timed
             )
 
         cmd = build_timed_turn_on_command(
@@ -1001,21 +1011,36 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         else:
             supersede()
 
-    def _anchor_pending_color_temp(
-        self, target_mireds: int, token: list[Any], written: Any
+    def _anchor_pending_cmd(
+        self,
+        attr_name: str,
+        value: int,
+        token: list[Any],
+        written: Any,
+        *,
+        echo_window: float = ECHO_CONFIRM_DELAY_S,
+        fallback_last_on_cancel: bool = False,
     ) -> None:
-        """Anchor ``_pending_cmd_color_temp`` on socket write and clear it on NACK/cancel."""
+        """Anchor a pending parameterized write on socket delivery and clear it on NACK/cancel."""
         token[0] = written
 
         def _on_written(_: Any = None) -> None:
             failed = isinstance(written, asyncio.Future) and (
                 written.cancelled() or written.exception() is not None
             )
-            cur = self._pending_cmd_color_temp
+            cur: _PendingCmdToken | None = getattr(self, attr_name)
             if cur is None or cur[2] is not token:
                 return
             if failed:
-                self._pending_cmd_color_temp = None
+                setattr(self, attr_name, None)
+                if (
+                    fallback_last_on_cancel
+                    and self._attr_is_on is True
+                    and not self._attr_brightness_pct
+                    and self._last_brightness_pct
+                ):
+                    self._apply_brightness_state(self._last_brightness_pct, is_on=True)
+                    self._publish_state()
                 return
             write_ts = written.result() if isinstance(written, asyncio.Future) else None
             anchor = (
@@ -1023,11 +1048,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 if isinstance(write_ts, (int, float)) and not isinstance(write_ts, bool)
                 else time.monotonic()
             )
-            self._pending_cmd_color_temp = (
-                target_mireds,
-                anchor + ECHO_CONFIRM_DELAY_S + 1.0,
-                token,
-            )
+            setattr(self, attr_name, (value, anchor + echo_window, token))
 
         if isinstance(written, asyncio.Future) and not written.done():
             written.add_done_callback(_on_written)
@@ -1083,13 +1104,21 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 cmd = OWNLightingCommand.set_hsv_color(self._full_where, h_int, s_int, v_int)
             else:  # pragma: no cover
                 cmd = OWNLightingCommand.set_rgb_color(self._full_where, int(r), int(g), int(b))
-            await self._send_switch_on(cmd)
+            tok_hs: list[Any] | None = None
             if v_int > 0:
+                tok_hs = [None]
                 self._pending_cmd_brightness_pct = (
                     v_int,
-                    time.monotonic() + ECHO_CONFIRM_DELAY_S,
+                    time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
+                    tok_hs,
                 )
+            written_hs = await self._send_switch_on(cmd)
+            if tok_hs is not None:
+                self._anchor_pending_cmd("_pending_cmd_brightness_pct", v_int, tok_hs, written_hs)
             return
+
+        has_brightness_kwarg = ATTR_BRIGHTNESS in kwargs or ATTR_BRIGHTNESS_PCT in kwargs
+        combined_ct_brightness = False
 
         # Color temperature control (DALI Tunable White)
         if (
@@ -1102,13 +1131,27 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 target_mireds = int(kwargs[ATTR_COLOR_TEMP])
 
             prev_pending_ct = self._pending_cmd_color_temp
+            prev_pending_br = self._pending_cmd_brightness_pct
             token: list[Any] = [None]
             if target_mireds > 1:
                 self._pending_cmd_color_temp = (
                     target_mireds,
-                    time.monotonic() + ECHO_CONFIRM_DELAY_S + 1.0,
+                    time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
                     token,
                 )
+            if has_brightness_kwarg:
+                raw_br = (
+                    int(kwargs[ATTR_BRIGHTNESS_PCT])
+                    if ATTR_BRIGHTNESS_PCT in kwargs
+                    else eight_bits_to_min_percent(int(kwargs[ATTR_BRIGHTNESS]))
+                )
+                if raw_br > 0:
+                    combined_ct_brightness = True
+                    self._pending_cmd_brightness_pct = (
+                        max(1, min(100, raw_br)),
+                        time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
+                        [None],
+                    )
             try:
                 written = await self._send_switch_on(
                     OWNLightingCommand.set_color_temperature(self._full_where, target_mireds)
@@ -1119,15 +1162,23 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     and self._pending_cmd_color_temp[2] is token
                 ):
                     self._pending_cmd_color_temp = prev_pending_ct
+                if combined_ct_brightness:
+                    self._pending_cmd_brightness_pct = prev_pending_br
                 raise
             if target_mireds > 1:
-                self._anchor_pending_color_temp(target_mireds, token, written)
-            if ATTR_BRIGHTNESS not in kwargs and ATTR_BRIGHTNESS_PCT not in kwargs:
+                self._anchor_pending_cmd(
+                    "_pending_cmd_color_temp",
+                    target_mireds,
+                    token,
+                    written,
+                    echo_window=DEFAULT_FIRST_ECHO_TIMEOUT,
+                )
+            if not has_brightness_kwarg:
                 return
 
         # Original combined condition preserved for compatibility
         if (
-            (ATTR_BRIGHTNESS in kwargs or ATTR_BRIGHTNESS_PCT in kwargs)
+            has_brightness_kwarg
             and (
                 ColorMode.BRIGHTNESS in self._attr_supported_color_modes
                 or ColorMode.COLOR_TEMP in self._attr_supported_color_modes
@@ -1140,7 +1191,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         ):
             transition = float(kwargs.get(ATTR_TRANSITION, 0.0))
 
-            if ATTR_BRIGHTNESS in kwargs or ATTR_BRIGHTNESS_PCT in kwargs:
+            if has_brightness_kwarg:
                 target_pct = (
                     int(kwargs[ATTR_BRIGHTNESS_PCT])
                     if ATTR_BRIGHTNESS_PCT in kwargs
@@ -1171,38 +1222,59 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
                 if self._should_use_software_stepped(transition):
                     if self.actuator_locked is True:
-                        await self._send_switch_on(
-                            OWNLightingCommand.set_brightness(self._full_where, clamped_target)
-                        )
+                        tok_lock_br: list[Any] = [None]
                         self._pending_cmd_brightness_pct = (
                             clamped_target,
-                            time.monotonic() + ECHO_CONFIRM_DELAY_S,
+                            time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
+                            tok_lock_br,
+                        )
+                        written_lock_br = await self._send_switch_on(
+                            OWNLightingCommand.set_brightness(self._full_where, clamped_target)
+                        )
+                        self._anchor_pending_cmd(
+                            "_pending_cmd_brightness_pct",
+                            clamped_target,
+                            tok_lock_br,
+                            written_lock_br,
+                            fallback_last_on_cancel=combined_ct_brightness,
                         )
                         return
                     if await self._maybe_instant_brightness(start_pct, clamped_target, is_on=True):
+                        tok_inst_br: list[Any] = [None]
                         self._pending_cmd_brightness_pct = (
                             clamped_target,
                             time.monotonic() + ECHO_CONFIRM_DELAY_S,
+                            tok_inst_br,
                         )
                         return
 
+                    self._pending_cmd_brightness_pct = None
                     self._fade_engine.start_fade(start_pct, clamped_target, transition)
                     return
 
                 # native path (echo-confirmed)
+                tok_nat_br: list[Any] = [None]
+                self._pending_cmd_brightness_pct = (
+                    clamped_target,
+                    time.monotonic() + _PENDING_CMD_QUEUE_MAX_S,
+                    tok_nat_br,
+                )
                 if ATTR_TRANSITION in kwargs:
-                    await self._send_switch_on(
+                    written_br = await self._send_switch_on(
                         OWNLightingCommand.set_brightness(
                             self._full_where, clamped_target, int(transition)
                         )
                     )
                 else:
-                    await self._send_switch_on(
+                    written_br = await self._send_switch_on(
                         OWNLightingCommand.set_brightness(self._full_where, clamped_target)
                     )
-                self._pending_cmd_brightness_pct = (
+                self._anchor_pending_cmd(
+                    "_pending_cmd_brightness_pct",
                     clamped_target,
-                    time.monotonic() + ECHO_CONFIRM_DELAY_S,
+                    tok_nat_br,
+                    written_br,
+                    fallback_last_on_cancel=combined_ct_brightness,
                 )
                 return
             else:
@@ -1751,7 +1823,16 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         has_color_temp = isinstance(raw_ct, int) and not isinstance(raw_ct, bool) and raw_ct > 1
         has_level = message.brightness is not None or has_preset
         pending_ct = self._pending_cmd_color_temp
-        if update_bus_state_complete or has_level or has_hs or has_rgb:
+        pending_br = self._pending_cmd_brightness_pct
+        if has_level or has_hs or has_rgb or (
+            update_bus_state_complete
+            and (
+                self._attr_is_on is True
+                or pending_br is None
+                or not isinstance(pending_br[2][0], asyncio.Future)
+                or pending_br[2][0].done()
+            )
+        ):
             self._pending_cmd_brightness_pct = None
         if has_hs or has_rgb or (
             update_bus_state_complete
@@ -1827,6 +1908,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_color_temp = new_ct
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(new_ct)
             self._pending_cmd_color_temp = None
+            from_poll = getattr(message, "_from_status_request", False) is True or (
+                getattr(self._gateway_handler, "sweep_active", False) is True
+            )
             if (
                 pending_ct is not None
                 and time.monotonic() < pending_ct[1]
@@ -1834,14 +1918,27 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     prev_color_temp is not None
                     and new_ct == prev_color_temp
                     and (
-                        (self._actuator_locked is True and (pending_ct[0] != prev_color_temp or prev_is_on is not True))
-                        or (prev_is_on is not True and abs(pending_ct[0] - prev_color_temp) > 5)
+                        (
+                            self._actuator_locked is True
+                            and (pending_ct[0] != prev_color_temp or prev_is_on is not True)
+                        )
+                        or (
+                            prev_is_on is not True
+                            and (from_poll or abs(pending_ct[0] - prev_color_temp) > 5)
+                        )
                     )
                 )
             ):
                 self._attr_is_on = True
                 self._is_on_restored = False
-                if not self._attr_brightness_pct and self._last_brightness_pct:
+                cur_br_pending = self._pending_cmd_brightness_pct
+                br_in_flight = cur_br_pending is not None and time.monotonic() < cur_br_pending[1]
+                if (
+                    not self._attr_brightness_pct
+                    and self._last_brightness_pct
+                    and not self._fade_engine.is_fading
+                    and not br_in_flight
+                ):
                     self._apply_brightness_state(self._last_brightness_pct, is_on=True)
 
         # Auto-promote to dimmable when brightness data is received (always) or dimmer reports no load
@@ -1969,7 +2066,21 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             step1_confirmed_by_event = False
             if has_level and message.brightness is not None and not has_preset:
                 reported_lvl = _LEVEL_ZERO_ON_PCT if level_zero_while_on else message.brightness
-                if prev_is_on is not True or fade_start is None:
+                coarse_quantized_start = (
+                    not was_fine
+                    and prev_is_on is True
+                    and not self._coarse_speed_seen
+                    and getattr(message, "is_coarse_dimmer", None) is not True
+                    and fade_start is not None
+                    and pending_step is not None
+                    and reported_lvl != pending_step
+                    and abs(reported_lvl - fade_start) <= 10
+                )
+                if coarse_quantized_start:
+                    self._fade_engine.fade_start_pct = reported_lvl
+                    self._attr_brightness_pct = reported_lvl
+                    self._attr_brightness = percent_to_eight_bits(reported_lvl)
+                elif prev_is_on is not True or fade_start is None:
                     step1_confirmed_by_event = reported_lvl > 0
                 elif fading_down:
                     step1_confirmed_by_event = 0 < reported_lvl < fade_start
