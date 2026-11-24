@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 from .const import CONF_IGNORED_ADDRESSES, CONF_WHERE, CONF_WHO
-from .where_grammar import canonical_contact_where
+from .where_grammar import canonical_contact_where, canonical_point_spelling, is_apl_address
 
 _PAIR_PATTERN = re.compile(
     r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?(#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?)$",
@@ -150,16 +150,29 @@ class IgnoredAddresses:
             who_str, _, where = s.partition("/")
             who = int(who_str)
             self._entries.add((who, where))
-            self._normalized.add((who, self._norm_where(where)))
+            norm = self._norm_where(where, who)
+            self._normalized.add((who, norm))
             if who == 25:
                 # A dry contact typed as an F455 spells it (301) is the 31 of the other gateways
-                self._normalized.add((who, canonical_contact_where(self._norm_where(where))))
+                self._normalized.add((who, canonical_contact_where(norm)))
 
     @staticmethod
-    def _norm_where(where: str) -> str:
-        """Normalize WHERE: strip leading zeros from device number if numeric."""
+    def _norm_where(where: str, who: int | None = None) -> str:
+        """Normalize WHERE, preserving canonical 2-digit vs 4-digit A/PL addresses on WHO 1/2/14."""
         base, sep, iface = where.partition("#4#")
-        clean_base = base.lstrip("0") or "0" if base.isascii() and base.isdigit() else base
+        if base.isascii() and base.isdigit():
+            if who in (1, 2, 14):
+                if is_apl_address(base):
+                    clean_base = canonical_point_spelling(base)
+                elif base in ("0", "00", "100"):
+                    clean_base = base
+                else:
+                    stripped = base.lstrip("0")
+                    clean_base = stripped if len(stripped) == 2 and int(stripped) > 15 else base
+            else:
+                clean_base = base.lstrip("0") or "0"
+        else:
+            clean_base = base
         clean_iface = iface.zfill(2) if iface.isascii() and iface.isdigit() else iface
         return f"{clean_base}#4#{clean_iface}" if sep else clean_base
 
@@ -167,7 +180,7 @@ class IgnoredAddresses:
         """Return True if the address is configured to be ignored.
 
         Matches exact address, interface-qualified address, clean where, or
-        zero-normalized where.
+        zero-normalized where without crossing F422 ``#4#II`` sub-bus boundaries.
         """
         if not self._entries:
             return False
@@ -180,15 +193,20 @@ class IgnoredAddresses:
         except (ValueError, TypeError):
             return False
 
-        candidates = {where}
         if interface:
             iface_str = interface.zfill(2) if interface.isascii() and interface.isdigit() else interface
-            candidates.add(f"{where}#4#{interface}")
-            candidates.add(f"{where}#4#{iface_str}")
-
-        if "#4#" in where:
-            bare = where.partition("#4#")[0]
-            candidates.add(bare)
+            base_where, sep, inline_iface = where.rpartition("#4#")
+            inline_norm = (
+                inline_iface.zfill(2)
+                if sep and inline_iface.isascii() and inline_iface.isdigit()
+                else inline_iface
+            )
+            if sep and inline_norm == iface_str:
+                candidates = {where, f"{base_where}#4#{interface}", f"{base_where}#4#{iface_str}"}
+            else:
+                candidates = {f"{where}#4#{interface}", f"{where}#4#{iface_str}"}
+        else:
+            candidates = {where}
 
         # Also strip who- prefix and leading # if any (e.g. clean WHERE, central units)
         for c in list(candidates):
@@ -198,12 +216,12 @@ class IgnoredAddresses:
             if c.startswith("#"):
                 candidates.add(c.removeprefix("#"))
         if who_int == 25:
-            candidates.update([canonical_contact_where(self._norm_where(c)) for c in candidates])
+            candidates.update([canonical_contact_where(self._norm_where(c, who_int)) for c in candidates])
 
         for c in candidates:
             if (who_int, c) in self._entries:
                 return True
-            if (who_int, self._norm_where(c)) in self._normalized:
+            if (who_int, self._norm_where(c, who_int)) in self._normalized:
                 return True
 
         return False

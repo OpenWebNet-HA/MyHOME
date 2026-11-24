@@ -203,30 +203,36 @@ def test_ignored_addresses_matching_zero_normalization():
 
 
 def test_ignored_addresses_matching_routed_interfaces():
-    """Verify bare addresses match all routed interfaces, while qualified addresses match specifically."""
-    # Bare WHO/WHERE 1/74: matches everywhere on that gateway
+    """Verify bare main-bus addresses stay isolated from F422 sub-buses (#408, #1010, #1015)."""
+    # Bare WHO/WHERE 1/74: matches main-bus 74 only, never F422 sub-bus 74#4#01..15
     ign_bare = IgnoredAddresses([(1, "74")])
     assert ign_bare.is_ignored(1, "74") is True
-    assert ign_bare.is_ignored(1, "74#4#01") is True
-    assert ign_bare.is_ignored(1, "74#4#02") is True
-    assert ign_bare.is_ignored(1, "074#4#01") is True
+    assert ign_bare.is_ignored(1, "74#4#01") is False
+    assert ign_bare.is_ignored(1, "74#4#02") is False
+    assert ign_bare.is_ignored(1, "074#4#01") is False
+    assert ign_bare.is_ignored(1, "74", interface="1") is False
+    assert ign_bare.is_ignored(1, "74", interface="01") is False
 
     # Qualified WHO/WHERE 1/74#4#01: matches only interface 01
     ign_qual = IgnoredAddresses([(1, "74#4#01")])
     assert ign_qual.is_ignored(1, "74#4#01") is True
     assert ign_qual.is_ignored(1, "074#4#01") is True
+    assert ign_qual.is_ignored(1, "74#4#1") is True
+    assert ign_qual.is_ignored(1, "74#4#1", interface="01") is True
     assert ign_qual.is_ignored(1, "74#4#02") is False
     assert ign_qual.is_ignored(1, "74") is False
 
     # Interface parameter matching
     assert ign_qual.is_ignored(1, "74", interface="1") is True
     assert ign_qual.is_ignored(1, "74", interface="01") is True
+    assert ign_qual.is_ignored(1, "1-74", interface="01") is True
     assert ign_qual.is_ignored(1, "74", interface="2") is False
     assert ign_qual.is_ignored(1, "74", interface="bus") is False
 
-    # Hyphenated WHERE stripping
+    # Hyphenated WHERE stripping on main bus
     assert ign_bare.is_ignored(1, "1-74") is True
     assert ign_bare.is_ignored(1, "prefix-74") is True
+    assert ign_bare.is_ignored(1, "1-74", interface="01") is False
 
 
 def test_ignored_addresses_defensive_types():

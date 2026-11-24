@@ -27,6 +27,7 @@ keys used for unique ids, de-duplication and default names.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
@@ -42,13 +43,27 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity import Entity
 
-from .const import BUS_ROUTING, CONF_BUS_INTERFACE, CONF_WHERE, CONF_WHO, CONF_ZONE, DOMAIN, LOGGER
+from .const import (
+    BUS_ROUTING,
+    CONF_BUS_INTERFACE,
+    CONF_DEVICE_CLASS,
+    CONF_WHERE,
+    CONF_WHO,
+    CONF_ZONE,
+    DOMAIN,
+    LOGGER,
+)
 from .data import MyHOMEConfigEntry, MyHOMERuntimeData, get_runtime_data
 from .expose import is_exposed_on_bus
 from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
 from .topology import entry_for_mac, peer_unique_id
-from .where_grammar import contact_where_aliases
+from .where_grammar import (
+    canonical_thermo_zone,
+    contact_where_aliases,
+    is_actuator_where,
+    is_probe,
+)
 
 
 @dataclass(frozen=True)
@@ -240,8 +255,11 @@ class KnownDevices:
 
 #: Buttons button.py hangs off an actuator, as suffixes of the actuator's unique id.
 COMPANION_SUFFIXES = ("-disable", "-enable", "-calibrate")
-#: Companion temperature / humidity sensors sensor.py attaches to a WHO=4 climate zone.
-CLIMATE_COMPANION_SENSOR_SUFFIXES = ("-temperature", "-humidity")
+#: Companion temperature / humidity / actuator-output sensors sensor.py attaches to a WHO=4 climate zone.
+CLIMATE_COMPANION_SENSOR_SUFFIXES = ("-temperature", "-humidity", "-output-level")
+_CLIMATE_ACTUATOR_OUTPUT_RE = re.compile(
+    r"^4-([1-9][0-9]?)#[1-9](?:#4#([0-9]{2}))?-output-level$", re.ASCII
+)
 #: Platforms whose entities get those buttons.
 ACTUATOR_DOMAINS = ("light", "switch", "cover")
 ACTUATOR_DEFAULT_WHOS = {"light": "1", "switch": "1", "cover": "2"}
@@ -304,6 +322,161 @@ def _kept_by_sibling_actuator(
     return False, uids
 
 
+def _climate_zone_from_unique_id(
+    unique_id: str | None, gw_mac: str, entry_mac: str
+) -> tuple[str | None, str | None, set[str]]:
+    """Extract canonical ``(zone, interface, mac_prefixes)`` from a WHO=4 climate unique_id."""
+    if not unique_id:
+        return None, None, set()
+    macs = {m for m in (gw_mac, entry_mac) if m}
+    who, dev_id = parse_unique_id(unique_id, gw_mac, entry_mac) if macs else (None, "")
+    if who != "4" and "-4-" in unique_id:
+        mac_prefix, _, dev_id = unique_id.partition("-4-")
+        if mac_prefix:
+            who = "4"
+            macs.add(mac_prefix)
+    if who != "4" or not dev_id:
+        return None, None, macs
+    c_addr = Address.from_device_id(dev_id)
+    if is_probe(c_addr.where) or is_actuator_where(c_addr.where):
+        return None, None, macs
+    canon_zone = canonical_thermo_zone(c_addr.where)
+    if canon_zone is None:
+        return None, None, macs
+    return canon_zone, c_addr.interface, macs
+
+
+def _has_active_yaml_zone_temperature(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    cfg_entry: Any,
+    runtime: MyHOMERuntimeData | None,
+    zone: str,
+    iface: str | None,
+) -> bool:
+    """Whether an explicit active ``myhome.yaml`` WHO=4 temperature sensor owns ``(zone, iface)``."""
+    if runtime is None or cfg_entry is None:
+        return False
+    zkey = f"{zone}{BUS_ROUTING}{iface}" if iface else zone
+    if (
+        IgnoredAddresses.from_config_entry(cfg_entry).is_ignored(4, zone, iface)
+        or is_exposed_on_bus(hass, cfg_entry, 4, zkey)
+    ):
+        return False
+    if runtime.is_follower and runtime.primary_gateway_mac:
+        peer = peer_unique_id(
+            f"{runtime.mac}-4-{zkey}-temperature",
+            str(runtime.mac),
+            str(runtime.primary_gateway_mac),
+        )
+        if peer is not None and registry.async_get_entity_id("sensor", DOMAIN, peer) is not None:
+            return False
+    sensor_cfgs: Mapping[str, Any] = runtime.platforms.get("sensor", {})
+    for cfg_key, cfg in sensor_cfgs.items():
+        if not isinstance(cfg, Mapping):
+            continue
+        dev_cls = cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
+        cfg_who = cfg.get(CONF_WHO)
+        is_temp = (str(cfg_who) == "4" and dev_cls in (None, "temperature")) or (
+            cfg_who is None and dev_cls == "temperature"
+        )
+        if not is_temp:
+            continue
+        cfg_addr = Address.from_config(str(cfg_key), dict(cfg))
+        if is_probe(cfg_addr.clean_where) or is_actuator_where(cfg_addr.clean_where):
+            continue
+        if canonical_thermo_zone(cfg_addr.clean_where) == zone and cfg_addr.interface == iface:
+            return True
+    return False
+
+
+@callback
+def _prune_climate_companions(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    entry: er.RegistryEntry,
+    config_entry_id: str,
+) -> set[str]:
+    """Remove WHO=4 companion sensors of a pruned climate entry unless kept by YAML or a sibling."""
+    touched_devices: set[str] = set()
+    cfg_entry = hass.config_entries.async_get_entry(config_entry_id)
+    runtime = get_runtime_data(cfg_entry) if cfg_entry is not None else None
+    gw_mac = str(getattr(runtime.gateway, "mac", runtime.mac)) if runtime is not None else ""
+    entry_mac = (
+        str(cfg_entry.data.get(CONF_MAC, runtime.mac if runtime is not None else ""))
+        if cfg_entry is not None
+        else ""
+    )
+    zone, iface, macs = _climate_zone_from_unique_id(entry.unique_id, gw_mac, entry_mac)
+    if runtime is not None and runtime.mac:
+        macs.add(str(runtime.mac))
+
+    sibling_climate = False
+    if zone is not None:
+        for other in er.async_entries_for_config_entry(registry, config_entry_id):
+            if other.domain != "climate" or not other.unique_id:
+                continue
+            o_zone, o_iface, _ = _climate_zone_from_unique_id(other.unique_id, gw_mac, entry_mac)
+            if (o_zone, o_iface) == (zone, iface):
+                sibling_climate = True
+                break
+
+    keep_yaml_temp = zone is not None and _has_active_yaml_zone_temperature(
+        hass, registry, cfg_entry, runtime, zone, iface
+    )
+    allowed_suffixes = (
+        tuple(s for s in CLIMATE_COMPANION_SENSOR_SUFFIXES if s != "-temperature")
+        if keep_yaml_temp
+        else CLIMATE_COMPANION_SENSOR_SUFFIXES
+    )
+
+    def _remove_sensor(entity_id: str) -> None:
+        reg_ent = registry.async_get(entity_id)
+        if reg_ent is not None and reg_ent.device_id:
+            touched_devices.add(reg_ent.device_id)
+        registry.async_remove(entity_id)
+
+    if not sibling_climate:
+        stems: set[str] = {entry.unique_id} if entry.unique_id else set()
+        if zone is not None:
+            zkey = f"{zone}{BUS_ROUTING}{iface}" if iface else zone
+            stems.update(f"{m}-4-{zkey}" for m in macs if m)
+        for stem in stems:
+            for suffix in allowed_suffixes:
+                comp_sensor = registry.async_get_entity_id("sensor", DOMAIN, f"{stem}{suffix}")
+                if comp_sensor is not None:
+                    _remove_sensor(comp_sensor)
+
+        if zone is not None and macs:
+            for cand in list(er.async_entries_for_config_entry(registry, config_entry_id)):
+                uid = cand.unique_id or ""
+                if cand.domain != "sensor" or not uid.endswith("-output-level"):
+                    continue
+                after_mac = next(
+                    (uid[len(m) + 1 :] for m in macs if uid.startswith(f"{m}-")),
+                    "",
+                )
+                match = _CLIMATE_ACTUATOR_OUTPUT_RE.fullmatch(after_mac)
+                if match is not None and match.groups() == (zone, iface):
+                    _remove_sensor(cand.entity_id)
+
+    if entry.device_id and not sibling_climate:
+        remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+        if not any(
+            e.domain == "climate" and e.config_entry_id == config_entry_id
+            for e in remaining
+        ):
+            for e in list(remaining):
+                if (
+                    e.domain == "sensor"
+                    and e.config_entry_id == config_entry_id
+                    and (e.unique_id or "").endswith(allowed_suffixes)
+                ):
+                    _remove_sensor(e.entity_id)
+
+    return touched_devices
+
+
 @callback
 def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.RegistryEntry, config_entry_id: str) -> None:
     """Remove an entity with its lock / unlock / calibrate buttons, and its device once empty (#524).
@@ -334,32 +507,18 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
             for e in list(remaining):
                 if e.domain == "switch" and (e.unique_id or "").endswith("-invert"):
                     registry.async_remove(e.entity_id)
-    if entry.domain == "climate":
-        if entry.unique_id:
-            for suffix in CLIMATE_COMPANION_SENSOR_SUFFIXES:
-                comp_sensor = registry.async_get_entity_id("sensor", DOMAIN, f"{entry.unique_id}{suffix}")
-                if comp_sensor is not None:
-                    registry.async_remove(comp_sensor)
-        if entry.device_id:
-            remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
-            if not any(
-                e.domain == "climate" and e.config_entry_id == config_entry_id
-                for e in remaining
+    extra_devices = (
+        _prune_climate_companions(hass, registry, entry, config_entry_id)
+        if entry.domain == "climate"
+        else set()
+    )
+    if not kept_by_sibling:
+        dev_reg = dr.async_get(hass)
+        for dev_id in ({entry.device_id} if entry.device_id else set()) | extra_devices:
+            if dev_reg.async_get(dev_id) is not None and not er.async_entries_for_device(
+                registry, dev_id, include_disabled_entities=True
             ):
-                for e in list(remaining):
-                    if (
-                        e.domain == "sensor"
-                        and e.config_entry_id == config_entry_id
-                        and (e.unique_id or "").endswith(CLIMATE_COMPANION_SENSOR_SUFFIXES)
-                    ):
-                        registry.async_remove(e.entity_id)
-    if (
-        not kept_by_sibling
-        and entry.device_id
-        and (dev_reg := dr.async_get(hass)).async_get(entry.device_id) is not None
-        and not er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
-    ):
-        dev_reg.async_remove_device(entry.device_id)
+                dev_reg.async_remove_device(dev_id)
 
 
 @callback

@@ -12,6 +12,7 @@ on:
       - main
       - master
       - "v2-*"
+      - "chore/release-*"
   schedule:
     - cron: "0 5 * * 1"  # Weekly run every Monday at 05:00 UTC
   workflow_dispatch:
